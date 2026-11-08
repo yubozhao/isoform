@@ -66,7 +66,24 @@ final class YourAgentUITests: XCTestCase {
     private func submit(_ app: XCUIApplication) {
         fill(app, name: "alex.rivera")
         let send = app.buttons["yourAgent.reserve"]
-        reveal(send, in: app); send.tap()
+        revealSend(send, in: app); send.tap()
+    }
+
+    /// At the sheet's first scroll position the Send button and the links below it sit in the bottom system zone,
+    /// where a tap never reaches them. Scroll the element into the band from y 200 to 700 and let the scroll settle.
+    private func revealSend(_ element: XCUIElement, in app: XCUIApplication) {
+        for _ in 0..<12 {
+            if element.exists && (200...700).contains(element.frame.midY) && element.isHittable { break }
+            if element.exists && element.frame.midY < 200 { app.swipeDown(velocity: .slow) }
+            else { app.swipeUp(velocity: .slow) }
+        }
+        var settled = element.frame.minY
+        for _ in 0..<10 {
+            Thread.sleep(forTimeInterval: 0.3)
+            if element.frame.minY == settled { break }
+            settled = element.frame.minY
+        }
+        XCTAssertTrue((200...700).contains(element.frame.midY))
     }
 
     func testTakenChecksOnLeavingFieldAndSuggestionFillsName() {
@@ -76,7 +93,8 @@ final class YourAgentUITests: XCTestCase {
         XCTAssertTrue(suggestion.waitForExistence(timeout: 5))
         XCTAssertEqual(suggestion.label, "Taken. Try alex.rivera.")
         reveal(suggestion, in: app)
-        app.links["alex.rivera"].tap()
+        // On iOS 17 the inline link is part of the text, not its own element: tap the name at the end of the line.
+        suggestion.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5)).tap()
         XCTAssertEqual(app.textFields["yourAgent.name"].value as? String, "alex.rivera")
     }
 
@@ -84,12 +102,14 @@ final class YourAgentUITests: XCTestCase {
         let app = launch("opened")
         fill(app, name: "alex.rivera")
         let send = app.buttons["yourAgent.reserve"]
-        reveal(send, in: app)
+        revealSend(send, in: app)
         XCTAssertTrue(send.isEnabled)
         send.tap()
         XCTAssertTrue(app.staticTexts["Check your email"].waitForExistence(timeout: 5))
-        let change = app.links["Change the name or email"]
-        reveal(change, in: app); change.tap()
+        // The change link is inline text on iOS 17, not a Link element: tap its trailing words.
+        let change = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Change the name or email'")).firstMatch
+        revealSend(change, in: app)
+        change.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)).tap()
         XCTAssertEqual(app.textFields["yourAgent.name"].value as? String, "alex.rivera")
         XCTAssertEqual(app.textFields["yourAgent.email"].value as? String, "alex.rivera@example.com")
     }
