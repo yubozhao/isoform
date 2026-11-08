@@ -20,7 +20,7 @@ final class TodayReviewUITests: XCTestCase {
                 XCTAssertTrue(app.buttons["brief.chip.0"].waitForExistence(timeout: 15))
                 if readAll { app.buttons["feed.readAll"].tap() }
                 let card = app.buttons[identifier]
-                for _ in 0..<12 where !card.isHittable { app.swipeUp() }
+                revealInTapBand(card, in: app, swipes: 12)
                 XCTAssertTrue(card.waitForExistence(timeout: 10))
                 card.tap()
                 let question = app.staticTexts["brief.ask.question"]
@@ -67,7 +67,7 @@ final class TodayReviewUITests: XCTestCase {
             XCTAssertTrue(app.buttons["feed.readAll"].waitForExistence(timeout: 15))
             app.buttons["feed.readAll"].tap()
             let talk = app.buttons["brief.talk"]
-            for _ in 0..<12 where !talk.isHittable { app.swipeUp() }
+            revealInTapBand(talk, in: app, swipes: 12)
             XCTAssertTrue(talk.waitForExistence(timeout: 10))
             talk.tap()
             XCTAssertTrue(app.staticTexts["brief.ask.opener"].waitForExistence(timeout: 10))
@@ -117,7 +117,7 @@ final class TodayReviewUITests: XCTestCase {
             app.launchArguments += ["-AppleLanguages", "(\(language))", "-AppleLocale", language, "-AppleInterfaceStyle", appearance]
             app.launch()
             let chip = app.buttons["brief.yourWeek.chip.open-launch"]
-            for _ in 0..<12 where !chip.isHittable { app.swipeUp() }
+            revealInTapBand(chip, in: app, swipes: 12)
             XCTAssertTrue(chip.waitForExistence(timeout: 15))
             chip.tap()
             XCTAssertTrue(app.staticTexts["brief.ask.question"].waitForExistence(timeout: 15))
@@ -126,7 +126,7 @@ final class TodayReviewUITests: XCTestCase {
             attachScreenshot(app, named: "today-week-ask-\(language)-\(appearance)")
             app.buttons["brief.ask.done"].tap()
             let notNow = app.buttons["brief.yourWeek.notNow"]
-            for _ in 0..<12 where !notNow.isHittable { app.swipeUp() }
+            revealInTapBand(notNow, in: app, swipes: 12)
             XCTAssertTrue(notNow.waitForExistence(timeout: 10))
             XCTAssertFalse(app.buttons["brief.yourWeek.ask"].exists, "calendar holds remain read-only")
             XCTAssertTrue(app.staticTexts["brief.yourWeek.holdReadOnly"].exists)
@@ -154,7 +154,7 @@ final class TodayReviewUITests: XCTestCase {
             app.launchArguments += ["-AppleLanguages", "(\(language))", "-AppleLocale", language, "-AppleInterfaceStyle", appearance]
             app.launch()
             let ask = app.buttons["brief.yourWeek.ask"]
-            for _ in 0..<12 where !ask.isHittable { app.swipeUp() }
+            revealInTapBand(ask, in: app, swipes: 12)
             XCTAssertTrue(ask.waitForExistence(timeout: 15))
             ask.tap()
             XCTAssertTrue(app.staticTexts["brief.ask.question"].waitForExistence(timeout: 15))
@@ -327,7 +327,7 @@ final class TodayReviewUITests: XCTestCase {
             // Each brief item is one row with its own actions (brief.item, BriefContentView.itemRow).
             let card = app.descendants(matching: .any).matching(identifier: "brief.item")
                 .containing(.button, identifier: "feed.notRight").firstMatch
-            for _ in 0..<12 where !card.isHittable { app.swipeUp() }
+            revealInTapBand(card, in: app, swipes: 12)
             XCTAssertTrue(card.isHittable)
             let useful = card.buttons["feed.like"]
             let notForMe = card.buttons["feed.notRight"]
@@ -343,17 +343,17 @@ final class TodayReviewUITests: XCTestCase {
             XCTAssertTrue(notForMe.waitForExistence(timeout: 5))
             let learned = app.descendants(matching: .any).matching(identifier: "brief.item")
                 .containing(.staticText, identifier: "You prefer short replies in the morning").firstMatch
-            for _ in 0..<8 where !learned.isHittable { app.swipeUp() }
+            revealInTapBand(learned, in: app, swipes: 8)
             XCTAssertTrue(learned.isHittable)
             XCTAssertTrue(learned.buttons.matching(NSPredicate(format: "label ENDSWITH 'sources' OR label ENDSWITH 'source'")).firstMatch.exists)
             let notQuite = learned.buttons["brief.notRight"]
-            for _ in 0..<5 where !notQuite.isHittable { app.swipeUp() }
+            revealInTapBand(notQuite, in: app, swipes: 5)
             XCTAssertEqual(notQuite.label, language == "en" ? "Not quite" : "不太对")
             XCTAssertFalse(learned.buttons["feed.like"].exists)
             notQuite.tap()
-            XCTAssertTrue(app.textFields["brief.correction.field"].firstMatch.waitForExistence(timeout: 5))
+            XCTAssertTrue(app.descendants(matching: .any)["brief.correction.field"].firstMatch.waitForExistence(timeout: 5))
             let cancel = app.buttons["brief.correction.cancel"].firstMatch
-            for _ in 0..<5 where !cancel.isHittable { app.swipeUp() }
+            revealInTapBand(cancel, in: app, swipes: 5)
             attachScreenshot(app, named: "today-feedback-correction-\(language)-\(appearance)")
             cancel.tap()
             app.terminate()
@@ -369,7 +369,7 @@ final class TodayReviewUITests: XCTestCase {
         XCTAssertTrue(read.waitForExistence(timeout: 15))
         read.tap()
         let notForMe = app.buttons["feed.notRight"].firstMatch
-        for _ in 0..<12 where !notForMe.isHittable { app.swipeUp() }
+        revealInTapBand(notForMe, in: app, swipes: 12)
         XCTAssertTrue(notForMe.isHittable)
         notForMe.tap()
         XCTAssertTrue(app.buttons["brief.feedback.undo"].firstMatch.waitForExistence(timeout: 5))
@@ -377,7 +377,7 @@ final class TodayReviewUITests: XCTestCase {
         XCTAssertTrue(read.waitForExistence(timeout: 10))
         read.tap()
         let folded = app.descendants(matching: .any)["brief.feedback.folded"].firstMatch
-        for _ in 0..<12 where !folded.isHittable { app.swipeUp() }
+        revealInTapBand(folded, in: app, swipes: 12)
         XCTAssertTrue(folded.waitForExistence(timeout: 10))
         XCTAssertFalse(folded.buttons["brief.feedback.undo"].exists)
     }
@@ -430,18 +430,18 @@ final class TodayReviewUITests: XCTestCase {
         app.buttons["feed.readAll"].tap()
         let learned = app.descendants(matching: .any).matching(identifier: "brief.item")
             .containing(.staticText, identifier: "You prefer short replies in the morning").firstMatch
-        for _ in 0..<15 where !learned.isHittable { app.swipeUp() }
+        revealInTapBand(learned, in: app, swipes: 15)
         XCTAssertTrue(learned.isHittable)
         let notQuite = learned.buttons["brief.notRight"]
-        for _ in 0..<5 where !notQuite.isHittable { app.swipeUp() }
+        revealInTapBand(notQuite, in: app, swipes: 5)
         XCTAssertTrue(notQuite.isHittable)
         notQuite.tap()
-        let field = app.textFields["brief.correction.field"].firstMatch
+        let field = app.descendants(matching: .any)["brief.correction.field"].firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         field.tap()
         field.typeText("This was a one-time exception")
         let send = app.buttons["brief.correction.send"].firstMatch
-        for _ in 0..<5 where !send.isHittable { app.swipeUp() }
+        revealInTapBand(send, in: app, swipes: 5)
         send.tap()
         XCTAssertTrue(app.buttons["brief.correction.undo"].firstMatch.waitForExistence(timeout: 5))
         XCTAssertTrue(field.waitForExistence(timeout: 15))
@@ -465,6 +465,8 @@ final class TodayReviewUITests: XCTestCase {
         }
     }
 
+    /// Notifications: until the computer answers, the page shows only its line and Try again. The choices, including
+    /// the one delivery test, appear once it answers (1ccd20f2a). This fixture has no computer answer, so it guards that rule.
     func testNotificationDiagnosticHasOneDeliveryTest() {
         for (language, appearance) in [("en", "Light"), ("zh-Hans", "Dark")] {
             let app = XCUIApplication()
@@ -475,17 +477,13 @@ final class TodayReviewUITests: XCTestCase {
             app.launch()
             openSettings(app)
             let preferences = app.buttons["settings.notifications.preferences"].firstMatch
-            for _ in 0..<6 where !preferences.isHittable { app.swipeUp() }
+            revealInTapBand(preferences, in: app, swipes: 6)
             XCTAssertTrue(preferences.waitForExistence(timeout: 10))
             preferences.tap()
-            // One test since d876a1174 (P132): the delivery test goes through the computer; the local test is gone.
-            let delivery = app.buttons["notifications.deliveryTest"]
-            XCTAssertTrue(delivery.waitForExistence(timeout: 10))
+            XCTAssertTrue(app.buttons["notifications.refresh"].waitForExistence(timeout: 10))
+            XCTAssertFalse(app.buttons["notifications.deliveryTest"].exists, "the delivery test waits for the computer")
             XCTAssertFalse(app.buttons["settings.testNotification"].exists)
             attachScreenshot(app, named: "notification-diagnostic-\(language)-\(appearance)")
-            delivery.tap()
-            XCTAssertTrue(app.staticTexts["notifications.deliveryResult"].waitForExistence(timeout: 10))
-            attachScreenshot(app, named: "notification-diagnostic-result-\(language)-\(appearance)")
             app.terminate()
         }
     }
@@ -533,7 +531,7 @@ final class TodayReviewUITests: XCTestCase {
             XCTAssertTrue(app.descendants(matching: .any)["feed.brief"].firstMatch.waitForExistence(timeout: 15))
             attachScreenshot(app, named: "today-review-\(language)-\(appearance)")
             let review = app.buttons["today.review.draft.ui-sow"]
-            for _ in 0..<5 where !review.isHittable { app.swipeUp() }
+            revealInTapBand(review, in: app, swipes: 5)
             XCTAssertTrue(review.isHittable)
             review.tap()
             XCTAssertTrue(app.descendants(matching: .any)["tasks.thread.draft"].firstMatch.waitForExistence(timeout: 10))
@@ -543,7 +541,7 @@ final class TodayReviewUITests: XCTestCase {
             attachScreenshot(app, named: "today-draft-\(language)-\(appearance)")
             app.buttons["today.review.done"].tap()
             let row = app.descendants(matching: .any)["tasks.row.review-ui"].firstMatch
-            for _ in 0..<5 where !row.isHittable { app.swipeUp() }
+            revealInTapBand(row, in: app, swipes: 5)
             XCTAssertTrue(row.isHittable)
             attachScreenshot(app, named: "today-sections-\(language)-\(appearance)")
             row.tap()
@@ -551,7 +549,7 @@ final class TodayReviewUITests: XCTestCase {
             attachScreenshot(app, named: "today-task-thread-\(language)-\(appearance)")
             app.navigationBars.buttons.element(boundBy: 0).tap()
             let done = app.descendants(matching: .any)["today.doneForYou"].firstMatch
-            for _ in 0..<5 where !done.isHittable { app.swipeUp() }
+            revealInTapBand(done, in: app, swipes: 5)
             XCTAssertTrue(done.waitForExistence(timeout: 10))
             let next = app.buttons["today.day.next"]
             let chatTab = app.buttons["tab.chat"]
@@ -567,7 +565,7 @@ final class TodayReviewUITests: XCTestCase {
             attachScreenshot(app, named: "today-meeting-\(language)-\(appearance)")
             app.buttons["today.meeting.done"].tap()
             let topics = app.descendants(matching: .any)["feed.topics"].firstMatch
-            for _ in 0..<5 where !topics.isHittable { app.swipeUp() }
+            revealInTapBand(topics, in: app, swipes: 5)
             XCTAssertTrue(topics.waitForExistence(timeout: 10))
             attachScreenshot(app, named: "today-day-topics-\(language)-\(appearance)")
             let past = app.buttons["feed.pastBriefs"]
@@ -587,7 +585,7 @@ final class TodayReviewUITests: XCTestCase {
         app.launchEnvironment["YANSU_UITEST_TAB"] = "today"
         app.launch()
         let row = app.descendants(matching: .any)["tasks.row.review-ui"].firstMatch
-        for _ in 0..<5 where !row.isHittable { app.swipeUp() }
+        revealInTapBand(row, in: app, swipes: 5)
         XCTAssertTrue(row.waitForExistence(timeout: 10))
         row.tap()
         XCTAssertTrue(app.descendants(matching: .any)["tasks.thread"].firstMatch.waitForExistence(timeout: 10))
@@ -653,7 +651,7 @@ final class TodayReviewUITests: XCTestCase {
             app.launchArguments += ["-AppleLanguages", "(\(language))", "-AppleLocale", language, "-AppleInterfaceStyle", appearance]
             app.launch()
             let row = app.buttons["today.waiting.ui-waiting-on-reply"]
-            for _ in 0..<5 where !row.isHittable { app.swipeUp() }
+            revealInTapBand(row, in: app, swipes: 5)
             XCTAssertTrue(row.waitForExistence(timeout: 15))
             row.tap()
             XCTAssertTrue(app.descendants(matching: .any)["chat.proactive.item"].firstMatch.waitForExistence(timeout: 10))
@@ -674,7 +672,7 @@ final class TodayReviewUITests: XCTestCase {
             app.launchArguments += ["-AppleLanguages", "(\(language))", "-AppleLocale", language, "-AppleInterfaceStyle", appearance]
             app.launch()
             let next = app.buttons["today.day.next"]
-            for _ in 0..<8 where !next.isHittable { app.swipeUp() }
+            revealInTapBand(next, in: app, swipes: 8)
             XCTAssertTrue(next.waitForExistence(timeout: 15))
             next.tap()
             XCTAssertTrue(app.descendants(matching: .any)["today.meeting.failed"].firstMatch.waitForExistence(timeout: 10))
@@ -690,7 +688,7 @@ final class TodayReviewUITests: XCTestCase {
         app.launchEnvironment["YANSU_UITEST_EXTRA_WAITING"] = "1"
         app.launch()
         let more = app.buttons["today.moreInTasks"]
-        for _ in 0..<6 where !more.isHittable { app.swipeUp() }
+        revealInTapBand(more, in: app, swipes: 6)
         XCTAssertTrue(more.waitForExistence(timeout: 15))
         XCTAssertEqual(more.label, "1 more in Tasks")
         XCTAssertEqual(app.buttons["tab.tasks"].value as? String, "4 need you")
@@ -710,10 +708,27 @@ final class TodayReviewUITests: XCTestCase {
         if failure { app.launchEnvironment["YANSU_UITEST_DRAFT_FAILURE"] = "1" }
         app.launch()
         let review = app.buttons["today.review.draft.ui-sow"]
-        for _ in 0..<6 where !review.isHittable { app.swipeUp() }
+        revealInTapBand(review, in: app, swipes: 6)
         XCTAssertTrue(review.waitForExistence(timeout: 15))
         review.tap()
         XCTAssertTrue(app.buttons["tasks.draft.send"].waitForExistence(timeout: 10))
         return app
+    }
+
+    /// On iPhone 15 the bottom ~60 pt of the screen is a system zone where taps never reach an element. A tap at an
+    /// element that is only hittable down there does nothing, so scroll until its middle is above that zone.
+    private func revealInTapBand(_ element: XCUIElement, in app: XCUIApplication, swipes: Int) {
+        for _ in 0..<swipes {
+            if element.exists && element.isHittable && element.frame.midY < 760 { break }
+            if element.exists && element.frame.midY < 100 { app.swipeDown(velocity: .slow) }
+            else { app.swipeUp(velocity: .slow) }
+        }
+        // Let the scroll stop: a tap during the scroll's momentum is swallowed.
+        var settled = element.frame.minY
+        for _ in 0..<10 {
+            Thread.sleep(forTimeInterval: 0.3)
+            if element.frame.minY == settled { break }
+            settled = element.frame.minY
+        }
     }
 }
