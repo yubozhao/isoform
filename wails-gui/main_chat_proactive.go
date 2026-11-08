@@ -39,6 +39,7 @@ type mainChatProactive struct {
 	FirstReadHash           string              `json:"firstReadHash,omitempty"`
 	FirstReadConfirmedAt    int64               `json:"firstReadConfirmedAt,omitempty"`
 	FirstReadCorrectionHash string              `json:"firstReadCorrectionHash,omitempty"`
+	FirstReadCorrectedAt    int64               `json:"firstReadCorrectedAt,omitempty"`
 	Sentences               []string            `json:"sentences,omitempty"`
 	Helps                   []string            `json:"helps,omitempty"`
 	OfferCount              int                 `json:"offerCount,omitempty"`

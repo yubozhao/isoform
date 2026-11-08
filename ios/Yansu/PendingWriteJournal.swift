@@ -100,6 +100,9 @@ struct PendingWrite: Codable, Equatable, Sendable {
     var todayDraftSend: TodayDraftSend? = nil
     var todayDeviceID: String? = nil
     var calendarHold: CalendarHoldReplay? = nil
+    /// The words of a first-read correction still waiting for the computer (P163), so a reopened card can show them.
+    /// Optional so older journals still decode.
+    var correctionWords: String? = nil
 }
 
 enum WriteFingerprint {
@@ -204,15 +207,16 @@ actor PendingWriteJournal {
     // Reserve and match under one actor turn. Adopt an older journal once, before returning a key;
     // after that, writes from another Mac must never supply the key for the currently paired hub.
     func reserve(operation: PendingWrite.Operation, target: String, choice: String, fingerprint: String,
-                 makeKey: @Sendable () -> String, createdAt: Date) throws -> PendingWrite {
+                 makeKey: @Sendable () -> String, createdAt: Date, correctionWords: String? = nil) throws -> PendingWrite {
         loadIfNeeded()
         let currentHubID = hubID()
         try adoptLegacyWrites(for: currentHubID)
         if let write = writes.first(where: {
             $0.hubID == currentHubID && $0.operation == operation && $0.target == target && $0.fingerprint == fingerprint
         }) { return write }
-        let write = PendingWrite(key: makeKey(), operation: operation, target: target, choice: choice,
+        var write = PendingWrite(key: makeKey(), operation: operation, target: target, choice: choice,
                                  fingerprint: fingerprint, createdAt: createdAt, hubID: currentHubID)
+        write.correctionWords = correctionWords
         try insert(write)
         return write
     }

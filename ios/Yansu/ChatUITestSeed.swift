@@ -321,11 +321,13 @@ actor ChatUITestHub: ChatHubAPI, FirstReadHubAPI {
             main[index].proactive?.firstReadConfirmedAt = nil
             result = FirstReadAnswer(state: "pending")
         case "correct_portrait":
-            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw HubRequestError.malformedResponse }
-            let next = (main.last?.seq ?? 0) + 1
-            main.remove(at: index)
-            main.append(ChatItemView(seq: next, role: .user, kind: .text, text: text,
-                                     toolName: "", at: ChatUITestSeed.stamp(Date()), permission: nil))
+            // A blank Not quite is accepted and saves nothing (P163 v1.0.1). The computer keeps the card and marks it corrected, as first_read.go does.
+            switch ProcessInfo.processInfo.environment["YANSU_UITEST_FIRST_READ_ANSWER"] {
+            case "held": throw HubRequestError.noAnswer
+            case "failed": throw HubRequestError.rejected(status: 400, message: "Couldn't save your answer.")
+            default: break
+            }
+            main[index].proactive?.state = "corrected"
             result = FirstReadAnswer(state: "corrected")
         default: throw HubRequestError.invalidIdentifier
         }

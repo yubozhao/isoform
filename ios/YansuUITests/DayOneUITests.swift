@@ -48,19 +48,38 @@ final class DayOneUITests: XCTestCase {
 
     func testFirstReadEnglishLight() throws {
         try exerciseFirstRead(language: "en", appearance: "Light")
+        try exerciseWaitingAndFailed(language: "en", appearance: "Light")
+        try exerciseBlank(language: "en", appearance: "Light")
         try exerciseOffers(language: "en", appearance: "Light")
+    }
+
+    /// P163 frames for the other two pairs: English dark and Chinese light.
+    func testFirstReadEnglishDarkStates() throws {
+        try exerciseFirstRead(language: "en", appearance: "Dark")
+        try exerciseWaitingAndFailed(language: "en", appearance: "Dark")
+        try exerciseBlank(language: "en", appearance: "Dark")
+    }
+
+    func testFirstReadChineseLightStates() throws {
+        try exerciseFirstRead(language: "zh-Hans", appearance: "Light")
+        try exerciseWaitingAndFailed(language: "zh-Hans", appearance: "Light")
+        try exerciseBlank(language: "zh-Hans", appearance: "Light")
     }
 
     func testFirstReadChineseDark() throws {
         try exerciseFirstRead(language: "zh-Hans", appearance: "Dark")
+        try exerciseWaitingAndFailed(language: "zh-Hans", appearance: "Dark")
+        try exerciseBlank(language: "zh-Hans", appearance: "Dark")
         try exerciseOffers(language: "zh-Hans", appearance: "Dark")
     }
 
-    private func launch(language: String, appearance: String) -> XCUIApplication {
+    private func launch(language: String, appearance: String, firstReadAnswer: String? = nil) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment["YANSU_UITEST_SETTINGS_STATE"] = "day-one"
         app.launchEnvironment["YANSU_UITEST_TAB"] = "chat"
         app.launchEnvironment["YANSU_UITEST_APPEARANCE"] = appearance.lowercased()
+        // The seeded computer holds the correction ("held") or refuses it ("failed") instead of answering.
+        if let firstReadAnswer { app.launchEnvironment["YANSU_UITEST_FIRST_READ_ANSWER"] = firstReadAnswer }
         app.launchArguments += ["-AppleInterfaceStyle", appearance, "-AppleLanguages", "(\(language))",
                                 "-AppleLocale", language == "zh-Hans" ? "zh_CN" : "en_US"]
         app.launch()
@@ -102,6 +121,61 @@ final class DayOneUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["I work best later in the day."].waitForExistence(timeout: 10))
         capture(app, "first-read-corrected-\(language)-\(appearance)")
         app.terminate()
+    }
+
+    /// P163: the words stay on the card while the computer has not answered, and come back to the field on failure.
+    private func exerciseWaitingAndFailed(language: String, appearance: String) throws {
+        let held = launch(language: language, appearance: appearance, firstReadAnswer: "held")
+        sendCorrection(in: held, words: "I work best later in the day.")
+        let waiting = held.staticTexts["firstRead.waiting"]
+        XCTAssertTrue(waiting.waitForExistence(timeout: 10))
+        XCTAssertTrue(held.staticTexts["I work best later in the day."].exists)
+        capture(held, "first-read-waiting-\(language)-\(appearance)")
+        held.buttons["firstRead.undo"].tap()
+        XCTAssertTrue(held.descendants(matching: .any)["firstRead.correction"].waitForExistence(timeout: 5))
+        held.terminate()
+
+        let failed = launch(language: language, appearance: appearance, firstReadAnswer: "failed")
+        sendCorrection(in: failed, words: "I work best later in the day.")
+        XCTAssertTrue(failed.staticTexts["firstRead.error"].waitForExistence(timeout: 10))
+        let field = failed.descendants(matching: .any)["firstRead.correction"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        XCTAssertEqual(field.value as? String, "I work best later in the day.")
+        // With the field focused, Chat keeps the card, its Send and the failure line above the composer.
+        field.tap()
+        Thread.sleep(forTimeInterval: 1)
+        capture(failed, "first-read-failed-\(language)-\(appearance)")
+        failed.terminate()
+    }
+
+    /// P163 v1.0.1: Not quite left blank goes through the real Send and shows the blank state.
+    private func exerciseBlank(language: String, appearance: String) throws {
+        let app = launch(language: language, appearance: appearance)
+        let notQuite = app.buttons["firstRead.notQuite"]
+        reveal(notQuite, in: app, direction: .down)
+        notQuite.tap()
+        let send = app.buttons["firstRead.send"]
+        XCTAssertTrue(send.waitForExistence(timeout: 5))
+        XCTAssertTrue(send.isEnabled)
+        send.tap()
+        let said = app.staticTexts["firstRead.said"]
+        XCTAssertTrue(said.waitForExistence(timeout: 10))
+        let portrait = app.staticTexts["firstRead.portraitLine"]
+        XCTAssertTrue(portrait.waitForExistence(timeout: 10))
+        reveal(portrait, in: app, direction: .up)
+        capture(app, "first-read-blank-\(language)-\(appearance)")
+        app.terminate()
+    }
+
+    private func sendCorrection(in app: XCUIApplication, words: String) {
+        let notQuite = app.buttons["firstRead.notQuite"]
+        reveal(notQuite, in: app, direction: .down)
+        notQuite.tap()
+        let correction = app.descendants(matching: .any)["firstRead.correction"]
+        XCTAssertTrue(correction.waitForExistence(timeout: 5))
+        correction.tap()
+        correction.typeText(words)
+        app.buttons["firstRead.send"].tap()
     }
 
     private func exerciseOffers(language: String, appearance: String) throws {

@@ -35,6 +35,7 @@ struct ChatView: View {
     @State private var firstReadFocusID: String?
     @State private var firstReadFocusSignal = UUID()
     @State private var firstReadCorrectionSignal = UUID()
+    @State private var firstReadCorrectionFocusSignal = UUID()
 
     private static let bottomID = "bottom"
 
@@ -170,6 +171,9 @@ struct ChatView: View {
                 .onChange(of: firstReadCorrectionSignal) { _, _ in
                     follow(scroll.policy.jumpToLatest(), proxy)
                 }
+                .onChange(of: firstReadCorrectionFocusSignal) { _, _ in
+                    focusCorrection(proxy)
+                }
                 // Today's Show for a send the computer did not take: Chat scrolls to that message (PROTOCOL.md section 23).
                 .task(id: router.chatMessageRequest) {
                     guard let id = router.chatMessageRequest else { return }
@@ -249,6 +253,18 @@ struct ChatView: View {
               item.proactive?.kind == "first_read", item.id != shownFirstReadID else { return }
         shownFirstReadID = item.id
         focusFirstRead(item.id, proxy)
+    }
+
+    /// The card's field took focus: the portrait card, with its field, Send and any failure line, ends above the composer.
+    private func focusCorrection(_ proxy: ScrollViewProxy) {
+        scroll.policy.readFirstRead()
+        DispatchQueue.main.async {
+            proxy.scrollTo(FirstReadCard.portraitAnchor, anchor: .bottom)
+        }
+        // The keyboard finishes rising after focus, so the visible area changes again; settle once it has.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            proxy.scrollTo(FirstReadCard.portraitAnchor, anchor: .bottom)
+        }
     }
 
     private func focusFirstRead(_ id: String, _ proxy: ScrollViewProxy) {
@@ -452,7 +468,8 @@ struct ChatView: View {
                 FirstReadCard(item: proactive, chatID: chatID, onPortraitChanged: {
                     firstReadFocusID = item.id
                     firstReadFocusSignal = UUID()
-                }, onCorrectionSent: { firstReadCorrectionSignal = UUID() })
+                }, onCorrectionSent: { firstReadCorrectionSignal = UUID() },
+                onCorrectionFocus: { firstReadCorrectionFocusSignal = UUID() })
             }
         } else if item.kind == .proactive, let proactive = item.proactive {
             VStack(alignment: .leading, spacing: 10) {

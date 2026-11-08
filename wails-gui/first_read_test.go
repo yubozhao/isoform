@@ -325,3 +325,85 @@ func TestFirstReadWaitsForFirstBriefChatDelivery(t *testing.T) {
 		t.Fatal("first read remained blocked after the brief was delivered")
 	}
 }
+
+func TestFirstReadCorrectionUndoRestoresButtons(t *testing.T) {
+	app, service, device, now := firstReadAnswerTestRig(t)
+	moment := firstReadMoment(device.MobileDeviceView)
+	const words = "I work best later in the day."
+	if result, err := app.AnswerFirstRead(moment, "correct_portrait", words); err != nil || result.State != "corrected" {
+		t.Fatalf("correction: %+v %v", result, err)
+	}
+	noteID := "first-read-correction-" + engagement.HashPart(moment)
+	if _, err := app.GetMemoryEntry(noteID); err != nil {
+		t.Fatalf("correction memory missing before undo: %v", err)
+	}
+	*now = now.Add(6 * time.Second)
+	if _, err := app.AnswerFirstRead(moment, "undo_portrait", ""); err == nil {
+		t.Fatal("correction undo remained available after five seconds")
+	}
+	*now = now.Add(-6 * time.Second)
+	if result, err := app.AnswerFirstRead(moment, "undo_portrait", ""); err != nil || result.State != "pending" {
+		t.Fatalf("correction undo: %+v %v", result, err)
+	}
+	if _, err := app.GetMemoryEntry(noteID); err == nil {
+		t.Fatal("undo left the correction memory behind")
+	}
+	if service.noteID == noteID {
+		t.Fatal("undo left the pending portrait note behind")
+	}
+	main, _ := app.ensureMainChat(t.Context())
+	rows, err := app.store.LoadStreamItems(t.Context(), main.LocalID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range rows {
+		if row.Kind == "user" && row.Content == words {
+			t.Fatal("undo left the correction message in the chat")
+		}
+	}
+	row, err := app.store.FindProactiveStreamItem(t.Context(), main.LocalID, moment)
+	if err != nil || row == nil {
+		t.Fatalf("card lost: %v", err)
+	}
+	var card mainChatProactive
+	if err := json.Unmarshal([]byte(row.ToolInput), &card); err != nil || card.State != "pending" || card.FirstReadCorrectedAt != 0 || card.FirstReadCorrectionHash != "" {
+		t.Fatalf("card after undo: %+v %v", card, err)
+	}
+	if repeat, err := app.AnswerFirstRead(moment, "undo_portrait", ""); err != nil || repeat.State != "pending" {
+		t.Fatalf("repeated undo: %+v %v", repeat, err)
+	}
+	if result, err := app.AnswerFirstRead(moment, "correct_portrait", "Mornings instead."); err != nil || result.State != "corrected" {
+		t.Fatalf("answering again after undo: %+v %v", result, err)
+	}
+}
+
+func TestFirstReadBlankCorrectionSavesNothing(t *testing.T) {
+	app, _, device, now := firstReadAnswerTestRig(t)
+	moment := firstReadMoment(device.MobileDeviceView)
+	if result, err := app.AnswerFirstRead(moment, "correct_portrait", ""); err != nil || result.State != "corrected" {
+		t.Fatalf("blank correction: %+v %v", result, err)
+	}
+	if portrait := mustPortraitRead(t, app, "ready"); portrait.SaidAt != 0 {
+		t.Fatalf("blank correction left the read confirmed: %+v", portrait)
+	}
+	if _, err := app.GetMemoryEntry("first-read-correction-" + engagement.HashPart(moment)); err == nil {
+		t.Fatal("blank correction saved a memory entry")
+	}
+	main, _ := app.ensureMainChat(t.Context())
+	rows, err := app.store.LoadStreamItems(t.Context(), main.LocalID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range rows {
+		if row.Kind == "user" {
+			t.Fatalf("blank correction added a chat message: %q", row.Content)
+		}
+	}
+	if result, err := app.AnswerFirstRead(moment, "undo_portrait", ""); err != nil || result.State != "pending" {
+		t.Fatalf("undo blank correction: %+v %v", result, err)
+	}
+	*now = now.Add(time.Second)
+	if _, err := app.AnswerFirstRead(moment, "correct_portrait", ""); err != nil {
+		t.Fatalf("answering blank again: %v", err)
+	}
+}

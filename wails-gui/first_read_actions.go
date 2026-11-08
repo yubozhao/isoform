@@ -91,6 +91,14 @@ func (a *App) answerFirstRead(ctx context.Context, momentID, action, text string
 		}
 		card.State, card.FirstReadConfirmedAt = "acted", at
 	case "undo_portrait":
+		if card.State == "corrected" {
+			// Not quite can be taken back within the same five seconds as That's me (P163).
+			if err := a.undoFirstReadCorrection(ctx, card); err != nil {
+				return result, err
+			}
+			card.State, card.FirstReadCorrectionHash, card.FirstReadCorrectedAt = "pending", "", 0
+			break
+		}
 		if card.State == "pending" && card.FirstReadConfirmedAt == 0 {
 			return FirstReadAnswerResult{State: "pending"}, nil
 		}
@@ -103,8 +111,9 @@ func (a *App) answerFirstRead(ctx context.Context, momentID, action, text string
 		card.State, card.FirstReadConfirmedAt = "pending", 0
 	case "correct_portrait":
 		text = strings.TrimSpace(text)
-		if text == "" || len([]rune(text)) > 500 {
-			return result, errors.New("correction must have 1 to 500 characters")
+		// A blank Not quite is allowed (P163 v1.0.1): it saves nothing and does not confirm the read.
+		if len([]rune(text)) > 500 {
+			return result, errors.New("correction must have at most 500 characters")
 		}
 		hash := agencyPayloadHash([]byte(text))
 		if card.State == "corrected" {
@@ -116,10 +125,15 @@ func (a *App) answerFirstRead(ctx context.Context, momentID, action, text string
 		if card.State != "pending" && card.State != "opened" {
 			return result, errors.New("first read was already answered")
 		}
-		if err := a.correctFirstRead(ctx, main.LocalID, card, text); err != nil {
+		if text == "" {
+			if err := a.blankFirstRead(); err != nil {
+				return result, err
+			}
+		} else if err := a.correctFirstRead(ctx, main.LocalID, card, text); err != nil {
 			return result, err
 		}
 		card.State, card.FirstReadCorrectionHash = "corrected", hash
+		card.FirstReadCorrectedAt = a.portraitService().now().UnixMilli()
 	default:
 		return result, errors.New("unknown first read answer")
 	}
@@ -223,6 +237,38 @@ func (a *App) undoFirstRead(card mainChatProactive) error {
 	}
 	answer.Undone = true
 	return a.saveFirstReadAnswer(ctx, answer)
+}
+
+// blankFirstRead is Not quite left blank: nothing is saved, and the portrait does not start from this read.
+func (a *App) blankFirstRead() error {
+	return a.portraitService().setSaid(0, false)
+}
+
+// undoFirstReadCorrection takes back a correction inside the undo window: the pending portrait note, the
+// correction's memory entry and its chat message go, so the card can be answered again. A blank Not quite
+// saved none of them.
+func (a *App) undoFirstReadCorrection(ctx context.Context, card mainChatProactive) error {
+	s := a.portraitService()
+	if card.FirstReadCorrectedAt <= 0 || s.now().After(time.UnixMilli(card.FirstReadCorrectedAt).Add(firstReadUndoWindow)) {
+		return errors.New("undo is no longer available")
+	}
+	if card.FirstReadCorrectionHash == agencyPayloadHash([]byte("")) {
+		return nil
+	}
+	noteID := "first-read-correction-" + engagement.HashPart(card.MomentID)
+	s.stateMu.Lock()
+	if s.noteID == noteID {
+		s.note, s.noteID, s.notQuite, s.force = "", "", false, false
+	}
+	s.stateMu.Unlock()
+	if err := a.DeleteMemoryEntry(noteID); err != nil {
+		return err
+	}
+	if err := a.store.DeleteStreamItemByID(ctx, "first-read-correction:"+engagement.HashPart(card.MomentID)); err != nil {
+		return err
+	}
+	s.poke()
+	return nil
 }
 
 func (a *App) correctFirstRead(ctx context.Context, chatID string, card mainChatProactive, text string) error {

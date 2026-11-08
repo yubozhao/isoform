@@ -27,10 +27,12 @@ struct JournaledWriter: Sendable {
     let now: @Sendable () -> Date
 
     func send<Value>(_ operation: PendingWrite.Operation, target: String, choice: String, fingerprint: String,
+                     correctionWords: String? = nil,
                      _ body: (String) async throws -> Value) async -> JournaledOutcome<Value> {
         let write: PendingWrite
         do {
-            write = try await reserve(operation, target: target, choice: choice, fingerprint: fingerprint)
+            write = try await reserve(operation, target: target, choice: choice, fingerprint: fingerprint,
+                                      correctionWords: correctionWords)
         } catch {
             return .notSaved
         }
@@ -52,9 +54,9 @@ struct JournaledWriter: Sendable {
     }
 
     private func reserve(_ operation: PendingWrite.Operation, target: String, choice: String,
-                         fingerprint: String) async throws -> PendingWrite {
+                         fingerprint: String, correctionWords: String? = nil) async throws -> PendingWrite {
         try await journal.reserve(operation: operation, target: target, choice: choice, fingerprint: fingerprint,
-                                  makeKey: makeKey, createdAt: now())
+                                  makeKey: makeKey, createdAt: now(), correctionWords: correctionWords)
     }
 
     static func disposition(for error: Error) -> WriteDisposition {
