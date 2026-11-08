@@ -822,6 +822,9 @@ func (a *App) OpenAssistantSignIn(agentID string) error {
 	if !ok {
 		return fmt.Errorf("unknown assistant %q", agentID)
 	}
+	if runtime.GOOS == "windows" {
+		return openWindowsSetupTerminal(command)
+	}
 	if runtime.GOOS != "darwin" {
 		return fmt.Errorf("open a terminal and run %s", strings.Join(command, " "))
 	}

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -82,6 +83,10 @@ var (
 	assistantGatewayWait      = assistantGatewayWaitTimeout
 	assistantGatewayRetry     = 200 * time.Millisecond
 	assistantLoginShellLocate = func(ctx context.Context, id string) string {
+		if runtime.GOOS == "windows" {
+			out, _ := loginShellOutput(ctx, "where "+id+" & npm prefix -g")
+			return strings.TrimSpace(out)
+		}
 		out, _ := loginShellOutput(ctx, "command -v "+id+"; npm prefix -g")
 		return strings.TrimSpace(out)
 	}
@@ -99,6 +104,9 @@ func assistantInstallCommand(id string) string { return "npm install -g " + inst
 // ~/.local/bin without Node.js or sudo; Codex's would ask questions on a
 // terminal, which CODEX_NON_INTERACTIVE turns off.
 func assistantNativeInstallCommand(id string) string {
+	if runtime.GOOS == "windows" {
+		return assistantInstallCommand(id)
+	}
 	if id == "codex" {
 		return "curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh"
 	}
@@ -113,6 +121,9 @@ func refreshAssistantPATH(id string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if out, err := loginShellOutput(ctx, "npm prefix -g"); err == nil {
+		if runtime.GOOS == "windows" {
+			shellenv.AppendPATH(lastLine(out))
+		}
 		if prefix := lastLine(out); prefix != "" && shellenv.AppendPATH(filepath.Join(prefix, "bin")) {
 			added = append(added, filepath.Join(prefix, "bin"))
 		}
@@ -155,7 +166,7 @@ func (a *App) SetupInstallAssistant(id string) AssistantSetupResult {
 	}
 	// The Terminal fallback is always the native installer: it needs no Node.
 	result.Command = assistantNativeInstallCommand(id)
-	native := assistantCurlAvailable()
+	native := runtime.GOOS != "windows" && assistantCurlAvailable()
 	npm := assistantNPMAvailable()
 	if !native && !npm {
 		result.Code = assistantSetupNeedsNode
@@ -384,6 +395,9 @@ func (a *App) OpenAssistantInstallTerminal(id string) error {
 	id = strings.ToLower(strings.TrimSpace(id))
 	if !validAssistantID(id) {
 		return fmt.Errorf("unknown assistant %q", id)
+	}
+	if runtime.GOOS == "windows" {
+		return openWindowsSetupTerminal([]string{"npm", "install", "-g", installPkg(id)})
 	}
 	command := assistantNativeInstallCommand(id)
 	log.Printf("[assistant-setup] %s: opening Terminal on %s", id, command)

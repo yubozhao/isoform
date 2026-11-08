@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
     plan: vi.fn(),
     start: vi.fn(),
 }));
+vi.mock("../../../wailsjs/runtime/runtime", () => ({ EventsOn: () => () => {} }));
 vi.mock("@/lib/wails-shim-app", () => ({
     PlanToolDownload: mocks.plan,
     StartToolDownload: mocks.start,
@@ -169,4 +170,17 @@ describe("shared tool download sheet", () => {
         fireEvent.click(screen.getByTestId("tool-download-confirm"));
         await waitFor(() => expect(mocks.start).toHaveBeenCalledWith(renewed));
     });
+});
+
+it("reviews a gateway separately and explains a failed file verification", async () => {
+    const plan = fresh();
+    plan.entry = { ...plan.entry, id: "model-gateway", displayName: "Magpie", sizeBytes: 74073600 };
+    mocks.plan.mockResolvedValue(plan);
+    mocks.start.mockRejectedValue(new Error("gateway download size or SHA-256 does not match confirmed manifest"));
+    render(<ToolDownloadSheet open onOpenChange={() => {}} toolId="model-gateway" />);
+    await waitFor(() => expect(mocks.plan).toHaveBeenCalledWith("model-gateway"));
+    expect(mocks.start).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByTestId("tool-download-confirm"));
+    expect(await screen.findByRole("alert")).toHaveTextContent("did not pass verification");
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
 });

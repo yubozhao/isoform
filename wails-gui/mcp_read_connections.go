@@ -12,6 +12,7 @@ import (
 	"time"
 	"unicode"
 
+	"wails-gui/internal/platform/cmdutil"
 	"wails-gui/internal/platform/shellenv"
 )
 
@@ -32,7 +33,7 @@ type MCPReadConnection struct {
 // Keep subprocess execution injectable so revocation tests never invoke an
 // installed assistant. Callers must not expose output or errors to the UI.
 var mcpReadRunCLI = func(ctx context.Context, cli string, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, cli, args...)
+	cmd := cmdutil.CommandContext(ctx, cli, args...)
 	cmd.WaitDelay = time.Second
 	cmd.Dir, _ = os.UserHomeDir()
 	return cmd.Output()
@@ -145,7 +146,7 @@ func mcpReadAssistantMatches(client, cli, yansu string) bool {
 		// or perform an auth/health check; no assistant/model session is started.
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		cmd := exec.CommandContext(ctx, cli, "mcp", "get", "isoform", "--json")
+		cmd := cmdutil.CommandContext(ctx, cli, "mcp", "get", "isoform", "--json")
 		cmd.WaitDelay = time.Second
 		cmd.Dir, _ = os.UserHomeDir()
 		output, err := cmd.Output()
@@ -262,14 +263,14 @@ func (a *App) ConnectMCPReadAssistant(client string) (MCPReadConnection, error) 
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		if replaceClaude {
-			remove := exec.CommandContext(ctx, cli, "mcp", "remove", "isoform", "--scope", "user")
+			remove := cmdutil.CommandContext(ctx, cli, "mcp", "remove", "isoform", "--scope", "user")
 			remove.WaitDelay = time.Second
 			remove.Dir, _ = os.UserHomeDir()
 			if err := remove.Run(); err != nil {
 				return MCPReadConnection{}, errors.New("assistant MCP registration could not be replaced")
 			}
 		}
-		cmd := exec.CommandContext(ctx, cli, mcpReadRegistrationArgs(client, yansu)...)
+		cmd := cmdutil.CommandContext(ctx, cli, mcpReadRegistrationArgs(client, yansu)...)
 		cmd.WaitDelay = time.Second
 		cmd.Dir, _ = os.UserHomeDir()
 		// Output can contain configuration values, so never forward it to UI/logs.

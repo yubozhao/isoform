@@ -180,3 +180,14 @@ describe("ToolsOnThisMacCard", () => {
         expect(componentSource).not.toMatch(/defaultValue/);
     });
 });
+
+it("offers the missing gateway download from Settings after onboarding", async () => {
+    await i18n.changeLanguage("en");
+    mocks.check.mockResolvedValue(deps({
+        magpie: { ...bundled, healthy: false },
+        gatewaySetup: { ...bundled, healthy: false, installed: false, required: true, downloadable: true, downloadBytes: 74073600, signedIn: false, plan: "", notFoundYet: false, probedAt: "" },
+    }));
+    render(<ToolsOnThisMacCard />);
+    expect(await screen.findByRole("button", { name: "Download and connect (74 MB)" })).toBeInTheDocument();
+    expect(screen.getByTestId("setup-gateway")).toHaveTextContent("separate from voice and memory models");
+});

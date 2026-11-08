@@ -58,6 +58,17 @@ func gitDownloadEntry(platform string) (ToolDownloadEntry, error) {
 // PlanToolDownload performs no I/O beyond local path resolution. Only the
 // shipped manifest can be planned; caller-supplied URLs are never accepted.
 func (a *App) PlanToolDownload(id string) (ToolDownloadPlan, error) {
+	if id == "model-gateway" {
+		entry, err := magpieDownloadEntry(runtime.GOOS + "/" + runtime.GOARCH)
+		if err != nil {
+			return ToolDownloadPlan{}, err
+		}
+		dir, err := flavorDataDir()
+		if err != nil {
+			return ToolDownloadPlan{}, err
+		}
+		return a.toolDownloads.plan(entry, filepath.Join(dir, magpieBundleDirName))
+	}
 	if id != "windows-git" {
 		return ToolDownloadPlan{}, fmt.Errorf("unknown tool %q", id)
 	}
@@ -97,10 +108,22 @@ func (p *toolDownloadPlans) plan(entry ToolDownloadEntry, folder string) (ToolDo
 // Startup must never call it. Until the shared model sheet supports tools,
 // missing Windows Git stays not ready rather than bypassing that sheet.
 func (a *App) StartToolDownload(plan ToolDownloadPlan) error {
+	if plan.Entry.ID == "model-gateway" {
+		if err := a.toolDownloads.consume(plan); err != nil {
+			return err
+		}
+		if err := downloadMagpieTool(plan, func(done int64) {
+			a.emitBrowserEvent("setup:tool-download", ToolDownloadProgress{ID: plan.Entry.ID, BytesDone: done, BytesTotal: plan.Entry.SizeBytes})
+		}); err != nil {
+			return err
+		}
+		a.RefreshAgentProbe()
+		return nil
+	}
 	return a.toolDownloads.startGit(plan)
 }
 
-func (p *toolDownloadPlans) startGit(plan ToolDownloadPlan) error {
+func (p *toolDownloadPlans) consume(plan ToolDownloadPlan) error {
 	p.mu.Lock()
 	expected, ok := p.pending[plan.Token]
 	if !ok || expected != plan || plan.ExpiresAt < time.Now().UnixMilli() {
@@ -109,6 +132,13 @@ func (p *toolDownloadPlans) startGit(plan ToolDownloadPlan) error {
 	}
 	delete(p.pending, plan.Token)
 	p.mu.Unlock()
+	return nil
+}
+
+func (p *toolDownloadPlans) startGit(plan ToolDownloadPlan) error {
+	if err := p.consume(plan); err != nil {
+		return err
+	}
 
 	// No network request or directory creation occurs above this boundary.
 	client := &http.Client{Timeout: 5 * time.Minute}

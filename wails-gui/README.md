@@ -552,6 +552,9 @@ The dev server starts the Vite dev server (with HMR) alongside the Go backend. W
 # Basic production build
 ./scripts/build-wails.sh
 
+# Explicit Linux build (WSL defaults to a Windows executable)
+./scripts/build-wails.sh --platform linux/amd64
+
 # With explicit version
 ./scripts/build-wails.sh --version 0.2.0
 
@@ -561,6 +564,18 @@ The dev server starts the Vite dev server (with HMR) alongside the Go backend. W
 # Cross-compilation
 ./scripts/build-wails.sh --platform darwin/arm64
 ```
+
+Under WSL, the basic command forwards to Windows Git Bash and produces
+`build/bin/Yansu.exe` using Windows Go, Node.js, pnpm, Wails and MinGW.
+The bootstrap checks Windows PATH and common tool locations. Set
+`ISOFORM_WINDOWS_BASH` to a custom `bash.exe` path in WSL, or
+`ISOFORM_WINDOWS_BUILD_PATH` to extra Git Bash tool directories separated by `:`,
+if needed. Quit the running Windows app before rebuilding.
+
+Frontend dependencies are cached separately for each Node host under
+`build/frontend-deps/`. Repeated builds on the same host reuse `node_modules`;
+switching between Windows and Linux restores the corresponding installation.
+Existing installs without host metadata are preserved once before a fresh install.
 
 The build script:
 1. Installs frontend dependencies and runs Vite build

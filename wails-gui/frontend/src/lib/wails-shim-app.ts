@@ -1585,6 +1585,7 @@ export interface GitStatus {
 
 export interface DependencyStatus {
     magpie: MagpieInstallView;
+    gatewaySetup?: import('./setup-backend').SetupAgentProbe['magpie'];
     claude: CLIToolStatus;
     codex: CLIToolStatus;
     npm: boolean;
@@ -1627,6 +1628,7 @@ export interface AssistantSetupResult {
     command?: string;
     detail?: string;
 }
+export const ReconnectModelGateway = appBinding<[], void>("ReconnectModelGateway");
 export const SetupInstallAssistant = appBinding<[string], AssistantSetupResult>("SetupInstallAssistant");
 export const SetupCheckAssistant = appBinding<[string, boolean], AssistantSetupResult>("SetupCheckAssistant");
 export const OpenAssistantInstallTerminal = appBinding<[string], void>("OpenAssistantInstallTerminal");

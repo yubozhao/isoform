@@ -61,6 +61,15 @@ describe("Your AI cards", () => {
 });
 
 describe("Sees rows", () => {
+    it("keeps unsupported Windows integrations out of the available rows", () => {
+        const p = perms(SEES_ROWS.flatMap((row) => row.keys.map((key) => ({
+            key, state: row.id === "day" ? "unsupported" as const : "on" as const,
+        }))));
+        p.platform = "windows";
+        expect(rowStates(p)).toEqual({ screen: "on", calls: "on", day: "unsupported", apps: "on" });
+        expect(sequenceDone(p)).toBe(true);
+    });
+
     it("groups the prompts into four rows and asks Screen Recording last", () => {
         expect(SEES_ROWS.map((r) => r.id)).toEqual(["screen", "calls", "day", "apps"]);
         expect(SEES_ROWS.flatMap((r) => r.keys)).toHaveLength(8);

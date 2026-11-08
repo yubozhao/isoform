@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"strings"
 	"time"
 )
@@ -71,7 +70,7 @@ func checkLocalCLI(tool, command, loginCheckCmd string) CLIToolStatus {
 func runCLIStatusCommand(name string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), cliStatusTimeout)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, name, args...).CombinedOutput()
+	out, err := cliProbeCommand(ctx, name, args...).CombinedOutput()
 	if ctx.Err() != nil {
 		return string(out), ctx.Err()
 	}

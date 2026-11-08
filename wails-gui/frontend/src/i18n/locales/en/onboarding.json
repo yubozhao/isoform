@@ -672,7 +672,20 @@
             },
             "cardLabel": "{{name}}, {{state}}",
             "fineHistory": "Isoform reads your last 30 days in {{assistants}} on this computer, so it knows your projects from the start. Change it in Settings › Privacy.",
-            "assistantsBoth": "Claude Code and Codex"
+            "assistantsBoth": "Claude Code and Codex",
+            "gatewayMissing": "Isoform needs Magpie to connect to your signed-in assistants. This small download is separate from voice and memory models.",
+            "gatewayInstalled": "The assistant connection is installed. Connect it to continue.",
+            "gatewayDownload": "Download and connect ({{size}})",
+            "gatewayConnect": "Connect assistants",
+            "gatewayConnecting": "Connecting assistants…",
+            "gatewayConnectFailed": "The download is installed, but the connection did not start. Check your connection and try connecting again.",
+            "gatewayProgress": "Downloading {{done}} / {{total}}",
+            "gatewayUnsupported": "Automatic gateway installation is not available for this platform. Update Isoform or install Magpie before connecting.",
+            "gatewayUnavailable": "Download unavailable",
+            "gatewayDownloadFailed": "The connection component could not be downloaded. Check your network, then download the component again.",
+            "gatewayIntegrityFailed": "The downloaded file did not pass verification and was not installed. Download it again.",
+            "gatewayDownloadLimited": "The download service is temporarily limiting requests. Download the component again later.",
+            "gatewayStorageFailed": "The component could not be saved. Check disk space and folder access, then download it again."
         },
         "sees": {
             "title": "Sees your work, on this computer.",
@@ -699,7 +712,12 @@
             "turnOn": "Turn on",
             "done": "Everything is on. Screenshots and audio are stored on this computer.",
             "failed": "Couldn't ask for that. Try again.",
-            "reopenFailed": "Isoform couldn't reopen itself. Quit and open it again."
+            "reopenFailed": "Isoform couldn't reopen itself. Quit and open it again.",
+            "windowsLine": "Windows does not need separate screen or keyboard permission dialogs. Microphone access follows your Windows privacy settings.",
+            "windowsDone": "Windows capabilities are available. Manage screen and audio capture in Settings.",
+            "windowsUnsupported": "System calendar, reminders and Mail access are not supported here yet. Contacts can be imported from a vCard file.",
+            "available": "Available",
+            "unsupported": "Not supported"
         },
         "runs": {
             "title": "Runs on this computer",

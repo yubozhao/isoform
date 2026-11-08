@@ -672,7 +672,20 @@
             },
             "cardLabel": "{{name}}，{{state}}",
             "fineHistory": "Isoform 会读取这台电脑上你最近 30 天的 {{assistants}} 记录，从一开始就了解你的项目。可在“设置 › 隐私”中更改。",
-            "assistantsBoth": "Claude Code 和 Codex"
+            "assistantsBoth": "Claude Code 和 Codex",
+            "gatewayMissing": "Isoform 需要 Magpie 来连接你已登录的 AI 助手。此组件与语音、记忆模型分开下载。",
+            "gatewayInstalled": "助手连接组件已安装，连接后即可继续。",
+            "gatewayDownload": "下载并连接（{{size}}）",
+            "gatewayConnect": "连接 AI 助手",
+            "gatewayConnecting": "正在连接 AI 助手……",
+            "gatewayConnectFailed": "组件已安装，但连接尚未启动。请检查网络后重新连接。",
+            "gatewayProgress": "正在下载 {{done}} / {{total}}",
+            "gatewayUnsupported": "此平台暂不支持自动安装连接组件。请更新 Isoform，或安装 Magpie 后再连接。",
+            "gatewayUnavailable": "暂不支持下载",
+            "gatewayDownloadFailed": "连接组件下载未完成，请检查网络后重试。",
+            "gatewayIntegrityFailed": "下载文件校验失败，尚未安装，请重新下载。",
+            "gatewayDownloadLimited": "下载服务暂时限制请求，请稍后重试。",
+            "gatewayStorageFailed": "无法保存连接组件，请检查磁盘空间和目录访问权限后重试。"
         },
         "sees": {
             "title": "看见你的工作，就在这台电脑上。",
@@ -699,7 +712,12 @@
             "turnOn": "开启",
             "done": "全部开启。截图和音频存储在这台电脑上。",
             "failed": "没能发起请求，请再试一次。",
-            "reopenFailed": "Isoform 没能自动重新打开，请退出后再打开。"
+            "reopenFailed": "Isoform 没能自动重新打开，请退出后再打开。",
+            "windowsLine": "Windows 无需单独授权屏幕采集和键鼠控制。麦克风访问遵循 Windows 隐私设置。",
+            "windowsDone": "Windows 功能已就绪，可在设置中管理屏幕和音频采集。",
+            "windowsUnsupported": "暂不支持读取系统日历、提醒事项和 Mail；通讯录可通过 vCard 文件导入。",
+            "available": "可用",
+            "unsupported": "暂不支持"
         },
         "runs": {
             "title": "在这台电脑上运行",

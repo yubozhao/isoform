@@ -7,6 +7,8 @@ set -euo pipefail
 #   wails-gui/scripts/build-wails.sh                          # the Isoform release: bundled yansu CLI + wails build + embed
 #   wails-gui/scripts/build-wails.sh --skip-cli               # skip yansu CLI bundle build
 #   wails-gui/scripts/build-wails.sh --skip-whisper           # legacy no-op (whisper.cpp removed)
+#   wails-gui/scripts/build-wails.sh --platform windows/amd64 # Windows Git Bash, or forwarded automatically from WSL
+#   wails-gui/scripts/build-wails.sh --platform linux/amd64   # explicit Linux build, including under WSL
 #   wails-gui/scripts/build-wails.sh --platform darwin/arm64  # cross-compile for a specific OS/arch
 #   wails-gui/scripts/build-wails.sh --version 0.2.0          # inject version into wails.json before building
 #   wails-gui/scripts/build-wails.sh --dmg                    # also create Isoform-<version>-darwin-<arch>.dmg with app icon (macOS only)
@@ -17,6 +19,9 @@ set -euo pipefail
 #   wails-gui/scripts/build-wails.sh --flavor isoform --install # copy the signed app to ~/Applications/Isoform.app
 #   wails-gui/scripts/build-wails.sh --flavor isoform --install --dry-run # print build/install plan without building (also on Linux)
 #   ISOFORM_DESKTOP_REMOTE_ACCESS=0 wails-gui/scripts/build-wails.sh # opt out of the iroh access default
+#
+# Under WSL the default is a Windows executable, built with Windows Git Bash.
+# Pass --platform linux/amd64 explicitly to build a Linux desktop app under WSL.
 #
 # Release and development builds are both Isoform.app, bundle id
 # com.wails.Isoform, data in ~/.isoform-agent, so the person keeps one
@@ -138,6 +143,7 @@ FLAVOR=""
 KEEP_PERMISSIONS=false
 INSTALL_APP=false
 DRY_RUN=false
+BUILD_ORIGINAL_ARGS=("$@")
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --skip-cli)
@@ -235,6 +241,20 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Choose the host before downloads, bundle replacement or frontend installs.
+# A Linux Node install cannot share node_modules with Windows Node.
+if [ "$DRY_RUN" != true ] && [ "$INSTALL_APP" != true ] && [ "$(uname -s)" = Linux ] && \
+    { [ -n "${WSL_DISTRO_NAME:-}" ] || { [ -r /proc/sys/kernel/osrelease ] && [[ "$(cat /proc/sys/kernel/osrelease)" == *[Mm]icrosoft* ]]; }; }; then
+    case "$PLATFORM" in
+        "")
+            exec bash "${SCRIPT_DIR}/build-windows-from-wsl.sh" "${BUILD_ORIGINAL_ARGS[@]}" --platform windows/amd64
+            ;;
+        windows/*)
+            exec bash "${SCRIPT_DIR}/build-windows-from-wsl.sh" "${BUILD_ORIGINAL_ARGS[@]}"
+            ;;
+    esac
+fi
 
 detect_host_os() {
     local os
@@ -350,6 +370,7 @@ if [ "$DRY_RUN" = true ]; then
 fi
 
 source "${SCRIPT_DIR}/bundle-architecture.sh"
+source "${SCRIPT_DIR}/frontend-deps.sh"
 configure_go_proxy
 
 git_target_platform() {
@@ -537,8 +558,8 @@ bundle_sherpa_dylibs_macos() {
 }
 
 # bundle_sherpa_dlls_windows <bin_dir>
-# Copies sherpa-onnx + onnxruntime DLLs next to Yansu.exe so the Windows loader
-# finds them via the executable directory.
+# Stage sherpa with a private ONNX DLL name. Windows PreferSystem32Images
+# otherwise selects the OS's incompatible onnxruntime.dll even beside the exe.
 bundle_sherpa_dlls_windows() {
     local bin_dir lib_src
     bin_dir="$1"
@@ -547,9 +568,13 @@ bundle_sherpa_dlls_windows() {
         return 0
     }
     echo "[build-wails] Bundling sherpa-onnx DLLs from ${lib_src}"
-    cp -f "${lib_src}/sherpa-onnx-c-api.dll"   "$bin_dir/"
-    cp -f "${lib_src}/sherpa-onnx-cxx-api.dll" "$bin_dir/"
-    cp -f "${lib_src}/onnxruntime.dll"         "$bin_dir/"
+    stage_sherpa_dlls_windows "$lib_src" "$bin_dir"
+}
+
+stage_sherpa_dlls_windows() {
+    # The staging helper runs on the build host, including cross-builds.
+    (cd "$WAILS_DIR" && GOOS="$(detect_host_os)" GOARCH="$(detect_host_arch)" CGO_ENABLED=0 \
+        go run ./scripts/windows-runtime-dlls -source "$1" -destination "$2")
 }
 
 # bundle_sherpa_libs_linux <bin_dir>
@@ -1001,6 +1026,13 @@ if [ "$EFFECTIVE_TARGET_OS" = darwin ]; then
     echo "[build-wails] Verified sherpa-onnx cache for ${EFFECTIVE_TARGET_ARCH}"
 fi
 
+# Preserve each host's native packages and links across Windows/WSL builds.
+FRONTEND_HOST="$(node -p 'process.platform + "-" + process.arch' | tr -d '\r')"
+prepare_frontend_deps "${WAILS_DIR}/frontend" "${WAILS_DIR}/build/frontend-deps/main" "$FRONTEND_HOST"
+if [ "$SKIP_SPOTLIGHT" != true ] && [ -d "${SPOTLIGHT_DIR}/frontend" ]; then
+    prepare_frontend_deps "${SPOTLIGHT_DIR}/frontend" "${WAILS_DIR}/build/frontend-deps/spotlight" "$FRONTEND_HOST"
+fi
+
 # Build provenance for perf-snapshot diagnostics. Capture the source state
 # before this script performs intentional tracked-file mutations such as
 # injecting --version into wails.json; otherwise every release build reports
@@ -1109,6 +1141,8 @@ GOOS="$EFFECTIVE_TARGET_OS" GOARCH="$EFFECTIVE_TARGET_ARCH" \
 #     model accounts. The embed step copies only the build's arch.
 if [ "$SKIP_MAGPIE" = true ]; then
     echo "[build-wails] Skipping magpie download (--skip-magpie)"
+elif [ "$EFFECTIVE_TARGET_OS" != "darwin" ]; then
+    echo "[build-wails] Skipping macOS magpie bundles for ${EFFECTIVE_TARGET_OS}; Windows setup offers the native CLI download"
 else
     echo "[build-wails] Checking pinned magpie bundles..."
     bash "${SCRIPT_DIR}/download-magpie.sh"
@@ -1117,6 +1151,8 @@ fi
 # 5c. Stage the pinned dumbpipe binaries for remote mobile access.
 if [ "$SKIP_DUMBPIPE" = true ]; then
     echo "[build-wails] Skipping dumbpipe download (--skip-dumbpipe)"
+elif [ "$EFFECTIVE_TARGET_OS" != "darwin" ]; then
+    echo "[build-wails] Skipping macOS dumbpipe bundles for ${EFFECTIVE_TARGET_OS}"
 else
     echo "[build-wails] Checking pinned dumbpipe bundles..."
     bash "${SCRIPT_DIR}/download-dumbpipe.sh"
@@ -1593,27 +1629,13 @@ cd "$WAILS_DIR"
 # When building for Windows, Wails' binding generator compiles a cgo binary
 # from the project's main package and runs it for type introspection. Since
 # we have cgo deps on sherpa-onnx-go-windows, that intermediate binary needs
-# the three sherpa DLLs (sherpa-onnx-c-api.dll / sherpa-onnx-cxx-api.dll /
-# onnxruntime.dll) reachable via the Windows DLL search path at runtime.
+# the sherpa DLLs and our private isoform-ort.dll reachable at runtime.
 #
-# Two failure modes to defend against:
-#   1. STATUS_DLL_NOT_FOUND (0xc0000135) — DLLs not on the search path at all.
-#      Fixed by prepending the sherpa lib dir to PATH.
-#   2. STATUS_INVALID_IMAGE_FORMAT (0xc000007b) — DLL found but wrong
-#      version. C:\Windows\System32 ships a 2832-byte onnxruntime.dll stub
-#      (Microsoft WindowsML API-set proxy) that shares the name but is
-#      ABI-incompatible with the real 1.24.x build sherpa links against.
-#      Windows DLL search puts System32 ABOVE PATH (SafeDllSearchMode
-#      default), so prepending to PATH does NOT win this race — the loader
-#      grabs the broken stub and crashes the binding-gen exe.
-#
-# Fix for (2): stage the real DLLs into the binding-gen exe's APPLICATION
-# DIRECTORY, which is search-order #1 (above System32). Wails v2 writes
-# wailsbindings.exe directly to os.TempDir() — confirmed in
-# github.com/wailsapp/wails/v2/pkg/commands/bindings/bindings.go — so the
-# real %TEMP% is where the DLLs need to land. MSYS bash remaps $TEMP/$TMP
-# to /tmp, so query Windows %TEMP% via cmd.exe instead of trusting $TEMP.
-if [ "$EFFECTIVE_TARGET_OS" = "windows" ]; then
+# System32 contains an incompatible onnxruntime.dll stub. PreferSystem32Images
+# can give it priority even over an app-local copy. Stage sherpa's imports with
+# the private isoform-ort.dll name in Wails' binding-generator directory, using
+# exactly the same transformation as the final distributable.
+if [ "$EFFECTIVE_TARGET_OS" = "windows" ] && [ "$(detect_host_os)" = "windows" ]; then
     # sherpa_module_lib_dir already returns an MSYS-style path on Windows
     # hosts (it does the cygpath conversion internally), so prepending with
     # `:` is safe for bash splitting and MSYS will translate it back to
@@ -1628,10 +1650,8 @@ if [ "$EFFECTIVE_TARGET_OS" = "windows" ]; then
             bind_stage_dir="$(cygpath -u "$win_temp" 2>/dev/null)"
         fi
         if [ -n "$bind_stage_dir" ] && [ -d "$bind_stage_dir" ]; then
-            cp -f "${sherpa_win_lib_dir}/sherpa-onnx-c-api.dll"   "$bind_stage_dir/" 2>/dev/null || true
-            cp -f "${sherpa_win_lib_dir}/sherpa-onnx-cxx-api.dll" "$bind_stage_dir/" 2>/dev/null || true
-            cp -f "${sherpa_win_lib_dir}/onnxruntime.dll"         "$bind_stage_dir/" 2>/dev/null || true
-            echo "[build-wails] Staged sherpa DLLs into wails binding-gen app dir: ${bind_stage_dir} (workaround for System32 onnxruntime stub)"
+            stage_sherpa_dlls_windows "$sherpa_win_lib_dir" "$bind_stage_dir"
+            echo "[build-wails] Staged sherpa DLLs with private ONNX name into wails binding-gen app dir: ${bind_stage_dir}"
         else
             echo "[build-wails] WARNING: could not resolve Windows %TEMP%; if System32 contains an onnxruntime.dll stub, binding generation will fail with 0xc000007b" >&2
         fi

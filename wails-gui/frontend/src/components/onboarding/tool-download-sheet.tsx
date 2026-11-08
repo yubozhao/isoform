@@ -14,10 +14,12 @@ import {
     type ToolDownloadPlan,
 } from "@/lib/wails-shim-app";
 import { formatBytes } from "@/components/settings/settings-format";
+import { EventsOn } from "../../../wailsjs/runtime/runtime";
+import { formatModelBytes } from "./v2/models";
 
 type Phase = "planning" | "review" | "starting" | "failed";
 
-// The shared confirmation sheet for a shipped tool (Windows Git). It never
+// The shared confirmation sheet for Git and the assistant connection. It never
 // starts a download on open, cancel, Escape or dismissal: only the explicit
 // confirm handler submits the exact backend-issued plan, once, while a pending
 // Start blocks duplicate confirmation. Failures and expired plans require a
@@ -26,16 +28,21 @@ export function ToolDownloadSheet({
     open,
     onOpenChange,
     onInstalled,
+    toolId = "windows-git",
 }: {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     onInstalled?: () => void;
+    toolId?: "windows-git" | "model-gateway";
 }) {
     const { t } = useTranslation("onboarding");
     const [phase, setPhase] = useState<Phase>("planning");
     const [plan, setPlan] = useState<ToolDownloadPlan | null>(null);
     const [failedKind, setFailedKind] = useState<"plan" | "start">("plan");
     const [planVersion, setPlanVersion] = useState(0);
+    const [bytesDone, setBytesDone] = useState(0);
+    const [failureKey, setFailureKey] = useState<string | null>(null);
+    const formatSize = toolId === "model-gateway" ? formatModelBytes : formatBytes;
     const requestRef = useRef(0);
 
     useEffect(() => {
@@ -44,7 +51,9 @@ export function ToolDownloadSheet({
         const request = ++requestRef.current;
         setPhase("planning");
         setPlan(null);
-        void PlanToolDownload("windows-git")
+        setBytesDone(0);
+        setFailureKey(null);
+        void PlanToolDownload(toolId)
             .then((next) => {
                 if (!live || request !== requestRef.current) return;
                 setPlan(next);
@@ -58,7 +67,14 @@ export function ToolDownloadSheet({
         return () => {
             live = false;
         };
-    }, [open, planVersion]);
+    }, [open, planVersion, toolId]);
+
+    useEffect(() => {
+        if (!open || toolId !== "model-gateway") return;
+        return EventsOn("setup:tool-download", (value: { id: string; bytesDone: number }) => {
+            if (value.id === toolId) setBytesDone(value.bytesDone);
+        });
+    }, [open, toolId]);
 
     const close = () => {
         if (phase === "starting") return;
@@ -78,7 +94,14 @@ export function ToolDownloadSheet({
             setPlan(null);
             onInstalled?.();
             onOpenChange(false);
-        } catch {
+        } catch (error) {
+            if (toolId === "model-gateway") {
+                const detail = String(error);
+                setFailureKey(/SHA-256|does not match/.test(detail) ? "v2.ai.gatewayIntegrityFailed"
+                    : /HTTP (403|429)/.test(detail) ? "v2.ai.gatewayDownloadLimited"
+                    : /permission|access.*denied|space/i.test(detail) ? "v2.ai.gatewayStorageFailed"
+                    : "v2.ai.gatewayDownloadFailed");
+            }
             setFailedKind("start");
             setPhase("failed");
         }
@@ -117,9 +140,9 @@ export function ToolDownloadSheet({
                     {phase === "failed" && (
                         <p role="alert" className="text-xs text-error">
                             {t(
-                                failedKind === "plan"
+                                failureKey ?? (failedKind === "plan"
                                     ? "tools.planFailed"
-                                    : "tools.startFailed",
+                                    : "tools.startFailed"),
                                 { name: entry?.displayName ?? t("tools.gitName") },
                             )}
                         </p>
@@ -133,7 +156,7 @@ export function ToolDownloadSheet({
                                     </span>
                                     <span className="text-muted">
                                         {t("tools.itemSize", {
-                                            size: formatBytes(entry.sizeBytes),
+                                            size: formatSize(entry.sizeBytes),
                                         })}
                                     </span>
                                 </div>
@@ -195,7 +218,9 @@ export function ToolDownloadSheet({
                             {phase === "starting" ? (
                                 <>
                                     <Loader2 className="size-3.5 animate-spin" aria-hidden />
-                                    {t("tools.pending")}
+                                            {toolId === "model-gateway" && entry
+                                                ? t("v2.ai.gatewayProgress", { done: formatSize(bytesDone), total: formatSize(entry.sizeBytes) })
+                                                : t("tools.pending")}
                                 </>
                             ) : (
                                 t("tools.confirm")

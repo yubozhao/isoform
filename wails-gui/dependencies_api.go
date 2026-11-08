@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"wails-gui/internal/platform/cmdutil"
 )
 
 // Onboarding's dependency check: which assistants and gateways this Mac has,
@@ -40,9 +42,10 @@ func gitReadiness() GitStatus {
 
 // DependencyStatus is the dependency check the onboarding step shows.
 type DependencyStatus struct {
-	Magpie MagpieInstallView `json:"magpie"`
-	Claude CLIToolStatus     `json:"claude"`
-	Codex  CLIToolStatus     `json:"codex"`
+	Magpie       MagpieInstallView `json:"magpie"`
+	GatewaySetup SetupMagpieProbe  `json:"gatewaySetup"`
+	Claude       CLIToolStatus     `json:"claude"`
+	Codex        CLIToolStatus     `json:"codex"`
 	// NPM is true when npm is on the login shell's PATH, so Install can work.
 	NPM bool `json:"npm"`
 	// Ollama is true when a local Ollama answers.
@@ -65,11 +68,12 @@ const cliInstallTimeout = 10 * time.Minute
 // CheckDependencies reports the gateway and assistant CLIs this Mac has.
 func (a *App) CheckDependencies() DependencyStatus {
 	status := DependencyStatus{
-		Magpie: a.magpieInstallView(),
-		Claude: a.CheckLocalCLIStatus("claude"),
-		Codex:  a.CheckLocalCLIStatus("codex"),
-		NPM:    loginShellHas("npm"),
-		Git:    gitReadiness(),
+		Magpie:       a.magpieInstallView(),
+		GatewaySetup: a.gatewaySetupAvailability(),
+		Claude:       a.CheckLocalCLIStatus("claude"),
+		Codex:        a.CheckLocalCLIStatus("codex"),
+		NPM:          loginShellHas("npm"),
+		Git:          gitReadiness(),
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -106,6 +110,10 @@ func (a *App) InstallCLITool(tool string) (CLIInstallResult, error) {
 // loginShellHas reports whether the user's login shell can find name on its
 // PATH (the app's own PATH is narrower than a terminal's).
 func loginShellHas(name string) bool {
+	if runtime.GOOS == "windows" {
+		_, err := exec.LookPath(name)
+		return err == nil
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	out, err := loginShellOutput(ctx, "command -v "+name)
@@ -117,10 +125,10 @@ func loginShellOutput(ctx context.Context, command string) (string, error) {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "windows":
-		cmd = exec.CommandContext(ctx, "cmd", "/C", command)
+		cmd = cmdutil.CommandContext(ctx, "cmd", "/D", "/C", command)
 	default:
 		shell := userLoginShell()
-		cmd = exec.CommandContext(ctx, shell, "-lc", command)
+		cmd = cmdutil.CommandContext(ctx, shell, "-lc", command)
 	}
 	out, err := cmd.CombinedOutput()
 	return string(out), err

@@ -34,7 +34,7 @@ export const SEES_ROWS: Array<{ id: RowId; icon: SetupIconId; keys: string[] }> 
 ];
 const ANSWERED = new Set(["on", "onAfterReopen", "unavailable"]);
 
-export type RowState = "off" | "on" | "denied";
+export type RowState = "off" | "on" | "denied" | "unsupported";
 
 /** A row is On when each of its prompts is answered yes (or couldn't be shown). */
 const T = TIMINGS.sees;
@@ -45,7 +45,9 @@ export function rowStates(p: SetupPermissions | null): Record<RowId, RowState> {
         const answers = row.keys.map(
             (key) => p?.answers.find((a) => a.key === key)?.state ?? "off",
         );
-        out[row.id] = answers.some((s) => s === "denied")
+        out[row.id] = answers.every((s) => s === "unsupported")
+            ? "unsupported"
+            : answers.some((s) => s === "denied")
             ? "denied"
             : answers.every((s) => ANSWERED.has(s))
               ? "on"
@@ -72,6 +74,8 @@ export function SeesScene({ onNext, reduced, still, enter }: SceneProps) {
     const [perms, setPerms] = useState<SetupPermissions | null>(
         still === "sees-on" ? STILL_ON : null,
     );
+    const windows = perms?.platform === "windows";
+    const visibleRows = SEES_ROWS.filter((row) => !windows || row.id !== "day");
     // Rows flip On one at a time, at least 0.38 s apart, even when macOS
     // answers faster (a reopen, or prompts answered before).
     const [shown, setShown] = useState<Record<RowId, RowState>>(() =>
@@ -128,7 +132,7 @@ export function SeesScene({ onNext, reduced, still, enter }: SceneProps) {
     useEffect(() => {
         if (frozen) return;
         let live = true;
-        void GetSetupPermissions()
+        const refresh = () => void GetSetupPermissions()
             .then((p) => {
                 if (!live) return;
                 setPerms(p);
@@ -139,6 +143,8 @@ export function SeesScene({ onNext, reduced, still, enter }: SceneProps) {
                 }
             })
             .catch(() => {});
+        refresh();
+        window.addEventListener("focus", refresh);
         const off = EventsOn("setup:permissions", (p: SetupPermissions) => {
             if (live) setPerms(p);
         });
@@ -152,6 +158,7 @@ export function SeesScene({ onNext, reduced, still, enter }: SceneProps) {
         });
         return () => {
             live = false;
+            window.removeEventListener("focus", refresh);
             off();
             offError();
             offRelaunch();
@@ -214,7 +221,7 @@ export function SeesScene({ onNext, reduced, still, enter }: SceneProps) {
         }
     }, [phase]);
 
-    const everythingOn = phase === "done" && SEES_ROWS.every((r) => shown[r.id] === "on");
+    const everythingOn = phase === "done" && visibleRows.every((r) => shown[r.id] === "on");
     const firstDenied = (row: (typeof SEES_ROWS)[number]) =>
         row.keys.find((key) => perms?.answers.find((a) => a.key === key)?.state === "denied") ??
         row.keys[0];
@@ -222,7 +229,7 @@ export function SeesScene({ onNext, reduced, still, enter }: SceneProps) {
     return (
         <section className={`scene ${enter}`} data-testid="setup-v2-sees">
             <h2 className="t">{t("v2.sees.title")}</h2>
-            <p className="s">{t("v2.sees.line")}</p>
+            <p className="s">{t(windows ? "v2.sees.windowsLine" : "v2.sees.line")}</p>
             <div className="ill">
                 <div className="see">
                     <div className="mini" ref={mini}>
@@ -275,7 +282,7 @@ export function SeesScene({ onNext, reduced, still, enter }: SceneProps) {
                         </span>
                     </div>
                     <div className="perm">
-                        {SEES_ROWS.map((row) => {
+                        {visibleRows.map((row) => {
                             const state = shown[row.id];
                             const name = t(`v2.sees.rows.${row.id}`);
                             return (
@@ -304,7 +311,7 @@ export function SeesScene({ onNext, reduced, still, enter }: SceneProps) {
                                         ) : (
                                             <>
                                                 <SetupIcon id="i-check" />
-                                                <em>{t(state === "on" ? "v2.sees.on" : "v2.sees.off")}</em>
+                                                <em>{t(state === "unsupported" ? "v2.sees.unsupported" : state === "on" ? (windows ? "v2.sees.available" : "v2.sees.on") : "v2.sees.off")}</em>
                                             </>
                                         )}
                                     </span>
@@ -323,8 +330,9 @@ export function SeesScene({ onNext, reduced, still, enter }: SceneProps) {
                         ? t("v2.sees.failed")
                         : failed === "relaunch"
                           ? t("v2.sees.reopenFailed")
-                          : t("v2.sees.done")}
+                          : t(windows ? "v2.sees.windowsDone" : "v2.sees.done")}
                 </div>
+                {windows && <p className="fine">{t("v2.sees.windowsUnsupported")}</p>}
                 <button
                     className="btn primary"
                     type="button"

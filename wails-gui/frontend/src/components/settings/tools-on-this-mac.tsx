@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { SettingsCard } from "@/components/settings/settings-primitives";
 import { ToolDownloadSheet } from "@/components/onboarding/tool-download-sheet";
+import { GatewaySetupNotice } from "@/components/onboarding/gateway-setup-notice";
 
 // ── Tools on this Mac ──
 //
@@ -290,7 +291,9 @@ export function ToolsOnThisMacCard({
                             {t("toolsOnThisMac.checkFailed")}
                         </p>
                     )}
-                    {gatewayRow(status.magpie)}
+                    {gatewayInUse && !status.magpie.healthy && status.gatewaySetup
+                        ? <GatewaySetupNotice gateway={status.gatewaySetup} compact onReady={() => void check()} />
+                        : gatewayRow(status.magpie)}
                     {TOOLS.map((tool) => toolRow(tool, status[tool.id], status.npm))}
                     {gitRow(status.git)}
                 </div>

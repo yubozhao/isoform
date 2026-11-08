@@ -27,6 +27,7 @@ type SetupPermissionAnswer struct {
 	State string `json:"state"`
 }
 type SetupPermissions struct {
+	Platform            string                  `json:"platform,omitempty"`
 	Answers             []SetupPermissionAnswer `json:"answers"`
 	Running             bool                    `json:"running"`
 	ResumeStep          string                  `json:"resumeStep"`
@@ -149,8 +150,24 @@ func (a *App) GetSetupPermissions() SetupPermissions {
 	a.setupPermissions.mu.Lock()
 	p.Running = a.setupPermissions.running
 	a.setupPermissions.mu.Unlock()
-	perms := setupNativePermissions()
 	p.NotificationGranted = setupNotificationPermission()
+	return setupPermissionsView(p, setupNativePermissions())
+}
+
+// Setup keeps canonical keys while each platform supplies its own capabilities.
+// Unimplemented integrations are not failed OS permission requests.
+func setupPermissionsView(p SetupPermissions, perms PlatformPermissions) SetupPermissions {
+	p.Platform = perms.Platform
+	for i := range p.Answers {
+		key := p.Answers[i].Key
+		if perms.Platform == "windows" {
+			switch key {
+			case calendarPermissionKey, remindersPermissionKey, "contacts", mailPermissionKey:
+				p.Answers[i].State = "unsupported"
+				continue
+			}
+		}
+	}
 	for _, item := range perms.Items {
 		for i := range p.Answers {
 			if p.Answers[i].Key == item.Key {
@@ -215,7 +232,10 @@ func (a *App) RequestAllPermissions() error {
 		}()
 		var err error
 		runPermissionRequest(func() {
-			err = sequencePermissionsWith(setupPermissionsPath(), a.requestSetupPermission, setupPermissionAskable, func(p SetupPermissions) { a.emitBrowserEvent("setup:permissions", p) }, setupScreenWasOnAtLaunch())
+			err = sequencePermissionsWith(setupPermissionsPath(), a.requestSetupPermission, setupPermissionAskable, func(p SetupPermissions) {
+				p.NotificationGranted = setupNotificationPermission()
+				a.emitBrowserEvent("setup:permissions", setupPermissionsView(p, setupNativePermissions()))
+			}, setupScreenWasOnAtLaunch())
 		})
 		if err != nil {
 			a.emitBrowserEvent("setup:permissions-error", err.Error())

@@ -7,9 +7,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
+
+	"wails-gui/internal/platform/cmdutil"
 )
 
 type SetupAgent struct {
@@ -23,11 +26,14 @@ type SetupAgent struct {
 }
 type SetupMagpieProbe struct {
 	MagpieInstallView
-	Installed   bool   `json:"installed"`
-	SignedIn    bool   `json:"signedIn"`
-	Plan        string `json:"plan"`
-	NotFoundYet bool   `json:"notFoundYet"`
-	ProbedAt    string `json:"probedAt"`
+	Downloadable  bool   `json:"downloadable"`
+	DownloadBytes int64  `json:"downloadBytes"`
+	Required      bool   `json:"required"`
+	Installed     bool   `json:"installed"`
+	SignedIn      bool   `json:"signedIn"`
+	Plan          string `json:"plan"`
+	NotFoundYet   bool   `json:"notFoundYet"`
+	ProbedAt      string `json:"probedAt"`
 }
 type AgentProbe struct {
 	Agents   []SetupAgent     `json:"agents"`
@@ -177,6 +183,7 @@ func (a *App) prepareAgentProbe() {
 func (a *App) GetAgentProbe() AgentProbe {
 	a.initAgentProbe()
 	p := a.setupAgents.snapshot()
+	p.Magpie.Required = a.modelSidecarActive()
 	a.setupAgents.refresh(false)
 	return p
 }
@@ -245,7 +252,7 @@ func probeSetupAgent(ctx context.Context, id string) (row SetupAgent) {
 		}
 		return row
 	}
-	out, err := exec.CommandContext(ctx, id, "--version").CombinedOutput()
+	out, err := cliProbeCommand(ctx, id, "--version").CombinedOutput()
 	if err != nil {
 		return row
 	}
@@ -255,7 +262,7 @@ func probeSetupAgent(ctx context.Context, id string) (row SetupAgent) {
 	if id == "codex" {
 		args = []string{"login", "status"}
 	}
-	out, err = exec.CommandContext(ctx, id, args...).CombinedOutput()
+	out, err = cliProbeCommand(ctx, id, args...).CombinedOutput()
 	row.SignedIn = cliLoggedIn(string(out), err)
 	if id == "claude" {
 		var v struct {
@@ -273,8 +280,19 @@ func execExists(name string) bool { _, err := exec.LookPath(name); return err ==
 
 // Probe only the gateway's read commands. runCLI is intentionally not used:
 // it reconciles BYOK configuration, whereas Welcome is observation only.
+func (a *App) gatewaySetupAvailability() SetupMagpieProbe {
+	result := SetupMagpieProbe{MagpieInstallView: a.magpieInstallView(), ProbedAt: time.Now().UTC().Format(time.RFC3339Nano)}
+	result.Required = a.modelSidecarActive()
+	if entry, err := magpieDownloadEntry(runtime.GOOS + "/" + runtime.GOARCH); err == nil {
+		result.Downloadable, result.DownloadBytes = true, entry.SizeBytes
+	}
+	_, err := LocateBundledMagpie()
+	result.Installed = err == nil
+	return result
+}
+
 func (a *App) probeSetupMagpie() (result SetupMagpieProbe) {
-	result = SetupMagpieProbe{MagpieInstallView: a.magpieInstallView(), ProbedAt: time.Now().UTC().Format(time.RFC3339Nano)}
+	result = a.gatewaySetupAvailability()
 	bin, err := LocateBundledMagpie()
 	if in, ok := detectUserMagpieInstall(); ok {
 		bin = in.BinaryPath
@@ -292,7 +310,7 @@ func (a *App) probeSetupMagpie() (result SetupMagpieProbe) {
 		}
 	}()
 	run := func(args ...string) ([]byte, error) {
-		cmd := exec.CommandContext(ctx, bin, args...)
+		cmd := cmdutil.CommandContext(ctx, bin, args...)
 		if result.Kind == "bundled" && a.magpie != nil {
 			cmd.Env = a.magpie.commandEnv(a.magpie.Status().Port)
 		}

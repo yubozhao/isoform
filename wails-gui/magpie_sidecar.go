@@ -13,11 +13,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
+
+	"wails-gui/internal/platform/cmdutil"
 )
 
 // magpieSidecar runs `magpie serve` as a child process owned by the App. It
@@ -409,7 +412,7 @@ func freeLoopbackPort() (int, error) {
 func (s *magpieSidecar) probeVersion(ctx context.Context, bin string, port int) string {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, bin, "version")
+	cmd := cmdutil.CommandContext(ctx, bin, "version")
 	cmd.Env = s.commandEnv(port)
 	out, err := cmd.Output()
 	if err != nil {
@@ -437,6 +440,12 @@ func (s *magpieSidecar) commandEnv(port int) []string {
 			"DO_NOT_TRACK=1",
 			"MAGPIE_NO_STATS=1",
 		)
+		// os.UserConfigDir on Windows uses APPDATA rather than XDG.
+		if runtime.GOOS == "windows" {
+			overrides = append(overrides,
+				"APPDATA="+filepath.Join(s.stateDir, "config"),
+				"LOCALAPPDATA="+filepath.Join(s.stateDir, "cache"))
+		}
 	}
 	keys := make(map[string]bool, len(overrides))
 	for _, kv := range overrides {
@@ -704,7 +713,7 @@ func (s *magpieSidecar) launch(bin string, port int) (*magpieChild, error) {
 	if err != nil {
 		logFile = nil
 	}
-	cmd := exec.Command(bin, "serve")
+	cmd := cmdutil.Command(bin, "serve")
 	cmd.Env = s.commandEnv(port)
 	cmd.Stdin = nil
 	setMagpieProcessGroup(cmd)
@@ -878,7 +887,7 @@ func (s *magpieSidecar) runCLIEnv(ctx context.Context, extraEnv []string, args .
 		port = persisted
 	}
 
-	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd := cmdutil.CommandContext(ctx, bin, args...)
 	cmd.Env = withEnvOverrides(s.commandEnv(port), extraEnv)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

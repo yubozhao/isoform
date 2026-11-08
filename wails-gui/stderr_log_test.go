@@ -20,8 +20,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-const stderrHelperEnv = "YANSU_STDERR_TEST_HELPER"
-
 func TestStderrLogCapturesProcessFailures(t *testing.T) {
 	for _, tc := range []struct {
 		mode string

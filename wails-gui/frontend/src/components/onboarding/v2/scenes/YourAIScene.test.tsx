@@ -296,3 +296,17 @@ describe("Your AI copy", () => {
         }
     });
 });
+
+
+it("offers the missing gateway download before testing signed-in assistants", async () => {
+    const next = { ...probe({ installed: true, signedIn: true }), magpie: {
+        installed: false, healthy: false, required: true, downloadable: true, downloadBytes: 74073600,
+    } } as SetupAgentProbe;
+    mocks.probe.mockResolvedValue(next);
+    render(<YourAIScene onNext={() => {}} reduced enter="" />);
+    expect(await screen.findByTestId("setup-gateway")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Download and connect (74 MB)" })).toBeInTheDocument();
+    expect(screen.queryByTestId("setup-v2-continue")).not.toBeInTheDocument();
+    expect(mocks.check).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Set up later" })).toBeInTheDocument();
+});
