@@ -874,14 +874,8 @@ struct ChatView: View {
                     .allowsHitTesting(false)
             }
         }
-        .padding(.horizontal, 14)
         // 22 pt of text plus 11 pt each side makes the box 44 pt, the same as Send, so the box's top is the row's top.
-        .padding(.vertical, 11)
-        .background(YansuTheme.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .strokeBorder(YansuTheme.border, lineWidth: 1)
-        }
+        .yansuFieldBox()
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("chat.composerBox")
     }

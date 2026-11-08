@@ -71,7 +71,8 @@ struct FirstReadCard: View {
                             TextField(String(localized: "What's off? You can leave it blank."), text: $correction,
                                       prompt: Text(String(localized: "What's off? You can leave it blank.")).foregroundColor(YansuTheme.secondary),
                                       axis: .vertical)
-                                .textFieldStyle(.roundedBorder)
+                                .textFieldStyle(.plain)
+                                .yansuFieldBox()
                                 .focused($fieldFocused)
                                 .accessibilityIdentifier("firstRead.correction")
                             Button(String(localized: "Send")) { sendCorrection() }
