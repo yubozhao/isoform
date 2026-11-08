@@ -2,7 +2,6 @@ package main
 
 import (
 	"os"
-	"runtime"
 	"testing"
 )
 
@@ -20,8 +19,6 @@ var testRealClaudeConfigDir, testRealCodexHome string
 // testHelperChildEnvVars mark a process as this test binary re-executed as a
 // helper child. A helper must keep the exact environment its parent test
 // chose, so TestMain leaves it untouched.
-const stderrHelperEnv = "YANSU_STDERR_TEST_HELPER"
-
 var testHelperChildEnvVars = []string{
 	stderrHelperEnv,           // TestStderrLogHelperProcess
 	"ISOFORM_MCP_STDIO_TEST",  // TestMCPReadStdioProcess
@@ -101,12 +98,8 @@ func setupIsolatedTestHome() func() {
 // under the macOS length limit. Falls back to the default temp root where
 // /tmp does not exist (Windows, which uses named pipes instead).
 func shortTestHome(prefix string) string {
-	var home string
-	var err error
-	if runtime.GOOS != "windows" {
-		home, err = os.MkdirTemp("/tmp", prefix)
-	}
-	if home == "" || err != nil {
+	home, err := os.MkdirTemp("/tmp", prefix)
+	if err != nil {
 		home, err = os.MkdirTemp("", prefix)
 	}
 	if err != nil {

@@ -1,8 +1,6 @@
 package main
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -73,8 +71,7 @@ func TestReleaseDeferredModelsWaitsForReady(t *testing.T) {
 func deferredModelFixture(t *testing.T, url string, data []byte) *models.Manager {
 	t.Helper()
 	n := int64(len(data))
-	digest := sha256.Sum256(data)
-	sum := hex.EncodeToString(digest[:])
+	sum := sha256Hex(data)
 	entry := models.Entry{ID: "fixture", Job: "live", DisplayName: "Fixture", Licence: models.Licence{Name: "MIT"}, Recommended: true, SizeBytes: &n,
 		Files:   []models.File{{Path: "fixture/model.bin", SHA256: &sum, Bytes: &n, URLs: []string{url}}},
 		Sources: []models.Source{{Kind: "mirror", URL: "https://model-assets.yansu.app/"}}}

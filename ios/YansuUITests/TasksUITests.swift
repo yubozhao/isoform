@@ -111,7 +111,9 @@ final class TasksUITests: XCTestCase {
         row.tap()
         app.buttons["tasks.thread.more"].tap()
         app.buttons["Stop"].tap()
-        app.sheets.buttons["Stop"].firstMatch.tap()
+        // The confirmation is a dialog, not a sheet: wait for its text, then tap the Stop inside it.
+        XCTAssertTrue(app.staticTexts["Stop this task? Isoform stops working on it on your computer."].waitForExistence(timeout: 5))
+        app.buttons["Stop"].firstMatch.tap()
         let failure = app.descendants(matching: .any)["tasks.thread.stopFailure"]
         XCTAssertTrue(failure.waitForExistence(timeout: 10))
         attachScreenshot(app, named: "thread-stop-failure")

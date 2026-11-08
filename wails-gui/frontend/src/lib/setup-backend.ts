@@ -67,14 +67,13 @@ export interface SetupAgent {
 }
 export interface SetupAgentProbe {
     agents: SetupAgent[];
-    magpie: import('./wails-shim-app').MagpieInstallView & { installed: boolean; signedIn: boolean; plan: string; notFoundYet: boolean; probedAt: string; downloadable?: boolean; downloadBytes?: number; required?: boolean };
+    magpie: import('./wails-shim-app').MagpieInstallView & { installed: boolean; signedIn: boolean; plan: string; notFoundYet: boolean; probedAt: string };
     npm: boolean;
     git: import('./wails-shim-app').GitStatus;
     probedAt: string;
 }
 export interface SetupPermissions {
-    platform?: string;
-    answers: Array<{ key: string; state: 'off' | 'on' | 'denied' | 'onAfterReopen' | 'unavailable' | 'unsupported' }>;
+    answers: Array<{ key: string; state: 'off' | 'on' | 'denied' | 'onAfterReopen' | 'unavailable' }>;
     running: boolean;
     resumeStep: 'sees';
     next: number;

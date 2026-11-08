@@ -86,9 +86,6 @@ func LocateBundledMagpie() (string, error) {
 // excluding the PATH fallback.
 func magpieBundleCandidates() []string {
 	candidates := make([]string, 0, 4)
-	if home, err := flavorDataDir(); err == nil {
-		candidates = append(candidates, filepath.Join(home, magpieBundleDirName, magpieAppBinaryName()))
-	}
 	if exePath, err := os.Executable(); err == nil {
 		exeDir := filepath.Dir(exePath)
 		candidates = append(candidates,

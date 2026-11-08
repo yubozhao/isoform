@@ -29,7 +29,6 @@ import { useAgentProbe } from "../useAgentProbe";
 import type { SceneProps } from "../types";
 import { TIMINGS } from "../timings";
 import { escapeHTML } from "./NoticesScene";
-import { GatewaySetupNotice } from "../../gateway-setup-notice";
 
 // Screen 2 (handoff §4, "Screen 2 · Your AI"): what Isoform notices goes to
 // the assistant on top. Choosing it is the gesture itself: drag it to the
@@ -171,8 +170,7 @@ const SIGN_IN: Record<AssistantId, string> = { claude: "claude auth login", code
 export function YourAIScene({ onNext, reduced, still, enter }: SceneProps) {
     const { t } = useTranslation("onboarding");
     const frozen = still ? STILL_STATES[still] : undefined;
-    const { probe, ready, refresh } = useAgentProbe(!frozen);
-    const gatewayNeeded = !frozen && !!probe?.magpie && probe.magpie.required !== false && !probe.magpie.healthy;
+    const { probe, ready } = useAgentProbe(!frozen);
     const [local, setLocal] = useState<Partial<Record<AssistantId, LocalState>>>({});
     const [verified, setVerified] = useState<Partial<Record<AssistantId, boolean>>>({});
     const st = frozen?.st ?? cardStates(probe, local, verified);
@@ -719,7 +717,7 @@ export function YourAIScene({ onNext, reduced, still, enter }: SceneProps) {
             testing.current.delete(id);
         }
     };
-    const launchSignedIn = frozen || gatewayNeeded
+    const launchSignedIn = frozen
         ? ""
         : IDS.filter((id) => probe?.agents.find((a) => a.id === id)?.signedIn).join(",");
     useEffect(() => {
@@ -891,16 +889,15 @@ export function YourAIScene({ onNext, reduced, still, enter }: SceneProps) {
                 </div>
             </div>
             <div className="act">
-                {!gatewayNeeded && <p className={`fine wide${error ? " error" : ""}`} aria-live="polite">
+                <p className={`fine wide${error ? " error" : ""}`} aria-live="polite">
                     {fine}
-                </p>}
-                {gatewayNeeded && probe?.magpie && <GatewaySetupNotice gateway={probe.magpie} onReady={() => void refresh()} />}
-                {historyFrom && !error && !gatewayNeeded ? (
+                </p>
+                {historyFrom && !error ? (
                     <p className="fine" data-testid="setup-v2-ai-history">
                         {t("v2.ai.fineHistory", { assistants: historyFrom })}
                     </p>
                 ) : null}
-                {!gatewayNeeded && <button
+                <button
                     className="btn primary"
                     type="button"
                     data-testid="setup-v2-continue"
@@ -908,8 +905,8 @@ export function YourAIScene({ onNext, reduced, still, enter }: SceneProps) {
                     onClick={finish}
                 >
                     {t("v2.continue")}
-                </button>}
-                {showCards && (!anyOn || gatewayNeeded) ? (
+                </button>
+                {showCards && !anyOn ? (
                     <button className="btn quiet" type="button" onClick={onNext}>
                         {t("v2.ai.setUpLater")}
                     </button>

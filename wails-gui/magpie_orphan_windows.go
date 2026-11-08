@@ -8,8 +8,8 @@ import (
 	"syscall"
 )
 
-// Windows children use cmdutil's hidden-console launch. Shutdown terminates
-// the owned child directly; Unix process groups do not apply here.
+// The bundled magpie is macOS-only, so the process-group and stale-child
+// handling in magpie_orphan_unix.go has nothing to do here.
 
 func setMagpieProcessGroup(*exec.Cmd) {}
 
