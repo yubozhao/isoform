@@ -247,7 +247,7 @@ struct YourWeekCardView: View {
                         }
                       }
                       if let target = correctionTarget, target.id == row.memoryId {
-                        InlineMemoryCorrection(initialReason: correctionDraft, initiallyFailed: correctionFailed,
+                        InlineMemoryCorrection(anchor: "memory.correction.\(target.id)", initialReason: correctionDraft, initiallyFailed: correctionFailed,
                                                cancel: { correctionTarget = nil }) { reason in
                             correctionHolds.begin(.init(id: target.id, label: String(localized: "Not quite"), detail: row.text)) {
                                 let saved: Bool

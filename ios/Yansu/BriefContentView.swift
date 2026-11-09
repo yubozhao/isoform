@@ -148,7 +148,7 @@ struct BriefContentView: View {
                                  feed: environment.feed, today: environment.today, briefStore: environment.brief)
             }
             if let target = memoryCorrection, singleMemory(for: item)?.id == target.id {
-                InlineMemoryCorrection(initialReason: correctionDraft, initiallyFailed: correctionFailed,
+                InlineMemoryCorrection(anchor: "memory.correction.\(target.id)", initialReason: correctionDraft, initiallyFailed: correctionFailed,
                                        cancel: { memoryCorrection = nil }) { reason in
                     correctionHolds.begin(.init(id: target.id, label: String(localized: "Not quite"), detail: target.label)) {
                         let saved: Bool

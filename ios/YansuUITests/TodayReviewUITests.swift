@@ -417,6 +417,22 @@ final class TodayReviewUITests: XCTestCase {
                     settled = send.frame.minY
                 }
                 let keyboard = app.keyboards.firstMatch
+                let fieldNow = app.descendants(matching: .any)["brief.correction.field"].firstMatch
+                let bar = keyboard.frame.minY - 44
+                let metrics = [
+                    "variant: \(week ? "your week" : "brief") \(language) \(appearance)",
+                    "keyboard exists: \(keyboard.exists)",
+                    "keyboard host top (minY): \(keyboard.exists ? keyboard.frame.minY : -1)",
+                    "input bar top (estimated keyboard minY - 44): \(bar)",
+                    "field minY/maxY: \(fieldNow.frame.minY)/\(fieldNow.frame.maxY)",
+                    "send minY/maxY: \(send.frame.minY)/\(send.frame.maxY)",
+                    "send maxY minus input bar top: \(send.frame.maxY - bar)",
+                    "send clear of input bar: \(send.frame.maxY <= bar)",
+                ].joined(separator: "\n")
+                let metricsAttachment = XCTAttachment(string: metrics)
+                metricsAttachment.name = "metrics-\(week ? "week" : "brief")-\(language)-\(appearance)"
+                metricsAttachment.lifetime = .keepAlways
+                add(metricsAttachment)
                 XCTAssertTrue(keyboard.exists)
                 XCTAssertLessThanOrEqual(send.frame.maxY, keyboard.frame.minY - 44, "Send sits above the keyboard and its input bar")
                 attachScreenshot(app, named: "today-correction-\(week ? "week" : "brief")-\(language)-\(appearance)")
@@ -456,7 +472,38 @@ final class TodayReviewUITests: XCTestCase {
         XCTAssertTrue(app.buttons["brief.correction.undo"].firstMatch.waitForExistence(timeout: 5))
         XCTAssertTrue(field.waitForExistence(timeout: 15))
         XCTAssertEqual(field.value as? String, "This was a one-time exception")
-        XCTAssertTrue(app.staticTexts["Didn't save. Try again."].exists)
+        XCTAssertTrue(app.staticTexts["brief.correction.error"].exists)
+        XCTAssertTrue(app.buttons["brief.correction.retry"].exists)
+        attachScreenshot(app, named: "p166-failure-en-Light")
+    }
+
+    /// P166: the phone's correction says the computer's words, and a blank answer can be sent.
+    func testCorrectionPromptAndBlankSendMatchTheComputer() {
+        for (language, appearance, prompt) in [("en", "Light", "What's off? You can leave it blank."),
+                                               ("zh-Hans", "Dark", "哪里不对？可以不填。")] {
+            let app = XCUIApplication()
+            app.launchEnvironment["YANSU_UITEST_SETTINGS_STATE"] = "feed"
+            app.launchEnvironment["YANSU_UITEST_TAB"] = "today"
+            app.launchEnvironment["YANSU_UITEST_APPEARANCE"] = appearance.lowercased()
+            app.launchArguments += ["-AppleLanguages", "(\(language))", "-AppleLocale", language,
+                                    "-AppleInterfaceStyle", appearance]
+            app.launch()
+            XCTAssertTrue(app.buttons["feed.readAll"].waitForExistence(timeout: 15))
+            app.buttons["feed.readAll"].tap()
+            let learned = app.descendants(matching: .any).matching(identifier: "brief.item")
+                .containing(.staticText, identifier: "You prefer short replies in the morning").firstMatch
+            revealInTapBand(learned, in: app, swipes: 15)
+            let notQuite = learned.buttons["brief.notRight"]
+            revealInTapBand(notQuite, in: app, swipes: 5)
+            notQuite.tap()
+            let field = app.descendants(matching: .any)["brief.correction.field"].firstMatch
+            XCTAssertTrue(field.waitForExistence(timeout: 5))
+            XCTAssertEqual(field.placeholderValue, prompt)
+            let send = app.buttons["brief.correction.send"].firstMatch
+            XCTAssertTrue(send.isEnabled, "a blank answer can be sent")
+            attachScreenshot(app, named: "p166-prompt-\(language)-\(appearance)")
+            app.terminate()
+        }
     }
 
     func testBriefSettingsAreRemoved() {
