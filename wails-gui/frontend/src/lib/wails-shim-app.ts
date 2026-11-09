@@ -6256,3 +6256,14 @@ export const RecordTodayAction = appBinding<[string, string, string, string, num
 export const RecordTodaySectionSeen = appBinding<[string, number], void>("RecordTodaySectionSeen");
 export const RecordTasksAction = appBinding<[string, string, string, number], void>("RecordTasksAction");
 export const RecordTasksSectionSeen = appBinding<[string, number], void>("RecordTasksSectionSeen");
+
+export const GetAgentOwnerSnapshot = appBinding<[string, string], { available: boolean; data: unknown }>("GetAgentOwnerSnapshot");
+export const UploadApprovedProfile = appBinding<[string[], string[], string, number], unknown>("UploadApprovedProfile");
+export const AgentOwnerAction = appBinding<[string, string, string, import('./agent-owner').AgentOwnerSettingsInput | null], unknown>("AgentOwnerAction");
+export const AgentOwnerDecision = appBinding<[import('./agent-owner').AgentOwnerDecisionInput], import('./agent-owner').AgentOwnerDecisionResult>("AgentOwnerDecision");
+export const OpenAgentOwnerPayoutOnboarding = appBinding<[string], void>("OpenAgentOwnerPayoutOnboarding");
+export const GetAgentOwnerNeeds = appBinding<[], { kind: string; id?: string }[]>("GetAgentOwnerNeeds");
+export const GetAgentOwnerNeedsWithDraft = appBinding<[string], { kind: string; id?: string }[]>("GetAgentOwnerNeedsWithDraft");
+export const MarkAgentOwnerPayoutNeedShown = appBinding<[], void>("MarkAgentOwnerPayoutNeedShown");
+
+export const DownloadAgentOwnerReviewFile = appBinding<[string, string], boolean>("DownloadAgentOwnerReviewFile");

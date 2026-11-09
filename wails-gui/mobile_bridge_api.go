@@ -212,6 +212,16 @@ func (bridge *mobileBridge) handleAuthorized(w http.ResponseWriter, r *http.Requ
 			return
 		}
 		bridge.serveYourAgent(w)
+	case "GET /agent-owner/status", "GET /agent-owner/jobs", "GET /agent-owner/job", "GET /agent-owner/balance":
+		if !mobileRequireScope(w, device, mobileScopeBriefRead) {
+			return
+		}
+		bridge.serveAgentOwnerRead(w, r, strings.TrimPrefix(path, "/agent-owner/"))
+	case "POST /agent-owner/decision", "POST /agent-owner/action":
+		if !mobileRequireScope(w, device, mobileScopeBriefRead) || !mobileRequireScope(w, device, mobileScopeChatWrite) {
+			return
+		}
+		bridge.serveAgentOwnerWrite(w, r, path == "/agent-owner/decision")
 	case "GET /tasks":
 		if !mobileRequireScope(w, device, mobileScopeBriefRead) {
 			return

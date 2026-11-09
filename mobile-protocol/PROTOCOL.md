@@ -3254,3 +3254,30 @@ still works while the computer sleeps; it waits and happens when the computer wa
   nothing new is sent to the phone for it.
 - **Not changed.** Chat, brief-opener and "Talk about this brief" routes, the brief made ahead
   (a later version), keep-awake settings and the relay's ciphertext-only rule.
+
+### Agent of You owner snapshots
+
+The sealed routes `GET /agent-owner/status`, `GET /agent-owner/jobs`,
+`GET /agent-owner/job?id=<id>`, and `GET /agent-owner/balance` require
+`brief:read`. The status includes the server's owner settings; jobs returns its
+cached list, job returns one cached detail, and balance returns the cached ledger.
+Each returns `{ "available": boolean, "data": <server snapshot or null> }`
+inside the normal response envelope. The computer starts a background refresh;
+an unavailable first snapshot has `available: false`. Responses never include
+reservation credentials or the approved profile text. An invalid job id returns
+400, and an unavailable identity or store returns 503.
+
+`POST /agent-owner/decision` requires both `brief:read` and `chat:write` and
+accepts `{ "action": "accept|decline|send|redo", "jobId": string,
+"passId": string, "decisionVersion": number, "note": string? }`. The pass
+and version must come from the card the owner saw. On success its data contains
+`accepted: true` and the server result. A stale card returns 409 with
+`error: "stale_decision"` and data containing `accepted: false` and `current`
+(`passId`, `state`, `decisionVersion`, or null). Older servers without decision
+versions cannot receive a decision through this route.
+
+`POST /agent-owner/action` requires the same scopes and accepts an `action` of
+`pause`, `on`, `agree`, or `settings`. `agree` also needs `termsVersion` after
+the owner has seen the terms; `settings` carries the owner `settings` object.
+Turning on requires an agreement recorded by the server. These writes are not
+automatically retried after an ambiguous network failure.
