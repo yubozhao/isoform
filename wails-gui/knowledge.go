@@ -325,6 +325,11 @@ func (a *App) SaveKnowledgeEntry(id string, content string) (KnowledgeEntry, err
 		}
 		return KnowledgeEntry{}, err
 	}
+	previous, err := os.ReadFile(filePath)
+	if err != nil {
+		return KnowledgeEntry{}, err
+	}
+	content = knowledgeProvenance(content, string(previous), []string{"manual"}, nil, true)
 	if err := snapshotKnowledgeFile(dir, id); err != nil {
 		return KnowledgeEntry{}, err
 	}
@@ -524,6 +529,7 @@ func (a *App) translateKnowledgeEntryToLanguage(id, languageName string) (Knowle
 		return KnowledgeEntry{}, err
 	}
 
+	translated = knowledgeProvenance(translated, string(data), []string{"translation"}, nil, knowledgeProvenanceKnown(string(data)))
 	if err := snapshotKnowledgeFile(dir, id); err != nil {
 		return KnowledgeEntry{}, err
 	}
@@ -568,6 +574,11 @@ func (a *App) TranslateKnowledgeVersionToCurrentLanguage(id string, timestampMs 
 	if err != nil {
 		return KnowledgeEntry{}, err
 	}
+	previous, err := os.ReadFile(filePath)
+	if err != nil {
+		return KnowledgeEntry{}, err
+	}
+	translated = knowledgeProvenance(translated, string(previous), []string{"translation"}, nil, knowledgeProvenanceKnown(content) && knowledgeProvenanceKnown(string(previous)))
 
 	if err := snapshotKnowledgeFile(dir, id); err != nil {
 		return KnowledgeEntry{}, err

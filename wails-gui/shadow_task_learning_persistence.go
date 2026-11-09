@@ -870,6 +870,10 @@ func (a *App) applyQualifiedShadowTaskLearningCandidate(
 		if knowHowDocumentsEqualExceptKind(string(existing), content) {
 			return targetID, ""
 		}
+		content = knowledgeProvenance(content, string(existing), []string{"shadow_task_evaluation"}, nil, true)
+		if knowHowDocumentsEqualExceptKind(string(existing), content) {
+			return targetID, ""
+		}
 		if err := snapshotKnowledgeFile(dir, targetID); err != nil {
 			return "", err.Error()
 		}

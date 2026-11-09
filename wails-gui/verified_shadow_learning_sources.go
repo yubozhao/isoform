@@ -477,10 +477,22 @@ func verifiedShadowLearningTargetContent(
 			shadowTaskLearningEvidencePoints(candidate),
 			"how_to",
 		)
-		if !knowHowDocumentsEqualExceptKind(string(content), expected) {
-			return "", TaskContextSourceReasonLearningTargetMismatch
+		legacyExpected := expected
+		if doc, ok := parseOKFDocument(expected); ok {
+			if existing, parsed := parseOKFDocument(string(content)); parsed {
+				if kind := okfString(existing.Frontmatter, "kind"); kind != "" {
+					doc.Frontmatter["kind"] = kind
+				}
+			}
+			expected = knowledgeProvenance(renderOKFDocument(doc.Frontmatter, doc.Body), string(content), []string{"shadow_task_evaluation"}, nil, true)
 		}
-		return expected, ""
+		if knowHowDocumentsEqualExceptKind(string(content), expected) {
+			return expected, ""
+		}
+		if knowHowDocumentsEqualExceptKind(string(content), legacyExpected) {
+			return legacyExpected, ""
+		}
+		return "", TaskContextSourceReasonLearningTargetMismatch
 	case ShadowTaskLearningTargetTypedSelf:
 		entry, err := store.GetSelfModelEntryByID(receipt.TargetID)
 		if errors.Is(err, sql.ErrNoRows) {

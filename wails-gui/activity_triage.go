@@ -206,6 +206,7 @@ type knowledgeGenerationResponse struct {
 	Title           string   `json:"title"`
 	Description     string   `json:"description"`
 	KnowledgePoints []string `json:"knowledgePoints"`
+	provenance      knowledgeGenerationProvenance
 }
 
 // sessionGroup is a bounded extraction batch of adjacent capture sessions.
@@ -1606,7 +1607,7 @@ func (c *ActivityTriager) saveKnowledge(session ActivitySessionRow, group sessio
 	if len(appNames) > 0 {
 		moment.App = appNames[0]
 	}
-	if existing, ok := relearnKnowHowWithPoints(knowledgeDir, knowledge.Title, entryID, moment, knowledge.KnowledgePoints, sessionIDsFromGroup(group)...); ok {
+	if existing, ok := relearnKnowHowWithEvidence(knowledgeDir, knowledge.Title, entryID, moment, knowledge.KnowledgePoints, "activity", appNames, knowledge.provenance, sessionIDsFromGroup(group)...); ok {
 		log.Printf("[triager] same lesson as an existing entry; added the moment: %s", activityPrivateLogField("entry", existing))
 		c.app.markMemoryDirty("activity-knowledge-relearned")
 		return existing, nil
@@ -1622,6 +1623,11 @@ func (c *ActivityTriager) saveKnowledge(session ActivitySessionRow, group sessio
 	}
 	content := buildOKFKnowledgeMarkdown(entryID, knowledge.Title, knowledge.Description, ts, "activity", appNames, sessionIDsFromGroup(group), knowledge.KnowledgePoints, normalizeKnowHowKind(knowledge.Kind))
 	content = c.app.normalizeGeneratedMarkdownToCurrentUILanguage("knowledge", content)
+	previous, readErr := os.ReadFile(filePath)
+	if readErr != nil && !os.IsNotExist(readErr) {
+		return "", readErr
+	}
+	content = knowledgeProvenance(content, string(previous), knowledgeProvenanceUnion([]string{"activity"}, knowledge.provenance.sources), knowledgeProvenanceUnion(appNames, knowledge.provenance.apps), knowledge.provenance.complete)
 	if err := os.WriteFile(filePath, []byte(content), 0600); err != nil {
 		log.Printf("[triager] failed to write knowledge file: %s %s", activityPrivateLogField("file", filePath), activityPrivateLogField("error", err.Error()))
 		return "", fmt.Errorf("write %s: %w", filePath, err)
@@ -1703,6 +1709,7 @@ func (c *ActivityTriager) updateKnowledge(session ActivitySessionRow, group sess
 	content := buildOKFKnowledgeMarkdown(knowledge.UpdateID, knowledge.Title, knowledge.Description, ts, "activity", appNames, mergedSessionIDs, knowledge.KnowledgePoints, updatedKnowHowKind(string(existingData), knowledge.Kind))
 	content = c.app.normalizeGeneratedMarkdownToCurrentUILanguage("knowledge", content)
 	content = preserveKnowHowMoments(content, string(existingData))
+	content = knowledgeProvenance(content, string(existingData), knowledgeProvenanceUnion([]string{"activity"}, knowledge.provenance.sources), knowledgeProvenanceUnion(appNames, knowledge.provenance.apps), knowledge.provenance.complete)
 	if err := os.WriteFile(filePath, []byte(content), 0600); err != nil {
 		log.Printf("[triager] failed to update knowledge file: %s %s", activityPrivateLogField("file", filePath), activityPrivateLogField("error", err.Error()))
 		return "", fmt.Errorf("write %s: %w", filePath, err)
@@ -3587,7 +3594,8 @@ func (c *ActivityTriager) runKnowledgeGeneration(ctx context.Context, summary st
 	}
 
 	// Load existing knowledge for dedup context
-	existingKnowledge := c.app.loadExistingKnowledgeSummaryWithBudget(100_000)
+	provenance := newKnowledgeGenerationProvenance()
+	existingKnowledge := c.app.loadModelDedupSummaryWithCapture(nil, "", 100_000, 0, MemorySourceKnowledge, provenance.addNote)
 	var existingSection string
 	if existingKnowledge != "" {
 		existingSection = fmt.Sprintf(`
@@ -3747,6 +3755,7 @@ The title names the KNOWLEDGE TOPIC, not what the user did.
 		return nil, fmt.Errorf("parse knowledge generation response: %w", err)
 	}
 
+	resp.provenance = provenance
 	return &resp, nil
 }
 

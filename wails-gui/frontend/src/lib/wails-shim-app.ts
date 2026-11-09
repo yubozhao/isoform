@@ -6258,7 +6258,6 @@ export const RecordTasksAction = appBinding<[string, string, string, number], vo
 export const RecordTasksSectionSeen = appBinding<[string, number], void>("RecordTasksSectionSeen");
 
 export const GetAgentOwnerSnapshot = appBinding<[string, string], { available: boolean; data: unknown }>("GetAgentOwnerSnapshot");
-export const UploadApprovedProfile = appBinding<[string[], string[], string, number], unknown>("UploadApprovedProfile");
 export const AgentOwnerAction = appBinding<[string, string, string, import('./agent-owner').AgentOwnerSettingsInput | null], unknown>("AgentOwnerAction");
 export const AgentOwnerDecision = appBinding<[import('./agent-owner').AgentOwnerDecisionInput], import('./agent-owner').AgentOwnerDecisionResult>("AgentOwnerDecision");
 export const OpenAgentOwnerPayoutOnboarding = appBinding<[string], void>("OpenAgentOwnerPayoutOnboarding");
@@ -6267,3 +6266,15 @@ export const GetAgentOwnerNeedsWithDraft = appBinding<[string], { kind: string; 
 export const MarkAgentOwnerPayoutNeedShown = appBinding<[], void>("MarkAgentOwnerPayoutNeedShown");
 
 export const DownloadAgentOwnerReviewFile = appBinding<[string, string], boolean>("DownloadAgentOwnerReviewFile");
+
+export const GetWorkProfile = appBinding<[], import('./work-profile').WorkProfileView>('GetWorkProfile');
+export const EditWorkProfileLine = appBinding<[string, string, string], import('./work-profile').WorkProfileView>('EditWorkProfileLine');
+export const SetWorkProfileLineRemoved = appBinding<[string, string, boolean], import('./work-profile').WorkProfileView>('SetWorkProfileLineRemoved');
+export const AddWorkProfileLine = appBinding<[string, string, string], import('./work-profile').WorkProfileView>('AddWorkProfileLine');
+export const SetWorkProfileSpecialties = appBinding<[string, string[]], import('./work-profile').WorkProfileView>('SetWorkProfileSpecialties');
+export const RenameWorkProfileSpecialty = appBinding<[string, string, string], import('./work-profile').WorkProfileView>('RenameWorkProfileSpecialty');
+export const KeepWorkProfileLine = appBinding<[string, string], import('./work-profile').WorkProfileView>('KeepWorkProfileLine');
+export const DiscardWorkProfileDraft = appBinding<[string], import('./work-profile').WorkProfileView>('DiscardWorkProfileDraft');
+export const PreviewWorkProfileUpload = appBinding<[string], import('./work-profile').WorkProfileUpload>('PreviewWorkProfileUpload');
+export const ApproveWorkProfile = appBinding<[string, import('./work-profile').WorkProfileUpload], import('./work-profile').WorkProfileApprovalResult>('ApproveWorkProfile');
+export const BuildWorkProfileDraft = appBinding<[], import('./work-profile').WorkProfileView>('BuildWorkProfileDraft');

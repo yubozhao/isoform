@@ -421,7 +421,7 @@ func TestAgentOwnerUploadApprovedProfile(t *testing.T) {
 	}
 	env := agentOwnerEnv{reservation: reservation, client: client, cachePath: filepath.Join(dir, "cache.json")}
 	waitAgentOwnerRefreshes(t, env.cachePath)
-	_, err = agentOwnerUploadProfile(env, []string{"line"}, []string{"specialty"}, "2026-11-09", 3)
+	_, err = (agentOwnerProfileUploader{env}).UploadApprovedProfile(context.Background(), WorkProfileUpload{Lines: []string{"line"}, PublicSpecialties: []string{"specialty"}, LearnedThrough: "2026-11-09", ExpectedVersion: 3})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -670,5 +670,71 @@ func TestAgentOwnerPhoneReadScopeAndCache(t *testing.T) {
 	serveAgentOwnerReadEnv(recorder, env, "job", "../bad")
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("invalid job: %d", recorder.Code)
+	}
+}
+
+func TestAgentOwnerSettingsToleratesMissingNotificationSupport(t *testing.T) {
+	var writes int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			writes++
+		}
+		_, _ = w.Write([]byte(`{"settings":{"approveJobs":false,"reviewResults":false}}`))
+	}))
+	defer server.Close()
+	dir := t.TempDir()
+	reservation := yourAgentEnv{stateFile: filepath.Join(dir, "identity.json")}
+	if err := writeYourAgentStateLocked(reservation.stateFile, &yourAgentStateFile{Hub: "test-hub", Token: "test-token"}); err != nil {
+		t.Fatal(err)
+	}
+	client, err := newAgentServerClient(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := agentOwnerEnv{reservation: reservation, client: client, cachePath: filepath.Join(dir, "cache.json")}
+	waitAgentOwnerRefreshes(t, env.cachePath)
+	on := true
+	settings := &AgentOwnerSettings{RateCentsPerMinute: 100, Speed: "balanced", Effort: "medium", DeliveredNotification: &on}
+	if _, err := agentOwnerAction(env, "settings", "", "", settings); err == nil || writes != 0 {
+		t.Fatal("unsupported notification was sent or accepted")
+	}
+	settings.DeliveredNotification = nil
+	if _, err := agentOwnerAction(env, "settings", "", "", settings); err != nil || writes != 1 {
+		t.Fatalf("older settings failed: %v", err)
+	}
+}
+
+func TestAgentOwnerSettingsSendsSupportedNotification(t *testing.T) {
+	written := make(chan bool, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			var input struct {
+				DeliveredNotification *bool `json:"deliveredNotification"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+				t.Error(err)
+			}
+			written <- input.DeliveredNotification != nil && *input.DeliveredNotification
+		}
+		_, _ = w.Write([]byte(`{"settings":{"deliveredNotification":false}}`))
+	}))
+	defer server.Close()
+	dir := t.TempDir()
+	reservation := yourAgentEnv{stateFile: filepath.Join(dir, "identity.json")}
+	if err := writeYourAgentStateLocked(reservation.stateFile, &yourAgentStateFile{Hub: "test-hub", Token: "test-token"}); err != nil {
+		t.Fatal(err)
+	}
+	client, err := newAgentServerClient(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := agentOwnerEnv{reservation: reservation, client: client, cachePath: filepath.Join(dir, "cache.json")}
+	waitAgentOwnerRefreshes(t, env.cachePath)
+	on := true
+	if _, err := agentOwnerAction(env, "settings", "", "", &AgentOwnerSettings{DeliveredNotification: &on}); err != nil {
+		t.Fatal(err)
+	}
+	if !<-written {
+		t.Fatal("notification setting missing")
 	}
 }

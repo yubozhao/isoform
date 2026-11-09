@@ -192,6 +192,14 @@ func relearnKnowHow(dir, title, except string, moment KnowHowMoment, sessionIDs 
 // Preserve newly learned details as well as the source moment. A match is not
 // evidence that the new extraction contains no additional information.
 func relearnKnowHowWithPoints(dir, title, except string, moment KnowHowMoment, points []string, sessionIDs ...string) (string, bool) {
+	return relearnKnowHowWithProvenance(dir, title, except, moment, points, "unknown", nil, sessionIDs...)
+}
+
+func relearnKnowHowWithProvenance(dir, title, except string, moment KnowHowMoment, points []string, source string, apps []string, sessionIDs ...string) (string, bool) {
+	return relearnKnowHowWithEvidence(dir, title, except, moment, points, source, apps, newKnowledgeGenerationProvenance(), sessionIDs...)
+}
+
+func relearnKnowHowWithEvidence(dir, title, except string, moment KnowHowMoment, points []string, source string, apps []string, evidence knowledgeGenerationProvenance, sessionIDs ...string) (string, bool) {
 	tokens := knowHowLessonTokens(title)
 	if len(tokens) == 0 {
 		return "", false
@@ -262,14 +270,15 @@ func relearnKnowHowWithPoints(dir, title, except string, moment KnowHowMoment, p
 	}
 	body, addedPoints := addKnowHowPoints(doc.Body, points)
 	doc.Body = body
-	if duplicate && len(previousSessions) == len(allSessions) && !addedPoints {
+	updated := knowledgeProvenance(renderOKFDocument(doc.Frontmatter, doc.Body), string(data), knowledgeProvenanceUnion([]string{source}, evidence.sources), knowledgeProvenanceUnion(apps, evidence.apps), evidence.complete && knowledgeProvenanceKnown(string(data)))
+	if duplicate && len(previousSessions) == len(allSessions) && !addedPoints && updated == string(data) {
 		return match.ID, true
 	}
 	if err := snapshotKnowledgeFile(dir, match.ID); err != nil {
 		log.Printf("[know-how] snapshot before relearning failed: %v", err)
 		return "", false
 	}
-	if err := os.WriteFile(path, []byte(renderOKFDocument(doc.Frontmatter, doc.Body)), 0600); err != nil {
+	if err := os.WriteFile(path, []byte(updated), 0600); err != nil {
 		log.Printf("[know-how] relearned moment not saved: %v", err)
 		return "", false
 	}

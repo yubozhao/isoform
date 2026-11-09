@@ -445,6 +445,18 @@ func yourAgentSpecialtyNamed(display string, entries []KnowledgeEntry) bool {
 // keeps the top three groups seen at least five times over at least two weeks,
 // named in plain words rather than a product or tool, and takes the taste from
 // the top group's entries, then from the next groups.
+// yourAgentSpecialtySource supplies the same specialty calculation to the
+// Settings page and the work-profile builder.
+type yourAgentSpecialtySource interface {
+	Insights([]KnowledgeEntry, string) YourAgentInsights
+}
+
+type knowHowSpecialtySource struct{}
+
+func (knowHowSpecialtySource) Insights(entries []KnowledgeEntry, fullName string) YourAgentInsights {
+	return computeYourAgentInsights(entries, fullName)
+}
+
 func computeYourAgentInsights(entries []KnowledgeEntry, fullName string) YourAgentInsights {
 	groups := map[string]*yourAgentGroup{}
 	for _, entry := range entries {
@@ -721,7 +733,7 @@ func refreshYourAgentInsights(env yourAgentEnv) error {
 	if err != nil {
 		return err
 	}
-	insights := computeYourAgentInsights(entries, env.fullName)
+	insights := (knowHowSpecialtySource{}).Insights(entries, env.fullName)
 	_, err = updateYourAgentState(env, func(state *yourAgentStateFile) {
 		state.Insights = &yourAgentSnapshot{Version: yourAgentInsightsVersion, Day: day, Fingerprint: fingerprint, Insights: insights}
 	})

@@ -135,7 +135,8 @@ func (mc *MemoryGenerator) runKnowledgeGeneration(ctx context.Context, summary, 
 	}
 
 	// Load existing knowledge for dedup context
-	existingKnowledge := mc.app.loadExistingKnowledgeSummaryWithBudget(100_000)
+	provenance := newKnowledgeGenerationProvenance()
+	existingKnowledge := mc.app.loadModelDedupSummaryWithCapture(nil, "", 100_000, 0, MemorySourceKnowledge, provenance.addNote)
 	var existingSection string
 	if existingKnowledge != "" {
 		existingSection = fmt.Sprintf(`
@@ -285,6 +286,7 @@ CRITICAL: Do NOT ask the user any questions. Respond immediately with the JSON o
 		return nil, fmt.Errorf("parse knowledge generation response: %w", err)
 	}
 
+	resp.provenance = provenance
 	return &resp, nil
 }
 
@@ -305,7 +307,7 @@ func (mc *MemoryGenerator) saveKnowledgeFile(source memorySource, sourceID strin
 	filename := entryID + ".md"
 
 	filePath := filepath.Join(dir, filename)
-	if existing, ok := relearnKnowHowWithPoints(dir, knowledge.Title, entryID, KnowHowMoment{At: time.Now().UnixMilli()}, knowledge.KnowledgePoints); ok {
+	if existing, ok := relearnKnowHowWithEvidence(dir, knowledge.Title, entryID, KnowHowMoment{At: time.Now().UnixMilli()}, knowledge.KnowledgePoints, string(source), nil, knowledge.provenance); ok {
 		log.Printf("[memory] same lesson as %s; added the moment", existing)
 		mc.app.markMemoryDirty("knowledge-relearned")
 		return existing
@@ -318,6 +320,11 @@ func (mc *MemoryGenerator) saveKnowledgeFile(source memorySource, sourceID strin
 	}
 	content := buildOKFKnowledgeMarkdown(entryID, knowledge.Title, knowledge.Description, time.Now(), string(source), nil, nil, knowledge.KnowledgePoints, normalizeKnowHowKind(knowledge.Kind))
 	content = mc.app.normalizeGeneratedMarkdownToCurrentUILanguage("knowledge", content)
+	previous, readErr := os.ReadFile(filePath)
+	if readErr != nil && !os.IsNotExist(readErr) {
+		return ""
+	}
+	content = knowledgeProvenance(content, string(previous), knowledgeProvenanceUnion([]string{string(source)}, knowledge.provenance.sources), knowledge.provenance.apps, knowledge.provenance.complete)
 	if err := os.WriteFile(filePath, []byte(content), 0600); err != nil {
 		log.Printf("[memory] failed to write knowledge file %s: %v", filePath, err)
 		return ""
@@ -368,7 +375,10 @@ func (mc *MemoryGenerator) updateKnowledgeFileDetailed(
 	unlock := memoryFileLocks.Acquire("knowledge:" + knowledge.UpdateID)
 	defer unlock()
 
-	existingData, _ := os.ReadFile(filePath)
+	existingData, readErr := os.ReadFile(filePath)
+	if readErr != nil {
+		return "", "", readErr
+	}
 	existingMeta := parseKnowledgeMetadata(filePath)
 	sourceValue := existingMeta["Source"]
 	apps := splitCommaList(existingMeta["Apps"])
@@ -387,6 +397,7 @@ func (mc *MemoryGenerator) updateKnowledgeFileDetailed(
 	content := buildOKFKnowledgeMarkdown(knowledge.UpdateID, knowledge.Title, knowledge.Description, time.Now(), sourceValue, apps, sessionIDs, knowledge.KnowledgePoints, updatedKnowHowKind(string(existingData), knowledge.Kind))
 	content = mc.app.normalizeGeneratedMarkdownToCurrentUILanguage("knowledge", content)
 	content = preserveKnowHowMoments(content, string(existingData))
+	content = knowledgeProvenance(content, string(existingData), knowledgeProvenanceUnion([]string{string(source)}, knowledge.provenance.sources), knowledge.provenance.apps, knowledge.provenance.complete)
 	if err := os.WriteFile(filePath, []byte(content), 0600); err != nil {
 		log.Printf("[memory] failed to update knowledge file %s: %v", filePath, err)
 		return "", "", err

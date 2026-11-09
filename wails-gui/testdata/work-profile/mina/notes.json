@@ -1,0 +1,5 @@
+[
+  {"id":"older","title":"Client updates","description":"You lead with decisions.","day":1,"source":"activity","app":"Editor","sessions":["a","b","c"]},
+  {"id":"newer","title":"Client updates","description":"You lead with decisions. Mina","day":16,"source":"activity","app":"Editor","sessions":["d","e"]},
+  {"id":"private","title":"Client updates","description":"You include CANARY-MAIL-7731 and owner@example.com.","day":16,"source":"gmail","app":"Gmail","sessions":["private"]}
+]

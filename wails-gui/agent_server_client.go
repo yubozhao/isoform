@@ -23,10 +23,11 @@ var errAgentServerOffline = errors.New("isoform server unavailable")
 // agentServerError carries the server's stable refusal code without exposing
 // request credentials or server-provided text to logs.
 type agentServerError struct {
-	Status  int
-	Code    string
-	Kind    string
-	Current json.RawMessage
+	Status         int
+	Code           string
+	Kind           string
+	Current        json.RawMessage
+	CurrentVersion *int64
 }
 
 func (e *agentServerError) Error() string {
@@ -103,8 +104,9 @@ func (c *agentServerClient) request(ctx context.Context, method, path string, pa
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		var failure struct {
-			Error   string          `json:"error"`
-			Current json.RawMessage `json:"current"`
+			Error          string          `json:"error"`
+			Current        json.RawMessage `json:"current"`
+			CurrentVersion *int64          `json:"currentVersion"`
 		}
 		_ = json.Unmarshal(body, &failure)
 		kind := "refused"
@@ -114,7 +116,7 @@ func (c *agentServerClient) request(ctx context.Context, method, path string, pa
 		case "paused":
 			kind = "paused"
 		}
-		return nil, &agentServerError{Status: resp.StatusCode, Code: failure.Error, Kind: kind, Current: failure.Current}
+		return nil, &agentServerError{Status: resp.StatusCode, Code: failure.Error, Kind: kind, Current: failure.Current, CurrentVersion: failure.CurrentVersion}
 	}
 	return body, nil
 }

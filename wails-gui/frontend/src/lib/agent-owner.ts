@@ -1,4 +1,4 @@
-import { DownloadAgentOwnerReviewFile, AgentOwnerAction, AgentOwnerDecision, GetAgentOwnerNeeds, GetAgentOwnerNeedsWithDraft, GetAgentOwnerSnapshot, MarkAgentOwnerPayoutNeedShown, OpenAgentOwnerPayoutOnboarding, UploadApprovedProfile } from './wails-shim-app';
+import { DownloadAgentOwnerReviewFile, AgentOwnerAction, AgentOwnerDecision, GetAgentOwnerNeeds, GetAgentOwnerNeedsWithDraft, GetAgentOwnerSnapshot, MarkAgentOwnerPayoutNeedShown, OpenAgentOwnerPayoutOnboarding } from './wails-shim-app';
 
 export type AgentOwnerSnapshotKind = 'status' | 'speeds' | 'profile' | 'jobs' | 'job' | 'balance' | 'payouts' | 'blocked';
 
@@ -170,9 +170,7 @@ export function getAgentOwnerSnapshot<K extends AgentOwnerSnapshotKind>(kind: K,
     return GetAgentOwnerSnapshot(kind, id) as Promise<AgentOwnerSnapshot<AgentOwnerSnapshotData[K]>>;
 }
 
-export function uploadApprovedProfile(lines: string[], publicSpecialties: string[], learnedThrough: string, expectedVersion: number): Promise<AgentOwnerProfile> {
-    return UploadApprovedProfile(lines, publicSpecialties, learnedThrough, expectedVersion) as Promise<AgentOwnerProfile>;
-}
+
 
 export type AgentOwnerActionName = 'join' | 'cancel_join' | 'pause' | 'on' | 'agree' | 'settings' | 'block' | 'unblock';
 
@@ -195,7 +193,7 @@ export function openAgentOwnerPayoutOnboarding(termsVersion: string): Promise<vo
     return OpenAgentOwnerPayoutOnboarding(termsVersion);
 }
 
-export interface AgentOwnerNeed { kind: 'approval' | 'review' | 'draft' | 'payouts'; id?: string; amountCents?: number }
+export interface AgentOwnerNeed { kind: 'approval' | 'review' | 'draft' | 'payouts'; id?: string; amountCents?: number; newCount?: number; changedCount?: number }
 
 function observeNeedSnapshots(): void {
     for (const kind of ['jobs', 'payouts', 'status', 'balance'] as const) observeSnapshot(kind, '');

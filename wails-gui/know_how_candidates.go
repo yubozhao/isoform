@@ -718,6 +718,11 @@ func (a *App) ConfirmKnowHowCandidate(id string) (KnowHowCandidateConfirm, error
 	defer unlock()
 	content := buildOKFConfirmedHowTo(id, entry, apps, time.Now())
 	path := filepath.Join(dir, id+".md")
+	previous, readErr := os.ReadFile(path)
+	if readErr != nil && !os.IsNotExist(readErr) {
+		return KnowHowCandidateConfirm{}, readErr
+	}
+	content = knowledgeProvenance(content, string(previous), []string{"observed"}, apps, true)
 	if _, err := a.GetKnowledgeEntry(id); err == nil {
 		if err := snapshotKnowledgeFile(dir, id); err != nil {
 			return KnowHowCandidateConfirm{}, err

@@ -212,6 +212,11 @@ func (bridge *mobileBridge) handleAuthorized(w http.ResponseWriter, r *http.Requ
 			return
 		}
 		bridge.serveYourAgent(w)
+	case "GET /work-profile/summary":
+		if !mobileRequireScope(w, device, mobileScopeBriefRead) {
+			return
+		}
+		bridge.serveWorkProfileSummary(w)
 	case "GET /agent-owner/status", "GET /agent-owner/jobs", "GET /agent-owner/job", "GET /agent-owner/balance":
 		if !mobileRequireScope(w, device, mobileScopeBriefRead) {
 			return

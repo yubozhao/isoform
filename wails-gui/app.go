@@ -1086,6 +1086,7 @@ func (a *App) startupServices(ctx context.Context) {
 	// disables automation management.
 	a.startCronScheduler()
 	a.startContactsSync()
+	a.startWorkProfileScheduler(ctx)
 
 	// Wait for both model downloads to finish before wiring up shared resources.
 	recordLaunchStage("models_wait")
@@ -1861,6 +1862,7 @@ func (a *App) StartAgent() (AgentStatus, error) {
 
 	a.mu.Lock()
 	a.runner = runner
+	workProfileKick()
 	a.setReadyLocked(true)
 	a.mu.Unlock()
 	readyAt := time.Now()

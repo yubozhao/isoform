@@ -404,32 +404,24 @@ func (a *App) GetAgentOwnerSnapshot(kind, id string) (AgentOwnerSnapshot, error)
 	return agentOwnerGet(env, kind, id)
 }
 
-// UploadApprovedProfile sends only a profile that the owner has approved.
-func (a *App) UploadApprovedProfile(lines, publicSpecialties []string, learnedThrough string, expectedVersion int) (json.RawMessage, error) {
-	env, err := a.agentOwnerEnv()
-	if err != nil {
-		return nil, err
-	}
-	return agentOwnerUploadProfile(env, lines, publicSpecialties, learnedThrough, expectedVersion)
-}
+// agentOwnerProfileUploader is only invoked by the local approval operation.
+type agentOwnerProfileUploader struct{ env agentOwnerEnv }
 
-func agentOwnerUploadProfile(env agentOwnerEnv, lines, publicSpecialties []string, learnedThrough string, expectedVersion int) (json.RawMessage, error) {
-	state, err := loadYourAgentState(env.reservation)
+func (u agentOwnerProfileUploader) UploadApprovedProfile(ctx context.Context, payload WorkProfileUpload) (WorkProfileUploadResult, error) {
+	state, err := loadYourAgentState(u.env.reservation)
 	if err != nil {
-		return nil, err
+		return WorkProfileUploadResult{}, err
 	}
-	payload := struct {
-		Lines             []string `json:"lines"`
-		PublicSpecialties []string `json:"publicSpecialties"`
-		LearnedThrough    string   `json:"learnedThrough"`
-		ExpectedVersion   int      `json:"expectedVersion"`
-	}{lines, publicSpecialties, learnedThrough, expectedVersion}
-	data, err := env.client.do(context.Background(), http.MethodPut, "/v1/owner/profile", payload, state.Hub, state.Token)
+	data, err := u.env.client.do(ctx, http.MethodPut, "/v1/owner/profile", payload, state.Hub, state.Token)
 	if err != nil {
-		return nil, err
+		return WorkProfileUploadResult{}, err
 	}
-	agentOwnerInvalidate(env, state.Hub, "status", "profile")
-	return data, nil
+	var result WorkProfileUploadResult
+	if err := json.Unmarshal(data, &result); err != nil {
+		return WorkProfileUploadResult{}, errors.New("invalid profile response")
+	}
+	agentOwnerInvalidate(u.env, state.Hub, "status", "profile")
+	return result, nil
 }
 
 // AgentOwnerSettings is the owner-controlled server configuration.
@@ -496,6 +488,21 @@ func agentOwnerAction(env agentOwnerEnv, action, id, note string, settings *Agen
 	state, err := loadYourAgentState(env.reservation)
 	if err != nil {
 		return nil, err
+	}
+	if action == "settings" && settings.DeliveredNotification != nil {
+		status, err := env.client.do(context.Background(), http.MethodGet, "/v1/owner", nil, state.Hub, state.Token)
+		if err != nil {
+			return nil, err
+		}
+		var owner struct {
+			Settings map[string]json.RawMessage `json:"settings"`
+		}
+		if json.Unmarshal(status, &owner) != nil {
+			return nil, errors.New("invalid owner settings response")
+		}
+		if _, supported := owner.Settings["deliveredNotification"]; !supported {
+			return nil, errors.New("delivered notification setting unavailable")
+		}
 	}
 	if action == "on" {
 		status, err := env.client.do(context.Background(), http.MethodGet, "/v1/owner", nil, state.Hub, state.Token)
@@ -623,9 +630,11 @@ func agentOwnerDecision(env agentOwnerEnv, input AgentOwnerDecisionInput) (Agent
 
 // AgentOwnerNeed identifies an owner item without supplying display copy.
 type AgentOwnerNeed struct {
-	Kind        string `json:"kind"`
-	ID          string `json:"id,omitempty"`
-	AmountCents *int64 `json:"amountCents,omitempty"`
+	Kind         string `json:"kind"`
+	ID           string `json:"id,omitempty"`
+	AmountCents  *int64 `json:"amountCents,omitempty"`
+	NewCount     int    `json:"newCount,omitempty"`
+	ChangedCount int    `json:"changedCount,omitempty"`
 }
 
 func agentOwnerNeeds(jobs, payouts, status json.RawMessage) []AgentOwnerNeed {
@@ -680,7 +689,18 @@ func (a *App) GetAgentOwnerNeeds() ([]AgentOwnerNeed, error) {
 	if err != nil {
 		return nil, err
 	}
-	return agentOwnerNeedsWithPayout(env, jobs.Data, payouts.Data, status.Data, balance.Data, time.Now()), nil
+	needs := agentOwnerNeedsWithPayout(env, jobs.Data, payouts.Data, status.Data, balance.Data, time.Now())
+	path, err := workProfilePath()
+	if err != nil {
+		return nil, err
+	}
+	workProfileStateMu.Lock()
+	profile, err := workProfileReadState(path)
+	workProfileStateMu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	return agentOwnerAddWorkProfileNeed(needs, profile), nil
 }
 
 // GetAgentOwnerNeedsWithDraft includes the local draft identified by the
@@ -693,7 +713,31 @@ func (a *App) GetAgentOwnerNeedsWithDraft(draftID string) ([]AgentOwnerNeed, err
 	if err != nil {
 		return nil, err
 	}
+	for _, need := range needs {
+		if need.Kind == "draft" {
+			return needs, nil
+		}
+	}
 	return agentOwnerAddDraftNeed(needs, draftID), nil
+}
+
+func agentOwnerAddWorkProfileNeed(needs []AgentOwnerNeed, state workProfileState) []AgentOwnerNeed {
+	if state.ApprovedVersion == 0 || state.Pending == nil {
+		return needs
+	}
+	need := AgentOwnerNeed{Kind: "draft", ID: state.Pending.ID}
+	for _, line := range state.Pending.Lines {
+		if line.Removed {
+			continue
+		}
+		switch line.Status {
+		case "new":
+			need.NewCount++
+		case "changed":
+			need.ChangedCount++
+		}
+	}
+	return append(needs, need)
 }
 
 func agentOwnerAddDraftNeed(needs []AgentOwnerNeed, draftID string) []AgentOwnerNeed {

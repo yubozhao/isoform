@@ -400,7 +400,7 @@ func (a *App) storeAssistantHistoryKnowHow(project HistoryProject, items []assis
 		if _, err := os.Stat(path); err == nil {
 			continue
 		}
-		if _, ok := relearnKnowHowWithPoints(dir, item.Title, id, KnowHowMoment{At: item.At.UnixMilli(), Assistant: item.Assistant}, []string{item.Takeaway}); ok {
+		if _, ok := relearnKnowHowWithProvenance(dir, item.Title, id, KnowHowMoment{At: item.At.UnixMilli(), Assistant: item.Assistant}, []string{item.Takeaway}, item.Source, nil); ok {
 			a.markMemoryDirty("assistant-history-relearned")
 			continue
 		}
@@ -413,6 +413,7 @@ func (a *App) storeAssistantHistoryKnowHow(project HistoryProject, items []assis
 			}
 			content = renderOKFDocument(doc.Frontmatter, doc.Body)
 		}
+		content = knowledgeProvenance(content, "", []string{item.Source}, []string{project.Name}, true)
 		unlock := memoryFileLocks.Acquire("knowledge:" + id)
 		err := os.WriteFile(path, []byte(content), 0600)
 		unlock()
