@@ -61,7 +61,10 @@ struct SettingsView: View {
             .padding(.bottom, 32)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        // P164: the last row rests above the bottom gesture zone; the scroll content keeps that margin at its end.
+        .contentMargins(.bottom, GestureZone.bottomInset, for: .scrollContent)
         .yansuScreen()
+        .hardTitleEdge()
         .navigationTitle(String(localized: "Settings"))
         .navigationBarTitleDisplayMode(.large)
         .onAppear {

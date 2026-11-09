@@ -49,6 +49,33 @@ enum YourAgentUITestSeed {
     }
 }
 
+/// The Keychain is not usable by the Agent of You UI-test runs on this Simulator (ad-hoc builds), so their pairing
+/// lives in memory for the length of the launch. DEBUG and simulator only.
+final class YourAgentUITestSecrets: SecretStore, @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [String: String] = [:]
+
+    func accountNames() throws -> [String] {
+        lock.lock(); defer { lock.unlock() }
+        return Array(values.keys)
+    }
+
+    func read(_ account: String) throws -> String? {
+        lock.lock(); defer { lock.unlock() }
+        return values[account]
+    }
+
+    func save(_ value: String, account: String) throws {
+        lock.lock(); defer { lock.unlock() }
+        values[account] = value
+    }
+
+    func delete(_ account: String) throws {
+        lock.lock(); defer { lock.unlock() }
+        values[account] = nil
+    }
+}
+
 private struct YourAgentUITestHub: YourAgentHubAPI {
     let copy: YourAgentCopy
     let placeholder: Bool

@@ -200,6 +200,218 @@ final class YourAgentUITests: XCTestCase {
         }
     }
 
+    /// The home indicator zone on an iPhone 15 (852 pt tall) starts 34 pt above the bottom of the screen.
+    private func homeIndicatorZoneTop(_ app: XCUIApplication) -> CGFloat { app.frame.maxY - 34 }
+
+    /// Waits until the software keyboard is on screen: its frame starts above the bottom of the screen.
+    private func keyboardOnScreen(_ app: XCUIApplication) -> Bool {
+        for _ in 0..<40 {
+            let keyboard = app.keyboards.firstMatch
+            if keyboard.exists && keyboard.frame.minY < app.frame.maxY { return true }
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+        return false
+    }
+
+    /// P164: the lowest control in the Agent of You sheet ends above the home indicator zone, and Send request
+    /// answers on the first tap.
+    func testLowestControlEndsAboveGestureZoneAndSendAnswersFirstTap() {
+        let app = launch("opened")
+        let zoneTop = homeIndicatorZoneTop(app)
+        // Controls that sit fully inside the scroll area, so a control clipped below its edge is not counted.
+        let area = app.scrollViews["yourAgent.page"].frame
+        let inView = (app.buttons.allElementsBoundByIndex + app.textFields.allElementsBoundByIndex)
+            .filter { $0.exists && !$0.identifier.hasPrefix("tab.") && $0.frame.height > 0 && $0.frame.minY >= area.minY && $0.frame.maxY <= area.maxY }
+        let lowest = inView.max { $0.frame.maxY < $1.frame.maxY }
+        XCTAssertNotNil(lowest)
+        XCTAssertLessThanOrEqual(lowest?.frame.maxY ?? .infinity, zoneTop, "lowest control rests in the gesture zone")
+        fill(app, name: "alex.rivera")
+        let send = app.buttons["yourAgent.reserve"]
+        revealSend(send, in: app)
+        XCTAssertLessThanOrEqual(send.frame.maxY, zoneTop, "Send request rests in the gesture zone")
+        send.tap()
+        XCTAssertTrue(app.staticTexts["Check your email"].waitForExistence(timeout: 5), "first tap did not answer")
+    }
+
+    /// P164: with the software keyboard up on the email field, the form and Send request sit above the keyboard,
+    /// and the return key reads Send.
+    func testKeyboardLiftsFormAndReturnKeyReadsSend() {
+        let app = launch("opened")
+        let name = app.textFields["yourAgent.name"]
+        reveal(name, in: app); name.tap(); name.typeText("alex.rivera")
+        let email = app.textFields["yourAgent.email"]
+        reveal(email, in: app); email.tap()
+        let keyboard = app.keyboards.firstMatch
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
+        XCTAssertTrue(keyboardOnScreen(app), "the software keyboard is off screen")
+        XCTAssertTrue(app.keyboards.buttons["Send"].exists, "return key does not read Send")
+        XCTAssertLessThanOrEqual(email.frame.maxY, keyboard.frame.minY)
+        XCTAssertLessThanOrEqual(app.buttons["yourAgent.reserve"].frame.maxY, keyboard.frame.minY)
+    }
+
+    /// P164 frames: Agent of You at first open, mid-scroll, scrolled to the end, and with the software keyboard up on the
+    /// email field, in light and dark. Frames go to YANSU_UITEST_SCREENSHOT_DIRECTORY when set.
+    func testP164WalkFrames() throws {
+        for appearance in ["light", "dark"] {
+            let app = launch("opened", appearance: appearance)
+            func capture(_ frame: String) {
+                let shot = XCUIScreen.main.screenshot()
+                let attachment = XCTAttachment(screenshot: shot)
+                attachment.name = "P164-\(frame)-\(appearance)"; attachment.lifetime = .keepAlways; add(attachment)
+                if let path = ProcessInfo.processInfo.environment["YANSU_UITEST_SCREENSHOT_DIRECTORY"], !path.isEmpty {
+                    let directory = URL(fileURLWithPath: path, isDirectory: true)
+                    try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                    try? shot.pngRepresentation.write(to: directory.appendingPathComponent("P164-\(frame)-\(appearance).png"), options: .atomic)
+                }
+            }
+            capture("first-open")
+            app.swipeUp(velocity: .slow)
+            Thread.sleep(forTimeInterval: 0.6)
+            capture("mid-scroll")
+            // Scroll to the end: stop when the last control stops moving.
+            var previous: CGFloat = -1
+            for _ in 0..<20 {
+                app.swipeUp(velocity: .fast)
+                Thread.sleep(forTimeInterval: 0.4)
+                let current = app.buttons["yourAgent.writeBo"].frame.minY
+                if current == previous { break }
+                previous = current
+            }
+            capture("scrolled-end")
+            let name = app.textFields["yourAgent.name"]
+            reveal(name, in: app); name.tap(); name.typeText("alex.rivera")
+            let email = app.textFields["yourAgent.email"]
+            reveal(email, in: app); email.tap()
+            XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5), "no software keyboard")
+            XCTAssertTrue(keyboardOnScreen(app), "the software keyboard is off screen")
+            let keyboardTop = app.keyboards.firstMatch.frame.minY
+            let report = "appearance \(appearance)\nkeyboard top \(keyboardTop)\nemail maxY \(email.frame.maxY)\nSend request maxY \(app.buttons["yourAgent.reserve"].frame.maxY)\n"
+            let attachment = XCTAttachment(data: Data(report.utf8), uniformTypeIdentifier: "public.plain-text")
+            attachment.name = "P164-keyboard-\(appearance).txt"; attachment.lifetime = .keepAlways; add(attachment)
+            capture("keyboard-email")
+            if let path = ProcessInfo.processInfo.environment["YANSU_UITEST_SCREENSHOT_DIRECTORY"], !path.isEmpty {
+                try report.write(toFile: path + "/P164-keyboard-\(appearance).txt", atomically: true, encoding: .utf8)
+            }
+            app.terminate()
+        }
+    }
+
+    /// P137 on the Settings sheet: text scrolled under the title bar stays out of the bar's way, light and dark.
+    /// Frames go to YANSU_UITEST_SCREENSHOT_DIRECTORY when set.
+    func testSettingsSheetFrames() throws {
+        for appearance in ["light", "dark"] {
+            let app = XCUIApplication()
+            app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+            app.launchEnvironment["YANSU_UITEST_SETTINGS_STATE"] = "paired"
+            app.launchEnvironment["YANSU_UITEST_APPEARANCE"] = appearance
+            app.launch()
+            openSettings(app)
+            XCTAssertTrue(app.buttons["settings.done"].waitForExistence(timeout: 5))
+            func capture(_ frame: String) {
+                let shot = XCUIScreen.main.screenshot()
+                let attachment = XCTAttachment(screenshot: shot)
+                attachment.name = "P137-settings-\(frame)-\(appearance)"; attachment.lifetime = .keepAlways; add(attachment)
+                if let path = ProcessInfo.processInfo.environment["YANSU_UITEST_SCREENSHOT_DIRECTORY"], !path.isEmpty {
+                    let directory = URL(fileURLWithPath: path, isDirectory: true)
+                    try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                    try? shot.pngRepresentation.write(to: directory.appendingPathComponent("P137-settings-\(frame)-\(appearance).png"), options: .atomic)
+                }
+            }
+            capture("first-open")
+            // Scroll to the end of the Settings page before measuring its last control.
+            for _ in 0..<8 {
+                app.swipeUp(velocity: .fast)
+                Thread.sleep(forTimeInterval: 0.3)
+            }
+            let lowestTop = app.frame.maxY - 34
+            let visible = (app.buttons.allElementsBoundByIndex + app.switches.allElementsBoundByIndex + app.staticTexts.allElementsBoundByIndex)
+                .filter { $0.exists && $0.frame.height > 0 && $0.frame.maxY <= app.frame.maxY && $0.frame.minY < app.frame.maxY }
+            let lowest = visible.map { $0.frame.maxY }.max() ?? -1
+            let report = "appearance \(appearance)\nlowest control maxY \(lowest)\nzone top \(lowestTop)\n"
+            let note = XCTAttachment(data: Data(report.utf8), uniformTypeIdentifier: "public.plain-text")
+            note.name = "P137-settings-lowest-\(appearance).txt"; note.lifetime = .keepAlways; add(note)
+            if let path = ProcessInfo.processInfo.environment["YANSU_UITEST_SCREENSHOT_DIRECTORY"], !path.isEmpty {
+                try report.write(toFile: path + "/P137-settings-lowest-\(appearance).txt", atomically: true, encoding: .utf8)
+            }
+            app.swipeUp(velocity: .slow)
+            Thread.sleep(forTimeInterval: 0.6)
+            capture("mid-scroll")
+            app.terminate()
+        }
+    }
+
+    /// P164 metrics at first open: the lowest control of the Agent of You sheet, counted only inside the sheet's own
+    /// page scroll view (the tab bar and the Settings page under the sheet are not counted). Light and dark from one
+    /// run. Frames and the metrics file go to YANSU_UITEST_SCREENSHOT_DIRECTORY when set.
+    func testP164AgentOfYouMetricsAndFrames() throws {
+        var lowestByAppearance: [String: CGFloat] = [:]
+        var zoneTopSeen: CGFloat = 0
+        for appearance in ["light", "dark"] {
+            let app = launch("opened", appearance: appearance)
+            let zoneTop = homeIndicatorZoneTop(app)
+            zoneTopSeen = zoneTop
+            let page = app.scrollViews["yourAgent.page"]
+            XCTAssertTrue(page.waitForExistence(timeout: 5))
+            func save(_ frame: String) {
+                let shot = XCUIScreen.main.screenshot()
+                let attachment = XCTAttachment(screenshot: shot)
+                attachment.name = "P164-\(frame)-\(appearance)"; attachment.lifetime = .keepAlways; add(attachment)
+                if let path = ProcessInfo.processInfo.environment["YANSU_UITEST_SCREENSHOT_DIRECTORY"], !path.isEmpty {
+                    let directory = URL(fileURLWithPath: path, isDirectory: true)
+                    try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                    try? shot.pngRepresentation.write(to: directory.appendingPathComponent("P164-\(frame)-\(appearance).png"), options: .atomic)
+                }
+            }
+            // The sheet's own controls are the yourAgent.* elements, wherever they lie, at their laid-out frames.
+            func sheetReport(_ stage: String) -> (maxY: CGFloat, text: String) {
+                let sheetControls = (app.buttons.allElementsBoundByIndex + app.textFields.allElementsBoundByIndex
+                    + app.switches.allElementsBoundByIndex)
+                    .filter { $0.exists && $0.frame.height > 0 && $0.identifier.hasPrefix("yourAgent.") }
+                let lowest = sheetControls.max { $0.frame.maxY < $1.frame.maxY }
+                let lowestMaxY = lowest?.frame.maxY ?? -1
+                let lowestName = lowest.map { $0.identifier.isEmpty ? $0.label : $0.identifier } ?? "none"
+                let listing = sheetControls.sorted { $0.frame.maxY > $1.frame.maxY }
+                    .map { "  \($0.identifier) maxY \($0.frame.maxY)" }.joined(separator: "\n")
+                let text = "stage \(stage), appearance \(appearance)\n"
+                    + "lowest control \(lowestName) maxY \(lowestMaxY)\n"
+                    + "zone top \(zoneTop)\n"
+                    + "lowest control at or above zone top (maxY <= zone top) \(lowestMaxY <= zoneTop)\n"
+                    + "sheet controls (yourAgent.*) \(sheetControls.count), scroll view \(page.frame)\n"
+                    + listing + "\n"
+                return (lowestMaxY, text)
+            }
+            // Metrics first, before any scroll: the sheet is at its first-open position.
+            let firstOpen = sheetReport("first open")
+            save("first-open")
+            app.swipeUp(velocity: .slow)
+            Thread.sleep(forTimeInterval: 0.6)
+            save("mid-scroll")
+            var previous: CGFloat = -1
+            for _ in 0..<20 {
+                app.swipeUp(velocity: .fast)
+                Thread.sleep(forTimeInterval: 0.4)
+                let current = app.buttons["yourAgent.writeBo"].frame.minY
+                if current == previous { break }
+                previous = current
+            }
+            save("scrolled-end")
+            // The rule that counts: at the scrolled end every yourAgent.* control sits fully above the zone top.
+            let scrolledEnd = sheetReport("scrolled end")
+            lowestByAppearance[appearance] = scrolledEnd.maxY
+            let combined = firstOpen.text + "\n" + scrolledEnd.text
+            let note = XCTAttachment(data: Data(combined.utf8), uniformTypeIdentifier: "public.plain-text")
+            note.name = "P164-agent-metrics-\(appearance).txt"; note.lifetime = .keepAlways; add(note)
+            if let path = ProcessInfo.processInfo.environment["YANSU_UITEST_SCREENSHOT_DIRECTORY"], !path.isEmpty {
+                try? FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
+                try combined.write(toFile: path + "/P164-agent-metrics-\(appearance).txt", atomically: true, encoding: .utf8)
+            }
+            app.terminate()
+        }
+        for (appearance, maxY) in lowestByAppearance {
+            XCTAssertLessThanOrEqual(maxY, zoneTopSeen, "lowest control in \(appearance) rests in the gesture zone")
+        }
+    }
+
     private func launch(_ state: String, appearance: String = "light") -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]

@@ -790,7 +790,10 @@ extension AppEnvironment {
             let pairingURL = directory.appendingPathComponent("pairing.json")
             let seedMarker = directory.appendingPathComponent("fixture-seeded")
             let isFirstLaunch = !FileManager.default.fileExists(atPath: seedMarker.path)
-            let secrets = KeychainSecretStore(service: "com.yansu.settings-ui-tests.\(identifier)", accessGroup: nil)
+            // The Agent of You states keep their pairing in memory: the Keychain is unavailable to them here.
+            let secrets: SecretStore = ProcessInfo.processInfo.environment["YANSU_UITEST_YOUR_AGENT_STATE"] != nil
+                ? YourAgentUITestSecrets()
+                : KeychainSecretStore(service: "com.yansu.settings-ui-tests.\(identifier)", accessGroup: nil)
             switch isFirstLaunch ? state : "" {
             case "unreadable":
                 try Data("unreadable saved pairing".utf8).write(to: pairingURL)
@@ -809,6 +812,22 @@ extension AppEnvironment {
                     // A phone paired before it could read the chat lists topics but cannot open one.
                     scopes: state == "feed-topics-no-chat-read"
                         ? PairingStore.requestedScopes.filter { $0 != "chat:read" } : PairingStore.requestedScopes,
+                    pairedAt: Date(timeIntervalSince1970: 1_790_000_000),
+                    expiresAt: Date(timeIntervalSince1970: 1_900_000_000), counters: SequenceCounters())
+                try PairingVault(directory: directory, secrets: secrets)
+                    .store(paired, devicePrivateKey: RelayCrypto.base64URLEncode(device.privateKey),
+                           bearer: RelayCrypto.base64URLEncode(RelayCrypto.randomBytes(32)))
+            case "paired" where ProcessInfo.processInfo.environment["YANSU_UITEST_YOUR_AGENT_STATE"] != nil:
+                // The Agent of You states read their hub from the vault, so their pairing is stored the way the chat
+                // states store theirs. Other paired states keep the plain record below.
+                let hubKeys = RelayCrypto.makeDeviceKeyPair()
+                let device = RelayCrypto.makeDeviceKeyPair()
+                let paired = PairedDevice(
+                    hubID: "settings-ui-hub", hubName: "Settings Test Mac",
+                    hubPublicKey: RelayCrypto.base64URLEncode(hubKeys.publicKey),
+                    relayOrigin: "https://settings-ui.invalid", deviceID: "settings-ui-phone",
+                    deviceName: "Settings Test iPhone",
+                    scopes: PairingStore.requestedScopes,
                     pairedAt: Date(timeIntervalSince1970: 1_790_000_000),
                     expiresAt: Date(timeIntervalSince1970: 1_900_000_000), counters: SequenceCounters())
                 try PairingVault(directory: directory, secrets: secrets)

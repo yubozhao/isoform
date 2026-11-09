@@ -15,33 +15,49 @@ struct YourAgentView: View {
     private enum Field { case name, email, code }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                header
-                // Gray bars and headings show only while the copy is being read. A copy that cannot be read leaves both
-                // sections out, and they appear when it arrives (P146). A section with nothing to list is left out too.
-                if store.copy == nil ? store.reading : (store.isStillLearning || !(store.copy?.specialties ?? []).isEmpty) {
-                    specialties
-                }
-                if store.copy == nil {
-                    if store.reading {
-                        VStack(alignment: .leading, spacing: 7) {
-                            heading("A taste of what it knows")
-                            placeholders(taste: true)
-                        }
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    header
+                    // Gray bars and headings show only while the copy is being read. A copy that cannot be read leaves both
+                    // sections out, and they appear when it arrives (P146). A section with nothing to list is left out too.
+                    if store.copy == nil ? store.reading : (store.isStillLearning || !(store.copy?.specialties ?? []).isEmpty) {
+                        specialties
                     }
-                } else if store.copy?.stillLearning == false, let taste = store.copy?.taste, !taste.isEmpty {
-                    tasteSection(taste)
+                    if store.copy == nil {
+                        if store.reading {
+                            VStack(alignment: .leading, spacing: 7) {
+                                heading("A taste of what it knows")
+                                placeholders(taste: true)
+                            }
+                        }
+                    } else if store.copy?.stillLearning == false, let taste = store.copy?.taste, !taste.isEmpty {
+                        tasteSection(taste)
+                    }
+                    reservationSection
+                    if store.status != .failed { writeBo }
+                    howItWorks
                 }
-                reservationSection
-                if store.status != .failed { writeBo }
-                howItWorks
+                .padding(.horizontal, YansuTheme.gutter).padding(.top, 10).padding(.bottom, 40)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.horizontal, YansuTheme.gutter).padding(.top, 10).padding(.bottom, 40)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            // P164: the scroll area ends above the bottom gesture zone, and above the keyboard while it is up.
+            .endsAboveGestureZone()
+            .scrollDismissesKeyboard(.interactively)
+            .onChange(of: focus) { old, new in
+                if old == .name { store.nameDidLoseFocus() }
+                if old == .email { store.emailDidLoseFocus() }
+                // Once the keyboard is up, scroll so the fields and Send request sit above it (P164).
+                if new == .name || new == .email {
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(350))
+                        withAnimation { proxy.scrollTo(Self.sendAnchor, anchor: .bottom) }
+                    }
+                }
+            }
         }
-        .scrollDismissesKeyboard(.interactively)
         .yansuScreen().foregroundStyle(YansuTheme.ink).tint(YansuTheme.accent)
+        .hardTitleEdge()
         .navigationTitle("").navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
@@ -51,10 +67,6 @@ struct YourAgentView: View {
         .accessibilityIdentifier("yourAgent.page")
         .task { await store.open() }
         .onDisappear { store.close() }
-        .onChange(of: focus) { old, _ in
-            if old == .name { store.nameDidLoseFocus() }
-            if old == .email { store.emailDidLoseFocus() }
-        }
         .onChange(of: store.step) { _, step in
             if step == .code { focus = .code }
         }
@@ -73,6 +85,9 @@ struct YourAgentView: View {
             } ?? String(localized: "My agent"))
         }
     }
+
+    /// The scroll target for Send request, so the form scrolls above the keyboard while it is typing.
+    private static let sendAnchor = "yourAgent.sendRequest"
 
     // One name, Agent of You (P146); the product name stays in English in every language.
     private var title: some View { Text("Agent of You").font(.title.bold()).fixedSize(horizontal: false, vertical: true) }
@@ -177,6 +192,7 @@ struct YourAgentView: View {
                 Button("Send request") { focus = nil; Task { await store.reserve() } }
                     .buttonStyle(YansuPrimaryButtonStyle()).disabled(!store.canReserve)
                     .accessibilityIdentifier("yourAgent.reserve")
+                    .id(Self.sendAnchor)
                 footnote("Only the name and this email are sent. We'll email a code to confirm it's you, and write once more when it opens.")
             case .code:
                 if let reservation = store.reservation { codeCard(reservation) }
@@ -202,7 +218,7 @@ struct YourAgentView: View {
             Divider().overlay(YansuTheme.borderSubtle)
             TextField("Your email", text: $store.email)
                 .keyboardType(.emailAddress).textInputAutocapitalization(.never).autocorrectionDisabled()
-                .textContentType(.emailAddress).submitLabel(.go).focused($focus, equals: .email)
+                .textContentType(.emailAddress).submitLabel(.send).focused($focus, equals: .email)
                 .onSubmit { if store.canReserve { focus = nil; Task { await store.reserve() } } }
                 .accessibilityLabel(Text("Your email"))
                 .accessibilityIdentifier("yourAgent.email").padding(16)
