@@ -1,7 +1,24 @@
 import SwiftUI
 
+/// Scrolls the scroll view that holds an inline correction to the element with the given id. The scroll view sets it.
+private struct CorrectionRevealKey: EnvironmentKey {
+    static let defaultValue: ((String) -> Void)? = nil
+}
+
+extension EnvironmentValues {
+    var correctionReveal: ((String) -> Void)? {
+        get { self[CorrectionRevealKey.self] }
+        set { self[CorrectionRevealKey.self] = newValue }
+    }
+}
+
 /// Keeps a correction beside the learned item until it is sent or cancelled.
 struct InlineMemoryCorrection: View {
+    /// The card's id, and where the scroll view puts it: a little above the middle, so the field, Send and Cancel
+    /// sit above the keyboard and its input bar.
+    static let anchorID = "memory.correction.anchor"
+    static let revealAnchor = UnitPoint(x: 0.5, y: 0.6)
+
     let cancel: () -> Void
     let submit: (String) async -> Bool
     @EnvironmentObject private var router: NotificationRouter
@@ -9,6 +26,7 @@ struct InlineMemoryCorrection: View {
     @State private var sending = false
     @State private var failed: Bool
     @FocusState private var focused: Bool
+    @Environment(\.correctionReveal) private var reveal
 
     init(initialReason: String = "", initiallyFailed: Bool = false, cancel: @escaping () -> Void,
          submit: @escaping (String) async -> Bool) {
@@ -48,9 +66,22 @@ struct InlineMemoryCorrection: View {
                     .accessibilityIdentifier("brief.correction.cancel")
             }
         }
+        .id(Self.anchorID)
         .onAppear { router.isCorrecting = true; focused = true }
         .onDisappear { router.isCorrecting = false }
+        .onChange(of: focused) { _, isFocused in if isFocused { revealAboveKeyboard() } }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { _ in
+            if focused { revealAboveKeyboard() }
+        }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("brief.correction.inline")
+    }
+
+    /// The field took focus, or the keyboard changed size. The keyboard finishes rising after focus, so the visible
+    /// area changes again: reveal once now and once it has settled, as the first-read card does.
+    private func revealAboveKeyboard() {
+        guard let reveal else { return }
+        DispatchQueue.main.async { reveal(Self.anchorID) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { reveal(Self.anchorID) }
     }
 }

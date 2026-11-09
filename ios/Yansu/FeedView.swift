@@ -451,6 +451,7 @@ struct FeedView: View {
                 .padding(.bottom, 48 + tabChromeHeight)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .environment(\.correctionReveal) { id in proxy.scrollTo(id, anchor: InlineMemoryCorrection.revealAnchor) }
             .onChange(of: router.pendingTodayDay, initial: true) { _, pending in
                 guard pending, todayStore.snapshot != nil || brief.current != nil else { return }
                 DispatchQueue.main.async {

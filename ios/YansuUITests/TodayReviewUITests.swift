@@ -401,14 +401,24 @@ final class TodayReviewUITests: XCTestCase {
                 XCTAssertTrue(correction.isHittable)
                 XCTAssertEqual(correction.label, language == "en" ? "Not quite" : "不太对")
                 correction.tap()
-                let field = app.textFields["brief.correction.field"].firstMatch
+                let field = app.descendants(matching: .any)["brief.correction.field"].firstMatch
                 XCTAssertTrue(field.waitForExistence(timeout: 5))
                 field.tap()
                 field.typeText("Not accurate")
                 XCTAssertFalse(app.buttons["tab.today"].exists, "the tab bar must step aside for the correction")
+                // The card is revealed above the keyboard when its field takes focus. Let the scroll settle, then check that
+                // Send sits above the keyboard's input bar (about 44 pt tall), so a tap on Send lands on it.
                 let send = app.buttons["brief.correction.send"]
-                for _ in 0..<5 where !send.isHittable { app.swipeUp() }
-                if week { app.swipeUp() }
+                XCTAssertTrue(send.waitForExistence(timeout: 5))
+                var settled = send.frame.minY
+                for _ in 0..<10 {
+                    Thread.sleep(forTimeInterval: 0.3)
+                    if send.frame.minY == settled { break }
+                    settled = send.frame.minY
+                }
+                let keyboard = app.keyboards.firstMatch
+                XCTAssertTrue(keyboard.exists)
+                XCTAssertLessThanOrEqual(send.frame.maxY, keyboard.frame.minY - 44, "Send sits above the keyboard and its input bar")
                 attachScreenshot(app, named: "today-correction-\(week ? "week" : "brief")-\(language)-\(appearance)")
                 send.tap()
                 let undo = app.buttons["brief.correction.undo"].firstMatch

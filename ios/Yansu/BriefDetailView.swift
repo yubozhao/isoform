@@ -143,6 +143,7 @@ struct BriefDetailView: View {
                 .padding(.bottom, 32 + tabChromeHeight)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .environment(\.correctionReveal) { id in proxy.scrollTo(id, anchor: InlineMemoryCorrection.revealAnchor) }
             .simultaneousGesture(swipes)
             .overlay(alignment: .bottom) {
                 if !following, spokenNow != nil {
