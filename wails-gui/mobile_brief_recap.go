@@ -20,9 +20,11 @@ import (
 const (
 	mobileBriefRecapSource = "summary"
 	mobileBriefNewsSource  = "news"
-	mobileBriefRecapLimit  = 6
-	mobileBriefNewsLimit   = 3
-	mobileBriefNewsFresh   = 24 * time.Hour
+	// Keep more candidates for a full workday; the wire section and shared
+	// evidence budgets still bound how many are displayed.
+	mobileBriefRecapLimit = 12
+	mobileBriefNewsLimit  = 3
+	mobileBriefNewsFresh  = 24 * time.Hour
 )
 
 // mobileBriefMorningStart is where the morning recap starts: the beginning

@@ -28,6 +28,9 @@ func morningBriefSelectionRefs(brief MobileBriefV1, selection morningBriefSelect
 		if ref := refs[key]; ref != "" {
 			return ref, nil
 		}
+		if kind == mobileBriefCalendarSource && mobileBriefEvidenceCounts(brief.Evidence)[mobileBriefCalendarSource] >= mobileBriefCalendarLimit {
+			return "", codeError("calendar evidence limit exceeded")
+		}
 		label = mobileBriefText(label, mobileBriefLabelLimit)
 		if label == "" || !mobileBriefCopySafe(label) || redactThreadOutcomeText(label) != label || len(brief.Evidence) >= mobileBriefEvidenceLimit {
 			return "", codeError("ranked evidence unavailable")

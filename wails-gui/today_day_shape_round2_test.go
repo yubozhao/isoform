@@ -70,7 +70,7 @@ func TestTodayDayShapeRound2SingleEndpointQuestion(t *testing.T) {
 	} {
 		t.Run(test.language+test.question, func(t *testing.T) {
 			_, brief.Offers = mobileBriefClosing(brief, test.language)
-			closing := &mobileBriefNarrativeReplyClosing{Text: test.question, Card: "offer-2", Hold: hold}
+			closing := &mobileBriefNarrativeReplyClosing{Text: test.question, Card: writtenOfferID(brief, "e7"), Hold: hold}
 			got, err := mobileBriefWrittenClosing(brief, closing, test.language)
 			if err != nil || !reflect.DeepEqual(got.Hold, hold) {
 				t.Fatalf("valid single endpoint refused: %+v err=%v", got, err)
@@ -150,7 +150,7 @@ func TestTodayDayShapeRound2SingleQuestionUsesOneAttempt(t *testing.T) {
 			_, brief.Offers = mobileBriefClosing(brief, test.language)
 			day, _ := todayDayShapeBriefDay(brief)
 			hold := &TodayDayShapeHold{Start: day.Add(11 * time.Hour).Format(time.RFC3339), End: day.Add(12 * time.Hour).Format(time.RFC3339), Label: "Sam memo"}
-			raw := writtenReply(t, &mobileBriefNarrativeReplyClosing{Text: test.question, Card: "offer-2", Hold: hold}, mobileBriefNarrativeReplyParagraph{Text: test.body, Refs: []string{"e7"}})
+			raw := writtenReply(t, &mobileBriefNarrativeReplyClosing{Text: test.question, Card: writtenOfferID(brief, "e7"), Hold: hold}, mobileBriefNarrativeReplyParagraph{Text: test.body, Refs: []string{"e7"}})
 			calls := 0
 			paragraphs, _, check := writeMobileBriefNarrative(context.Background(), brief, picks, "PROMPT", test.language, func(string) (string, error) { calls++; return raw, nil })
 			if check != "" || calls != 1 || len(paragraphs) == 0 || !reflect.DeepEqual(paragraphs[len(paragraphs)-1].Hold, hold) {
@@ -171,7 +171,7 @@ func TestTodayDayShapeRound2UnrecognisedPairRetries(t *testing.T) {
 			_, brief.Offers = mobileBriefClosing(brief, language)
 			day, _ := todayDayShapeBriefDay(brief)
 			hold := &TodayDayShapeHold{Start: day.Add(11 * time.Hour).Format(time.RFC3339), End: day.Add(12 * time.Hour).Format(time.RFC3339), Label: "Sam memo"}
-			raw := writtenReply(t, &mobileBriefNarrativeReplyClosing{Text: question, Card: "offer-2", Hold: hold}, mobileBriefNarrativeReplyParagraph{Text: writtenShoe, Refs: []string{"e7"}})
+			raw := writtenReply(t, &mobileBriefNarrativeReplyClosing{Text: question, Card: writtenOfferID(brief, "e7"), Hold: hold}, mobileBriefNarrativeReplyParagraph{Text: writtenShoe, Refs: []string{"e7"}})
 			calls := 0
 			_, _, check := writeMobileBriefNarrative(context.Background(), brief, picks, "PROMPT", language, func(ask string) (string, error) {
 				calls++

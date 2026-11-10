@@ -71,7 +71,7 @@ func TestMobileBriefMergeSharesUpcomingRecapAndPurposeEvidence(t *testing.T) {
 					t.Fatalf("Purpose metadata or atomic evidence lost: %+v", item)
 				}
 			}
-			if crowdedPurposes && (len(brief.Sections.Commitments) != 7 || !containsString(brief.Limits.TruncatedSections, mobileBriefSectionCommitments)) {
+			if crowdedPurposes && (len(brief.Sections.Commitments) != 5 || !containsString(brief.Limits.TruncatedSections, mobileBriefSectionCommitments) || len(brief.Sections.Moved) != mobileBriefItemsPerSection) {
 				t.Fatalf("over-budget commitment was not truncated atomically: %+v", brief.Sections.Commitments)
 			}
 			for _, item := range brief.Sections.Commitments {

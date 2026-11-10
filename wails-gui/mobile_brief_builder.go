@@ -199,6 +199,7 @@ func buildMobileBriefV1(in mobileBriefInput) MobileBriefV1 {
 	in = mobileBriefAnchorInput(in)
 	in = selectMobileBriefOpenLoops(in)
 	in = mobileBriefChiefInput(in)
+	in = mobileBriefObservationMeetings(in)
 	// The local date is the user's: a brief made after 17:00 in California
 	// is already tomorrow in UTC.
 	loc := in.Location
@@ -222,8 +223,8 @@ func buildMobileBriefV1(in mobileBriefInput) MobileBriefV1 {
 		builder.truncated = append(builder.truncated, mobileBriefSectionOpenLoops)
 	}
 	builder.reserveRecap(in.rankedEvidence)
-	attendance := buildMobileBriefAttendance(builder, in.Attendance)
 	reserveMobileBriefChiefEvidence(builder, in)
+	reserved := mobileBriefEvidenceCounts(builder.evidence)
 
 	// Share the 60-ref budget explicitly: up to 3 upcoming actions, 8 live
 	// failures and 4 primary recap citations first; then atomic Purpose rows
@@ -247,6 +248,7 @@ func buildMobileBriefV1(in mobileBriefInput) MobileBriefV1 {
 		mobileBriefSectionDoing,
 		prepareMobileBriefCandidates(in.Doing, mobileBriefNewestFirst),
 	)
+	attendance := buildMobileBriefAttendance(builder, in.Attendance)
 	watching := builder.section(
 		mobileBriefSectionWatching,
 		prepareMobileBriefCandidates(in.Watching, mobileBriefNewestFirst),
@@ -348,6 +350,7 @@ func buildMobileBriefV1(in mobileBriefInput) MobileBriefV1 {
 	}
 	brief := MobileBriefV1{
 		ownVoiceFacts:     true,
+		generationDebug:   mobileBriefGenerationCounts(builder.evidence, reserved),
 		Version:           1,
 		BriefID:           mobileBriefID(localDate, slot, localAsOf),
 		Slot:              slot,
@@ -437,13 +440,17 @@ func (b *mobileBriefBuilder) sectionLimit(name string, items []mobileBriefCandid
 		// A progress statement and its backing references are one unit. Never
 		// spend the last ref on a title and silently lose its source evidence.
 		needed := map[string]bool{}
+		calendarNeeded := map[string]bool{}
 		for _, source := range append([]mobileBriefCandidate{item}, item.Evidence...) {
 			key := source.SourceKind + "\x00" + source.SourceID
 			if _, exists := b.index[key]; !exists {
 				needed[key] = true
+				if source.SourceKind == mobileBriefCalendarSource {
+					calendarNeeded[key] = true
+				}
 			}
 		}
-		if len(b.evidence)+len(needed) > mobileBriefEvidenceLimit {
+		if len(b.evidence)+len(needed) > mobileBriefEvidenceLimit || mobileBriefEvidenceCounts(b.evidence)[mobileBriefCalendarSource]+len(calendarNeeded) > mobileBriefCalendarLimit {
 			b.truncated = append(b.truncated, name)
 			continue
 		}
@@ -502,6 +509,9 @@ func (b *mobileBriefBuilder) refFor(item mobileBriefCandidate) (string, bool) {
 		return ref, true
 	}
 	if len(b.evidence) >= mobileBriefEvidenceLimit {
+		return "", false
+	}
+	if item.SourceKind == mobileBriefCalendarSource && mobileBriefEvidenceCounts(b.evidence)[mobileBriefCalendarSource] >= mobileBriefCalendarLimit {
 		return "", false
 	}
 	ref := "e" + strconv.Itoa(len(b.evidence)+1)

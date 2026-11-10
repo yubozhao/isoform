@@ -116,11 +116,11 @@ func briefPickRefs(picks []mobileBriefPick) []string {
 
 // On 2026-10-20 the brief led with a Reddit thread, our own dev work and a
 // question typed into an AI tool, and left out the check-in on now and the
-// 1:1 at 7:30pm. Isoform now picks the check-in, the 1:1 and the follow-up
-// owed to a person, in that order; the day keeps every meeting.
+// 1:1 at 7:30pm. The follow-up and a learning lead; calendar-only meetings
+// stay in the day instead of becoming picks.
 func TestMobileBriefPicksTheDayThatMatters(t *testing.T) {
 	brief := briefPicksFixture()
-	if got, want := strings.Join(briefPickRefs(mobileBriefPicks(brief)), " "), "meeting:e23 meeting:e22 follow_up:e7"; got != want {
+	if got, want := strings.Join(briefPickRefs(mobileBriefPicks(brief)), " "), "follow_up:e7 observed:e25"; got != want {
 		t.Fatalf("picks = %s, want %s", got, want)
 	}
 	var day []string
@@ -143,7 +143,7 @@ func TestMobileBriefPicksTheDayThatMatters(t *testing.T) {
 }
 
 // Browsing, what the user typed into an AI tool, an AI's answer, our own
-// threads, learning notes and news never become picks, and their words never
+// threads and news never become picks, and their words never
 // reach the prompt, whatever state or due date they carry.
 func TestMobileBriefPicksNeverIncludeActivity(t *testing.T) {
 	brief := briefPicksFixture()
@@ -151,7 +151,7 @@ func TestMobileBriefPicksNeverIncludeActivity(t *testing.T) {
 	// make it a pick.
 	brief.Sections.Moved[0].DueAt = "2026-10-20T23:00:00Z"
 	brief.Sections.Moved[1].Title = "Reply to the hair assessment question"
-	activity := map[string]bool{"e8": true, "e12": true, "e13": true, "e14": true, "e19": true, "e25": true, "e30": true}
+	activity := map[string]bool{"e8": true, "e12": true, "e13": true, "e14": true, "e19": true, "e30": true}
 	for _, p := range mobileBriefPicks(brief) {
 		for _, ref := range p.Item.Refs {
 			if activity[ref] {
@@ -166,6 +166,9 @@ func TestMobileBriefPicksNeverIncludeActivity(t *testing.T) {
 	}
 	prompt := mobileBriefTestPrompt(brief, "English")
 	for _, word := range briefPicksActivityWords {
+		if word == "EEG" {
+			continue // The filtered learning title is now eligible.
+		}
 		if strings.Contains(prompt, word) {
 			t.Errorf("the prompt carries %q", word)
 		}
@@ -188,7 +191,7 @@ func TestMobileBriefPicksLeaveStaleItemsOut(t *testing.T) {
 		MobileBriefRef{Ref: "e41", SourceKind: "purpose", SourceID: "purpose-unknown"},
 		MobileBriefRef{Ref: "e42", SourceKind: "purpose", SourceID: "purpose-late"})
 	got := strings.Join(briefPickRefs(mobileBriefPicks(brief)), " ")
-	if want := "meeting:e23 meeting:e22 due:e42 follow_up:e7"; got != want {
+	if want := "due:e42 follow_up:e7 observed:e25"; got != want {
 		t.Fatalf("picks = %s, want %s", got, want)
 	}
 	if prompt := mobileBriefTestPrompt(brief, "English"); strings.Contains(prompt, "Discovery") || strings.Contains(prompt, "landlord") {
@@ -196,7 +199,7 @@ func TestMobileBriefPicksLeaveStaleItemsOut(t *testing.T) {
 	}
 }
 
-// Six picks at most, in tier order: meetings, due now, people waiting,
+// Six picks at most, in tier order: due now, people waiting,
 // follow-ups owed, due soon, Isoform's own work, goals that moved.
 func TestMobileBriefPicksKeepSixInTierOrder(t *testing.T) {
 	brief := briefPicksFixture()
@@ -214,7 +217,7 @@ func TestMobileBriefPicksKeepSixInTierOrder(t *testing.T) {
 	}
 	brief.Evidence = append(brief.Evidence, MobileBriefRef{Ref: "e53", SourceKind: "history", SourceID: "history-e53"})
 	picks := mobileBriefPicks(brief)
-	if got, want := strings.Join(briefPickRefs(picks), " "), "meeting:e23 meeting:e22 due:e52 waiting:e50 follow_up:e7 due_soon:e51"; got != want {
+	if got, want := strings.Join(briefPickRefs(picks), " "), "due:e52 waiting:e50 follow_up:e7 due_soon:e51 own_work:e53 goal:e54"; got != want {
 		t.Fatalf("picks = %s, want %s", got, want)
 	}
 	// Without the meetings, Isoform's own work and the goal come in.
@@ -228,11 +231,11 @@ func TestMobileBriefPicksKeepSixInTierOrder(t *testing.T) {
 // on the follow-up the user liked hearing about.
 func TestMobileBriefOffersFollowThePicks(t *testing.T) {
 	offers := mobileBriefConversationOffers(briefPicksFixture(), "English")
-	if len(offers) != 2 || offers[0].Refs[0] != "e23" || offers[1].Refs[0] != "e7" || offers[1].Kind != "follow_up" {
+	if len(offers) != 2 || offers[0].Refs[0] != "e7" || offers[0].Kind != "follow_up" || offers[1].Refs[0] != "e9" {
 		t.Fatalf("offers = %+v", offers)
 	}
-	if offers[1].Label != "Follow up on Sam shoe" || !strings.Contains(offers[1].Prompt, "do not send it") {
-		t.Fatalf("follow-up offer = %+v", offers[1])
+	if offers[0].Label != "Follow up on Sam shoe" || !strings.Contains(offers[0].Prompt, "do not send it") {
+		t.Fatalf("follow-up offer = %+v", offers[0])
 	}
 }
 
@@ -245,7 +248,7 @@ func TestMobileBriefPromptIsShort(t *testing.T) {
 	prompt := buildMobileBriefNarrativePrompt(brief, mobileBriefPicks(brief), profile, nil, "English")
 	for _, want := range []string{"chief of staff to Alex", "Working toward this week: Launch the beta", "How they work: Builds product with coding agents",
 		"Morning: Good morning.", "Evening: Tomorrow starts", "1. Lead with what matters most", "2. Say why", "3. Give each item one next step",
-		"4. End with one question", "5. Write 150 to 300 words", "offer-1 | Prep for Northwind Weekly Check In", "offer-2 | Follow up on Sam shoe",
+		"4. End with one question", "5. Write 150 to 300 words", "offer-1 | Follow up on Sam shoe",
 		`"closing":{"text":"...?","card":"offer-1","answers":[`} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("prompt lacks %q", want)
@@ -262,6 +265,7 @@ func TestMobileBriefShortFormWithNoPicks(t *testing.T) {
 	brief := briefPicksFixture()
 	brief.Sections.Meetings = brief.Sections.Meetings[:3] // deep work, the appointment, dinner
 	brief.Sections.OpenLoops, brief.Sections.WorkingToward = nil, nil
+	brief.Sections.Learned = nil
 	picks := mobileBriefPicks(brief)
 	if len(picks) != 0 {
 		t.Fatalf("picks = %v", briefPickRefs(picks))
@@ -271,9 +275,8 @@ func TestMobileBriefShortFormWithNoPicks(t *testing.T) {
 		t.Fatalf("prompt:\n%s", prompt)
 	}
 	raw := `{"paragraphs":[{"text":"You have deep work at 12:30pm, then Dr Lee at 3pm. Dinner is at 6pm, and the evening is yours after that.","refs":["e9","e10","e11"]}],"closing":{"text":"Want me to plan your evening?","card":"offer-1"}}`
-	paragraphs, _, err := mobileBriefNarrativeFromReply(brief, picks, raw, "English")
-	if err != nil || len(paragraphs) != 1 || strings.Contains(paragraphs[0].Text, "?") {
-		t.Fatalf("paragraphs = %+v, rule=%s", paragraphs, mobileBriefNarrativeRule(err))
+	if _, _, err := mobileBriefNarrativeFromReply(brief, picks, raw, "English"); mobileBriefNarrativeRule(err) != mobileBriefRuleOrder {
+		t.Fatalf("calendar-only opening was accepted: %v", err)
 	}
 }
 
@@ -314,10 +317,13 @@ func TestMobileBriefPromptCardsAreThePicks(t *testing.T) {
 	_, brief.Offers = mobileBriefClosing(brief, "English")
 	cards := mobileBriefPatternCards(brief, "English")
 	prompt := buildMobileBriefNarrativePrompt(brief, mobileBriefPicks(brief), mobileBriefProfile{}, cards, "English")
-	if !strings.Contains(prompt, "offer-2 | button | label: Follow up on Sam shoe") {
+	if !strings.Contains(prompt, "offer-1 | button | label: Follow up on Sam shoe") {
 		t.Fatalf("the pick's button is missing:\n%s", prompt)
 	}
 	for _, word := range append(briefPicksActivityWords, "Discovery") {
+		if word == "EEG" {
+			continue
+		}
 		if strings.Contains(prompt, word) {
 			t.Errorf("the prompt carries %q", word)
 		}
@@ -329,6 +335,7 @@ func TestMobileBriefPromptCardsAreThePicks(t *testing.T) {
 func TestMobileBriefOnePickIsSaidWithTheDay(t *testing.T) {
 	brief := briefPicksFixture()
 	brief.Sections.Meetings = brief.Sections.Meetings[:3] // deep work, the appointment, dinner
+	brief.Sections.Learned = nil
 	_, brief.Offers = mobileBriefClosing(brief, "English")
 	picks := mobileBriefPicks(brief)
 	if got := strings.Join(briefPickRefs(picks), " "); got != "follow_up:e7" {
@@ -352,12 +359,12 @@ func TestMobileBriefOnePickIsSaidWithTheDay(t *testing.T) {
 	}
 	day := "You have deep work at 12:30pm, then Dr Lee at 3pm and dinner at 6pm."
 	shoe := "The shoe insert follow-up with Sam has been open since last Saturday, and I can draft the note for you."
-	raw := `{"paragraphs":[{"text":"` + day + `","refs":["e9","e10","e11"]},{"text":"` + shoe + `","refs":["e7"]}],"closing":{"text":"Want me to draft the note to Sam?","card":"` + buttons[0].ID + `"}}`
+	raw := `{"paragraphs":[{"text":"` + shoe + `","refs":["e7"]},{"text":"` + day + `","refs":["e9","e10","e11"]}],"closing":{"text":"Want me to draft the note to Sam?","card":"` + buttons[0].ID + `"}}`
 	paragraphs, _, err := mobileBriefNarrativeFromReply(brief, picks, raw, "English")
-	if err != nil || len(paragraphs) != 3 || !strings.Contains(paragraphs[1].Text, "since last Saturday") {
+	if err != nil || len(paragraphs) != 3 || !strings.Contains(paragraphs[0].Text, "since last Saturday") {
 		t.Fatalf("paragraphs = %+v, rule=%s", paragraphs, mobileBriefNarrativeRule(err))
 	}
-	noClosing := `{"paragraphs":[{"text":"` + day + `","refs":["e9","e10","e11"]}]}`
+	noClosing := `{"paragraphs":[{"text":"` + shoe + `","refs":["e7"]}]}`
 	if _, _, err := mobileBriefNarrativeFromReply(brief, picks, noClosing, "English"); mobileBriefNarrativeRule(err) != mobileBriefRuleClosing {
 		t.Fatalf("a one-pick brief without its question passed: %v", err)
 	}
@@ -371,16 +378,17 @@ func TestMobileBriefOpenerStartsFromTheTopPick(t *testing.T) {
 	for _, status := range []string{"", "ok"} {
 		brief.NarrativeStatus = status
 		message, item, ok := mobileBriefOpenerMessage(brief, "en")
-		if !ok || item.Refs[0] != "e23" || message != "I'd start with “Northwind Weekly Check In”: it is on now, and the invite is not answered yet. Want to begin there?" {
+		if !ok || item.Refs[0] != "e7" || message != "I'd start with “follow-up Sam shoe: insert on one shoe”: it has been open since last Saturday. Want to begin there?" {
 			t.Fatalf("status %q: opener = %q (%v)", status, message, item.Refs)
 		}
 	}
 	opener, found := mobileBriefFindCard(MobileBriefV1{Cards: mobileBriefPatternCards(brief, "English")}, mobileBriefOpenerCardID)
-	if !found || strings.Contains(opener.Message, "Discovery") || opener.Refs[0] != "e23" {
+	if !found || strings.Contains(opener.Message, "Discovery") || opener.Refs[0] != "e7" {
 		t.Fatalf("opener card = %+v", opener)
 	}
 	brief.Sections.Meetings = brief.Sections.Meetings[:3]
 	brief.Sections.OpenLoops, brief.Sections.WorkingToward = nil, nil
+	brief.Sections.Learned = nil
 	if message, _, _ := mobileBriefOpenerMessage(brief, "en"); message != "I'd start with “Deep work”: it is at 12:30 PM. Want to begin there?" {
 		t.Fatalf("no-pick opener = %q", message)
 	}

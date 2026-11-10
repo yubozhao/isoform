@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"wails-gui/internal/engagement"
 	"wails-gui/internal/interests"
 	"wails-gui/internal/pii"
 	"yansu-agent/agent"
@@ -58,6 +59,10 @@ func composeMobileBriefNarrativeWithLeadAt(ctx context.Context, a *App, brief Mo
 	languageName := a.currentUILanguageName()
 	fallback := mobileBriefNarrativeTemplate(brief, languageName)
 	picks := mobileBriefPicks(brief)
+	if len(picks) == 0 && len(mobileBriefDayItems(brief)) > 0 && len(mobileBriefNarrativeTemplateOnly(brief, languageName)) == 0 {
+		// The calendar remains in Day ahead; it does not become an opening.
+		return mobileBriefCalendarFallback(brief, languageName), "skipped", nil, "", ""
+	}
 	// The writer gets the picks (design R74): picks and words follow one rule. Only
 	// a brief with nothing picked skips the model.
 	if len(picks) == 0 && len(mobileBriefDayItems(brief)) == 0 {
@@ -83,6 +88,23 @@ func composeMobileBriefNarrativeWithLeadAt(ctx context.Context, a *App, brief Mo
 		return paragraphs, "ok", words, weekLead, weekLeadFacts
 	}
 	return fallback, "unavailable", nil, "", ""
+}
+
+// Reuse the existing localized ready notice for a calendar-only brief. It
+// carries no item claim; the actual calendar entries remain in Day ahead. Its
+// reference lets the normal read gate withdraw it if the calendar is removed.
+func mobileBriefCalendarFallback(brief MobileBriefV1, languageName string) []MobileBriefPara {
+	language := "en"
+	if mobileBriefVoiceLang(languageName) == "zh" {
+		language = "zh-CN"
+	}
+	copy, _ := engagement.Copy(engagement.KindBriefReady, language)
+	for _, item := range mobileBriefDayItems(brief) {
+		if len(item.Refs) > 0 {
+			return []MobileBriefPara{{Text: copy.PushBody, Refs: []string{item.Refs[0]}}}
+		}
+	}
+	return nil
 }
 
 // writeMobileBriefNarrative asks the model for the brief and holds the reply
@@ -296,6 +318,8 @@ func mobileBriefPickWhy(tier string) string {
 		return "an optional suggestion from Isoform noticed, not a commitment or an urgent task"
 	case mobileBriefPickGoal:
 		return "a goal that moved"
+	case mobileBriefPickObserved:
+		return "observed work, without an inferred obligation"
 	}
 	return tier
 }
@@ -304,6 +328,9 @@ func mobileBriefPickWhy(tier string) string {
 // clause its offer would use ("draft a follow-up on the Halcyon Arc lamp
 // follow-up"), or "" when there is none.
 func mobileBriefPickStep(brief MobileBriefV1, p mobileBriefPick, languageName string) string {
+	if p.Tier == mobileBriefPickObserved {
+		return ""
+	}
 	draft, ok := mobileBriefOfferFor(brief, p.Section, p.Item, nil, mobileBriefVoiceLang(languageName))
 	if !ok || mobileBriefBannedOutcomePhrase(draft.phrase) {
 		return ""
@@ -345,7 +372,7 @@ func buildMobileBriefNarrativePrompt(brief MobileBriefV1, picks []mobileBriefPic
 		b.WriteString("Rules:\n")
 		b.WriteString("1. Lead with what matters most. The items under Worth saying are already in order; start with the first.\n")
 		b.WriteString("2. Say why each item matters today, from its facts: it is on now, the invite is unanswered, it is due Thursday, it has been open since last Sunday.\n")
-		b.WriteString("3. Give each item one next step, and only one that Isoform can do (its Isoform can line). Never give the user homework.\n")
+		b.WriteString("3. Give each item one next step only when its Isoform can line supplies one. Do not infer an obligation. Never give the user homework.\n")
 		if len(buttons) > 0 {
 			b.WriteString("4. End with one question that offers one of the buttons below, in your own words and naming its subject, and put that button's id in card. Ask no other question.\n")
 		} else {
@@ -384,6 +411,26 @@ func buildMobileBriefNarrativePrompt(brief MobileBriefV1, picks []mobileBriefPic
 		}
 		b.WriteString("\n")
 	}
+	if !short {
+		b.WriteString("\nWorth saying, most important first (ref | why it is here | what | facts | Isoform can | chip):\n")
+		for _, p := range picks {
+			chip := ""
+			if p.Tier != mobileBriefPickObserved {
+				chip = mobileBriefParagraphChipLabel(brief, p.Item, lang)
+			}
+			if chip == "" {
+				chip = "none"
+			}
+			fmt.Fprintf(&b, "%s | %s | %s | %s | %s | %s\n", strings.Join(p.Item.Refs, ","), mobileBriefPickWhy(p.Tier),
+				mobileBriefSpokenTitle(mobileBriefCardTitle(p.Item)), mobileBriefPickFacts(brief, p, lang), mobileBriefPickStep(brief, p, languageName), chip)
+		}
+		if len(buttons) > 0 {
+			b.WriteString("\nButtons (id | label | it offers to):\n")
+		}
+		for _, offer := range buttons {
+			fmt.Fprintf(&b, "%s | %s | %s\n", offer.ID, mobileBriefActionLabel(offer.Label), mobileBriefOfferClause(offer))
+		}
+	}
 	fmt.Fprintf(&b, "The day, %s (ref | what | when | where and who):\n", day)
 	dayItems := mobileBriefDayItems(brief)
 	if len(dayItems) == 0 {
@@ -406,23 +453,7 @@ func buildMobileBriefNarrativePrompt(brief MobileBriefV1, picks []mobileBriefPic
 		}
 		b.WriteString(line + "\n")
 	}
-	if !short {
-		b.WriteString("\nWorth saying, most important first (ref | why it is here | what | facts | Isoform can | chip):\n")
-		for _, p := range picks {
-			chip := mobileBriefParagraphChipLabel(brief, p.Item, lang)
-			if chip == "" {
-				chip = "none"
-			}
-			fmt.Fprintf(&b, "%s | %s | %s | %s | %s | %s\n", strings.Join(p.Item.Refs, ","), mobileBriefPickWhy(p.Tier),
-				mobileBriefSpokenTitle(mobileBriefCardTitle(p.Item)), mobileBriefPickFacts(brief, p, lang), mobileBriefPickStep(brief, p, languageName), chip)
-		}
-		if len(buttons) > 0 {
-			b.WriteString("\nButtons (id | label | it offers to):\n")
-		}
-		for _, offer := range buttons {
-			fmt.Fprintf(&b, "%s | %s | %s\n", offer.ID, mobileBriefActionLabel(offer.Label), mobileBriefOfferClause(offer))
-		}
-	}
+
 	fields := "\"paragraphs\":[{\"text\":\"...\",\"refs\":[\"e1\"],\"chip\":{\"label\":\"...\",\"message\":\"...\"}}]"
 	if !short && len(buttons) > 0 {
 		fields += ",\"closing\":{\"text\":\"...?\",\"card\":\"offer-1\",\"answers\":[{\"label\":\"Yes, add follow-up\",\"message\":\"Yes, add a follow-up for ...\"}],\"hold\":null}"
@@ -474,6 +505,9 @@ func mobileBriefPickOffers(brief MobileBriefV1, picks []mobileBriefPick, languag
 	}
 	picked := map[string]bool{}
 	for _, p := range picks {
+		if p.Tier == mobileBriefPickObserved {
+			continue
+		}
 		picked[p.Item.Refs[0]] = true
 	}
 	var out []MobileBriefOffer
@@ -552,13 +586,33 @@ func mobileBriefNarrativeEvidenceForDocument(brief MobileBriefV1) []MobileBriefR
 			}
 		}
 	}
+	fileRefs := map[string]bool{}
+	byRef := mobileBriefEvidenceByRef(brief)
+	for _, item := range brief.Sections.Doing {
+		if len(item.Refs) > 0 && !item.EvidenceUnavailable && item.Title == byRef[item.Refs[0]].Label {
+			fileRefs[item.Refs[0]] = true
+		}
+	}
 	var out []MobileBriefRef
-	for _, ref := range mobileBriefNarratableEvidence(brief.Evidence) {
+	for _, ref := range brief.Evidence {
+		if ref.SourceKind == mobileBriefFileSource {
+			if strings.HasPrefix(ref.SourceID, "file:") && fileRefs[ref.Ref] && !delivered[ref.Ref] && mobileBriefDocumentTitleSafe(ref.Label) {
+				out = append(out, ref)
+			}
+			continue
+		}
+		if len(mobileBriefNarratableEvidence([]MobileBriefRef{ref})) == 0 {
+			continue
+		}
 		if !delivered[ref.Ref] {
 			out = append(out, ref)
 		}
 	}
 	return out
+}
+
+func mobileBriefDocumentTitleSafe(title string) bool {
+	return mobileBriefCopySafe(title) && !interests.Sensitive(title) && !strings.Contains(strings.ToLower(title), "severance")
 }
 
 // mobileBriefItemNarratable reports whether an item's title may go to the

@@ -84,6 +84,9 @@ func mobileBriefNarrativeFromReplyWithWeek(brief MobileBriefV1, picks []mobileBr
 	if len(paragraphs) == 0 {
 		return nil, nil, "", "", mobileBriefNarrativeRuleErr(mobileBriefRuleNoText, "no paragraph was left after the voice rules")
 	}
+	if mobileBriefCalendarOnlyParagraph(brief, paragraphs[0]) {
+		return nil, nil, "", "", mobileBriefNarrativeRuleErr(mobileBriefRuleOrder, "lead with the observed item")
+	}
 	// A brief with no button on its picks (the day alone, or picks Isoform
 	// has no step for) asks nothing; any closing it wrote is left out.
 	if len(picks) >= mobileBriefPickMinimum && len(mobileBriefPickOffers(brief, picks, languageName)) > 0 {

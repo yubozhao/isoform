@@ -26,11 +26,11 @@ func TestMobileBriefChiefEvidenceSurvivesBusyDay(t *testing.T) {
 	}
 	in.Moved = append(in.Moved, mobileBriefCandidate{SourceKind: "history", SourceID: "old-ready", Title: "Draft ready for review", Status: "needs_review", At: in.AsOf.Add(-24 * time.Hour)})
 	brief := buildMobileBriefV1(in)
-	if len(brief.MeetingAttendance) != 1 || len(brief.Sections.Review) < 2 || brief.Sections.Review[0].Title != "Draft ready for review" || brief.Sections.Review[1].Title != "Review with Tim" {
+	if len(brief.MeetingAttendance) != 1 || len(brief.Sections.Review) != 1 || brief.Sections.Review[0].Title != "Draft ready for review" {
 		t.Fatalf("review was starved by legacy evidence: %+v, attendance %+v", brief.Sections.Review, brief.MeetingAttendance)
 	}
-	if len(brief.Sections.Decide) == 0 || len(brief.Sections.Plan) == 0 || brief.Sections.Plan[0].Title != "Meeting 0" {
-		t.Fatalf("decisions or nearest meeting dropped: decide %+v plan %+v", brief.Sections.Decide, brief.Sections.Plan)
+	if len(brief.Sections.Decide) == 0 || len(brief.Sections.DayAhead) != 2 || brief.Sections.DayAhead[0].Title != "Meeting 0" {
+		t.Fatalf("decisions or nearest meeting dropped: decide %+v day ahead %+v", brief.Sections.Decide, brief.Sections.DayAhead)
 	}
 	if len(brief.Evidence) > mobileBriefEvidenceLimit {
 		t.Fatalf("evidence limit exceeded: %d", len(brief.Evidence))
@@ -62,8 +62,11 @@ func TestMobileBriefChiefSectionsSeparateForwardReviewFromHighlights(t *testing.
 	if got := brief.Sections.Decide; len(got) != 2 || got[0].Title != "Launch plan" || got[1].Title != "Review the offer" {
 		t.Fatalf("decide = %+v", got)
 	}
-	if got := brief.Sections.Plan; len(got) != 3 || got[0].Title != "Hiring discussion" || got[1].Title != "Team review" || got[2].Title != "Prepare the next release" {
+	if got := brief.Sections.Plan; len(got) != 1 || got[0].Title != "Prepare the next release" {
 		t.Fatalf("plan = %+v", got)
+	}
+	if got := brief.Sections.DayAhead; len(got) != 2 || got[0].Title != "Hiring discussion" || got[1].Title != "Team review" {
+		t.Fatalf("day ahead = %+v", got)
 	}
 	seen := map[string]bool{}
 	for _, section := range []struct {
@@ -148,8 +151,8 @@ func TestMobileBriefFixtureDayHasNoPastClockTimes(t *testing.T) {
 			}
 		}
 	}
-	if len(brief.Sections.Plan) != 1 || !strings.Contains(brief.Sections.Plan[0].Detail, "7:00 PM") {
-		t.Fatalf("needed upcoming time lost: %+v", brief.Sections.Plan)
+	if len(brief.Sections.DayAhead) != 1 || !strings.Contains(brief.Sections.DayAhead[0].Detail, "7:00 PM") {
+		t.Fatalf("needed upcoming time lost: %+v", brief.Sections.DayAhead)
 	}
 	prompt := mobileBriefTestPrompt(brief, "English")
 	_, dayData, ok := strings.Cut(prompt, "The day,")
@@ -171,8 +174,8 @@ func TestEveningBriefPlansForTomorrow(t *testing.T) {
 	in := mobileBriefInput{Slot: mobileBriefSlotEvening, WindowStart: asOf.Add(-time.Hour), AsOf: asOf, Location: time.UTC}
 	collectMobileBriefCalendar(app, &in)
 	brief := buildMobileBriefV1(in)
-	if len(brief.Sections.Plan) != 1 || brief.Sections.Plan[0].Title != "Founder review" {
-		t.Fatalf("tomorrow is missing: %+v", brief.Sections.Plan)
+	if len(brief.Sections.DayAhead) != 1 || brief.Sections.DayAhead[0].Title != "Founder review" {
+		t.Fatalf("tomorrow is missing: %+v", brief.Sections.DayAhead)
 	}
 }
 

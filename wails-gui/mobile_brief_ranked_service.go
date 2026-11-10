@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"math"
+	"time"
 )
 
 // composeRankedMorning runs the scheduled morning edition through the same
@@ -21,7 +22,22 @@ func (s *mobileBriefService) composeRankedMorning(ctx context.Context, input mob
 			rows = append(rows, row)
 		}
 	}
+	// These are the same title-only, filtered observations offered by the
+	// ordinary composer. Their exact current readers are bound below.
+	sources := s.app.collectTodayChatSources(ctx, time.Now())
+	for _, ref := range mobileBriefModelReadEvidence(original) {
+		if !morningBriefObservedSourceKind(ref.SourceKind) {
+			continue
+		}
+		digest, ok := s.app.mobileBriefModelSourceDigest(ctx, ref, original, sources)
+		if !ok {
+			continue
+		}
+		rows = append(rows, morningBriefCandidate{ID: mobileBriefItemKey("candidate", ref.SourceKind, ref.SourceID), SourceKind: ref.SourceKind,
+			SourceID: ref.SourceID, SourceDigest: digest, Title: ref.Label, Confidence: 1})
+	}
 	admitted := s.app.morningBriefBindRankedInputs(ctx, input.AsOf, rows)
+	admitted = morningBriefObservationFirst(admitted)
 	if len(admitted) == 0 {
 		if len(rows) == 0 && !input.ColdStart && !input.OpenLoopsTruncated && s.app.validateMobileBriefGatherRevision(ctx, revision) {
 			original.rankedEdition, original.rankedEmpty, original.Offers = true, true, nil
@@ -123,6 +139,25 @@ func (s *mobileBriefService) composeRankedMorning(ctx context.Context, input mob
 	return brief, binding, draft, nil
 }
 
+func morningBriefObservationFirst(inputs []morningBriefBoundInput) []morningBriefBoundInput {
+	var observed, calendar []morningBriefBoundInput
+	for _, item := range inputs {
+		if mobileBriefCalendarShaped(item.Kind) {
+			if len(calendar) < mobileBriefCalendarLimit {
+				calendar = append(calendar, item)
+			}
+		} else {
+			observed = append(observed, item)
+		}
+	}
+	// Calendar cannot lead when another source can be read. The day-ahead
+	// section still shows the independently filtered calendar items.
+	if len(observed) > 0 {
+		return observed
+	}
+	return calendar
+}
+
 const (
 	morningBriefEmptyEN = "The available items did not surface a decision for this morning."
 	morningBriefEmptyZH = "可用的事项中，今早没有发现需要决定的事。"
@@ -141,6 +176,9 @@ func morningBriefQuietEligible(input mobileBriefInput, gathered, admitted []morn
 		return false
 	}
 	for _, item := range admitted {
+		if morningBriefObservedSourceKind(item.SourceKind) {
+			return false
+		}
 		if item.NeedsUser || item.Slipping || item.Confidence < 0.8 || item.Confidence > 1 || math.IsNaN(item.Confidence) {
 			return false
 		}

@@ -14,8 +14,31 @@ import (
 // service holds it when the model writes.
 func writtenBriefFixture() (MobileBriefV1, []mobileBriefPick) {
 	brief := briefPicksFixture()
+	// The calendar lead in these legacy reply fixtures is now explicitly tied
+	// to an observed attendee; it is no longer a calendar-only item.
+	brief.Evidence = append(brief.Evidence, MobileBriefRef{Ref: "observed-andy", SourceKind: "principal", SourceID: "andy", Label: "Andy Reed"})
+	for i := range brief.Sections.Meetings {
+		if len(brief.Sections.Meetings[i].Refs) > 0 && brief.Sections.Meetings[i].Refs[0] == "e23" {
+			brief.Sections.Meetings[i].Refs = append(brief.Sections.Meetings[i].Refs, "observed-andy")
+		}
+	}
 	_, brief.Offers = mobileBriefClosing(brief, "English")
+	for i := range brief.Offers {
+		brief.Offers[i].ID = "offer-1"
+		if len(brief.Offers[i].Refs) > 0 && brief.Offers[i].Refs[0] == "e7" {
+			brief.Offers[i].ID = "offer-2"
+		}
+	}
 	return brief, mobileBriefPicks(brief)
+}
+
+func writtenOfferID(brief MobileBriefV1, ref string) string {
+	for _, offer := range brief.Offers {
+		if len(offer.Refs) > 0 && offer.Refs[0] == ref {
+			return offer.ID
+		}
+	}
+	return ""
 }
 
 // writtenReply is a model reply: the paragraphs and the model's own closing.
@@ -151,7 +174,7 @@ func TestMobileBriefWrittenBriefRetriesOnceWithTheReason(t *testing.T) {
 	if !strings.Contains(summary, "writer=template sentences=") || !strings.Contains(summary, "stored morning brief:") {
 		t.Fatalf("summary = %q", summary)
 	}
-	if want := mobileBriefPickCounts(picks); want == "" || !strings.Contains(mobileBriefPickCounts(picks), "picks=3 meeting=2 due=0 waiting=0 follow_up=1") {
+	if want := mobileBriefPickCounts(picks); !strings.Contains(want, "picks=3") || !strings.Contains(want, "meeting=1") || !strings.Contains(want, "follow_up=1") || !strings.Contains(want, "observed=1") {
 		t.Fatalf("picks tally = %q", want)
 	}
 	for _, word := range []string{"Northwind", "Sam", "Wei"} {
@@ -291,7 +314,7 @@ func TestMobileBriefWrittenBriefNamesTheRuleItCannotRepair(t *testing.T) {
 func TestMobileBriefWrittenBriefRepairsChineseCopy(t *testing.T) {
 	brief := briefPicksFixture()
 	_, brief.Offers = mobileBriefClosing(brief, "Chinese")
-	raw := writtenReply(t, &mobileBriefNarrativeReplyClosing{Text: "要我起草给Sam的跟进消息吗？", Card: "offer-2"},
+	raw := writtenReply(t, &mobileBriefNarrativeReplyClosing{Text: "要我起草给Sam的跟进消息吗？", Card: writtenOfferID(brief, "e7")},
 		mobileBriefNarrativeReplyParagraph{Text: "Sam的鞋垫跟进从上周日起一直未结！要不要现在就写？我可以帮你起草。", Refs: []string{"e7"}})
 	paragraphs, _, err := mobileBriefNarrativeFromReply(brief, mobileBriefPicks(brief), raw, "Chinese")
 	if err != nil {

@@ -648,7 +648,32 @@ func mobileBriefNarrativeTemplate(brief MobileBriefV1, languageName string) []Mo
 	if out := mobileBriefNarrativeTemplateOnly(brief, languageName); len(out) > 0 {
 		return out
 	}
+	if len(mobileBriefDayItems(brief)) > 0 && len(mobileBriefPicks(brief)) == 0 {
+		return mobileBriefCalendarFallback(brief, languageName)
+	}
 	return []MobileBriefPara{{Text: mobileBriefOpeningSentence(brief, languageName)}}
+}
+
+func mobileBriefCalendarOnlyParagraph(brief MobileBriefV1, paragraph MobileBriefPara) bool {
+	if len(paragraph.Refs) == 0 {
+		return false
+	}
+	evidence := mobileBriefEvidenceByRef(brief)
+	allowed := map[string]bool{}
+	for _, ref := range mobileBriefNarrativeEvidenceForDocument(brief) {
+		allowed[ref.Ref] = true
+	}
+	for _, id := range paragraph.Refs {
+		if !mobileBriefCalendarShaped(evidence[id].SourceKind) {
+			return false
+		}
+		for _, meeting := range brief.Sections.Meetings {
+			if len(meeting.Refs) > 0 && meeting.Refs[0] == id && mobileBriefItemNarratable(meeting, allowed) && mobileBriefMeetingHasObservation(meeting, evidence) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // mobileBriefNarrativeTemplateOnly is the template's paragraphs without the opening.
@@ -743,6 +768,21 @@ func mobileBriefNarrativeTemplateTitles(brief MobileBriefV1, languageName string
 	}
 	// Two short forward items per paragraph leave room for every forward
 	// group, while keeping the existing four-paragraph wire contract.
+	// A calendar-only paragraph must not precede an observed highlight.
+	// Keep the original ordering and omit the day line when it would be the
+	// only forward paragraph; the day-ahead section still carries those rows.
+	if len(highlights) > 0 {
+		evidence := mobileBriefEvidenceByRef(brief)
+		observedForward := false
+		for _, paragraph := range forward {
+			for _, ref := range paragraph.Refs {
+				observedForward = observedForward || !mobileBriefCalendarShaped(evidence[ref].SourceKind)
+			}
+		}
+		if !observedForward {
+			forward = nil
+		}
+	}
 	for _, paragraph := range forward {
 		if len(out) > 0 && len(out[len(out)-1].Text)+len(paragraph.Text)+1 <= mobileBriefNarrativeMaxBytes &&
 			len(strings.Split(out[len(out)-1].Text, "\n")) < 2 {
@@ -762,6 +802,9 @@ func mobileBriefNarrativeTemplateTitles(brief MobileBriefV1, languageName string
 	}
 	if closing.Text != "" {
 		out = append(out, closing)
+	}
+	for len(out) > 0 && mobileBriefCalendarOnlyParagraph(brief, out[0]) {
+		out = out[1:]
 	}
 	return out
 }

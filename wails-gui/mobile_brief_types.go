@@ -5,10 +5,11 @@ package main
 // field as optional and ignores unknown fields, so additive changes stay in
 // version 1. Arrays are never nil when marshalled.
 type MobileBriefV1 struct {
-	modelBinding  *mobileBriefModelBinding
-	rankedEdition bool
-	rankedEmpty   bool
-	ownVoiceFacts bool
+	modelBinding    *mobileBriefModelBinding
+	rankedEdition   bool
+	rankedEmpty     bool
+	ownVoiceFacts   bool
+	generationDebug *mobileBriefGenerationDebug
 
 	DisplaySlot string `json:"displaySlot,omitempty"`
 	// Kind names the card title (morning, evening, week, on_request) and

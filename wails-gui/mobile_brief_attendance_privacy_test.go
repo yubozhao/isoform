@@ -137,7 +137,7 @@ func TestMobileBriefAttendanceDeliveryRechecksStoredSessions(t *testing.T) {
 					}
 				}
 				if privacy == "readable" {
-					if len(delivered.MeetingAttendance) != 1 || delivered.MeetingAttendance[0].State != "skipped" || len(delivered.Sections.Review) == 0 {
+					if len(delivered.MeetingAttendance) != 1 || delivered.MeetingAttendance[0].State != "skipped" || len(delivered.Sections.Review) != 0 {
 						t.Fatalf("readable attendance lost: %+v", delivered)
 					}
 				} else if len(delivered.MeetingAttendance) != 0 || strings.Contains(string(wire), "Review with Tim") || strings.Contains(string(wire), "1:1 with Ann") || strings.Contains(string(wire), "active_elsewhere_on_computer") || strings.Contains(string(wire), "calendar-review") {

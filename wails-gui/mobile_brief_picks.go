@@ -42,11 +42,12 @@ const (
 	mobileBriefPickOwnWork  = "own_work"
 	mobileBriefPickGoal     = "goal"
 	mobileBriefPickNoticed  = "noticed"
+	mobileBriefPickObserved = "observed"
 )
 
 var mobileBriefPickTiers = []string{
-	mobileBriefPickMeeting, mobileBriefPickDue, mobileBriefPickWaiting, mobileBriefPickFollowUp,
-	mobileBriefPickDueSoon, mobileBriefPickOwnWork, mobileBriefPickGoal, mobileBriefPickNoticed,
+	mobileBriefPickDue, mobileBriefPickWaiting, mobileBriefPickFollowUp,
+	mobileBriefPickDueSoon, mobileBriefPickOwnWork, mobileBriefPickGoal, mobileBriefPickObserved, mobileBriefPickNoticed, mobileBriefPickMeeting,
 }
 
 // mobileBriefPick is one thing worth saying today.
@@ -105,7 +106,7 @@ func mobileBriefPicks(brief MobileBriefV1) []mobileBriefPick {
 	}
 
 	for _, item := range mobileBriefDayItems(brief) {
-		if eligible(item) && mobileBriefMeetingNeedsSomething(item) {
+		if eligible(item) && mobileBriefMeetingHasObservation(item, evidence) && mobileBriefMeetingNeedsSomething(item) {
 			add(mobileBriefPickMeeting, mobileBriefSectionMeetings, item)
 		}
 	}
@@ -150,6 +151,27 @@ func mobileBriefPicks(brief MobileBriefV1) []mobileBriefPick {
 		}
 	}
 
+	for _, line := range []mobileBriefSectionLine{{mobileBriefSectionDoing, s.Doing}, {mobileBriefSectionLearned, s.Learned}} {
+		for _, item := range line.items {
+			if len(item.Refs) == 0 || !mobileBriefItemNarratable(item, allowed) || item.EvidenceUnavailable || item.ChatMessageID != "" ||
+				!mobileBriefCopySafe(item.Title) || redactThreadOutcomeText(item.Title) != item.Title || threadOutcomeTypingNarration.MatchString(item.Title) {
+				continue
+			}
+			ref := evidence[item.Refs[0]]
+			switch ref.SourceKind {
+			case mobileBriefFileSource, "memory", "knowledge":
+				if ref.SourceKind == mobileBriefFileSource && !strings.HasPrefix(ref.SourceID, "file:") {
+					continue
+				}
+				// Only the already-filtered title is offered; no document content,
+				// previews, app names or inferred obligations enter this pick.
+				item.Detail, item.NextStep, item.Context, item.Outcome = "", "", nil, nil
+				item.DueAt, item.Since = "", ""
+				item.Refs = item.Refs[:1]
+				add(mobileBriefPickObserved, line.name, item)
+			}
+		}
+	}
 	for _, item := range s.Noticed {
 		if item.Kind == "noticed" && eligible(item) && len(byTier[mobileBriefPickNoticed]) < mobileBriefNoticedLimit {
 			add(mobileBriefPickNoticed, mobileBriefSectionNoticed, item)

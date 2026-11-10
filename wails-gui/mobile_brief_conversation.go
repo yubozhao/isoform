@@ -114,7 +114,21 @@ func mobileBriefOfferCandidates(brief MobileBriefV1, language string) []mobileBr
 	}
 	var candidates []mobileBriefOfferDraft
 	used := map[string]bool{}
+	evidence := mobileBriefEvidenceByRef(brief)
+	picks := mobileBriefPicks(brief)
 	consider := func(section string, item MobileBriefItem, tier int) {
+		if len(item.Refs) == 0 {
+			return
+		}
+		if due := mobileBriefParseTime(item.DueAt); len(picks) > 0 && !due.IsZero() && mobileBriefCivilDays(due, reference, mobileBriefNarrativeLocation(brief)) < -mobileBriefPickOverdueDays {
+			return
+		}
+		if section == mobileBriefSectionDoing || section == mobileBriefSectionLearned || section == "Highlights" {
+			switch evidence[item.Refs[0]].SourceKind {
+			case mobileBriefFileSource, "memory", "knowledge":
+				return
+			}
+		}
 		outcome := item.Outcome
 		if outcome == nil && item.Kind == mobileBriefThreadOutcomeSource {
 			outcome = outcomes[item.Refs[0]]
@@ -149,7 +163,6 @@ func mobileBriefOfferCandidates(brief MobileBriefV1, language string) []mobileBr
 	// The picks lead, ahead of every attention tier: the first of each kind
 	// in pick order, then the rest, so the two buttons are not two of a kind
 	// (a meeting to prepare and a follow-up to write, not two meetings).
-	picks := mobileBriefPicks(brief)
 	firstOfTier := map[string]bool{}
 	for i, p := range picks {
 		tier := i - len(picks)
@@ -163,7 +176,7 @@ func mobileBriefOfferCandidates(brief MobileBriefV1, language string) []mobileBr
 	}
 	for _, section := range mobileBriefNarrativeSections(brief) {
 		for _, item := range section.items {
-			if len(item.Refs) == 0 || item.ChatMessageID != "" || !mobileBriefItemNarratable(item, allowed) || used[item.Refs[0]] {
+			if len(item.Refs) == 0 || item.ChatMessageID != "" || !mobileBriefItemNarratable(item, allowed) || used[item.Refs[0]] || len(picks) > 0 && item.Kind == mobileBriefThreadOutcomeSource {
 				continue
 			}
 			consider(section.name, item, 0)

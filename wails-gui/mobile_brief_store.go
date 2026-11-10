@@ -81,10 +81,11 @@ func newMobileBriefStore(stateDir string) *mobileBriefStore {
 // the public document preserves existing readers; ordinary JSON encoding of
 // MobileBriefV1 can never expose these session IDs to a phone or model.
 type storedMobileBrief struct {
-	ModelBinding  *mobileBriefModelBinding `json:"modelReadBinding,omitempty"`
-	RankedEdition bool                     `json:"rankedEdition,omitempty"`
-	RankedEmpty   bool                     `json:"rankedEmpty,omitempty"`
-	OwnVoiceFacts bool                     `json:"ownVoiceFacts,omitempty"`
+	ModelBinding    *mobileBriefModelBinding    `json:"modelReadBinding,omitempty"`
+	RankedEdition   bool                        `json:"rankedEdition,omitempty"`
+	RankedEmpty     bool                        `json:"rankedEmpty,omitempty"`
+	OwnVoiceFacts   bool                        `json:"ownVoiceFacts,omitempty"`
+	GenerationDebug *mobileBriefGenerationDebug `json:"generationDebug,omitempty"`
 	MobileBriefV1
 	AttendanceSourceSessions map[string][]string `json:"attendanceSourceSessions,omitempty"`
 	AudioBinding             string              `json:"audioBinding,omitempty"`
@@ -93,7 +94,7 @@ type storedMobileBrief struct {
 }
 
 func marshalStoredMobileBrief(brief MobileBriefV1) ([]byte, error) {
-	stored := storedMobileBrief{ModelBinding: brief.modelBinding, RankedEdition: brief.rankedEdition, RankedEmpty: brief.rankedEmpty, OwnVoiceFacts: brief.ownVoiceFacts, MobileBriefV1: brief,
+	stored := storedMobileBrief{ModelBinding: brief.modelBinding, RankedEdition: brief.rankedEdition, RankedEmpty: brief.rankedEmpty, OwnVoiceFacts: brief.ownVoiceFacts, GenerationDebug: brief.generationDebug, MobileBriefV1: brief,
 		AttendanceSourceSessions: map[string][]string{}, WeekLead: brief.WeekLead, WeekLeadFacts: brief.WeekLeadFacts}
 	if brief.Audio != nil {
 		stored.AudioBinding = brief.Audio.binding
@@ -116,6 +117,7 @@ func unmarshalStoredMobileBrief(data []byte, brief *MobileBriefV1) error {
 	brief.rankedEdition = stored.RankedEdition
 	brief.rankedEmpty = stored.RankedEmpty
 	brief.ownVoiceFacts = stored.OwnVoiceFacts
+	brief.generationDebug = stored.GenerationDebug
 	brief.WeekLead, brief.WeekLeadFacts = stored.WeekLead, stored.WeekLeadFacts
 	if brief.Audio != nil {
 		brief.Audio.binding = stored.AudioBinding

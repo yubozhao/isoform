@@ -35,7 +35,7 @@ func (a *App) morningBriefBindRankedInputs(ctx context.Context, cutoff time.Time
 	}
 	var sources todayChatSources
 	for _, c := range candidates {
-		if c.SourceKind == "purpose" || len(c.Dependencies) > 0 {
+		if c.SourceKind == "purpose" || morningBriefObservedSourceKind(c.SourceKind) || len(c.Dependencies) > 0 {
 			sources = a.collectTodayChatSources(ctx, time.Now())
 			break
 		}
@@ -65,7 +65,7 @@ func (a *App) morningBriefRankedInputsReadable(ctx context.Context, cutoff time.
 	}
 	var sources todayChatSources
 	for _, item := range inputs {
-		if item.Kind == "purpose" || len(item.Dependencies) > 0 {
+		if item.Kind == "purpose" || morningBriefObservedSourceKind(item.Kind) || len(item.Dependencies) > 0 {
 			sources = a.collectTodayChatSources(ctx, time.Now())
 			break
 		}
@@ -99,6 +99,11 @@ func (a *App) morningBriefRankedInputsReadableFromWithLedger(ctx context.Context
 			readable = a.morningBriefWaitingSourceReadable(ctx, item.ID, item.Digest, cutoff)
 		case "history":
 			readable = a.morningBriefHandoffSourceReadable(ctx, item.ID, item.Digest)
+		case mobileBriefRecapSource, mobileBriefFileSource, "memory", "knowledge", "principal":
+			ref := MobileBriefRef{SourceKind: item.Kind, SourceID: item.ID}
+			brief := MobileBriefV1{Slot: mobileBriefSlotMorning, AsOf: formatMobileBriefTime(cutoff)}
+			digest, ok := a.mobileBriefModelSourceDigest(ctx, ref, brief, sources)
+			readable = ok && digest == item.Digest
 		default:
 			return false
 		}
@@ -179,7 +184,7 @@ func (a *App) morningBriefRankedInputsReadableWithLedger(ctx context.Context, br
 	}
 	var sources todayChatSources
 	for _, input := range inputs {
-		if input.Kind == "purpose" || len(input.Dependencies) > 0 {
+		if input.Kind == "purpose" || morningBriefObservedSourceKind(input.Kind) || len(input.Dependencies) > 0 {
 			sources = a.collectTodayChatSources(ctx, time.Now())
 			break
 		}
@@ -191,8 +196,17 @@ func (a *App) morningBriefRankedInputsReadableWithLedger(ctx context.Context, br
 // morningBriefRankedInputsReadableFromWithLedger can read again.
 func morningBriefRankedSourceKind(kind string) bool {
 	switch kind {
-	case "purpose", mobileBriefCalendarSource, mobileBriefWaitingReplySource, "history":
+	case "purpose", mobileBriefCalendarSource, mobileBriefWaitingReplySource, "history", mobileBriefRecapSource, mobileBriefFileSource, "memory", "knowledge", "principal":
 		return true
 	}
 	return false
+}
+
+func morningBriefObservedSourceKind(kind string) bool {
+	switch kind {
+	case mobileBriefRecapSource, mobileBriefFileSource, "memory", "knowledge", "principal":
+		return true
+	default:
+		return false
+	}
 }

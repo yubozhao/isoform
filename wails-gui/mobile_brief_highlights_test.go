@@ -38,7 +38,7 @@ func mobileBriefHighlightsFixture() MobileBriefV1 {
 func TestMobileBriefHighlightsSelectImportanceBeforeRecency(t *testing.T) {
 	brief := mobileBriefHighlightsFixture()
 	got := brief.Sections.Highlights
-	if len(got) != 3 || got[0].Title != "Sent the offer with approval" || got[1].Title != "Chose the launch scope" || got[2].Status != "attended" {
+	if len(got) != 2 || got[0].Title != "Sent the offer with approval" || got[1].Title != "Chose the launch scope" {
 		t.Fatalf("Highlights lost outcomes, decisions or people: %+v", got)
 	}
 	for _, item := range got {
@@ -86,7 +86,7 @@ func TestMobileBriefHighlightsOrderAcrossPromptTemplateSpeechAndJSON(t *testing.
 		if err := validateMobileBriefNarrativeVoice(brief, paragraphs, lang); err != nil {
 			t.Fatalf("%s: %v", lang, err)
 		}
-		if len(strings.Split(paragraphs[3].Text, "\n")) != 3 {
+		if len(strings.Split(paragraphs[3].Text, "\n")) != 2 {
 			t.Fatalf("missing Highlights lines: %+v", paragraphs[3])
 		}
 		brief.Narrative = paragraphs

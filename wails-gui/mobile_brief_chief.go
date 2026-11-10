@@ -8,13 +8,15 @@ import (
 )
 
 const (
-	mobileBriefSectionReview     = "review"
-	mobileBriefSectionDecide     = "decide"
-	mobileBriefSectionPlan       = "plan"
-	mobileBriefSectionHighlights = "highlights"
-	mobileBriefSectionDayAhead   = "dayAhead"
-	mobileBriefHighlightBytes    = 160
-	mobileBriefChiefLimit        = 3
+	mobileBriefSectionReview           = "review"
+	mobileBriefSectionDecide           = "decide"
+	mobileBriefSectionPlan             = "plan"
+	mobileBriefSectionHighlights       = "highlights"
+	mobileBriefSectionDayAhead         = "dayAhead"
+	mobileBriefHighlightBytes          = 160
+	mobileBriefChiefLimit              = 3
+	mobileBriefCalendarLimit           = 2
+	mobileBriefObservationReserveLimit = 24
 )
 
 // mobileBriefChiefInput keeps the source collectors and their privacy gates
@@ -24,10 +26,8 @@ func mobileBriefChiefInput(in mobileBriefInput) mobileBriefInput {
 	clean := func(items []mobileBriefCandidate) []mobileBriefCandidate {
 		out := make([]mobileBriefCandidate, 0, len(items))
 		for _, item := range items {
-			// Browsing and file rows stay in their own sections: Today lists the
-			// documents worked on and offers "Chat about this" on them. They never
-			// reach the chief sections or the narrative, whose evidence excludes
-			// browsing and files (mobileBriefNarratableEvidence).
+			// Browsing is excluded from the narrative. File titles are admitted
+			// only through the filtered Today list.
 			if item.Kind == "day_shape" {
 				// The shape line names only time still ahead today
 				// (mobileBriefDayShapeLine); its clocks are forward-looking.
@@ -79,12 +79,16 @@ func mobileBriefChiefInput(in mobileBriefInput) mobileBriefInput {
 func reserveMobileBriefChiefEvidence(builder *mobileBriefBuilder, in mobileBriefInput) {
 	reserve := func(items []mobileBriefCandidate, limit int) {
 		for i, item := range items {
-			if i >= limit {
+			if i >= limit || len(builder.evidence) >= mobileBriefObservationReserveLimit {
 				break
 			}
 			// The content-free fallback for purged evidence has no source: it
 			// never takes an evidence slot.
 			if item.EvidenceUnavailable {
+				continue
+			}
+			switch item.SourceKind {
+			case mobileBriefCalendarSource, mobileBriefAttendanceSource, mobileBriefDayShapeSource, mobileBriefMeetingAppSource, mobileBriefWebSource:
 				continue
 			}
 			if _, ok := builder.refFor(item); !ok {
@@ -93,15 +97,7 @@ func reserveMobileBriefChiefEvidence(builder *mobileBriefBuilder, in mobileBrief
 		}
 	}
 	reserve(prepareMobileBriefCandidates(in.OpenLoops, mobileBriefOpenLoopFirst), mobileBriefItemsPerSection)
-	var upcoming, needsYou []mobileBriefCandidate
-	for _, item := range in.Meetings {
-		if item.SourceKind == mobileBriefCalendarSource && item.Status == "upcoming" && !item.At.Before(in.AsOf) {
-			upcoming = append(upcoming, item)
-		}
-	}
-	reserve(prepareMobileBriefCandidates(upcoming, func(a, b mobileBriefCandidate) bool {
-		return a.At.Before(b.At)
-	}), mobileBriefChiefLimit)
+	var needsYou []mobileBriefCandidate
 	for _, items := range [][]mobileBriefCandidate{in.Moved, in.Doing} {
 		for _, item := range items {
 			switch item.Status {
@@ -111,6 +107,51 @@ func reserveMobileBriefChiefEvidence(builder *mobileBriefBuilder, in mobileBrief
 		}
 	}
 	reserve(prepareMobileBriefCandidates(needsYou, mobileBriefNewestFirst), mobileBriefChiefLimit*2)
+	for _, items := range [][]mobileBriefCandidate{in.Moved, in.Doing, in.People, in.Noticed, in.Learned} {
+		reserve(prepareMobileBriefCandidates(items, mobileBriefNewestFirst), mobileBriefItemsPerSection)
+	}
+}
+
+// Only a current, readable observation with an exact shared person or title
+// anchors a calendar item. Carry its source ref with the meeting so the link
+// is rechecked with the rest of the brief's provenance.
+func mobileBriefObservationMeetings(in mobileBriefInput) mobileBriefInput {
+	var observations []mobileBriefCandidate
+	for _, group := range [][]mobileBriefCandidate{in.People, in.Doing, in.Deliverables, in.OpenLoops, in.Moved} {
+		observations = append(observations, prepareMobileBriefCandidates(group, mobileBriefNewestFirst)...)
+	}
+	meetings := prepareMobileBriefCandidates(in.Meetings, mobileBriefUpcomingFirst)
+	in.Meetings = nil
+	calendarCount := 0
+	for _, meeting := range meetings {
+		if meeting.SourceKind != mobileBriefCalendarSource {
+			in.Meetings = append(in.Meetings, meeting)
+			continue
+		}
+		if calendarCount >= mobileBriefCalendarLimit || meeting.Status == "done" || meeting.Status == "upcoming" && meeting.At.Before(in.AsOf) {
+			continue
+		}
+		calendarCount++
+		for _, observed := range observations {
+			if observed.SourceKind == mobileBriefCalendarSource || observed.SourceKind == mobileBriefAttendanceSource || observed.SourceKind == mobileBriefWebSource {
+				continue
+			}
+			matched := false
+			if observed.SourceKind == "principal" {
+				for _, name := range meeting.rankedAttendees {
+					matched = matched || strings.EqualFold(strings.TrimSpace(name), strings.TrimSpace(observed.Title))
+				}
+			} else if observed.SourceKind == mobileBriefFileSource || observed.SourceKind == "deliverable" {
+				matched = strings.EqualFold(strings.TrimSpace(observed.Title), strings.TrimSpace(meeting.Title))
+			}
+			if matched && strings.TrimSpace(observed.Title) != "" {
+				meeting.Evidence = append(meeting.Evidence, observed)
+				break
+			}
+		}
+		in.Meetings = append(in.Meetings, meeting)
+	}
+	return in
 }
 
 func mobileBriefReviewFirst(a, b mobileBriefCandidate) bool {
@@ -145,7 +186,7 @@ func mobileBriefChiefSections(brief MobileBriefV1) MobileBriefSections {
 	s.Review, s.Decide, s.Plan, s.DayAhead, s.Highlights = nil, nil, nil, nil, nil
 	byRef := make(map[string]MobileBriefRef, len(brief.Evidence))
 	allowed := map[string]bool{}
-	for _, ref := range mobileBriefNarratableEvidence(brief.Evidence) {
+	for _, ref := range mobileBriefNarrativeEvidenceForDocument(brief) {
 		byRef[ref.Ref], allowed[ref.Ref] = ref, true
 	}
 	used := map[string]bool{}
@@ -157,6 +198,9 @@ func mobileBriefChiefSections(brief MobileBriefV1) MobileBriefSections {
 			return
 		}
 		ref := byRef[item.Refs[0]]
+		if ref.SourceKind == mobileBriefAttendanceSource || ref.SourceKind == mobileBriefCalendarSource && !mobileBriefMeetingHasObservation(item, all) {
+			return
+		}
 		identity := ref.SourceKind + ":" + ref.SourceID
 		if used[identity] {
 			return
@@ -178,16 +222,6 @@ func mobileBriefChiefSections(brief MobileBriefV1) MobileBriefSections {
 			add(mobileBriefSectionReview, &s.Review, item)
 		}
 	}
-	for _, attendance := range brief.MeetingAttendance {
-		if attendance.State != "skipped" {
-			continue
-		}
-		add(mobileBriefSectionReview, &s.Review, MobileBriefItem{
-			Title: attendance.Title, Status: attendance.State, Kind: mobileBriefAttendanceSource,
-			Refs:   attendance.Refs,
-			Detail: "This computer was active outside the call. I can draft a follow-up.",
-		})
-	}
 	for _, item := range work {
 		switch item.Status {
 		case "blocked", "waiting":
@@ -205,12 +239,14 @@ func mobileBriefChiefSections(brief MobileBriefV1) MobileBriefSections {
 	for _, item := range upcoming {
 		at, err := time.Parse(time.RFC3339, item.At)
 		if item.Status == "upcoming" && err == nil && !at.Before(asOf) && len(item.Refs) > 0 && mobileBriefItemNarratable(item, allowed) {
-			add(mobileBriefSectionPlan, &s.Plan, item)
+			if mobileBriefMeetingHasObservation(item, all) {
+				add(mobileBriefSectionPlan, &s.Plan, item)
+			}
 			dayItem := item
 			dayItem.ID = mobileBriefSectionDayAhead + "-" + strconv.Itoa(len(s.DayAhead)+1)
 			ref := byRef[item.Refs[0]]
 			dayItem.Key = mobileBriefItemKey(mobileBriefSectionDayAhead, ref.SourceKind, ref.SourceID)
-			if len(s.DayAhead) < mobileBriefChiefLimit {
+			if len(s.DayAhead) < mobileBriefCalendarLimit {
 				s.DayAhead = append(s.DayAhead, dayItem)
 			}
 		}
@@ -223,16 +259,6 @@ func mobileBriefChiefSections(brief MobileBriefV1) MobileBriefSections {
 		case "active", "in_progress":
 			add(mobileBriefSectionPlan, &s.Plan, item)
 		}
-	}
-	// Uncertain attendance is a question to review, never a past accomplishment.
-	for _, attendance := range brief.MeetingAttendance {
-		if attendance.State != "unknown" || attendance.Reason == "slot_not_finished" {
-			continue
-		}
-		add(mobileBriefSectionReview, &s.Review, MobileBriefItem{
-			Title: attendance.Title, Status: attendance.State,
-			Kind: mobileBriefAttendanceSource, Refs: attendance.Refs,
-		})
 	}
 	// Select by importance before recency: recorded outcomes, decisions,
 	// confirmed meeting signals, then observed progress. Never use browsing,
@@ -247,12 +273,6 @@ func mobileBriefChiefSections(brief MobileBriefV1) MobileBriefSections {
 			continue
 		}
 		highlights = append(highlights, item)
-	}
-	for _, attendance := range brief.MeetingAttendance {
-		if attendance.State == "attended" {
-			highlights = append(highlights, MobileBriefItem{Title: attendance.Title,
-				Status: "attended", Kind: mobileBriefAttendanceSource, Refs: attendance.Refs})
-		}
 	}
 	sort.SliceStable(highlights, func(i, j int) bool {
 		a, b := mobileBriefHighlightPriority(highlights[i]), mobileBriefHighlightPriority(highlights[j])
@@ -278,6 +298,19 @@ func mobileBriefChiefSections(brief MobileBriefV1) MobileBriefSections {
 	}
 
 	return s
+}
+
+func mobileBriefMeetingHasObservation(item MobileBriefItem, evidence map[string]MobileBriefRef) bool {
+	if len(item.Refs) == 0 {
+		return false
+	}
+	for _, id := range item.Refs[1:] {
+		switch evidence[id].SourceKind {
+		case "principal", mobileBriefFileSource, "deliverable":
+			return true
+		}
+	}
+	return false
 }
 
 // The old-phone rows share their primary ref with the richer Purpose cards.

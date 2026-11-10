@@ -107,7 +107,7 @@ func TestCollectMobileBriefCalendarMorning(t *testing.T) {
 
 	// The builder renders them with evidence refs, newest first within the section.
 	brief := buildMobileBriefV1(in)
-	if len(brief.Sections.Meetings) != 5 || len(brief.Evidence) != 5 {
+	if len(brief.Sections.Meetings) != 3 || len(brief.Evidence) != 3 || mobileBriefEvidenceCounts(brief.Evidence)[mobileBriefCalendarSource] != 2 {
 		t.Fatalf("brief meetings %d evidence %d", len(brief.Sections.Meetings), len(brief.Evidence))
 	}
 }

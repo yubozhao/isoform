@@ -55,7 +55,7 @@ func TestMobileBriefAttendancePushRechecksSourcesAtReconnect(t *testing.T) {
 			if err := json.Unmarshal(queuedWire, &queuedBrief); err != nil {
 				t.Fatal(err)
 			}
-			if len(queuedBrief.MeetingAttendance) != 1 || len(queuedBrief.Sections.Review) != 1 || len(queuedBrief.Narrative) != 1 {
+			if len(queuedBrief.MeetingAttendance) != 1 || len(queuedBrief.Sections.Review) != 0 || len(queuedBrief.Narrative) != 1 {
 				t.Fatalf("offline queue lost readable attendance: %+v", queuedBrief)
 			}
 			switch privacy {
@@ -88,7 +88,7 @@ func TestMobileBriefAttendancePushRechecksSourcesAtReconnect(t *testing.T) {
 				t.Fatal(err)
 			}
 			if privacy == "readable" {
-				if len(got.MeetingAttendance) != 1 || got.MeetingAttendance[0].State != "skipped" || len(got.Sections.Review) != 1 || len(got.Narrative) != 1 {
+				if len(got.MeetingAttendance) != 1 || got.MeetingAttendance[0].State != "skipped" || len(got.Sections.Review) != 0 || len(got.Narrative) != 1 {
 					t.Fatalf("reconnect dropped readable attendance: %+v", got)
 				}
 				if delivered.Env.Seq != queued.Env.Seq {

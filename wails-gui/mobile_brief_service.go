@@ -1134,9 +1134,10 @@ func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, s
 	}
 	// Existing composer overrides are test seams; production always uses the
 	// ranked route for scheduled mornings.
-	rankedMorning := slot == mobileBriefSlotMorning && s.compose == nil && s.composeWithLead == nil
+	calendarOnlyFallback := s.compose == nil && s.composeWithLead == nil && len(mobileBriefPicks(brief)) == 0 && len(mobileBriefDayItems(brief)) > 0 && len(mobileBriefNarrativeTemplateOnly(brief, s.app.currentUILanguageName())) == 0
+	rankedMorning := slot == mobileBriefSlotMorning && s.compose == nil && s.composeWithLead == nil && !calendarOnlyFallback
 	var modelBinding *mobileBriefModelBinding
-	if !rankedMorning {
+	if !rankedMorning && !calendarOnlyFallback {
 		modelBinding = s.app.captureMobileBriefModelSources(ctx, brief, gathered)
 	}
 	if gathered != nil {
@@ -1261,6 +1262,11 @@ func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, s
 	if generation != nil {
 		captured := *generation
 		brief.Generation = &captured
+	}
+	if brief.generationDebug != nil {
+		counts := *brief.generationDebug
+		counts.EvidenceByKind = mobileBriefEvidenceCounts(brief.Evidence)
+		brief.generationDebug = &counts
 	}
 	firstReadBriefMu.Lock()
 	// The copy is sealed after patchMu is released (below), so the save does not

@@ -543,6 +543,11 @@ func (a *App) mobileBriefDeliveryOnce(ctx context.Context, brief MobileBriefV1) 
 				allowed = deliverableAllowed(ref.SourceID)
 			case mobileBriefWebSource:
 				allowed = a.mobileBriefWebSourceAllowsRead(ref.WebSource)
+			case mobileBriefFileSource:
+				// A document can now support prose or a meeting tie. Recheck
+				// its current Today listing before retaining either projection.
+				current, ok := a.currentTodayBriefCandidate(ctx, ref, brief, mobileBriefAsOfTime(brief))
+				allowed = ok && mobileBriefWithoutClockTimes(current.Title) == ref.Label
 			case "chat_message":
 				if a.store == nil {
 					allowed = false

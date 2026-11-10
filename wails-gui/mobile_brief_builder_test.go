@@ -143,6 +143,54 @@ func mobileBriefGoldenInput() mobileBriefInput {
 	}
 }
 
+// The unchanged historical snapshots predate observation-first reservation.
+// Apply only the expected five-reference permutation, retaining a byte-exact
+// comparison of every other field without rewriting the non-Go fixtures.
+func mobileBriefObservedGolden(t *testing.T, original []byte) []byte {
+	t.Helper()
+	var expected MobileBriefV1
+	if err := json.Unmarshal(original, &expected); err != nil {
+		t.Fatal(err)
+	}
+	if len(expected.Evidence) != 13 {
+		t.Fatalf("unexpected golden evidence count: %d", len(expected.Evidence))
+	}
+	oldKinds := []string{"watching", "meeting", "principal", "memory", "learning"}
+	newKinds := []string{"principal", "memory", "learning", "watching", "meeting"}
+	var kinds []string
+	for _, ref := range expected.Evidence[6:11] {
+		kinds = append(kinds, ref.SourceKind)
+	}
+	if reflect.DeepEqual(kinds, newKinds) {
+		return original
+	}
+	if !reflect.DeepEqual(kinds, oldKinds) {
+		t.Fatalf("unexpected golden evidence order: %v", kinds)
+	}
+	previous := append([]MobileBriefRef(nil), expected.Evidence...)
+	remap := map[string]string{}
+	for offset, oldIndex := range []int{8, 9, 10, 6, 7} {
+		index := 6 + offset
+		expected.Evidence[index] = previous[oldIndex]
+		expected.Evidence[index].Ref = previous[index].Ref
+		remap[previous[oldIndex].Ref] = previous[index].Ref
+	}
+	for _, section := range mobileBriefSectionLines(expected.Sections) {
+		for i := range section.items {
+			for j, ref := range section.items[i].Refs {
+				if next, ok := remap[ref]; ok {
+					section.items[i].Refs[j] = next
+				}
+			}
+		}
+	}
+	result, err := json.MarshalIndent(expected, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return append(result, '\n')
+}
+
 func TestBuildMobileBriefGoldenV1(t *testing.T) {
 	brief := buildMobileBriefV1(mobileBriefGoldenInput())
 	got, err := json.MarshalIndent(brief, "", "  ")
@@ -164,6 +212,7 @@ func TestBuildMobileBriefGoldenV1(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read golden file (create it with -update-mobile-brief-golden): %v", err)
 	}
+	want = mobileBriefObservedGolden(t, want)
 	if !bytes.Equal(got, want) {
 		t.Fatalf("brief differs from %s; rerun with -update-mobile-brief-golden after reviewing:\n%s", path, got)
 	}
@@ -196,6 +245,7 @@ func TestBuildMobileBriefGoldenEarlyV1(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read golden file (create it with -update-mobile-brief-golden): %v", err)
 	}
+	want = mobileBriefObservedGolden(t, want)
 	if !bytes.Equal(got, want) {
 		t.Fatalf("early brief differs from %s; rerun with -update-mobile-brief-golden after reviewing:\n%s", path, got)
 	}

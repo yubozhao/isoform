@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"os"
 	"time"
@@ -11,8 +12,8 @@ import (
 
 // The brief's doing section, from the recent files: the documents worked on
 // today, by name only, with the app and the commitment each one is linked
-// to. File names stay on the Mac and the paired phone; they never reach the
-// narrative model (mobileBriefNarratableEvidence).
+// to. The narrative may use only titles from the filtered Today list, and
+// the model binding rechecks the same file permissions and private folders.
 const mobileBriefFileSource = "file"
 
 // collectMobileBriefDoing adds today's documents to in.Doing.
@@ -27,7 +28,7 @@ func collectMobileBriefDoingWithCommitments(a *App, in *mobileBriefInput, includ
 }
 
 func collectMobileBriefDoingContext(ctx context.Context, a *App, in *mobileBriefInput, includeCommitments bool) {
-	if a == nil || a.activity == nil || a.activity.store == nil {
+	if a == nil || a.store == nil || a.activity == nil || a.activity.store == nil {
 		return
 	}
 	if !a.isPermissionEnabledContext(ctx, filesPermissionKey) || ctx.Err() != nil {
@@ -53,8 +54,12 @@ func collectMobileBriefDoingContext(ctx context.Context, a *App, in *mobileBrief
 		}
 	}
 	home, _ := os.UserHomeDir()
-	private := a.filesPrivateFoldersContext(ctx)
-	if ctx.Err() != nil {
+	rawPrivate, err := a.store.GetUIState(ctx, filesPrivateFoldersKey)
+	if err != nil || ctx.Err() != nil {
+		return
+	}
+	var private []string
+	if rawPrivate != "" && json.Unmarshal([]byte(rawPrivate), &private) != nil {
 		return
 	}
 	for i, folder := range private {

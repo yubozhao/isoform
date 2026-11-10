@@ -16,13 +16,13 @@ func TestMobileBriefTodayRefreshKeepsAttendanceEvidence(t *testing.T) {
 				Attendance: []mobileBriefAttendanceObservation{{EventID: "missed-meeting", Title: "Planning discussion", State: "skipped", Reason: "active_elsewhere_on_computer", ObservedAt: now, SourceSessionIDs: []string{"fixture-session"}}},
 				OpenLoops:  []mobileBriefCandidate{task},
 			})
-			if len(base.Evidence) != 2 || base.Evidence[0].Ref != "e1" || base.Evidence[0].SourceID != "missed-meeting" || base.Evidence[1].Ref != "e2" || base.Evidence[1].SourceID != task.SourceID {
-				t.Fatalf("fixture must start with meeting e1 and task e2: %+v", base.Evidence)
+			if len(base.Evidence) != 2 || base.Evidence[0].SourceID != task.SourceID || base.Evidence[1].SourceID != "missed-meeting" {
+				t.Fatalf("fixture must reserve the task before attendance: %+v", base.Evidence)
 			}
-			base.Narrative = []MobileBriefPara{{Text: "Review whether the planning discussion needs a follow-up.", Refs: []string{"e1"}}}
-			if order == "task-first" {
+			base.Narrative = []MobileBriefPara{{Text: "Review whether the planning discussion needs a follow-up.", Refs: append([]string(nil), base.MeetingAttendance[0].Refs...)}}
+			if order == "meeting-first" {
 				// A stored brief can have a different reservation order. Both
-				// attendance and its Review row must follow the source, not its ID.
+				// attendance and the task must follow the source, not its ID.
 				remap := map[string]string{"e1": "e2", "e2": "e1"}
 				for i := range base.Evidence {
 					base.Evidence[i].Ref = remap[base.Evidence[i].Ref]
@@ -32,8 +32,8 @@ func TestMobileBriefTodayRefreshKeepsAttendanceEvidence(t *testing.T) {
 						section.items[i].Refs = []string{remap[section.items[i].Refs[0]]}
 					}
 				}
-				base.MeetingAttendance[0].Refs = []string{"e2"}
-				base.Narrative[0].Refs = []string{"e2"}
+				base.MeetingAttendance[0].Refs = []string{"e1"}
+				base.Narrative[0].Refs = []string{"e1"}
 			}
 			originalAttendance := base.MeetingAttendance[0]
 			task.At = now.Add(time.Hour)
@@ -76,8 +76,8 @@ func TestMobileBriefTodayRefreshKeepsAttendanceEvidence(t *testing.T) {
 					foundTask = len(item.Refs) == 1 && byRef[item.Refs[0]].SourceID == task.SourceID
 				}
 			}
-			if !foundMeeting || !foundTask {
-				t.Fatalf("refresh lost the meeting or task in Review: %+v", got.Sections.Review)
+			if foundMeeting || !foundTask {
+				t.Fatalf("refresh promoted attendance or lost the task in Review: %+v", got.Sections.Review)
 			}
 			if len(got.Narrative) != 1 {
 				t.Fatal("refresh lost the narrative")

@@ -28,9 +28,9 @@ func TestBriefGeneratedClockFormat(t *testing.T) {
 				}
 				at := time.Date(2026, 10, 23, hour, minute, 0, 0, time.UTC)
 				brief := MobileBriefV1{Slot: mobileBriefSlotOnRequest, AsOf: "2026-10-23T07:00:00Z", Timezone: "UTC",
-					Evidence: []MobileBriefRef{{Ref: "e1", SourceKind: mobileBriefCalendarSource, SourceID: "review"}},
-					Sections: MobileBriefSections{Meetings: []MobileBriefItem{{Title: "Dana review", Status: "upcoming", Kind: "meeting", At: at.Format(time.RFC3339), EndAt: at.Add(time.Hour).Format(time.RFC3339), Refs: []string{"e1"}}}}}
-				raw, err := json.Marshal(mobileBriefNarrativeReply{Paragraphs: []mobileBriefNarrativeReplyParagraph{{Text: "Dana review starts at " + input + ".", Refs: []string{"e1"}}}})
+					Evidence: []MobileBriefRef{{Ref: "e1", SourceKind: mobileBriefCalendarSource, SourceID: "review"}, {Ref: "e2", SourceKind: "principal", SourceID: "dana", Label: "Dana"}},
+					Sections: MobileBriefSections{Meetings: []MobileBriefItem{{Title: "Dana review", Status: "upcoming", Kind: "meeting", At: at.Format(time.RFC3339), EndAt: at.Add(time.Hour).Format(time.RFC3339), Refs: []string{"e1", "e2"}}}}}
+				raw, err := json.Marshal(mobileBriefNarrativeReply{Paragraphs: []mobileBriefNarrativeReplyParagraph{{Text: "Dana review starts at " + input + ".", Refs: []string{"e1", "e2"}}}})
 				if err != nil {
 					t.Fatal(err)
 				}

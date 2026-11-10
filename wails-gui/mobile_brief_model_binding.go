@@ -69,12 +69,58 @@ func mobileBriefModelReadEvidence(brief MobileBriefV1) []MobileBriefRef {
 		read[ref.Ref] = true
 	}
 	var out []MobileBriefRef
-	for _, ref := range mobileBriefNarratableEvidence(brief.Evidence) {
+	for _, ref := range mobileBriefNarrativeEvidenceForDocument(brief) {
 		if read[ref.Ref] {
 			out = append(out, ref)
 		}
 	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return !mobileBriefCalendarShaped(out[i].SourceKind) && mobileBriefCalendarShaped(out[j].SourceKind)
+	})
 	return out
+}
+
+func mobileBriefCalendarShaped(kind string) bool {
+	switch kind {
+	case mobileBriefCalendarSource, mobileBriefAttendanceSource, mobileBriefDayShapeSource, mobileBriefMeetingAppSource:
+		return true
+	default:
+		return false
+	}
+}
+
+// Counts only: this local generation diagnostic never contains source content
+// or changes the phone document.
+type mobileBriefGenerationDebug struct {
+	EvidenceByKind      map[string]int `json:"evidenceByKind"`
+	ReservedObservation int            `json:"reservedObservation"`
+	ReservedCalendar    int            `json:"reservedCalendar"`
+}
+
+func mobileBriefEvidenceCounts(refs []MobileBriefRef) map[string]int {
+	counts := map[string]int{}
+	for _, ref := range refs {
+		kind := ref.SourceKind
+		switch kind {
+		case "activity", "activity_noticed", "activity_outcome", "activity_run", "activity_session", "activity_summary", "activity_timeline_group", "brief_waiting_reply", "calendar", "calendar_day", "chat_message", "deliverable", "engagement_moment", "file", "handoff", "history", "initiative", "knowledge", "knowledge_markdown", "learning", "mail", "manual", "meeting", "meeting_attendance", "meeting_transcript", "memory", "memory_markdown", "news", "principal", "purpose", "schedule", "schedule_run", "self_model_entry", "session", "summary", "thread_outcome", "watching", "web":
+		default:
+			kind = "other"
+		}
+		counts[kind]++
+	}
+	return counts
+}
+
+func mobileBriefGenerationCounts(refs []MobileBriefRef, reserved map[string]int) *mobileBriefGenerationDebug {
+	debug := &mobileBriefGenerationDebug{EvidenceByKind: mobileBriefEvidenceCounts(refs)}
+	for kind, count := range reserved {
+		if mobileBriefCalendarShaped(kind) {
+			debug.ReservedCalendar += count
+		} else {
+			debug.ReservedObservation += count
+		}
+	}
+	return debug
 }
 
 type mobileBriefModelSource struct {
