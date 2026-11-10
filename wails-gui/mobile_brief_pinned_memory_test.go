@@ -11,13 +11,13 @@ import (
 )
 
 // Isoform writes memory notes all the time (today-review v1.1.15 D12).
-// During a collection a note written or edited never rejects the brief;
-// removing or forgetting a note it cites does, and every other file the brief
+// During a collection an unrelated note never rejects the brief;
+// editing, removing or forgetting a note it cites does, and every other file the brief
 // reads still counts whatever changed.
 func TestMobileBriefGatherFenceKeepsIsoformMemoryWrites(t *testing.T) {
 	cases := map[string]string{
 		"new note": "", "edited uncited note": "", "removed uncited note": "", "forgot uncited note": "",
-		"edited cited note": "", "edited note before the brief is built": "", "removed cited note": "memory_files", "forgot cited note": "privacy_withdrawal",
+		"edited cited note": "memory_files", "edited note before the brief is built": "memory_files", "removed cited note": "memory_files", "forgot cited note": "privacy_withdrawal",
 		"knowledge": "source_files", "removed note before the brief is built": "memory_files",
 	}
 	for change, want := range cases {

@@ -1193,6 +1193,14 @@ func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, s
 	if !rankedMorning {
 		_, brief.Offers = mobileBriefClosing(brief, language)
 	}
+	// Composition can overlap an edit. Retry before later navigation reads
+	// refresh their own topic state.
+	if gathered != nil {
+		if changed := s.app.mobileBriefGatherChange(ctx, gathered); changed != "" {
+			log.Printf("[mobile-brief] %s brief sources changed during composition: %s", slot, changed)
+			return MobileBriefV1{}, errMobileBriefSourcesChanged
+		}
+	}
 	if s.app != nil && s.app.topicSource != nil {
 		_, _ = s.app.topicsSvc().registryViews(ctx)
 	}
@@ -1225,7 +1233,6 @@ func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, s
 	if err := ctx.Err(); err != nil {
 		return MobileBriefV1{}, err
 	}
-
 	s.patchMu.Lock()
 	if reason == mobileBriefReasonAdaptive && !s.adaptiveDeliveryAllowed(asOf, slot) {
 		s.patchMu.Unlock()

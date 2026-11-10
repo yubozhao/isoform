@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -213,6 +214,11 @@ type mobileBriefFinishedRead struct {
 	// Cites are the source keys the brief's words were checked against, sorted;
 	// nil when the brief has no binding record (every source then counts).
 	Cites []string `json:"cites,omitempty"`
+	// SealedAt remains the original boundary when a copy is amended. Source
+	// fingerprints are local provenance for a later per-part amendment.
+	SealedAt     time.Time               `json:"sealed_at,omitempty"`
+	Fingerprints map[string]string       `json:"fingerprints,omitempty"`
+	SourceRefs   []mobileBriefSealSource `json:"source_refs"`
 	// Withheld is the non-transient withholding the copy was sealed with (a
 	// source the person protected, for example). Reads report it, so the reason
 	// is logged on read as it was before sealing. Older copies have none.
@@ -302,12 +308,26 @@ func (s *mobileBriefStore) loadFinishedRead(briefID string) (mobileBriefFinished
 	if !ok {
 		return mobileBriefFinishedRead{}, false, nil
 	}
-	data, err := os.ReadFile(path)
+	file, err := os.Open(path)
 	if os.IsNotExist(err) {
 		return mobileBriefFinishedRead{}, false, nil
 	}
+	var data []byte
+	var info os.FileInfo
+	if err == nil {
+		info, err = file.Stat()
+		if err == nil {
+			data, err = io.ReadAll(file)
+		}
+		_ = file.Close()
+	}
 	var read mobileBriefFinishedRead
 	if err == nil && json.Unmarshal(data, &read) == nil && (read.Schema == 1 || read.Schema == mobileBriefSealedSchema) {
+		// Read the old seal and its mtime from the same open file. A concurrent
+		// atomic replacement must not supply a newer timestamp for older text.
+		if read.SealedAt.IsZero() {
+			read.SealedAt = info.ModTime()
+		}
 		return read, true, nil
 	}
 	_ = os.Remove(path)
@@ -384,6 +404,24 @@ func (s *mobileBriefService) seal(ctx context.Context, source MobileBriefV1) (Mo
 		return MobileBriefV1{}, mobileBriefWithholding{Reason: mobileBriefWithheldNotReady}, false
 	}
 	mobileBriefFinishedReadKeys.Add(1)
+	previous, found, err := s.store.loadFinishedRead(source.BriefID)
+	if err != nil {
+		return MobileBriefV1{}, mobileBriefWithholding{Reason: mobileBriefWithheldNotReady}, false
+	}
+	sealedAt := time.Now()
+	cited := source
+	if found {
+		sealedAt = s.store.finishedReadTime(source.BriefID, previous)
+		cited = mobileBriefSealedSources(previous, source)
+		if kind, changed := s.app.mobileBriefEditedSources(cited, sealedAt); kind != "" {
+			var old MobileBriefV1
+			if unmarshalStoredMobileBrief(previous.Brief, &old) != nil {
+				old = mobileBriefPaused(source)
+			}
+			changed = mobileBriefChangedRefs(cited, source, old, changed)
+			return s.withholdEditedRead(ctx, source, previous, old, changed), mobileBriefWithholding{Reason: mobileBriefWithheldSource, SourceKind: kind}, true
+		}
+	}
 	epoch := mobileBriefPrivacyEpoch.Load()
 	print := s.app.briefPrivacyPrint()
 	day := s.readDay()
@@ -397,7 +435,15 @@ func (s *mobileBriefService) seal(ctx context.Context, source MobileBriefV1) (Mo
 	if err != nil {
 		return brief, withheld, false
 	}
-	read := mobileBriefFinishedRead{Schema: mobileBriefSealedSchema, Epoch: epoch, Print: print, Source: mobileBriefSourceDigest(source), Day: day, Cites: sealCites(source), WithheldReason: withheld.Reason, WithheldKind: withheld.SourceKind, Brief: raw}
+	fingerprints := previous.Fingerprints
+	if !found || fingerprints == nil {
+		fingerprints = s.app.mobileBriefSourceFingerprints(ctx, cited)
+	}
+	if kind, changed := s.app.mobileBriefEditedSources(cited, sealedAt); kind != "" {
+		changed = mobileBriefChangedRefs(cited, source, brief, changed)
+		return mobileBriefWithholdEdited(brief, changed), mobileBriefWithholding{Reason: mobileBriefWithheldSource, SourceKind: kind}, true
+	}
+	read := mobileBriefFinishedRead{Schema: mobileBriefSealedSchema, Epoch: epoch, Print: print, Source: mobileBriefSourceDigest(source), Day: day, Cites: sealCites(source), SealedAt: sealedAt, Fingerprints: fingerprints, SourceRefs: mobileBriefSealSources(cited), WithheldReason: withheld.Reason, WithheldKind: withheld.SourceKind, Brief: raw}
 	if mobileBriefBeforeSealSave != nil {
 		mobileBriefBeforeSealSave(source.BriefID)
 	}
@@ -413,13 +459,37 @@ func (s *mobileBriefService) seal(ctx context.Context, source MobileBriefV1) (Mo
 // the local day), the brief is sealed again in the background, and the copy is
 // shown meanwhile, without words and audio when Closed Eyes is on. A brief with
 // no copy yet is sealed in the background and is not shown until then.
-func (s *mobileBriefService) finishedReadWithholding(source MobileBriefV1) (MobileBriefV1, mobileBriefWithholding, error) {
+func (s *mobileBriefService) finishedReadWithholding(source MobileBriefV1) (result MobileBriefV1, resultWithheld mobileBriefWithholding, resultErr error) {
+	defer func() {
+		status, reason := "shown", "none"
+		switch true {
+		case resultErr != nil:
+			status, reason = "withheld", "read_error"
+		case len(result.Narrative) == 0:
+			status, reason = "withheld", resultWithheld.Reason
+			if reason == "" {
+				reason = "no_written_text"
+			}
+		}
+		log.Printf("[mobile-brief] read brief=%s written=%s reason=%s", source.BriefID, status, reason)
+	}()
 	mobileBriefLive.Store(s)
 	brief, withheld, pending, err := s.sealedReadOrPending(source)
 	if err != nil {
 		return MobileBriefV1{}, mobileBriefWithholding{}, err
 	}
 	if !pending && s.app != nil {
+		saved, found, err := s.store.loadFinishedRead(source.BriefID)
+		if err != nil {
+			return MobileBriefV1{}, mobileBriefWithholding{}, err
+		}
+		if found {
+			cited := mobileBriefSealedSources(saved, source)
+			if kind, changed := s.app.mobileBriefEditedSources(cited, s.store.finishedReadTime(source.BriefID, saved)); kind != "" {
+				changed = mobileBriefChangedRefs(cited, source, brief, changed)
+				return s.withholdEditedRead(context.Background(), source, saved, brief, changed), mobileBriefWithholding{Reason: mobileBriefWithheldSource, SourceKind: kind}, nil
+			}
+		}
 		if kind, changed := s.copyPrivacyChange(source); changed {
 			// The amend: the privacy state changed since the copy was sealed, so the
 			// next read seals the brief again with the current gates and shows that.

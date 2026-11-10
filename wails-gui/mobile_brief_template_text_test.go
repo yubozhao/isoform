@@ -5,7 +5,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -112,7 +111,7 @@ func TestClosedEyesReportsThePassingReasonForATemplateBrief(t *testing.T) {
 // names only the cards it cites. Opening Today used to withdraw all of it, on
 // disk too, as soon as any one card could no longer be read. Now only the
 // paragraphs naming that card leave; the rest render and stay stored.
-func TestTodayKeepsTemplateBriefParagraphsWhoseCardsStillRead(t *testing.T) {
+func TestTodayWithholdsTemplateBriefWhenACitedCardIsWithdrawn(t *testing.T) {
 	rig := newHandoffTestRig(t)
 	clock := &fakeMobileBriefClock{now: mobileBriefTestDay(7, 0)}
 	svc, _ := newTestMobileBriefService(t, clock)
@@ -168,26 +167,10 @@ func TestTodayKeepsTemplateBriefParagraphsWhoseCardsStillRead(t *testing.T) {
 		if err != nil || view.Brief == nil {
 			t.Fatalf("read %d: view = %+v, %v", read, view, err)
 		}
-		var texts []string
-		for _, para := range view.Brief.Narrative {
-			texts = append(texts, para.Text)
-			if strings.Contains(para.Text, "Draft "+withdrawn) {
-				t.Fatalf("read %d: a paragraph still names the withdrawn card: %q", read, para.Text)
-			}
-		}
-		if !reflect.DeepEqual(texts, kept) {
-			t.Fatalf("read %d: Today shows %q, want the paragraphs whose cards still read: %q", read, texts, kept)
-		}
-		for _, offer := range view.Brief.Offers {
-			if strings.Contains(offer.Text+offer.Prompt, "Draft "+withdrawn) {
-				t.Fatalf("read %d: an offer still names the withdrawn card: %+v", read, offer)
-			}
+		if len(view.Brief.Narrative) != 0 || len(view.Brief.Offers) != 0 || view.Brief.Audio != nil {
+			t.Fatalf("read %d: the written template survived withdrawal: %+v", read, view.Brief.Narrative)
 		}
 		assertTodayRefsResolve(t, *view.Brief)
-		stored, ok := svc.store.load(brief.BriefID)
-		if !ok || len(stored.Narrative) != len(kept) {
-			t.Fatalf("read %d: the stored brief lost its text: %+v", read, stored.Narrative)
-		}
 	}
 }
 
@@ -287,22 +270,12 @@ func TestTodayShowsTheTemplateForAStoredBriefWithoutText(t *testing.T) {
 		}
 	}
 
-	// A card that can no longer be read is not named; the others still are.
+	// A withdrawn source withholds the entire written template.
 	if err := rig.app.handoffStore.Delete(named); err != nil {
 		t.Fatal(err)
 	}
 	view, err = rig.app.GetLatestBrief()
-	if err != nil || view.Brief == nil || len(view.Brief.Narrative) == 0 {
-		t.Fatalf("view = %+v, %v", view, err)
-	}
-	for _, para := range view.Brief.Narrative {
-		if strings.Contains(para.Text, named) {
-			t.Fatalf("the template names a withdrawn card: %q", para.Text)
-		}
-	}
-	for _, offer := range view.Brief.Offers {
-		if strings.Contains(offer.Text+offer.Prompt, named) {
-			t.Fatalf("an offer names a withdrawn card: %+v", offer)
-		}
+	if err != nil || view.Brief == nil || len(view.Brief.Narrative) != 0 || len(view.Brief.Offers) != 0 {
+		t.Fatalf("withdrawn template = %+v, %v", view, err)
 	}
 }

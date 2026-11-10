@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"wails-gui/internal/handoff"
 )
 
 // mobileBriefCurrentWritten is a stored brief whose written words are there.
@@ -124,6 +125,41 @@ func TestMobileBriefSurfacesReadOneCurrentBrief(t *testing.T) {
 	view := todayBriefView(now, time.UTC, latest, ok, MobileBriefHealth{}, false, nil)
 	if view.Brief == nil || view.Brief.BriefID != want {
 		t.Fatalf("Today shows %+v, want %s", view.Brief, want)
+	}
+}
+
+func TestTodayBriefRepairsStaleLatestShownAfterEveningSeal(t *testing.T) {
+	clock := &fakeMobileBriefClock{now: mobileBriefTestDay(21, 13)}
+	svc, _ := newTestMobileBriefService(t, clock)
+	svc.app.mobileBriefSvc = svc
+	morning := mobileBriefCurrentWritten(t, "2026-10-09", mobileBriefSlotMorning, 7, "Morning fixture.")
+	evening := mobileBriefCurrentWritten(t, "2026-10-09", mobileBriefSlotEvening, 17, "Evening fixture.")
+	for _, brief := range []MobileBriefV1{morning, evening} {
+		for _, ref := range brief.Evidence {
+			if _, err := svc.app.handoffStore.Save(handoff.Entry{ID: ref.SourceID, Title: ref.Label, Status: handoff.StatusCompleted}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := svc.store.saveDocument(brief, clock.Now()); err != nil {
+			t.Fatal(err)
+		}
+		raw, err := marshalStoredMobileBrief(brief)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := svc.store.saveFinishedRead(brief.BriefID, mobileBriefFinishedRead{Schema: mobileBriefSealedSchema, Epoch: mobileBriefPrivacyEpoch.Load(), Print: svc.app.briefPrivacyPrint(), Source: mobileBriefSourceDigest(brief), Day: svc.readDay(), Brief: raw}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := svc.store.writeLatestShown(mobileBriefLatestShown{Version: 1, BriefID: morning.BriefID, Slot: morning.Slot, At: morning.AsOf}); err != nil {
+		t.Fatal(err)
+	}
+	view, err := svc.app.GetLatestBrief()
+	if err != nil || view.Brief == nil || view.Brief.BriefID != evening.BriefID || view.Brief.Slot != mobileBriefSlotEvening {
+		t.Fatalf("Today = %+v, error %v; want the evening brief", view.Brief, err)
+	}
+	if record, ok := svc.store.readLatestShown(); !ok || record.BriefID != evening.BriefID || record.Slot != mobileBriefSlotEvening {
+		t.Fatalf("latest shown = %+v, found %v; want evening", record, ok)
 	}
 }
 

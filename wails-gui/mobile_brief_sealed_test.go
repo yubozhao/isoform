@@ -1,9 +1,56 @@
 package main
 
 import (
+	"bytes"
+	"log"
 	"os"
+	"strings"
 	"testing"
 )
+
+func TestBriefReadLogsOneContentFreeOutcome(t *testing.T) {
+	_, svc, brief := newStoredMobileBriefPrivacyFixture(t)
+	svc.todayRefreshWG.Wait()
+	svc.wg.Wait()
+	var output bytes.Buffer
+	previous := log.Writer()
+	log.SetOutput(&output)
+	t.Cleanup(func() { log.SetOutput(previous) })
+	read, withheld, err := svc.finishedReadWithholding(brief)
+	if err != nil || withheld.Reason != "" || !mobileBriefHasWrittenText(read) {
+		t.Fatalf("fixture was not shown: reason=%s error=%v", withheld.Reason, err)
+	}
+	line := output.String()
+	if strings.Count(line, "[mobile-brief] read brief=") != 1 || !strings.Contains(line, "written=shown") || strings.Contains(line, read.Narrative[0].Text) {
+		t.Fatalf("unexpected read outcome log: %q", line)
+	}
+}
+
+func TestBriefReadLogsVisibleTemplateText(t *testing.T) {
+	_, svc, brief := newStoredMobileBriefPrivacyFixture(t)
+	svc.todayRefreshWG.Wait()
+	svc.wg.Wait()
+	brief.NarrativeStatus = "unavailable"
+	brief.Audio = nil
+	if err := svc.store.save(brief, svc.now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, wrote := svc.seal(t.Context(), brief); !wrote {
+		t.Fatal("fixture did not seal")
+	}
+	var output bytes.Buffer
+	previous := log.Writer()
+	log.SetOutput(&output)
+	t.Cleanup(func() { log.SetOutput(previous) })
+	read, _, err := svc.finishedReadWithholding(brief)
+	if err != nil || len(read.Narrative) == 0 {
+		t.Fatalf("template text was not shown: error=%v", err)
+	}
+	line := output.String()
+	if strings.Count(line, "[mobile-brief] read brief=") != 1 || !strings.Contains(line, "written=shown") || strings.Contains(line, read.Narrative[0].Text) {
+		t.Fatalf("unexpected template read outcome log: %q", line)
+	}
+}
 
 // Reading a sealed brief is a plain read of its saved copy: no gate runs, so a
 // store that is still opening cannot hide the brief (docs/brief-rebuild.md).

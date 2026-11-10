@@ -434,11 +434,11 @@ func (s *MemoryStore) indexFile(db *sql.DB, file memoryFileRecord, content strin
 
 // ── File change detection (polling-based) ───────────────────────────────
 
-func (s *MemoryStore) detectFileChanges() bool {
+func (s *MemoryStore) detectFileChanges() (changed, removedOrEdited bool) {
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
-		return false
+		return false, false
 	}
 	baseDir := s.baseDir
 	knowledgeDir := s.knowledgeDir
@@ -486,20 +486,23 @@ func (s *MemoryStore) detectFileChanges() bool {
 	scanDir(baseDir, MemorySourceMemory)
 	scanDir(knowledgeDir, MemorySourceKnowledge)
 
-	// Diff against previous snapshot.
-	changed := false
+	// Diff against previous snapshot. changed says any file differs and the
+	// index must read it again. removedOrEdited says a file that already existed
+	// was edited or is gone: only that is a privacy change (a new file cannot
+	// withdraw anything a sealed brief relies on).
+	changed, removedOrEdited = false, false
 	for key, hash := range currentHashes {
-		if prevHash, exists := prevHashes[key]; !exists || prevHash != hash {
+		prevHash, exists := prevHashes[key]
+		if !exists {
 			changed = true
-			break
+		} else if prevHash != hash {
+			changed, removedOrEdited = true, true
 		}
 	}
-	if !changed {
-		for key := range prevHashes {
-			if _, exists := currentHashes[key]; !exists {
-				changed = true
-				break
-			}
+	for key := range prevHashes {
+		if _, exists := currentHashes[key]; !exists {
+			changed, removedOrEdited = true, true
+			break
 		}
 	}
 
@@ -509,7 +512,7 @@ func (s *MemoryStore) detectFileChanges() bool {
 		s.mu.Unlock()
 	}
 
-	return changed
+	return changed, removedOrEdited
 }
 
 // ── Full reindex detection ──────────────────────────────────────────────

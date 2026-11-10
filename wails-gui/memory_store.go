@@ -321,28 +321,37 @@ func (s *MemoryStore) Run(ctx context.Context) {
 	// Interval sync ticker (cron-like periodic sync)
 	intervalTicker := time.NewTicker(time.Duration(memorySyncIntervalMinutes) * time.Minute)
 	defer intervalTicker.Stop()
+	firstWatch := true
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-watchTicker.C:
-			if s.detectFileChanges() {
-				// A changed file may be unreadable or protected now; the briefs
-				// that rely on it are amended (outside the store's lock).
-				memorySourcesChangedOnDisk()
-				s.mu.Lock()
-				s.dirty = true
-				s.lastReason = "watch"
-				s.mu.Unlock()
-				if err := s.Sync("watch"); err != nil {
-					log.Printf("[memory] watch sync failed: %v", err)
-				}
-			}
+			s.pollFileChanges(firstWatch)
+			firstWatch = false
 		case <-intervalTicker.C:
 			if err := s.Sync("interval"); err != nil {
 				log.Printf("[memory] interval sync failed: %v", err)
 			}
+		}
+	}
+}
+
+func (s *MemoryStore) pollFileChanges(firstWatch bool) {
+	changed, removedOrEdited := s.detectFileChanges()
+	if removedOrEdited || firstWatch && changed {
+		// On the first watch, existing files may have been edited while the app
+		// was closed. Later additions cannot withdraw an existing source.
+		memorySourcesChangedOnDisk()
+	}
+	if changed {
+		s.mu.Lock()
+		s.dirty = true
+		s.lastReason = "watch"
+		s.mu.Unlock()
+		if err := s.Sync("watch"); err != nil {
+			log.Printf("[memory] watch sync failed: %v", err)
 		}
 	}
 }

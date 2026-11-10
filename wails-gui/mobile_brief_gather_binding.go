@@ -239,17 +239,16 @@ func (a *App) mobileBriefGatherChange(ctx context.Context, revision *mobileBrief
 	if err != nil {
 		return "memory_files"
 	}
-	// Isoform writes memory notes all the time, and the brief is built from
-	// the snapshot pinned when it began (today-review v1.1.15 D12): a note
-	// written or edited meanwhile shows in the next brief. Only a cited note
-	// that left (removed or forgotten) counts; every other file still does.
+	// The pinned snapshot keeps unrelated new or edited notes out of this
+	// collection. An edit to a cited note, like its removal, must reject the
+	// old text and retry with a new snapshot.
 	for path, old := range revision.fileRevisions {
 		current, ok := currentFiles[path]
 		if ok && os.SameFile(old, current) && old.ModTime() == current.ModTime() && old.Size() == current.Size() && old.Mode() == current.Mode() {
 			continue
 		}
 		if id := revision.memoryNote(path); id != "" {
-			if !ok && revision.noteCounts(id) {
+			if revision.noteCounts(id) {
 				return "memory_files"
 			}
 			continue

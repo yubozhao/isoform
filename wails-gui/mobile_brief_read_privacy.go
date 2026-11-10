@@ -955,7 +955,11 @@ func (a *App) mobileBriefDeliveryOnce(ctx context.Context, brief MobileBriefV1) 
 			// The source reader may be temporarily unavailable. Hide the text
 			// without deleting its stored copy until that distinction is known.
 			changed = true
-			withhold(mobileBriefWithheldNotReady, "")
+			if morningBriefMissingLedgerProof(a.morningBriefLedgerStore(), brief.modelBinding.RankedLedgerProofs) {
+				withhold(mobileBriefWithheldSource, "brief")
+			} else {
+				withhold(mobileBriefWithheldNotReady, "")
+			}
 		}
 	}
 	// The About-you notes the model's prompt read are inputs too (backlog

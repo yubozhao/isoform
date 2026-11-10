@@ -870,7 +870,9 @@ func collectMobileBriefInput(
 	collectMobileBriefAttendance(a, &in)
 	collectMobileBriefWatching(a, &in)
 	collectMobileBriefDoing(a, &in)
-	collectMobileBriefPeople(a, &in)
+	if err := collectMobileBriefPeople(a, &in); errors.Is(err, storage.ErrReadRevisionChanged) {
+		return mobileBriefInput{}, errMobileBriefSourcesChanged
+	}
 	collectMobileBriefRecall(a, &in)
 	collectMobileBriefDeliverables(a, &in)
 	collectMobileBriefRecap(a, &in)
@@ -1120,11 +1122,11 @@ func collectMobileBriefSessions(a *App, in *mobileBriefInput) {
 	in.DayShape = day
 }
 
-func collectMobileBriefPeople(a *App, in *mobileBriefInput) {
+func collectMobileBriefPeople(a *App, in *mobileBriefInput) error {
 	people, err := a.ListPrincipalsWithStats()
 	if err != nil {
 		log.Printf("[mobile-brief] people unavailable: %v", err)
-		return
+		return err
 	}
 	for _, person := range people {
 		kind := person.Principal.Kind
@@ -1153,6 +1155,7 @@ func collectMobileBriefPeople(a *App, in *mobileBriefInput) {
 			AppsShown:  true,
 		})
 	}
+	return nil
 }
 
 // collectMobileBriefRecall adds memory and knowledge entries updated in the

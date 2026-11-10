@@ -2,9 +2,32 @@ package main
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"sort"
 	"time"
 )
+
+// A historical proof cannot be recovered by waiting for a store to open if
+// its referenced brief has already left an accessible store. Treat only a
+// definite missing file as a withdrawal; other I/O failures remain transient.
+func morningBriefMissingLedgerProof(store *mobileBriefStore, proofs []morningBriefLedgerProof) bool {
+	if store == nil || store.dir == "" {
+		return false
+	}
+	if info, err := os.Stat(store.dir); err != nil || !info.IsDir() {
+		return false
+	}
+	for _, proof := range proofs {
+		if !mobileBriefIDPattern.MatchString(proof.BriefID) {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(store.dir, proof.BriefID+".json")); os.IsNotExist(err) {
+			return true
+		}
+	}
+	return false
+}
 
 // A historical fact stays inside code. The model receives only the resulting
 // change flag, never the previous title or other previous source text.

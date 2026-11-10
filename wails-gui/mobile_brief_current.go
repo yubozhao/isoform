@@ -133,8 +133,8 @@ func (s *mobileBriefService) noteLatestShownIfNewer(brief MobileBriefV1) {
 	s.noteLatestShown(brief)
 }
 
-// latestShown is the latest brief as every surface reads it. The record's brief
-// comes first; then the other stored briefs, newest first. The first one whose
+// latestShown is the latest brief as every surface reads it. Stored briefs are
+// checked newest first, including any newer than the record. The first whose
 // sealed words may be shown is the latest. A brief whose words were withheld
 // for a transient reason ends the search: it is hidden while the reason lasts,
 // and older briefs are not shown in its place. With no brief that has written
@@ -185,17 +185,9 @@ func (s *mobileBriefService) latestShown() (MobileBriefV1, bool, error) {
 		}
 		return brief, true, nil
 	}
-	if record, ok := s.store.readLatestShown(); ok {
-		if source, found := s.store.load(record.BriefID); found {
-			brief, done, err := visit(source)
-			if err != nil {
-				return MobileBriefV1{}, false, err
-			}
-			if done {
-				return pick(brief)
-			}
-		}
-	}
+	// A previous record can lag a newer completed seal, for example after a
+	// restart between saving the copy and updating the pointer. Inspect the
+	// stored briefs in time order before repairing the record in pick.
 	for _, source := range s.store.briefs() {
 		brief, done, err := visit(source)
 		if err != nil {

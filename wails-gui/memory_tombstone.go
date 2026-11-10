@@ -457,7 +457,14 @@ func persistMemoryTombstones(dir string, tombstones []memoryTombstone) error {
 		return err
 	}
 	defer memoryTombstoneGeneration.Add(1)
-	return os.Rename(file.Name(), filepath.Join(dir, memoryTombstonesFile))
+	if err := os.Rename(file.Name(), filepath.Join(dir, memoryTombstonesFile)); err != nil {
+		return err
+	}
+	// A tombstone is a retraction written to a file the memory watcher does not
+	// read (it reads .md only), so the write advances the epoch itself.
+	briefPrivacyChanged()
+	briefPrivacyAmendSoon()
+	return nil
 }
 
 func isUserEditedMemory(content string) bool {
