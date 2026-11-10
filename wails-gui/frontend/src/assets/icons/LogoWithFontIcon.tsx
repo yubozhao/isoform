@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { LogoIcon } from "./LogoIcon";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "react-i18next";
@@ -7,9 +8,12 @@ interface LogoWithFontIconProps {
     height?: number;
     /** Play a quick double blink of the dot when the logo is hovered. */
     blinkOnHover?: boolean;
+    /** Draws this 19-unit mark in place of the still logo (the sidebar's
+     *  animated mark); the wordmark beside it never moves. */
+    mark?: ReactNode;
 }
 
-export function LogoWithFontIcon({ className, height = 19, blinkOnHover }: LogoWithFontIconProps) {
+export function LogoWithFontIcon({ className, height = 19, blinkOnHover, mark }: LogoWithFontIconProps) {
     const { t } = useTranslation('common');
     const width = (90 / 19) * height;
     return (
@@ -21,7 +25,7 @@ export function LogoWithFontIcon({ className, height = 19, blinkOnHover }: LogoW
             xmlns="http://www.w3.org/2000/svg"
             className={cn(className, 'text-accent', blinkOnHover && 'logo-hover-blink')}
         >
-            <LogoIcon size={19} eyeClassName={blinkOnHover ? "logo-eye-hover" : undefined} />
+            {mark ?? <LogoIcon size={19} eyeClassName={blinkOnHover ? "logo-eye-hover" : undefined} />}
             {/* Wordmark: the product name is Isoform (the letter paths spelled
                 the old name). A fixed textLength keeps the width stable
                 whatever font the WebView resolves. */}

@@ -18,6 +18,7 @@ vi.mock("@/lib/wails-shim-app", () => ({
     GetPlatformPermissions: vi.fn(async () => ({ items: [] })),
     GetBackgroundListening: vi.fn(async () => true),
     GetDoingNow: vi.fn(async () => ({ kind: "watching" })),
+    GetLatestBrief: vi.fn(async () => ({ brief: null, building: false, enabled: true, nextAt: "", nextSlot: "" })),
     GetCaptureCounts: vi.fn(async () => ({ sources: [] })),
     PauseObservationFor: vi.fn(async () => {}),
     ResumeObservation: vi.fn(async () => {}),

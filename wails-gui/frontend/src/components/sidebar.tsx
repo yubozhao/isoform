@@ -20,7 +20,7 @@ import { SearchIcon } from "@/assets/icons/SearchIcon";
 import { TodayIcon } from "@/assets/icons/TodayIcon";
 import { ChatBubbleIcon } from "@/assets/icons/ChatBubbleIcon";
 import { LogoWithFontIcon } from "@/assets/icons/LogoWithFontIcon";
-import { LogoIcon } from "@/assets/icons/LogoIcon";
+import { MarkMotion } from "@/components/mark-motion/MarkMotion";
 import { HandoffIcon } from "@/assets/icons/HandoffIcon";
 import { TranscriptIcon } from "@/assets/icons/TranscriptIcon";
 import { ObservingStatus } from "@/components/observing-status";
@@ -244,6 +244,8 @@ export function Sidebar({
             activeStandaloneSessionId !== mainChat?.localId &&
             standaloneSessions.some((s) => s.localId === activeStandaloneSessionId));
     const isOnMainChat = appMode === "chat" && !otherChatOnScreen;
+    // A page change blinks the mark once (mark motion rule 6).
+    const markPageKey = [appMode, todayOpen, tasksOpen, activityOpen, activeTopicId, isOnMainChat].join("|");
 
     // Only pinned chats are listed; every other chat is reached from Search.
     const { pinnedSessions } = useMemo(
@@ -586,7 +588,7 @@ export function Sidebar({
                     {collapsed ? (
                         <div className="flex flex-col items-center w-full flex-1 min-h-0 px-2.5 pb-3 pt-11 gap-1">
                             <Button variant="quiet" size="icon" className="shrink-0 mb-2" aria-label={t("sidebar.show")} title={t("sidebar.show")} onClick={onToggleCollapse}>
-                                <LogoIcon size={19} />
+                                <MarkMotion size={19} needsCount={waitingCount} pageKey={markPageKey} />
                             </Button>
                             {railRows.map((row, index) => row === "divider" ? (
                                 <div key="divider" data-sidebar-divider className="my-1 h-px w-5 shrink-0 bg-border-subtle" />
@@ -639,6 +641,7 @@ export function Sidebar({
                                 height={20}
                                 className="text-accent"
                                 blinkOnHover
+                                mark={<MarkMotion size={19} needsCount={waitingCount} pageKey={markPageKey} hoverBlink />}
                             />
                             {isStaging && (
                                 <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider bg-warning-bg text-warning border border-warning-border">

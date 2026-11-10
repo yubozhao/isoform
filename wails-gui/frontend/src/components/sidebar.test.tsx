@@ -31,6 +31,9 @@ vi.mock("@/lib/wails-shim-app", () => ({
     RestartToUpdate: vi.fn(async () => {}),
     ListHandoffs: vi.fn(async () => []),
     EnsureSelfProfile: mocks.ensureSelf,
+    // The sidebar's mark follows the status line and the brief.
+    GetDoingNow: vi.fn(async () => ({ kind: "watching" })),
+    GetLatestBrief: vi.fn(async () => ({ brief: null, building: false, enabled: true, nextAt: "", nextSlot: "" })),
 }));
 vi.mock("../../wailsjs/runtime/runtime", () => ({ EventsOn: vi.fn(() => () => {}) }));
 
@@ -138,8 +141,18 @@ describe("Sidebar (main chat, no side chats)", () => {
         expect(lockup).toHaveClass("text-accent");
         const mark = lockup.querySelector("svg")!;
         expect(mark).toHaveClass("text-accent");
-        expect(mark.querySelectorAll("path")).toHaveLength(2);
-        expect(lockup.querySelector("rect, image, filter, linearGradient")).toBeNull();
+        // At rest the mark is the logo's two paths; the animated drawing
+        // (mark motion v1.0.1) stays hidden until something plays.
+        expect(mark.querySelectorAll('[data-k="logo"] path:not([data-k="llid"])')).toHaveLength(2);
+        expect(mark.querySelector('[data-k="kit"]')).toHaveStyle({ display: "none" });
+        expect(lockup.querySelector("image, filter, linearGradient")).toBeNull();
+        expect([...lockup.querySelectorAll("rect")].every((rect) => rect.parentElement?.localName === "clipPath")).toBe(true);
+        for (const el of mark.querySelectorAll("[fill], [stroke]")) {
+            for (const attr of ["fill", "stroke"]) {
+                const value = el.getAttribute(attr);
+                if (value) expect(["none", "var(--color-accent)"]).toContain(value);
+            }
+        }
         expect(lockup.querySelector(".logo-eye-hover")).not.toBeNull();
     });
 
