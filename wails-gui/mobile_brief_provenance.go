@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"wails-gui/storage"
 )
 
 // Source identities are local to the seal. Later Today refreshes may add
@@ -205,12 +207,37 @@ func (a *App) mobileBriefEditableSource(ctx context.Context, ref MobileBriefRef)
 	}
 }
 
-func (a *App) mobileBriefEditedSources(source MobileBriefV1, sealedAt time.Time) (string, map[string]bool) {
+func (a *App) mobileBriefEditedSources(source MobileBriefV1, sealedAt time.Time, fingerprints map[string]string) (string, map[string]bool) {
 	var kind string
 	changed := map[string]bool{}
+	var sources todayChatSources
+	var collected bool
 	for _, ref := range source.Evidence {
-		modified, _, supported, found := a.mobileBriefEditableSource(context.Background(), ref)
-		if supported && (!found || sealedAt.IsZero() || modified.After(sealedAt)) {
+		modified, value, supported, found := a.mobileBriefEditableSource(context.Background(), ref)
+		sealedPrint := fingerprints[mobileBriefSourceKey(ref.SourceKind, ref.SourceID)]
+		edited := false
+		if supported {
+			switch true {
+			case !found:
+				edited = true
+			case strings.HasPrefix(sealedPrint, "v2:"):
+				edited = sealedPrint != mobileBriefContentFingerprint(ref, value)
+			case sealedPrint != "":
+				edited = sealedPrint != mobileBriefModelDigest(value)
+			default:
+				edited = sealedAt.IsZero() || modified.After(sealedAt)
+			}
+		} else if sealedPrint != "" {
+			if !collected {
+				sources = a.collectTodayChatSources(context.Background(), mobileBriefAsOfTime(source))
+				collected = true
+			}
+			current, ok := a.mobileBriefModelSourceDigest(context.Background(), ref, source, sources)
+			// Browser evidence retains its own privacy-checked provenance when
+			// routine retention removes the underlying visit rows.
+			edited = (!ok && ref.SourceKind != mobileBriefWebSource) || (ok && current != sealedPrint)
+		}
+		if edited {
 			if kind == "" {
 				kind = ref.SourceKind
 			}
@@ -229,16 +256,16 @@ func (a *App) mobileBriefEditedSources(source MobileBriefV1, sealedAt time.Time)
 }
 
 func (a *App) mobileBriefEditedSource(source MobileBriefV1, sealedAt time.Time) (string, bool) {
-	kind, _ := a.mobileBriefEditedSources(source, sealedAt)
+	kind, _ := a.mobileBriefEditedSources(source, sealedAt, nil)
 	return kind, kind != ""
 }
 
 // An edit may arrive with a separate privacy withdrawal. In that case the old
 // copy cannot provide the unaffected sections until the current gates run.
-func (s *mobileBriefService) withholdEditedRead(ctx context.Context, source MobileBriefV1, saved mobileBriefFinishedRead, brief MobileBriefV1, changed map[string]bool) MobileBriefV1 {
+func (s *mobileBriefService) withholdEditedRead(ctx context.Context, saved mobileBriefFinishedRead, brief MobileBriefV1, kind string, changed map[string]bool) MobileBriefV1 {
 	print := s.app.briefPrivacyPrint()
-	if saved.Print != print {
-		projected, withheld := s.app.mobileBriefForProjectionWithholding(ctx, source, true)
+	if saved.Print != print || len(changed) > 0 || (kind != "history" && kind != "handoff") {
+		projected, withheld := s.app.mobileBriefForProjectionWithholding(ctx, brief, true)
 		if withheld.Transient() || print != s.app.briefPrivacyPrint() {
 			return mobileBriefPaused(brief)
 		}
@@ -303,7 +330,52 @@ func mobileBriefWithholdEdited(brief MobileBriefV1, changed map[string]bool) Mob
 	return brief
 }
 
-// Fingerprints are recorded as provenance only and never used as a read gate.
+// v2 fingerprints omit metadata that does not contribute to the brief. Old
+// unprefixed fingerprints hash the whole record and remain comparable as-is.
+func mobileBriefContentFingerprint(ref MobileBriefRef, value any) string {
+	switch ref.SourceKind {
+	case "memory", taskContextSourceMemoryKind:
+		data, ok := value.([]byte)
+		if !ok {
+			return ""
+		}
+		content := string(data)
+		return "v2:" + mobileBriefModelDigest(struct{ Title, Body string }{extractTitle(content), memoryConfirmationBody(content)})
+	case "principal":
+		row, ok := value.(storage.PrincipalRow)
+		if !ok {
+			return ""
+		}
+		return "v2:" + mobileBriefModelDigest(struct {
+			DisplayName, Relationship, Notes string
+			Aliases                          []string
+		}{row.DisplayName, row.Relationship, row.Notes, row.Aliases})
+	case mobileBriefCalendarSource:
+		row, ok := value.(storage.CalendarEventRow)
+		if !ok {
+			return ""
+		}
+		type attendee struct {
+			Name, Email string
+			IsMe        bool
+		}
+		var attendees []attendee
+		for _, person := range row.Attendees {
+			attendees = append(attendees, attendee{person.Name, person.Email, person.IsMe})
+		}
+		return "v2:" + mobileBriefModelDigest(struct {
+			Title                                                                                                                 string
+			StartAt, EndAt                                                                                                        int64
+			AllDay                                                                                                                bool
+			TimeZone, Location, ConferenceURL, ConferenceHost, URL, Availability, Status, MyStatus, OrganizerEmail, OrganizerName string
+			Attendees                                                                                                             []attendee
+		}{row.Title, row.StartAt, row.EndAt, row.AllDay, row.TimeZone, row.Location, row.ConferenceURL, row.ConferenceHost, row.URL, row.Availability, row.Status, row.MyStatus, row.OrganizerEmail, row.OrganizerName, attendees})
+	default:
+		return "v2:" + mobileBriefModelDigest(value)
+	}
+}
+
+// Store the source content at the original seal boundary.
 func (a *App) mobileBriefSourceFingerprints(ctx context.Context, source MobileBriefV1) map[string]string {
 	prints := make(map[string]string, len(source.Evidence))
 	var sources todayChatSources
@@ -312,7 +384,7 @@ func (a *App) mobileBriefSourceFingerprints(ctx context.Context, source MobileBr
 		key := mobileBriefSourceKey(ref.SourceKind, ref.SourceID)
 		_, value, supported, found := a.mobileBriefEditableSource(ctx, ref)
 		if supported && found {
-			prints[key] = mobileBriefModelDigest(value)
+			prints[key] = mobileBriefContentFingerprint(ref, value)
 			continue
 		}
 		if !supported {

@@ -413,13 +413,13 @@ func (s *mobileBriefService) seal(ctx context.Context, source MobileBriefV1) (Mo
 	if found {
 		sealedAt = s.store.finishedReadTime(source.BriefID, previous)
 		cited = mobileBriefSealedSources(previous, source)
-		if kind, changed := s.app.mobileBriefEditedSources(cited, sealedAt); kind != "" {
+		if kind, changed := s.app.mobileBriefEditedSources(cited, sealedAt, previous.Fingerprints); kind != "" {
 			var old MobileBriefV1
 			if unmarshalStoredMobileBrief(previous.Brief, &old) != nil {
 				old = mobileBriefPaused(source)
 			}
 			changed = mobileBriefChangedRefs(cited, source, old, changed)
-			return s.withholdEditedRead(ctx, source, previous, old, changed), mobileBriefWithholding{Reason: mobileBriefWithheldSource, SourceKind: kind}, true
+			return s.withholdEditedRead(ctx, previous, old, kind, changed), mobileBriefWithholding{Reason: mobileBriefWithheldSource, SourceKind: kind}, true
 		}
 	}
 	epoch := mobileBriefPrivacyEpoch.Load()
@@ -436,10 +436,14 @@ func (s *mobileBriefService) seal(ctx context.Context, source MobileBriefV1) (Mo
 		return brief, withheld, false
 	}
 	fingerprints := previous.Fingerprints
-	if !found || fingerprints == nil {
+	if !found {
+		if kind, changed := s.app.mobileBriefEditedSources(cited, sealedAt, nil); kind != "" {
+			changed = mobileBriefChangedRefs(cited, source, brief, changed)
+			return mobileBriefWithholdEdited(brief, changed), mobileBriefWithholding{Reason: mobileBriefWithheldSource, SourceKind: kind}, true
+		}
 		fingerprints = s.app.mobileBriefSourceFingerprints(ctx, cited)
 	}
-	if kind, changed := s.app.mobileBriefEditedSources(cited, sealedAt); kind != "" {
+	if kind, changed := s.app.mobileBriefEditedSources(cited, sealedAt, fingerprints); kind != "" {
 		changed = mobileBriefChangedRefs(cited, source, brief, changed)
 		return mobileBriefWithholdEdited(brief, changed), mobileBriefWithholding{Reason: mobileBriefWithheldSource, SourceKind: kind}, true
 	}
@@ -471,7 +475,7 @@ func (s *mobileBriefService) finishedReadWithholding(source MobileBriefV1) (resu
 				reason = "no_written_text"
 			}
 		}
-		log.Printf("[mobile-brief] read brief=%s written=%s reason=%s", source.BriefID, status, reason)
+		log.Printf("[mobile-brief] read brief=%s written=%s reason=%s kind=%s", source.BriefID, status, reason, resultWithheld.SourceKind)
 	}()
 	mobileBriefLive.Store(s)
 	brief, withheld, pending, err := s.sealedReadOrPending(source)
@@ -485,9 +489,9 @@ func (s *mobileBriefService) finishedReadWithholding(source MobileBriefV1) (resu
 		}
 		if found {
 			cited := mobileBriefSealedSources(saved, source)
-			if kind, changed := s.app.mobileBriefEditedSources(cited, s.store.finishedReadTime(source.BriefID, saved)); kind != "" {
+			if kind, changed := s.app.mobileBriefEditedSources(cited, s.store.finishedReadTime(source.BriefID, saved), saved.Fingerprints); kind != "" {
 				changed = mobileBriefChangedRefs(cited, source, brief, changed)
-				return s.withholdEditedRead(context.Background(), source, saved, brief, changed), mobileBriefWithholding{Reason: mobileBriefWithheldSource, SourceKind: kind}, nil
+				return s.withholdEditedRead(context.Background(), saved, brief, kind, changed), mobileBriefWithholding{Reason: mobileBriefWithheldSource, SourceKind: kind}, nil
 			}
 		}
 		if kind, changed := s.copyPrivacyChange(source); changed {
