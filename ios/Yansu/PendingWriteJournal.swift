@@ -50,6 +50,31 @@ struct PendingWrite: Codable, Equatable, Sendable {
         /// The person the reply is to, when the phone knows it. Optional so older journals still decode.
         var person: String? = nil
     }
+    /// Persisted separately from the legacy dispatch markers so older journals remain readable.
+    struct TodayLifecycle: Codable, Equatable, Sendable {
+        let version: Int
+        let state: TodayState
+    }
+
+    enum TodayState: String, Codable, CaseIterable, Sendable {
+        case reserved, dispatched, outcomeUnknown, resolved, dismissed
+
+        enum Event: CaseIterable {
+            case dispatch, expire, answer, dismiss, undo
+        }
+
+        func transition(_ event: Event) -> TodayState? {
+            switch (self, event) {
+            case (.reserved, .dispatch): return .dispatched
+            case (.dispatched, .dispatch): return .dispatched
+            case (.dispatched, .expire): return .outcomeUnknown
+            case (.dispatched, .answer), (.outcomeUnknown, .answer): return .resolved
+            case (.outcomeUnknown, .dismiss), (.reserved, .undo): return .dismissed
+            default: return nil
+            }
+        }
+    }
+
     enum Operation: String, Codable, Sendable {
         // Retired with the Desk. Kept so a journal written by an older build still decodes;
         // ActionStore.pruneJournal drops these entries, because nothing can send them again.
@@ -99,10 +124,26 @@ struct PendingWrite: Codable, Equatable, Sendable {
     var todayCorrection: TodayCorrection? = nil
     var todayDraftSend: TodayDraftSend? = nil
     var todayDeviceID: String? = nil
+    var todayLifecycle: TodayLifecycle? = nil
     var calendarHold: CalendarHoldReplay? = nil
     /// The words of a first-read correction still waiting for the computer (P163), so a reopened card can show them.
     /// Optional so older journals still decode.
     var correctionWords: String? = nil
+
+    var todayState: TodayState? {
+        guard todayReplay != nil || todayRefresh == true || todayFeedback != nil || todayCorrection != nil else { return nil }
+        if let todayLifecycle {
+            // An unrecognised version must never make a write eligible for replay.
+            return todayLifecycle.version == 1 ? todayLifecycle.state : .outcomeUnknown
+        }
+        if todayReplay?.dispatched == true || todayRefreshDispatchedAt != nil ||
+            todayFeedback?.dispatchedAt != nil || todayCorrection?.dispatchedAt != nil { return .dispatched }
+        return .reserved
+    }
+
+    var todayDispatchedAt: Date? {
+        todayReplay?.dispatchedAt ?? todayRefreshDispatchedAt ?? todayFeedback?.dispatchedAt ?? todayCorrection?.dispatchedAt
+    }
 }
 
 enum WriteFingerprint {
@@ -116,6 +157,7 @@ enum WriteFingerprint {
 /// Keeps pending writes in Application Support until the hub answers, so a retry after a crash or a
 /// relaunch sends the same idempotency key and the hub replays the original receipt.
 actor PendingWriteJournal {
+    static let receiptLifetime: TimeInterval = 24 * 60 * 60
     /// Capture legacy chat identities before launch maintenance can prune old keys. The cache uses them only
     /// to identify hashed outgoing files; requests still reserve keys under the current hub.
     nonisolated let initialChatMessageTargets: [String]
@@ -211,6 +253,11 @@ actor PendingWriteJournal {
         loadIfNeeded()
         let currentHubID = hubID()
         try adoptLegacyWrites(for: currentHubID)
+        // Today writes have their own dispatch deadline and must not bypass it through the generic writer,
+        // including a different choice for the same target.
+        guard !writes.contains(where: {
+            $0.hubID == currentHubID && $0.operation == operation && $0.target == target && $0.todayState != nil
+        }) else { throw HubRequestError.conflict(message: "") }
         if let write = writes.first(where: {
             $0.hubID == currentHubID && $0.operation == operation && $0.target == target && $0.fingerprint == fingerprint
         }) { return write }
@@ -375,12 +422,7 @@ actor PendingWriteJournal {
     }
 
     func markTodayCorrectionDispatched(key: String, at date: Date) throws -> PendingWrite? {
-        loadIfNeeded()
-        guard let index = writes.firstIndex(where: { $0.key == key && $0.hubID == hubID() && $0.todayCorrection != nil }) else { return nil }
-        let previous = writes[index]
-        if writes[index].todayCorrection?.dispatchedAt == nil { writes[index].todayCorrection?.dispatchedAt = date }
-        do { try persist() } catch { writes[index] = previous; throw error }
-        return writes[index]
+        try dispatchToday(key: key, at: date, matching: { $0.todayCorrection != nil })
     }
 
     func reserveTodayFeedback(_ feedback: PendingWrite.TodayFeedback, deviceID: String,
@@ -404,34 +446,66 @@ actor PendingWriteJournal {
     }
 
     func markTodayFeedbackDispatched(key: String, at date: Date) throws -> PendingWrite? {
-        loadIfNeeded()
-        guard let index = writes.firstIndex(where: { $0.key == key && $0.hubID == hubID() && $0.todayFeedback != nil }) else { return nil }
-        let previous = writes[index]
-        if writes[index].todayFeedback?.dispatchedAt == nil { writes[index].todayFeedback?.dispatchedAt = date }
-        do { try persist() } catch { writes[index] = previous; throw error }
-        return writes[index]
+        try dispatchToday(key: key, at: date, matching: { $0.todayFeedback != nil })
     }
 
     func markTodayRefreshDispatched(key: String, at date: Date) throws -> PendingWrite? {
+        try dispatchToday(key: key, at: date, matching: { $0.todayRefresh == true })
+    }
+
+    func markTodayDispatched(key: String, at date: Date) throws -> PendingWrite? {
+        try dispatchToday(key: key, at: date, matching: { $0.todayReplay != nil })
+    }
+
+    /// The actor checks the deadline immediately before sending, including after a suspended caller resumes.
+    private func dispatchToday(key: String, at date: Date, matching: (PendingWrite) -> Bool) throws -> PendingWrite? {
         loadIfNeeded()
-        guard let index = writes.firstIndex(where: { $0.key == key && $0.hubID == hubID() && $0.todayRefresh == true }) else { return nil }
+        guard let index = writes.firstIndex(where: { $0.key == key && $0.hubID == hubID() && matching($0) }) else { return nil }
+        if writes[index].todayState == .dispatched &&
+            (writes[index].todayDispatchedAt.map { date.timeIntervalSince($0) >= Self.receiptLifetime } ?? true) {
+            _ = try transitionToday(at: index, event: .expire)
+            return nil
+        }
+        guard writes[index].todayState?.transition(.dispatch) != nil else { return nil }
         let previous = writes[index]
-        if writes[index].todayRefreshDispatchedAt == nil { writes[index].todayRefreshDispatchedAt = date }
-        do { try persist() } catch { writes[index] = previous; throw error }
+        if writes[index].todayReplay != nil {
+            writes[index].todayReplay?.dispatched = true
+            if writes[index].todayReplay?.dispatchedAt == nil { writes[index].todayReplay?.dispatchedAt = date }
+        }
+        if writes[index].todayRefresh == true && writes[index].todayRefreshDispatchedAt == nil { writes[index].todayRefreshDispatchedAt = date }
+        if writes[index].todayFeedback != nil && writes[index].todayFeedback?.dispatchedAt == nil { writes[index].todayFeedback?.dispatchedAt = date }
+        if writes[index].todayCorrection != nil && writes[index].todayCorrection?.dispatchedAt == nil { writes[index].todayCorrection?.dispatchedAt = date }
+        do { _ = try transitionToday(at: index, event: .dispatch) } catch { writes[index] = previous; throw error }
         return writes[index]
     }
 
-    /// Persist the dispatched marker before attempting the network write. Once a
-    /// request may have reached the Mac it cannot safely be undone locally.
-    func markTodayDispatched(key: String, at date: Date) throws -> PendingWrite? {
+    /// Expiry records uncertainty; it never sends a request or asserts whether one was executed.
+    func expireToday(at date: Date) throws {
         loadIfNeeded()
-        guard let index = writes.firstIndex(where: { $0.key == key && $0.hubID == hubID() }),
-              writes[index].todayReplay != nil else { return nil }
-        let previous = writes[index]
-        writes[index].todayReplay?.dispatched = true
-        if writes[index].todayReplay?.dispatchedAt == nil { writes[index].todayReplay?.dispatchedAt = date }
-        do { try persist() } catch { writes[index] = previous; throw error }
-        return writes[index]
+        for index in writes.indices where writes[index].hubID == hubID() && writes[index].todayState == .dispatched {
+            if writes[index].todayDispatchedAt.map({ date.timeIntervalSince($0) >= Self.receiptLifetime }) ?? true {
+                _ = try transitionToday(at: index, event: .expire)
+            }
+        }
+    }
+
+    @discardableResult
+    func transitionToday(key: String, event: PendingWrite.TodayState.Event) throws -> Bool {
+        loadIfNeeded()
+        guard let index = writes.firstIndex(where: { $0.key == key && $0.hubID == hubID() }) else { return false }
+        return try transitionToday(at: index, event: event)
+    }
+
+    private func transitionToday(at index: Int, event: PendingWrite.TodayState.Event) throws -> Bool {
+        guard let next = writes[index].todayState?.transition(event) else { return false }
+        let previous = writes
+        if next == .resolved || next == .dismissed {
+            writes.remove(at: index)
+        } else {
+            writes[index].todayLifecycle = PendingWrite.TodayLifecycle(version: 1, state: next)
+        }
+        do { try persist() } catch { writes = previous; throw error }
+        return true
     }
 
     /// A draft send the relay took and never answered is gone from the relay after a day (PROTOCOL.md section 23), so
@@ -444,12 +518,9 @@ actor PendingWriteJournal {
 
     func undoToday(key: String) throws -> Bool {
         loadIfNeeded()
-        guard let index = writes.firstIndex(where: { $0.key == key && $0.hubID == hubID() }),
-              writes[index].todayReplay?.dispatched == false ||
-                (writes[index].todayRefresh == true && writes[index].todayRefreshDispatchedAt == nil) ||
-                (writes[index].todayFeedback != nil && writes[index].todayFeedback?.dispatchedAt == nil) ||
-                (writes[index].todayCorrection != nil && writes[index].todayCorrection?.dispatchedAt == nil) ||
-                (writes[index].todayDraftSend != nil && Self.draftSendCanBeUndone(writes[index].todayDraftSend)) else { return false }
+        guard let index = writes.firstIndex(where: { $0.key == key && $0.hubID == hubID() }) else { return false }
+        if writes[index].todayState != nil { return try transitionToday(at: index, event: .undo) }
+        guard writes[index].todayDraftSend != nil && Self.draftSendCanBeUndone(writes[index].todayDraftSend) else { return false }
         let previous = writes
         writes.remove(at: index)
         do { try persist() } catch { writes = previous; throw error }

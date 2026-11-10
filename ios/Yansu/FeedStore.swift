@@ -96,6 +96,8 @@ final class FeedStore: ObservableObject {
     func loadPendingToday() async {
         let current = generation
         guard let device = deviceID() else { pendingToday = []; return }
+        do { try await journal.expireToday(at: now()) }
+        catch { todayNotice = String(localized: "Isoform could not save this change. Try again.") }
         let values = await journal.entries().filter { $0.todayFeedback != nil && $0.todayDeviceID == device }
         guard current == generation, deviceID() == device else { return }
         pendingToday = values
@@ -124,6 +126,12 @@ final class FeedStore: ObservableObject {
         await loadPendingToday()
     }
 
+    func dismissUnknownToday(_ key: String) async {
+        do { _ = try await journal.transitionToday(key: key, event: .dismiss) }
+        catch { todayNotice = String(localized: "Isoform could not save this change. Try again.") }
+        await loadPendingToday()
+    }
+
     func reconcileToday(_ snapshot: MobileTodaySnapshot, isCurrent: @MainActor () -> Bool = { true }) async {
         let current = generation
         let device = deviceID()
@@ -134,7 +142,9 @@ final class FeedStore: ObservableObject {
             return feedback.bodyVersion != nil && feedback.bodyVersion != brief.bodyVersion
         }
         guard current == generation, deviceID() == device, isCurrent() else { return }
-        if !obsolete.isEmpty { await journal.remove(keys: obsolete.map(\.key)) }
+        for write in obsolete where write.todayState == .reserved {
+            _ = try? await journal.transitionToday(key: write.key, event: .undo)
+        }
         await loadPendingToday()
     }
 
@@ -145,10 +155,11 @@ final class FeedStore: ObservableObject {
         defer { replayingToday = false }
         for pending in await journal.entries() where pending.todayFeedback != nil && pending.todayDeviceID == device {
             guard current == generation, deviceID() == device, isPaired(), !Task.isCancelled else { break }
-            if let sent = pending.todayFeedback?.dispatchedAt, now().timeIntervalSince(sent) >= ActionStore.journalRetention { continue }
+            var didDispatch = false
             do {
                 guard let write = try await journal.markTodayFeedbackDispatched(key: pending.key, at: now()),
                       let feedback = write.todayFeedback else { continue }
+                didDispatch = true
                 await loadPendingToday()
                 _ = try await HubRequestScope.$hubID.withValue(write.hubID) {
                     try await HubRequestScope.$deviceID.withValue(write.todayDeviceID) {
@@ -159,10 +170,14 @@ final class FeedStore: ObservableObject {
                 guard current == generation, deviceID() == device else { return }
                 record(feedback.cardKey, Choice(action: feedback.action, delivery: .sent, at: write.createdAt,
                                                 briefID: feedback.briefID, itemID: feedback.itemID))
-                await journal.remove(keys: [write.key])
+                _ = try await journal.transitionToday(key: write.key, event: .answer)
             } catch {
+                guard didDispatch else {
+                    todayNotice = String(localized: "Isoform could not save this change. Try again.")
+                    break
+                }
                 if JournaledWriter.disposition(for: error) != .keep {
-                    await journal.remove(keys: [pending.key])
+                    _ = try? await journal.transitionToday(key: pending.key, event: .answer)
                     todayNotice = String(localized: "Your computer could not finish that. Try again.")
                 }
                 else { break }

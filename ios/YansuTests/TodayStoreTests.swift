@@ -287,6 +287,111 @@ final class TodayStoreTests: XCTestCase {
         XCTAssertNil(store.newestBrief(), "the lead is not a brief: nothing shows until the text arrives")
     }
 
+    func testTodayWriteStateTransitions() {
+        typealias State = PendingWrite.TodayState
+        typealias Event = State.Event
+        let allowed: [State: [Event: State]] = [
+            .reserved: [.dispatch: .dispatched, .undo: .dismissed],
+            .dispatched: [.dispatch: .dispatched, .expire: .outcomeUnknown, .answer: .resolved],
+            .outcomeUnknown: [.answer: .resolved, .dismiss: .dismissed],
+            .resolved: [:], .dismissed: [:]
+        ]
+        for state in State.allCases {
+            for event in Event.allCases {
+                XCTAssertEqual(state.transition(event), allowed[state]?[event], "\(state) + \(event)")
+            }
+        }
+    }
+
+    func testExpiredAmbiguousRefreshSurvivesRelaunchAndCanBeDismissed() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("journal.json")
+        let sent = Date(timeIntervalSince1970: 1_800_000_000)
+        let first = PendingWriteJournal(fileURL: url, hubID: { "mac" })
+        let write = try await first.reserveTodayRefresh(deviceID: "phone", makeKey: { "old" }, createdAt: sent)
+        _ = try await first.markTodayRefreshDispatched(key: write.key, at: sent)
+        let reopened = PendingWriteJournal(fileURL: url, hubID: { "mac" })
+        let expired = sent.addingTimeInterval(ActionStore.journalRetention)
+        let replay = try await reopened.markTodayRefreshDispatched(key: write.key, at: expired)
+        XCTAssertNil(replay, "an ambiguous write must not be replayed after receipt expiry")
+        let restored = await reopened.entries()
+        XCTAssertEqual(restored.first?.todayState, .outcomeUnknown)
+        XCTAssertEqual(restored.first?.todayLifecycle?.version, 1)
+        let blocked = try await reopened.reserveTodayRefresh(deviceID: "phone", makeKey: { "new" }, createdAt: expired)
+        XCTAssertEqual(blocked.key, write.key)
+        let dismissed = try await reopened.transitionToday(key: write.key, event: .dismiss)
+        XCTAssertTrue(dismissed)
+        let fresh = try await reopened.reserveTodayRefresh(deviceID: "phone", makeKey: { "new" }, createdAt: expired)
+        XCTAssertEqual(fresh.key, "new")
+        let late = try await reopened.transitionToday(key: write.key, event: .answer)
+        XCTAssertFalse(late, "a late answer must not remove a newer request")
+        let remaining = await reopened.entries()
+        XCTAssertEqual(remaining.map(\.key), ["new"])
+    }
+
+    func testLateAnswerResolvesUnknownWithoutReplaying() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let journal = PendingWriteJournal(fileURL: directory.appendingPathComponent("journal.json"), hubID: { "mac" })
+        let sent = Date(timeIntervalSince1970: 1_800_000_000)
+        let write = try await journal.reserveTodayRefresh(deviceID: "phone", makeKey: { "key" }, createdAt: sent)
+        _ = try await journal.markTodayRefreshDispatched(key: write.key, at: sent)
+        try await journal.expireToday(at: sent.addingTimeInterval(ActionStore.journalRetention))
+        let answered = try await journal.transitionToday(key: write.key, event: .answer)
+        XCTAssertTrue(answered)
+        let entries = await journal.entries()
+        XCTAssertTrue(entries.isEmpty)
+    }
+
+    func testEachTodayWriteExpiresWithoutReplaying() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let journal = PendingWriteJournal(fileURL: directory.appendingPathComponent("journal.json"), hubID: { "mac" })
+        let sent = Date(timeIntervalSince1970: 1_800_000_000)
+        var action = PendingWrite(key: "action", operation: .chatProactiveAction, target: "a", choice: "done", fingerprint: "a", createdAt: sent, hubID: "mac")
+        action.todayReplay = PendingWrite.TodayReplay(chatID: "chat", momentID: "moment", cardDigest: "digest", actionID: "done", dispatched: false)
+        var feedback = PendingWrite(key: "feedback", operation: .feedback, target: "b", choice: "like", fingerprint: "b", createdAt: sent, hubID: "mac")
+        feedback.todayFeedback = PendingWrite.TodayFeedback(briefID: "brief", itemID: "item", cardKey: "card", title: "title", action: .like, reason: nil, bodyVersion: nil)
+        var correction = PendingWrite(key: "correction", operation: .correction, target: "c", choice: "reject", fingerprint: "c", createdAt: sent, hubID: "mac")
+        correction.todayCorrection = PendingWrite.TodayCorrection(briefID: "brief", bodyVersion: nil, memoryID: "memory", reason: "reason")
+        var refresh = PendingWrite(key: "refresh", operation: .briefRefresh, target: "d", choice: "refresh", fingerprint: "d", createdAt: sent, hubID: "mac")
+        refresh.todayRefresh = true
+        for write in [action, feedback, correction, refresh] { try await journal.insert(write) }
+        _ = try await journal.markTodayDispatched(key: action.key, at: sent)
+        _ = try await journal.markTodayFeedbackDispatched(key: feedback.key, at: sent)
+        _ = try await journal.markTodayCorrectionDispatched(key: correction.key, at: sent)
+        _ = try await journal.markTodayRefreshDispatched(key: refresh.key, at: sent)
+        try await journal.expireToday(at: sent.addingTimeInterval(ActionStore.journalRetention))
+        let writes = await journal.entries()
+        XCTAssertEqual(writes.map(\.todayState), Array(repeating: .outcomeUnknown, count: 4))
+        let replay = try await journal.markTodayDispatched(key: action.key, at: sent.addingTimeInterval(ActionStore.journalRetention))
+        XCTAssertNil(replay)
+        do {
+            _ = try await journal.reserve(operation: action.operation, target: action.target, choice: action.choice,
+                                          fingerprint: action.fingerprint, makeKey: { "other" }, createdAt: sent)
+            XCTFail("The generic writer must not replay a Today write")
+        } catch HubRequestError.conflict { }
+    }
+
+    func testFailedExpirySaveKeepsDispatchedKeyAndDoesNotReplay() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("journal.json")
+        let sent = Date(timeIntervalSince1970: 1_800_000_000)
+        let journal = PendingWriteJournal(fileURL: url, hubID: { "mac" })
+        let write = try await journal.reserveTodayRefresh(deviceID: "phone", makeKey: { "key" }, createdAt: sent)
+        _ = try await journal.markTodayRefreshDispatched(key: write.key, at: sent)
+        let failing = PendingWriteJournal(fileURL: url, hubID: { "mac" }, writeData: { _, _ in throw CocoaError(.fileWriteNoPermission) })
+        do {
+            _ = try await failing.markTodayRefreshDispatched(key: write.key, at: sent.addingTimeInterval(ActionStore.journalRetention))
+            XCTFail("The expired write must not be sent when the unknown state cannot be saved")
+        } catch {}
+        let retained = await failing.entries()
+        XCTAssertEqual(retained.first?.todayState, .dispatched)
+        XCTAssertEqual(retained.first?.key, write.key)
+    }
+
     @MainActor
     func testOfflineFreshRequestCanBeUndoneOrSentAfterReconnect() async throws {
         let directory = try makeTemporaryDirectory()

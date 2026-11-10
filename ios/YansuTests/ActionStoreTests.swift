@@ -199,6 +199,22 @@ final class ActionStoreTests: XCTestCase {
         XCTAssertTrue(h.store.pendingToday.isEmpty)
     }
 
+    func testExpiredTodayActionCannotBeReplayedThroughChat() async throws {
+        let h = try makeHarness(hubID: "mac")
+        let item = try JSONDecoder().decode(ChatProactiveView.self, from: Data(#"{"momentId":"m1","kind":"reminder","state":"pending","actionIds":["done"],"actionLabels":{"done":"Done"}}"#.utf8))
+        let sent = instant.addingTimeInterval(-ActionStore.journalRetention)
+        let write = try await h.journal.reserveToday(chatID: "chat", item: item, actionID: "done", deviceID: "phone",
+                                                     makeKey: { "old" }, createdAt: sent)
+        _ = try await h.journal.markTodayDispatched(key: write.key, at: sent)
+        await h.store.loadPendingToday()
+        XCTAssertEqual(h.store.pendingToday.first?.todayState, .outcomeUnknown)
+        await h.store.retryToday()
+        _ = await h.store.performProactiveAction(chatID: "chat", momentID: "m1", actionID: "done")
+        XCTAssertTrue(h.hub.proactiveRequests.isEmpty)
+        let remaining = await h.journal.entries()
+        XCTAssertEqual(remaining.first?.key, write.key)
+    }
+
     func testTodayMemoryCorrectionWaitsForReconnectAndCanBeUndone() async throws {
         let h = try makeHarness(hubID: "mac")
         let first = await h.store.queueTodayCorrection(memoryID: "memory-1", reason: "Incorrect", briefID: "brief", bodyVersion: "v1")

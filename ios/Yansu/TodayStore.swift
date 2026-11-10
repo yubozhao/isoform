@@ -425,6 +425,8 @@ final class TodayStore: ObservableObject {
         guard let journal else { return }
         let current = generation
         guard let device = identity()?.deviceID else { pendingFresh = nil; return }
+        do { try await journal.expireToday(at: Date()) }
+        catch { brief.notice = String(localized: "Isoform could not save this change. Try again.") }
         let value = await journal.entries().first { $0.todayRefresh == true && $0.todayDeviceID == device }
         guard current == generation, identity()?.deviceID == device else { return }
         pendingFresh = value
@@ -452,16 +454,26 @@ final class TodayStore: ObservableObject {
         await loadPendingFresh()
     }
 
+    func dismissUnknownFresh() async {
+        guard let journal, let pendingFresh else { return }
+        do { _ = try await journal.transitionToday(key: pendingFresh.key, event: .dismiss) }
+        catch { brief.notice = String(localized: "Isoform could not save this change. Try again.") }
+        await loadPendingFresh()
+    }
+
     func retryFresh() async {
         guard let journal, !sendingFresh, let pendingFresh, let selectedIdentity = identity(),
               pendingFresh.todayDeviceID == selectedIdentity.deviceID else { return }
-        if let sent = pendingFresh.todayRefreshDispatchedAt,
-           Date().timeIntervalSince(sent) >= ActionStore.journalRetention { return }
         sendingFresh = true
         let current = generation
         defer { sendingFresh = false }
+        var didDispatch = false
         do {
-            guard let write = try await journal.markTodayRefreshDispatched(key: pendingFresh.key, at: Date()) else { return }
+            guard let write = try await journal.markTodayRefreshDispatched(key: pendingFresh.key, at: Date()) else {
+                await loadPendingFresh()
+                return
+            }
+            didDispatch = true
             await loadPendingFresh()
             let result = try await HubRequestScope.$hubID.withValue(write.hubID) {
                 try await HubRequestScope.$deviceID.withValue(write.todayDeviceID) {
@@ -469,7 +481,7 @@ final class TodayStore: ObservableObject {
                 }
             }
             guard current == generation, identity() == selectedIdentity else { return }
-            await journal.remove(keys: [write.key])
+            _ = try await journal.transitionToday(key: write.key, event: .answer)
             await loadPendingFresh()
             if let sent = write.todayRefreshDispatchedAt,
                let latest = snapshot?.latestBrief?.madeDate, latest >= sent, snapshot?.briefRequest == nil { return }
@@ -477,8 +489,12 @@ final class TodayStore: ObservableObject {
             noteBriefRequest(result)
         } catch {
             guard current == generation, identity() == selectedIdentity else { return }
+            guard didDispatch else {
+                brief.notice = String(localized: "Isoform could not save this change. Try again.")
+                return
+            }
             if JournaledWriter.disposition(for: error) != .keep {
-                await journal.remove(keys: [pendingFresh.key])
+                _ = try? await journal.transitionToday(key: pendingFresh.key, event: .answer)
                 await loadPendingFresh()
                 freshFailed = true
             }

@@ -19,7 +19,7 @@ final class ActionStore: ObservableObject {
     @Published private(set) var pendingToday: [PendingWrite] = []
 
     /// How long an unanswered write keeps its key. A retry within this window replays the Mac's first answer.
-    static let journalRetention: TimeInterval = 24 * 60 * 60
+    static let journalRetention: TimeInterval = PendingWriteJournal.receiptLifetime
     private static let oneTimeWorkTarget = "new-one-time-work"
 
     private let hub: ActionHubAPI
@@ -70,6 +70,8 @@ final class ActionStore: ObservableObject {
     func loadPendingToday() async {
         let current = generation
         guard let device = deviceID() else { pendingToday = []; return }
+        do { try await journal.expireToday(at: now()) }
+        catch { todayNotice = String(localized: "Isoform could not save this change. Try again.") }
         let entries = await journal.entries().filter { ($0.todayReplay != nil || $0.todayCorrection != nil) && $0.todayDeviceID == device }
         guard current == generation, deviceID() == device else { return }
         pendingToday = entries
@@ -111,6 +113,12 @@ final class ActionStore: ObservableObject {
         await loadPendingToday()
     }
 
+    func dismissUnknownToday(_ key: String) async {
+        do { _ = try await journal.transitionToday(key: key, event: .dismiss) }
+        catch { todayNotice = String(localized: "Isoform could not save this change. Try again.") }
+        await loadPendingToday()
+    }
+
     func queueTodayCorrection(memoryID: String, reason: String, briefID: String, bodyVersion: String?) async -> Bool {
         guard isPaired(), let device = deviceID(), Identifiers.isSafePathID(memoryID) else { return false }
         let text = Self.bounded(reason)
@@ -146,7 +154,9 @@ final class ActionStore: ObservableObject {
             return false
         }
         guard current == generation, deviceID() == device, isCurrent() else { return }
-        if !obsolete.isEmpty { await journal.remove(keys: obsolete.map(\.key)) }
+        for write in obsolete where write.todayState == .reserved {
+            _ = try? await journal.transitionToday(key: write.key, event: .undo)
+        }
         await loadPendingToday()
     }
 
@@ -157,12 +167,11 @@ final class ActionStore: ObservableObject {
         defer { replayingToday = false }
         for pending in await journal.entries() where pending.todayReplay != nil && pending.todayDeviceID == device {
             guard current == generation, isPaired(), deviceID() == device, !Task.isCancelled else { break }
-            // The server's idempotency receipts have a bounded lifetime. Never replay
-            // an ambiguous, previously dispatched request after that lifetime.
-            if let sentAt = pending.todayReplay?.dispatchedAt, now().timeIntervalSince(sentAt) >= Self.journalRetention { continue }
+            var didDispatch = false
             do {
                 guard let write = try await journal.markTodayDispatched(key: pending.key, at: now()),
                       let replay = write.todayReplay else { continue }
+                didDispatch = true
                 await loadPendingToday()
                 _ = try await HubRequestScope.$hubID.withValue(write.hubID) {
                     try await HubRequestScope.$deviceID.withValue(write.todayDeviceID) {
@@ -174,10 +183,14 @@ final class ActionStore: ObservableObject {
                                                                              actionID: replay.actionID, idempotencyKey: write.key)
                     }
                 }
-                await journal.remove(keys: [write.key])
+                _ = try await journal.transitionToday(key: write.key, event: .answer)
             } catch {
+                guard didDispatch else {
+                    todayNotice = String(localized: "Isoform could not save this change. Try again.")
+                    break
+                }
                 if JournaledWriter.disposition(for: error) != .keep {
-                    await journal.remove(keys: [pending.key])
+                    _ = try? await journal.transitionToday(key: pending.key, event: .answer)
                     todayNotice = String(localized: "Your computer could not finish that. Try again.")
                 }
                 else { break }
@@ -185,20 +198,25 @@ final class ActionStore: ObservableObject {
         }
         for pending in await journal.entries() where pending.todayCorrection != nil && pending.todayDeviceID == device {
             guard current == generation, isPaired(), deviceID() == device, !Task.isCancelled else { break }
-            if let sent = pending.todayCorrection?.dispatchedAt, now().timeIntervalSince(sent) >= Self.journalRetention { continue }
+            var didDispatch = false
             do {
                 guard let write = try await journal.markTodayCorrectionDispatched(key: pending.key, at: now()),
                       let correction = write.todayCorrection else { continue }
+                didDispatch = true
                 await loadPendingToday()
                 _ = try await HubRequestScope.$hubID.withValue(write.hubID) {
                     try await HubRequestScope.$deviceID.withValue(write.todayDeviceID) {
                         try await hub.rejectAttribution(memoryID: correction.memoryID, reason: correction.reason, idempotencyKey: write.key)
                     }
                 }
-                await journal.remove(keys: [write.key])
+                _ = try await journal.transitionToday(key: write.key, event: .answer)
             } catch {
+                guard didDispatch else {
+                    todayNotice = String(localized: "Isoform could not save this change. Try again.")
+                    break
+                }
                 if JournaledWriter.disposition(for: error) != .keep {
-                    await journal.remove(keys: [pending.key])
+                    _ = try? await journal.transitionToday(key: pending.key, event: .answer)
                     todayNotice = String(localized: "Your computer could not finish that. Try again.")
                 } else { break }
             }
