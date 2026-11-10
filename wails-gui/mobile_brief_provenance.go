@@ -2,13 +2,148 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
 	"wails-gui/storage"
 )
+
+// Summary fingerprints retain only content and hashed run identities. The
+// latter let a replacement bucket be distinguished from unrelated work with
+// the same wording, including when the original runs are folded into a day.
+type mobileBriefSummaryPrint struct {
+	Content string   `json:"content"`
+	Start   int64    `json:"start"`
+	End     int64    `json:"end"`
+	Runs    []string `json:"runs"`
+}
+
+func mobileBriefSummaryFingerprint(row ActivityRow) string {
+	p := mobileBriefSummaryPrint{
+		Content: mobileBriefModelDigest(struct{ Title, Description, LatestChange string }{row.Title, row.Description, row.LatestChange}),
+		Start:   row.StartMs, End: row.EndMs,
+	}
+	for _, id := range composeParseStrings(row.RunIDs) {
+		p.Runs = append(p.Runs, mobileBriefModelDigest(id))
+	}
+	sort.Strings(p.Runs)
+	raw, _ := json.Marshal(p)
+	return "summary-v1:" + base64.RawURLEncoding.EncodeToString(raw)
+}
+
+func mobileBriefParseSummaryFingerprint(value string) (mobileBriefSummaryPrint, bool) {
+	var p mobileBriefSummaryPrint
+	if !strings.HasPrefix(value, "summary-v1:") {
+		return p, false
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(value, "summary-v1:"))
+	if err != nil || json.Unmarshal(raw, &p) != nil || p.Content == "" {
+		return p, false
+	}
+	return p, true
+}
+
+func mobileBriefSummaryContainsRuns(current, original mobileBriefSummaryPrint) bool {
+	runs := make(map[string]bool, len(current.Runs))
+	for _, run := range current.Runs {
+		runs[run] = true
+	}
+	for _, run := range original.Runs {
+		if !runs[run] {
+			return false
+		}
+	}
+	return true
+}
+
+func (a *App) mobileBriefSummaryReadable(ctx context.Context, row ActivityRow) bool {
+	if a == nil || a.activity == nil || a.activity.store == nil {
+		return false
+	}
+	store := a.activity.store
+	pauses, err := a.observationPauses()
+	reader := mobileBriefPurposeReader{app: a, store: store, asOf: time.Now(), pauses: pauses, pausesReadable: err == nil, cache: map[string]mobileBriefPurposeObservation{}}
+	observation := reader.source("activity", row.ID, 0, false)
+	return !observation.Sensitive && !observation.Unavailable && !observation.MissingEvidence && len(a.filterComposerModelCandidatesContext(ctx, store, []ActivityRow{row})) == 1
+}
+
+// Resolve a regenerated summary only when its text and every original run
+// survive in an overlapping bucket. A present but edited original never falls
+// back to a different bucket.
+func (a *App) mobileBriefSummaryReplacement(ctx context.Context, id string, p mobileBriefSummaryPrint) (string, bool) {
+	if a == nil || a.activity == nil || a.activity.store == nil || len(p.Runs) == 0 || p.Start <= 0 || p.End < p.Start {
+		return "", false
+	}
+	store := a.activity.store
+	original, err := store.GetActivityByIDContext(ctx, id)
+	if err != nil || original != nil {
+		return "", false
+	}
+	rows, err := store.GetActivitiesInRangeContext(ctx, p.Start, p.End)
+	if err != nil {
+		return "", false
+	}
+	for _, row := range rows {
+		current, ok := mobileBriefParseSummaryFingerprint(mobileBriefSummaryFingerprint(row))
+		if !ok || current.Content != p.Content {
+			continue
+		}
+		if mobileBriefSummaryContainsRuns(current, p) && a.mobileBriefSummaryReadable(ctx, row) {
+			return row.ID, true
+		}
+	}
+	return "", false
+}
+
+type mobileBriefSummaryReplacementKey struct{}
+
+type mobileBriefSummaryProjectionSources struct {
+	refs map[string]string
+	ids  map[string]bool
+}
+
+// Substitute only inside the privacy gate, leaving the model binding and wire
+// citations attached to their original identities.
+func (a *App) mobileBriefSummaryProjection(ctx context.Context, brief MobileBriefV1, prints map[string]string) context.Context {
+	replaced := mobileBriefSummaryProjectionSources{refs: map[string]string{}, ids: map[string]bool{}}
+	if a == nil || a.activity == nil || a.activity.store == nil {
+		return context.WithValue(ctx, mobileBriefSummaryReplacementKey{}, replaced)
+	}
+	for _, ref := range brief.Evidence {
+		if ref.SourceKind != mobileBriefRecapSource || strings.HasPrefix(ref.SourceID, threadOutcomeMomentPrefix) {
+			continue
+		}
+		p, ok := mobileBriefParseSummaryFingerprint(prints[mobileBriefSourceKey(ref.SourceKind, ref.SourceID)])
+		if !ok {
+			continue
+		}
+		id := ref.SourceID
+		row, err := a.activity.store.GetActivityByIDContext(ctx, id)
+		if err != nil {
+			continue
+		}
+		if row == nil {
+			var found bool
+			id, found = a.mobileBriefSummaryReplacement(ctx, ref.SourceID, p)
+			if !found {
+				continue
+			}
+			replaced.refs[ref.Ref] = id
+			replaced.ids[ref.SourceID] = true
+			continue
+		}
+		current, valid := mobileBriefParseSummaryFingerprint(mobileBriefSummaryFingerprint(*row))
+		if valid && current.Content == p.Content && mobileBriefSummaryContainsRuns(current, p) && a.mobileBriefSummaryReadable(ctx, *row) {
+			replaced.ids[id] = true
+		}
+	}
+	return context.WithValue(ctx, mobileBriefSummaryReplacementKey{}, replaced)
+}
 
 // Source identities are local to the seal. Later Today refreshes may add
 // display evidence without adding it to the already written prose.
@@ -218,10 +353,27 @@ func (a *App) mobileBriefEditedSources(source MobileBriefV1, sealedAt time.Time,
 		edited := false
 		if supported {
 			switch true {
+			case strings.HasPrefix(sealedPrint, "summary-v1:"):
+				p, ok := mobileBriefParseSummaryFingerprint(sealedPrint)
+				if !ok {
+					edited = true
+				} else if !found {
+					_, ok = a.mobileBriefSummaryReplacement(context.Background(), ref.SourceID, p)
+					edited = !ok
+				} else if row, ok := value.(*ActivityRow); ok {
+					current, valid := mobileBriefParseSummaryFingerprint(mobileBriefSummaryFingerprint(*row))
+					edited = !valid || current.Content != p.Content || !mobileBriefSummaryContainsRuns(current, p) || !a.mobileBriefSummaryReadable(context.Background(), *row)
+				} else {
+					edited = true
+				}
 			case !found:
 				edited = true
 			case strings.HasPrefix(sealedPrint, "v2:"):
-				edited = sealedPrint != mobileBriefContentFingerprint(ref, value)
+				if ref.SourceKind == mobileBriefRecapSource {
+					edited = sealedPrint != "v2:"+mobileBriefModelDigest(value)
+				} else {
+					edited = sealedPrint != mobileBriefContentFingerprint(ref, value)
+				}
 			case sealedPrint != "":
 				edited = sealedPrint != mobileBriefModelDigest(value)
 			default:
@@ -334,6 +486,11 @@ func mobileBriefWithholdEdited(brief MobileBriefV1, changed map[string]bool) Mob
 // unprefixed fingerprints hash the whole record and remain comparable as-is.
 func mobileBriefContentFingerprint(ref MobileBriefRef, value any) string {
 	switch ref.SourceKind {
+	case mobileBriefRecapSource:
+		if row, ok := value.(*ActivityRow); ok && !strings.HasPrefix(ref.SourceID, threadOutcomeMomentPrefix) {
+			return mobileBriefSummaryFingerprint(*row)
+		}
+		return "v2:" + mobileBriefModelDigest(value)
 	case "memory", taskContextSourceMemoryKind:
 		data, ok := value.([]byte)
 		if !ok {

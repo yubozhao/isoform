@@ -616,8 +616,12 @@ func (a *App) mobileBriefDeliveryOnce(ctx context.Context, brief MobileBriefV1) 
 				}
 				allowed = reader.store != nil
 				if allowed {
-					row, err := reader.store.GetActivityByID(ref.SourceID)
-					observation := reader.source("activity", ref.SourceID, 0, false)
+					id := ref.SourceID
+					if replacements, ok := ctx.Value(mobileBriefSummaryReplacementKey{}).(mobileBriefSummaryProjectionSources); ok && replacements.refs[ref.Ref] != "" {
+						id = replacements.refs[ref.Ref]
+					}
+					row, err := reader.store.GetActivityByID(id)
+					observation := reader.source("activity", id, 0, false)
 					allowed = err == nil && row != nil && !observation.Sensitive && !observation.Unavailable && !observation.MissingEvidence && len(a.filterComposerModelCandidatesContext(ctx, reader.store, []ActivityRow{*row})) == 1
 				}
 			case taskContextSourceSelfKind, "activity", "activity_summary", "activity_run", "activity_timeline_group", "activity_session", "session", meetingFollowupSourceKind:

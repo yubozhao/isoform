@@ -431,7 +431,8 @@ func (s *mobileBriefService) sealResult(ctx context.Context, source MobileBriefV
 	epoch := mobileBriefPrivacyEpoch.Load()
 	print := s.app.briefPrivacyPrint()
 	day := s.readDay()
-	projected, withheld := s.app.mobileBriefForProjectionWithholding(ctx, source, true)
+	projectionContext := s.app.mobileBriefSummaryProjection(ctx, source, previous.Fingerprints)
+	projected, withheld := s.app.mobileBriefForProjectionWithholding(projectionContext, source, true)
 	brief := s.app.mobileBriefWithCards(projected)
 	brief.Audio = s.finishedReadAudio(ctx, source, brief)
 	if withheld.Transient() || print != s.app.briefPrivacyPrint() || day != s.readDay() {

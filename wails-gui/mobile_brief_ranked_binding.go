@@ -100,6 +100,12 @@ func (a *App) morningBriefRankedInputsReadableFromWithLedger(ctx context.Context
 		case "history":
 			readable = a.morningBriefHandoffSourceReadable(ctx, item.ID, item.Digest)
 		case mobileBriefRecapSource, mobileBriefFileSource, "memory", "knowledge", "principal":
+			if item.Kind == mobileBriefRecapSource {
+				if checked, ok := ctx.Value(mobileBriefSummaryReplacementKey{}).(mobileBriefSummaryProjectionSources); ok && checked.ids[item.ID] {
+					readable = true
+					break
+				}
+			}
 			ref := MobileBriefRef{SourceKind: item.Kind, SourceID: item.ID}
 			brief := MobileBriefV1{Slot: mobileBriefSlotMorning, AsOf: formatMobileBriefTime(cutoff)}
 			digest, ok := a.mobileBriefModelSourceDigest(ctx, ref, brief, sources)
