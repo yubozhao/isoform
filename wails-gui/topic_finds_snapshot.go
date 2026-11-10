@@ -52,6 +52,7 @@ type topicFindsSnapshotState struct {
 	// dueAt is the earliest time the next refresh may run (zero: none queued).
 	dueAt   time.Time
 	running bool
+	done    chan struct{}
 	last    string
 	// refreshes counts computations, so tests can prove reads do not recompute.
 	refreshes atomic.Int64
@@ -217,6 +218,9 @@ func (s *topicsService) findsEventDelay() time.Duration {
 // scheduleFindsRefresh queues one refresh no earlier than at. Requests that
 // arrive while one is queued keep the earlier time; one goroutine runs them.
 func (s *topicsService) scheduleFindsRefresh(a *App, at time.Time) {
+	if a == nil || a.ctx == nil || a.ctx.Err() != nil {
+		return
+	}
 	s.findsSnap.mu.Lock()
 	defer s.findsSnap.mu.Unlock()
 	if s.findsSnap.dueAt.IsZero() || at.Before(s.findsSnap.dueAt) {
@@ -226,14 +230,22 @@ func (s *topicsService) scheduleFindsRefresh(a *App, at time.Time) {
 		return
 	}
 	s.findsSnap.running = true
-	go s.runFindsRefreshes(a)
+	s.findsSnap.done = make(chan struct{})
+	go s.runFindsRefreshes(a, a.ctx, s.findsSnap.done)
 }
 
 // runFindsRefreshes runs queued refreshes one at a time, on a thread that has
 // been lowered in priority. Work queued during a refresh runs after it.
-func (s *topicsService) runFindsRefreshes(a *App) {
+func (s *topicsService) runFindsRefreshes(a *App, ctx context.Context, done chan struct{}) {
+	defer close(done)
 	for {
 		s.findsSnap.mu.Lock()
+		if ctx.Err() != nil {
+			s.findsSnap.dueAt = time.Time{}
+			s.findsSnap.running = false
+			s.findsSnap.mu.Unlock()
+			return
+		}
 		due := s.findsSnap.dueAt
 		if due.IsZero() {
 			s.findsSnap.running = false
@@ -242,7 +254,12 @@ func (s *topicsService) runFindsRefreshes(a *App) {
 		}
 		s.findsSnap.mu.Unlock()
 		if wait := time.Until(due); wait > 0 {
-			time.Sleep(min(wait, time.Second))
+			timer := time.NewTimer(min(wait, time.Second))
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+			case <-timer.C:
+			}
 			continue
 		}
 		s.findsSnap.mu.Lock()

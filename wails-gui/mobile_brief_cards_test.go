@@ -224,11 +224,18 @@ func TestMobileBriefCardWordsFromTheBriefModelAreCheckedFirst(t *testing.T) {
 // cardRig is a stored brief Today shows: two of Isoform's handoffs waiting on
 // the user, made by the real brief service.
 func cardRig(t *testing.T) (*handoffTestRig, *mobileBriefService, MobileBriefV1) {
+	return cardRigWithStore(t, nil)
+}
+
+func cardRigWithStore(t *testing.T, setup func(*handoffTestRig)) (*handoffTestRig, *mobileBriefService, MobileBriefV1) {
 	t.Helper()
 	rig := newHandoffTestRig(t)
 	clock := &fakeMobileBriefClock{now: mobileBriefTestDay(7, 0)}
 	svc, _ := newTestMobileBriefService(t, clock)
 	svc.app, rig.app.mobileBriefSvc = rig.app, svc
+	if setup != nil {
+		setup(rig)
+	}
 	var candidates []mobileBriefCandidate
 	for i, entry := range []handoff.Entry{
 		{ID: "memo", Title: "Release memo", Status: handoff.StatusBlocked},

@@ -16,12 +16,43 @@ func newSnapshotTestApp(t *testing.T) *App {
 	t.Helper()
 	t.Setenv("YANSU_MOBILE_STATE_DIR", t.TempDir())
 	app := newTopicFindsTestApp(t)
+	app.ctx = t.Context()
 	svc := app.topicsSvc()
 	svc.findsSnap.launchDelay = 0
 	svc.findsSnap.eventDelay = 0
 	// This launch has already refreshed once, so a read does not start the launch check.
 	svc.findsSnap.lastRefresh = time.Now()
 	return app
+}
+
+func TestTopicFindsRefreshRequiresAndStopsWithAppLifecycle(t *testing.T) {
+	app := newTopicFindsTestApp(t)
+	svc := app.topicsSvc()
+	svc.scheduleFindsRefresh(app, time.Now().Add(time.Hour))
+	svc.findsSnap.mu.Lock()
+	running := svc.findsSnap.running
+	svc.findsSnap.mu.Unlock()
+	if running {
+		t.Fatal("refresh started without an app lifecycle")
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	app.ctx = ctx
+	svc.scheduleFindsRefresh(app, time.Now().Add(time.Hour))
+	svc.findsSnap.mu.Lock()
+	done := svc.findsSnap.done
+	svc.findsSnap.mu.Unlock()
+	if done == nil {
+		t.Fatal("refresh was not queued for the active lifecycle")
+	}
+	cancel()
+	<-done
+	svc.findsSnap.mu.Lock()
+	running = svc.findsSnap.running
+	due := svc.findsSnap.dueAt
+	svc.findsSnap.mu.Unlock()
+	if running || !due.IsZero() || svc.findsSnap.refreshes.Load() != 0 {
+		t.Fatal("cancelled lifecycle retained or ran a queued refresh")
+	}
 }
 
 // waitFindsRefreshIdle waits for the background refresh to finish, so a test

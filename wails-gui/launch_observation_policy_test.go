@@ -16,7 +16,17 @@ import (
 func TestLaunchPublishesObservationPolicyBeforeFirstScreen(t *testing.T) {
 	for _, policy := range []string{"future", "expired", "empty", "malformed", "read_failed", "expires_before_paint"} {
 		t.Run(policy, func(t *testing.T) {
-			rig, svc, brief := cardRig(t)
+			rig, svc, brief := cardRigWithStore(t, func(rig *handoffTestRig) {
+				root, err := flavorDataDir()
+				if err != nil {
+					t.Fatal(err)
+				}
+				work, err := handoff.NewStore(filepath.Join(root, "handoff"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				rig.app.handoffStore = work
+			})
 			svc.wg.Wait()
 			app := rig.app
 			app.launch = newLaunchStartup()
@@ -27,24 +37,6 @@ func TestLaunchPublishesObservationPolicyBeforeFirstScreen(t *testing.T) {
 			t.Cleanup(func() { todayBriefPermissionStatus = previous })
 			// Keep all source gates real, including the canonical handoff store
 			// that mandatory publication opens for the first screen.
-			root, err := flavorDataDir()
-			if err != nil {
-				t.Fatal(err)
-			}
-			work, err := handoff.NewStore(filepath.Join(root, "handoff"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			for _, id := range []string{"memo", "deck"} {
-				entry, err := app.handoffStore.Get(id)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if _, err := work.Save(entry); err != nil {
-					t.Fatal(err)
-				}
-			}
-			app.handoffStore = work
 			// A real, locally rendered recording makes the withheld-audio
 			// assertion meaningful; no provider, model or native capture runs.
 			// Only the model's ok text is read aloud (design R74): a recording needs model

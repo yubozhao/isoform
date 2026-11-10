@@ -132,7 +132,9 @@ func TestFileDisplayNamePreservesDocumentIDsAndRedactsSecrets(t *testing.T) {
 }
 
 func TestFilesReaderKeepsDocumentNamesAndProtectsSecretsThroughDelivery(t *testing.T) {
-	now := time.Now().Truncate(time.Second)
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("YANSU_AGENT_HOME", t.TempDir())
+	now := time.Date(2026, 10, 17, 12, 0, 0, 0, time.Local)
 	tr := newTestFilesReader(t, now)
 	docs := filesTestHome + "/Documents"
 	const token = "ghp_1234567890abcdefghijklmnopqrstuvwxyz"
@@ -180,7 +182,7 @@ func TestFilesReaderKeepsDocumentNamesAndProtectsSecretsThroughDelivery(t *testi
 		t.Fatalf("stored file names = %v, want %v", stored, expected)
 	}
 	brief := buildMobileBriefV1(mobileBriefInput{
-		AsOf: now, Location: time.UTC, Slot: mobileBriefSlotOnRequest,
+		AsOf: now, Location: time.Local, Slot: mobileBriefSlotOnRequest,
 		Doing: mobileBriefDoingCandidates(rows, nil, nil),
 	})
 	state, err := storage.New(filepath.Join(t.TempDir(), "state.db"))
@@ -188,6 +190,9 @@ func TestFilesReaderKeepsDocumentNamesAndProtectsSecretsThroughDelivery(t *testi
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = state.Close() })
+	if err := state.SetUIState(context.Background(), permissionUIStateKey(filesPermissionKey), "true"); err != nil {
+		t.Fatal(err)
+	}
 	app := &App{store: state, activity: &activityMonitorState{store: tr.store}}
 	delivered := app.mobileBriefForDelivery(brief)
 	for _, stage := range []struct {
@@ -236,6 +241,27 @@ func TestFilesReaderKeepsDocumentNamesAndProtectsSecretsThroughDelivery(t *testi
 				}
 			}
 		})
+	}
+	if err := state.SetUIState(context.Background(), permissionUIStateKey(filesPermissionKey), "false"); err != nil {
+		t.Fatal(err)
+	}
+	withdrawn := app.mobileBriefForDelivery(brief)
+	if len(withdrawn.Sections.Doing) != 0 || len(withdrawn.Evidence) != 0 {
+		t.Fatal("file titles remained visible after permission was withdrawn")
+	}
+	if err := state.SetUIState(context.Background(), permissionUIStateKey(filesPermissionKey), "true"); err != nil {
+		t.Fatal(err)
+	}
+	private, err := json.Marshal([]string{docs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := state.SetUIState(context.Background(), filesPrivateFoldersKey, string(private)); err != nil {
+		t.Fatal(err)
+	}
+	withdrawn = app.mobileBriefForDelivery(brief)
+	if len(withdrawn.Sections.Doing) != 0 || len(withdrawn.Evidence) != 0 {
+		t.Fatal("file titles remained visible after the folder became private")
 	}
 }
 
