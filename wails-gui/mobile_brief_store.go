@@ -348,7 +348,7 @@ func (s *mobileBriefStore) sweepLocked(now time.Time) {
 		}
 		switch filepath.Ext(id) {
 		case ".json", mobileBriefAudioExtM4A, mobileBriefAudioExtWAV,
-			mobileBriefPackageExt, mobileBriefPackageMetaExt, mobileBriefPackageSrcExt:
+			mobileBriefPackageExt, mobileBriefPackageMetaExt, mobileBriefPackageSrcExt, mobileBriefSealStateExt:
 			id = strings.TrimSuffix(id, filepath.Ext(id))
 		default:
 			continue

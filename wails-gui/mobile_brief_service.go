@@ -241,6 +241,7 @@ func (s *mobileBriefService) Start(parent context.Context) {
 	go s.loop(ctx)
 	go func() {
 		defer s.wg.Done()
+		s.resumeSealRetries()
 		s.remakeLegacyBriefOnce(ctx)
 		s.backfillTodayAudio(ctx)
 		s.resumeBriefAudioRetry()
@@ -278,6 +279,7 @@ func (s *mobileBriefService) Stop() {
 	queueCancel := s.queueCancel
 	audioCancel := s.audioUploadCancel
 	s.mu.Unlock()
+	s.stopSealRetries()
 	if cancel != nil {
 		cancel()
 	}

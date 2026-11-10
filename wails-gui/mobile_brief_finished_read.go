@@ -400,13 +400,19 @@ func sealCites(source MobileBriefV1) []string {
 // words come back once the gates can say. Any other outcome is saved, with its
 // withholding, because it is the answer for the sources as they are now.
 func (s *mobileBriefService) seal(ctx context.Context, source MobileBriefV1) (MobileBriefV1, mobileBriefWithholding, bool) {
+	brief, withheld, wrote, _ := s.sealResult(ctx, source)
+	return brief, withheld, wrote
+}
+
+// sealResult distinguishes a malformed brief from failures that may recover.
+func (s *mobileBriefService) sealResult(ctx context.Context, source MobileBriefV1) (MobileBriefV1, mobileBriefWithholding, bool, bool) {
 	if briefPolicyPending.Load() {
-		return MobileBriefV1{}, mobileBriefWithholding{Reason: mobileBriefWithheldNotReady}, false
+		return MobileBriefV1{}, mobileBriefWithholding{Reason: mobileBriefWithheldNotReady}, false, false
 	}
 	mobileBriefFinishedReadKeys.Add(1)
 	previous, found, err := s.store.loadFinishedRead(source.BriefID)
 	if err != nil {
-		return MobileBriefV1{}, mobileBriefWithholding{Reason: mobileBriefWithheldNotReady}, false
+		return MobileBriefV1{}, mobileBriefWithholding{Reason: mobileBriefWithheldNotReady}, false, false
 	}
 	sealedAt := time.Now()
 	cited := source
@@ -419,7 +425,7 @@ func (s *mobileBriefService) seal(ctx context.Context, source MobileBriefV1) (Mo
 				old = mobileBriefPaused(source)
 			}
 			changed = mobileBriefChangedRefs(cited, source, old, changed)
-			return s.withholdEditedRead(ctx, previous, old, kind, changed), mobileBriefWithholding{Reason: mobileBriefWithheldSource, SourceKind: kind}, true
+			return s.withholdEditedRead(ctx, previous, old, kind, changed), mobileBriefWithholding{Reason: mobileBriefWithheldSource, SourceKind: kind}, true, false
 		}
 	}
 	epoch := mobileBriefPrivacyEpoch.Load()
@@ -429,32 +435,32 @@ func (s *mobileBriefService) seal(ctx context.Context, source MobileBriefV1) (Mo
 	brief := s.app.mobileBriefWithCards(projected)
 	brief.Audio = s.finishedReadAudio(ctx, source, brief)
 	if withheld.Transient() || print != s.app.briefPrivacyPrint() || day != s.readDay() {
-		return brief, withheld, false
+		return brief, withheld, false, false
 	}
 	raw, err := marshalStoredMobileBrief(brief)
 	if err != nil {
-		return brief, withheld, false
+		return brief, withheld, false, true
 	}
 	fingerprints := previous.Fingerprints
 	if !found {
 		if kind, changed := s.app.mobileBriefEditedSources(cited, sealedAt, nil); kind != "" {
 			changed = mobileBriefChangedRefs(cited, source, brief, changed)
-			return mobileBriefWithholdEdited(brief, changed), mobileBriefWithholding{Reason: mobileBriefWithheldSource, SourceKind: kind}, true
+			return mobileBriefWithholdEdited(brief, changed), mobileBriefWithholding{Reason: mobileBriefWithheldSource, SourceKind: kind}, true, false
 		}
 		fingerprints = s.app.mobileBriefSourceFingerprints(ctx, cited)
 	}
 	if kind, changed := s.app.mobileBriefEditedSources(cited, sealedAt, fingerprints); kind != "" {
 		changed = mobileBriefChangedRefs(cited, source, brief, changed)
-		return mobileBriefWithholdEdited(brief, changed), mobileBriefWithholding{Reason: mobileBriefWithheldSource, SourceKind: kind}, true
+		return mobileBriefWithholdEdited(brief, changed), mobileBriefWithholding{Reason: mobileBriefWithheldSource, SourceKind: kind}, true, false
 	}
 	read := mobileBriefFinishedRead{Schema: mobileBriefSealedSchema, Epoch: epoch, Print: print, Source: mobileBriefSourceDigest(source), Day: day, Cites: sealCites(source), SealedAt: sealedAt, Fingerprints: fingerprints, SourceRefs: mobileBriefSealSources(cited), WithheldReason: withheld.Reason, WithheldKind: withheld.SourceKind, Brief: raw}
 	if mobileBriefBeforeSealSave != nil {
 		mobileBriefBeforeSealSave(source.BriefID)
 	}
 	if err := s.store.saveFinishedReadIfCurrent(source.BriefID, read); err != nil {
-		return brief, withheld, false
+		return brief, withheld, false, false
 	}
-	return brief, withheld, true
+	return brief, withheld, true, false
 }
 
 // finishedReadWithholding is source as the readers show it. A display read
@@ -482,19 +488,27 @@ func (s *mobileBriefService) finishedReadWithholding(source MobileBriefV1) (resu
 	if err != nil {
 		return MobileBriefV1{}, mobileBriefWithholding{}, err
 	}
+	if mobileBriefAfterSealedRead != nil {
+		mobileBriefAfterSealedRead(source.BriefID)
+	}
 	if !pending && s.app != nil {
 		saved, found, err := s.store.loadFinishedRead(source.BriefID)
 		if err != nil {
 			return MobileBriefV1{}, mobileBriefWithholding{}, err
 		}
 		if found {
+			// Use the same saved copy for the words and their privacy metadata.
+			// A background seal may have replaced the copy after the first read.
+			brief = s.sealedReadSnapshot(source, saved)
+			withheld = mobileBriefWithholding{Reason: saved.WithheldReason, SourceKind: saved.WithheldKind}
 			cited := mobileBriefSealedSources(saved, source)
 			if kind, changed := s.app.mobileBriefEditedSources(cited, s.store.finishedReadTime(source.BriefID, saved), saved.Fingerprints); kind != "" {
 				changed = mobileBriefChangedRefs(cited, source, brief, changed)
 				return s.withholdEditedRead(context.Background(), saved, brief, kind, changed), mobileBriefWithholding{Reason: mobileBriefWithheldSource, SourceKind: kind}, nil
 			}
 		}
-		if kind, changed := s.copyPrivacyChange(source); changed {
+		if found && saved.Print != s.app.briefPrivacyPrint() {
+			kind := briefPrivacyChangeKind(saved.Print, s.app.briefPrivacyPrint())
 			// The amend: the privacy state changed since the copy was sealed, so the
 			// next read seals the brief again with the current gates and shows that.
 			// Only when the gates cannot decide yet are the words withheld, and the
@@ -520,6 +534,7 @@ func (s *mobileBriefService) finishedReadWithholding(source MobileBriefV1) (resu
 func (s *mobileBriefService) sealedReadOrPending(source MobileBriefV1) (MobileBriefV1, mobileBriefWithholding, bool, error) {
 	saved, found, err := s.store.loadFinishedRead(source.BriefID)
 	if err != nil {
+		s.scheduleSealRetry(source)
 		return MobileBriefV1{}, mobileBriefWithholding{}, false, err
 	}
 	if !found || saved.Schema != mobileBriefSealedSchema {
@@ -532,7 +547,7 @@ func (s *mobileBriefService) sealedReadOrPending(source MobileBriefV1) (MobileBr
 		}
 		// A brief that could not be sealed recently is not gated again on every
 		// read; it stays withheld until its backoff ends or its content changes.
-		if sealRetryBackedOff(source.BriefID, mobileBriefSourceDigest(source), time.Now()) {
+		if s.sealRetryWaiting(source) {
 			return MobileBriefV1{}, mobileBriefWithholding{}, true, nil
 		}
 		sealed, withheld, wrote := s.seal(context.Background(), source)
@@ -543,8 +558,8 @@ func (s *mobileBriefService) sealedReadOrPending(source MobileBriefV1) (MobileBr
 		s.noteLatestShownIfNewer(sealed)
 		return sealed, withheld, false, nil
 	}
-	brief, err := s.sealedRead(source)
-	return brief, mobileBriefWithholding{Reason: saved.WithheldReason, SourceKind: saved.WithheldKind}, false, err
+	brief := s.sealedReadSnapshot(source, saved)
+	return brief, mobileBriefWithholding{Reason: saved.WithheldReason, SourceKind: saved.WithheldKind}, false, nil
 }
 
 // mobileBriefWithheldPrivacyCheck is the withholding of a copy whose privacy
@@ -554,29 +569,25 @@ const mobileBriefWithheldPrivacyCheck = "privacy_check"
 // mobileBriefLive is the service whose sealed briefs a source change re-seals.
 var mobileBriefLive atomic.Pointer[mobileBriefService]
 
-func (s *mobileBriefService) sealedRead(source MobileBriefV1) (MobileBriefV1, error) {
-	saved, found, err := s.store.loadFinishedRead(source.BriefID)
-	if err != nil {
-		return MobileBriefV1{}, err
-	}
+func (s *mobileBriefService) sealedReadSnapshot(source MobileBriefV1, saved mobileBriefFinishedRead) MobileBriefV1 {
 	var brief MobileBriefV1
-	if !found || saved.Schema != mobileBriefSealedSchema || unmarshalStoredMobileBrief(saved.Brief, &brief) != nil || brief.BriefID != source.BriefID {
+	if saved.Schema != mobileBriefSealedSchema || unmarshalStoredMobileBrief(saved.Brief, &brief) != nil || brief.BriefID != source.BriefID {
 		s.scheduleSealRetry(source)
-		return MobileBriefV1{}, nil
+		return MobileBriefV1{}
 	}
 	if s.app == nil || saved.Print != s.app.briefPrivacyPrint() || saved.Source != mobileBriefSourceDigest(source) || saved.Day != s.readDay() {
 		s.scheduleSealRetry(source)
 	}
 	if s.app != nil && s.app.IsClosedEyesModeEnabled() {
 		// Closed Eyes is known in memory: nothing the brief says stays readable.
-		return mobileBriefPaused(brief), nil
+		return mobileBriefPaused(brief)
 	}
 	if s.app != nil && (s.app.store == nil || s.app.store.Closing()) {
 		// The policy store is closed, so a web source's hold cannot be confirmed:
 		// every web-source item is left out and the rest of the brief shows.
 		brief = mobileBriefWithoutWebSources(brief)
 	}
-	return brief, nil
+	return brief
 }
 
 // mobileBriefWithoutWebSources leaves out every item that comes from a web source,
@@ -643,6 +654,9 @@ func (s *mobileBriefService) copyPrivacyChange(source MobileBriefV1) (string, bo
 	}
 	return briefPrivacyChangeKind(saved.Print, current), true
 }
+
+// mobileBriefAfterSealedRead lets a test replace the copy between read steps.
+var mobileBriefAfterSealedRead func(briefID string)
 
 // mobileBriefBeforeSealSave, when set by a test, runs after a seal is worked out
 // and before it is saved, where a newer stored version can arrive. Nil in the app.
@@ -768,13 +782,12 @@ func (s *mobileBriefService) sealStored(briefID string) {
 	if !ok || source.NarrativeStatus == "quiet" {
 		return
 	}
+	s.resetSealFailure(source.BriefID)
 	// The saver announces the brief (brief:stored) itself; sealing it here
 	// only saves the copy, so one stored brief is not announced twice.
-	sealed, withheld, wrote := s.seal(context.Background(), source)
+	sealed, _, wrote := s.seal(context.Background(), source)
 	if !wrote {
-		if withheld.Transient() {
-			s.scheduleSealRetry(source)
-		}
+		s.scheduleSealRetry(source)
 		return
 	}
 	s.noteLatestShownIfNewer(sealed)
@@ -814,11 +827,10 @@ func (s *mobileBriefService) sealSources() {
 // announces a saved copy (brief:stored). A brief whose gates cannot decide yet
 // is sealed again in the background.
 func (s *mobileBriefService) sealAndAnnounce(source MobileBriefV1) {
-	sealed, withheld, wrote := s.seal(context.Background(), source)
+	s.resetSealFailure(source.BriefID)
+	sealed, _, wrote := s.seal(context.Background(), source)
 	if !wrote {
-		if withheld.Transient() {
-			s.scheduleSealRetry(source)
-		}
+		s.scheduleSealRetry(source)
 		return
 	}
 	s.noteLatestShownIfNewer(sealed)
@@ -827,91 +839,399 @@ func (s *mobileBriefService) sealAndAnnounce(source MobileBriefV1) {
 	}
 }
 
-// sealRetryDelays are the waits before a brief whose gates could not decide yet
-// (a store still opening) is sealed again. Its surfaces refresh when it is saved.
-var sealRetryDelays = []time.Duration{time.Second, 3 * time.Second, 10 * time.Second, 30 * time.Second}
+// A retry job owns the lifecycle of a seal that could not finish immediately.
+// The state file contains no brief text and lets launch resume a scheduled retry.
+const mobileBriefSealStateExt = ".seal-state"
 
-// sealRetryBackoff is how long a brief whose seal still fails after its retries
-// is left alone. Reads in that window keep showing the withheld brief and do not
-// run the gates again. A change to the brief's stored content (a new digest) or
-// a restart tries again at once.
-const sealRetryBackoff = time.Hour
+type briefSealState string
 
-// sealRetryPause is the backoff of one brief: the stored-content digest it failed
-// under and the time before which no new attempt is made for that digest.
-type sealRetryPause struct {
-	digest string
-	until  time.Time
+const (
+	briefSealPending   briefSealState = "pending"
+	briefSealSealing   briefSealState = "sealing"
+	briefSealRetryWait briefSealState = "retry_wait"
+	briefSealSealed    briefSealState = "sealed"
+	briefSealWithheld  briefSealState = "withheld"
+	briefSealFailed    briefSealState = "failed"
+)
+
+// transitionBriefSeal is the only writer of a job's state. A terminal outcome
+// can be reopened when its source changes or an explicit source event occurs.
+func transitionBriefSeal(from, to briefSealState) (briefSealState, bool) {
+	allowed := false
+	switch from {
+	case "":
+		allowed = to == briefSealPending
+	case briefSealPending:
+		allowed = to == briefSealSealing || to == briefSealFailed
+	case briefSealSealing:
+		allowed = to == briefSealRetryWait || to == briefSealSealed || to == briefSealWithheld || to == briefSealFailed
+	case briefSealRetryWait:
+		allowed = to == briefSealSealing || to == briefSealPending || to == briefSealFailed || to == briefSealRetryWait
+	case briefSealSealed, briefSealWithheld, briefSealFailed:
+		allowed = to == briefSealPending
+	}
+	if !allowed {
+		return from, false
+	}
+	return to, true
 }
 
-// sealRetryPaused maps a brief ID to its sealRetryPause.
-var sealRetryPaused sync.Map
+type briefSealRecord struct {
+	State       briefSealState `json:"state"`
+	Digest      string         `json:"digest"`
+	Reason      string         `json:"reason,omitempty"`
+	NextAttempt time.Time      `json:"next_attempt,omitempty"`
+}
 
-// mobileBriefSealRetryAttempts counts the sealing attempts the background retries
-// make, so tests can see that a backed-off brief is not tried again on each read.
+type briefSealJob struct {
+	record  briefSealRecord
+	timer   *time.Timer
+	active  bool
+	changed bool
+}
+
+type briefSealJobKey struct {
+	service *mobileBriefService
+	id      string
+}
+
+var briefSealJobs = struct {
+	sync.Mutex
+	jobs map[briefSealJobKey]*briefSealJob
+}{jobs: make(map[briefSealJobKey]*briefSealJob)}
+var sealRetryDelays = []time.Duration{time.Second, 3 * time.Second, 10 * time.Second, 30 * time.Second}
+var sealRetryBackoff = time.Hour
 var mobileBriefSealRetryAttempts atomic.Uint64
 
-// sealRetryBackedOff reports whether a brief failed to seal under this digest
-// recently enough that it should not be tried again yet.
-func sealRetryBackedOff(briefID, digest string, now time.Time) bool {
-	value, ok := sealRetryPaused.Load(briefID)
+func (s *mobileBriefService) sealStatePath(id string) string {
+	if s.store.dir == "" || !mobileBriefIDPattern.MatchString(id) {
+		return ""
+	}
+	return filepath.Join(s.store.dir, id+mobileBriefSealStateExt)
+}
+
+// Caller holds briefSealJobs. Save the wait or failure before scheduling it;
+// if storage is unavailable the live timer still retries.
+func (s *mobileBriefService) setSealState(id string, job *briefSealJob, next briefSealState) bool {
+	state, ok := transitionBriefSeal(job.record.State, next)
 	if !ok {
 		return false
 	}
-	pause := value.(sealRetryPause)
-	return pause.digest == digest && now.Before(pause.until)
+	job.record.State = state
+	path := s.sealStatePath(id)
+	if path != "" {
+		if state == briefSealSealed || state == briefSealWithheld {
+			_ = os.Remove(path)
+		} else if data, err := json.Marshal(job.record); err == nil {
+			if err := os.MkdirAll(s.store.dir, 0700); err == nil {
+				if err := writeMobileBriefFileAtomic(s.store.dir, filepath.Base(path), data); err != nil {
+					log.Printf("[mobile-brief] could not save seal state for %s: %v", id, err)
+				}
+			}
+		}
+	}
+	return true
 }
 
-// sealRetrying names the briefs with a retry in flight, so each has one.
-var sealRetrying sync.Map
+// A source event is an explicit opportunity to recover a terminal failure.
+func (s *mobileBriefService) resetSealFailure(id string) {
+	key := briefSealJobKey{s, id}
+	briefSealJobs.Lock()
+	defer briefSealJobs.Unlock()
+	job := briefSealJobs.jobs[key]
+	if job == nil {
+		data, err := os.ReadFile(s.sealStatePath(id))
+		var record briefSealRecord
+		if err == nil && json.Unmarshal(data, &record) == nil && record.State == briefSealFailed {
+			job = &briefSealJob{record: record}
+		}
+	}
+	if job != nil && job.record.State == briefSealFailed {
+		s.setSealState(id, job, briefSealPending)
+		delete(briefSealJobs.jobs, key)
+		_ = os.Remove(s.sealStatePath(id))
+	}
+}
 
-// scheduleSealRetry seals a brief again in the background while its gates cannot
-// decide, then announces it (brief:stored) so Today and the other surfaces read
-// it. The waits poll the service's stop flag, so shutdown never waits on one.
-// When every retry fails, the reason is logged once and the brief is left alone
-// for sealRetryBackoff, unless its stored content changes first.
+// loadSealFailure prevents reads from restarting a terminal failure before
+// startup has restored its state.
+func (s *mobileBriefService) loadSealFailure(key briefSealJobKey) *briefSealJob {
+	data, err := os.ReadFile(s.sealStatePath(key.id))
+	var record briefSealRecord
+	if err != nil || json.Unmarshal(data, &record) != nil || record.State != briefSealFailed {
+		return nil
+	}
+	job := &briefSealJob{record: record}
+	briefSealJobs.jobs[key] = job
+	return job
+}
+
+func (s *mobileBriefService) sealRetryWaiting(source MobileBriefV1) bool {
+	briefSealJobs.Lock()
+	defer briefSealJobs.Unlock()
+	key := briefSealJobKey{s, source.BriefID}
+	job := briefSealJobs.jobs[key]
+	if job == nil {
+		job = s.loadSealFailure(key)
+	}
+	return job != nil && job.record.Digest == mobileBriefSourceDigest(source) && (job.active || job.record.State == briefSealRetryWait || job.record.State == briefSealFailed)
+}
+
+// scheduleSealRetry keeps one job per service and brief. A changed digest wakes
+// a waiting job; a change while it is sealing is picked up before it exits.
 func (s *mobileBriefService) scheduleSealRetry(source MobileBriefV1) {
-	if sealRetryBackedOff(source.BriefID, mobileBriefSourceDigest(source), time.Now()) {
+	if s == nil || s.isStopped() || s.sealStatePath(source.BriefID) == "" {
 		return
 	}
-	if _, busy := sealRetrying.LoadOrStore(source.BriefID, true); busy {
-		return
+	key := briefSealJobKey{s, source.BriefID}
+	digest := mobileBriefSourceDigest(source)
+	briefSealJobs.Lock()
+	job := briefSealJobs.jobs[key]
+	if job == nil {
+		job = s.loadSealFailure(key)
 	}
+	if job == nil {
+		job = &briefSealJob{record: briefSealRecord{Digest: digest}}
+		briefSealJobs.jobs[key] = job
+		s.setSealState(key.id, job, briefSealPending)
+	} else if job.record.Digest != digest {
+		job.record.Digest = digest
+		job.changed = true
+		if !job.active {
+			if job.timer != nil {
+				job.timer.Stop()
+				job.timer = nil
+			}
+			s.setSealState(key.id, job, briefSealPending)
+		}
+	} else if job.active || job.record.State == briefSealRetryWait || job.record.State == briefSealFailed {
+		briefSealJobs.Unlock()
+		return
+	} else {
+		s.setSealState(key.id, job, briefSealPending)
+	}
+	if !job.active {
+		s.startSealJobLocked(key, job)
+	}
+	briefSealJobs.Unlock()
+}
+
+func (s *mobileBriefService) startSealJobLocked(key briefSealJobKey, job *briefSealJob) {
 	if !s.beginWork() {
-		sealRetrying.Delete(source.BriefID)
+		delete(briefSealJobs.jobs, key)
 		return
 	}
-	go func() {
-		defer s.wg.Done()
-		defer sealRetrying.Delete(source.BriefID)
-		var last mobileBriefWithholding
-		for _, wait := range sealRetryDelays {
-			if !s.sleepUnlessStopped(wait) {
-				return
+	job.active = true
+	job.changed = false
+	go s.runSealJob(key, job)
+}
+
+// A missing directory or unreadable Today file can recover; only an absent
+// dated source and a definitively absent or different Today source are terminal.
+func (s *mobileBriefService) sealSourceMissing(id string) bool {
+	if info, err := os.Stat(s.store.dir); err != nil || !info.IsDir() {
+		return false
+	}
+	if _, err := os.Stat(filepath.Join(s.store.dir, id+".json")); !os.IsNotExist(err) {
+		return false
+	}
+	if _, err := os.Stat(filepath.Join(s.store.dir, mobileBriefTodayFileName)); os.IsNotExist(err) {
+		return true
+	} else if err != nil {
+		return false
+	}
+	today, ok := s.store.currentToday()
+	return ok && (today.BriefID != id || today.LocalDate != s.readDay())
+}
+
+func (s *mobileBriefService) runSealJob(key briefSealJobKey, job *briefSealJob) {
+	defer s.wg.Done()
+	var last mobileBriefWithholding
+	for attempt, delay := range sealRetryDelays {
+		if !s.sleepUnlessStopped(delay) {
+			break
+		}
+		briefSealJobs.Lock()
+		s.setSealState(key.id, job, briefSealSealing)
+		job.changed = false
+		briefSealJobs.Unlock()
+		current, found := s.storedSource(key.id)
+		if found {
+			briefSealJobs.Lock()
+			if !job.changed {
+				job.record.Digest = mobileBriefSourceDigest(current)
 			}
-			current, ok := s.storedSource(source.BriefID)
-			if !ok {
-				return
-			}
+			briefSealJobs.Unlock()
 			mobileBriefSealRetryAttempts.Add(1)
-			sealed, withheld, wrote := s.seal(context.Background(), current)
-			if wrote {
-				sealRetryPaused.Delete(source.BriefID)
+			sealed, withheld, wrote, permanent := s.sealResult(context.Background(), current)
+			last = withheld
+			briefSealJobs.Lock()
+			changed := job.changed || job.record.Digest != mobileBriefSourceDigest(current)
+			if wrote && !changed {
+				state := briefSealSealed
+				if withheld.Reason != "" {
+					state = briefSealWithheld
+				}
+				s.setSealState(key.id, job, state)
+				delete(briefSealJobs.jobs, key)
+				briefSealJobs.Unlock()
 				s.noteLatestShownIfNewer(sealed)
 				if s.app != nil {
-					s.app.emitBrowserEvent("brief:stored", source.BriefID)
+					s.app.emitBrowserEvent("brief:stored", key.id)
 				}
 				return
 			}
-			last = withheld
+			if permanent && !changed {
+				job.record.Reason = "invalid_brief"
+				s.setSealState(key.id, job, briefSealFailed)
+				job.active = false
+				briefSealJobs.Unlock()
+				log.Printf("[mobile-brief] brief %s cannot be sealed (reason=invalid_brief)", key.id)
+				return
+			}
+			briefSealJobs.Unlock()
+		} else if s.sealSourceMissing(key.id) {
+			briefSealJobs.Lock()
+			if !job.changed {
+				job.record.Reason = "source_missing"
+				s.setSealState(key.id, job, briefSealFailed)
+				job.active = false
+				briefSealJobs.Unlock()
+				log.Printf("[mobile-brief] brief %s cannot be sealed (reason=source_missing)", key.id)
+				return
+			}
+			briefSealJobs.Unlock()
+		} else {
+			last.Reason = mobileBriefWithheldNotReady
 		}
-		sealRetryPaused.Store(source.BriefID, sealRetryPause{
-			digest: mobileBriefSourceDigest(source),
-			until:  time.Now().Add(sealRetryBackoff),
-		})
-		log.Printf("[mobile-brief] the brief %s could not be sealed yet (reason=%s kind=%s); the next try is in %s unless the brief changes",
-			source.BriefID, last.Reason, last.SourceKind, sealRetryBackoff)
-	}()
+		briefSealJobs.Lock()
+		job.record.Reason = last.Reason
+		if job.record.Reason == "" {
+			job.record.Reason = "seal_unavailable"
+		}
+		wait := sealRetryBackoff
+		if attempt+1 < len(sealRetryDelays) {
+			wait = sealRetryDelays[attempt+1]
+		}
+		job.record.NextAttempt = time.Now().Add(wait)
+		s.setSealState(key.id, job, briefSealRetryWait)
+		briefSealJobs.Unlock()
+	}
+	briefSealJobs.Lock()
+	defer briefSealJobs.Unlock()
+	if s.isStopped() {
+		delete(briefSealJobs.jobs, key)
+		return
+	}
+	if job.record.State == briefSealSealing {
+		s.setSealState(key.id, job, briefSealRetryWait)
+	}
+	job.record.Reason = last.Reason
+	if job.record.Reason == "" {
+		job.record.Reason = "seal_unavailable"
+	}
+	job.record.NextAttempt = time.Now().Add(sealRetryBackoff)
+	if job.changed {
+		job.record.NextAttempt = time.Now()
+	}
+	// Record the final next-attempt time even if the last attempt already entered wait.
+	s.setSealState(key.id, job, briefSealRetryWait)
+	job.active = false
+	wait := time.Until(job.record.NextAttempt)
+	job.timer = time.AfterFunc(max(wait, 0), func() {
+		briefSealJobs.Lock()
+		defer briefSealJobs.Unlock()
+		if briefSealJobs.jobs[key] != job {
+			return
+		}
+		job.timer = nil
+		s.startSealJobLocked(key, job)
+	})
+	log.Printf("[mobile-brief] the brief %s could not be sealed yet (reason=%s kind=%s); the next try is in %s unless the brief changes", key.id, job.record.Reason, last.SourceKind, sealRetryBackoff)
+}
+
+// stopSealRetries cancels timers belonging to this service; a running attempt
+// sees the stopped flag and exits. Its saved wait is retained for the next launch.
+func (s *mobileBriefService) stopSealRetries() {
+	briefSealJobs.Lock()
+	defer briefSealJobs.Unlock()
+	for key, job := range briefSealJobs.jobs {
+		if key.service != s {
+			continue
+		}
+		if job.timer != nil {
+			job.timer.Stop()
+		}
+		delete(briefSealJobs.jobs, key)
+	}
+}
+
+// resumeSealRetries restores unfinished waits after the service starts.
+func (s *mobileBriefService) resumeSealRetries() {
+	if s.isStopped() {
+		return
+	}
+	entries, err := os.ReadDir(s.store.dir)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), mobileBriefSealStateExt) {
+			continue
+		}
+		id := strings.TrimSuffix(entry.Name(), mobileBriefSealStateExt)
+		if s.sealStatePath(id) == "" {
+			continue
+		}
+		data, err := os.ReadFile(s.sealStatePath(id))
+		if err != nil {
+			continue
+		}
+		var record briefSealRecord
+		if json.Unmarshal(data, &record) != nil {
+			continue
+		}
+		source, found := s.storedSource(id)
+		if found && record.Digest != mobileBriefSourceDigest(source) {
+			s.scheduleSealRetry(source)
+			continue
+		}
+		key := briefSealJobKey{s, id}
+		briefSealJobs.Lock()
+		if s.isStopped() {
+			briefSealJobs.Unlock()
+			return
+		}
+		if briefSealJobs.jobs[key] != nil {
+			briefSealJobs.Unlock()
+			continue
+		}
+		job := &briefSealJob{record: record}
+		briefSealJobs.jobs[key] = job
+		switch record.State {
+		case briefSealFailed:
+			// A changed source or explicit source event can reopen this state.
+		case briefSealRetryWait:
+			wait := max(time.Until(record.NextAttempt), 0)
+			job.timer = time.AfterFunc(wait, func() {
+				briefSealJobs.Lock()
+				defer briefSealJobs.Unlock()
+				if briefSealJobs.jobs[key] == job {
+					job.timer = nil
+					s.startSealJobLocked(key, job)
+				}
+			})
+		case briefSealPending, briefSealSealing:
+			// An interrupted attempt is safe to retry from the beginning.
+			if record.State == briefSealSealing {
+				s.setSealState(id, job, briefSealRetryWait)
+			}
+			s.startSealJobLocked(key, job)
+		default:
+			delete(briefSealJobs.jobs, key)
+		}
+		briefSealJobs.Unlock()
+	}
 }
 
 // sleepUnlessStopped waits for d in short steps; false when the service stopped.
@@ -955,6 +1275,8 @@ func (s *mobileBriefService) saveFinishedRead(source MobileBriefV1) {
 	sealed, _, ok := s.seal(context.Background(), source)
 	if ok {
 		s.noteLatestShownIfNewer(sealed)
+	} else {
+		s.scheduleSealRetry(source)
 	}
 }
 
