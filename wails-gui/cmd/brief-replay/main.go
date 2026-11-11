@@ -26,8 +26,10 @@
 //	go run ./cmd/brief-replay -h
 //	go run ./cmd/brief-replay                 # default: the app data folder
 //	go run ./cmd/brief-replay -data /path/to/data-root
+//	go run ./cmd/brief-replay -reader=new    # the decision and counts from internal/brief
 //
-// The briefs are read from <data>/mobile/briefs.
+// -reader=new prints the same lines as the default, so the two runs can be
+// compared on the same folder. The briefs are read from <data>/mobile/briefs.
 package main
 
 import (
@@ -119,8 +121,9 @@ type result struct {
 
 func main() {
 	data := flag.String("data", "", "app data root, the folder that holds mobile/ (default: the Isoform data folder, resolved at runtime)")
+	readerMode := flag.String("reader", "old", "old: this command's own decision; new: the decision and counts from internal/brief (same output format, for comparing the two)")
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "Usage: brief-replay [-data DIR]\n\nPrints one count-only line per stored brief. Read-only. The briefs are read from DIR/mobile/briefs.\n\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "Usage: brief-replay [-data DIR] [-reader old|new]\n\nPrints one count-only line per stored brief. Read-only. The briefs are read from DIR/mobile/briefs.\n\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -133,7 +136,16 @@ func main() {
 		root = dir
 	}
 	fmt.Println("gates=skipped: the privacy gates need the running app; migrate is predicted from the built brief and the keyed withdrawal log")
-	results, err := replay(briefsDirFor(root))
+	var results []result
+	var err error
+	switch *readerMode {
+	case "old":
+		results, err = replay(briefsDirFor(root))
+	case "new":
+		results, err = replayWithReader(briefsDirFor(root))
+	default:
+		log.Fatalf("unknown -reader %q: use old or new", *readerMode)
+	}
 	if err != nil {
 		log.Fatal(err)
 	}
