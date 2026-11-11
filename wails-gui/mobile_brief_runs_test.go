@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -659,5 +660,77 @@ func TestMobileBriefFailureRecordsProvenSignedOutCause(t *testing.T) {
 				t.Fatalf("runs=%+v", runs)
 			}
 		})
+	}
+}
+
+func TestBriefRunHistoryTransitions(t *testing.T) {
+	for _, tc := range []struct {
+		state   mobileBriefRunsState
+		allowed bool
+	}{
+		{mobileBriefRunsMissing, true}, {mobileBriefRunsValid, true},
+		{mobileBriefRunsUnsupported, false}, {mobileBriefRunsUnreadable, false},
+		{mobileBriefRunsState(99), false},
+	} {
+		if got := mobileBriefRunsTransition(tc.state); got != tc.allowed {
+			t.Errorf("state %d: allowed = %v", tc.state, got)
+		}
+	}
+}
+
+func TestBriefRunHistoryPreservedOnReadFailure(t *testing.T) {
+	for _, tc := range []struct {
+		name, contents string
+		state          mobileBriefRunsState
+		directory      bool
+	}{
+		{"malformed", "{broken", mobileBriefRunsUnreadable, false},
+		{"future version", `{"version":2,"runs":[{"briefId":"kept"}]}`, mobileBriefRunsUnsupported, false},
+		{"read error", "", mobileBriefRunsUnreadable, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := newMobileBriefRunStore(t.TempDir())
+			if tc.directory {
+				if err := os.Mkdir(store.path, 0700); err != nil {
+					t.Fatal(err)
+				}
+			} else if err := os.WriteFile(store.path, []byte(tc.contents), 0600); err != nil {
+				t.Fatal(err)
+			}
+			_, state, err := store.loadLocked()
+			if state != tc.state || err == nil {
+				t.Fatalf("state %v error %v", state, err)
+			}
+			if _, err := store.record(mobileBriefRun{BriefID: "new", Status: mobileBriefRunFailed}); err == nil {
+				t.Fatal("record accepted unreadable history")
+			}
+			if err := store.markNotified("new"); err == nil {
+				t.Fatal("notification accepted unreadable history")
+			}
+			if err := store.markEarlyReplaced("new"); err == nil {
+				t.Fatal("replacement accepted unreadable history")
+			}
+			store.firstSeen(time.Now())
+			if !tc.directory {
+				got, err := os.ReadFile(store.path)
+				if err != nil || string(got) != tc.contents {
+					t.Fatalf("history changed: %q, %v", got, err)
+				}
+			} else if info, err := os.Stat(store.path); err != nil || !info.IsDir() {
+				t.Fatalf("read error path changed: %v", err)
+			}
+		})
+	}
+	store := newMobileBriefRunStore(t.TempDir())
+	_, state, err := store.loadLocked()
+	if err != nil || state != mobileBriefRunsMissing {
+		t.Fatalf("first use state %v error %v", state, err)
+	}
+	if _, err := store.record(mobileBriefRun{BriefID: "new", Status: mobileBriefRunFailed}); err != nil {
+		t.Fatal(err)
+	}
+	_, state, err = store.loadLocked()
+	if err != nil || state != mobileBriefRunsValid {
+		t.Fatalf("saved state %v error %v", state, err)
 	}
 }

@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -101,7 +103,8 @@ func (s *mobileBriefRunStore) list() []mobileBriefRun {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.loadLocked().Runs
+	file, _, _ := s.loadLocked()
+	return file.Runs
 }
 
 // firstSeen returns when the schedule was first watched, recording now when
@@ -110,7 +113,10 @@ func (s *mobileBriefRunStore) list() []mobileBriefRun {
 func (s *mobileBriefRunStore) firstSeen(now time.Time) time.Time {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	file := s.loadLocked()
+	file, _, loadErr := s.loadLocked()
+	if loadErr != nil {
+		return now
+	}
 	if seen, err := time.Parse(time.RFC3339Nano, file.FirstSeenAt); err == nil {
 		return seen
 	}
@@ -128,27 +134,63 @@ func (s *mobileBriefRunStore) firstSeen(now time.Time) time.Time {
 func (s *mobileBriefRunStore) seenAt() (time.Time, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	seen, err := time.Parse(time.RFC3339Nano, s.loadLocked().FirstSeenAt)
+	file, _, loadErr := s.loadLocked()
+	if loadErr != nil {
+		return time.Time{}, false
+	}
+	seen, err := time.Parse(time.RFC3339Nano, file.FirstSeenAt)
 	return seen, err == nil
 }
 
-func (s *mobileBriefRunStore) loadLocked() mobileBriefRunsFile {
+// mobileBriefRunsState distinguishes first use from data that needs recovery.
+type mobileBriefRunsState int
+
+const (
+	mobileBriefRunsMissing mobileBriefRunsState = iota
+	mobileBriefRunsValid
+	mobileBriefRunsUnsupported
+	mobileBriefRunsUnreadable
+)
+
+// mobileBriefRunsTransition only allows writes from a known schema or first use.
+func mobileBriefRunsTransition(state mobileBriefRunsState) bool {
+	switch state {
+	case mobileBriefRunsMissing, mobileBriefRunsValid:
+		return true
+	case mobileBriefRunsUnsupported, mobileBriefRunsUnreadable:
+		return false
+	default:
+		return false
+	}
+}
+
+func (s *mobileBriefRunStore) loadLocked() (mobileBriefRunsFile, mobileBriefRunsState, error) {
+	empty := mobileBriefRunsFile{Version: mobileBriefRunsVersion}
 	if s.path == "" {
-		return mobileBriefRunsFile{Version: mobileBriefRunsVersion}
+		return empty, mobileBriefRunsMissing, nil
 	}
 	data, err := os.ReadFile(s.path)
+	if errors.Is(err, os.ErrNotExist) {
+		return empty, mobileBriefRunsMissing, nil
+	}
 	if err != nil {
-		return mobileBriefRunsFile{Version: mobileBriefRunsVersion}
+		return mobileBriefRunsFile{}, mobileBriefRunsUnreadable, err
 	}
 	var file mobileBriefRunsFile
-	if err := json.Unmarshal(data, &file); err != nil || file.Version != mobileBriefRunsVersion {
-		return mobileBriefRunsFile{Version: mobileBriefRunsVersion}
+	if err := json.Unmarshal(data, &file); err != nil {
+		return mobileBriefRunsFile{}, mobileBriefRunsUnreadable, err
 	}
-	return file
+	if file.Version != mobileBriefRunsVersion {
+		return mobileBriefRunsFile{}, mobileBriefRunsUnsupported, fmt.Errorf("unsupported brief run history version %d", file.Version)
+	}
+	return file, mobileBriefRunsValid, nil
 }
 
 func (s *mobileBriefRunStore) saveLocked(runs []mobileBriefRun) error {
-	file := s.loadLocked()
+	file, state, err := s.loadLocked()
+	if !mobileBriefRunsTransition(state) {
+		return err
+	}
 	file.Runs = runs
 	return s.saveFileLocked(file)
 }
@@ -183,7 +225,11 @@ func (s *mobileBriefRunStore) saveFileLocked(file mobileBriefRunsFile) error {
 func (s *mobileBriefRunStore) markEarlyReplaced(briefID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	runs := s.loadLocked().Runs
+	file, state, err := s.loadLocked()
+	if !mobileBriefRunsTransition(state) {
+		return err
+	}
+	runs := file.Runs
 	for i := range runs {
 		if runs[i].BriefID == briefID && runs[i].Early != nil {
 			runs[i].Early.Replaced = true
@@ -196,7 +242,11 @@ func (s *mobileBriefRunStore) markEarlyReplaced(briefID string) error {
 func (s *mobileBriefRunStore) record(run mobileBriefRun) (mobileBriefRun, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	runs := s.loadLocked().Runs
+	file, state, err := s.loadLocked()
+	if !mobileBriefRunsTransition(state) {
+		return mobileBriefRun{}, err
+	}
+	runs := file.Runs
 	for i, existing := range runs {
 		if existing.BriefID != run.BriefID {
 			continue
@@ -247,7 +297,11 @@ func (s *mobileBriefRunStore) record(run mobileBriefRun) (mobileBriefRun, error)
 func (s *mobileBriefRunStore) markNotified(briefID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	runs := s.loadLocked().Runs
+	file, state, err := s.loadLocked()
+	if !mobileBriefRunsTransition(state) {
+		return err
+	}
+	runs := file.Runs
 	for i := range runs {
 		if runs[i].BriefID == briefID {
 			if runs[i].Notified {

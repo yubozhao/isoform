@@ -1,6 +1,7 @@
 package main
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -221,5 +222,76 @@ func TestMobileBriefCurrentSkipsABriefWhoseWordsAreNowWithheld(t *testing.T) {
 	got, ok := svc.CurrentMobileBrief()
 	if !ok || got.BriefID != older.BriefID || !mobileBriefHasWrittenText(got) {
 		t.Fatalf("a brief whose words are withheld stayed current: %s (ok=%v, status %q), want %s", got.BriefID, ok, got.NarrativeStatus, older.BriefID)
+	}
+}
+
+func TestMobileBriefLatestTransition(t *testing.T) {
+	older := mobileBriefCurrentWritten(t, "2026-10-09", mobileBriefSlotMorning, 7, "Older.")
+	newer := mobileBriefCurrentWritten(t, "2026-10-09", mobileBriefSlotEvening, 18, "Newer.")
+	tie := newer
+	tie.AsOf = older.AsOf
+	for _, tc := range []struct {
+		name      string
+		current   MobileBriefV1
+		state     mobileBriefLatestState
+		candidate MobileBriefV1
+		want      mobileBriefLatestMove
+	}{
+		{"missing", older, mobileBriefLatestMissing, older, mobileBriefLatestAdvance},
+		{"newer", older, mobileBriefLatestRecorded, newer, mobileBriefLatestAdvance},
+		{"older", newer, mobileBriefLatestRecorded, older, mobileBriefLatestKeep},
+		{"same", older, mobileBriefLatestRecorded, older, mobileBriefLatestKeep},
+		{"equal time lesser ID", older, mobileBriefLatestRecorded, tie, mobileBriefLatestKeep},
+		{"equal time greater ID", tie, mobileBriefLatestRecorded, older, mobileBriefLatestAdvance},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := mobileBriefLatestTransition(tc.state, tc.current, tc.candidate); got != tc.want {
+				t.Fatalf("move = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestMobileBriefLatestConcurrentCompletionAndRestart(t *testing.T) {
+	clock := &fakeMobileBriefClock{now: mobileBriefTestDay(21, 0)}
+	svc, _ := newTestMobileBriefService(t, clock)
+	older := mobileBriefCurrentWritten(t, "2026-10-09", mobileBriefSlotMorning, 7, "Older.")
+	newer := mobileBriefCurrentWritten(t, "2026-10-09", mobileBriefSlotEvening, 18, "Newer.")
+	for _, brief := range []MobileBriefV1{older, newer} {
+		if err := svc.store.saveDocument(brief, clock.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Hold the shared operation lock while an older completion is queued, then
+	// install the newer record before allowing that completion to compare.
+	svc.noteLatestShownIfNewer(older)
+	other := &mobileBriefService{store: newMobileBriefStore(filepath.Dir(svc.store.dir))}
+	mobileBriefLatestShownMu.Lock()
+	started, done := make(chan struct{}), make(chan struct{})
+	go func() {
+		close(started)
+		other.noteLatestShownIfNewer(older)
+		close(done)
+	}()
+	<-started
+	err := svc.store.writeLatestShown(mobileBriefLatestShown{Version: 1, BriefID: newer.BriefID, Slot: newer.Slot, At: newer.AsOf})
+	mobileBriefLatestShownMu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-done
+	restarted := newMobileBriefStore(filepath.Dir(svc.store.dir))
+	if record, ok := restarted.readLatestShown(); !ok || record.BriefID != newer.BriefID {
+		t.Fatalf("after restart latest = %+v, found %v", record, ok)
+	}
+	// A record whose source no longer has words can be repaired to the last
+	// written brief, even though that brief has an earlier timestamp.
+	newer.NarrativeStatus, newer.Narrative = "quiet", nil
+	if err := svc.store.saveDocument(newer, clock.Now()); err != nil {
+		t.Fatal(err)
+	}
+	other.noteLatestShownIfNewer(older)
+	if record, ok := restarted.readLatestShown(); !ok || record.BriefID != older.BriefID {
+		t.Fatalf("after quiet replacement latest = %+v, found %v", record, ok)
 	}
 }

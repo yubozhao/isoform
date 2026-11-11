@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
 )
 
 // The latest brief (PROTOCOL.md section 8.1) is one read, latestShown, and
@@ -87,6 +88,9 @@ func (s *mobileBriefStore) readLatestShown() (mobileBriefLatestShown, bool) {
 	return record, true
 }
 
+// Separate store instances can refer to the same directory.
+var mobileBriefLatestShownMu sync.Mutex
+
 // writeLatestShown saves the latest-brief record atomically.
 func (s *mobileBriefStore) writeLatestShown(record mobileBriefLatestShown) error {
 	if s.dir == "" {
@@ -96,21 +100,62 @@ func (s *mobileBriefStore) writeLatestShown(record mobileBriefLatestShown) error
 	if err != nil {
 		return err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	if err := os.MkdirAll(s.dir, 0700); err != nil {
 		return err
 	}
 	return writeMobileBriefFileAtomic(s.dir, mobileBriefLatestShownName, data)
 }
 
-// noteLatestShown makes brief the latest brief.
+// mobileBriefLatestState describes whether a readable record names a brief.
+type mobileBriefLatestState int
+
+const (
+	mobileBriefLatestMissing mobileBriefLatestState = iota
+	mobileBriefLatestRecorded
+)
+
+// Equal timestamps use the same ID order as store.briefs.
+type mobileBriefLatestMove int
+
+const (
+	mobileBriefLatestKeep mobileBriefLatestMove = iota
+	mobileBriefLatestAdvance
+)
+
+func mobileBriefLatestTransition(state mobileBriefLatestState, current MobileBriefV1, candidate MobileBriefV1) mobileBriefLatestMove {
+	switch state {
+	case mobileBriefLatestMissing:
+		return mobileBriefLatestAdvance
+	case mobileBriefLatestRecorded:
+	default:
+		return mobileBriefLatestKeep
+	}
+	oldAt, newAt := mobileBriefAsOfTime(current), mobileBriefAsOfTime(candidate)
+	if newAt.After(oldAt) || (newAt.Equal(oldAt) && candidate.BriefID > current.BriefID) {
+		return mobileBriefLatestAdvance
+	}
+	return mobileBriefLatestKeep
+}
+
+// noteLatestShown compares and updates under one lock, including when a read
+// repairs a stale pointer. Held and non-written briefs never advance it.
 func (s *mobileBriefService) noteLatestShown(brief MobileBriefV1) {
-	// An early brief is never the latest record before its slot.
-	if mobileBriefHeld(brief, mobileBriefClock()) {
+	if !mobileBriefHasWrittenText(brief) || mobileBriefHeld(brief, mobileBriefClock()) {
 		return
 	}
-	if current, ok := s.store.readLatestShown(); ok && current.BriefID == brief.BriefID {
+	mobileBriefLatestShownMu.Lock()
+	defer mobileBriefLatestShownMu.Unlock()
+	var current MobileBriefV1
+	found := false
+	if record, ok := s.store.readLatestShown(); ok {
+		current, found = s.store.load(record.BriefID)
+		found = found && mobileBriefHasWrittenText(current) && !mobileBriefHeld(current, mobileBriefClock())
+	}
+	state := mobileBriefLatestMissing
+	if found {
+		state = mobileBriefLatestRecorded
+	}
+	if mobileBriefLatestTransition(state, current, brief) != mobileBriefLatestAdvance {
 		return
 	}
 	if err := s.store.writeLatestShown(mobileBriefLatestShown{Version: 1, BriefID: brief.BriefID, Slot: brief.Slot, At: brief.AsOf}); err != nil {
@@ -118,18 +163,7 @@ func (s *mobileBriefService) noteLatestShown(brief MobileBriefV1) {
 	}
 }
 
-// noteLatestShownIfNewer makes a brief with written words the latest brief,
-// unless the record already names a newer one. A brief without words never
-// does (R61).
 func (s *mobileBriefService) noteLatestShownIfNewer(brief MobileBriefV1) {
-	if !mobileBriefHasWrittenText(brief) {
-		return
-	}
-	if current, ok := s.store.readLatestShown(); ok {
-		if recorded, found := s.store.load(current.BriefID); found && mobileBriefAsOfTime(recorded).After(mobileBriefAsOfTime(brief)) {
-			return
-		}
-	}
 	s.noteLatestShown(brief)
 }
 

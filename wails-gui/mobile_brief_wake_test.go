@@ -25,7 +25,8 @@ func TestMobileBriefWakeRecoversMissedSlotThroughSystemSignals(t *testing.T) {
 			mobileTestWaitFor(t, "the initial schedule check", func() bool {
 				svc.runs.mu.Lock()
 				defer svc.runs.mu.Unlock()
-				return svc.runs.loadLocked().FirstSeenAt != ""
+				file, _, _ := svc.runs.loadLocked()
+				return file.FirstSeenAt != ""
 			})
 			signals.handleChange(t.Context(), activitymon.SystemStateChange{Kind: activitymon.SystemStateSleep, At: clock.Now()})
 			clock.Set(mobileBriefTestDay(7, minute))
