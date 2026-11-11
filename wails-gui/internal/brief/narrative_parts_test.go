@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // readShadowFileParts returns the narrative parts stored in the shadow copy.
@@ -91,6 +92,48 @@ func TestJudgeRejectsEmptyNextAndPastOnlyDraft(t *testing.T) {
 	}
 }
 
+// TestSlotFixturesSetTheLargerPart runs one fixture per slot. A morning brief
+// must make next the larger part; an evening brief must make done the larger
+// part; an on-request brief follows the hour it is made. The wrong balance for
+// a slot is rejected before any judge call.
+func TestSlotFixturesSetTheLargerPart(t *testing.T) {
+	forward := `{"done":[{"text":"Shipped the draft yesterday.","refs":["e1"]}],"next":[{"text":"Send the draft to Sam before the review, because Sam is waiting on it.","refs":["e1"]}]}`
+	reflective := `{"done":[{"text":"You shipped the draft and closed two loops, but the review slipped again, which is becoming a pattern across the week.","refs":["e1"]}],"next":[{"text":"Plan the review for tomorrow morning.","refs":["e2"]}]}`
+	cases := []struct {
+		name    string
+		slot    string
+		end     time.Time
+		reply   string
+		wantJud string
+	}{
+		{"morning forward passes", "morning", testWindow.End, forward, JudgePass},
+		{"morning reflective rejected", "morning", testWindow.End, reflective, JudgeReject},
+		{"evening reflective passes", "evening", testWindow.End, reflective, JudgePass},
+		{"evening forward rejected", "evening", testWindow.End, forward, JudgeReject},
+		{"on-request before noon forward", "on_request", time.Date(2026, 10, 9, 9, 0, 0, 0, time.UTC), forward, JudgePass},
+		{"on-request after noon reflective", "on_request", time.Date(2026, 10, 9, 15, 0, 0, 0, time.UTC), reflective, JudgePass},
+		{"on-request after noon forward rejected", "on_request", time.Date(2026, 10, 9, 15, 0, 0, 0, time.UTC), forward, JudgeReject},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			w := testWindow
+			w.Slot, w.End = tc.slot, tc.end
+			deps := &fakeDeps{items: twoItems()}
+			deps.queue(tc.reply, passJudgment)
+			report, err := RunShadow(context.Background(), deps, t.TempDir(), testBriefID, w, ShadowOld{})
+			if err != nil {
+				t.Fatalf("RunShadow: %v", err)
+			}
+			if report.Judge != tc.wantJud {
+				t.Fatalf("judge=%s, want %s", report.Judge, tc.wantJud)
+			}
+			if tc.wantJud == JudgeReject && len(deps.asks) != 1 {
+				t.Fatalf("a wrong-balance draft reached the judge: %d model calls", len(deps.asks))
+			}
+		})
+	}
+}
+
 // TestModelJudgeRejectKeepsNoParts keeps the privacy rule for a rejected draft:
 // the words are not kept on the composed brief, so nothing reaches a reader.
 func TestModelJudgeRejectKeepsNoParts(t *testing.T) {
@@ -105,4 +148,3 @@ func TestModelJudgeRejectKeepsNoParts(t *testing.T) {
 		t.Fatalf("a rejected draft kept parts: pass=%v done=%d next=%d", report.JudgePass, report.DoneParts, report.NextParts)
 	}
 }
-

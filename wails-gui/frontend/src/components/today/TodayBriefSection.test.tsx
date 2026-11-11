@@ -3,13 +3,33 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "@/i18n";
 import { briefDateTime } from "@/lib/brief-time";
 import type { MobileBriefCard, MobileBriefDocument, MobileBriefItem, TodayBriefView } from "@/lib/wails-shim-app";
-import { MAX_MEETINGS, MAX_SECTION_ITEMS, TodayBriefSection, briefItemLink, needsYou, nextMeetings } from "./TodayBriefSection";
+import { MAX_MEETINGS, MAX_SECTION_ITEMS, TodayBriefSection, briefItemLink, narrativeInPartOrder, needsYou, nextMeetings } from "./TodayBriefSection";
 import { resetTodayChatDrafts } from "@/lib/today-chat-prepared";
 import { todayBriefCardRef, type TodayChatContextRef } from "@/lib/today-chat-navigation";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { dayShapeFixture } from "./today-next.fixture";
 import { briefHoldSource } from "./useBriefHoldOffer";
+
+describe("narrativeInPartOrder", () => {
+    const done = { text: "You shipped the draft.", refs: ["e1"] };
+    const next = { text: "Send it to Sam before the review.", refs: ["e2"] };
+    const closing = { text: "Want me to book the room?", refs: ["e2"] };
+
+    it("keeps done first, then next, with the closing question last", () => {
+        const brief = { narrative: [done, next, closing], narrativeParts: [{ kind: "done", count: 1 }, { kind: "next", count: 2 }] };
+        expect(narrativeInPartOrder(brief)).toEqual([done, next, closing]);
+    });
+
+    it("keeps the stored narrative when a brief has no parts", () => {
+        const brief = { narrative: [next, closing] };
+        expect(narrativeInPartOrder(brief)).toEqual([next, closing]);
+    });
+
+    it("reads a null narrative as empty", () => {
+        expect(narrativeInPartOrder({ narrative: null, narrativeParts: null })).toEqual([]);
+    });
+});
 
 const mocks = vi.hoisted(() => ({ signIn: vi.fn(async () => undefined), reopen: vi.fn(), openURL: vi.fn(), prepareDrafts: vi.fn(), postClosing: vi.fn(), addSchedule: vi.fn(), undoSchedule: vi.fn(), toast: Object.assign(vi.fn(), { error: vi.fn() }), moveGoal: vi.fn(), noteCheckIn: vi.fn(), setKindEnabled: vi.fn(), openDeliverable: vi.fn(), permissions: vi.fn(), requestPermission: vi.fn(), permissionSettings: vi.fn(), recordToday: vi.fn(), correctBelief: vi.fn(), undoBelief: vi.fn(), canUndoBelief: vi.fn(), holdSettings: vi.fn(), propose: vi.fn(), hold: vi.fn(), holdStatus: vi.fn(), undoHold: vi.fn(), dismissHold: vi.fn(), undoDismissHold: vi.fn(), removeHold: vi.fn(), undoRemove: vi.fn(), openCalendar: vi.fn(), prepForPerson: vi.fn(), draftRoute: vi.fn() }));
 

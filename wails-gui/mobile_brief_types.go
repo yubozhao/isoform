@@ -33,15 +33,18 @@ type MobileBriefV1 struct {
 	ColdStart       bool              `json:"coldStart"`
 	// FromHistory is true when the brief drew on this computer's Claude Code or
 	// Codex history (AssistantHistoryView), so the screen can name it.
-	FromHistory     bool                `json:"fromHistory"`
-	NarrativeStatus string              `json:"narrativeStatus"` // ok | unavailable | skipped
-	Narrative       []MobileBriefPara   `json:"narrative"`
-	NeedsYouCount   int                 `json:"needsYouCount"` // always 0 since the Desk was removed; kept so older phones decode
-	Sections        MobileBriefSections `json:"sections"`
-	DayShape        *MobileBriefDay     `json:"dayShape"`
-	Counts          MobileBriefCounts   `json:"counts"`
-	Evidence        []MobileBriefRef    `json:"evidence"`
-	Limits          MobileBriefLimits   `json:"limits"`
+	FromHistory     bool              `json:"fromHistory"`
+	NarrativeStatus string            `json:"narrativeStatus"` // ok | unavailable | skipped
+	Narrative       []MobileBriefPara `json:"narrative"`
+	// NarrativeParts splits Narrative into its done and next parts, in order
+	// (mobile_brief_forward.go). Additive: phones read Narrative alone.
+	NarrativeParts []MobileBriefNarrativePart `json:"narrativeParts,omitempty"`
+	NeedsYouCount  int                        `json:"needsYouCount"` // always 0 since the Desk was removed; kept so older phones decode
+	Sections       MobileBriefSections        `json:"sections"`
+	DayShape       *MobileBriefDay            `json:"dayShape"`
+	Counts         MobileBriefCounts          `json:"counts"`
+	Evidence       []MobileBriefRef           `json:"evidence"`
+	Limits         MobileBriefLimits          `json:"limits"`
 	// WeeklyRecap is "Your week" as paragraphs, for readers that show
 	// paragraphs and for the recording; YourWeek is the same week as a card
 	// (your_week.go). Both exist only on the Friday evening brief.
@@ -87,6 +90,9 @@ type MobileBriefPara struct {
 	TopicID   string                `json:"topicId,omitempty"`
 	TopicName string                `json:"topicName,omitempty"`
 	Role      yourWeekParagraphRole `json:"-"`
+	// Part is done or next while the writer's paragraphs are being checked;
+	// the wire form is the narrativeParts count list instead.
+	Part      string `json:"-"`
 	chipWords *mobileBriefCardWords
 	Text      string   `json:"text"`
 	Refs      []string `json:"refs"`

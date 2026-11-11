@@ -313,6 +313,20 @@ function needsAttentionByReason(item: MobileBriefItem): boolean {
 const ATTENTION_OTHER_SECTIONS: ReadonlyArray<keyof MobileBriefSections> = ["moved", "deliverables", "people"];
 
 /** The meetings still ahead, soonest first, without the day-shape line. */
+/**
+ * The brief's paragraphs in part order: done first, then next, so the closing
+ * question stays last. The stored narrative is already in this order; the
+ * counts in narrativeParts say where next starts. Briefs without parts keep
+ * their narrative as it is.
+ */
+export function narrativeInPartOrder(brief: { narrative?: MobileBriefParagraph[] | null; narrativeParts?: { kind: string; count: number }[] | null }): MobileBriefParagraph[] {
+    const narrative = brief.narrative ?? [];
+    const parts = brief.narrativeParts ?? [];
+    const doneCount = parts.find((part) => part.kind === "done")?.count ?? 0;
+    if (parts.length === 0 || doneCount <= 0 || doneCount >= narrative.length) return narrative;
+    return [...narrative.slice(0, doneCount), ...narrative.slice(doneCount)];
+}
+
 export function nextMeetings(items: MobileBriefItem[], now = new Date()): MobileBriefItem[] {
     return items
         .filter((item) => {
@@ -1261,7 +1275,7 @@ function briefParts({
     const checkIn = goalCheckIn && !hiddenGoals.has(goalCheckIn.goalId) ? goalCheckIn : null;
     const brief = withoutHiddenGoals(storedBrief, checkIn ? new Set([...hiddenGoals, checkIn.goalId]) : hiddenGoals);
     // Older stored briefs and Go's empty lists can arrive as null.
-    const storedNarrative = brief.narrative ?? [];
+    const storedNarrative = narrativeInPartOrder(brief);
     const storedClosing = storedNarrative.at(-1);
     const closingText = storedClosing?.text ?? "";
     const holdQuestion = /[?？]\s*$/.test(closingText) && /\b(?:hold|reserve|block|set aside|make time)\b|预留|留出|留给|安排.*时间/i.test(closingText);

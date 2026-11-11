@@ -1111,6 +1111,8 @@ export interface MobileBriefDocument {
      *  failed ("late"). */
     generation?: { reason: string; scheduledAt: string; generatedAt: string; message: string };
     narrative: MobileBriefParagraph[];
+    /** How many paragraphs of narrative each part holds, done first then next. Absent on older briefs. */
+    narrativeParts?: { kind: "done" | "next" | string; count: number }[];
     /** "Your week" as paragraphs (older phones, the recording). */
     weeklyRecap?: { text: string; refs: string[] }[];
     /** "Your week", the Friday evening look back (Go your_week.go). */

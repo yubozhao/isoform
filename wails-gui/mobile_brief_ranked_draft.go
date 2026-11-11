@@ -11,6 +11,8 @@ type morningBriefDraftParagraph struct {
 	Text  string                `json:"text"`
 	Items []string              `json:"items"`
 	Chip  *mobileBriefCardWords `json:"chip,omitempty"`
+	// Part is done or next (mobile_brief_forward.go); absent in older replies.
+	Part string `json:"part,omitempty"`
 }
 
 type morningBriefDraftReply struct {
@@ -18,7 +20,14 @@ type morningBriefDraftReply struct {
 	Answers    []mobileBriefCardWords       `json:"answers,omitempty"`
 }
 
+// parseMorningBriefDraft reads a scheduled morning draft (next is the larger part).
 func parseMorningBriefDraft(raw string, selection morningBriefSelection) (morningBriefDraft, error) {
+	return parseRankedBriefDraft(raw, selection, mobileBriefSlotMorning)
+}
+
+// parseRankedBriefDraft reads a ranked draft for slot: the scheduled morning or
+// the scheduled evening. The slot sets which part must be the larger one.
+func parseRankedBriefDraft(raw string, selection morningBriefSelection, slot string) (morningBriefDraft, error) {
 	decoder := json.NewDecoder(strings.NewReader(stripMobileBriefCodeFence(raw)))
 	decoder.DisallowUnknownFields()
 	var reply morningBriefDraftReply
@@ -39,6 +48,11 @@ func parseMorningBriefDraft(raw string, selection morningBriefSelection) (mornin
 		items[selection.Handled.ID] = *selection.Handled
 	}
 	var draft morningBriefDraft
+	labelled := false
+	for _, paragraph := range reply.Paragraphs {
+		labelled = labelled || paragraph.Part != ""
+	}
+	leadCited := false
 	for index, paragraph := range reply.Paragraphs {
 		text := strings.TrimSpace(paragraph.Text)
 		if text == "" || len(text) > mobileBriefNarrativeMaxBytes || !mobileBriefCopySafe(text) || redactThreadOutcomeText(text) != text || len(paragraph.Items) == 0 {
@@ -63,14 +77,25 @@ func parseMorningBriefDraft(raw string, selection morningBriefSelection) (mornin
 				}
 			}
 		}
-		if index == 0 && !lead {
+		leadCited = leadCited || lead
+		// A labelled draft may put done first, so the lead is checked over the
+		// whole draft below; an unlabelled draft keeps the lead-first rule.
+		if index == 0 && !lead && !labelled {
 			return morningBriefDraft{}, codeError("draft does not lead with the selected item")
 		}
-		draft.Paragraphs = append(draft.Paragraphs, MobileBriefPara{Text: text, Refs: refs, chipWords: paragraph.Chip})
+		draft.Paragraphs = append(draft.Paragraphs, MobileBriefPara{Text: text, Refs: refs, chipWords: paragraph.Chip, Part: paragraph.Part})
+	}
+	if labelled && !leadCited {
+		return morningBriefDraft{}, codeError("draft does not cite the selected item")
 	}
 	if mobileBriefNarrativeWords(draft.Paragraphs) > mobileBriefMaxWords {
 		return morningBriefDraft{}, codeError("draft exceeds word ceiling")
 	}
+	ordered, err := orderRankedParts(draft.Paragraphs, rankedPartsBalance(slot))
+	if err != nil {
+		return morningBriefDraft{}, err
+	}
+	draft.Paragraphs = ordered
 	if len(reply.Answers) > 2 {
 		return morningBriefDraft{}, codeError("too many closing answers")
 	}

@@ -1164,7 +1164,9 @@ func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, s
 	// Existing composer overrides are test seams; production always uses the
 	// ranked route for scheduled mornings.
 	calendarOnlyFallback := s.compose == nil && s.composeWithLead == nil && len(mobileBriefPicks(brief)) == 0 && len(mobileBriefDayItems(brief)) > 0 && len(mobileBriefNarrativeTemplateOnly(brief, s.app.currentUILanguageName())) == 0
-	rankedMorning := slot == mobileBriefSlotMorning && s.compose == nil && s.composeWithLead == nil && !calendarOnlyFallback
+	// The ranked writer serves the scheduled morning and evening (the evening
+	// reflects back; rankedPartsBalance sets its larger part).
+	rankedMorning := (slot == mobileBriefSlotMorning || slot == mobileBriefSlotEvening) && s.compose == nil && s.composeWithLead == nil && !calendarOnlyFallback
 	var modelBinding *mobileBriefModelBinding
 	if !rankedMorning && !calendarOnlyFallback {
 		modelBinding = s.app.captureMobileBriefModelSources(ctx, brief, gathered)
@@ -1285,6 +1287,8 @@ func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, s
 	if s.app != nil && !mobileBriefStaticEmpty(brief) {
 		s.app.appendOpenAnswerBriefParagraph(ctx, &brief, windowStart, asOf, language)
 	}
+	// The part counts follow the final narrative, so they are set last.
+	brief = mobileBriefWithNarrativeParts(brief)
 	// A stored copy with written words is kept over a build with no words, and a
 	// made-ahead build never replaces a final copy with words. A made-ahead copy
 	// with words is replaced by a real build (below), and a remake replaces a

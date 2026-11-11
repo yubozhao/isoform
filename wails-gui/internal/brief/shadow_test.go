@@ -362,17 +362,17 @@ func TestParseNarrativePartsKeepsOnlyCitedEvidence(t *testing.T) {
 func TestCheckNarrativePartsRejectsEmptyNextAndPastRestatement(t *testing.T) {
 	short := []Paragraph{{Text: "Done."}}
 	long := []Paragraph{{Text: "Send the draft to Sam before the review because Sam is waiting."}}
-	if err := CheckNarrativeParts(short, nil); err == nil {
+	if err := CheckNarrativeParts(PartNext, short, nil); err == nil {
 		t.Fatal("an empty next part passed")
 	}
-	if err := CheckNarrativeParts(short, long); err != nil {
+	if err := CheckNarrativeParts(PartNext, short, long); err != nil {
 		t.Fatalf("a larger next part was rejected: %v", err)
 	}
-	if err := CheckNarrativeParts(long, long); err == nil {
+	if err := CheckNarrativeParts(PartNext, long, long); err == nil {
 		t.Fatal("a next part that only restates the done part passed")
 	}
 	clock := []Paragraph{{Text: "You shipped the draft at 9:30."}}
-	if err := CheckNarrativeParts(clock, long); err == nil {
+	if err := CheckNarrativeParts(PartNext, clock, long); err == nil {
 		t.Fatal("a clock time in the done part passed")
 	}
 }
