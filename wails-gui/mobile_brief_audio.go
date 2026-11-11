@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-	"unicode"
 
 	"wails-gui/internal/platform/cmdutil"
 )
@@ -40,8 +39,6 @@ const (
 	// mobileBriefAudioStatusRendering marks a brief whose recording is being made right now: the computer
 	// is speaking it. It carries no file, and the phone shows "Recording on its way" for it (P138).
 	mobileBriefAudioStatusRendering = "rendering"
-	yourWeekSpokenMaxWords          = 110
-	yourWeekSpokenMaxHan            = 180
 )
 
 // MobileBriefAudio describes the spoken brief stored beside the document.
@@ -137,159 +134,49 @@ func mobileBriefVoiceLang(uiLanguage string) string {
 	return "en"
 }
 
-// mobileBriefSpokenText is what the voice reads: the narrative paragraphs, or
-// the same forward-first template with Highlights last when there is no narrative.
-// It carries titles, states and counts. The one item detail it may read is a
-// vague Purpose's goal, as its own template sentence; the narrative model
-// never receives it.
+// mobileBriefSpokenText is the written narrative or weekly recap read by the
+// voice, with display text normalized for speech.
 func mobileBriefSpokenText(brief MobileBriefV1, lang string) string {
 	text, _ := mobileBriefSpeech(brief, lang)
 	return text
 }
 
-// mobileBriefSpeech is the spoken text and whether the voice reads Isoform's
-// template from the brief's rows instead of its written paragraphs (no text,
-// or text too long to read aloud).
+// mobileBriefSpeech reads the paragraphs delivered to the user in order. The
+// display has already applied its publication and privacy rules; applying a
+// second speech budget here would make a complete recording sound cut off.
 func mobileBriefSpeech(brief MobileBriefV1, lang string) (string, bool) {
 	if brief.YourWeek != nil {
 		return yourWeekSpeech(brief, lang), false
 	}
-	// A template opening is never spoken (design R74): only the model's ok text is.
 	if brief.NarrativeStatus != "ok" {
 		return "", false
 	}
-	narrative := make([]MobileBriefPara, 0, len(brief.Narrative))
-	for _, paragraph := range brief.Narrative {
-		if !mobileBriefIsOpenAnswerParagraph(brief, paragraph) {
-			narrative = append(narrative, paragraph)
+	var parts []string
+	question := morningBriefWeekQuestionSpeech(brief.WeekQuestion, lang)
+	for i, paragraph := range brief.Narrative {
+		text := mobileBriefSpokenClocks(mobileBriefParagraphSpeech(brief, paragraph, lang), lang)
+		if question != "" && i == len(brief.Narrative)-1 && strings.ContainsAny(text, "?？") {
+			parts = append(parts, question)
+			question = ""
+		}
+		if text != "" {
+			parts = append(parts, text)
 		}
 	}
-	paragraphs, fits := fitMobileBriefNarrative(brief, narrative, lang)
-	if fits {
-		// Speech reads the source clocks: written Chinese clocks are bare
-		// 24-hour values (R47) that speech can't tell from other numbers.
-		paragraphs = paragraphs[:0]
-		for _, paragraph := range narrative {
-			if paragraph.Text = strings.TrimSpace(paragraph.Text); paragraph.Text != "" {
-				paragraphs = append(paragraphs, paragraph)
-			}
-		}
+	if question != "" {
+		parts = append(parts, question)
 	}
-	// A template is never spoken (design R74): with no model text that fits, nothing is read aloud.
-	if !fits || len(paragraphs) == 0 {
-		return "", false
-	}
-	for attempt := 0; attempt < 2; attempt++ {
-		var parts []string
-		for i := range paragraphs {
-			// The screen keeps its clocks as written ("9:00"); the voice says them (R68).
-			paragraphs[i].Text = mobileBriefSpokenClocks(mobileBriefParagraphSpeech(brief, paragraphs[i], lang), lang)
-		}
-		paragraphs = trimMobileBriefNarrative(brief, paragraphs)
-		if mobileBriefNarrativeWords(paragraphs) > mobileBriefMaxWords {
-			if brief.rankedEdition {
-				return "", false
-			}
-			// Model text too long to read aloud is not replaced by a template (design R74).
-			return "", false
-		}
-		if len(brief.WeeklyRecap) > 0 {
-			weekly := append([]MobileBriefPara{}, brief.WeeklyRecap...)
-			for i := range weekly {
-				weekly[i].Text = mobileBriefParagraphSpeech(brief, weekly[i], lang)
-			}
-			// The concrete offers close the complete reading, after the weekly
-			// recap too. Reserve both before trimming ordinary daily paragraphs.
-			closing := mobileBriefDeliveredClosing(brief, lang)
-			closing.Text = mobileBriefParagraphSpeech(brief, closing, lang)
-			var daily []MobileBriefPara
-			for _, paragraph := range paragraphs {
-				if closing.Text == "" || paragraph.Text != closing.Text {
-					daily = append(daily, paragraph)
-				}
-			}
-			fixed := weekly
-			if closing.Text != "" {
-				// Speech assembly does not expose refs. Keep this paragraph out
-				// of Highlight trimming even when its offer cites a Highlight.
-				fixed = append(fixed, MobileBriefPara{Text: closing.Text})
-			}
-			if mobileBriefNarrativeWords(fixed) > mobileBriefMaxWords {
-				// Neither the recap nor its final offers may be cut mid-thought.
-				// Keep the written brief when those fixed parts cannot fit audio.
-				return "", false
-			}
-			paragraphs = trimMobileBriefNarrative(brief, append(daily, fixed...))
-			for len(paragraphs) > len(fixed) && mobileBriefNarrativeWords(paragraphs) > mobileBriefMaxWords {
-				lastDaily := len(paragraphs) - len(fixed) - 1
-				paragraphs = append(paragraphs[:lastDaily], paragraphs[lastDaily+1:]...)
-			}
-		}
-		weekQuestion := morningBriefWeekQuestionSpeech(brief.WeekQuestion, lang)
-		for i, paragraph := range paragraphs {
-			if weekQuestion != "" && i == len(paragraphs)-1 && strings.ContainsAny(paragraph.Text, "?？") {
-				parts = append(parts, weekQuestion)
-				weekQuestion = ""
-			}
-			if paragraph.Text != "" {
-				parts = append(parts, paragraph.Text)
-			}
-		}
-		if weekQuestion != "" {
-			parts = append(parts, weekQuestion)
-		}
-		if mobileBriefWordCount(strings.Join(parts, " ")) > mobileBriefMaxWords {
-			return "", false
-		}
-		return speechDisplayText(strings.Join(parts, "\n\n"), lang), false
-	}
-	return "", false
+	return speechDisplayText(strings.Join(parts, "\n\n"), lang), false
 }
 
 func yourWeekSpeech(brief MobileBriefV1, lang string) string {
-	paragraphs := append([]MobileBriefPara(nil), brief.WeeklyRecap...)
-	for i := range paragraphs {
-		paragraphs[i].Text = mobileBriefParagraphSpeech(brief, paragraphs[i], lang)
-	}
-	if yourWeekSpeechFits(paragraphs, lang) {
-		return speechDisplayText(yourWeekSpeechText(paragraphs), lang)
-	}
-	for _, role := range []yourWeekParagraphRole{yourWeekParagraphLearned, yourWeekParagraphDone, yourWeekParagraphTime, yourWeekParagraphOpen} {
-		for i := len(paragraphs) - 1; i >= 0; i-- {
-			if paragraphs[i].Role != role {
-				continue
-			}
-			paragraphs = append(paragraphs[:i], paragraphs[i+1:]...)
-			if yourWeekSpeechFits(paragraphs, lang) {
-				return speechDisplayText(yourWeekSpeechText(paragraphs), lang)
-			}
-		}
-	}
-	return ""
-}
-
-func yourWeekSpeechText(paragraphs []MobileBriefPara) string {
 	var parts []string
-	for _, paragraph := range paragraphs {
-		if paragraph.Text != "" {
-			parts = append(parts, paragraph.Text)
+	for _, paragraph := range brief.WeeklyRecap {
+		if text := mobileBriefParagraphSpeech(brief, paragraph, lang); text != "" {
+			parts = append(parts, text)
 		}
 	}
-	return strings.Join(parts, "\n\n")
-}
-
-func yourWeekSpeechFits(paragraphs []MobileBriefPara, lang string) bool {
-	text := yourWeekSpeechText(paragraphs)
-	if lang != "zh" {
-		return mobileBriefWordCount(text) <= yourWeekSpokenMaxWords
-	}
-	han := 0
-	for _, r := range text {
-		if unicode.Is(unicode.Han, r) {
-			han++
-		}
-	}
-	return han <= yourWeekSpokenMaxHan
+	return speechDisplayText(strings.Join(parts, "\n\n"), lang)
 }
 
 func mobileBriefParagraphSpeech(brief MobileBriefV1, paragraph MobileBriefPara, language string) string {
@@ -361,9 +248,6 @@ func renderMobileBriefAudio(ctx context.Context, speaker mobileBriefSpeaker, dir
 	duration, err := wavDurationSeconds(wav)
 	if err != nil {
 		return mobileBriefAudioFile{}, false, "synthesis produced no audio"
-	}
-	if brief.YourWeek != nil && duration >= 60 {
-		return mobileBriefAudioFile{}, false, "weekly audio too long"
 	}
 	data, ext, mime := wav, mobileBriefAudioExtWAV, mobileBriefAudioMimeWAV
 	if speaker.ffmpeg != nil {

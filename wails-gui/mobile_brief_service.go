@@ -1380,6 +1380,10 @@ func (s *mobileBriefService) backfillTodayAudio(ctx context.Context) {
 	if brief.LocalDate != s.now().In(loc).Format("2006-01-02") {
 		return
 	}
+	// Refresh the sealed view after an exclusion before deciding what to read.
+	if _, _, ok := s.seal(ctx, brief); !ok {
+		return
+	}
 	delivered := s.app.mobileBriefForDelivery(brief)
 	if delivered.NarrativeStatus != "ok" || len(delivered.Narrative) == 0 {
 		return
@@ -1434,10 +1438,21 @@ func (s *mobileBriefService) addAudioWithLatestGuard(ctx context.Context, brief 
 		return
 	}
 	lang := s.speaker.voiceLang()
-	input := mobileBriefAudioBinding(brief, lang)
-	if s.app != nil && input != mobileBriefAudioBinding(s.app.mobileBriefForDelivery(brief), lang) {
+	// Start with the latest stored and privacy-projected text, including any
+	// amendment made after this generation was sealed.
+	initial, found := s.store.load(brief.BriefID)
+	if !found || initial.AsOf != brief.AsOf {
 		return
 	}
+	brief = initial
+	if s.app != nil {
+		shown, _, err := s.finishedReadWithholding(initial)
+		if err != nil || mobileBriefAudioBinding(shown, lang) != mobileBriefAudioBinding(s.app.mobileBriefForDelivery(initial), lang) {
+			return
+		}
+		brief = shown
+	}
+	input := mobileBriefAudioBinding(brief, lang)
 	// Until the recording is saved, the stored brief says it is being made. Any path that does not save the
 	// final audio clears that mark again (P138).
 	saved := false
@@ -1467,7 +1482,11 @@ func (s *mobileBriefService) addAudioWithLatestGuard(ctx context.Context, brief 
 			return
 		}
 		if s.app != nil {
-			stored = s.app.mobileBriefForDelivery(stored)
+			shown, _, err := s.finishedReadWithholding(stored)
+			if err != nil || mobileBriefAudioBinding(shown, lang) != mobileBriefAudioBinding(s.app.mobileBriefForDelivery(stored), lang) {
+				return
+			}
+			stored = shown
 		}
 		current := mobileBriefAudioBinding(stored, lang)
 		if input == current {
@@ -1503,7 +1522,11 @@ func (s *mobileBriefService) addAudioWithLatestGuard(ctx context.Context, brief 
 	if s.app != nil {
 		preEpoch = s.app.briefPrivacyPrint()
 		if preFound {
-			preCurrent = s.app.mobileBriefForDelivery(pre)
+			shown, _, err := s.finishedReadWithholding(pre)
+			if err != nil || mobileBriefAudioBinding(shown, lang) != mobileBriefAudioBinding(s.app.mobileBriefForDelivery(pre), lang) {
+				return
+			}
+			preCurrent = shown
 		}
 	}
 	s.patchMu.Lock()
@@ -1512,7 +1535,7 @@ func (s *mobileBriefService) addAudioWithLatestGuard(ctx context.Context, brief 
 		s.patchMu.Unlock()
 		return
 	}
-	if !found || !preFound || stored.AsOf != pre.AsOf || input != mobileBriefAudioBinding(preCurrent, lang) {
+	if !found || !preFound || stored.AsOf != pre.AsOf || mobileBriefAudioBinding(stored, lang) != mobileBriefAudioBinding(pre, lang) || input != mobileBriefAudioBinding(preCurrent, lang) {
 		s.patchMu.Unlock()
 		return
 	}
@@ -1561,8 +1584,7 @@ func (s *mobileBriefService) addAudioWithLatestGuard(ctx context.Context, brief 
 // mobileBriefAudioBinding binds a recording to what it says, in the voice's
 // language: the brief's text as shown (its paragraphs, its weekly recap and
 // the question that closes it), the sources each paragraph cites by identity,
-// and the whole spoken text whenever the voice reads Isoform's template from
-// the brief's rows instead. Ref numbers, labels and the live rows a Today
+// and the complete spoken script. Ref numbers, labels and the live rows a Today
 // refresh adds are not part of it: they change on every refresh, and binding
 // them kept every recording made from 2026-10-19 to 2026-10-21 from being
 // attached although its file was written.
@@ -1615,9 +1637,6 @@ func mobileBriefAudioBinding(brief MobileBriefV1, lang string) string {
 	said := func(paragraphs []MobileBriefPara) [][]string {
 		out := make([][]string, 0, len(paragraphs))
 		for _, paragraph := range paragraphs {
-			if mobileBriefIsOpenAnswerParagraph(brief, paragraph) {
-				continue
-			}
 			line := []string{pii.DisplayModelText(paragraph.Text, lang)}
 			for _, id := range paragraph.Refs {
 				ref, ok := evidence[id]
@@ -1631,25 +1650,23 @@ func mobileBriefAudioBinding(brief MobileBriefV1, lang string) string {
 		}
 		return out
 	}
-	var spoken, closing string
-	if text, template := mobileBriefSpeech(brief, lang); template {
-		spoken = text
-	}
+	spoken := mobileBriefSpokenText(brief, lang)
+	var closing string
 	if len(brief.WeeklyRecap) > 0 && brief.YourWeek == nil {
 		closing = pii.DisplayModelText(mobileBriefDeliveredClosing(brief, lang).Text, lang)
 	}
 	base := struct {
 		ID, AsOf, Status  string
 		Narrative, Weekly [][]string
-		Template, Closing string
+		Spoken, Closing   string
 	}{brief.BriefID, brief.AsOf, brief.NarrativeStatus, said(brief.Narrative), said(brief.WeeklyRecap), spoken, closing}
 	if question := morningBriefWeekQuestionSpeech(brief.WeekQuestion, lang); question != "" {
-		return lang + ":" + mobileBriefModelDigest(struct {
+		return lang + ":v2:" + mobileBriefModelDigest(struct {
 			Base     any
 			Question string
 		}{base, question})
 	}
-	return lang + ":" + mobileBriefModelDigest(base)
+	return lang + ":v2:" + mobileBriefModelDigest(base)
 }
 
 // mobileBriefAudioForRead is the recording a read may play: one bound to its
@@ -1661,15 +1678,19 @@ func mobileBriefAudioForRead(brief MobileBriefV1) *MobileBriefAudio {
 		return nil
 	}
 	if brief.Audio.binding == "" {
-		// Pre-binding files cannot prove which reading they contain.
-		for _, paragraphs := range [][]MobileBriefPara{brief.Narrative, brief.WeeklyRecap} {
-			for _, paragraph := range paragraphs {
-				if pii.DisplayModelText(paragraph.Text, "en") != paragraph.Text {
-					return nil
+		// An older recording cannot prove it matches the text as shown now.
+		// Download/rendering statuses carry no playable recording.
+		if brief.Audio.Bytes == 0 || brief.Audio.Status == mobileBriefAudioStatusDownloading || brief.Audio.Status == mobileBriefAudioStatusRendering {
+			for _, paragraphs := range [][]MobileBriefPara{brief.Narrative, brief.WeeklyRecap} {
+				for _, paragraph := range paragraphs {
+					if pii.DisplayModelText(paragraph.Text, "en") != paragraph.Text {
+						return nil
+					}
 				}
 			}
+			return brief.Audio
 		}
-		return brief.Audio
+		return nil
 	}
 	lang, _, _ := strings.Cut(brief.Audio.binding, ":")
 	if brief.Audio.binding != mobileBriefAudioBinding(brief, lang) {
@@ -1681,11 +1702,12 @@ func mobileBriefAudioForRead(brief MobileBriefV1) *MobileBriefAudio {
 // Audio returns the stored spoken brief or its download status for an id.
 func (s *mobileBriefService) Audio(briefID string) (MobileBriefAudioData, bool) {
 	brief, found := s.store.load(briefID)
+	if !found || brief.Audio == nil {
+		return MobileBriefAudioData{}, false
+	}
 	if s.app != nil {
-		if !found {
-			return MobileBriefAudioData{}, false
-		}
-		if delivered := s.app.mobileBriefForDelivery(brief); s.finishedReadAudio(context.Background(), brief, delivered) == nil {
+		shown, _, err := s.finishedReadWithholding(brief)
+		if err != nil || shown.Audio == nil || mobileBriefAudioForRead(shown) == nil || shown.Audio.binding != brief.Audio.binding || shown.Audio.SHA256 != brief.Audio.SHA256 {
 			return MobileBriefAudioData{}, false
 		}
 	}
@@ -1696,12 +1718,18 @@ func (s *mobileBriefService) Audio(briefID string) (MobileBriefAudioData, bool) 
 			StatusMessage: brief.Audio.StatusMessage,
 		}, true
 	}
+	if !mobileBriefAudioReady(brief.Audio) {
+		return MobileBriefAudioData{}, false
+	}
 	path, mime, ok := mobileBriefAudioPath(s.store.dir, briefID)
-	if !ok {
+	if !ok || mime != brief.Audio.Mime {
 		return MobileBriefAudioData{}, false
 	}
 	data, err := os.ReadFile(path)
 	if err != nil || len(data) == 0 {
+		return MobileBriefAudioData{}, false
+	}
+	if brief.Audio != nil && brief.Audio.SHA256 != "" && (len(data) != brief.Audio.Bytes || fmt.Sprintf("%x", sha256.Sum256(data)) != brief.Audio.SHA256) {
 		return MobileBriefAudioData{}, false
 	}
 	out := MobileBriefAudioData{BriefID: briefID, Status: mobileBriefAudioStatusOK, Mime: mime, Base64: base64.StdEncoding.EncodeToString(data)}

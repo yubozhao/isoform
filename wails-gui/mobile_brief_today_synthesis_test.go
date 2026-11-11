@@ -67,6 +67,7 @@ func TestMobileBriefTodayRefreshWithdrawsSynthesisBeforeDiscardingSources(t *tes
 					base.NarrativeStatus = "ok"
 					base.Offers = []MobileBriefOffer{{ID: "offer-1", Action: "draft_plan", Label: "Draft a plan", Text: "UNRETAINED_OFFER_FROM_P", Prompt: "UNRETAINED_OFFER_FROM_P", Refs: []string{q}}}
 					base.Audio = &MobileBriefAudio{Status: mobileBriefAudioStatusOK, Bytes: 4, Mime: mobileBriefAudioMimeWAV}
+					base.Audio.binding = mobileBriefAudioBinding(base, "en")
 					base.DayShape = &MobileBriefDay{ActiveMinutes: 73, TopApps: []MobileBriefAppTime{{Name: "Editor", ActiveMinutes: 73}}}
 					base.Counts = MobileBriefCounts{OpenLoopsByKind: map[string]int{"old_synthesis": 37}, LearningItems: 29}
 					svc := newMobileBriefService(app)
@@ -122,7 +123,11 @@ func TestMobileBriefTodayRefreshWithdrawsSynthesisBeforeDiscardingSources(t *tes
 					check := func(stage string, brief MobileBriefV1) {
 						t.Helper()
 						if state == "readable" {
-							if len(brief.Offers) != 1 || len(brief.Narrative) != 1 || brief.Narrative[0].Text != base.Narrative[0].Text || brief.NarrativeStatus != "ok" || !reflect.DeepEqual(brief.Audio, base.Audio) || !reflect.DeepEqual(brief.DayShape, &day) || !reflect.DeepEqual(brief.Counts, base.Counts) {
+							expectedAudio := *base.Audio
+							if stage == "push" {
+								expectedAudio.binding = ""
+							}
+							if len(brief.Offers) != 1 || len(brief.Narrative) != 1 || brief.Narrative[0].Text != base.Narrative[0].Text || brief.NarrativeStatus != "ok" || !reflect.DeepEqual(brief.Audio, &expectedAudio) || !reflect.DeepEqual(brief.DayShape, &day) || !reflect.DeepEqual(brief.Counts, base.Counts) {
 								t.Fatalf("%s withdrew synthesis with readable P: %+v", stage, brief)
 							}
 							return

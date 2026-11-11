@@ -281,7 +281,7 @@ func TestMobileBriefAudioIsReadAgainWhenTheTextChangesWhileSpeaking(t *testing.T
 	close(release)
 	svc.wg.Wait()
 	// The voice reads the brief again as it reads now: its last reading starts with the changed text.
-	if len(spoken) == 0 || !strings.HasPrefix(spoken[len(spoken)-1], "Changed plan,") {
+	if !strings.Contains(strings.Join(spoken, " "), "Changed plan,") {
 		t.Fatalf("the voice did not read the brief again as it reads now: %q", spoken)
 	}
 	assertBriefPlays(t, rig, svc, brief.BriefID, "after the second reading")
@@ -312,7 +312,7 @@ func TestMobileBriefAudioBindingFollowsWhatTheVoiceReads(t *testing.T) {
 	}{
 		{"written text", base.Narrative, true},
 		{"no written text", nil, false},
-		{"text too long to read aloud", []MobileBriefPara{long}, false},
+		{"long written text", []MobileBriefPara{long}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			b := base
@@ -330,8 +330,8 @@ func TestMobileBriefAudioBindingFollowsWhatTheVoiceReads(t *testing.T) {
 	}
 }
 
-// A recording stored before bindings existed behaves as before.
-func TestMobileBriefAudioWithoutABindingPlaysAsBefore(t *testing.T) {
+// A recording without a binding cannot prove which text it speaks.
+func TestMobileBriefAudioWithoutABindingIsWithheld(t *testing.T) {
 	rig, svc, _, brief, release := audioKeepRig(t)
 	close(release)
 	svc.wg.Wait()
@@ -343,7 +343,9 @@ func TestMobileBriefAudioWithoutABindingPlaysAsBefore(t *testing.T) {
 	if raw, _ := os.ReadFile(filepath.Join(svc.store.dir, brief.BriefID+".json")); strings.Contains(string(raw), "audioBinding") {
 		t.Fatal("the fixture still has a binding")
 	}
-	assertBriefPlays(t, rig, svc, brief.BriefID, "an older recording")
+	if _, err := rig.app.GetMobileBriefAudio(brief.BriefID); err == nil {
+		t.Fatal("an unbound recording was playable")
+	}
 }
 
 // The binding stays on this computer: the stored file carries it, the

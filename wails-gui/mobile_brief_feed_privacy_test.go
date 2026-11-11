@@ -20,6 +20,7 @@ func TestMobileBriefFeedRechecksStoredSourcesAndCachedAudioURLs(t *testing.T) {
 			wav := testWAV(1)
 			stored.Audio.Mime = mobileBriefAudioMimeWAV
 			stored.Audio.Bytes = len(wav)
+			stored.Audio.binding = mobileBriefAudioBinding(app.mobileBriefForDelivery(stored), "en")
 			audioPath := filepath.Join(svc.store.dir, stored.BriefID+mobileBriefAudioExtWAV)
 			if err := os.WriteFile(audioPath, wav, 0600); err != nil {
 				t.Fatal(err)

@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"strings"
+	"unicode/utf8"
 )
 
 // Paragraph timings (PROTOCOL.md section 8.1): the voice reads each spoken
@@ -18,32 +19,55 @@ const mobileBriefParagraphGapSeconds = 0.45
 
 var errMobileBriefWAVFormat = errors.New("the readings do not share one WAV format")
 
-// synthesizeMobileBriefParagraphs reads the spoken text paragraph by paragraph
-// and returns one WAV with each paragraph's start in seconds. A single
-// paragraph, or any failure, reads the text whole and returns no starts.
+// synthesizeMobileBriefParagraphs reads every paragraph in bounded chunks,
+// then joins the chunks and records each paragraph's start. A failed chunk
+// fails the whole recording; a partial reading is never published.
 func synthesizeMobileBriefParagraphs(ctx context.Context, speaker mobileBriefSpeaker, lang, text string) ([]byte, []float64, error) {
 	segments := mobileBriefSpokenSegments(text)
-	if len(segments) > 1 {
-		parts := make([][]byte, 0, len(segments))
-		for _, segment := range segments {
-			wav, err := speaker.synthesize(ctx, lang, segment)
-			if err != nil || len(wav) == 0 {
-				parts = nil
-				break
-			}
-			parts = append(parts, wav)
+	parts := make([][]byte, 0, len(segments))
+	for _, segment := range segments {
+		chunks := []string{segment}
+		limit := ttsMaxChunkRunesEn
+		if dominantSpeechLang(segment) != "en" {
+			limit = ttsMaxChunkRunesZh
 		}
-		if parts != nil {
-			if joined, starts, err := joinMobileBriefWAV(parts, mobileBriefParagraphGapSeconds); err == nil {
-				return joined, starts, nil
+		if utf8.RuneCountInString(segment) > limit {
+			chunks = nil
+			for _, sentence := range splitIntoSentences(segment) {
+				chunks = append(chunks, splitLongChunk(strings.TrimSpace(sentence), limit)...)
 			}
 		}
-		if ctx.Err() != nil {
-			return nil, nil, ctx.Err()
+		if len(chunks) == 0 {
+			return nil, nil, errMobileBriefWAVFormat
+		}
+		var readings [][]byte
+		for _, chunk := range chunks {
+			if err := ctx.Err(); err != nil {
+				return nil, nil, err
+			}
+			wav, err := speaker.synthesize(ctx, lang, chunk)
+			if err != nil {
+				return nil, nil, err
+			}
+			if len(wav) == 0 {
+				return nil, nil, errMobileBriefWAVFormat
+			}
+			readings = append(readings, wav)
+		}
+		if len(readings) == 1 {
+			parts = append(parts, readings[0])
+		} else {
+			joined, _, err := joinMobileBriefWAV(readings, 0)
+			if err != nil {
+				return nil, nil, err
+			}
+			parts = append(parts, joined)
 		}
 	}
-	wav, err := speaker.synthesize(ctx, lang, text)
-	return wav, nil, err
+	if len(parts) == 1 {
+		return parts[0], []float64{0}, nil
+	}
+	return joinMobileBriefWAV(parts, mobileBriefParagraphGapSeconds)
 }
 
 // mobileBriefSpokenSegments splits the spoken text into the paragraphs the
@@ -144,9 +168,7 @@ func mobileBriefParagraphStarts(brief MobileBriefV1, lang string, segments []str
 	}
 	var candidates []written
 	for i, paragraph := range brief.Narrative {
-		if !mobileBriefIsOpenAnswerParagraph(brief, paragraph) {
-			candidates = append(candidates, written{mobileBriefAudioSourceNarrative, i, speak(paragraph)})
-		}
+		candidates = append(candidates, written{mobileBriefAudioSourceNarrative, i, speak(paragraph)})
 	}
 	for i, paragraph := range brief.WeeklyRecap {
 		candidates = append(candidates, written{mobileBriefAudioSourceWeekly, i, speak(paragraph)})

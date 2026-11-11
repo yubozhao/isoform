@@ -88,10 +88,10 @@ func TestBriefSpeechPreparationAndSynthesisNormalizeTimes(t *testing.T) {
 	for _, language := range []string{"en", "zh-CN"} {
 		t.Run(language, func(t *testing.T) {
 			brief := MobileBriefV1{AsOf: "2026-10-17T18:00:00Z", Timezone: "UTC", NarrativeStatus: "ok", Narrative: []MobileBriefPara{{Text: "Fri Oct 16, 6:00 PM; 1:30 PM. 1 h 33 min. 11:04 AM to 05:06 PM."}}}
-			var received string
+			var received []string
 			speaker := fakeSpeaker(language, testWAV(1), nil)
 			speaker.synthesize = func(_ context.Context, _, text string) ([]byte, error) {
-				received = text
+				received = append(received, text)
 				return testWAV(1), nil
 			}
 			brief.BriefID = "2026-10-17-evening"
@@ -103,8 +103,8 @@ func TestBriefSpeechPreparationAndSynthesisNormalizeTimes(t *testing.T) {
 			if briefChinese(language) {
 				want = "昨天, 下午6点; 下午1点半. 1小时33分钟. 从上午11点4分到下午5点6分."
 			}
-			if received != want {
-				t.Fatalf("synthesizer received %q, want %q", received, want)
+			if got := strings.Join(received, " "); got != want {
+				t.Fatalf("synthesizer received %q, want %q", got, want)
 			}
 		})
 	}

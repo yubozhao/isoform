@@ -68,8 +68,8 @@ func TestMobileBriefBudgetFixtureDays(t *testing.T) {
 				t.Fatal("trimming mutated the original document")
 			}
 			brief.Narrative = original
-			if spoken := mobileBriefSpokenText(brief, language); mobileBriefWordCount(spoken) > mobileBriefMaxWords {
-				t.Fatalf("spoken day exceeds budget: %d", mobileBriefWordCount(spoken))
+			if spoken := mobileBriefSpokenText(brief, language); spoken == "" && brief.NarrativeStatus == "ok" {
+				t.Fatal("shown model text was not spoken")
 			}
 			prompt := mobileBriefTestPrompt(brief, language)
 			if !strings.Contains(prompt, "150 to 300 words") && !strings.Contains(prompt, "two sentences") {
@@ -133,10 +133,9 @@ func TestMobileBriefBudgetSpeechExpansionAndEmptyLegacyParagraphs(t *testing.T) 
 		{Text: strings.Repeat("1 h 33 min. ", 22), Refs: refs},
 		{Text: strings.Repeat("1 h 33 min. ", 22), Refs: refs},
 	}
-	// Model text too long to read aloud is not replaced by a template, so nothing is
-	// spoken and nothing over the budget is spoken either (design R74).
-	if got := mobileBriefSpokenText(brief, "en"); got != "" {
-		t.Fatalf("over-long model text must not be spoken or replaced by a template: %q", got)
+	// Spoken expansion must not drop the written paragraphs.
+	if got := mobileBriefSpokenText(brief, "en"); len(mobileBriefSpokenSegments(got)) != len(brief.Narrative) {
+		t.Fatalf("spoken expansion omitted paragraphs: %q", got)
 	}
 	brief.Narrative = []MobileBriefPara{{Text: " \n "}}
 	if got := mobileBriefSpokenText(brief, "en"); got != "" {

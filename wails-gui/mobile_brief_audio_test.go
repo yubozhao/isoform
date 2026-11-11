@@ -65,7 +65,7 @@ func TestMobileBriefSpokenTextPrefersNarrativeAndFallsBackToPlan(t *testing.T) {
 	}
 }
 
-func TestYourWeekSpeechUsesOnlyWeeklyParagraphsAndTrimsByRole(t *testing.T) {
+func TestYourWeekSpeechUsesAllWeeklyParagraphs(t *testing.T) {
 	brief := MobileBriefV1{
 		Narrative: []MobileBriefPara{{Text: "Daily brief must not be spoken."}},
 		YourWeek:  &MobileBriefWeek{Start: "2026-10-19", End: "2026-10-23"},
@@ -81,20 +81,21 @@ func TestYourWeekSpeechUsesOnlyWeeklyParagraphsAndTrimsByRole(t *testing.T) {
 	if speech := mobileBriefSpokenText(brief, "en"); strings.Contains(speech, "Daily brief") || !strings.Contains(speech, "Weekly lead") || !strings.Contains(speech, "Weekly ask") {
 		t.Fatalf("weekly speech mixed daily content or dropped fixed paragraphs: %q", speech)
 	}
-	trimmed := yourWeekSpeech(brief, "en")
-	if strings.Contains(trimmed, "learned") || strings.Contains(trimmed, "done") ||
-		!strings.Contains(trimmed, "time") || !strings.Contains(trimmed, "open") {
-		t.Fatalf("weekly paragraphs were not trimmed learned then done: %q", trimmed)
+	spoken := yourWeekSpeech(brief, "en")
+	for _, word := range []string{"learned", "done", "time", "open"} {
+		if !strings.Contains(spoken, word) {
+			t.Fatalf("weekly speech omitted %q: %q", word, spoken)
+		}
 	}
 }
 
-func TestRenderMobileBriefAudioRejectsWeeklyAudioAtSixtySeconds(t *testing.T) {
+func TestRenderMobileBriefAudioAcceptsWeeklyAudioAtSixtySeconds(t *testing.T) {
 	brief := MobileBriefV1{
 		BriefID: "2026-10-23-evening", YourWeek: &MobileBriefWeek{},
 		WeeklyRecap: []MobileBriefPara{{Text: "A full week."}},
 	}
 	_, ok, status := renderMobileBriefAudio(context.Background(), fakeSpeaker("en", testWAV(60), nil), t.TempDir(), brief)
-	if ok || status != "weekly audio too long" {
+	if !ok || status != mobileBriefAudioStatusOK {
 		t.Fatalf("weekly duration: ok=%v status=%q", ok, status)
 	}
 }
@@ -586,6 +587,7 @@ func TestMobileBriefAudioRouteHonorsWithdrawnSources(t *testing.T) {
 	brief.Audio.Mime = mobileBriefAudioMimeWAV
 	brief.Audio.Bytes = 100
 	brief.Audio.DurationSeconds = 1
+	brief.Audio.binding = mobileBriefAudioBinding(app.mobileBriefForDelivery(brief), "en")
 	if err := svc.store.save(brief, svc.now()); err != nil {
 		t.Fatal(err)
 	}
@@ -614,6 +616,7 @@ func newMobileBriefAudioUploadFixture(t *testing.T) (*mobileBriefService, Mobile
 	brief := mobileTestBrief()
 	data := testWAV(1)
 	brief.Audio = &MobileBriefAudio{Status: "ok", Mime: mobileBriefAudioMimeWAV, Bytes: len(data), DurationSeconds: 1, SHA256: fmt.Sprintf("%x", sha256.Sum256(data))}
+	brief.Audio.binding = mobileBriefAudioBinding(svc.app.mobileBriefForDelivery(brief), "en")
 	if err := svc.store.save(brief, clock.Now()); err != nil {
 		t.Fatal(err)
 	}
@@ -848,6 +851,9 @@ func TestMobileBriefAudioPreparationDoesNotBlockDeviceWorker(t *testing.T) {
 	t.Cleanup(svc.Stop)
 	other := brief
 	other.BriefID = "2026-10-09-evening"
+	otherAudio := *other.Audio
+	other.Audio = &otherAudio
+	other.Audio.binding = mobileBriefAudioBinding(svc.app.mobileBriefForDelivery(other), "en")
 	if err := svc.store.save(other, svc.now()); err != nil {
 		t.Fatal(err)
 	}
@@ -1004,5 +1010,168 @@ func TestMobileBriefAudioRenderingMarkWhileSpokenAndClearedWhenItFails(t *testin
 	}
 	if stored.Audio != nil && stored.Audio.Status == mobileBriefAudioStatusRendering {
 		t.Fatalf("a failed attempt left the rendering mark on the brief: %+v", stored.Audio)
+	}
+}
+
+// The script and the joined audio must contain every delivered paragraph even
+// when the written brief is longer than the old speech-only budget.
+func TestBriefAudioReadsAllThreeShownParagraphs(t *testing.T) {
+	brief := MobileBriefV1{BriefID: "2026-11-10-evening", Slot: "evening", NarrativeStatus: "ok"}
+	for _, part := range []string{"First", "Second", "Third"} {
+		brief.Narrative = append(brief.Narrative, MobileBriefPara{Text: strings.TrimSpace(strings.Repeat(part+" part is complete. ", 30))})
+	}
+	var spoken []string
+	speaker := fakeSpeaker("en", testWAV(1), nil)
+	speaker.synthesize = func(_ context.Context, _, text string) ([]byte, error) {
+		spoken = append(spoken, text)
+		return testWAV(1), nil
+	}
+	file, ok, reason := renderMobileBriefAudio(t.Context(), speaker, t.TempDir(), brief)
+	if !ok {
+		t.Fatalf("render failed: %s", reason)
+	}
+	var shown []string
+	for _, p := range brief.Narrative {
+		shown = append(shown, p.Text)
+	}
+	if got, want := strings.Join(strings.Fields(strings.Join(spoken, " ")), " "), strings.Join(strings.Fields(strings.Join(shown, " ")), " "); got != want {
+		t.Fatalf("spoken script differs from shown text: got %q, want %q", got, want)
+	}
+	if len(file.Audio.Paragraphs) != 3 {
+		t.Fatalf("paragraph starts = %+v", file.Audio.Paragraphs)
+	}
+}
+
+func TestBriefAudioReadsAmendmentAfterSealing(t *testing.T) {
+	svc, sealed, _, clock := newAudioBackfillFixture(t)
+	if _, _, ok := svc.seal(t.Context(), sealed); !ok {
+		t.Fatal("fixture could not seal the original brief")
+	}
+	amended := sealed
+	refs := sealed.Narrative[0].Refs
+	amended.Narrative = []MobileBriefPara{{Text: "The amended plan is ready.", Refs: refs}, {Text: "The review is next.", Refs: refs}, {Text: "The final part is here.", Refs: refs}}
+	if err := svc.store.save(amended, clock.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, ok := svc.seal(t.Context(), amended); !ok {
+		t.Fatal("fixture could not seal the amended brief")
+	}
+	var spoken []string
+	svc.speaker = fakeSpeaker("en", testWAV(1), nil)
+	svc.speaker.synthesize = func(_ context.Context, _, text string) ([]byte, error) {
+		spoken = append(spoken, text)
+		return testWAV(1), nil
+	}
+	svc.addAudio(t.Context(), sealed, clock.Now())
+	stored, ok := svc.store.load(sealed.BriefID)
+	if !ok || stored.Audio == nil {
+		t.Fatal("amended brief has no audio")
+	}
+	shown, _, err := svc.finishedReadWithholding(stored)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var paragraphs []string
+	for _, p := range shown.Narrative {
+		paragraphs = append(paragraphs, p.Text)
+	}
+	if got, want := strings.Join(spoken, "\n\n"), strings.Join(paragraphs, "\n\n"); got != want {
+		t.Fatalf("spoken %q; shown %q", got, want)
+	}
+}
+
+func TestBriefAudioRejectsFailedChunk(t *testing.T) {
+	brief := MobileBriefV1{BriefID: "2026-11-10-evening", NarrativeStatus: "ok", Narrative: []MobileBriefPara{{Text: strings.Repeat("A complete sentence. ", 20)}}}
+	calls := 0
+	speaker := fakeSpeaker("en", testWAV(1), nil)
+	speaker.synthesize = func(context.Context, string, string) ([]byte, error) {
+		calls++
+		if calls == 2 {
+			return nil, errors.New("voice failed")
+		}
+		return testWAV(1), nil
+	}
+	dir := t.TempDir()
+	if _, ok, _ := renderMobileBriefAudio(t.Context(), speaker, dir, brief); ok {
+		t.Fatal("partial recording was accepted")
+	}
+	if _, _, found := mobileBriefAudioPath(dir, brief.BriefID); found {
+		t.Fatal("partial recording was stored")
+	}
+}
+
+func TestBriefAudioRejectsReplacedFile(t *testing.T) {
+	svc, brief, _ := newMobileBriefAudioUploadFixture(t)
+	if _, ok := svc.Audio(brief.BriefID); !ok {
+		t.Fatal("original file was not available")
+	}
+	path := filepath.Join(svc.store.dir, brief.BriefID+mobileBriefAudioExtWAV)
+	if err := os.WriteFile(path, testWAV(2), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := svc.Audio(brief.BriefID); ok {
+		t.Fatal("replaced file was served under the old audio metadata")
+	}
+}
+
+func TestBriefAudioDoesNotServeOrphanWhileRendering(t *testing.T) {
+	svc, brief, _ := newMobileBriefAudioUploadFixture(t)
+	brief.Audio = &MobileBriefAudio{Status: mobileBriefAudioStatusRendering}
+	if err := svc.store.save(brief, svc.now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := svc.Audio(brief.BriefID); ok {
+		t.Fatal("rendering status served an old file")
+	}
+}
+
+func TestBriefAudioWithholdsRecordingAfterCitedSourceEdit(t *testing.T) {
+	_, svc, brief := newStoredMobileBriefPrivacyFixture(t)
+	svc.wg.Wait()
+	var ref string
+	for _, evidence := range brief.Evidence {
+		if evidence.SourceID == "safe-recall" {
+			ref = evidence.Ref
+		}
+	}
+	if ref == "" {
+		t.Fatal("fixture lacks memory source")
+	}
+	brief.NarrativeStatus = "ok"
+	brief.Narrative = []MobileBriefPara{{Text: "The original note is ready.", Refs: []string{ref}}}
+	data := testWAV(1)
+	brief.Audio = &MobileBriefAudio{Status: mobileBriefAudioStatusOK, Mime: mobileBriefAudioMimeWAV, Bytes: len(data), DurationSeconds: 1, SHA256: fmt.Sprintf("%x", sha256.Sum256(data))}
+	brief.Audio.binding = mobileBriefAudioBinding(svc.app.mobileBriefForDelivery(brief), "en")
+	if err := svc.store.save(brief, svc.now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(svc.store.dir, brief.BriefID+mobileBriefAudioExtWAV), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, ok := svc.seal(t.Context(), brief); !ok {
+		t.Fatal("fixture did not seal")
+	}
+	if _, ok := svc.Audio(brief.BriefID); !ok {
+		t.Fatal("original recording was not available")
+	}
+	writePrivacyMemory(t, "safe-recall", "# Corrected recall\n\nThe note changed.\n")
+	if _, ok := svc.Audio(brief.BriefID); ok {
+		t.Fatal("recording of a withheld source was served")
+	}
+	calls := 0
+	svc.speaker = fakeSpeaker("en", data, nil)
+	svc.speaker.synthesize = func(context.Context, string, string) ([]byte, error) { calls++; return data, nil }
+	svc.addAudio(t.Context(), brief, svc.now())
+	if calls != 0 {
+		t.Fatal("withheld text was sent to the voice")
+	}
+}
+
+func TestBriefAudioBindingIncludesSpokenScript(t *testing.T) {
+	brief := MobileBriefV1{NarrativeStatus: "ok", Narrative: []MobileBriefPara{{Text: "The daily text."}}}
+	weekly := brief
+	weekly.YourWeek = &MobileBriefWeek{}
+	if mobileBriefAudioBinding(brief, "en") == mobileBriefAudioBinding(weekly, "en") {
+		t.Fatal("different spoken scripts shared a binding")
 	}
 }

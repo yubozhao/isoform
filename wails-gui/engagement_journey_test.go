@@ -240,7 +240,7 @@ func TestFirstWeekQuietWelcomeAndMutedPlan(t *testing.T) {
 	}
 }
 
-func TestYourWeekSpeechKeepsConcreteClosingLast(t *testing.T) {
+func TestBriefAudioOmitsWeeklyRecapWhenDailyBriefIsShown(t *testing.T) {
 	for _, language := range engagement.Languages {
 		t.Run(language, func(t *testing.T) {
 			brief := conversationFixtureBrief(t, conversationFixtures(t)[0], language)
@@ -248,9 +248,7 @@ func TestYourWeekSpeechKeepsConcreteClosingLast(t *testing.T) {
 			if closing.Text == "" {
 				t.Fatal("fixture needs concrete offers")
 			}
-			// This daily body fits by itself, but forces whole-paragraph
-			// trimming when the week and the closing are reserved: the last
-			// daily paragraph goes, the others stay.
+			// The daily view shows the narrative, not the weekly recap.
 			brief.NarrativeStatus = "ok" // only the model's ok text is spoken (design R74)
 			brief.Narrative = []MobileBriefPara{
 				{Text: strings.Repeat("Review the plan. ", 16), Refs: closing.Refs},
@@ -267,13 +265,15 @@ func TestYourWeekSpeechKeepsConcreteClosingLast(t *testing.T) {
 			if !strings.HasSuffix(spoken, spokenClosing) || strings.Count(spoken, spokenClosing) != 1 {
 				t.Fatalf("closing must occur once after all weekly speech: %q", spoken)
 			}
-			for _, paragraph := range brief.WeeklyRecap {
+			for _, paragraph := range brief.Narrative {
 				if !strings.Contains(spoken, mobileBriefParagraphSpeech(brief, paragraph, language)) {
-					t.Fatal("speech lost part of the weekly reading")
+					t.Fatal("speech lost part of the shown daily reading")
 				}
 			}
-			if words := mobileBriefWordCount(spoken); words < mobileBriefMinWords || words > mobileBriefMaxWords {
-				t.Fatalf("combined reading uses %d words", words)
+			for _, paragraph := range brief.WeeklyRecap {
+				if strings.Contains(spoken, mobileBriefParagraphSpeech(brief, paragraph, language)) {
+					t.Fatal("speech included an unshown weekly recap")
+				}
 			}
 			after, _ := json.Marshal(brief)
 			if string(before) != string(after) {

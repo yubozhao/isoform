@@ -121,11 +121,11 @@ func TestMobileBriefUnseenOpenAnswerParagraph(t *testing.T) {
 			if tc.mode == "unseen" {
 				base := MobileBriefV1{NarrativeStatus: "ok", Narrative: []MobileBriefPara{{Text: "The brief summary."}}}
 				withAnswer := brief
-				if spoken := mobileBriefSpokenText(withAnswer, "en"); strings.Contains(spoken, "You asked:") {
-					t.Fatalf("spoken brief included open-answer paragraph: %q", spoken)
+				if spoken := mobileBriefSpokenText(withAnswer, "en"); !strings.Contains(spoken, "You asked:") {
+					t.Fatalf("spoken brief omitted the shown open-answer paragraph: %q", spoken)
 				}
-				if mobileBriefAudioBinding(base, "en") != mobileBriefAudioBinding(withAnswer, "en") {
-					t.Fatal("open-answer paragraph changed the audio binding")
+				if mobileBriefAudioBinding(base, "en") == mobileBriefAudioBinding(withAnswer, "en") {
+					t.Fatal("open-answer paragraph did not change the audio binding")
 				}
 			}
 			if tc.mode == "several" && !mobileBriefIsOpenAnswerParagraph(brief, brief.Narrative[1]) {
