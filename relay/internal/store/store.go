@@ -37,8 +37,10 @@ const (
 	// (chat turn updates, needs-you counts, receipts) are re-read on the next
 	// poll, so only the newest are worth keeping.
 	MaxEvents = 50
-	// KeptBriefs is how many briefs each device retains.
+	// KeptBriefs is how many due briefs each device retains.
 	KeptBriefs = 7
+	// KeptHeldBriefs is the separate limit for briefs not yet due.
+	KeptHeldBriefs = 7
 	// RequestTTL is how long a queued request remains deliverable. A phone request
 	// waits this long for a sleeping computer (PROTOCOL.md section 23).
 	RequestTTL = 24 * time.Hour

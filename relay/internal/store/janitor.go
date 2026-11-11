@@ -14,9 +14,9 @@ type Swept struct {
 }
 
 // Sweep removes expired pairings, requests and devices, briefs beyond the
-// newest KeptBriefs per device, finished push rows older than a day, notice
-// receipts older than NoticeReceiptKeep, expired attachments, and the text
-// message rows sweepSMS names.
+// newest KeptBriefs due and KeptHeldBriefs held per device, finished push rows
+// older than a day, notice receipts older than NoticeReceiptKeep, expired
+// attachments, and the text message rows sweepSMS names.
 func (s *Store) Sweep(ctx context.Context, now time.Time) (Swept, error) {
 	var swept Swept
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -32,7 +32,6 @@ func (s *Store) Sweep(ctx context.Context, now time.Time) (Swept, error) {
 		{"DELETE FROM pairings WHERE expires_at<=?", &swept.Pairings, []any{millis(now)}},
 		{"DELETE FROM envelopes WHERE dir='d2h' AND expires_at<=?", &swept.Requests, []any{millis(now)}},
 		{"DELETE FROM devices WHERE expires_at<=?", &swept.Devices, []any{millis(now)}},
-		{"DELETE FROM briefs WHERE rowid IN (SELECT rowid FROM (SELECT rowid, ROW_NUMBER() OVER (PARTITION BY device_id ORDER BY version DESC) AS position FROM briefs) WHERE position>?)", &swept.Briefs, []any{KeptBriefs}},
 		{"DELETE FROM notice_receipts WHERE received_at<=?", &swept.Receipts, []any{millis(now.Add(-NoticeReceiptKeep))}},
 		// An email code is kept a day after it expired, so the hub can still
 		// be told so, then it and its sealed address go.
@@ -46,6 +45,9 @@ func (s *Store) Sweep(ctx context.Context, now time.Time) (Swept, error) {
 		if *step.count, err = result.RowsAffected(); err != nil {
 			return Swept{}, err
 		}
+	}
+	if swept.Briefs, err = retainBriefs(ctx, tx, now, ""); err != nil {
+		return Swept{}, err
 	}
 	if swept.Pushes, err = push.Sweep(ctx, tx, now.Add(-push.Expiry)); err != nil {
 		return Swept{}, err

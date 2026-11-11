@@ -18,8 +18,48 @@ type Brief struct {
 	Body    []byte
 }
 
+// briefState is derived from deliver_at at the time of an operation; it is not
+// persisted, so a held brief becomes due without a write or a background job.
+type briefState string
+
+const (
+	briefHeld briefState = "held"
+	briefDue  briefState = "due"
+)
+
+// briefStateAt is the single transition from held to due. Its placeholder is
+// the operation's current time in milliseconds. All reads and retention use
+// the same boundary, including the immediate-delivery sentinel (0).
+func briefStateAt() string {
+	return "CASE WHEN deliver_at<=? THEN '" + string(briefDue) + "' ELSE '" + string(briefHeld) + "' END"
+}
+
+// retainBriefs applies independent limits to due and held versions, either for
+// one device on insertion or for all devices during maintenance.
+func retainBriefs(ctx context.Context, tx *sql.Tx, now time.Time, deviceID string) (int64, error) {
+	filter := ""
+	args := []any{millis(now)}
+	if deviceID != "" {
+		filter = " WHERE device_id=?"
+		args = append(args, deviceID)
+	}
+	query := `DELETE FROM briefs WHERE rowid IN (
+		SELECT rowid FROM (
+			SELECT rowid, state, ROW_NUMBER() OVER (PARTITION BY device_id, state ORDER BY version DESC) AS position
+			FROM (SELECT rowid, device_id, version, ` + briefStateAt() + ` AS state FROM briefs` + filter + `)
+		) WHERE position > CASE state WHEN ? THEN ? ELSE ? END
+	)`
+	args = append(args, briefHeld, KeptHeldBriefs, KeptBriefs)
+	result, err := tx.ExecContext(ctx, query, args...)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 // PutBrief stores a brief for a device of the hub and keeps the newest
-// KeptBriefs. With notify it queues one push for the brief, once.
+// KeptBriefs due and KeptHeldBriefs held versions. With notify it queues one
+// push for the brief, once.
 func (s *Store) PutBrief(ctx context.Context, hubID string, env wire.Envelope, body []byte, asOf string, notify bool, now time.Time) error {
 	return s.PutBriefDueAt(ctx, hubID, env, body, asOf, notify, now, time.Time{})
 }
@@ -56,7 +96,7 @@ func (s *Store) PutBriefDueAt(ctx context.Context, hubID string, env wire.Envelo
 			return err
 		}
 	}
-	if _, err = tx.ExecContext(ctx, "DELETE FROM briefs WHERE device_id=? AND version NOT IN (SELECT version FROM briefs WHERE device_id=? ORDER BY version DESC LIMIT ?)", env.Dev, env.Dev, KeptBriefs); err != nil {
+	if _, err = retainBriefs(ctx, tx, now, env.Dev); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -77,7 +117,7 @@ func (s *Store) LatestBrief(ctx context.Context, deviceID string, now time.Time)
 // ListBriefs returns up to limit briefs due at now, newest first. A brief held
 // for a later time is not listed.
 func (s *Store) ListBriefs(ctx context.Context, deviceID string, limit int, now time.Time) ([]Brief, error) {
-	rows, err := s.db.QueryContext(ctx, "SELECT version,as_of,body FROM briefs WHERE device_id=? AND deliver_at<=? ORDER BY version DESC LIMIT ?", deviceID, millis(now), limit)
+	rows, err := s.db.QueryContext(ctx, "SELECT version,as_of,body FROM briefs WHERE device_id=? AND "+briefStateAt()+"=? ORDER BY version DESC LIMIT ?", deviceID, millis(now), briefDue, limit)
 	if err != nil {
 		return nil, err
 	}

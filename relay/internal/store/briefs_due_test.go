@@ -9,6 +9,93 @@ import (
 	"isoform-relay/internal/wire"
 )
 
+func TestBriefStateTransitions(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	const dueAt = int64(1000)
+	tests := []struct {
+		name                  string
+		deliverAt             int64
+		before, after         int64
+		wantBefore, wantAfter briefState
+	}{
+		{"immediate stays due", 0, 1, 2, briefDue, briefDue},
+		{"held stays held", dueAt, 998, 999, briefHeld, briefHeld},
+		{"held becomes due at boundary", dueAt, 999, 1000, briefHeld, briefDue},
+		{"due stays due", dueAt, 1000, 1001, briefDue, briefDue},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, step := range []struct {
+				now  int64
+				want briefState
+			}{{tt.before, tt.wantBefore}, {tt.after, tt.wantAfter}} {
+				var got briefState
+				err := s.db.QueryRowContext(ctx, "SELECT "+briefStateAt()+" FROM (SELECT ? AS deliver_at)", step.now, tt.deliverAt).Scan(&got)
+				if err != nil || got != step.want {
+					t.Fatalf("state at %d = %q, %v; want %q", step.now, got, err, step.want)
+				}
+			}
+		})
+	}
+}
+
+func TestHeldAmendmentsKeepDueBriefUntilReleaseAndCleanup(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	hubID := newHub(t, s)
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	dev := seedDevice(t, s, hubID, now.Add(72*time.Hour))
+	other := seedDevice(t, s, hubID, now.Add(72*time.Hour))
+	dueAt := now.Add(time.Hour)
+	put := func(deviceID string, seq uint64, deliverAt time.Time) {
+		t.Helper()
+		env := wire.Envelope{V: 1, Hub: hubID, Dev: deviceID, Dir: "h2d", Seq: seq, Kind: "brief", CT: ct(t, 300)}
+		body, err := env.Canonical()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.PutBriefDueAt(ctx, hubID, env, body, wire.FormatTime(now), false, now, deliverAt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put(dev.ID, 1, time.Time{})
+	put(other.ID, 1, time.Time{})
+	for seq := uint64(2); seq <= uint64(KeptHeldBriefs+3); seq++ {
+		put(dev.ID, seq, dueAt)
+	}
+	if n := count(t, s, "SELECT count(*) FROM briefs WHERE device_id=?", dev.ID); n != KeptHeldBriefs+1 {
+		t.Fatalf("retained %d briefs, want one due and %d held", n, KeptHeldBriefs)
+	}
+	for _, at := range []time.Time{now, dueAt.Add(-time.Millisecond)} {
+		latest, err := s.LatestBrief(ctx, dev.ID, at)
+		if err != nil || latest.Version != 1 {
+			t.Fatalf("latest before release = %+v, %v; want version 1", latest, err)
+		}
+	}
+	if _, err := s.Sweep(ctx, now); err != nil {
+		t.Fatal(err)
+	}
+	latest, err := s.LatestBrief(ctx, dev.ID, now)
+	if err != nil || latest.Version != 1 {
+		t.Fatalf("latest after sweep = %+v, %v; want version 1", latest, err)
+	}
+	latest, err = s.LatestBrief(ctx, dev.ID, dueAt)
+	if err != nil || latest.Version != uint64(KeptHeldBriefs+3) {
+		t.Fatalf("latest at release = %+v, %v", latest, err)
+	}
+	swept, err := s.Sweep(ctx, dueAt)
+	if err != nil || swept.Briefs != 1 {
+		t.Fatalf("release sweep = %+v, %v; want one superseded brief removed", swept, err)
+	}
+	if n := count(t, s, "SELECT count(*) FROM briefs WHERE device_id=?", dev.ID); n != KeptBriefs {
+		t.Fatalf("after release retained %d, want %d", n, KeptBriefs)
+	}
+	if n := count(t, s, "SELECT count(*) FROM briefs WHERE device_id=?", other.ID); n != 1 {
+		t.Fatalf("other device retained %d briefs, want 1", n)
+	}
+}
+
 func TestHeldBriefIsHiddenUntilDueAndItsPushWaits(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
