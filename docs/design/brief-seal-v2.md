@@ -79,6 +79,21 @@ Unnamed (the gates decide on each affected brief):
 - Deleting meeting notes (meeting_notes.go, `DeleteMeetingNotes`).
 - An observation pause (observation_pauses.go).
 - A memory tombstone written from brief feedback (mobile_brief_feedback.go).
+- A belief correction (today_week_belief.go, `CorrectTodayWeekBelief`): the user
+  corrects what Isoform says about them, so the corrected memory is withdrawn
+  by its id, with the corrected wording in the log entry when it passes the
+  week's copy rules. A copy that shows that belief is amended from the log with
+  no live read: only the learned rows for that memory leave, and each takes the
+  corrected wording, or is dropped when there is none. Everything else stays:
+  the rows, the question and the rest of the week. The lead, the ask, the recap
+  and the narrative are withheld only when their own text names the old belief.
+  The audio is withheld only when the narrative or recap it speaks was withheld.
+  The phone read recomputes the week from memory, so it drops the old row
+  without the corrected wording until the next seal (see Still open).
+  The next seal shows the words the belief now has.
+- An undo of a belief correction (`UndoTodayWeekBelief`): the belief comes back,
+  which a log entry cannot name, so the change names no sources and the gates
+  seal each brief again. The read that follows sees the restored belief.
 - A goal move (`MoveGoal`, purpose_user_actions.go). A closed goal withholds its
   content (closed purposes), so every move is a privacy action that names no
   source; the gates decide. The bump stays on every move.
@@ -95,7 +110,6 @@ Not privacy actions, so they advance nothing:
 - Memory file edits and new files (memory_sync.go, memory_store.go).
 - Memory tombstone preserved-record upkeep (memory.go).
 - Handoff saves and edits (`ChangedHook` removed).
-- Belief corrections (today_week_belief.go, removed).
 - Activity summary rewrites, calendar sync, attendance, file edits, retention.
 - Isoform's own writes that add to a brief (audio, week answers): these call
   `briefSourceChanged`, which re-seals, and do not advance the epoch.
@@ -121,8 +135,19 @@ read path:
 `brief-replay` reports the prediction as `migrate=shown|withheld|none`, from the
 built brief and the keyed withdrawal log. It does not run the gates.
 
+## Background work
+
+An amendment pass after a privacy change runs on the brief service's work group.
+A started service runs it in a goroutine that `Stop` waits for, and app shutdown
+calls `Stop`. A service that was never started has no lifecycle to wait for, so
+its pass runs before the change returns. Nothing is left writing after a test or
+a caller has finished.
+
 ## Still open
 
+- A corrected belief's wording is kept in the withdrawal log, not in the memory
+  copy the phone reads. The phone's live week drops the old row and does not show
+  the wording until the next seal.
 - Unnamed changes re-run the gates, which may drop items that retention already
   removed. Naming sessions and accounts needs a map from their ids to the ids
   the briefs cite.

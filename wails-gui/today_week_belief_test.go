@@ -10,7 +10,14 @@ import (
 
 func todayWeekBeliefFixture(t *testing.T) (*App, MobileBriefV1, string) {
 	t.Helper()
-	app, brief, now := yourWeekFrozenWindowFixture(t, []time.Weekday{time.Monday, time.Tuesday, time.Wednesday, time.Thursday, time.Friday}, "2026-10-19", intPointer(5), 2, nil)
+	return todayWeekBeliefFixtureWithTopics(t, nil)
+}
+
+// todayWeekBeliefFixtureWithTopics is the belief fixture with activity topics,
+// so the week has rows besides the learned belief.
+func todayWeekBeliefFixtureWithTopics(t *testing.T, topics []yourWeekSnapshotRef) (*App, MobileBriefV1, string) {
+	t.Helper()
+	app, brief, now := yourWeekFrozenWindowFixture(t, []time.Weekday{time.Monday, time.Tuesday, time.Wednesday, time.Thursday, time.Friday}, "2026-10-19", intPointer(5), 2, topics)
 	before := "# A belief\n\n- **Source**: user_edit\n\n## Memory Points\n- Prefers mornings.\n"
 	writeTodayContextMemory(t, "week-belief", before)
 	ctx := context.Background()
@@ -69,7 +76,15 @@ func TestTodayWeekBeliefCorrectionAndUndo(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if view.Brief != nil && view.Brief.YourWeek != nil && len(view.Brief.YourWeek.Learned) != 0 {
+			if view.Brief == nil || view.Brief.YourWeek == nil {
+				t.Fatal("the weekly view was removed by a one-line correction")
+			}
+			// The corrected wording takes the belief's place; the old label is gone.
+			learned := view.Brief.YourWeek.Learned
+			if words == "" && len(learned) != 0 || words != "" && (len(learned) != 1 || learned[0].Text != words) {
+				t.Fatalf("learned rows after correction = %+v", learned)
+			}
+			if raw, _ := json.Marshal(view.Brief); strings.Contains(string(raw), "A belief") {
 				t.Fatal("the old weekly belief survived its correction")
 			}
 			if strings.Contains(token, words) && words != "" {
@@ -104,6 +119,44 @@ func TestTodayWeekBeliefCorrectionAndUndo(t *testing.T) {
 				t.Fatal("replayed undo")
 			}
 		})
+	}
+}
+
+// A correction changes one line of the weekly view. The other rows stay on both
+// the computer and the phone, and the old belief text appears in neither.
+func TestTodayWeekBeliefCorrectionKeepsOtherWeekRows(t *testing.T) {
+	app, brief, _ := todayWeekBeliefFixtureWithTopics(t, []yourWeekSnapshotRef{{ID: "t-halcyon", Minutes: 6 * 60}, {ID: "t-borealis", Minutes: 4 * 60}})
+	before, err := app.GetTodayBriefByID(brief.BriefID)
+	if err != nil || before.Brief == nil || before.Brief.YourWeek == nil || len(before.Brief.YourWeek.Time) == 0 {
+		t.Fatalf("fixture week has no other rows: %+v, %v", before.Brief, err)
+	}
+	if _, err := app.CorrectTodayWeekBelief(brief.BriefID, "week-belief", "A belief", "I prefer afternoons.", "test"); err != nil {
+		t.Fatal(err)
+	}
+	app.ensureMobileBriefService().(*mobileBriefService).wg.Wait()
+
+	computer, err := app.GetTodayBriefByID(brief.BriefID)
+	if err != nil || computer.Brief == nil || computer.Brief.YourWeek == nil {
+		t.Fatalf("computer read lost the week: %+v, %v", computer.Brief, err)
+	}
+	week := computer.Brief.YourWeek
+	if len(week.Time) != len(before.Brief.YourWeek.Time) || len(week.Learned) != 1 || week.Learned[0].Text != "I prefer afternoons." {
+		t.Fatalf("computer week rows = time %d, learned %+v", len(week.Time), week.Learned)
+	}
+	phone, _ := app.mobileBriefPhoneProjection(brief)
+	if phone.YourWeek == nil || len(phone.YourWeek.Time) == 0 {
+		t.Fatalf("phone read lost the week's other rows: %+v", phone.YourWeek)
+	}
+	for surface, value := range map[string]any{"computer": computer.Brief, "phone": phone} {
+		raw, err := json.Marshal(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, old := range []string{"A belief", "Prefers mornings"} {
+			if strings.Contains(string(raw), old) {
+				t.Fatalf("%s read still shows the old belief %q", surface, old)
+			}
+		}
 	}
 }
 

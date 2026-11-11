@@ -79,6 +79,9 @@ var (
 type briefWithdrawn struct {
 	Kind string `json:"kind,omitempty"`
 	ID   string `json:"id"`
+	// Text is the wording a correction leaves in place of a withdrawn belief
+	// (empty drops the belief). Only the belief correction sets it.
+	Text string `json:"text,omitempty"`
 }
 
 // briefWithdrawal is one privacy epoch change. Keys is empty when the change
@@ -168,9 +171,11 @@ type briefAmendState struct {
 	dirty   bool
 }
 
-// requestAmendment starts the amendment pass in its own goroutine, or marks the
-// running pass dirty so it goes again. The goroutine is tracked by the service's
-// work group, so Stop waits for it and a test cleanup drains it.
+// requestAmendment starts the amendment pass, or marks the running pass dirty so
+// it goes again. A started service runs the pass in a goroutine tracked by its
+// work group, so Stop waits for it. A service that was never started has no
+// lifecycle that would await a goroutine, so the pass runs before the caller
+// returns; nothing is left writing after the caller is done.
 func (s *mobileBriefService) requestAmendment() {
 	s.amend.mu.Lock()
 	if s.amend.running {
@@ -178,27 +183,50 @@ func (s *mobileBriefService) requestAmendment() {
 		s.amend.mu.Unlock()
 		return
 	}
-	s.amend.mu.Unlock()
-	if !s.beginWork() {
-		return
-	}
-	s.amend.mu.Lock()
 	s.amend.running = true
 	s.amend.mu.Unlock()
+	s.mu.Lock()
+	started, stopped := s.started, s.stopped
+	s.mu.Unlock()
+	if stopped {
+		s.finishAmendRequest()
+		return
+	}
+	if !started {
+		s.runAmendments()
+		return
+	}
+	if !s.beginWork() {
+		s.finishAmendRequest()
+		return
+	}
 	go func() {
 		defer s.wg.Done()
-		for {
-			s.amendSources()
-			s.amend.mu.Lock()
-			if !s.amend.dirty {
-				s.amend.running = false
-				s.amend.mu.Unlock()
-				return
-			}
-			s.amend.dirty = false
-			s.amend.mu.Unlock()
-		}
+		s.runAmendments()
 	}()
+}
+
+// runAmendments runs amendment passes until no request arrived during one. The
+// caller has set amend.running.
+func (s *mobileBriefService) runAmendments() {
+	for {
+		s.amendSources()
+		s.amend.mu.Lock()
+		if !s.amend.dirty {
+			s.amend.running = false
+			s.amend.mu.Unlock()
+			return
+		}
+		s.amend.dirty = false
+		s.amend.mu.Unlock()
+	}
+}
+
+// finishAmendRequest clears the running flag when a request starts no pass.
+func (s *mobileBriefService) finishAmendRequest() {
+	s.amend.mu.Lock()
+	s.amend.running, s.amend.dirty = false, false
+	s.amend.mu.Unlock()
 }
 
 // memorySourcesRemovedOnDisk is a privacy change: memory or knowledge files were
@@ -798,19 +826,29 @@ func (s *mobileBriefService) amendKeyed(source MobileBriefV1, saved mobileBriefF
 	if unmarshalStoredMobileBrief(saved.Brief, &brief) != nil || brief.BriefID != source.BriefID {
 		return MobileBriefV1{}, false
 	}
-	changed := map[string]bool{}
+	// A withdrawn memory is a belief: only its learned rows, and the paragraphs,
+	// items and parts of the week that name its wording, leave the copy.
+	beliefs := briefBeliefWithdrawals(withdrawn)
+	changed, beliefRefs := map[string]bool{}, map[string]bool{}
 	for _, ref := range brief.Evidence {
-		if briefRefWithdrawn(ref.SourceID, withdrawn) {
+		if _, belief := beliefs[ref.SourceID]; belief && ref.SourceKind == string(MemorySourceMemory) {
+			beliefRefs[ref.Ref] = true
+		} else if briefRefWithdrawn(ref.SourceID, withdrawn) {
 			changed[ref.Ref] = true
 		}
 	}
 	for _, ref := range saved.SourceRefs {
-		if briefRefWithdrawn(ref.ID, withdrawn) {
+		if _, belief := beliefs[ref.ID]; belief && ref.Kind == string(MemorySourceMemory) {
+			beliefRefs[ref.Ref] = true
+		} else if briefRefWithdrawn(ref.ID, withdrawn) {
 			changed[ref.Ref] = true
 		}
 	}
 	if len(changed) > 0 {
 		brief = mobileBriefDropCited(brief, changed)
+	}
+	if len(beliefs) > 0 {
+		brief = mobileBriefAmendBeliefs(brief, beliefRefs, beliefs)
 	}
 	epoch := mobileBriefPrivacyEpoch.Load()
 	raw, err := marshalStoredMobileBrief(brief)
@@ -852,6 +890,99 @@ func (s *mobileBriefService) amendSources() {
 		}
 		s.sealAndAnnounce(source)
 	}
+}
+
+// briefBeliefWithdrawals maps each withdrawn memory id to the wording a correction
+// leaves in its place. An empty wording drops the belief. The last entry for an
+// id wins, so a later forget or correction decides.
+func briefBeliefWithdrawals(withdrawn []briefWithdrawn) map[string]string {
+	beliefs := map[string]string{}
+	for _, w := range withdrawn {
+		if w.Kind == string(MemorySourceMemory) && w.ID != "" {
+			beliefs[w.ID] = w.Text
+		}
+	}
+	return beliefs
+}
+
+// mobileBriefAmendBeliefs removes a withdrawn belief from the weekly view and the
+// written parts that name it. Learned rows for a withdrawn memory are replaced by
+// its correction wording, or dropped. The lead, question, ask, recap and narrative
+// are withheld only when their own text names a removed belief, and the audio
+// only when the narrative or recap it speaks was withheld. Everything else stays.
+func mobileBriefAmendBeliefs(brief MobileBriefV1, refs map[string]bool, beliefs map[string]string) MobileBriefV1 {
+	var wording []string
+	if week := brief.YourWeek; week != nil {
+		kept := make([]MobileBriefWeekLearned, 0, len(week.Learned))
+		for _, row := range week.Learned {
+			if _, belief := beliefs[row.MemoryID]; row.Kind != yourWeekLearnedMemory || !belief {
+				kept = append(kept, row)
+				continue
+			}
+			wording = append(wording, row.Text)
+			if text := beliefs[row.MemoryID]; text != "" {
+				row.Text = text
+				kept = append(kept, row)
+			}
+		}
+		copied := *week
+		copied.Learned = kept
+		brief.YourWeek = &copied
+	}
+	// Dropping a cited item clears the week, the lead, the question and the audio
+	// as a whole. For a belief they are withheld only by their own text, so keep them.
+	week, question, lead, facts, audio := brief.YourWeek, brief.WeekQuestion, brief.WeekLead, brief.WeekLeadFacts, brief.Audio
+	narrative, recap := brief.Narrative, brief.WeeklyRecap
+	if len(refs) > 0 {
+		brief = mobileBriefDropCited(brief, refs)
+	}
+	brief.YourWeek, brief.WeekQuestion, brief.WeekLead, brief.WeekLeadFacts, brief.Audio = week, question, lead, facts, audio
+	if week != nil {
+		copied := *week
+		if briefTextNamesAny(wording, copied.Headline) {
+			copied.Headline = ""
+		}
+		if copied.Ask != nil && (briefTextNamesAny(wording, copied.Ask.Text) || briefTextNamesAny(wording, copied.Ask.Message)) {
+			copied.Ask = nil
+		}
+		brief.YourWeek = &copied
+	}
+	if briefTextNamesAny(wording, lead) || briefTextNamesAny(wording, facts) {
+		brief.WeekLead, brief.WeekLeadFacts = "", ""
+	}
+	if briefParasName(wording, brief.WeeklyRecap) || len(recap) > 0 && len(brief.WeeklyRecap) == 0 {
+		brief.WeeklyRecap = nil
+	}
+	if briefParasName(wording, brief.Narrative) {
+		brief.Narrative = nil
+	}
+	if len(brief.Narrative) == 0 && len(narrative) > 0 {
+		brief.NarrativeStatus = "unavailable"
+	}
+	if audio != nil && (len(narrative) > 0 && len(brief.Narrative) == 0 || len(recap) > 0 && len(brief.WeeklyRecap) == 0) {
+		brief.Audio = nil
+	}
+	return brief
+}
+
+// briefTextNamesAny reports whether text contains any wording in names.
+func briefTextNamesAny(names []string, text string) bool {
+	for _, name := range names {
+		if name != "" && strings.Contains(text, name) {
+			return true
+		}
+	}
+	return false
+}
+
+// briefParasName reports whether any paragraph's text names a wording.
+func briefParasName(names []string, paras []MobileBriefPara) bool {
+	for _, para := range paras {
+		if briefTextNamesAny(names, para.Text) {
+			return true
+		}
+	}
+	return false
 }
 
 // briefRefWithdrawn reports whether a cited source is one a privacy change

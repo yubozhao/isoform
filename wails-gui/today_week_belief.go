@@ -297,6 +297,16 @@ func (a *App) CorrectTodayWeekBelief(briefID, id, expectedText, words, correlati
 	if err != nil {
 		return "", err
 	}
+	// The correction is a user action on what Isoform says about them, so the old
+	// belief leaves every sealed copy that shows it. The copy is amended from this
+	// keyed withdrawal and reads no live source. The corrected wording (when it
+	// passes the week's copy rules) takes the belief's place in the learned row.
+	shown := ""
+	if words != "" && yourWeekCopyAllowed(words) {
+		shown = words
+	}
+	briefPrivacyChanged(briefWithdrawn{Kind: string(MemorySourceMemory), ID: id, Text: shown})
+	briefPrivacyAmendSoon()
 	a.markMemoryDirtyWithCorrelation("today_not_quite", correlation)
 	return token, nil
 }
@@ -335,6 +345,10 @@ func (a *App) UndoTodayWeekBelief(token, correlation string) error {
 		return writeMemoryFileAtomically(dir, receipt.ID, before)
 	})
 	if err == nil {
+		// Undo brings the belief back. A restored belief cannot be named by the
+		// log, so this is an unkeyed change: the gates seal the copies again.
+		briefPrivacyChanged()
+		briefPrivacyAmendSoon()
 		a.markMemoryDirtyWithCorrelation("today_not_quite_undo", correlation)
 	}
 	return err
