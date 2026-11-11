@@ -295,3 +295,26 @@ func TestMobileBriefLatestConcurrentCompletionAndRestart(t *testing.T) {
 		t.Fatalf("after quiet replacement latest = %+v, found %v", record, ok)
 	}
 }
+
+func TestLatestBriefReadsWithheldCandidateOnce(t *testing.T) {
+	_, svc, source := newStoredMobileBriefPrivacyFixture(t)
+	svc.wg.Wait()
+	if _, _, wrote := svc.seal(t.Context(), source); !wrote {
+		t.Fatal("initial seal failed")
+	}
+	writePrivacyMemory(t, "safe-recall", "# Changed memory\n")
+	reads := 0
+	mobileBriefAfterSealedRead = func(id string) {
+		if id == source.BriefID {
+			reads++
+		}
+	}
+	t.Cleanup(func() { mobileBriefAfterSealedRead = nil })
+	got, ok, err := svc.latestShown()
+	if err != nil || !ok || got.BriefID != source.BriefID || len(got.Narrative) != 0 {
+		t.Fatalf("latest withheld brief = %s, ok=%v, err=%v", got.BriefID, ok, err)
+	}
+	if reads != 1 {
+		t.Fatalf("candidate was read %d times, want once", reads)
+	}
+}

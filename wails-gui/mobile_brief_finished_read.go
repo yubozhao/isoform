@@ -425,7 +425,7 @@ func (s *mobileBriefService) sealResult(ctx context.Context, source MobileBriefV
 				old = mobileBriefPaused(source)
 			}
 			changed = mobileBriefChangedRefs(cited, source, old, changed)
-			return s.withholdEditedRead(ctx, previous, old, kind, changed), mobileBriefWithholding{Reason: mobileBriefWithheldSource, SourceKind: kind}, true, false
+			return s.saveEditedSeal(ctx, source, previous, old, kind, changed)
 		}
 	}
 	epoch := mobileBriefPrivacyEpoch.Load()
@@ -446,13 +446,13 @@ func (s *mobileBriefService) sealResult(ctx context.Context, source MobileBriefV
 	if !found {
 		if kind, changed := s.app.mobileBriefEditedSources(cited, sealedAt, nil); kind != "" {
 			changed = mobileBriefChangedRefs(cited, source, brief, changed)
-			return mobileBriefWithholdEdited(brief, changed), mobileBriefWithholding{Reason: mobileBriefWithheldSource, SourceKind: kind}, true, false
+			return mobileBriefWithholdEdited(brief, changed), mobileBriefWithholding{Reason: mobileBriefWithheldSource, SourceKind: kind}, false, false
 		}
 		fingerprints = s.app.mobileBriefSourceFingerprints(ctx, cited)
 	}
 	if kind, changed := s.app.mobileBriefEditedSources(cited, sealedAt, fingerprints); kind != "" {
 		changed = mobileBriefChangedRefs(cited, source, brief, changed)
-		return mobileBriefWithholdEdited(brief, changed), mobileBriefWithholding{Reason: mobileBriefWithheldSource, SourceKind: kind}, true, false
+		return mobileBriefWithholdEdited(brief, changed), mobileBriefWithholding{Reason: mobileBriefWithheldSource, SourceKind: kind}, false, false
 	}
 	read := mobileBriefFinishedRead{Schema: mobileBriefSealedSchema, Epoch: epoch, Print: print, Source: mobileBriefSourceDigest(source), Day: day, Cites: sealCites(source), SealedAt: sealedAt, Fingerprints: fingerprints, SourceRefs: mobileBriefSealSources(cited), WithheldReason: withheld.Reason, WithheldKind: withheld.SourceKind, Brief: raw}
 	if mobileBriefBeforeSealSave != nil {
@@ -462,6 +462,125 @@ func (s *mobileBriefService) sealResult(ctx context.Context, source MobileBriefV
 		return brief, withheld, false, false
 	}
 	return brief, withheld, true, false
+}
+
+// saveEditedSeal preserves the original provenance while saving a withheld copy.
+// A transient privacy gate or a concurrent change leaves the previous seal intact.
+func (s *mobileBriefService) saveEditedSeal(ctx context.Context, source MobileBriefV1, previous mobileBriefFinishedRead, brief MobileBriefV1, kind string, changed map[string]bool) (MobileBriefV1, mobileBriefWithholding, bool, bool) {
+	withheld := mobileBriefWithholding{Reason: mobileBriefWithheldSource, SourceKind: kind}
+	epoch, print, day := mobileBriefPrivacyEpoch.Load(), s.app.briefPrivacyPrint(), s.readDay()
+	if previous.Print != print || len(changed) > 0 || (kind != "history" && kind != "handoff") {
+		projected, gate := s.app.mobileBriefForProjectionWithholding(ctx, brief, true)
+		if gate.Transient() {
+			return mobileBriefPaused(brief), withheld, false, false
+		}
+		brief = projected
+	}
+	brief = mobileBriefWithholdEdited(brief, changed)
+	if epoch != mobileBriefPrivacyEpoch.Load() || print != s.app.briefPrivacyPrint() || day != s.readDay() {
+		return mobileBriefPaused(brief), withheld, false, false
+	}
+	raw, err := marshalStoredMobileBrief(brief)
+	if err != nil {
+		return brief, withheld, false, true
+	}
+	previous.SourceRefs = mobileBriefSealSources(mobileBriefSealedSources(previous, source))
+	previous.Schema, previous.Epoch, previous.Print = mobileBriefSealedSchema, epoch, print
+	previous.Source, previous.Day = mobileBriefSourceDigest(source), day
+	previous.WithheldReason, previous.WithheldKind, previous.Brief = withheld.Reason, withheld.SourceKind, raw
+	if mobileBriefBeforeSealSave != nil {
+		mobileBriefBeforeSealSave(source.BriefID)
+	}
+	if err := s.store.saveFinishedReadIfCurrent(source.BriefID, previous); err != nil {
+		return brief, withheld, false, false
+	}
+	return brief, withheld, true, false
+}
+
+// briefReadDecision caches only provenance decisions, never source text. Entries
+// are removed when their service stops.
+type briefReadDecisionKey struct {
+	service *mobileBriefService
+	id      string
+}
+
+type briefReadDecision struct {
+	fingerprint string
+	kind        string
+	changed     map[string]bool
+}
+
+var briefReadDecisions = struct {
+	sync.Mutex
+	entries map[briefReadDecisionKey]briefReadDecision
+}{entries: make(map[briefReadDecisionKey]briefReadDecision)}
+
+var mobileBriefReadDecisions atomic.Uint64
+
+// The fingerprint includes the data actually consulted by the edited-source
+// check. Summary readability and replacement depend on other activity rows, so
+// they must be checked even when the original summary's content is unchanged.
+func (s *mobileBriefService) readDecisionFingerprint(source, cited MobileBriefV1, saved mobileBriefFinishedRead) string {
+	ctx := context.Background()
+	parts := []any{saved, mobileBriefSourceDigest(source), s.app.briefPrivacyPrint(), s.readDay(), briefPolicyPending.Load()}
+	var sources todayChatSources
+	collected := false
+	for _, ref := range cited.Evidence {
+		modified, value, supported, found := s.app.mobileBriefEditableSource(ctx, ref)
+		part := []any{ref, modified.UnixNano(), supported, found}
+		if supported && found {
+			part = append(part, mobileBriefModelDigest(value))
+		}
+		sealedPrint := saved.Fingerprints[mobileBriefSourceKey(ref.SourceKind, ref.SourceID)]
+		if strings.HasPrefix(sealedPrint, "summary-v1:") {
+			if p, ok := mobileBriefParseSummaryFingerprint(sealedPrint); ok {
+				if !found {
+					id, valid := s.app.mobileBriefSummaryReplacement(ctx, ref.SourceID, p)
+					part = append(part, id, valid)
+				} else if row, ok := value.(*ActivityRow); ok {
+					part = append(part, s.app.mobileBriefSummaryReadable(ctx, *row))
+				}
+			}
+		}
+		if !supported && sealedPrint != "" {
+			if !collected {
+				sources = s.app.collectTodayChatSources(ctx, mobileBriefAsOfTime(cited))
+				collected = true
+			}
+			digest, ok := s.app.mobileBriefModelSourceDigest(ctx, ref, cited, sources)
+			part = append(part, digest, ok)
+		}
+		if (ref.SourceKind == "history" || ref.SourceKind == "handoff") && s.app.handoffStore != nil {
+			info, err := os.Stat(s.app.handoffStore.Dir())
+			part = append(part, err == nil && info.IsDir())
+		}
+		parts = append(parts, part)
+	}
+	return mobileBriefModelDigest(parts)
+}
+
+// editedReadDecision reports whether this exact snapshot was already decided.
+func (s *mobileBriefService) editedReadDecision(source, cited MobileBriefV1, saved mobileBriefFinishedRead) (string, map[string]bool, bool) {
+	key := briefReadDecisionKey{s, source.BriefID}
+	fingerprint := s.readDecisionFingerprint(source, cited, saved)
+	briefReadDecisions.Lock()
+	decision, found := briefReadDecisions.entries[key]
+	briefReadDecisions.Unlock()
+	if found && decision.fingerprint == fingerprint {
+		return decision.kind, decision.changed, true
+	}
+	mobileBriefReadDecisions.Add(1)
+	kind, changed := s.app.mobileBriefEditedSources(cited, s.store.finishedReadTime(source.BriefID, saved), saved.Fingerprints)
+	// A source may have changed while the decision was made. Do not cache that
+	// decision; the next read must inspect it again.
+	if fingerprint == s.readDecisionFingerprint(source, cited, saved) {
+		briefReadDecisions.Lock()
+		if !s.isStopped() {
+			briefReadDecisions.entries[key] = briefReadDecision{fingerprint, kind, changed}
+		}
+		briefReadDecisions.Unlock()
+	}
+	return kind, changed, false
 }
 
 // finishedReadWithholding is source as the readers show it. A display read
@@ -497,15 +616,25 @@ func (s *mobileBriefService) finishedReadWithholding(source MobileBriefV1) (resu
 		if err != nil {
 			return MobileBriefV1{}, mobileBriefWithholding{}, err
 		}
+		decisionCached := false
 		if found {
 			// Use the same saved copy for the words and their privacy metadata.
 			// A background seal may have replaced the copy after the first read.
 			brief = s.sealedReadSnapshot(source, saved)
 			withheld = mobileBriefWithholding{Reason: saved.WithheldReason, SourceKind: saved.WithheldKind}
 			cited := mobileBriefSealedSources(saved, source)
-			if kind, changed := s.app.mobileBriefEditedSources(cited, s.store.finishedReadTime(source.BriefID, saved), saved.Fingerprints); kind != "" {
+			kind, changed, cached := s.editedReadDecision(source, cited, saved)
+			decisionCached = cached
+			stale := saved.Print != s.app.briefPrivacyPrint() || saved.Source != mobileBriefSourceDigest(source) || saved.Day != s.readDay()
+			if kind != "" {
+				if !cached && stale {
+					s.scheduleSealRetry(source)
+				}
 				changed = mobileBriefChangedRefs(cited, source, brief, changed)
 				return s.withholdEditedRead(context.Background(), saved, brief, kind, changed), mobileBriefWithholding{Reason: mobileBriefWithheldSource, SourceKind: kind}, nil
+			}
+			if !cached && saved.Print == s.app.briefPrivacyPrint() && (stale || saved.WithheldReason == mobileBriefWithheldSource) {
+				s.scheduleSealRetry(source)
 			}
 		}
 		if found && saved.Print != s.app.briefPrivacyPrint() {
@@ -514,10 +643,12 @@ func (s *mobileBriefService) finishedReadWithholding(source MobileBriefV1) (resu
 			// next read seals the brief again with the current gates and shows that.
 			// Only when the gates cannot decide yet are the words withheld, and the
 			// brief is sealed again in the background.
-			if sealed, amended, wrote := s.amendSealedCopy(source); wrote {
-				return sealed, amended, nil
+			if !decisionCached {
+				if sealed, amended, wrote := s.amendSealedCopy(source); wrote {
+					return sealed, amended, nil
+				}
+				s.scheduleSealRetry(source)
 			}
-			s.scheduleSealRetry(source)
 			return mobileBriefPaused(brief), mobileBriefWithholding{Reason: mobileBriefWithheldPrivacyCheck, SourceKind: kind}, nil
 		}
 	}
@@ -575,9 +706,6 @@ func (s *mobileBriefService) sealedReadSnapshot(source MobileBriefV1, saved mobi
 	if saved.Schema != mobileBriefSealedSchema || unmarshalStoredMobileBrief(saved.Brief, &brief) != nil || brief.BriefID != source.BriefID {
 		s.scheduleSealRetry(source)
 		return MobileBriefV1{}
-	}
-	if s.app == nil || saved.Print != s.app.briefPrivacyPrint() || saved.Source != mobileBriefSourceDigest(source) || saved.Day != s.readDay() {
-		s.scheduleSealRetry(source)
 	}
 	if s.app != nil && s.app.IsClosedEyesModeEnabled() {
 		// Closed Eyes is known in memory: nothing the brief says stays readable.
@@ -904,6 +1032,10 @@ var sealRetryDelays = []time.Duration{time.Second, 3 * time.Second, 10 * time.Se
 var sealRetryBackoff = time.Hour
 var mobileBriefSealRetryAttempts atomic.Uint64
 
+// mobileBriefBeforeRetryAnnounce observes the saved copy at the publication
+// boundary in tests; it is nil during normal operation.
+var mobileBriefBeforeRetryAnnounce func(string)
+
 func (s *mobileBriefService) sealStatePath(id string) string {
 	if s.store.dir == "" || !mobileBriefIDPattern.MatchString(id) {
 		return ""
@@ -1078,6 +1210,9 @@ func (s *mobileBriefService) runSealJob(key briefSealJobKey, job *briefSealJob) 
 				briefSealJobs.Unlock()
 				s.noteLatestShownIfNewer(sealed)
 				if s.app != nil {
+					if mobileBriefBeforeRetryAnnounce != nil {
+						mobileBriefBeforeRetryAnnounce(key.id)
+					}
 					s.app.emitBrowserEvent("brief:stored", key.id)
 				}
 				return
@@ -1154,6 +1289,13 @@ func (s *mobileBriefService) runSealJob(key briefSealJobKey, job *briefSealJob) 
 // stopSealRetries cancels timers belonging to this service; a running attempt
 // sees the stopped flag and exits. Its saved wait is retained for the next launch.
 func (s *mobileBriefService) stopSealRetries() {
+	briefReadDecisions.Lock()
+	for key := range briefReadDecisions.entries {
+		if key.service == s {
+			delete(briefReadDecisions.entries, key)
+		}
+	}
+	briefReadDecisions.Unlock()
 	briefSealJobs.Lock()
 	defer briefSealJobs.Unlock()
 	for key, job := range briefSealJobs.jobs {

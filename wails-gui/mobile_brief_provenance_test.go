@@ -560,3 +560,172 @@ func TestMobileBriefFingerprintPersonFields(t *testing.T) {
 		t.Fatalf("person edit was shown: %s", kind)
 	}
 }
+
+// A successful edited-source seal is the copy on disk, including on retry.
+func TestEditedSealSavedBeforeRetryCompletion(t *testing.T) {
+	_, svc, source := newStoredMobileBriefPrivacyFixture(t)
+	svc.wg.Wait()
+	if _, _, wrote := svc.seal(t.Context(), source); !wrote {
+		t.Fatal("initial seal failed")
+	}
+	before, _, err := svc.store.loadFinishedRead(source.BriefID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writePrivacyMemory(t, "safe-recall", "# Changed memory\n")
+	oldDelays := sealRetryDelays
+	sealRetryDelays = []time.Duration{time.Millisecond}
+	announced := make(chan mobileBriefFinishedRead, 1)
+	mobileBriefBeforeRetryAnnounce = func(id string) {
+		saved, _, _ := svc.store.loadFinishedRead(id)
+		announced <- saved
+	}
+	t.Cleanup(func() { svc.Stop(); sealRetryDelays = oldDelays; mobileBriefBeforeRetryAnnounce = nil })
+	svc.scheduleSealRetry(source)
+	svc.wg.Wait()
+	select {
+	case atAnnouncement := <-announced:
+		if atAnnouncement.WithheldReason != mobileBriefWithheldSource || atAnnouncement.WithheldKind != "memory" {
+			t.Fatal("stored announcement preceded the withheld seal")
+		}
+	default:
+		t.Fatal("retry did not announce its stored seal")
+	}
+	after, found, err := svc.store.loadFinishedRead(source.BriefID)
+	if err != nil || !found || after.WithheldReason != mobileBriefWithheldSource || after.WithheldKind != "memory" {
+		t.Fatalf("retry completed without a withheld seal: found=%v reason=%q kind=%q err=%v", found, after.WithheldReason, after.WithheldKind, err)
+	}
+	var sealed MobileBriefV1
+	if err := unmarshalStoredMobileBrief(after.Brief, &sealed); err != nil || len(sealed.Narrative) != 0 {
+		t.Fatalf("saved seal contains old words: err=%v", err)
+	}
+	if !after.SealedAt.Equal(before.SealedAt) || after.Fingerprints[mobileBriefSourceKey("memory", "safe-recall")] != before.Fingerprints[mobileBriefSourceKey("memory", "safe-recall")] {
+		t.Fatal("edited seal changed the original provenance")
+	}
+}
+
+func TestEditedSealSaveFailureIsNotReportedSaved(t *testing.T) {
+	_, svc, source := newStoredMobileBriefPrivacyFixture(t)
+	svc.wg.Wait()
+	if _, _, wrote := svc.seal(t.Context(), source); !wrote {
+		t.Fatal("initial seal failed")
+	}
+	writePrivacyMemory(t, "safe-recall", "# Changed memory\n")
+	mobileBriefBeforeSealSave = func(id string) {
+		saved, found, err := svc.store.loadFinishedRead(id)
+		if err != nil || !found {
+			t.Fatalf("load seal: %v", err)
+		}
+		saved.Epoch = mobileBriefPrivacyEpoch.Load() + 1
+		if err := svc.store.saveFinishedRead(id, saved); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() { mobileBriefBeforeSealSave = nil })
+	if _, _, wrote := svc.seal(t.Context(), source); wrote {
+		t.Fatal("rejected seal reported saved")
+	}
+}
+
+func TestUnchangedBriefReadDoesNotRepeatDecisionOrRetry(t *testing.T) {
+	_, svc, source := newStoredMobileBriefPrivacyFixture(t)
+	svc.wg.Wait()
+	if _, _, wrote := svc.seal(t.Context(), source); !wrote {
+		t.Fatal("initial seal failed")
+	}
+	writePrivacyMemory(t, "safe-recall", "# Changed memory\n")
+	// Force a stale seal so the first read starts a retry.
+	saved, found, err := svc.store.loadFinishedRead(source.BriefID)
+	if err != nil || !found {
+		t.Fatalf("load seal: %v", err)
+	}
+	saved.Day = "2000-01-01"
+	if err := svc.store.saveFinishedRead(source.BriefID, saved); err != nil {
+		t.Fatal(err)
+	}
+	oldDelays := sealRetryDelays
+	sealRetryDelays = []time.Duration{time.Millisecond}
+	t.Cleanup(func() { svc.Stop(); sealRetryDelays = oldDelays })
+	if got, withheld, err := svc.finishedReadWithholding(source); err != nil || withheld.Reason != mobileBriefWithheldSource || len(got.Narrative) != 0 {
+		t.Fatalf("first read did not withhold: %q %v", withheld.Reason, err)
+	}
+	svc.wg.Wait()
+	if _, _, err := svc.finishedReadWithholding(source); err != nil {
+		t.Fatal(err)
+	}
+	decisions, retries := mobileBriefReadDecisions.Load(), mobileBriefSealRetryAttempts.Load()
+	noteMobileBriefReadCachesChanged()
+	for i := 0; i < 3; i++ {
+		got, withheld, err := svc.finishedReadWithholding(source)
+		if err != nil || withheld.Reason != mobileBriefWithheldSource || len(got.Narrative) != 0 {
+			t.Fatalf("repeat read exposed changed source: %q %v", withheld.Reason, err)
+		}
+	}
+	svc.wg.Wait()
+	if got := mobileBriefReadDecisions.Load() - decisions; got != 0 {
+		t.Fatalf("unchanged reads made %d new decisions", got)
+	}
+	if got := mobileBriefSealRetryAttempts.Load() - retries; got != 0 {
+		t.Fatalf("unchanged reads made %d retries", got)
+	}
+	writePrivacyMemory(t, "safe-recall", "# Changed again\n")
+	if _, _, err := svc.finishedReadWithholding(source); err != nil {
+		t.Fatal(err)
+	}
+	if mobileBriefReadDecisions.Load() == decisions {
+		t.Fatal("a source change did not invalidate the decision")
+	}
+	decisions = mobileBriefReadDecisions.Load()
+	saved, _, err = svc.store.loadFinishedRead(source.BriefID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved.Day = "2000-01-02"
+	if err := svc.store.saveFinishedRead(source.BriefID, saved); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := svc.finishedReadWithholding(source); err != nil {
+		t.Fatal(err)
+	}
+	if mobileBriefReadDecisions.Load() == decisions {
+		t.Fatal("a seal change did not invalidate the decision")
+	}
+}
+
+func TestWithheldSealRecoversWhenSourceIsRestored(t *testing.T) {
+	_, svc, source := newStoredMobileBriefPrivacyFixture(t)
+	svc.wg.Wait()
+	if _, _, wrote := svc.seal(t.Context(), source); !wrote {
+		t.Fatal("initial seal failed")
+	}
+	dir, err := memoryDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "safe-recall.md")
+	original, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writePrivacyMemory(t, "safe-recall", "# Changed memory\n")
+	if _, withheld, wrote := svc.seal(t.Context(), source); !wrote || withheld.Reason != mobileBriefWithheldSource {
+		t.Fatalf("withheld seal: wrote=%v reason=%q", wrote, withheld.Reason)
+	}
+	if _, _, err := svc.finishedReadWithholding(source); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, original, 0600); err != nil {
+		t.Fatal(err)
+	}
+	oldDelays := sealRetryDelays
+	sealRetryDelays = []time.Duration{time.Millisecond}
+	t.Cleanup(func() { svc.Stop(); sealRetryDelays = oldDelays })
+	if _, _, err := svc.finishedReadWithholding(source); err != nil {
+		t.Fatal(err)
+	}
+	svc.wg.Wait()
+	got, withheld, err := svc.finishedReadWithholding(source)
+	if err != nil || withheld.Reason != "" || len(got.Narrative) == 0 {
+		t.Fatalf("restored source stayed withheld: reason=%q err=%v", withheld.Reason, err)
+	}
+}

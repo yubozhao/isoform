@@ -60,6 +60,11 @@ func TestMobileBriefSummarySealTracksContentAndReplacement(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
+			// Prime the read decision before changing summary content or its
+			// underlying privacy evidence, without sending a source event.
+			if got, withheld, err := svc.finishedReadWithholding(brief); err != nil || len(got.Narrative) != 1 || withheld.Reason != "" {
+				t.Fatalf("initial read: narrative=%d reason=%q err=%v", len(got.Narrative), withheld.Reason, err)
+			}
 			switch scenario {
 			case "metadata", "legacy", "legacy fingerprint":
 				row.UpdatedAt = now.Add(time.Minute).UnixMilli()

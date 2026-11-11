@@ -192,7 +192,7 @@ func (s *mobileBriefService) latestShown() (MobileBriefV1, bool, error) {
 		}
 		// A brief withheld for privacy never stands in as the written one.
 		if !haveWritten && mobileBriefHasWrittenText(source) && withheld.Reason != mobileBriefWithheldPrivacyCheck {
-			written, haveWritten = source, true
+			written, haveWritten = read, true
 		}
 		if withheld.Reason != "" {
 			// The current brief's withholding is said once per brief and reason (R64).
@@ -232,11 +232,7 @@ func (s *mobileBriefService) latestShown() (MobileBriefV1, bool, error) {
 		}
 	}
 	if haveWritten {
-		read, _, err := s.finishedReadWithholding(written)
-		if err != nil {
-			return MobileBriefV1{}, false, err
-		}
-		return read, true, nil
+		return written, true, nil
 	}
 	if haveTemplate {
 		return template, true, nil
