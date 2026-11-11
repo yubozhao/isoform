@@ -34,11 +34,14 @@ func (a *App) projectLegacyWeekAnswer(ctx context.Context, items []StreamItemDat
 			loc = service.location
 		}
 	}
+	if now.IsZero() {
+		return
+	}
 	start, err := time.ParseInLocation("2006-01-02", morningBriefWeekStart(now, loc), loc)
 	if err != nil {
 		return
 	}
-	answer, err := a.morningBriefWeekIntent(ctx, now, loc)
+	answer, err := a.store.GetStreamPageUIState(ctx, "morning_brief_week_intent:"+morningBriefWeekStart(now, loc))
 	if err != nil || answer == "" {
 		return
 	}

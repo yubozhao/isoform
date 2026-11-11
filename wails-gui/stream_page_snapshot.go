@@ -201,15 +201,21 @@ func (a *App) loadLatestStreamPage(session string, limit int) (StreamItemPageDat
 	}
 	key := streamPageKey{session: session, limit: limit}
 	st := &a.streamPages
+	lockStart := time.Now()
 	st.mu.Lock()
+	lockWait := time.Since(lockStart)
 	st.settings()
 	st.keys[key] = true
 	call := st.readCall(key)
 	st.mu.Unlock()
+	log.Printf("[perf] binding=LoadStreamItemsPage stage=lock_wait ms=%d", lockWait.Milliseconds())
+	waitStart := time.Now()
 	res := call.Do(func() streamPageReadResult {
+		log.Printf("[perf] binding=LoadStreamItemsPage stage=coalescer_run_offset ms=%d", time.Since(waitStart).Milliseconds())
 		page, err := a.loadLatestStreamPageNow(key)
 		return streamPageReadResult{page: page, err: err}
 	})
+	log.Printf("[perf] binding=LoadStreamItemsPage stage=coalescer_total ms=%d", time.Since(waitStart).Milliseconds())
 	return res.page, res.err
 }
 
@@ -225,6 +231,7 @@ func (a *App) loadLatestStreamPageNow(key streamPageKey) (StreamItemPageData, er
 	stampStart := time.Now()
 	stamp := a.streamPageStamp(context.Background())
 	stampMs := time.Since(stampStart).Milliseconds()
+	log.Printf("[perf] binding=LoadStreamItemsPage stage=privacy_stamp ms=%d", stampMs)
 	if stamp == "" {
 		page, _, err := a.computeLatestStreamPage(key, "")
 		logStreamPage("recompute", "no-stamp", stampMs, 0, time.Since(now).Milliseconds(), 0, 0)
@@ -235,6 +242,7 @@ func (a *App) loadLatestStreamPageNow(key streamPageKey) (StreamItemPageData, er
 	version, verErr := a.persistenceService().StreamItemVersion(verCtx, key.session)
 	cancel()
 	versionMs := time.Since(versionStart).Milliseconds()
+	log.Printf("[perf] binding=LoadStreamItemsPage stage=version ms=%d", versionMs)
 	saved, reason := readStreamPageSnapshot(key, stamp)
 	cards, cardCheckMs := 0, int64(0)
 	if reason == "" {
@@ -368,13 +376,20 @@ func (a *App) computeLatestStreamPage(key streamPageKey, stamp string) (StreamIt
 		return StreamItemPageData{}, false, err
 	}
 	cardsRaw := rawProactiveCards(page.Items)
-	a.projectStreamItems(page.Items)
-	release, err := a.projectMainChatView(ctx, key.session, page.Items, time.Now())
+	enrichStart := time.Now()
+	streamCtx := context.WithValue(ctx, streamProjectionTimingKey{}, true)
+	incomplete := false
+	streamCtx = context.WithValue(streamCtx, streamProjectionIncompleteKey{}, &incomplete)
+	a.projectStreamItemsContext(streamCtx, page.Items)
+	release, err := a.projectMainChatView(streamCtx, key.session, page.Items, time.Now())
+	enrichDuration := time.Since(enrichStart)
 	if err != nil {
+		log.Printf("[perf] binding=LoadStreamItemsPage stage=enrich ms=%d", enrichDuration.Milliseconds())
 		return StreamItemPageData{}, false, err
 	}
 	release()
-	if verr != nil || stamp == "" || a.streamPageStamp(ctx) != stamp {
+	log.Printf("[perf] binding=LoadStreamItemsPage stage=enrich ms=%d", enrichDuration.Milliseconds())
+	if incomplete || verr != nil || stamp == "" || a.streamPageStamp(ctx) != stamp {
 		return page, false, nil
 	}
 	_ = writeStreamPageSnapshot(key, streamPageSnapshot{Format: streamPageSnapshotFormat, Version: version, ReadStamp: stamp, SavedAt: time.Now(), Page: page, Cards: cardsRaw})

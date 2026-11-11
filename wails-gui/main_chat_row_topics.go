@@ -247,10 +247,6 @@ func (a *App) computeMainChatView(ctx context.Context, sessionID string, items [
 	if a == nil || a.store == nil || len(items) == 0 {
 		return nil, nil
 	}
-	before, err := a.store.ReadRevision(ctx)
-	if err != nil {
-		return nil, err
-	}
 	ids := make([]string, 0, len(items))
 	for _, item := range items {
 		ids = append(ids, item.ID)
@@ -259,12 +255,47 @@ func (a *App) computeMainChatView(ctx context.Context, sessionID string, items [
 	if err != nil {
 		return nil, err
 	}
+	// Only derived system tags need a publication fence. If the writer is
+	// busy, omit those optional tags, retaining the conversation and metadata.
+	var before storage.ReadRevision
+	needsFence := false
+	for _, m := range metadata {
+		if m.Row.Kind == "system" && len(m.TopicIDs) > 0 {
+			needsFence = true
+			break
+		}
+	}
+	if needsFence {
+		fenceCtx := ctx
+		cancel := func() {}
+		if streamTimed, _ := ctx.Value(streamProjectionTimingKey{}).(bool); streamTimed {
+			fenceCtx, cancel = context.WithTimeout(ctx, 100*time.Millisecond)
+		}
+		before, err = a.store.ReadRevision(fenceCtx)
+		cancel()
+		if err != nil {
+			if incomplete, ok := ctx.Value(streamProjectionIncompleteKey{}).(*bool); ok {
+				*incomplete = true
+			}
+			needsFence = false
+		} else {
+			// The revision must precede the metadata used to derive tags.
+			metadata, err = a.store.LoadMainChatRowMetadata(ctx, sessionID, ids)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
 	derived := false
 	var briefAt time.Time
-	if svc, ok := a.mobileBriefSource().(*mobileBriefService); ok && svc != nil && svc.store != nil {
-		// A scheduled brief on a later day folds yesterday's left-off cards.
-		if brief, ok := svc.store.latest(); ok && (brief.Slot == "morning" || brief.Slot == "evening") {
-			briefAt, _ = time.Parse(time.RFC3339, brief.AsOf)
+	for _, m := range metadata {
+		if m.Row.ToolName == mainChatProactiveTool {
+			if svc, ok := a.mobileBriefSource().(*mobileBriefService); ok && svc != nil && svc.store != nil {
+				if brief, ok := svc.store.latest(); ok && (brief.Slot == "morning" || brief.Slot == "evening") {
+					briefAt, _ = time.Parse(time.RFC3339, brief.AsOf)
+				}
+			}
+			break
 		}
 	}
 	for i := range items {
@@ -281,7 +312,7 @@ func (a *App) computeMainChatView(ctx context.Context, sessionID string, items [
 		}
 		items[i].LocalDay = time.UnixMilli(m.Row.CreatedAt).In(time.Local).Format("2006-01-02")
 		if m.Row.Kind == "system" {
-			derived = derived || len(m.TopicIDs) > 0
+			derived = derived || (needsFence && len(m.TopicIDs) > 0)
 		} else {
 			items[i].TopicIDs = m.TopicIDs
 		}

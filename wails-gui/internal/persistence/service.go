@@ -3,6 +3,8 @@ package persistence
 import (
 	"context"
 	"fmt"
+	"log"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
@@ -445,6 +447,7 @@ func (s *Service) LoadStreamItemsPage(ctx context.Context, sessionLocalID string
 		limit = 50
 	}
 
+	queryStart := time.Now()
 	var page storage.StreamItemPage
 	var err error
 	switch {
@@ -454,13 +457,17 @@ func (s *Service) LoadStreamItemsPage(ctx context.Context, sessionLocalID string
 		page, err = s.store.LoadStreamItemsBefore(ctx, sessionLocalID, cursor, limit)
 	}
 	if err != nil {
+		log.Printf("[perf] binding=LoadStreamItemsPage stage=query ms=%d", time.Since(queryStart).Milliseconds())
 		return StreamItemPageData{}, fmt.Errorf("load stream items page: %w", err)
 	}
+	log.Printf("[perf] binding=LoadStreamItemsPage stage=query ms=%d", time.Since(queryStart).Milliseconds())
 
+	decodeStart := time.Now()
 	items := make([]StreamItemData, len(page.Items))
 	for i, ir := range page.Items {
 		items[i] = ToStreamItemData(ir)
 	}
+	log.Printf("[perf] binding=LoadStreamItemsPage stage=decode ms=%d", time.Since(decodeStart).Milliseconds())
 
 	nextCursor := -1
 	if len(items) > 0 {

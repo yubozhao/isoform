@@ -142,6 +142,61 @@ func TestStreamBindingServesSnapshotDuringStateWrite(t *testing.T) {
 	}
 }
 
+func TestStreamColdPageDoesNotWaitForStateWriter(t *testing.T) {
+	a, session := streamPageTestApp(t)
+	rows := make([]storage.StreamItemRow, 50)
+	for i := range rows {
+		rows[i] = storage.StreamItemRow{ID: fmt.Sprintf("assistant-%d", i), Kind: "assistant", Content: "reply"}
+	}
+	rows[0].Kind = "system"
+	rows[1].Kind = "user"
+	if err := a.store.SaveStreamItems(context.Background(), session, rows); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := peopleProfileStorageDB(a.store).Exec(`INSERT INTO stream_item_topics(stream_item_id,session_id,topic_id,created_at) VALUES (?,?,?,?)`, rows[0].ID, session, "topic", 1); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := peopleProfileStorageDB(a.store).BeginTx(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(`UPDATE stream_items SET content='pending' WHERE id='one'`); err != nil {
+		tx.Rollback()
+		t.Fatal(err)
+	}
+	start := time.Now()
+	done := make(chan error, 1)
+	go func() {
+		page, err := a.LoadStreamItemsPage(session, -1, 50)
+		if err == nil {
+			if len(page.Items) != 50 {
+				err = fmt.Errorf("got %d items", len(page.Items))
+			}
+			for _, item := range page.Items {
+				if item.ID == rows[0].ID && (len(item.TopicIDs) != 0 || item.LocalDay == "") {
+					err = fmt.Errorf("system row should retain classification but omit unverified topics: %+v", item)
+				}
+			}
+		}
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		tx.Rollback()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, reason := readRawStreamPageSnapshot(streamPageKey{session: session, limit: 50}); reason == "" {
+			t.Fatal("incomplete topic projection was saved as a snapshot")
+		}
+		t.Logf("cold page while writer held: %s", time.Since(start))
+	case <-time.After(300 * time.Millisecond):
+		tx.Rollback()
+		<-done
+		t.Fatal("cold stream page waited for state writer")
+	}
+}
+
 func TestPeopleBindingDoesNotWaitForStreamComputation(t *testing.T) {
 	a := newPeopleStatsBatchFixture(t)
 	session := seedPerfStream(t, a, 2000)

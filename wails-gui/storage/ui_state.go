@@ -110,3 +110,14 @@ func (s *Store) GetUIState(ctx context.Context, key string) (string, error) {
 	}
 	return value, nil
 }
+
+// GetStreamPageUIState reads committed display state without borrowing the
+// writer connection used by background jobs.
+func (s *Store) GetStreamPageUIState(ctx context.Context, key string) (string, error) {
+	var value string
+	err := s.streamReader().QueryRowContext(ctx, "SELECT value FROM ui_state WHERE key = ?", key).Scan(&value)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return value, err
+}

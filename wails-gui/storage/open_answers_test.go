@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -509,6 +510,28 @@ func TestOpenAnswerMessageBatch(t *testing.T) {
 	got, err := s.OpenAnswersForMessages(ctx, ids)
 	if err != nil || len(got) != 2 || got["message-1"].Answer.ID != "answer-1" || got["message-1"].Post || got["post"].Answer.ID != "answer-1" || !got["post"].Post {
 		t.Fatalf("batch = %+v, %v", got, err)
+	}
+}
+
+func TestStreamOpenAnswerAssociationsReadDuringWriter(t *testing.T) {
+	s, _ := proactiveItemsTestStore(t)
+	ctx := t.Context()
+	if err := s.CreateOpenAnswer(ctx, openAnswerFixture(1)); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `UPDATE open_answers SET topic='uncommitted' WHERE id='answer-1'`); err != nil {
+		t.Fatal(err)
+	}
+	readCtx, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
+	defer cancel()
+	got, err := s.OpenAnswersForMessages(readCtx, []string{"message-1"})
+	if err != nil || got["message-1"].Answer.ID != "answer-1" || got["message-1"].Answer.Topic == "uncommitted" {
+		t.Fatalf("committed association while writer held = %+v, %v", got, err)
 	}
 }
 

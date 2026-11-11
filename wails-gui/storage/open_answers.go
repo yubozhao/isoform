@@ -763,7 +763,7 @@ func (s *Store) OpenAnswersForMessages(ctx context.Context, ids []string) (map[s
 		for _, id := range batch {
 			args = append(args, id)
 		}
-		rows, err := s.db.QueryContext(ctx, `SELECT assistant_message_id,id,0 FROM open_answers WHERE assistant_message_id IN (`+marks+`)
+		rows, err := s.streamReader().QueryContext(ctx, `SELECT assistant_message_id,id,0 FROM open_answers WHERE assistant_message_id IN (`+marks+`)
 			UNION ALL SELECT message_id,answer_id,1 FROM open_answer_posts WHERE message_id IN (`+marks+`)`, args...)
 		if err != nil {
 			return nil, err
@@ -791,7 +791,7 @@ func (s *Store) OpenAnswersForMessages(ctx context.Context, ids []string) (map[s
 		for _, item := range associations {
 			answer, ok := answers[item.answerID]
 			if !ok {
-				answer, err = s.GetOpenAnswer(ctx, item.answerID)
+				answer, err = scanOpenAnswer(s.streamReader().QueryRowContext(ctx, `SELECT `+openAnswerColumns+` FROM open_answers WHERE id = ?`, item.answerID))
 				if err != nil {
 					return nil, err
 				}

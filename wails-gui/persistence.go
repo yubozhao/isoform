@@ -375,17 +375,26 @@ func (a *App) LoadStreamItemsPage(sessionLocalID string, cursor, limit int) (per
 		// The first page paints from its saved copy; see loadLatestStreamPage.
 		return a.loadLatestStreamPage(sessionLocalID, limit)
 	}
+	retryStart := time.Now()
 	a.retryWorkPermissionWrites()
+	log.Printf("[perf] binding=LoadStreamItemsPage stage=permission_retry ms=%d", time.Since(retryStart).Milliseconds())
 	page, err := a.persistenceService().LoadStreamItemsPage(context.Background(), sessionLocalID, cursor, limit)
 	if err != nil {
 		return page, err
 	}
-	a.projectStreamItems(page.Items)
-	release, err := a.projectMainChatView(context.Background(), sessionLocalID, page.Items, time.Now())
+	enrichStart := time.Now()
+	streamCtx := context.WithValue(context.Background(), streamProjectionTimingKey{}, true)
+	a.projectStreamItemsContext(streamCtx, page.Items)
+	release, err := a.projectMainChatView(streamCtx, sessionLocalID, page.Items, time.Now())
+	enrichDuration := time.Since(enrichStart)
 	if err != nil {
+		log.Printf("[perf] binding=LoadStreamItemsPage stage=enrich ms=%d", enrichDuration.Milliseconds())
 		return StreamItemPageData{}, err
 	}
-	defer release()
+	defer func() {
+		release()
+		log.Printf("[perf] binding=LoadStreamItemsPage stage=enrich ms=%d", enrichDuration.Milliseconds())
+	}()
 	return page, nil
 }
 
@@ -394,9 +403,13 @@ func (a *App) projectStreamItems(items []StreamItemData) {
 }
 
 type waitingProjectionTimingKey struct{}
+type streamProjectionTimingKey struct{}
+type streamProjectionIncompleteKey struct{}
 
 func (a *App) projectStreamItemsContext(ctx context.Context, items []StreamItemData) {
 	timed, _ := ctx.Value(waitingProjectionTimingKey{}).(bool)
+	streamTimed, _ := ctx.Value(streamProjectionTimingKey{}).(bool)
+	timed = timed || streamTimed
 	var timings [10]time.Duration
 	measure := func(index int, fn func()) {
 		if !timed {
@@ -409,7 +422,17 @@ func (a *App) projectStreamItemsContext(ctx context.Context, items []StreamItemD
 	}
 	measure(0, func() { a.projectOpenAnswers(items) })
 	measure(1, func() { a.projectLegacyWeekAnswer(ctx, items) })
-	language := a.modelDisplayLanguage()
+	languageStart := time.Now()
+	var language string
+	if streamTimed && a.store != nil {
+		languageCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+		value, _ := a.store.GetStreamPageUIState(languageCtx, uiLanguageStateKey)
+		cancel()
+		language = normalizeUILanguage(value)
+	} else {
+		language = a.modelDisplayLanguage()
+	}
+	languageDuration := time.Since(languageStart)
 	briefDisplay := a.mainChatBriefDisplayProjector()
 	captureDisplay := a.mainChatCaptureProjector(ctx)
 	briefMissed := a.mainChatBriefMissedProjector(ctx)
@@ -433,8 +456,11 @@ func (a *App) projectStreamItemsContext(ctx context.Context, items []StreamItemD
 			}
 		})
 	}
-	if timed {
+	if ctx.Value(waitingProjectionTimingKey{}) == true {
 		log.Printf("[main-chat] waiting visible projection timing answers=%s legacy=%s voice=%s locale=%s prefs=%s privacy=%s brief=%s capture=%s missed=%s pause=%s", timings[0], timings[1], timings[2], timings[3], timings[4], timings[5], timings[6], timings[7], timings[8], timings[9])
+	}
+	if streamTimed {
+		log.Printf("[perf] binding=LoadStreamItemsPage stage=enrich_detail answers_ms=%d legacy_ms=%d language_ms=%d voice_ms=%d brief_ms=%d capture_ms=%d missed_ms=%d pause_ms=%d", timings[0].Milliseconds(), timings[1].Milliseconds(), languageDuration.Milliseconds(), timings[2].Milliseconds(), timings[6].Milliseconds(), timings[7].Milliseconds(), timings[8].Milliseconds(), timings[9].Milliseconds())
 	}
 }
 
