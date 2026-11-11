@@ -34,6 +34,10 @@ type mobileBriefSettings struct {
 	// from a period the schedule was off are never reported as missed. Empty
 	// for the defaults and for files written before it existed.
 	EnabledAt string
+	// ShadowCompose runs the new brief pipeline (internal/brief) beside each
+	// scheduled brief and stores its result under briefs/shadow only. Nothing
+	// user-visible changes. Off by default; the hub turns it on for a build.
+	ShadowCompose bool
 }
 
 // mobileBriefScheduleFile is the on-disk shape of brief-schedule.json.
@@ -45,6 +49,8 @@ type mobileBriefScheduleFile struct {
 	Feed      *bool  `json:"feed,omitempty"`
 	EnabledAt string `json:"enabledAt,omitempty"`
 	Adaptive  *bool  `json:"adaptiveTiming,omitempty"`
+	// A missing key reads as off.
+	ShadowCompose *bool `json:"shadowCompose,omitempty"`
 }
 
 func defaultMobileBriefSettings() mobileBriefSettings {
@@ -124,6 +130,9 @@ func (c *mobileBriefConfigStore) load() mobileBriefSettings {
 	if file.Adaptive != nil {
 		settings.Adaptive = *file.Adaptive
 	}
+	if file.ShadowCompose != nil {
+		settings.ShadowCompose = *file.ShadowCompose
+	}
 	if _, err := time.Parse(time.RFC3339Nano, file.EnabledAt); err == nil {
 		settings.EnabledAt = file.EnabledAt
 	}
@@ -144,15 +153,16 @@ func (c *mobileBriefConfigStore) save(settings mobileBriefSettings) error {
 	if err := validateMobileBriefSettings(settings); err != nil {
 		return err
 	}
-	enabled, feed, adaptive := settings.Enabled, settings.Feed, settings.Adaptive
+	enabled, feed, adaptive, shadow := settings.Enabled, settings.Feed, settings.Adaptive, settings.ShadowCompose
 	data, err := json.MarshalIndent(mobileBriefScheduleFile{
-		Version:   mobileBriefScheduleVersion,
-		Enabled:   &enabled,
-		Morning:   settings.Morning,
-		Evening:   settings.Evening,
-		Feed:      &feed,
-		EnabledAt: settings.EnabledAt,
-		Adaptive:  &adaptive,
+		Version:       mobileBriefScheduleVersion,
+		Enabled:       &enabled,
+		Morning:       settings.Morning,
+		Evening:       settings.Evening,
+		Feed:          &feed,
+		EnabledAt:     settings.EnabledAt,
+		Adaptive:      &adaptive,
+		ShadowCompose: &shadow,
 	}, "", "  ")
 	if err != nil {
 		return err

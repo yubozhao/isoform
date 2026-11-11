@@ -80,6 +80,11 @@ type mobileBriefService struct {
 	// speaker reads the brief aloud at build time; a zero speaker stores
 	// briefs without audio.
 	speaker mobileBriefSpeaker
+	// shadowCtx and shadowCancel bound the background shadow runs (see
+	// mobile_brief_shadow.go); shadowBudget counts their model calls per day.
+	shadowCtx    context.Context
+	shadowCancel context.CancelFunc
+	shadowBudget mobileBriefModelBudget
 	// feed serves the spoken briefs as a private podcast on this Mac while
 	// the schedule's feed switch is on.
 	feed *mobileBriefFeedServer
@@ -288,7 +293,11 @@ func (s *mobileBriefService) Stop() {
 	cancel := s.cancel
 	queueCancel := s.queueCancel
 	audioCancel := s.audioUploadCancel
+	shadowCancel := s.shadowCancel
 	s.mu.Unlock()
+	if shadowCancel != nil {
+		shadowCancel()
+	}
 	s.stopSealRetries()
 	if cancel != nil {
 		cancel()
@@ -1323,6 +1332,9 @@ func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, s
 	// completion only after the brief is saved and before its first projection.
 	if onStored != nil {
 		onStored(brief)
+	}
+	if reason == mobileBriefReasonSchedule {
+		s.startBriefShadow(brief)
 	}
 	if brief.NarrativeStatus != "quiet" {
 		s.saveFinishedRead(brief)

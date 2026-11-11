@@ -27,6 +27,7 @@
 //	go run ./cmd/brief-replay                 # default: the app data folder
 //	go run ./cmd/brief-replay -data /path/to/data-root
 //	go run ./cmd/brief-replay -reader=new    # the decision and counts from internal/brief
+//	go run ./cmd/brief-replay -shadow        # also compare each brief with its shadow copy (counts only)
 //
 // -reader=new prints the same lines as the default, so the two runs can be
 // compared on the same folder. The briefs are read from <data>/mobile/briefs.
@@ -121,9 +122,10 @@ type result struct {
 
 func main() {
 	data := flag.String("data", "", "app data root, the folder that holds mobile/ (default: the Isoform data folder, resolved at runtime)")
+	shadow := flag.Bool("shadow", false, "also compare each stored brief with its shadow copy (briefs/shadow/<id>.json): counts and section counts only")
 	readerMode := flag.String("reader", "old", "old: this command's own decision; new: the decision and counts from internal/brief (same output format, for comparing the two)")
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "Usage: brief-replay [-data DIR] [-reader old|new]\n\nPrints one count-only line per stored brief. Read-only. The briefs are read from DIR/mobile/briefs.\n\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "Usage: brief-replay [-data DIR] [-reader old|new] [-shadow]\n\nPrints one count-only line per stored brief. Read-only. The briefs are read from DIR/mobile/briefs.\n\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -155,6 +157,9 @@ func main() {
 			r.Built[0], r.Built[1], r.Built[2], r.BuiltOK, r.Migrate)
 	}
 	fmt.Printf("briefs=%d\n", len(results))
+	if *shadow {
+		shadowReport(briefsDirFor(root), results)
+	}
 }
 
 // briefsDirFor returns where the briefs of an app data root are stored.

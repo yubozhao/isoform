@@ -38,6 +38,23 @@ type Snapshot struct {
 	Window  Window
 	TakenAt time.Time
 	Sources []SourceRef
+	// Items are the gathered records, already through the privacy gates and in
+	// the order each section shows them. Compose keeps that order.
+	Items []Item
+}
+
+// Item is one gathered record a section may show. Section is one of the
+// Section* keys. Title and Detail are already bounded and privacy-checked by
+// the app; this package bounds them again to the wire limits.
+type Item struct {
+	Section    string
+	SourceKind string
+	SourceID   string
+	Title      string
+	Detail     string
+	Status     string
+	Kind       string
+	At         time.Time
 }
 
 // Inputs is a Snapshot prepared for composing: the language and privacy state
