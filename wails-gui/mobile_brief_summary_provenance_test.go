@@ -120,18 +120,19 @@ func TestMobileBriefSummarySealTracksContentAndReplacement(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			wantShown := scenario == "regenerated" || scenario == "rolled up" || scenario == "metadata"
-			for _, amend := range []bool{false, true} {
-				if amend {
-					briefPrivacyChanged()
-				}
-				got, withheld, err := svc.finishedReadWithholding(brief)
-				if err != nil || (len(got.Narrative) == 1) != wantShown {
-					t.Fatalf("%s amend=%v: narrative=%d reason=%q kind=%q err=%v", scenario, amend, len(got.Narrative), withheld.Reason, withheld.SourceKind, err)
-				}
-				if !wantShown && withheld.Reason != mobileBriefWithheldSource {
-					t.Fatalf("unexpected withholding: %+v", withheld)
-				}
+			// An edited, regenerated, rolled-up or retention-deleted summary is not a
+			// withdrawal: the sealed words keep showing. Only a protected (hidden)
+			// source is a privacy action; its amend drops the words through the gates.
+			wantShown := scenario != "protected original" && scenario != "protected replacement"
+			if !wantShown {
+				briefPrivacyChanged()
+			}
+			got, withheld, err := svc.finishedReadWithholding(brief)
+			if err != nil || (len(got.Narrative) == 1) != wantShown {
+				t.Fatalf("%s: narrative=%d reason=%q kind=%q err=%v", scenario, len(got.Narrative), withheld.Reason, withheld.SourceKind, err)
+			}
+			if !wantShown && withheld.Reason == mobileBriefWithheldSource {
+				t.Fatalf("a hidden source was withheld as an edit: %+v", withheld)
 			}
 		})
 	}
@@ -202,9 +203,10 @@ func TestMobileBriefRankedSummaryResealChecksContent(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			briefPrivacyChanged()
+			// No privacy change: an edited or regenerated summary is not a withdrawal,
+			// so the sealed copy is read as it was sealed.
 			got, withheld, err := svc.finishedReadWithholding(brief)
-			if err != nil || (len(got.Narrative) == 1) != (scenario != "edited") {
+			if err != nil || len(got.Narrative) != 1 {
 				t.Fatalf("%s: narrative=%d reason=%q kind=%q err=%v", scenario, len(got.Narrative), withheld.Reason, withheld.SourceKind, err)
 			}
 		})

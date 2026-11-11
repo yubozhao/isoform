@@ -161,17 +161,43 @@ func TestTodayWithholdsTemplateBriefWhenACitedCardIsWithdrawn(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	clock.Set(mobileBriefTestDay(11, 0))
+	// The brief sealed before the withdrawal is amended from the withdrawal alone:
+	// the written template cites the withdrawn card, so it is withheld as a whole,
+	// and the card's evidence is gone. Reads repeat the same answer.
 	for read := 1; read <= 2; read++ {
-		view, err := latestBriefAfterRefresh(t, rig.app)
+		view, err := rig.app.GetLatestBrief()
 		if err != nil || view.Brief == nil {
 			t.Fatalf("read %d: view = %+v, %v", read, view, err)
 		}
 		if len(view.Brief.Narrative) != 0 || len(view.Brief.Offers) != 0 || view.Brief.Audio != nil {
 			t.Fatalf("read %d: the written template survived withdrawal: %+v", read, view.Brief.Narrative)
 		}
-		assertTodayRefsResolve(t, *view.Brief)
+		for _, ref := range view.Brief.Evidence {
+			if ref.SourceID == withdrawn {
+				t.Fatalf("read %d: evidence of the withdrawn card is still shown", read)
+			}
+		}
 	}
+
+	// A brief built later reads the live store, which no longer holds the card.
+	var live []mobileBriefCandidate
+	for _, candidate := range candidates {
+		if candidate.SourceID != withdrawn {
+			live = append(live, candidate)
+		}
+	}
+	candidates = live
+	clock.Set(mobileBriefTestDay(11, 0))
+	view, err := latestBriefAfterRefresh(t, rig.app)
+	if err != nil || view.Brief == nil {
+		t.Fatalf("day 11 view = %+v, %v", view, err)
+	}
+	for _, para := range view.Brief.Narrative {
+		if strings.Contains(para.Text, withdrawn) {
+			t.Fatalf("the day 11 brief names the withdrawn card: %q", para.Text)
+		}
+	}
+	assertTodayRefsResolve(t, *view.Brief)
 }
 
 // The model's own text may draw on more than it cites, so a withdrawn card

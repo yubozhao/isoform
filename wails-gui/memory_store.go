@@ -339,11 +339,10 @@ func (s *MemoryStore) Run(ctx context.Context) {
 }
 
 func (s *MemoryStore) pollFileChanges(firstWatch bool) {
-	changed, removedOrEdited := s.detectFileChanges()
-	if removedOrEdited || firstWatch && changed {
-		// On the first watch, existing files may have been edited while the app
-		// was closed. Later additions cannot withdraw an existing source.
-		memorySourcesChangedOnDisk()
+	changed, removed := s.detectFileChanges()
+	if len(removed) > 0 {
+		// Only deleted files withdraw sources. Edits are not privacy changes.
+		memorySourcesRemovedOnDisk(removed)
 	}
 	if changed {
 		s.mu.Lock()

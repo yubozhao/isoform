@@ -127,8 +127,6 @@ func todayWeekRewordMemory(content, wording string) string {
 // The selected source must still be readable under the same publication
 // barriers used by Today chat. The database fence is held across the write.
 func (a *App) withTodayWeekBelief(ctx context.Context, id, digest string, check, write func(MemoryEntry, string) error) error {
-	// A corrected or undone belief is a source change for the briefs that cite it.
-	defer briefSourceChanged()
 	for _, lock := range []struct {
 		try     func() bool
 		release func()

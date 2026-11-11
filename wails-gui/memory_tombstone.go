@@ -431,7 +431,13 @@ func recordMemoryTombstoneScoped(dir, id string, contents []string, now time.Tim
 		tombstone.Semantics = &prepared
 	}
 	active = append(active, tombstone)
-	return persistMemoryTombstones(dir, active)
+	if err := persistMemoryTombstones(dir, active); err != nil {
+		return err
+	}
+	// A forgotten memory is withdrawn from the briefs that cite it.
+	briefPrivacyChanged(briefWithdrawn{Kind: string(MemorySourceMemory), ID: id})
+	briefPrivacyAmendSoon()
+	return nil
 }
 
 // Caller holds memoryTombstoneMu to serialize this atomic replacement.
@@ -460,10 +466,6 @@ func persistMemoryTombstones(dir string, tombstones []memoryTombstone) error {
 	if err := os.Rename(file.Name(), filepath.Join(dir, memoryTombstonesFile)); err != nil {
 		return err
 	}
-	// A tombstone is a retraction written to a file the memory watcher does not
-	// read (it reads .md only), so the write advances the epoch itself.
-	briefPrivacyChanged()
-	briefPrivacyAmendSoon()
 	return nil
 }
 

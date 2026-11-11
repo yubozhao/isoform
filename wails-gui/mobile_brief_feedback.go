@@ -297,7 +297,14 @@ func recordMemoryPhoneCorrection(dir, id, content string, now time.Time) error {
 		Version: memoryTombstoneVersion, Keys: keys, PreservedRecords: preserved,
 		ExpiresAt: now.Add(memoryForgetRetentionDays * 24 * time.Hour).UnixMilli(),
 	})
-	return persistMemoryTombstones(dir, active)
+	if err := persistMemoryTombstones(dir, active); err != nil {
+		return err
+	}
+	// A brief feedback tombstone withdraws what it names, and the keys are hashes,
+	// so the change is not keyed: the briefs are amended with the gates.
+	briefPrivacyChanged()
+	briefPrivacyAmendSoon()
+	return nil
 }
 
 // applyFindFeedback maps Like to "more" and Not right to "less" on a find.

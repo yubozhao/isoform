@@ -377,6 +377,28 @@ func (a *App) refreshMobileBriefTodaySoon() {
 	}
 }
 
+// refreshMobileBriefTodayLiveSoon is refreshMobileBriefTodaySoon for a mail sync:
+// live sections only, no store or seal for an existing sealed brief. It reaches
+// the live brief service the privacy amendment uses (mobileBriefLive), since a
+// mail sync may need the gates to refuse a sealed copy (see refreshToday).
+func (a *App) refreshMobileBriefTodayLiveSoon() {
+	svc, _ := a.mobileBriefSource().(*mobileBriefService)
+	if svc == nil {
+		if live := mobileBriefLive.Load(); live != nil && live.app == a {
+			svc = live
+		}
+	}
+	if svc == nil || !svc.beginWork() {
+		return
+	}
+	// The work slot is taken here, before the goroutine starts, so a caller that
+	// waits for the service sees the refresh it asked for.
+	go func() {
+		defer svc.wg.Done()
+		svc.refreshTodayLiveSoon()
+	}()
+}
+
 func (a *App) emitBrowserEvent(eventName string, data ...interface{}) {
 	if mobileBriefPrivacyInputEvents[eventName] {
 		// A privacy change advances the epoch durably; the sealed briefs are
@@ -390,7 +412,13 @@ func (a *App) emitBrowserEvent(eventName string, data ...interface{}) {
 		// Source changes refresh Today's live signals in the background, at most
 		// once per todayRefreshGap. The brief is read again when that refresh
 		// stores a change (brief:stored), never for the event itself (R24).
-		go a.refreshMobileBriefTodaySoon()
+		if eventName == "mail:synced" {
+			// A mail sync refreshes Today's live sections only; it never stores or
+			// seals an existing sealed brief (TestFiftyMailSyncsLeaveSealedBriefShown).
+			go a.refreshMobileBriefTodayLiveSoon()
+		} else {
+			go a.refreshMobileBriefTodaySoon()
+		}
 	}
 	a.noteStreamPageEvent(eventName)
 	if topicFindsSourceEvents[eventName] {

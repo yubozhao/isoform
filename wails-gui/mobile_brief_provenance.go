@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"wails-gui/storage"
@@ -182,22 +183,92 @@ func mobileBriefSealedSources(saved mobileBriefFinishedRead, source MobileBriefV
 	return source
 }
 
-func mobileBriefChangedRefs(cited, source, shown MobileBriefV1, changed map[string]bool) map[string]bool {
-	keys := map[string]bool{}
-	for _, ref := range cited.Evidence {
-		if changed[ref.Ref] {
-			keys[mobileBriefSourceKey(ref.SourceKind, ref.SourceID)] = true
-		}
-	}
-	out := map[string]bool{}
-	for _, brief := range []MobileBriefV1{source, shown} {
-		for _, ref := range brief.Evidence {
-			if keys[mobileBriefSourceKey(ref.SourceKind, ref.SourceID)] {
-				out[ref.Ref] = true
+// mobileBriefDropCited removes what cites a withdrawn source (changed holds the
+// evidence refs). Items, cards, paragraphs and evidence that cite only other
+// sources stay. The written synthesis that depends on the removed material (the
+// recap, the week, the audio) is withheld as a whole, because its words cannot be
+// tied to one source.
+func mobileBriefDropCited(brief MobileBriefV1, changed map[string]bool) MobileBriefV1 {
+	usesChanged := func(refs []string) bool {
+		for _, ref := range refs {
+			if changed[ref] {
+				return true
 			}
 		}
+		return false
 	}
-	return out
+	removed := 0
+	filter := func(items []MobileBriefItem) []MobileBriefItem {
+		if items == nil {
+			return nil
+		}
+		kept := make([]MobileBriefItem, 0, len(items))
+		for _, item := range items {
+			if usesChanged(item.Refs) {
+				removed++
+				continue
+			}
+			kept = append(kept, item)
+		}
+		return kept
+	}
+	sections := &brief.Sections
+	for _, items := range []*[]MobileBriefItem{&sections.Noticed, &sections.Decide, &sections.Review, &sections.Plan, &sections.WaitingOnYou, &sections.Commitments, &sections.WorkingToward, &sections.DayAhead, &sections.Highlights, &sections.Moved, &sections.Doing, &sections.Watching, &sections.Meetings, &sections.People, &sections.OpenLoops, &sections.Learned, &sections.Deliverables, &sections.Schedules, &brief.Upcoming} {
+		*items = filter(*items)
+	}
+	// Written paragraphs can name a withdrawn item in their words without citing
+	// it in the same paragraph, so the written synthesis is withheld as a whole
+	// when any paragraph cites a withdrawn source.
+	paragraphTouched := func(list []MobileBriefPara) bool {
+		for _, para := range list {
+			if usesChanged(para.Refs) {
+				return true
+			}
+		}
+		return false
+	}
+	if paragraphTouched(brief.Narrative) || paragraphTouched(brief.WeeklyRecap) {
+		removed++
+		brief.Narrative, brief.WeeklyRecap = nil, nil
+	}
+	var cards []MobileBriefCard
+	for _, card := range brief.Cards {
+		if usesChanged(card.Refs) {
+			removed++
+			continue
+		}
+		cards = append(cards, card)
+	}
+	brief.Cards = cards
+	var evidence []MobileBriefRef
+	for _, ref := range brief.Evidence {
+		if !changed[ref.Ref] {
+			evidence = append(evidence, ref)
+		}
+	}
+	brief.Evidence = evidence
+	var attendance []MobileBriefAttendance
+	for _, row := range brief.MeetingAttendance {
+		if !usesChanged(row.Refs) {
+			attendance = append(attendance, row)
+		}
+	}
+	brief.MeetingAttendance = attendance
+	if removed == 0 {
+		return brief
+	}
+	brief.Audio = nil
+	brief.Offers, brief.YourWeek, brief.WeekQuestion, brief.DayShape = nil, nil, nil, nil
+	brief.WeekLead, brief.WeekLeadFacts = "", ""
+	if len(brief.Narrative) == 0 {
+		brief.NarrativeStatus = "unavailable"
+	}
+	brief.Limits.ExcludedSensitiveItems += removed
+	brief.Counts = MobileBriefCounts{OpenLoopsByKind: map[string]int{}}
+	for _, item := range brief.Sections.OpenLoops {
+		brief.Counts.OpenLoopsByKind[mobileBriefFirstText(item.Kind, "other")]++
+	}
+	return brief
 }
 
 // finishedReadTime uses the saved file's mtime for seals written before the
@@ -214,10 +285,15 @@ func (s *mobileBriefStore) finishedReadTime(id string, saved mobileBriefFinished
 	return time.Time{}
 }
 
+// mobileBriefSourceLookups counts reads of live sources made for briefs (store,
+// file and chat-source lookups), for tests: a read of a sealed brief adds none.
+var mobileBriefSourceLookups atomic.Uint64
+
 // mobileBriefEditableSource reads the current source and its modification
 // time. A missing or unreadable supported source fails closed. The boolean
 // says whether this kind is supported, separately from whether it was found.
 func (a *App) mobileBriefEditableSource(ctx context.Context, ref MobileBriefRef) (time.Time, any, bool, bool) {
+	mobileBriefSourceLookups.Add(1)
 	id, _, _ := strings.Cut(ref.SourceID, ":")
 	switch ref.SourceKind {
 	case "memory", taskContextSourceMemoryKind, "knowledge", taskContextSourceKnowledgeKind:
@@ -340,146 +416,6 @@ func (a *App) mobileBriefEditableSource(ctx context.Context, ref MobileBriefRef)
 	default:
 		return time.Time{}, nil, false, false
 	}
-}
-
-func (a *App) mobileBriefEditedSources(source MobileBriefV1, sealedAt time.Time, fingerprints map[string]string) (string, map[string]bool) {
-	var kind string
-	changed := map[string]bool{}
-	var sources todayChatSources
-	var collected bool
-	for _, ref := range source.Evidence {
-		modified, value, supported, found := a.mobileBriefEditableSource(context.Background(), ref)
-		sealedPrint := fingerprints[mobileBriefSourceKey(ref.SourceKind, ref.SourceID)]
-		edited := false
-		if supported {
-			switch true {
-			case strings.HasPrefix(sealedPrint, "summary-v1:"):
-				p, ok := mobileBriefParseSummaryFingerprint(sealedPrint)
-				if !ok {
-					edited = true
-				} else if !found {
-					_, ok = a.mobileBriefSummaryReplacement(context.Background(), ref.SourceID, p)
-					edited = !ok
-				} else if row, ok := value.(*ActivityRow); ok {
-					current, valid := mobileBriefParseSummaryFingerprint(mobileBriefSummaryFingerprint(*row))
-					edited = !valid || current.Content != p.Content || !mobileBriefSummaryContainsRuns(current, p) || !a.mobileBriefSummaryReadable(context.Background(), *row)
-				} else {
-					edited = true
-				}
-			case !found:
-				edited = true
-			case strings.HasPrefix(sealedPrint, "v2:"):
-				if ref.SourceKind == mobileBriefRecapSource {
-					edited = sealedPrint != "v2:"+mobileBriefModelDigest(value)
-				} else {
-					edited = sealedPrint != mobileBriefContentFingerprint(ref, value)
-				}
-			case sealedPrint != "":
-				edited = sealedPrint != mobileBriefModelDigest(value)
-			default:
-				edited = sealedAt.IsZero() || modified.After(sealedAt)
-			}
-		} else if sealedPrint != "" {
-			if !collected {
-				sources = a.collectTodayChatSources(context.Background(), mobileBriefAsOfTime(source))
-				collected = true
-			}
-			current, ok := a.mobileBriefModelSourceDigest(context.Background(), ref, source, sources)
-			// Browser evidence retains its own privacy-checked provenance when
-			// routine retention removes the underlying visit rows.
-			edited = (!ok && ref.SourceKind != mobileBriefWebSource) || (ok && current != sealedPrint)
-		}
-		if edited {
-			if kind == "" {
-				kind = ref.SourceKind
-			}
-			// A temporarily inaccessible handoff directory cannot establish
-			// that the item itself was removed. Keep its independently shown
-			// card, but withhold all prose until the store can be read.
-			if (ref.SourceKind == "history" || ref.SourceKind == "handoff") && a != nil && a.handoffStore != nil {
-				if info, err := os.Stat(a.handoffStore.Dir()); err != nil || !info.IsDir() {
-					continue
-				}
-			}
-			changed[ref.Ref] = true
-		}
-	}
-	return kind, changed
-}
-
-func (a *App) mobileBriefEditedSource(source MobileBriefV1, sealedAt time.Time) (string, bool) {
-	kind, _ := a.mobileBriefEditedSources(source, sealedAt, nil)
-	return kind, kind != ""
-}
-
-// An edit may arrive with a separate privacy withdrawal. In that case the old
-// copy cannot provide the unaffected sections until the current gates run.
-func (s *mobileBriefService) withholdEditedRead(ctx context.Context, saved mobileBriefFinishedRead, brief MobileBriefV1, kind string, changed map[string]bool) MobileBriefV1 {
-	print := s.app.briefPrivacyPrint()
-	if saved.Print != print || len(changed) > 0 || (kind != "history" && kind != "handoff") {
-		projected, withheld := s.app.mobileBriefForProjectionWithholding(ctx, brief, true)
-		if withheld.Transient() || print != s.app.briefPrivacyPrint() {
-			return mobileBriefPaused(brief)
-		}
-		brief = projected
-	}
-	brief = mobileBriefWithholdEdited(brief, changed)
-	if print != s.app.briefPrivacyPrint() {
-		return mobileBriefPaused(brief)
-	}
-	return brief
-}
-
-// Withhold the written synthesis and items tied to an edited source; retain
-// independently readable sections just as the withdrawal filter does.
-func mobileBriefWithholdEdited(brief MobileBriefV1, changed map[string]bool) MobileBriefV1 {
-	usesChanged := func(refs []string) bool {
-		for _, ref := range refs {
-			if changed[ref] {
-				return true
-			}
-		}
-		return false
-	}
-	filter := func(items []MobileBriefItem) []MobileBriefItem {
-		if items == nil {
-			return nil
-		}
-		kept := make([]MobileBriefItem, 0, len(items))
-		for _, item := range items {
-			if !usesChanged(item.Refs) {
-				kept = append(kept, item)
-			}
-		}
-		return kept
-	}
-	sections := &brief.Sections
-	for _, items := range []*[]MobileBriefItem{&sections.Noticed, &sections.Decide, &sections.Review, &sections.Plan, &sections.WaitingOnYou, &sections.Commitments, &sections.WorkingToward, &sections.DayAhead, &sections.Highlights, &sections.Moved, &sections.Doing, &sections.Watching, &sections.Meetings, &sections.People, &sections.OpenLoops, &sections.Learned, &sections.Deliverables, &sections.Schedules, &brief.Upcoming} {
-		*items = filter(*items)
-	}
-	var evidence []MobileBriefRef
-	for _, ref := range brief.Evidence {
-		if !changed[ref.Ref] {
-			evidence = append(evidence, ref)
-		}
-	}
-	brief.Evidence = evidence
-	var attendance []MobileBriefAttendance
-	for _, row := range brief.MeetingAttendance {
-		if !usesChanged(row.Refs) {
-			attendance = append(attendance, row)
-		}
-	}
-	brief.MeetingAttendance = attendance
-	brief.Narrative, brief.WeeklyRecap, brief.Audio, brief.Cards, brief.Offers = nil, nil, nil, nil, nil
-	brief.YourWeek, brief.WeekQuestion, brief.DayShape = nil, nil, nil
-	brief.WeekLead, brief.WeekLeadFacts = "", ""
-	brief.NarrativeStatus = "unavailable"
-	brief.Counts = MobileBriefCounts{OpenLoopsByKind: map[string]int{}}
-	for _, item := range sections.OpenLoops {
-		brief.Counts.OpenLoopsByKind[mobileBriefFirstText(item.Kind, "other")]++
-	}
-	return brief
 }
 
 // v2 fingerprints omit metadata that does not contribute to the brief. Old

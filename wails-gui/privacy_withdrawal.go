@@ -68,7 +68,14 @@ func subscribePrivacyWithdrawals(subscriber func(privacyWithdrawal)) func() {
 }
 
 func publishPrivacyWithdrawal(scope privacyWithdrawalScope) {
-	briefPrivacyChanged()
+	// A withdrawn source is named, so the briefs that cite it are amended from
+	// that alone. Other scopes (apps, sessions, accounts, time ranges) are not
+	// named here and are amended with the gates.
+	var keys []briefWithdrawn
+	if scope.Kind == privacyWithdrawalSource && scope.ID != "" {
+		keys = []briefWithdrawn{{Kind: scope.SourceKind, ID: scope.ID}}
+	}
+	briefPrivacyChanged(keys...)
 	briefPrivacyAmendSoon()
 	privacyWithdrawals.publish(privacyWithdrawal{Scope: scope})
 }

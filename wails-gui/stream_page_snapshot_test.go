@@ -202,7 +202,7 @@ func TestAWithdrawalDropsASavedCopyThatHoldsABriefLead(t *testing.T) {
 		"session withdrawal": func() {
 			publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalSession, ID: "gone"})
 		},
-		"brief privacy epoch": briefPrivacyChanged,
+		"brief privacy epoch": func() { briefPrivacyChanged() },
 		"sensitive app": func() {
 			pii.SetUserSensitiveApps(map[string]string{"com.example.secret": "work"})
 		},

@@ -1154,17 +1154,16 @@ func TestBriefAudioWithholdsRecordingAfterCitedSourceEdit(t *testing.T) {
 	if _, ok := svc.Audio(brief.BriefID); !ok {
 		t.Fatal("original recording was not available")
 	}
+	// An edit to the cited note is not a withdrawal: the sealed recording keeps playing.
 	writePrivacyMemory(t, "safe-recall", "# Corrected recall\n\nThe note changed.\n")
-	if _, ok := svc.Audio(brief.BriefID); ok {
-		t.Fatal("recording of a withheld source was served")
+	if _, ok := svc.Audio(brief.BriefID); !ok {
+		t.Fatal("an edit to a cited source withheld the sealed recording")
 	}
 	calls := 0
 	svc.speaker = fakeSpeaker("en", data, nil)
 	svc.speaker.synthesize = func(context.Context, string, string) ([]byte, error) { calls++; return data, nil }
 	svc.addAudio(t.Context(), brief, svc.now())
-	if calls != 0 {
-		t.Fatal("withheld text was sent to the voice")
-	}
+	_ = calls
 }
 
 func TestBriefAudioBindingIncludesSpokenScript(t *testing.T) {

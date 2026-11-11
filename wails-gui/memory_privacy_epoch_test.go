@@ -6,9 +6,9 @@ import (
 	"testing"
 )
 
-// A new memory file cannot withdraw anything, so the scan reports it as a
-// change to index but not as a privacy change. An edit or a removal is both.
-func TestMemoryScanOnlyEditsAndRemovalsAreReportedAsPrivacyChanges(t *testing.T) {
+// A new or edited memory file cannot withdraw anything. Only a removed file is
+// reported as a withdrawal, and it names the source it was.
+func TestMemoryScanOnlyRemovalsAreReportedAsWithdrawals(t *testing.T) {
 	dir := t.TempDir()
 	first := filepath.Join(dir, "first.md")
 	second := filepath.Join(dir, "second.md")
@@ -21,40 +21,43 @@ func TestMemoryScanOnlyEditsAndRemovalsAreReportedAsPrivacyChanges(t *testing.T)
 	if err := os.WriteFile(second, []byte("invented note two"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if changed, edited := s.detectFileChanges(); !changed || edited {
-		t.Fatalf("a new file: changed=%v removedOrEdited=%v, want true false", changed, edited)
+	if changed, removed := s.detectFileChanges(); !changed || len(removed) != 0 {
+		t.Fatalf("a new file: changed=%v removed=%v, want true none", changed, removed)
 	}
-	if changed, edited := s.detectFileChanges(); changed || edited {
-		t.Fatalf("no change: changed=%v removedOrEdited=%v, want false false", changed, edited)
+	if changed, removed := s.detectFileChanges(); changed || len(removed) != 0 {
+		t.Fatalf("no change: changed=%v removed=%v, want false none", changed, removed)
 	}
 	if err := os.WriteFile(first, []byte("invented note one, edited"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if changed, edited := s.detectFileChanges(); !changed || !edited {
-		t.Fatalf("an edit: changed=%v removedOrEdited=%v, want true true", changed, edited)
+	if changed, removed := s.detectFileChanges(); !changed || len(removed) != 0 {
+		t.Fatalf("an edit: changed=%v removed=%v, want true none", changed, removed)
 	}
 	if err := os.Remove(second); err != nil {
 		t.Fatal(err)
 	}
-	if changed, edited := s.detectFileChanges(); !changed || !edited {
-		t.Fatalf("a removal: changed=%v removedOrEdited=%v, want true true", changed, edited)
+	changed, removed := s.detectFileChanges()
+	if !changed || len(removed) != 1 || removed[0].ID != "second" {
+		t.Fatalf("a removal: changed=%v removed=%v, want the one removed source", changed, removed)
 	}
 }
 
-// A tombstone is a retraction in a file the watcher never reads, so writing it
-// advances the privacy epoch itself.
-func TestTombstoneWriteAdvancesThePrivacyEpoch(t *testing.T) {
+// A tombstone file write is storage only. The forgotten memory is withdrawn by
+// the forget itself (recordMemoryTombstoneScoped), so the write alone advances nothing.
+func TestTombstoneFileWriteAloneDoesNotAdvanceThePrivacyEpoch(t *testing.T) {
 	dir := t.TempDir()
 	before := mobileBriefPrivacyEpoch.Load()
 	if err := persistMemoryTombstones(dir, nil); err != nil {
 		t.Fatal(err)
 	}
-	if after := mobileBriefPrivacyEpoch.Load(); after <= before {
-		t.Fatalf("a tombstone write left the privacy epoch at %d", after)
+	if after := mobileBriefPrivacyEpoch.Load(); after != before {
+		t.Fatalf("a tombstone file write moved the privacy epoch from %d to %d", before, after)
 	}
 }
 
-func TestMemoryWatchStartupChecksForOfflineEdits(t *testing.T) {
+// An edit made while the app was closed is found at startup, but it is not a
+// withdrawal, so the sealed copies are not amended for it.
+func TestMemoryWatchStartupDoesNotAmendForOfflineEdits(t *testing.T) {
 	s, err := NewMemoryStore(t.TempDir(), MemoryStoreConfig{Provider: "none"})
 	if err != nil {
 		t.Fatal(err)
@@ -65,8 +68,8 @@ func TestMemoryWatchStartupChecksForOfflineEdits(t *testing.T) {
 	}
 	before := mobileBriefPrivacyEpoch.Load()
 	s.pollFileChanges(true)
-	if mobileBriefPrivacyEpoch.Load() <= before {
-		t.Fatal("startup did not invalidate copies after possible offline edits")
+	if mobileBriefPrivacyEpoch.Load() != before {
+		t.Fatal("startup advanced the privacy epoch for a file that was not withdrawn")
 	}
 }
 

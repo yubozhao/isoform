@@ -1,9 +1,12 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -158,32 +161,66 @@ func TestTodayOpensTheFinishedReadSavedWhenTheBriefWasMade(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc.todayRefreshWG.Wait()
-	loads := 0
-	previous := mainChatReadMemoLoad
-	mainChatReadMemoLoad = func(kind string) {
-		if kind == "handoffs" {
-			loads++
+	read, ok, err := svc.finishedLatest()
+	if err != nil || !ok || read.BriefID != brief.BriefID {
+		t.Fatalf("finished read = %v %v", ok, err)
+	}
+	// The written synthesis cites the work record removed below, so the privacy
+	// outcome covers the words as well as the cards.
+	memoRef := ""
+	for _, ref := range brief.Evidence {
+		if ref.SourceID == "memo" {
+			memoRef = ref.Ref
 		}
 	}
-	t.Cleanup(func() { mainChatReadMemoLoad = previous })
-	read, ok, err := svc.finishedLatest()
-	if err != nil || !ok || read.BriefID != brief.BriefID || loads != 0 {
-		t.Fatalf("finished read = %v %v, %d delivery reads", ok, err, loads)
+	if memoRef == "" {
+		t.Fatal("fixture has no evidence for the work record")
 	}
-	// Removing a cited work record changes what the read depends on.
+	brief.Narrative = []MobileBriefPara{{Text: "Get the release memo to the team.", Refs: []string{memoRef}}}
+	brief.NarrativeStatus = "ok"
+	if err := svc.store.save(brief, svc.now()); err != nil {
+		t.Fatal(err)
+	}
+	svc.todayRefreshWG.Wait()
+	if before, ok, err := svc.finishedLatest(); err != nil || !ok || len(before.Narrative) == 0 {
+		t.Fatalf("before the removal the written synthesis is not shown: ok=%v err=%v", ok, err)
+	}
+	// Removing a cited work record withdraws it from what the brief shows.
 	if err := app.handoffStore.Delete("memo"); err != nil {
 		t.Fatal(err)
 	}
-	read, ok, err = svc.finishedLatest()
-	if err != nil || !ok || loads == 0 {
-		t.Fatalf("a changed source kept the saved read: %v %v, %d delivery reads", ok, err, loads)
+	bridge := newMobileBriefPrivacyBridge(t, app)
+	device := mobileTestDevice(mobileScopeBriefRead)
+	computer := map[string]func() (MobileBriefV1, bool){
+		"computer latest": func() (MobileBriefV1, bool) { got, ok, err := svc.finishedLatest(); return got, ok && err == nil },
+		"computer by id":  func() (MobileBriefV1, bool) { return svc.GetMobileBrief(brief.BriefID) },
 	}
-	for _, item := range read.Sections.OpenLoops {
-		if item.Title == "Release memo" {
-			t.Fatal("the removed work record is still shown")
+	for name, get := range computer {
+		got, ok := get()
+		if !ok {
+			t.Fatalf("%s: the brief is missing after the removal", name)
+		}
+		wire, _ := json.Marshal(got)
+		if strings.Contains(string(wire), "Release memo") || strings.Contains(string(wire), "Get the release memo") {
+			t.Fatalf("%s: the removed work record or its written synthesis is still shown: %s", name, wire)
+		}
+		if !strings.Contains(string(wire), "Board deck draft") {
+			t.Fatalf("%s: the rest of the brief disappeared with the removed record", name)
 		}
 	}
-	mainChatReadMemoLoad = previous
+	for _, path := range []string{"/brief/latest", "/briefs/" + brief.BriefID} {
+		response := mobileTestChatCall(bridge, device, http.MethodGet, path, "")
+		body := response.Body.String()
+		if response.Code != http.StatusOK {
+			t.Fatalf("%s: phone read failed: %d %s", path, response.Code, body)
+		}
+		if strings.Contains(body, "Release memo") || strings.Contains(body, "Get the release memo") {
+			t.Fatalf("%s: phone read shows the removed work record or its synthesis: %s", path, body)
+		}
+		if !strings.Contains(body, "Board deck draft") {
+			t.Fatalf("%s: phone read lost the rest of the brief", path)
+		}
+	}
 	path, _ := svc.store.finishedReadPath(read.BriefID)
 	if err := os.WriteFile(path, []byte("{not json"), 0600); err != nil {
 		t.Fatal(err)

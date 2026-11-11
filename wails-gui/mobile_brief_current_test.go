@@ -311,8 +311,9 @@ func TestLatestBriefReadsWithheldCandidateOnce(t *testing.T) {
 	}
 	t.Cleanup(func() { mobileBriefAfterSealedRead = nil })
 	got, ok, err := svc.latestShown()
-	if err != nil || !ok || got.BriefID != source.BriefID || len(got.Narrative) != 0 {
-		t.Fatalf("latest withheld brief = %s, ok=%v, err=%v", got.BriefID, ok, err)
+	// An edit to a cited memory is not a withdrawal: the sealed words still show.
+	if err != nil || !ok || got.BriefID != source.BriefID || len(got.Narrative) == 0 {
+		t.Fatalf("latest brief after an edit = %s, ok=%v, err=%v narrative=%d", got.BriefID, ok, err, len(got.Narrative))
 	}
 	if reads != 1 {
 		t.Fatalf("candidate was read %d times, want once", reads)

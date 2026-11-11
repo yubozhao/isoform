@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 
 	"wails-gui/internal/calendar"
@@ -22,7 +23,7 @@ func (s *mobileBriefService) latestWithToday() (MobileBriefV1, bool) {
 		return s.store.current()
 	}
 	defer s.wg.Done()
-	brief, ok, changed := s.refreshToday()
+	brief, ok, changed := s.refreshToday(false)
 	if changed && ok && s.app != nil {
 		// A dated brief the refresh saved is sealed by that save. Only the
 		// Today-only document (not in the dated store) needs the seal here, so the
@@ -43,6 +44,9 @@ const todayRefreshGap = 5 * time.Minute
 // Today asks for another. Reads do not refresh inside it.
 const todayRefreshBudget = 15 * time.Minute
 
+// mobileBriefTodayRefreshRuns counts Today refresh passes, for tests.
+var mobileBriefTodayRefreshRuns atomic.Uint64
+
 // refreshTodaySoon brings the stored Today signals up to date off the read
 // path. A source read takes minutes on a busy computer, and a live refresh
 // holds todayMu throughout, so Today reads the stored brief at once
@@ -50,12 +54,31 @@ const todayRefreshBudget = 15 * time.Minute
 // next read. A request during a refresh runs one more after it, and no
 // refresh starts sooner than todayRefreshGap after the last one.
 func (s *mobileBriefService) refreshTodaySoon() {
+	s.requestTodayRefresh(true)
+}
+
+// refreshTodayLiveSoon is the refresh a mail sync asks for. It refreshes Today's
+// live sections like refreshTodaySoon, but a brief that already has a sealed
+// copy is neither stored nor sealed again: a mail sync is not a privacy change
+// (see refreshToday).
+func (s *mobileBriefService) refreshTodayLiveSoon() {
+	s.requestTodayRefresh(false)
+}
+
+// requestTodayRefresh asks for a live refresh. store says whether the pass may
+// store what it finds for a brief that has a sealed copy. A pending store request
+// stays pending until a pass takes it, so a queued live-only request never turns
+// a store request into a live-only one.
+func (s *mobileBriefService) requestTodayRefresh(store bool) {
 	s.mu.Lock()
 	if s.stopped {
 		s.mu.Unlock()
 		return
 	}
 	s.todayRefreshMu.Lock()
+	if store {
+		s.todayRefreshStore = true
+	}
 	if s.todayRefreshing {
 		s.todayRefreshAgain = true
 		s.todayRefreshMu.Unlock()
@@ -78,7 +101,12 @@ func (s *mobileBriefService) refreshTodaySoon() {
 		defer s.wg.Done()
 		defer s.todayRefreshWG.Done()
 		for {
-			if brief, ok, changed := s.refreshToday(); changed && ok && s.app != nil {
+			mobileBriefTodayRefreshRuns.Add(1)
+			s.todayRefreshMu.Lock()
+			storePass := s.todayRefreshStore
+			s.todayRefreshStore = false
+			s.todayRefreshMu.Unlock()
+			if brief, ok, changed := s.refreshToday(!storePass); changed && ok && s.app != nil {
 				s.saveFinishedRead(brief)
 				s.app.emitBrowserEvent("brief:stored", "")
 			}
@@ -121,7 +149,8 @@ func (s *mobileBriefService) queueTodayRefreshLocked(wait time.Duration) {
 		s.todayRefreshMu.Lock()
 		s.todayRefreshQueued = false
 		s.todayRefreshMu.Unlock()
-		s.refreshTodaySoon()
+		// A pending store request is already recorded in todayRefreshStore.
+		s.requestTodayRefresh(false)
 	})
 }
 
@@ -133,9 +162,68 @@ func (s *mobileBriefService) todayRefreshDue(now time.Time) bool {
 	return s.todayRefreshAt.IsZero() || now.Sub(s.todayRefreshAt) >= todayRefreshBudget
 }
 
+// mobileBriefPrivacyRefused reports whether a delivery gate withheld stored words
+// for a privacy reason. Closed Eyes and an unreadable mail index are transient and
+// are not privacy refusals of a source.
+func mobileBriefPrivacyRefused(w mobileBriefWithholding) bool {
+	switch w.Reason {
+	case mobileBriefWithheldSource, mobileBriefWithheldRedacted, mobileBriefWithheldMailEcho:
+		return true
+	default:
+		return false
+	}
+}
+
+// sealedCopyRefused reports whether the privacy gates now refuse words that the
+// sealed copy of brief holds (a mail subject echoed in the text, a withdrawn
+// source). It runs the gates the seal runs and saves nothing.
+func (s *mobileBriefService) sealedCopyRefused(brief MobileBriefV1) bool {
+	saved, found, err := s.store.loadFinishedRead(brief.BriefID)
+	if err != nil || !found || saved.Schema != mobileBriefSealedSchema {
+		return false
+	}
+	var copied MobileBriefV1
+	if err := unmarshalStoredMobileBrief(saved.Brief, &copied); err != nil {
+		return true
+	}
+	ctx := s.app.mobileBriefSummaryProjection(context.Background(), brief, saved.Fingerprints)
+	projected, withheld := s.app.mobileBriefForProjectionWithholding(ctx, brief, true)
+	if mobileBriefPrivacyRefused(withheld) {
+		return true
+	}
+	// The gates also drop held items without a reason (a purpose whose title is
+	// now a mail subject). The copy differs from what the gates give now.
+	now := s.app.mobileBriefWithCards(projected)
+	return !mobileBriefSameWords(now, copied)
+}
+
+// mobileBriefSameWords reports whether two briefs show the same written words,
+// offers and cards.
+func mobileBriefSameWords(a, b MobileBriefV1) bool {
+	left, errA := json.Marshal(struct {
+		Narrative []MobileBriefPara
+		Offers    []MobileBriefOffer
+		Cards     []MobileBriefCard
+	}{a.Narrative, a.Offers, a.Cards})
+	right, errB := json.Marshal(struct {
+		Narrative []MobileBriefPara
+		Offers    []MobileBriefOffer
+		Cards     []MobileBriefCard
+	}{b.Narrative, b.Offers, b.Cards})
+	return errA == nil && errB == nil && bytes.Equal(left, right)
+}
+
+// hasSealedCopy reports whether a brief already has a current-schema sealed copy.
+func (s *mobileBriefService) hasSealedCopy(briefID string) bool {
+	saved, found, err := s.store.loadFinishedRead(briefID)
+	return err == nil && found && saved.Schema == mobileBriefSealedSchema
+}
+
 // refreshToday reads Today's live signals into the stored brief and reports
-// whether the stored copy changed.
-func (s *mobileBriefService) refreshToday() (MobileBriefV1, bool, bool) {
+// whether the stored copy changed. liveOnly is a mail sync's pass: a stored brief
+// with a sealed copy is not stored or sealed again, and a withdrawn or protected
+// source it finds asks for the copy to be amended.
+func (s *mobileBriefService) refreshToday(liveOnly bool) (MobileBriefV1, bool, bool) {
 	if s.app == nil {
 		brief, ok := s.store.current()
 		return brief, ok, false
@@ -213,6 +301,17 @@ func (s *mobileBriefService) refreshToday() (MobileBriefV1, bool, bool) {
 			return latest, found, true
 		}
 		return latest, found, false
+	}
+	// A live pass that finds a privacy gate refusing the stored words (a withdrawn
+	// or protected source, a mail subject echoed in the text) amends the copy: the
+	// store below seals it again through the gates. Any other live pass leaves a
+	// sealed copy as it is.
+	if liveOnly && scheduled && s.hasSealedCopy(base.BriefID) {
+		if mobileBriefPrivacyRefused(withheld) || s.sealedCopyRefused(base) {
+			changed = true
+		} else {
+			return updated, true, false
+		}
 	}
 	if changed {
 		var err error

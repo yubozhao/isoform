@@ -434,11 +434,11 @@ func (s *MemoryStore) indexFile(db *sql.DB, file memoryFileRecord, content strin
 
 // ── File change detection (polling-based) ───────────────────────────────
 
-func (s *MemoryStore) detectFileChanges() (changed, removedOrEdited bool) {
+func (s *MemoryStore) detectFileChanges() (changed bool, removed []briefWithdrawn) {
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
-		return false, false
+		return false, nil
 	}
 	baseDir := s.baseDir
 	knowledgeDir := s.knowledgeDir
@@ -486,23 +486,20 @@ func (s *MemoryStore) detectFileChanges() (changed, removedOrEdited bool) {
 	scanDir(baseDir, MemorySourceMemory)
 	scanDir(knowledgeDir, MemorySourceKnowledge)
 
-	// Diff against previous snapshot. changed says any file differs and the
-	// index must read it again. removedOrEdited says a file that already existed
-	// was edited or is gone: only that is a privacy change (a new file cannot
-	// withdraw anything a sealed brief relies on).
-	changed, removedOrEdited = false, false
+	// Diff against the previous snapshot. changed says any file differs and the
+	// index must read it again. removed names the files that are gone: deleting a
+	// source withdraws it from the briefs that cite it. An edited file is not a
+	// withdrawal, and neither is a new file.
+	changed = false
 	for key, hash := range currentHashes {
-		prevHash, exists := prevHashes[key]
-		if !exists {
+		if prevHash, exists := prevHashes[key]; !exists || prevHash != hash {
 			changed = true
-		} else if prevHash != hash {
-			changed, removedOrEdited = true, true
 		}
 	}
 	for key := range prevHashes {
 		if _, exists := currentHashes[key]; !exists {
-			changed, removedOrEdited = true, true
-			break
+			changed = true
+			removed = append(removed, memoryFileWithdrawn(key))
 		}
 	}
 
@@ -512,7 +509,15 @@ func (s *MemoryStore) detectFileChanges() (changed, removedOrEdited bool) {
 		s.mu.Unlock()
 	}
 
-	return changed, removedOrEdited
+	return changed, removed
+}
+
+// memoryFileWithdrawn names the source a removed memory or knowledge file was,
+// from its snapshot key ("<source>:<relative path>"). The id is the file name
+// without its .md extension, which is how a brief cites it.
+func memoryFileWithdrawn(key string) briefWithdrawn {
+	source, rel, _ := strings.Cut(key, ":")
+	return briefWithdrawn{Kind: source, ID: strings.TrimSuffix(rel, ".md")}
 }
 
 // ── Full reindex detection ──────────────────────────────────────────────

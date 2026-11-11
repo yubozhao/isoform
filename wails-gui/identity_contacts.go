@@ -568,6 +568,8 @@ func removeImportedContacts(ctx context.Context, store *storage.Store) (Contacts
 			res.Errors = append(res.Errors, fmt.Sprintf("%s: %v", p.DisplayName, err))
 			continue
 		}
+		// A person removed from the system contacts withdraws what briefs cite about them.
+		publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalSource, SourceKind: "principal", ID: p.ID})
 		res.Removed++
 	}
 	return res, nil

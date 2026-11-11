@@ -318,7 +318,12 @@ func (a *App) DeletePrincipal(id string) error {
 	if err != nil {
 		return err
 	}
-	return store.DeletePrincipal(context.Background(), id)
+	if err := store.DeletePrincipal(context.Background(), id); err != nil {
+		return err
+	}
+	// A deleted person withdraws what the sealed briefs cite about them.
+	publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalSource, SourceKind: "principal", ID: id})
+	return nil
 }
 
 // BindAppHandle attaches a per-app account identifier to a principal. Pass

@@ -147,6 +147,9 @@ type mobileBriefService struct {
 	todayRefreshMu    sync.Mutex
 	todayRefreshing   bool
 	todayRefreshAgain bool
+	// todayRefreshStore is set by a request that may store a refresh's result for
+	// a sealed brief (not a mail sync). Guarded by todayRefreshMu.
+	todayRefreshStore bool
 	todayRefreshWG    sync.WaitGroup
 	// todayRefreshAt is when the last live refresh started; todayRefreshQueued
 	// means one deferred refresh waits for the gap to pass. Guarded by todayRefreshMu.
@@ -232,8 +235,13 @@ func (s *mobileBriefService) Start(parent context.Context) {
 	s.startedAt = s.now()
 	s.cancel = cancel
 	s.runCtx = ctx
-	s.wg.Add(3)
+	s.wg.Add(4)
 	s.mu.Unlock()
+	// The one-time migration of copies the old rule hid runs once per start, off the read path.
+	go func() {
+		defer s.wg.Done()
+		s.migrateOldSealedCopies()
+	}()
 	defer s.wg.Done()
 	if s.config.load().Feed {
 		s.applyFeed(true)

@@ -245,6 +245,17 @@ func TestTodayRetainsInsightsWhenSourceFileReadFails(t *testing.T) {
 			if err := os.Chtimes(path, now, now); err != nil {
 				t.Fatal(err)
 			}
+			// The memory watcher's scan takes the snapshot the removal is found against.
+			memDir, err := memoryDir()
+			if err != nil {
+				t.Fatal(err)
+			}
+			knDir, err := knowledgeDir()
+			if err != nil {
+				t.Fatal(err)
+			}
+			watcher := &MemoryStore{baseDir: memDir, knowledgeDir: knDir}
+			watcher.detectFileChanges()
 			original, ok := svc.LatestMobileBrief()
 			if !ok || len(original.Sections.Learned) != 1 {
 				t.Fatal("insight missing before read failure")
@@ -263,7 +274,12 @@ func TestTodayRetainsInsightsWhenSourceFileReadFails(t *testing.T) {
 			checkMemoryFolderNow(rig.app)
 			// The memory watcher reports the changed folder (the same call its
 			// poll makes); the sealed briefs are amended before a read shows them.
-			memorySourcesChangedOnDisk()
+			// The watcher's scan finds the entry gone from its snapshot and reports the
+			// removal, which the poll (pollFileChanges) passes on as a withdrawal; the
+			// sealed briefs are amended before a read shows them.
+			if _, removed := watcher.detectFileChanges(); len(removed) > 0 {
+				memorySourcesRemovedOnDisk(removed)
+			}
 			// The source session's privacy gate cannot be run for an unreadable file, so
 			// the insight is not shown to the phone until the file reads again.
 			current, ok := svc.LatestMobileBrief()
