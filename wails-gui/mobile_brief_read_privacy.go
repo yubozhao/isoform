@@ -468,6 +468,11 @@ func (a *App) mobileBriefDeliveryOnce(ctx context.Context, brief MobileBriefV1) 
 	// A withdrawn input removes every card and paragraph that cites it, never
 	// the whole brief while anything else is left (hub decision, 2026-11-04).
 	withdrawnInputs := map[string]bool{}
+	// goneInputs are cited sources the person removed (a calendar event deleted
+	// in place). They are not privacy withdrawals: a paragraph citing one keeps
+	// its words (seal v2, rule 2). An event missing from the store altogether is
+	// still unreadable evidence (walkthrough v1.1.6).
+	goneInputs := map[string]bool{}
 	narrativeDropped := false
 	trimmed := false
 	// Without the model's text, the written brief is Isoform's template: each
@@ -597,8 +602,14 @@ func (a *App) mobileBriefDeliveryOnce(ctx context.Context, brief MobileBriefV1) 
 					withhold(mobileBriefWithheldNotReady, mobileBriefCalendarSource)
 					break
 				}
-				if !found || row.DeletedAt != 0 {
+				if !found {
 					allowed = false
+					break
+				}
+				if row.DeletedAt != 0 {
+					// Removed by the person (an edit): not a withdrawal.
+					allowed = false
+					goneInputs[ref.Ref] = true
 					break
 				}
 				event := calendarEventFromRow(row)
@@ -654,10 +665,23 @@ func (a *App) mobileBriefDeliveryOnce(ctx context.Context, brief MobileBriefV1) 
 			refs = append(refs, ref)
 		} else if !silenced[ref.Ref] {
 			changed = true
-			if isInput(ref) {
+			if isInput(ref) && !goneInputs[ref.Ref] {
 				withdrawnInputs[ref.Ref] = true
 			}
 		}
+	}
+	// goneOnly reports refs that include at least one removed source and no
+	// withdrawn one: every other ref is readable.
+	goneOnly := func(ids []string) bool {
+		gone := false
+		for _, id := range ids {
+			if goneInputs[id] {
+				gone = true
+			} else if !readable[id] {
+				return false
+			}
+		}
+		return gone
 	}
 	citesWithdrawn := func(ids []string) bool {
 		for _, id := range ids {
@@ -716,7 +740,9 @@ func (a *App) mobileBriefDeliveryOnce(ctx context.Context, brief MobileBriefV1) 
 				if purposeID != "" {
 					alteredPurposes[purposeID] = true
 				}
-				if citesInput(original.Refs, purposeID) {
+				// An item citing only removed sources leaves the section without
+				// withdrawing the written words (see goneOnly).
+				if citesInput(original.Refs, purposeID) && !goneOnly(original.Refs) {
 					kind := "purpose"
 					if len(original.Refs) > 0 {
 						kind = evidenceByRef[original.Refs[0]].SourceKind
@@ -874,6 +900,12 @@ func (a *App) mobileBriefDeliveryOnce(ctx context.Context, brief MobileBriefV1) 
 			if notReady || a.store == nil {
 				withhold(mobileBriefWithheldNotReady, "")
 			}
+			continue
+		}
+		// Words that cite only sources retention or an edit removed stay as
+		// written: that is not a withdrawal, so the synthesis is not cleared.
+		if !template && goneOnly(paragraph.Refs) && !mobileBriefValueEchoesMail(paragraph, subjects) && redactThreadOutcomeText(paragraph.Text) == paragraph.Text {
+			narrative = append(narrative, paragraph)
 			continue
 		}
 		if !staticEmpty && !mobileBriefRefsReadable(paragraph.Refs, readable) || mobileBriefValueEchoesMail(paragraph, subjects) || redactThreadOutcomeText(paragraph.Text) != paragraph.Text || (template && !unaltered(paragraph.Refs)) {

@@ -29,6 +29,14 @@ const (
 	// mobileBriefAheadSleepLookback is how far back a slept-through slot allows a
 	// scheduled early brief on a computer that slept.
 	mobileBriefAheadSleepLookback = 14 * 24 * time.Hour
+	// mobileBriefNoTextRetry is how long a slot waits before the next build after one
+	// that produced no written text (or kept a made-ahead copy). It bounds a morning to
+	// a handful of builds, the same cap as the failure backoff.
+	mobileBriefNoTextRetry = 30 * time.Minute
+	// mobileBriefNoTextBuilds is how many builds of one slot may write no words: the
+	// first, and two retries. Then the slot waits for the next slot (no model calls
+	// for a quiet day).
+	mobileBriefNoTextBuilds = 3
 	// mobileBriefAheadMomentHour is the scheduled moment when the person has no quiet
 	// hours set earlier (9 PM).
 	mobileBriefAheadMomentHour = 21
@@ -250,6 +258,44 @@ func (s *mobileBriefService) sleptThroughSlotRecently(now time.Time) bool {
 		}
 	}
 	return false
+}
+
+// slotFilled reports whether a stored brief satisfies its slot for the scheduler.
+// Only a final brief with written words does. A made-ahead copy is provisional
+// (generation.reason made_ahead, the explicit marker; timing is never inferred),
+// and a build with no written text never blocks a later build that can write it.
+// An awake slot therefore still runs its real build (rule 1, rule 2).
+func (s *mobileBriefService) slotFilled(briefID string) bool {
+	brief, ok := s.store.load(briefID)
+	return (ok && mobileBriefStandsIn(brief)) || s.noTextSpent(briefID)
+}
+
+// mobileBriefStandsIn reports whether a stored brief can stand in for its slot:
+// a final brief with written words. The scheduler's "made since the slot" and
+// "made just before the slot" checks use it too, so a made-ahead copy or a
+// no-words build never blocks the slot's real build.
+func mobileBriefStandsIn(brief MobileBriefV1) bool {
+	return !mobileBriefIsAhead(brief) && mobileBriefHasWrittenText(brief)
+}
+
+// noteNoTextBuild counts a real build of a slot that wrote no words (or kept a
+// made-ahead copy) and holds the next try mobileBriefNoTextRetry. The count is in
+// memory: a restart starts it again.
+func (s *mobileBriefService) noteNoTextBuild(now time.Time, briefID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.noTextBuilds == nil {
+		s.noTextBuilds = map[string]int{}
+	}
+	s.noTextBuilds[briefID]++
+	s.retryAfter, s.retryFor = now.Add(mobileBriefNoTextRetry), briefID
+}
+
+// noTextSpent reports whether a slot used its builds without words.
+func (s *mobileBriefService) noTextSpent(briefID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.noTextBuilds[briefID] >= mobileBriefNoTextBuilds
 }
 
 // slotBlocked reports whether a stored brief already fills a slot. A final brief

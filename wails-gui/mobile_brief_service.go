@@ -122,6 +122,8 @@ type mobileBriefService struct {
 	// ahead carries early-brief triggers (lock, display sleep, the scheduled moment).
 	ahead       chan string
 	aheadArmed  string
+	// noTextBuilds counts, per slot ID, the builds that wrote no words (see noteNoTextBuild).
+	noTextBuilds map[string]int
 	aheadTimer  *time.Timer
 	sleeping    bool
 	sleepAt     time.Time
@@ -378,8 +380,8 @@ func (s *mobileBriefService) checkDue(ctx context.Context) {
 		s.checkAdaptiveDue(ctx, now, settings)
 		return
 	}
-	slot, due, _ := mobileBriefPendingSlot(now, s.location, settings, s.store.exists)
-	recovery, recovering := mobileBriefWakeSlot(now, s.location, settings, s.store.exists, wakeWindows)
+	slot, due, _ := mobileBriefPendingSlot(now, s.location, settings, s.slotFilled)
+	recovery, recovering := mobileBriefWakeSlot(now, s.location, settings, s.slotFilled, wakeWindows)
 	if recovering && !s.slotHasRequestedBrief(recovery, settings) {
 		slot, due = recovery.Slot, true
 	} else {
@@ -489,6 +491,11 @@ func (s *mobileBriefService) checkDue(ctx context.Context) {
 			s.retryLater(occurrence.BriefID, slot, 1, err)
 		}
 		return
+	}
+	// A build with no written words, or one that kept a made-ahead copy, does not
+	// fill the slot; retry it on the normal schedule (not every tick).
+	if found && (!mobileBriefHasWrittenText(brief) || mobileBriefIsAhead(brief)) {
+		s.noteNoTextBuild(s.now(), occurrence.BriefID)
 	}
 	if found {
 		// A rebuild can retain an existing stored brief instead of saving one.
@@ -907,7 +914,7 @@ func (s *mobileBriefService) slotHasRequestedBrief(occurrence mobileBriefSlotOcc
 // briefSince reports a stored brief made at or after at.
 func (s *mobileBriefService) briefSince(at time.Time) bool {
 	latest, found := s.store.latest()
-	if !found {
+	if !found || !mobileBriefStandsIn(latest) {
 		return false
 	}
 	asOf, err := time.Parse(time.RFC3339Nano, latest.AsOf)
@@ -918,7 +925,7 @@ func (s *mobileBriefService) briefSince(at time.Time) bool {
 // before at (mobileBriefMadeJustBefore).
 func (s *mobileBriefService) briefJustBefore(at time.Time) bool {
 	latest, found := s.store.latest()
-	return found && mobileBriefMadeJustBefore(mobileBriefAsOfTime(latest), at)
+	return found && mobileBriefStandsIn(latest) && mobileBriefMadeJustBefore(mobileBriefAsOfTime(latest), at)
 }
 
 // noteAwake records the slots whose window is open now, while the computer
@@ -1041,7 +1048,10 @@ func (s *mobileBriefService) windowStart(asOf time.Time) time.Time {
 	var latest MobileBriefV1
 	ok := false
 	for _, candidate := range s.store.briefs() {
-		if candidate.NarrativeStatus != "quiet" {
+		// A made-ahead copy is provisional, and a build with no words failed to
+		// cover its window: the next build reads from the last brief with words
+		// (a "skipped" brief covered its window by design).
+		if candidate.NarrativeStatus != "quiet" && !mobileBriefIsAhead(candidate) && (mobileBriefHasWrittenText(candidate) || candidate.NarrativeStatus == "skipped") {
 			latest, ok = candidate, true
 			break
 		}
@@ -1266,11 +1276,13 @@ func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, s
 	if s.app != nil && !mobileBriefStaticEmpty(brief) {
 		s.app.appendOpenAnswerBriefParagraph(ctx, &brief, windowStart, asOf, language)
 	}
-	// A rebuild never replaces a stored brief that has the model's text with
-	// one that does not.
-	if stored, found := s.store.load(brief.BriefID); found && stored.NarrativeStatus == "ok" && brief.NarrativeStatus != "ok" {
+	// A stored copy with written words is kept over a build with no words, and a
+	// made-ahead build never replaces a final copy with words. A made-ahead copy
+	// with words is replaced by a real build (below), and a remake replaces a
+	// made-ahead copy with words only when it is complete.
+	if stored, found := s.store.load(brief.BriefID); found && mobileBriefHasWrittenText(stored) && (!mobileBriefHasWrittenText(brief) || mobileBriefIsAhead(brief) && !mobileBriefIsAhead(stored)) {
 		s.patchMu.Unlock()
-		log.Printf("[mobile-brief] kept the stored %s brief: the rebuild has no written text", brief.Slot)
+		log.Printf("[mobile-brief] kept the stored %s brief: the rebuild has no written text or is made ahead", brief.Slot)
 		return stored, nil
 	}
 	// Delivery projection reads completed run records, but this run is not
@@ -2084,14 +2096,16 @@ func mobileBriefSlotClock(settings mobileBriefSettings) []mobileBriefSlotClockEn
 }
 
 // mobileBriefPendingSlot returns the scheduled slot that is due at now. A slot
-// is due when its time has passed on today's local date, no brief exists for
-// it, and its window is still open (mobileBriefSlotCloses). A slot whose
-// window has closed is returned in missed and is never generated.
+// is due when its time has passed on today's local date, the slot is not yet
+// filled (filled is the scheduler's test: a final brief with written words, so a
+// made-ahead copy or a no-words build does not count), and its window is still
+// open (mobileBriefSlotCloses). A slot whose window has closed is returned in
+// missed and is never generated.
 func mobileBriefPendingSlot(
 	now time.Time,
 	loc *time.Location,
 	settings mobileBriefSettings,
-	exists func(briefID string) bool,
+	filled func(briefID string) bool,
 ) (slot string, due bool, missed []string) {
 	if loc == nil {
 		loc = time.Local
@@ -2107,7 +2121,7 @@ func mobileBriefPendingSlot(
 			continue
 		}
 		briefID := datePrefix + "-" + candidate.slot
-		if exists(briefID) {
+		if filled(briefID) {
 			continue
 		}
 		occurrence := mobileBriefSlotOccurrence{BriefID: briefID, Slot: candidate.slot, ScheduledAt: at}

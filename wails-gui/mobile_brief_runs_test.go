@@ -606,6 +606,9 @@ func TestMobileBriefOnRequestStopsFailedScheduledRetry(t *testing.T) {
 			svc, _, _ := catchUpRig(t, clock, adaptive)
 			original := svc.gather
 			scheduled := 0
+			// The on-request brief must have words to stand in for the slot (it is
+			// a no-words build otherwise, which does not block the retry).
+			svc.compose = testModelCompose
 			svc.gather = func(ctx context.Context, slot string, start, asOf time.Time) (mobileBriefInput, error) {
 				if slot == mobileBriefSlotMorning {
 					scheduled++

@@ -14,6 +14,9 @@ import (
 func catchUpRig(t *testing.T, clock *fakeMobileBriefClock, adaptive bool) (*mobileBriefService, *engagementTestRig, *mobileBriefTimingInput) {
 	t.Helper()
 	svc, rig := missedBriefRig(t, clock)
+	// A build with no written words does not stand in for its slot, so these
+	// rigs write words the way a model brief does (design R74).
+	svc.compose = testModelCompose
 	input := &mobileBriefTimingInput{}
 	if adaptive {
 		enableTestAdaptiveBrief(t, svc, input)

@@ -325,6 +325,8 @@ func TestBriefHygieneQuietSlotsStayOutOfPhoneHistory(t *testing.T) {
 	now := mobileBriefTestDay(18, 0)
 	store := newMobileBriefStore(t.TempDir())
 	posted := mobileBriefStoredBrief(t, "2026-10-09", "morning", 7)
+	// A posted brief has written words.
+	posted.NarrativeStatus, posted.Narrative = "ok", []MobileBriefPara{{Text: madeAheadWords()}}
 	quiet := mobileBriefStoredBrief(t, "2026-10-09", "evening", 18)
 	quiet.NarrativeStatus = "quiet"
 	for _, brief := range []MobileBriefV1{posted, quiet} {

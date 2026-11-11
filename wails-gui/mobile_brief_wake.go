@@ -64,14 +64,14 @@ func (s *mobileBriefService) systemStateChangedLocked(change activitymon.SystemS
 	}
 }
 
-// Recover today's earliest missing slot crossed during sleep while its
-// window is open. A schedule enabled after the slot never claims the
-// computer missed that slot.
-func mobileBriefWakeSlot(now time.Time, loc *time.Location, settings mobileBriefSettings, exists func(string) bool, windows []mobileBriefWakeWindow) (mobileBriefSlotOccurrence, bool) {
+// Recover today's earliest unfilled slot crossed during sleep while its window
+// is open. A made-ahead copy is not filled: an awake slot builds its own brief.
+// A schedule enabled after the slot never claims the computer missed that slot.
+func mobileBriefWakeSlot(now time.Time, loc *time.Location, settings mobileBriefSettings, filled func(string) bool, windows []mobileBriefWakeWindow) (mobileBriefSlotOccurrence, bool) {
 	enabledAt, _ := time.Parse(time.RFC3339Nano, settings.EnabledAt)
 	for _, occurrence := range mobileBriefTodaySlots(now, loc, settings) {
 		at := occurrence.ScheduledAt
-		if at.After(now) || at.Before(enabledAt) || exists(occurrence.BriefID) || !now.Before(mobileBriefSlotCloses(occurrence, loc, settings)) {
+		if at.After(now) || at.Before(enabledAt) || filled(occurrence.BriefID) || !now.Before(mobileBriefSlotCloses(occurrence, loc, settings)) {
 			continue
 		}
 		for _, window := range windows {

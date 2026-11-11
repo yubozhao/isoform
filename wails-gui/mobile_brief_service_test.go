@@ -607,6 +607,8 @@ func TestMobileBriefWindowStart(t *testing.T) {
 
 	previous := mobileBriefStoredBrief(t, "2026-10-09", mobileBriefSlotMorning, 7)
 	previous.AsOf = mobileBriefTestDay(7, 0).Format(time.RFC3339)
+	// A brief the window can start from has written words.
+	previous.NarrativeStatus, previous.Narrative = "ok", []MobileBriefPara{{Text: madeAheadWords()}}
 	if err := svc.store.save(previous, asOf); err != nil {
 		t.Fatal(err)
 	}

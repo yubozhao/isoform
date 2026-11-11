@@ -69,6 +69,10 @@ func composeMobileBriefNarrativeWithLeadAt(ctx context.Context, a *App, brief Mo
 		return fallback, "skipped", nil, "", ""
 	}
 	if ctx.Err() != nil || !mobileBriefNarrativeAvailable(a) {
+		if ctx.Err() == nil {
+			// Without the native runner no model call is made at all (rule 4 cause).
+			log.Printf("[mobile-brief] %s narrative unavailable: the native model runner is not attached", brief.Slot)
+		}
 		return fallback, "unavailable", nil, "", ""
 	}
 	var week *MobileBriefWeek
