@@ -87,7 +87,9 @@ type Composed struct {
 	Sections  map[string][]Placed `json:"sections"`
 	Evidence  []Evidence          `json:"evidence"`
 	Narrative []Paragraph         `json:"narrative"`
-	Truncated []string            `json:"truncated,omitempty"`
+	// NarrativeParts is the done and next split of Narrative (additive).
+	NarrativeParts []NarrativePart `json:"narrativeParts,omitempty"`
+	Truncated      []string        `json:"truncated,omitempty"`
 }
 
 // Compose builds the deterministic sections from in. Given the same snapshot it

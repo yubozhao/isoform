@@ -47,8 +47,24 @@ type ShadowReport struct {
 	SectionsDiff []string
 	Narrative    string
 	Judge        string
+	DoneParts    int
+	NextParts    int
+	JudgePass    bool
 	Ms           int64
 	Path         string
+}
+
+// partCounts returns how many paragraphs the done and next parts hold.
+func partCounts(parts []NarrativePart) (done, next int) {
+	for _, p := range parts {
+		switch p.Kind {
+		case PartDone:
+			done += len(p.Paragraphs)
+		case PartNext:
+			next += len(p.Paragraphs)
+		}
+	}
+	return done, next
 }
 
 // shadowFile is the on-disk shadow copy. The brief part holds the composed words
@@ -90,6 +106,7 @@ func RunShadow(ctx context.Context, deps ShadowDeps, dir, id string, w Window, o
 	if err != nil {
 		return ShadowReport{}, err
 	}
+	doneParts, nextParts := partCounts(c.NarrativeParts)
 	report := ShadowReport{
 		ID:        id,
 		Old:       old,
@@ -97,6 +114,9 @@ func RunShadow(ctx context.Context, deps ShadowDeps, dir, id string, w Window, o
 		Sections:  c.SectionCounts(),
 		Narrative: narrative,
 		Judge:     judge,
+		DoneParts: doneParts,
+		NextParts: nextParts,
+		JudgePass: judge == JudgePass,
 		Ms:        time.Since(start).Milliseconds(),
 	}
 	report.SectionsDiff = sectionsDiff(old.Sections, report.Sections)
@@ -126,8 +146,8 @@ func LogShadow(r ShadowReport) {
 	if len(r.SectionsDiff) > 0 {
 		diff = strings.Join(r.SectionsDiff, ",")
 	}
-	log.Printf("[brief-shadow] id=%s old_narrative=%d new_narrative=%d old_cards=%d new_cards=%d old_evidence=%d new_evidence=%d sections_diff=%s ms=%d",
-		r.ID, r.Old.Narrative, r.New.Narrative, r.Old.Cards, r.New.Cards, r.Old.Evidence, r.New.Evidence, diff, r.Ms)
+	log.Printf("[brief-shadow] id=%s old_narrative=%d new_narrative=%d old_cards=%d new_cards=%d old_evidence=%d new_evidence=%d sections_diff=%s done_parts=%d next_parts=%d judge_pass=%t ms=%d",
+		r.ID, r.Old.Narrative, r.New.Narrative, r.Old.Cards, r.New.Cards, r.Old.Evidence, r.New.Evidence, diff, r.DoneParts, r.NextParts, r.JudgePass, r.Ms)
 }
 
 // sectionsDiff names the composed sections whose item counts differ.
@@ -173,6 +193,29 @@ func writeShadowFile(dir, id string, file shadowFile) (string, error) {
 		return "", err
 	}
 	return final, nil
+}
+
+// ReadShadowParts reads the done and next paragraph counts and whether the judge
+// passed, from a stored shadow copy. It never returns the words.
+func ReadShadowParts(dir, id string) (done, next int, pass bool, found bool) {
+	if !idPattern.MatchString(id) {
+		return 0, 0, false, false
+	}
+	data, err := os.ReadFile(filepath.Join(dir, ShadowDirName, id+".json"))
+	if err != nil {
+		return 0, 0, false, false
+	}
+	var file struct {
+		Judge string `json:"judge"`
+		Brief struct {
+			NarrativeParts []NarrativePart `json:"narrativeParts"`
+		} `json:"brief"`
+	}
+	if err := json.Unmarshal(data, &file); err != nil {
+		return 0, 0, false, false
+	}
+	done, next = partCounts(file.Brief.NarrativeParts)
+	return done, next, file.Judge == JudgePass, true
 }
 
 // ReadShadowCounts reads the counts and section counts of a stored shadow copy.

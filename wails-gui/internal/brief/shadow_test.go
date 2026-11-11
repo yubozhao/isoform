@@ -60,7 +60,10 @@ func (f *fakeDeps) Emit(string, any)        {}
 func (f *fakeDeps) BudgetLow() bool         { return f.low }
 func (f *fakeDeps) queue(replies ...string) { f.replies = append(f.replies, replies...) }
 
-var passJudgment = `{"judgments":[{"question":1,"pass":true},{"question":2,"pass":true},{"question":3,"pass":true},{"question":4,"pass":true},{"question":5,"pass":true},{"question":6,"pass":true}]}`
+var passJudgment = `{"judgments":[{"question":1,"pass":true},{"question":2,"pass":true},{"question":3,"pass":true},{"question":4,"pass":true}]}`
+
+// partsReply is a well-formed done and next reply: the next part is the larger.
+const partsReply = `{"done":[{"text":"Shipped the draft.","refs":["e1"]}],"next":[{"text":"Send the draft to Sam before the review, because Sam is waiting on it.","refs":["e1"]}]}`
 
 var testWindow = Window{
 	Slot:      "morning",
@@ -126,7 +129,7 @@ func TestRunShadowWritesOnlyUnderShadowAndUsesOneJudgeCall(t *testing.T) {
 	before := listTree(t, dir)
 
 	deps := &fakeDeps{items: twoItems()}
-	deps.queue(`{"paragraphs":[{"text":"Ship the draft first.","refs":["e1"]}]}`, passJudgment)
+	deps.queue(partsReply, passJudgment)
 
 	report, err := RunShadow(context.Background(), deps, dir, testBriefID, testWindow, ShadowOld{Narrative: 1, Evidence: 2})
 	if err != nil {
@@ -135,8 +138,25 @@ func TestRunShadowWritesOnlyUnderShadowAndUsesOneJudgeCall(t *testing.T) {
 	if len(deps.asks) != 2 {
 		t.Fatalf("model calls: got %d, want 2 (one narrative, one batched judge)", len(deps.asks))
 	}
-	if report.Judge != JudgePass || report.New.Narrative != 1 || report.New.Evidence != 2 {
+	if report.Judge != JudgePass || report.New.Narrative != 2 || report.New.Evidence != 2 {
 		t.Fatalf("report: judge=%s narrative=%d evidence=%d", report.Judge, report.New.Narrative, report.New.Evidence)
+	}
+	if report.DoneParts != 1 || report.NextParts != 1 || !report.JudgePass {
+		t.Fatalf("parts: done=%d next=%d pass=%v, want 1 1 true", report.DoneParts, report.NextParts, report.JudgePass)
+	}
+	done, next, pass, found := ReadShadowParts(dir, testBriefID)
+	if !found || !pass || done != 1 || next != 1 {
+		t.Fatalf("stored parts: done=%d next=%d pass=%v found=%v", done, next, pass, found)
+	}
+	for _, part := range readShadowFileParts(t, dir) {
+		if len(part.Paragraphs) == 0 {
+			t.Fatalf("part %s has no paragraphs", part.Kind)
+		}
+		for _, p := range part.Paragraphs {
+			if len(p.Refs) == 0 {
+				t.Fatalf("part %s paragraph cites no refs", part.Kind)
+			}
+		}
 	}
 	after := listTree(t, dir)
 	added := []string{}
@@ -249,8 +269,8 @@ func TestRunShadowNoEvidenceMakesNoModelCall(t *testing.T) {
 func TestRunShadowJudgeRejectKeepsNoParagraphs(t *testing.T) {
 	dir := t.TempDir()
 	deps := &fakeDeps{items: twoItems()}
-	reject := `{"judgments":[{"question":1,"pass":false,"critique":"weak lead"},{"question":2,"pass":true},{"question":3,"pass":true},{"question":4,"pass":true},{"question":5,"pass":true},{"question":6,"pass":true}]}`
-	deps.queue(`{"paragraphs":[{"text":"Ship the draft.","refs":["e1"]}]}`, reject)
+	reject := `{"judgments":[{"question":1,"pass":false,"critique":"weak lead"},{"question":2,"pass":true},{"question":3,"pass":true},{"question":4,"pass":true}]}`
+	deps.queue(partsReply, reject)
 	report, err := RunShadow(context.Background(), deps, dir, testBriefID, testWindow, ShadowOld{})
 	if err != nil {
 		t.Fatalf("RunShadow: %v", err)
@@ -271,12 +291,12 @@ func TestLogShadowLineHasCountsOnly(t *testing.T) {
 
 	dir := t.TempDir()
 	deps := &fakeDeps{items: twoItems()}
-	deps.queue(`{"paragraphs":[{"text":"Secret project name here.","refs":["e1"]}]}`, passJudgment)
+	deps.queue(`{"done":[{"text":"Secret project name here.","refs":["e1"]}],"next":[{"text":"Send the draft before the review tomorrow.","refs":["e1"]}]}`, passJudgment)
 	if _, err := RunShadow(context.Background(), deps, dir, testBriefID, testWindow, ShadowOld{Narrative: 1, Evidence: 2, Sections: map[string]int{SectionMoved: 1}}); err != nil {
 		t.Fatalf("RunShadow: %v", err)
 	}
 	line := strings.TrimSpace(buf.String())
-	pattern := regexp.MustCompile(`^\S* ?\S* ?\[brief-shadow\] id=2026-10-09-morning old_narrative=1 new_narrative=1 old_cards=0 new_cards=0 old_evidence=2 new_evidence=2 sections_diff=\S+ ms=\d+$`)
+	pattern := regexp.MustCompile(`^\S* ?\S* ?\[brief-shadow\] id=2026-10-09-morning old_narrative=1 new_narrative=2 old_cards=0 new_cards=0 old_evidence=2 new_evidence=2 sections_diff=\S+ done_parts=1 next_parts=1 judge_pass=true ms=\d+$`)
 	if !pattern.MatchString(line) {
 		t.Fatalf("log line does not match the shadow format: %q", line)
 	}
@@ -288,13 +308,13 @@ func TestLogShadowLineHasCountsOnly(t *testing.T) {
 func TestReadShadowCountsReadsOnlyCounts(t *testing.T) {
 	dir := t.TempDir()
 	deps := &fakeDeps{items: twoItems()}
-	deps.queue(`{"paragraphs":[{"text":"Ship the draft.","refs":["e1"]}]}`, passJudgment)
+	deps.queue(partsReply, passJudgment)
 	if _, err := RunShadow(context.Background(), deps, dir, testBriefID, testWindow, ShadowOld{}); err != nil {
 		t.Fatalf("RunShadow: %v", err)
 	}
 	counts, sections, ok := ReadShadowCounts(dir, testBriefID)
-	if !ok || counts.Narrative != 1 || counts.Evidence != 2 {
-		t.Fatalf("counts = %+v ok=%v, want narrative 1 evidence 2", counts, ok)
+	if !ok || counts.Narrative != 2 || counts.Evidence != 2 {
+		t.Fatalf("counts = %+v ok=%v, want narrative 2 evidence 2", counts, ok)
 	}
 	names := make([]string, 0, len(sections))
 	for name := range sections {
@@ -306,44 +326,81 @@ func TestReadShadowCountsReadsOnlyCounts(t *testing.T) {
 	}
 }
 
-func TestParseNarrativeKeepsOnlyCitedEvidence(t *testing.T) {
+func TestParseNarrativePartsKeepsOnlyCitedEvidence(t *testing.T) {
 	evidence := []Evidence{{Ref: "e1"}, {Ref: "e2"}}
 	cases := []struct {
-		name   string
-		raw    string
-		want   int
-		status string
+		name       string
+		raw        string
+		wantDone   int
+		wantNext   int
+		wantStatus string
 	}{
-		{"valid", `{"paragraphs":[{"text":"One.","refs":["e1"]}]}`, 1, NarrativeOK},
-		{"unknown ref dropped", `{"paragraphs":[{"text":"One.","refs":["e9"]}]}`, 0, NarrativeEmpty},
-		{"mixed refs kept", `{"paragraphs":[{"text":"One.","refs":["e9","e2"]}]}`, 1, NarrativeOK},
-		{"uncited paragraph rejected", `{"paragraphs":[{"text":"One.","refs":[]},{"text":"Two.","refs":["e1"]}]}`, 1, NarrativeRejected},
-		{"fenced reply", "```json\n{\"paragraphs\":[{\"text\":\"One.\",\"refs\":[\"e1\"]}]}\n```", 1, NarrativeOK},
+		{"valid", `{"done":[{"text":"One.","refs":["e1"]}],"next":[{"text":"Two.","refs":["e2"]}]}`, 1, 1, NarrativeOK},
+		{"unknown ref dropped", `{"done":[{"text":"One.","refs":["e9"]}],"next":[]}`, 0, 0, NarrativeEmpty},
+		{"mixed refs kept", `{"done":[],"next":[{"text":"One.","refs":["e9","e2"]}]}`, 0, 1, NarrativeOK},
+		{"uncited paragraph rejected", `{"done":[],"next":[{"text":"One.","refs":[]},{"text":"Two.","refs":["e1"]}]}`, 0, 1, NarrativeRejected},
+		{"done capped at two", `{"done":[{"text":"A.","refs":["e1"]},{"text":"B.","refs":["e1"]},{"text":"C.","refs":["e1"]}],"next":[{"text":"D.","refs":["e2"]}]}`, 2, 1, NarrativeRejected},
+		{"fenced reply", "```json\n" + partsReply + "\n```", 1, 1, NarrativeOK},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			paras, status, err := ParseNarrative(tc.raw, evidence)
+			done, next, status, err := ParseNarrativeParts(tc.raw, evidence)
 			if err != nil {
-				t.Fatalf("ParseNarrative: %v", err)
+				t.Fatalf("ParseNarrativeParts: %v", err)
 			}
-			if len(paras) != tc.want || status != tc.status {
-				t.Fatalf("got %d paragraphs status=%s, want %d status=%s", len(paras), status, tc.want, tc.status)
+			if len(done) != tc.wantDone || len(next) != tc.wantNext || status != tc.wantStatus {
+				t.Fatalf("got done=%d next=%d status=%s, want done=%d next=%d status=%s",
+					len(done), len(next), status, tc.wantDone, tc.wantNext, tc.wantStatus)
 			}
 		})
 	}
-	if _, _, err := ParseNarrative("not json", evidence); err == nil {
+	if _, _, _, err := ParseNarrativeParts("not json", evidence); err == nil {
 		t.Fatal("non-JSON reply parsed")
 	}
 }
 
-func TestParseJudgmentNeedsSixAnswers(t *testing.T) {
-	if pass, err := ParseJudgment(passJudgment); err != nil || !pass {
-		t.Fatalf("six passes: pass=%v err=%v", pass, err)
+func TestCheckNarrativePartsRejectsEmptyNextAndPastRestatement(t *testing.T) {
+	short := []Paragraph{{Text: "Done."}}
+	long := []Paragraph{{Text: "Send the draft to Sam before the review because Sam is waiting."}}
+	if err := CheckNarrativeParts(short, nil); err == nil {
+		t.Fatal("an empty next part passed")
 	}
-	if _, err := ParseJudgment(`{"judgments":[{"question":1,"pass":true}]}`); err == nil {
+	if err := CheckNarrativeParts(short, long); err != nil {
+		t.Fatalf("a larger next part was rejected: %v", err)
+	}
+	if err := CheckNarrativeParts(long, long); err == nil {
+		t.Fatal("a next part that only restates the done part passed")
+	}
+	clock := []Paragraph{{Text: "You shipped the draft at 9:30."}}
+	if err := CheckNarrativeParts(clock, long); err == nil {
+		t.Fatal("a clock time in the done part passed")
+	}
+}
+
+func TestRunShadowRejectsEmptyNextPartWithoutJudgeCall(t *testing.T) {
+	dir := t.TempDir()
+	deps := &fakeDeps{items: twoItems()}
+	deps.queue(`{"done":[{"text":"Shipped the draft.","refs":["e1"]}],"next":[]}`)
+	report, err := RunShadow(context.Background(), deps, dir, testBriefID, testWindow, ShadowOld{})
+	if err != nil {
+		t.Fatalf("RunShadow: %v", err)
+	}
+	if report.Judge != JudgeReject || report.JudgePass || report.NextParts != 0 {
+		t.Fatalf("judge=%s pass=%v next=%d, want reject and no next part", report.Judge, report.JudgePass, report.NextParts)
+	}
+	if len(deps.asks) != 1 {
+		t.Fatalf("model calls: got %d, want 1 (the judge is not called for an empty next part)", len(deps.asks))
+	}
+}
+
+func TestParseJudgmentNeedsEveryAnswer(t *testing.T) {
+	if pass, err := ParseJudgment(passJudgment, JudgeQuestionCount()); err != nil || !pass {
+		t.Fatalf("four passes: pass=%v err=%v", pass, err)
+	}
+	if _, err := ParseJudgment(`{"judgments":[{"question":1,"pass":true}]}`, JudgeQuestionCount()); err == nil {
 		t.Fatal("a partial judgment was accepted")
 	}
-	if _, err := ParseJudgment(`{"judgments":[{"question":1},{"question":2,"pass":true},{"question":3,"pass":true},{"question":4,"pass":true},{"question":5,"pass":true},{"question":6,"pass":true}]}`); err == nil {
+	if _, err := ParseJudgment(`{"judgments":[{"question":1},{"question":2,"pass":true},{"question":3,"pass":true},{"question":4,"pass":true}]}`, JudgeQuestionCount()); err == nil {
 		t.Fatal("a judgment without a verdict was accepted")
 	}
 }

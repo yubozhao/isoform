@@ -38,8 +38,9 @@ func shadowReport(dir string, results []result) {
 			withDiff++
 			diff = strings.Join(differ, ",")
 		}
-		fmt.Printf("%s shadow=ok old_narrative=%d new_narrative=%d old_cards=%d new_cards=%d old_evidence=%d new_evidence=%d sections_diff=%s\n",
-			r.ID, r.Built[0], newCounts.Narrative, r.Built[1], newCounts.Cards, r.Built[2], newCounts.Evidence, diff)
+		doneParts, nextParts, judgePass, _ := briefpkg.ReadShadowParts(dir, r.ID)
+		fmt.Printf("%s shadow=ok old_narrative=%d new_narrative=%d old_cards=%d new_cards=%d old_evidence=%d new_evidence=%d sections_diff=%s done_parts=%d next_parts=%d judge_pass=%t\n",
+			r.ID, r.Built[0], newCounts.Narrative, r.Built[1], newCounts.Cards, r.Built[2], newCounts.Evidence, diff, doneParts, nextParts, judgePass)
 	}
 	fmt.Printf("shadow_copies=%d shadow_with_section_diff=%d\n", copies, withDiff)
 }
