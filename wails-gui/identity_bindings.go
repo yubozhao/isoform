@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"wails-gui/internal/identity"
@@ -594,6 +596,26 @@ type PrincipalWithStatsDTO struct {
 	Stats     PrincipalStatsDTO `json:"stats"`
 }
 
+// A snapshot is reusable only under the complete source and privacy revision.
+// Publication still takes the same fences as a freshly calculated result.
+type peopleStatsSnapshot struct {
+	mu       sync.Mutex
+	revision peopleReadRevision
+	rows     []PrincipalWithStatsDTO
+	valid    bool
+}
+
+func clonePeopleStats(rows []PrincipalWithStatsDTO) []PrincipalWithStatsDTO {
+	out := slices.Clone(rows)
+	for i := range out {
+		out[i].Principal.Aliases = slices.Clone(rows[i].Principal.Aliases)
+		out[i].Principal.AppHandles = slices.Clone(rows[i].Principal.AppHandles)
+		out[i].Stats.ByApp = slices.Clone(rows[i].Stats.ByApp)
+		out[i].Stats.RecentMessages = slices.Clone(rows[i].Stats.RecentMessages)
+	}
+	return out
+}
+
 func principalStatsToDTO(s storage.PrincipalStatsRow) PrincipalStatsDTO {
 	byApp := make([]PrincipalSightingDTO, 0, len(s.ByApp))
 	for _, sg := range s.ByApp {
@@ -654,15 +676,27 @@ func (a *App) ListPrincipalsWithStats() (perfValue []PrincipalWithStatsDTO, perf
 	if err != nil {
 		return nil, err
 	}
-	rows, err := a.listPrincipalsWithStats(newPeopleReadGateCache())
-	if err != nil {
-		return nil, err
+	cache := &a.peopleStatsCache
+	cache.mu.Lock()
+	var rows []PrincipalWithStatsDTO
+	if cache.valid && cache.revision == stamp {
+		rows = clonePeopleStats(cache.rows)
+	}
+	cache.mu.Unlock()
+	if rows == nil {
+		rows, err = a.listPrincipalsWithStats(newPeopleReadGateCache())
+		if err != nil {
+			return nil, err
+		}
 	}
 	release, err := a.lockPeoplePublication(ctx, stamp)
 	if err != nil {
 		return nil, err
 	}
 	defer release()
+	cache.mu.Lock()
+	cache.revision, cache.rows, cache.valid = stamp, clonePeopleStats(rows), true
+	cache.mu.Unlock()
 	return rows, nil
 }
 

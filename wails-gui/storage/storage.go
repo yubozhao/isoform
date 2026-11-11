@@ -16,13 +16,14 @@ import (
 
 // Store provides SQLite-backed persistence for projects, sessions, and stream items.
 type Store struct {
-	db          *sql.DB
-	contextUses contextUseWriter
-	closeMu     sync.Mutex
-	closing     bool
-	closeOnce   sync.Once
-	closeErr    error
-	operations  sync.WaitGroup
+	db           *sql.DB
+	streamReadDB *sql.DB
+	contextUses  contextUseWriter
+	closeMu      sync.Mutex
+	closing      bool
+	closeOnce    sync.Once
+	closeErr     error
+	operations   sync.WaitGroup
 }
 
 // hasColumn reports whether a table contains the given column.
@@ -166,9 +167,31 @@ func newStoreWithSnapshotOptions(dbPath string, snapshots snapshotOptions) (*Sto
 
 	// Remove orphaned rows left by earlier foreign-key enforcement gap.
 	s.cleanupOrphans()
+	// Stream pagination and its version check need not queue behind the single
+	// writer connection. WAL readers see only committed data.
+	streamReadDB, err := openReadOnlyDatabase(dbPath)
+	if err != nil {
+		db.Close()
+		return nil, fmt.Errorf("open stream readers: %w", err)
+	}
+	streamReadDB.SetMaxOpenConns(4)
+	streamReadDB.SetMaxIdleConns(4)
+	if err := streamReadDB.Ping(); err != nil {
+		streamReadDB.Close()
+		db.Close()
+		return nil, fmt.Errorf("connect stream readers: %w", err)
+	}
+	s.streamReadDB = streamReadDB
 	s.startContextUses()
 
 	return s, nil
+}
+
+func (s *Store) streamReader() *sql.DB {
+	if s.streamReadDB != nil {
+		return s.streamReadDB
+	}
+	return s.db
 }
 
 // Closing reports whether Close has begun. It reads memory only, so a read can
@@ -193,8 +216,13 @@ func (s *Store) Close() error {
 			s.contextUses.closed = true
 			s.contextUses.mu.Unlock()
 		}
+		if s.streamReadDB != nil {
+			s.closeErr = s.streamReadDB.Close()
+		}
 		if s.db != nil {
-			s.closeErr = s.db.Close()
+			if err := s.db.Close(); s.closeErr == nil {
+				s.closeErr = err
+			}
 		}
 	})
 	return s.closeErr

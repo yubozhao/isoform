@@ -133,7 +133,7 @@ func (s *Store) LoadMainChatRowMetadata(ctx context.Context, sessionID string, i
 	for _, id := range ids {
 		args = append(args, id)
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT i.id,i.kind,i.content,i.tool_name,`+mainChatViewInput+`,i.created_at,COALESCE(t.topic_id,'') FROM stream_items i JOIN sessions s ON s.local_id=i.session_local_id AND s.kind='main' LEFT JOIN stream_item_topics t ON t.stream_item_id=i.id AND t.session_id=i.session_local_id WHERE i.session_local_id=? AND i.id IN (`+strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")+`) ORDER BY t.topic_id`, args...)
+	rows, err := s.streamReader().QueryContext(ctx, `SELECT i.id,i.kind,i.content,i.tool_name,`+mainChatViewInput+`,i.created_at,COALESCE(t.topic_id,'') FROM stream_items i JOIN sessions s ON s.local_id=i.session_local_id AND s.kind='main' LEFT JOIN stream_item_topics t ON t.stream_item_id=i.id AND t.session_id=i.session_local_id WHERE i.session_local_id=? AND i.id IN (`+strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")+`) ORDER BY t.topic_id`, args...)
 	if err != nil {
 		return out, err
 	}

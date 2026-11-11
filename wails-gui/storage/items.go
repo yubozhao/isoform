@@ -362,7 +362,7 @@ func (s *Store) LoadStreamItemCounts(ctx context.Context) (map[string]int, error
 // Items are returned in ascending sort_order (oldest first).
 func (s *Store) LoadStreamItemsLatest(ctx context.Context, sessionLocalID string, limit int) (StreamItemPage, error) {
 	// Fetch limit+1 to detect whether more items exist.
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.streamReader().QueryContext(ctx, `
 		SELECT id, session_local_id, kind, content, tool_name, tool_input, tool_use_id, run_id, session_id, sort_order, created_at, images, automation_context, files
 		FROM stream_items WHERE session_local_id = ?
 		ORDER BY sort_order DESC LIMIT ?
@@ -437,7 +437,7 @@ func (s *Store) LoadConversationHistory(ctx context.Context, sessionLocalID stri
 // LoadStreamItemsBefore loads `limit` items with sort_order < cursor.
 // Items are returned in ascending sort_order (oldest first).
 func (s *Store) LoadStreamItemsBefore(ctx context.Context, sessionLocalID string, cursor, limit int) (StreamItemPage, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.streamReader().QueryContext(ctx, `
 		SELECT id, session_local_id, kind, content, tool_name, tool_input, tool_use_id, run_id, session_id, sort_order, created_at, images, automation_context, files
 		FROM stream_items WHERE session_local_id = ? AND sort_order < ?
 		ORDER BY sort_order DESC LIMIT ?

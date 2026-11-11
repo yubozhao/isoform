@@ -44,7 +44,7 @@ func (s *Store) ensureStreamItemVersions() error {
 // lookup. A session with no items yet is version 0.
 func (s *Store) StreamItemVersion(ctx context.Context, sessionLocalID string) (int64, error) {
 	var version int64
-	err := s.db.QueryRowContext(ctx, `SELECT version FROM stream_item_versions WHERE session_local_id = ?`, sessionLocalID).Scan(&version)
+	err := s.streamReader().QueryRowContext(ctx, `SELECT version FROM stream_item_versions WHERE session_local_id = ?`, sessionLocalID).Scan(&version)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, nil
 	}

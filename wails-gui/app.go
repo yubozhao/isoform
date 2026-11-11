@@ -86,6 +86,7 @@ type App struct {
 	todayChatSourcesMemo todayChatSourcesCoalescer
 	// streamPages keeps the saved first page of each chat stream.
 	streamPages                streamPageState
+	peopleStatsCache           peopleStatsSnapshot
 	memoryEvidenceReadObserver func()
 	topicPageBeforePublish     func()
 	topicPageAfterValidate     func()
