@@ -10,7 +10,7 @@ Target: Thursday, November 19, 2026. **Do not launch yet.** The Fly files are a 
 - [ ] **Hub / website:** Provide an access gate for the 75-person waitlist; verify a waitlisted person can enter and a non-waitlisted person cannot. `AOY_CHAT=1` currently enables the feature globally, not for a cohort.
 - [ ] **Bo / hub:** Complete the Stripe test-mode money plan before live mode; verify holds, capture, refunds, Connect, reconciliation and both webhook endpoints in test mode.
 
-The only production sandbox driver today invokes Docker to create an egress container, per-chat isolated networks and workspace volumes. The image here contains neither a Docker daemon nor the sandbox images; it cannot start with that driver on an ordinary Fly Machine. The local driver executes on the host and is for tests only. A Daytona or E2B adapter must implement `sandbox.Driver` and `sandbox.Box` (create, find, put, execute, list, open, stop and destroy), preserve per-chat state and recovery, enforce network isolation and LLM-proxy-only access, prevent access to credentials and other chats, enforce resource limits and deletion, and be wired into configuration and startup. Provider network controls and proxy connectivity must be demonstrated before real client work. Provider credentials and their variable names do not exist in the current code.
+The only production sandbox driver today invokes Docker to create an egress container, per-chat isolated networks and workspace volumes. The image here contains neither a Docker daemon nor the sandbox images; it cannot start with that driver on an ordinary Fly Machine. The local driver executes on the host and is for tests only. The selected Runta adapter must implement `sandbox.Driver` and `sandbox.Box` (create, find, put, execute, list, open, stop and destroy), preserve per-chat state and recovery, enforce network isolation and LLM-proxy-only access, prevent access to credentials and other chats, enforce resource limits and deletion, and be wired into configuration and startup. Provider network controls and proxy connectivity must be demonstrated before real client work. The Runta adapter scaffold is disabled and is not wired into server startup. Confirm which Runta account holds the credits: [runta.com](https://runta.com/docs/overview/) documents managed runtimes and uses `RUNTA_TOKEN`, while [runtahq.com](https://runtahq.com/docs/quickstart) documents `RUNTA_API_KEY` but its linked API reference could not be confirmed. Do not assume they are the same provider.
 
 ## Configuration
 
@@ -51,7 +51,7 @@ Runtime settings read by the server (defaults apply when omitted):
 | `ISOFORM_APPROVAL_TTL`, `ISOFORM_REVIEW_TTL`, `ISOFORM_IDLE_STOP`, `ISOFORM_RETENTION`, `ISOFORM_UNATTACHED_TTL` | Local-only positive duration overrides; production uses defaults. |
 | `ISOFORM_TEST_MODEL_CAP_CENTS` | Test model cost cap override; leave unset in production. |
 
-The Docker egress process itself reads `ISOFORM_EGRESS_ALLOW`. No Daytona or E2B secret is currently consumed. Development and opt-in integration test variables are not production configuration. The website separately needs `AOY_CHAT`, `AOY_API_ORIGIN`, and `AOY_TERMS_URL`; they are Pages settings, not server secrets.
+The Docker egress process itself reads `ISOFORM_EGRESS_ALLOW`. The disabled Runta scaffold reads `RUNTA_API_KEY` and optional HTTPS `RUNTA_BASE_URL` only when explicitly constructed; the server does not construct it or use either setting yet. Development and opt-in integration test variables are not production configuration. The website separately needs `AOY_CHAT` and `AOY_API_ORIGIN`; optional `AOY_TERMS_URL` overrides the draft Terms link. These are Pages settings, not server secrets.
 
 ## Bo's setup
 
@@ -60,7 +60,7 @@ Use an authenticated Fly CLI and create the app in the intended organization bef
 - [ ] **Bo:** Create the Fly account and app matching `server/fly.toml`; verify `fly status` names the intended private organization's app.
 - [ ] **Bo:** Create Stripe live credentials and separate platform and Connect webhook endpoints; verify their events and API version against `server/README.md`.
 - [ ] **Bo:** Create the Anthropic API key and Resend account and verified sending domain; verify provider dashboards show the intended account and domain.
-- [ ] **Bo:** Create a hosted sandbox account after provider selection; verify network controls and credentials can support the adapter before creating production jobs.
+- [ ] **Bo:** Confirm the Runta account with the credits; verify its API, network controls and credentials can support the adapter before creating production jobs.
 - [ ] **Bo:** Set the server HMAC secret: `read -rs 'aoy_value?Value: '; printf 'ISOFORM_SERVER_SECRET=%s\n' "$aoy_value" | fly secrets import --stage; unset aoy_value` (run from `server/`); verify its name with `fly secrets list`.
 - [ ] **Bo:** Set the model key: `read -rs 'aoy_value?Value: '; printf 'ANTHROPIC_API_KEY=%s\n' "$aoy_value" | fly secrets import --stage; unset aoy_value`; verify its name with `fly secrets list`.
 - [ ] **Bo:** Set the email key: `read -rs 'aoy_value?Value: '; printf 'RESEND_API_KEY=%s\n' "$aoy_value" | fly secrets import --stage; unset aoy_value`; verify its name with `fly secrets list`.
@@ -68,13 +68,13 @@ Use an authenticated Fly CLI and create the app in the intended organization bef
 - [ ] **Bo:** Set the platform signing secret: `read -rs 'aoy_value?Value: '; printf 'STRIPE_WEBHOOK_SECRET=%s\n' "$aoy_value" | fly secrets import --stage; unset aoy_value`; verify its name with `fly secrets list`.
 - [ ] **Bo:** Set the Connect signing secret: `read -rs 'aoy_value?Value: '; printf 'STRIPE_CONNECT_WEBHOOK_SECRET=%s\n' "$aoy_value" | fly secrets import --stage; unset aoy_value`; verify its name with `fly secrets list`.
 - [ ] **Bo:** Set `ISOFORM_SERVER_PUBLIC_URL`, `ISOFORM_WEB_ORIGINS` and `ISOFORM_STRIPE_LIVE=1` in Fly configuration after confirming the domains and test plan; verify the configured names and public HTTPS origin.
-- [ ] **Bo:** Add the sandbox provider secret using the adapter's eventual documented variable name and stdin-based secret import; verify its name in Fly without revealing its value.
+- [ ] **Bo:** After confirming the intended Runta provider and API, set `RUNTA_API_KEY` from a hidden prompt: `read -rs 'aoy_value?Value: '; printf 'RUNTA_API_KEY=%s\n' "$aoy_value" | fly secrets import --stage; unset aoy_value`; verify its name with `fly secrets list`. This stages the same secret as `fly secrets set RUNTA_API_KEY=...` without putting its value in command arguments or shell history. The scaffold cannot run jobs yet.
 
 ## Hub launch
 
 - [ ] **Hub:** After every prerequisite is complete, remove the deployment guard and run `server/scripts/deploy.sh`; verify exactly one running machine, its attached writable volume and a passing `/healthz` check.
 - [ ] **Hub:** Test a real end-to-end hire, stop, delivery, receipt, refund and webhook with agreed controlled accounts; verify the displayed amounts, Stripe records and owner ledger agree.
-- [ ] **Hub:** Publish legally reviewed pages and configure `AOY_TERMS_URL`; verify the Terms link under Start resolves to the approved page.
+- [ ] **Hub:** Publish legally reviewed pages; if the approved Terms page moves, configure `AOY_TERMS_URL`. Verify both legal links under Start resolve to the approved pages.
 - [ ] **Hub:** Enable chat only through the verified waitlist gate for the 75 people; verify an allowed and a disallowed identity before inviting the cohort.
 - [ ] **Hub:** Monitor Fly health, logs, volume capacity, sandbox failures, provider usage, payment and email failures; verify alerts reach the named operator and review receipts daily.
 - [ ] **Hub:** Document rollback before enabling access; verify the website gate can be turned off without interrupting settlement of work already started.
