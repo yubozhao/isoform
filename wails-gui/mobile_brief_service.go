@@ -1092,6 +1092,13 @@ func (s *mobileBriefService) generateWithMetadata(ctx context.Context, slot, rea
 func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, slot, reason string, generation *MobileBriefGeneration, onStored func(MobileBriefV1)) (MobileBriefV1, error) {
 	useEpoch := s.app.contextUseEpoch()
 	asOf := s.now()
+	// A build works from the snapshot it collected. Edits to sources during
+	// the build (memory files, summaries, files) are not withdrawals; only an
+	// explicit privacy action, which moves the privacy print, restarts it.
+	startPrint := ""
+	if s.app != nil {
+		startPrint = s.app.briefPrivacyPrint()
+	}
 	if s.app != nil {
 		s.app.releaseOpenAnswerHolds(ctx, asOf, true)
 	}
@@ -1173,8 +1180,8 @@ func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, s
 		modelBinding = s.app.captureMobileBriefModelSources(ctx, brief, gathered)
 	}
 	if gathered != nil {
-		if changed := s.app.mobileBriefGatherChange(ctx, gathered); changed != "" {
-			log.Printf("[mobile-brief] %s brief sources changed during collection (%s): %s", slot, time.Since(time.UnixMilli(gathered.startedMs)).Round(time.Second), changed)
+		if s.app != nil && s.app.briefPrivacyPrint() != startPrint {
+			log.Printf("[mobile-brief] %s brief privacy changed during collection (%s); regenerating", slot, time.Since(time.UnixMilli(gathered.startedMs)).Round(time.Second))
 			return MobileBriefV1{}, errMobileBriefSourcesChanged
 		}
 	}
@@ -1236,8 +1243,8 @@ func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, s
 	// Composition can overlap an edit. Retry before later navigation reads
 	// refresh their own topic state.
 	if gathered != nil {
-		if changed := s.app.mobileBriefGatherChange(ctx, gathered); changed != "" {
-			log.Printf("[mobile-brief] %s brief sources changed during composition: %s", slot, changed)
+		if s.app != nil && s.app.briefPrivacyPrint() != startPrint {
+			log.Printf("[mobile-brief] %s brief privacy changed during composition; regenerating", slot)
 			return MobileBriefV1{}, errMobileBriefSourcesChanged
 		}
 	}
