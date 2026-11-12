@@ -39,5 +39,11 @@ func mobileBriefWriterErrorClass(err error) string {
 		}
 		return fmt.Sprintf("http_%d", httpErr.Status)
 	}
+	// Validation failures are fixed strings with no user content, so the
+	// reason is safe to log and tells which check refused the draft.
+	var code codeError
+	if errors.As(err, &code) {
+		return "check: " + string(code)
+	}
 	return "other"
 }
