@@ -47,7 +47,7 @@ const (
 
 var mobileBriefPickTiers = []string{
 	mobileBriefPickDue, mobileBriefPickWaiting, mobileBriefPickFollowUp,
-	mobileBriefPickDueSoon, mobileBriefPickOwnWork, mobileBriefPickGoal, mobileBriefPickObserved, mobileBriefPickNoticed, mobileBriefPickMeeting,
+	mobileBriefPickDueSoon, mobileBriefPickOwnWork, mobileBriefPickGoal, mobileBriefPickMeeting, mobileBriefPickObserved, mobileBriefPickNoticed,
 }
 
 // mobileBriefPick is one thing worth saying today.

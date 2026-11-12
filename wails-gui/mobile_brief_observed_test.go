@@ -119,7 +119,7 @@ func TestBriefObservedTitleOnlyAndRankedOrder(t *testing.T) {
 	}
 	inputs := []morningBriefBoundInput{{Kind: mobileBriefCalendarSource, ID: "one"}, {Kind: "memory", ID: "learned"}, {Kind: mobileBriefCalendarSource, ID: "two"}}
 	got := morningBriefObservationFirst(inputs)
-	if len(got) != 1 || got[0].Kind != "memory" {
+	if len(got) != 3 || got[0].Kind != "memory" || got[1].Kind != mobileBriefCalendarSource || got[2].Kind != mobileBriefCalendarSource {
 		t.Fatalf("ranked input order = %+v", got)
 	}
 	got = morningBriefObservationFirst([]morningBriefBoundInput{{Kind: mobileBriefCalendarSource}, {Kind: mobileBriefCalendarSource}, {Kind: mobileBriefCalendarSource}})

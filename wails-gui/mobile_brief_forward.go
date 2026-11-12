@@ -228,7 +228,7 @@ func rankedPartsPromptRule(slot string) string {
 	if slot == mobileBriefSlotEvening {
 		return "Label each paragraph with a part. Part \"done\": two or three paragraphs, each two to four sentences, reflecting on the day: what got done, what moved forward, what slipped or stayed open, and a pattern when one is visible. Each sentence rests on the items it cites; from observation only; name no clock times. Together the done paragraphs run at least seventy words. If the day has little to observe, one short done paragraph is enough. This part is the larger one. Part \"next\": one or two short items for tomorrow. Put the closing question last, as a next paragraph."
 	}
-	return "Label each paragraph with a part. Part \"done\": one short paragraph covering yesterday and since, from observation only; name no clock times. Part \"next\": two to four paragraphs saying what needs to happen today, each with a short reason tied to its items; this part is the larger one. Put the closing question last, as a next paragraph."
+	return "Label each paragraph with a part. Part \"done\": one short paragraph covering yesterday and since, from observation only; name no clock times. Part \"next\": two to four paragraphs saying what needs to happen today, each with a short reason tied to its items; this part is the larger one. Use items with briefRole next for the next part, and items with briefRole done for yesterday. A meeting is not evidence of preparation or an obligation. Observation, automated activity and assistant work are never the user's next step. Put the closing question last, as a next paragraph."
 }
 
 // Empty and quiet lines name the slot they are for. Each is a fixed sentence,
@@ -254,4 +254,16 @@ func rankedEmptyLine(slot, lang string) string {
 		return pick(lang, eveningEmptyEN, eveningEmptyZH)
 	}
 	return pick(lang, morningBriefEmptyEN, morningBriefEmptyZH)
+}
+
+// Retry an underfilled morning once with the deterministic reason.
+func writeRankedMorningWithRetry(critique string, write func(string) (morningBriefDraft, error)) (morningBriefDraft, error) {
+	draft, err := write(critique)
+	if err != errMorningBriefTooFewNext {
+		return draft, err
+	}
+	if critique != "" {
+		critique += " "
+	}
+	return write(critique + morningBriefTooFewNextReason)
 }
