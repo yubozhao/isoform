@@ -1199,10 +1199,18 @@ func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, s
 		original := brief
 		brief, modelBinding, draft, err = s.composeRankedMorning(ctx, input, brief, gathered)
 		if err != nil {
-			if !mobileBriefWriteJudgeFailed(err) || ctx.Err() != nil || errors.Is(err, errMobileBriefSourcesChanged) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			// No source-backed lead (a quiet or empty day, a cold start, or
+			// candidates that did not bind) is not a failure: the brief takes
+			// the template composer, as a failed write does.
+			noLead := errors.Is(err, errMorningBriefNoEligibleLead)
+			if ctx.Err() != nil || errors.Is(err, errMobileBriefSourcesChanged) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || !noLead && !mobileBriefWriteJudgeFailed(err) {
 				return MobileBriefV1{}, withLogStage("ranked morning", err)
 			}
-			log.Printf("[mobile-brief] ranked morning writing failed (%s); using on-request composer", safeLogError(err))
+			if noLead {
+				log.Printf("[mobile-brief] %s brief has no source-backed lead; using the template composer", slot)
+			} else {
+				log.Printf("[mobile-brief] ranked morning writing failed (%s); using on-request composer", safeLogError(err))
+			}
 			brief, rankedMorning = original, false
 			modelBinding = s.app.captureMobileBriefModelSources(ctx, brief, gathered)
 			_, brief.Offers = mobileBriefClosing(brief, language)
