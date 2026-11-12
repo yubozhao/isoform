@@ -31,6 +31,14 @@ type MobileBriefNarrativePart struct {
 // the deterministic check refuses, are a draft error: the pipeline then retries
 // or falls back to the fixed order.
 func orderRankedParts(paragraphs []MobileBriefPara, larger string) ([]MobileBriefPara, error) {
+	return orderParts(paragraphs, func(done, next []briefcore.Paragraph) error {
+		return briefcore.CheckNarrativeParts(larger, done, next)
+	})
+}
+
+// orderParts is orderRankedParts with the part check given by the caller, so a
+// thin evening day can use briefcore.CheckThinNarrativeParts.
+func orderParts(paragraphs []MobileBriefPara, check func(done, next []briefcore.Paragraph) error) ([]MobileBriefPara, error) {
 	labelled := 0
 	for _, p := range paragraphs {
 		switch p.Part {
@@ -55,7 +63,7 @@ func orderRankedParts(paragraphs []MobileBriefPara, larger string) ([]MobileBrie
 			next = append(next, p)
 		}
 	}
-	if err := briefcore.CheckNarrativeParts(larger, briefParagraphs(done), briefParagraphs(next)); err != nil {
+	if err := check(briefParagraphs(done), briefParagraphs(next)); err != nil {
 		return nil, codeError("draft parts failed the check")
 	}
 	return append(done, next...), nil
@@ -127,11 +135,98 @@ func rankedPartsBalance(slot string) string {
 	return briefPartNext
 }
 
+// Evening length. A reflective done part is at least two paragraphs and seventy
+// words, unless the day has too little evidence to fill it: then one short done
+// paragraph is allowed, so a quiet day is not padded.
+const (
+	eveningMinDoneParagraphs = 2
+	eveningMinDoneWords      = 70
+	eveningThinEvidenceRefs  = 3
+)
+
+// eveningDoneStats counts the done paragraphs and their words.
+func eveningDoneStats(paragraphs []MobileBriefPara) (count, words int) {
+	for _, p := range paragraphs {
+		if p.Part == briefPartDone {
+			count++
+			words += mobileBriefWordCount(p.Text)
+		}
+	}
+	return count, words
+}
+
+// eveningIsThin reports whether the day has too few distinct evidence refs to
+// fill a fuller reflection.
+func eveningIsThin(evidenceRefs int) bool {
+	return evidenceRefs < eveningThinEvidenceRefs
+}
+
+// eveningDoneLengthReason says why an evening draft's done part is too short, or
+// returns "" when it is long enough (or the day is thin).
+func eveningDoneLengthReason(paragraphs []MobileBriefPara, evidenceRefs int) string {
+	if eveningIsThin(evidenceRefs) {
+		return ""
+	}
+	count, words := eveningDoneStats(paragraphs)
+	if count >= eveningMinDoneParagraphs && words >= eveningMinDoneWords {
+		return ""
+	}
+	return "The done part needs two or three paragraphs and at least seventy words about the day."
+}
+
+// selectionEvidenceRefs counts the distinct evidence refs of the selected items.
+func selectionEvidenceRefs(selection morningBriefSelection) int {
+	seen := map[string]bool{}
+	add := func(item *morningBriefCandidate) {
+		if item == nil {
+			return
+		}
+		for _, ref := range item.Refs {
+			seen[ref] = true
+		}
+	}
+	add(selection.Lead)
+	for i := range selection.Needs {
+		add(&selection.Needs[i])
+	}
+	add(selection.Slip)
+	add(selection.Handled)
+	return len(seen)
+}
+
+// writeRankedWithLengthRetry runs one writer attempt. For an evening draft whose
+// done part is too short, it makes exactly one more attempt, with the reason
+// passed in. The better draft is kept: a passing retry, or else the one with
+// more done words. A failed first attempt returns its error, so the pipeline's
+// own retry handles it; a failed retry keeps the first draft, never an empty one.
+func writeRankedWithLengthRetry(balance string, evidenceRefs int, attempt func(reason string) (morningBriefDraft, error)) (morningBriefDraft, error) {
+	draft, err := attempt("")
+	if err != nil || balance != briefPartDone {
+		return draft, err
+	}
+	reason := eveningDoneLengthReason(draft.Paragraphs, evidenceRefs)
+	if reason == "" {
+		return draft, nil
+	}
+	retry, retryErr := attempt(reason)
+	if retryErr != nil || len(retry.Paragraphs) == 0 {
+		return draft, nil
+	}
+	if eveningDoneLengthReason(retry.Paragraphs, evidenceRefs) == "" {
+		return retry, nil
+	}
+	_, firstWords := eveningDoneStats(draft.Paragraphs)
+	if _, retryWords := eveningDoneStats(retry.Paragraphs); retryWords > firstWords {
+		return retry, nil
+	}
+	return draft, nil
+}
+
 // rankedPartsPromptRule is the writer instruction for the two parts of a
 // ranked brief in balance slot. A morning looks forward; an evening reflects back.
 func rankedPartsPromptRule(slot string) string {
 	if slot == mobileBriefSlotEvening {
-		return "Label each paragraph with a part. Part \"done\": two or three paragraphs reflecting on the day: what got done, what moved, what slipped, and a pattern if one is visible; from observation only; name no clock times. This part is the larger one. Part \"next\": one or two short items for tomorrow. Put the closing question last, as a next paragraph."
+		return "Label each paragraph with a part. Part \"done\": two or three paragraphs, each two to four sentences, reflecting on the day: what got done, what moved forward, what slipped or stayed open, and a pattern when one is visible. Each sentence rests on the items it cites; from observation only; name no clock times. Together the done paragraphs run at least seventy words. If the day has little to observe, one short done paragraph is enough. This part is the larger one. Part \"next\": one or two short items for tomorrow. Put the closing question last, as a next paragraph."
 	}
 	return "Label each paragraph with a part. Part \"done\": one short paragraph covering yesterday and since, from observation only; name no clock times. Part \"next\": two to four paragraphs saying what needs to happen today, each with a short reason tied to its items; this part is the larger one. Put the closing question last, as a next paragraph."
 }

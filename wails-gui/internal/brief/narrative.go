@@ -205,6 +205,19 @@ func ParseNarrativeParts(raw string, evidence []Evidence) (done, next []Paragrap
 // total runs long. It runs before the model judge, so a draft that fails here
 // costs no call.
 func CheckNarrativeParts(larger string, done, next []Paragraph) error {
+	return checkParts(larger, false, done, next)
+}
+
+// CheckThinNarrativeParts is the evening check for a thin day, when the evidence
+// is too little to fill two done paragraphs. One short done paragraph is enough:
+// the done part may be shorter than the default balance, but not shorter than
+// next. The other checks still apply: next is not empty, the done part is not
+// empty, and it names no clock time.
+func CheckThinNarrativeParts(done, next []Paragraph) error {
+	return checkParts(PartDone, true, done, next)
+}
+
+func checkParts(larger string, thin bool, done, next []Paragraph) error {
 	if len(next) == 0 {
 		return errors.New("next part is empty")
 	}
@@ -226,10 +239,13 @@ func CheckNarrativeParts(larger string, done, next []Paragraph) error {
 	if runes > maxNarrativeRunes {
 		return errors.New("narrative is too long")
 	}
-	if larger == PartDone && doneWords <= nextWords {
-		return errors.New("done part is not the larger part")
-	}
-	if larger != PartDone && nextWords <= doneWords {
+	if larger == PartDone {
+		// A thin day may have one short done part, as long as it is not shorter
+		// than the next part.
+		if doneWords < nextWords || doneWords == nextWords && !thin {
+			return errors.New("done part is not the larger part")
+		}
+	} else if nextWords <= doneWords {
 		return errors.New("next part is not the larger part")
 	}
 	return nil

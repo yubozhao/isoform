@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/json"
 	"strings"
+
+	briefcore "wails-gui/internal/brief"
 )
 
 // A writer may refer only to the capped selection. The client receives the
@@ -91,7 +93,15 @@ func parseRankedBriefDraft(raw string, selection morningBriefSelection, slot str
 	if mobileBriefNarrativeWords(draft.Paragraphs) > mobileBriefMaxWords {
 		return morningBriefDraft{}, codeError("draft exceeds word ceiling")
 	}
-	ordered, err := orderRankedParts(draft.Paragraphs, rankedPartsBalance(slot))
+	var ordered []MobileBriefPara
+	var err error
+	if slot == mobileBriefSlotEvening && eveningIsThin(selectionEvidenceRefs(selection)) {
+		// A thin evening day may have one short done paragraph, so no part must
+		// be larger by words.
+		ordered, err = orderParts(draft.Paragraphs, briefcore.CheckThinNarrativeParts)
+	} else {
+		ordered, err = orderRankedParts(draft.Paragraphs, rankedPartsBalance(slot))
+	}
 	if err != nil {
 		return morningBriefDraft{}, err
 	}
