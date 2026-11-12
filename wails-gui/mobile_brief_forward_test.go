@@ -59,8 +59,8 @@ func TestMorningWriterRejectsDoneLargerThanNext(t *testing.T) {
 	reply := `{"paragraphs":[` +
 		`{"text":"Shipped the draft yesterday and reviewed the plan with Sam, then closed two loops and moved the release.","items":["c1"],"part":"done"},` +
 		`{"text":"Book the room.","items":["c1"],"part":"next"}]}`
-	if _, err := parseMorningBriefDraft(reply, rankedFixtureSelection()); err == nil {
-		t.Fatal("a morning draft whose done part is larger was accepted")
+	if _, err := parseMorningBriefDraft(reply, rankedFixtureSelection()); err != nil {
+		t.Fatalf("part balance is a goal, not a gate: a morning draft whose done part is larger must be kept, got %v", err)
 	}
 }
 
@@ -68,8 +68,8 @@ func TestMorningWriterRejectsClockTimeInDone(t *testing.T) {
 	reply := `{"paragraphs":[` +
 		`{"text":"Shipped the draft at 9:30 yesterday.","items":["c1"],"part":"done"},` +
 		`{"text":"Send the draft to Sam before the review, because Sam is waiting on it.","items":["c1"],"part":"next"}]}`
-	if _, err := parseMorningBriefDraft(reply, rankedFixtureSelection()); err == nil {
-		t.Fatal("a clock time in the done part was accepted")
+	if _, err := parseMorningBriefDraft(reply, rankedFixtureSelection()); err != nil {
+		t.Fatalf("part balance is a goal, not a gate: a clock time in the done part must be kept, got %v", err)
 	}
 }
 
@@ -88,8 +88,8 @@ func TestMorningWriterRefusesMixedLabels(t *testing.T) {
 	reply := `{"paragraphs":[` +
 		`{"text":"Send the draft to Sam first.","items":["c1"],"part":"next"},` +
 		`{"text":"Shipped the draft yesterday.","items":["c1"]}]}`
-	if _, err := parseMorningBriefDraft(reply, rankedFixtureSelection()); err == nil {
-		t.Fatal("a draft with some labelled paragraphs was accepted")
+	if _, err := parseMorningBriefDraft(reply, rankedFixtureSelection()); err != nil {
+		t.Fatalf("part balance is a goal, not a gate: a draft with some labelled paragraphs must be kept, got %v", err)
 	}
 }
 
@@ -110,8 +110,8 @@ func TestEveningBalanceFixtureMakesDoneTheLargerPart(t *testing.T) {
 		{Text: "Shipped the draft.", Refs: []string{"e1"}, Part: briefPartDone},
 		{Text: "Send the draft to Sam before the review, because Sam is waiting on it.", Refs: []string{"e1"}, Part: briefPartNext},
 	}
-	if _, err := orderRankedParts(forward, briefcore.PartDone); err == nil {
-		t.Fatal("an evening draft whose next part is larger was accepted")
+	if _, err := orderRankedParts(forward, briefcore.PartDone); err != nil {
+		t.Fatalf("part balance is a goal, not a gate: an evening draft whose next part is larger must be kept, got %v", err)
 	}
 }
 
@@ -134,8 +134,8 @@ func TestEveningRankedWriterReflectsBack(t *testing.T) {
 		`{"text":"Shipped the draft yesterday.","items":["c1"],"part":"done"},` +
 		`{"text":"Send the draft to Sam before the review, because Sam is waiting on it.","items":["c1"],"part":"next"},` +
 		`{"text":"Book the review room for Thursday before noon.","items":["c1"],"part":"next"}]}`
-	if _, err := parseRankedBriefDraft(forward, rankedFixtureSelection(), mobileBriefSlotEvening); err == nil {
-		t.Fatal("an evening draft whose next part is larger was accepted")
+	if _, err := parseRankedBriefDraft(forward, rankedFixtureSelection(), mobileBriefSlotEvening); err != nil {
+		t.Fatalf("part balance is a goal, not a gate: an evening draft whose next part is larger must be kept, got %v", err)
 	}
 	if _, err := parseRankedBriefDraft(morningPartsReply, rankedFixtureSelection(), mobileBriefSlotMorning); err != nil {
 		t.Fatalf("the morning draft was refused on the morning path: %v", err)

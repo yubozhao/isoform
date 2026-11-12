@@ -70,11 +70,11 @@ func TestEveningThinEvidenceAllowsOneShortDonePart(t *testing.T) {
 	forward := `{"paragraphs":[` +
 		`{"text":"Shipped the draft.","items":["c1"],"part":"done"},` +
 		`{"text":"Send the draft to Sam before the review, because Sam is waiting on it.","items":["c1"],"part":"next"}]}`
-	if _, err := parseRankedBriefDraft(forward, selection, mobileBriefSlotEvening); err == nil {
-		t.Fatal("a thin evening day accepted a done part shorter than next")
+	if _, err := parseRankedBriefDraft(forward, selection, mobileBriefSlotEvening); err != nil {
+		t.Fatalf("part balance is a goal, not a gate: a thin evening day kept a done part shorter than next must be kept, got %v", err)
 	}
-	if _, err := parseRankedBriefDraft(forward, eveningRichSelection(), mobileBriefSlotEvening); err == nil {
-		t.Fatal("a rich evening day accepted a done part shorter than next")
+	if _, err := parseRankedBriefDraft(forward, eveningRichSelection(), mobileBriefSlotEvening); err != nil {
+		t.Fatalf("part balance is a goal, not a gate: a rich evening day kept a done part shorter than next must be kept, got %v", err)
 	}
 }
 

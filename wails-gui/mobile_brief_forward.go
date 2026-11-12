@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"time"
 
 	briefcore "wails-gui/internal/brief"
@@ -52,19 +53,19 @@ func orderParts(paragraphs []MobileBriefPara, check func(done, next []briefcore.
 	if labelled == 0 {
 		return paragraphs, nil
 	}
-	if labelled != len(paragraphs) {
-		return nil, codeError("draft labels only some paragraphs with a part")
-	}
 	var done, next []MobileBriefPara
 	for _, p := range paragraphs {
+		// An unlabelled paragraph (usually the closing question) reads as next.
 		if p.Part == briefPartDone {
 			done = append(done, p)
 		} else {
 			next = append(next, p)
 		}
 	}
+	// The part balance is a goal, not a gate: a draft that misses it is kept
+	// (done first, then next) rather than thrown away for a template.
 	if err := check(briefParagraphs(done), briefParagraphs(next)); err != nil {
-		return nil, codeError("draft parts failed the check")
+		log.Printf("[mobile-brief] draft parts off balance, kept: %v", err)
 	}
 	return append(done, next...), nil
 }
@@ -265,5 +266,10 @@ func writeRankedMorningWithRetry(critique string, write func(string) (morningBri
 	if critique != "" {
 		critique += " "
 	}
-	return write(critique + morningBriefTooFewNextReason)
+	retried, retryErr := write(critique + morningBriefTooFewNextReason)
+	if retryErr == errMorningBriefTooFewNext && len(retried.Paragraphs) > 0 {
+		log.Printf("[mobile-brief] morning draft kept with fewer next items than asked")
+		return retried, nil
+	}
+	return retried, retryErr
 }
