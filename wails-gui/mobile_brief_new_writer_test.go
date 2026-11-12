@@ -158,3 +158,29 @@ func TestNewBriefDropsParagraphsWithUnboundRefsNotTheBrief(t *testing.T) {
 		t.Fatalf("codes %v", codes)
 	}
 }
+
+func TestNewBriefMaterialCarriesConversationsOutsideSections(t *testing.T) {
+	in := newWriterTestInput()
+	in.Conversations = []mobileBriefCandidate{
+		{SourceKind: mobileBriefRecapSource, SourceID: "chat-1", Title: "Message Xiaotian about Product Hunt groups", Status: "done", Kind: "conversation", At: in.AsOf.Add(-2 * time.Hour), Apps: []string{"WeChat"}},
+		{SourceKind: mobileBriefRecapSource, SourceID: "chat-2", Title: "Coffee plan in #random", Status: "needs_reply", Kind: "conversation", At: in.AsOf.Add(-time.Hour), Apps: []string{"Slack"}, NextStep: "Reply with a time"},
+	}
+	brief := buildMobileBriefV1(in)
+	for _, ref := range brief.Evidence {
+		if strings.HasPrefix(ref.SourceID, "chat-") {
+			t.Fatal("a conversation reached a section")
+		}
+	}
+	m, _ := newBriefMaterial(in, brief, briefPartDone, "")
+	groups := map[string]string{}
+	for _, item := range m.Items {
+		groups[item.Title] = item.Group
+	}
+	if groups["Message Xiaotian about Product Hunt groups"] != briefcore.GroupDone || groups["Coffee plan in #random"] != briefcore.GroupFollowUp {
+		t.Fatalf("conversation groups %v", groups)
+	}
+	excluded := mobileBriefWithoutExcluded(in, []string{"xiaotian"})
+	if len(excluded.Conversations) != 1 {
+		t.Fatalf("a stated exclusion must remove the conversation: %d left", len(excluded.Conversations))
+	}
+}

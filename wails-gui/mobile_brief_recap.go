@@ -24,7 +24,10 @@ const (
 	// evidence budgets still bound how many are displayed.
 	mobileBriefRecapLimit = 30
 	mobileBriefNewsLimit  = 3
-	mobileBriefNewsFresh  = 24 * time.Hour
+	// mobileBriefConversationLimit bounds the messaging summaries the new
+	// writer sees.
+	mobileBriefConversationLimit = 12
+	mobileBriefNewsFresh         = 24 * time.Hour
 )
 
 // mobileBriefMorningStart is where the morning recap starts: the beginning
@@ -132,10 +135,24 @@ func collectMobileBriefRecap(a *App, in *mobileBriefInput) {
 			continue
 		}
 		apps, dwell := topicAppTime(row.ActiveMsByApp)
-		if len(apps) == 0 || topicAnySensitive(apps) || topicAnyPeopleApp(apps) {
+		if len(apps) == 0 || topicAnySensitive(apps) {
 			continue
 		}
 		if activitymon.IsPrivateBrowsing(row.Title) || pausedAt(pauses, mobileBriefMillis(row.StartMs)) || pausedAt(pauses, mobileBriefMillis(row.EndMs)) {
+			continue
+		}
+		if topicAnyPeopleApp(apps) {
+			// A conversation stays out of the recap section (as topics do), but
+			// the new writer may say it happened and what it asked of the user.
+			if len(in.Conversations) < mobileBriefConversationLimit {
+				conversation := mobileBriefCandidate{SourceKind: mobileBriefRecapSource, SourceID: row.ID, Title: row.Title,
+					Status: "done", Kind: "conversation", At: mobileBriefMillis(row.StartMs), Apps: apps}
+				if outcome := a.readableThreadOutcome(context.Background(), row); outcome != nil && outcome.NextStep != "" {
+					conversation.NextStep = outcome.NextStep
+					conversation.Status = "needs_reply"
+				}
+				in.Conversations = append(in.Conversations, conversation)
+			}
 			continue
 		}
 		if dwell <= 0 && row.EndMs > row.StartMs {

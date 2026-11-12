@@ -175,6 +175,15 @@ func newBriefMaterial(in mobileBriefInput, brief MobileBriefV1, larger, name str
 			add(briefcore.GroupDone, c, agent)
 		}
 	}
+	// Conversations held: one that asks something of the user is a follow-up,
+	// the rest are done.
+	for _, c := range prepareMobileBriefCandidates(in.Conversations, mobileBriefNewestFirst) {
+		group := briefcore.GroupDone
+		if c.NextStep != "" {
+			group = briefcore.GroupFollowUp
+		}
+		add(group, c, false)
+	}
 	addAll(briefcore.GroupAgents, in.Schedules, mobileBriefNewestFirst, true)
 	addAll(briefcore.GroupOpenLoop, in.OpenLoops, mobileBriefOpenLoopFirst, false)
 	addAll(briefcore.GroupContext, in.People, mobileBriefNewestFirst, false)
@@ -400,8 +409,8 @@ func (s *mobileBriefService) composeNewBrief(ctx context.Context, input mobileBr
 		}
 	}
 	logLine := func(outcome string, codes []string, paragraphs int) {
-		log.Printf("[brief-new] slot=%s balance=%s items=%d done=%d attended=%d agents=%d agent_marked=%d ahead=%d commitment=%d waiting=%d follow_up=%d open_loop=%d context=%d outcome=%s paragraphs=%d codes=%s ms=%d",
-			brief.Slot, larger, len(material.Items), counts[briefcore.GroupDone], counts[briefcore.GroupAttended], counts[briefcore.GroupAgents], agents,
+		log.Printf("[brief-new] slot=%s balance=%s conversations=%d items=%d done=%d attended=%d agents=%d agent_marked=%d ahead=%d commitment=%d waiting=%d follow_up=%d open_loop=%d context=%d outcome=%s paragraphs=%d codes=%s ms=%d",
+			brief.Slot, larger, len(input.Conversations), len(material.Items), counts[briefcore.GroupDone], counts[briefcore.GroupAttended], counts[briefcore.GroupAgents], agents,
 			counts[briefcore.GroupAhead], counts[briefcore.GroupCommitment], counts[briefcore.GroupWaiting], counts[briefcore.GroupFollowUp],
 			counts[briefcore.GroupOpenLoop], counts[briefcore.GroupContext], outcome, paragraphs, briefcore.SummarizeCodes(codes), time.Since(start).Milliseconds())
 	}

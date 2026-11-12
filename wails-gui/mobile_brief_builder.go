@@ -93,16 +93,20 @@ type mobileBriefInput struct {
 	Watching []mobileBriefCandidate
 	Meetings []mobileBriefCandidate
 	// TomorrowMeetings is scoring input, separate from today's displayed rows.
-	TomorrowMeetings       []mobileBriefCandidate
-	People                 []mobileBriefCandidate
-	OpenLoops              []mobileBriefCandidate
-	Learned                []mobileBriefCandidate
-	Deliverables           []mobileBriefCandidate
-	Schedules              []mobileBriefCandidate
-	WorkingToward          []mobileBriefCandidate
-	Commitments            []mobileBriefCandidate
-	Noticed                []mobileBriefCandidate
-	WaitingOnYou           []mobileBriefCandidate
+	TomorrowMeetings []mobileBriefCandidate
+	People           []mobileBriefCandidate
+	OpenLoops        []mobileBriefCandidate
+	Learned          []mobileBriefCandidate
+	Deliverables     []mobileBriefCandidate
+	Schedules        []mobileBriefCandidate
+	WorkingToward    []mobileBriefCandidate
+	Commitments      []mobileBriefCandidate
+	Noticed          []mobileBriefCandidate
+	WaitingOnYou     []mobileBriefCandidate
+	// Conversations are activity summaries from messaging apps (WeChat, Slack,
+	// Messages, ...). They reach only the new writer, never a section, and
+	// pass the same sensitive-app, pause and private-window gates as the recap.
+	Conversations          []mobileBriefCandidate
 	ExcludedSensitiveItems int
 
 	DayShape   *MobileBriefDay

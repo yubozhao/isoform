@@ -128,6 +128,7 @@ func mobileBriefWithoutExcluded(in mobileBriefInput, terms []string) mobileBrief
 	in.TomorrowMeetings, in.People, in.OpenLoops = keep(in.TomorrowMeetings), keep(in.People), keep(in.OpenLoops)
 	in.Learned, in.Deliverables, in.Schedules = keep(in.Learned), keep(in.Deliverables), keep(in.Schedules)
 	in.WorkingToward, in.Commitments, in.Noticed, in.WaitingOnYou = keep(in.WorkingToward), keep(in.Commitments), keep(in.Noticed), keep(in.WaitingOnYou)
+	in.Conversations = keep(in.Conversations)
 	return in
 }
 
