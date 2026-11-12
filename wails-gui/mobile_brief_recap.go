@@ -22,7 +22,7 @@ const (
 	mobileBriefNewsSource  = "news"
 	// Keep more candidates for a full workday; the wire section and shared
 	// evidence budgets still bound how many are displayed.
-	mobileBriefRecapLimit = 12
+	mobileBriefRecapLimit = 30
 	mobileBriefNewsLimit  = 3
 	mobileBriefNewsFresh  = 24 * time.Hour
 )

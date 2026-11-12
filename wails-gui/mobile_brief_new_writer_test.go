@@ -1,0 +1,160 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"testing"
+	"time"
+
+	briefcore "wails-gui/internal/brief"
+)
+
+func newWriterTestInput() mobileBriefInput {
+	loc := time.UTC
+	asOf := time.Date(2026, 11, 12, 12, 36, 0, 0, loc)
+	in := mobileBriefInput{Slot: mobileBriefSlotOnRequest, WindowStart: asOf.Add(-14 * time.Hour), AsOf: asOf, Location: loc, Timezone: "UTC"}
+	for i := 0; i < 12; i++ {
+		in.Moved = append(in.Moved, mobileBriefCandidate{SourceKind: mobileBriefRecapSource, SourceID: fmt.Sprintf("act-%d", i), Title: fmt.Sprintf("Own work item %d", i),
+			Status: "done", Kind: "recap", At: asOf.Add(-time.Duration(i+1) * time.Hour), Apps: []string{"Safari"}})
+	}
+	in.Moved = append(in.Moved, mobileBriefCandidate{SourceKind: mobileBriefRecapSource, SourceID: "act-agent", Title: "Fix the brief in Claude Code",
+		Status: "done", Kind: "recap", At: asOf.Add(-30 * time.Minute), Apps: []string{"Claude"}})
+	in.Meetings = append(in.Meetings, mobileBriefCandidate{SourceKind: mobileBriefCalendarSource, SourceID: "cal-1", Title: "Coffee with Vaishant", Status: "upcoming", Kind: "meeting", At: asOf.Add(2 * time.Hour)})
+	in.Learned = append(in.Learned, mobileBriefCandidate{SourceKind: "memory", SourceID: "mem-1", Title: "You send a report to the hub after opening each PR", Status: "updated", Kind: "memory", At: asOf.Add(-time.Hour)})
+	return in
+}
+
+func TestNewBriefMaterialKeepsTheWholeDayAndMarksAgents(t *testing.T) {
+	in := newWriterTestInput()
+	brief := buildMobileBriefV1(in)
+	m, sources := newBriefMaterial(in, brief, briefPartDone, "")
+	counts := map[string]int{}
+	for _, item := range m.Items {
+		counts[item.Group]++
+		if strings.Contains(item.Title, "Claude Code") && (!item.Agent || item.Group != briefcore.GroupAgents) {
+			t.Fatalf("agent work not marked: %+v", item)
+		}
+		if strings.Contains(item.Title, "report to the hub") {
+			t.Fatalf("a habit learned from agent sessions reached the writer")
+		}
+		if item.Group != briefcore.GroupAhead && strings.Contains(item.When, ":") {
+			t.Fatalf("past item carries a clock time: %+v", item)
+		}
+	}
+	if counts[briefcore.GroupDone] != 12 {
+		t.Fatalf("done items = %d, want all 12 (section caps must not drop them)", counts[briefcore.GroupDone])
+	}
+	if counts[briefcore.GroupAhead] != 1 || counts[briefcore.GroupAgents] != 1 {
+		t.Fatalf("counts %v", counts)
+	}
+	if len(sources) != len(m.Items) {
+		t.Fatalf("sources %d for %d items", len(sources), len(m.Items))
+	}
+}
+
+func TestComposeNewBriefOneCallCitesRealEvidence(t *testing.T) {
+	in := newWriterTestInput()
+	brief := buildMobileBriefV1(in)
+	before := len(brief.Evidence)
+	s := &mobileBriefService{}
+	calls := 0
+	ask := func(_ context.Context, prompt string) (string, error) {
+		calls++
+		var lastDone, agent, ahead string
+		m, _ := newBriefMaterial(in, brief, briefPartDone, "")
+		for _, item := range m.Items {
+			switch {
+			case item.Title == "Own work item 11":
+				lastDone = item.ID
+			case item.Agent:
+				agent = item.ID
+			case item.Group == briefcore.GroupAhead:
+				ahead = item.ID
+			}
+		}
+		reply, _ := json.Marshal(map[string][]map[string]any{
+			"done": {
+				{"text": "You got through a full day of your own work, down to the last item.", "refs": []string{lastDone}},
+				{"text": "Your agents fixed the brief in Claude Code.", "refs": []string{agent}},
+			},
+			"next": {
+				{"text": "Coffee with Vaishant is up next.", "refs": []string{ahead}},
+				{"text": "Check on the agents.", "refs": []string{agent}},
+			},
+		})
+		return string(reply), nil
+	}
+	out, paragraphs, binding, err := s.composeNewBrief(context.Background(), in, brief, nil, ask)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatalf("model calls = %d, want 1", calls)
+	}
+	if binding != nil {
+		t.Fatalf("no app: no binding expected")
+	}
+	if len(paragraphs) != 3 {
+		t.Fatalf("paragraphs = %d, want 3 (the agent-only next step dropped)", len(paragraphs))
+	}
+	if paragraphs[0].Part != briefPartDone || paragraphs[2].Part != briefPartNext {
+		t.Fatalf("parts not labelled: %+v", paragraphs)
+	}
+	byRef := mobileBriefEvidenceByRef(out)
+	for _, p := range paragraphs {
+		for _, ref := range p.Refs {
+			if _, ok := byRef[ref]; !ok {
+				t.Fatalf("paragraph cites %s, which has no evidence", ref)
+			}
+		}
+	}
+	// "Own work item 11" is past the moved section's cap, so it gets new evidence.
+	if len(out.Evidence) <= before {
+		t.Fatalf("no evidence reserved for an item outside the sections")
+	}
+	if got := mobileBriefNarrativePartsOf(paragraphs); len(got) != 2 || got[0].Count != 2 || got[1].Count != 1 {
+		t.Fatalf("parts %+v", got)
+	}
+}
+
+func TestComposeNewBriefErrorLeavesTheOldPath(t *testing.T) {
+	in := newWriterTestInput()
+	brief := buildMobileBriefV1(in)
+	s := &mobileBriefService{}
+	_, _, _, err := s.composeNewBrief(context.Background(), in, brief, nil, func(context.Context, string) (string, error) { return "no json here", nil })
+	if err == nil {
+		t.Fatal("an unusable reply must return an error so the old writer runs")
+	}
+}
+
+func TestNewBriefSettingDefaultsOnAndSurvivesScheduleSave(t *testing.T) {
+	store := newMobileBriefConfigStore(t.TempDir())
+	if !store.load().NewBrief {
+		t.Fatal("newBrief must default to on")
+	}
+	settings := store.load()
+	settings.NewBrief = false
+	if err := store.save(settings); err != nil {
+		t.Fatal(err)
+	}
+	if store.load().NewBrief {
+		t.Fatal("newBrief false did not persist")
+	}
+}
+
+func TestNewBriefDropsParagraphsWithUnboundRefsNotTheBrief(t *testing.T) {
+	paragraphs := []MobileBriefPara{
+		{Text: "Done.", Refs: []string{"e1", "e2"}, Part: briefPartDone},
+		{Text: "Also done.", Refs: []string{"e1"}, Part: briefPartDone},
+		{Text: "Next.", Refs: []string{"e3"}, Part: briefPartNext},
+	}
+	out, codes := newBriefWithoutUnbound(paragraphs, map[string]string{"e2": "summary"})
+	if len(out) != 2 || out[0].Text != "Also done." || out[1].Text != "Next." {
+		t.Fatalf("a paragraph citing an unbound source must go whole: %+v", out)
+	}
+	if strings.Join(codes, ",") != "paragraph_unbound_summary" {
+		t.Fatalf("codes %v", codes)
+	}
+}

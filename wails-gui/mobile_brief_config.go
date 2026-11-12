@@ -38,6 +38,10 @@ type mobileBriefSettings struct {
 	// scheduled brief and stores its result under briefs/shadow only. Nothing
 	// user-visible changes. Off by default; the hub turns it on for a build.
 	ShadowCompose bool
+	// NewBrief writes the narrative with the new one-call writer
+	// (mobile_brief_new_writer.go), the old path as its fallback. On by
+	// default; "newBrief": false rolls back to the old path.
+	NewBrief bool
 }
 
 // mobileBriefScheduleFile is the on-disk shape of brief-schedule.json.
@@ -51,6 +55,8 @@ type mobileBriefScheduleFile struct {
 	Adaptive  *bool  `json:"adaptiveTiming,omitempty"`
 	// A missing key reads as off.
 	ShadowCompose *bool `json:"shadowCompose,omitempty"`
+	// A missing key reads as on.
+	NewBrief *bool `json:"newBrief,omitempty"`
 }
 
 func defaultMobileBriefSettings() mobileBriefSettings {
@@ -59,6 +65,7 @@ func defaultMobileBriefSettings() mobileBriefSettings {
 		Morning:  mobileBriefDefaultMorning,
 		Evening:  mobileBriefDefaultEvening,
 		Adaptive: appFlavor() == appFlavorIsoform,
+		NewBrief: true,
 	}
 }
 
@@ -133,6 +140,9 @@ func (c *mobileBriefConfigStore) load() mobileBriefSettings {
 	if file.ShadowCompose != nil {
 		settings.ShadowCompose = *file.ShadowCompose
 	}
+	if file.NewBrief != nil {
+		settings.NewBrief = *file.NewBrief
+	}
 	if _, err := time.Parse(time.RFC3339Nano, file.EnabledAt); err == nil {
 		settings.EnabledAt = file.EnabledAt
 	}
@@ -153,7 +163,7 @@ func (c *mobileBriefConfigStore) save(settings mobileBriefSettings) error {
 	if err := validateMobileBriefSettings(settings); err != nil {
 		return err
 	}
-	enabled, feed, adaptive, shadow := settings.Enabled, settings.Feed, settings.Adaptive, settings.ShadowCompose
+	enabled, feed, adaptive, shadow, newBrief := settings.Enabled, settings.Feed, settings.Adaptive, settings.ShadowCompose, settings.NewBrief
 	data, err := json.MarshalIndent(mobileBriefScheduleFile{
 		Version:       mobileBriefScheduleVersion,
 		Enabled:       &enabled,
@@ -163,6 +173,7 @@ func (c *mobileBriefConfigStore) save(settings mobileBriefSettings) error {
 		EnabledAt:     settings.EnabledAt,
 		Adaptive:      &adaptive,
 		ShadowCompose: &shadow,
+		NewBrief:      &newBrief,
 	}, "", "  ")
 	if err != nil {
 		return err

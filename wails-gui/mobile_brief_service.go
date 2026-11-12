@@ -125,15 +125,15 @@ type mobileBriefService struct {
 	windowLogged map[string]bool
 	wake         chan struct{}
 	// ahead carries early-brief triggers (lock, display sleep, the scheduled moment).
-	ahead       chan string
-	aheadArmed  string
+	ahead      chan string
+	aheadArmed string
 	// noTextBuilds counts, per slot ID, the builds that wrote no words (see noteNoTextBuild).
 	noTextBuilds map[string]int
-	aheadTimer  *time.Timer
-	sleeping    bool
-	sleepAt     time.Time
-	wakeWindows []mobileBriefWakeWindow
-	sleepState  func() activitymon.SystemStateChange
+	aheadTimer   *time.Timer
+	sleeping     bool
+	sleepAt      time.Time
+	wakeWindows  []mobileBriefWakeWindow
+	sleepState   func() activitymon.SystemStateChange
 	// timing is a fixture seam; production projects only existing timestamps.
 	timing func(time.Time) mobileBriefTimingInput
 	wg     sync.WaitGroup
@@ -1103,6 +1103,12 @@ func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, s
 		s.app.releaseOpenAnswerHolds(ctx, asOf, true)
 	}
 	windowStart := s.windowStart(asOf)
+	if slot == mobileBriefSlotOnRequest && s.newBriefEnabled() {
+		// A brief asked for covers at least the day, even right after another.
+		if floor := newBriefOnRequestFloor(asOf, s.location); floor.Before(windowStart) {
+			windowStart = floor
+		}
+	}
 	release := s.holdPower(reason)
 	defer release()
 
@@ -1201,7 +1207,27 @@ func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, s
 	var words []mobileBriefCardWords
 	var rankedCards []MobileBriefCard
 	var weekLead, weekLeadFacts string
-	if rankedMorning {
+	// The new writer (newBrief, on by default) makes the narrative in one model
+	// call over everything the window holds. When it fails, the old path below
+	// runs as before.
+	wroteNew := false
+	if s.compose == nil && s.composeWithLead == nil && !brief.ColdStart && !calendarOnlyFallback && s.newBriefEnabled() && mobileBriefNarrativeAvailable(s.app) {
+		composed, written, binding, newErr := s.composeNewBrief(ctx, input, brief, gathered, s.app.mobileBriefModelCall)
+		switch {
+		case newErr == nil:
+			brief, paragraphs, status, modelBinding = composed, written, "ok", binding
+			rankedMorning, wroteNew = false, true
+			_, brief.Offers = mobileBriefClosing(brief, language)
+			cards = mobileBriefPatternCards(brief, language)
+		case ctx.Err() != nil:
+			return MobileBriefV1{}, ctx.Err()
+		default:
+			log.Printf("[brief-new] %s brief falls back to the old writer", slot)
+		}
+	}
+	if wroteNew {
+		// The narrative is written; cards take Isoform's own sentences below.
+	} else if rankedMorning {
 		var draft morningBriefDraft
 		original := brief
 		brief, modelBinding, draft, err = s.composeRankedMorning(ctx, input, brief, gathered)
@@ -2078,6 +2104,9 @@ func (s *mobileBriefService) SetSchedule(schedule MobileBriefSchedule) (MobileBr
 		Feed:      schedule.FeedEnabled,
 		EnabledAt: previous.EnabledAt,
 		Adaptive:  previous.Adaptive,
+		// Settings the schedule screen does not show keep their saved values.
+		ShadowCompose: previous.ShadowCompose,
+		NewBrief:      previous.NewBrief,
 	}
 	if schedule.AdaptiveTiming != nil {
 		settings.Adaptive = *schedule.AdaptiveTiming

@@ -11,7 +11,7 @@ import (
 func TestMobileBriefScheduleDefaultsWhenMissing(t *testing.T) {
 	store := newMobileBriefConfigStore(t.TempDir())
 	got := store.load()
-	want := mobileBriefSettings{Enabled: true, Morning: "07:00", Evening: "18:00"}
+	want := mobileBriefSettings{Enabled: true, Morning: "07:00", Evening: "18:00", NewBrief: true}
 	if got != want {
 		t.Fatalf("defaults = %+v, want %+v", got, want)
 	}
@@ -85,7 +85,7 @@ func TestMobileBriefScheduleFallsBackPerField(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := newMobileBriefConfigStore(dir).load()
-	want := mobileBriefSettings{Enabled: false, Morning: "07:00", Evening: "19:30"}
+	want := mobileBriefSettings{Enabled: false, Morning: "07:00", Evening: "19:30", NewBrief: true}
 	if got != want {
 		t.Fatalf("per-field fallback = %+v, want %+v", got, want)
 	}

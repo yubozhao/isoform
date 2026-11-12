@@ -178,7 +178,8 @@ func (d *mobileBriefShadowDeps) BudgetLow() bool {
 // startBriefShadow runs the shadow for a scheduled brief in the background. It
 // returns at once, so the old brief is never delayed or changed by it.
 func (s *mobileBriefService) startBriefShadow(brief MobileBriefV1) {
-	if s == nil || s.app == nil || s.store == nil || s.store.dir == "" || !s.config.load().ShadowCompose {
+	// With the new writer live (newBrief) the shadow has nothing to compare.
+	if s == nil || s.app == nil || s.store == nil || s.store.dir == "" || !s.config.load().ShadowCompose || s.newBriefEnabled() {
 		return
 	}
 	s.mu.Lock()
