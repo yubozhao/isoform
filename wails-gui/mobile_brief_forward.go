@@ -1,6 +1,8 @@
 package main
 
 import (
+	"time"
+
 	briefcore "wails-gui/internal/brief"
 )
 
@@ -101,8 +103,23 @@ func briefParagraphs(in []MobileBriefPara) []briefcore.Paragraph {
 	return out
 }
 
-// rankedPartsBalance is the larger part for a scheduled ranked brief: next for
-// the morning, done for the evening (briefcore.BalanceFor).
+// rankedBalanceSlot is the slot whose rules a ranked brief follows. A scheduled
+// brief keeps its own slot. An on-request brief takes the balance of the local
+// time it is made: the morning before noon, the evening from noon. The brief
+// itself keeps its on_request slot.
+func rankedBalanceSlot(slot string, localNow time.Time) string {
+	if slot != mobileBriefSlotOnRequest {
+		return slot
+	}
+	if localNow.Hour() < 12 {
+		return mobileBriefSlotMorning
+	}
+	return mobileBriefSlotEvening
+}
+
+// rankedPartsBalance is the larger part for a ranked brief in balance slot: next
+// for the morning, done for the evening (briefcore.BalanceFor). Callers pass the
+// result of rankedBalanceSlot.
 func rankedPartsBalance(slot string) string {
 	if slot == mobileBriefSlotEvening {
 		return briefPartDone
@@ -111,7 +128,7 @@ func rankedPartsBalance(slot string) string {
 }
 
 // rankedPartsPromptRule is the writer instruction for the two parts of a
-// ranked brief. A morning looks forward; an evening reflects back.
+// ranked brief in balance slot. A morning looks forward; an evening reflects back.
 func rankedPartsPromptRule(slot string) string {
 	if slot == mobileBriefSlotEvening {
 		return "Label each paragraph with a part. Part \"done\": two or three paragraphs reflecting on the day: what got done, what moved, what slipped, and a pattern if one is visible; from observation only; name no clock times. This part is the larger one. Part \"next\": one or two short items for tomorrow. Put the closing question last, as a next paragraph."

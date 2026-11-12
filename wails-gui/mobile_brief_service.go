@@ -1165,8 +1165,9 @@ func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, s
 	// ranked route for scheduled mornings.
 	calendarOnlyFallback := s.compose == nil && s.composeWithLead == nil && len(mobileBriefPicks(brief)) == 0 && len(mobileBriefDayItems(brief)) > 0 && len(mobileBriefNarrativeTemplateOnly(brief, s.app.currentUILanguageName())) == 0
 	// The ranked writer serves the scheduled morning and evening (the evening
-	// reflects back; rankedPartsBalance sets its larger part).
-	rankedMorning := (slot == mobileBriefSlotMorning || slot == mobileBriefSlotEvening) && s.compose == nil && s.composeWithLead == nil && !calendarOnlyFallback
+	// reflects back) and a brief made on request; rankedBalanceSlot picks the
+	// balance for an on-request brief from the local time it is made.
+	rankedMorning := (slot == mobileBriefSlotMorning || slot == mobileBriefSlotEvening || slot == mobileBriefSlotOnRequest) && s.compose == nil && s.composeWithLead == nil && !calendarOnlyFallback
 	var modelBinding *mobileBriefModelBinding
 	if !rankedMorning && !calendarOnlyFallback {
 		modelBinding = s.app.captureMobileBriefModelSources(ctx, brief, gathered)
