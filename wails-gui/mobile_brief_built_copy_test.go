@@ -47,18 +47,3 @@ func TestBuiltCopySurvivesAStrippedSave(t *testing.T) {
 		t.Fatal(err)
 	}
 }
-
-// What a refresh stores keeps the build's words even when the gates withheld
-// them; the gated copy goes to the seal only.
-func TestRefreshStoresTheWordsNotTheGatedCopy(t *testing.T) {
-	base := MobileBriefV1{NarrativeStatus: "ok", Narrative: []MobileBriefPara{{Text: "You shipped it.", Refs: []string{"e1"}, Part: briefPartDone}},
-		Evidence: []MobileBriefRef{{Ref: "e1", SourceKind: "summary", SourceID: "act-1"}}}
-	gated := MobileBriefV1{NarrativeStatus: "unavailable", Narrative: []MobileBriefPara{}}
-	saved := mobileBriefWithWordsOf(gated, base)
-	if len(saved.Narrative) != 1 || saved.NarrativeStatus != "ok" || len(saved.Evidence) != 1 {
-		t.Fatalf("the stored brief lost the build's words: %+v", saved)
-	}
-	if len(gated.Narrative) != 0 {
-		t.Fatal("the gated copy was changed")
-	}
-}

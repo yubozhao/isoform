@@ -46,7 +46,15 @@ func newBriefOnRequestFloor(asOf time.Time, loc *time.Location) time.Time {
 func newBriefMaterial(in mobileBriefInput, brief MobileBriefV1, larger, name string) (briefcore.Material, map[string]newBriefSource) {
 	loc := mobileBriefInputLocation(in)
 	now := in.AsOf.In(loc)
-	m := briefcore.Material{Slot: in.Slot, Larger: larger, Name: name, Now: now.Format("Monday, January 2, 3:04 PM")}
+	// Day words are the reader's: a brief made ahead is read on its own day,
+	// so the evening it was made is "yesterday".
+	dayRef := in.AsOf
+	nowWords := now.Format("Monday, January 2, 3:04 PM")
+	if !in.BriefDay.IsZero() {
+		dayRef = in.briefDayRef(loc)
+		nowWords = "the morning of " + dayRef.In(loc).Format("Monday, January 2") + " (the brief is read then)"
+	}
+	m := briefcore.Material{Slot: in.Slot, Larger: larger, Name: name, Now: nowWords}
 	sources := map[string]newBriefSource{}
 	existing := map[string]string{}
 	for _, ref := range brief.Evidence {
@@ -58,7 +66,7 @@ func newBriefMaterial(in mobileBriefInput, brief MobileBriefV1, larger, name str
 		if at.IsZero() {
 			return ""
 		}
-		switch days := mobileBriefCivilDays(at, in.AsOf, loc); {
+		switch days := mobileBriefCivilDays(at, dayRef, loc); {
 		case days == 0:
 			return "today"
 		case days == -1:
@@ -94,7 +102,7 @@ func newBriefMaterial(in mobileBriefInput, brief MobileBriefV1, larger, name str
 		}
 		when := dayWord(c.At)
 		if group == briefcore.GroupAhead {
-			if mobileBriefCivilDays(c.At, in.AsOf, loc) == 0 {
+			if mobileBriefCivilDays(c.At, dayRef, loc) == 0 {
 				when = "today " + c.At.In(loc).Format("3:04 PM")
 			}
 		} else if !c.DueAt.IsZero() {
@@ -148,7 +156,7 @@ func newBriefMaterial(in mobileBriefInput, brief MobileBriefV1, larger, name str
 		switch {
 		case obs.Start.After(in.AsOf):
 			group, when = briefcore.GroupAhead, dayWord(obs.Start)
-			if mobileBriefCivilDays(obs.Start, in.AsOf, loc) == 0 {
+			if mobileBriefCivilDays(obs.Start, dayRef, loc) == 0 {
 				when = "today " + obs.Start.In(loc).Format("3:04 PM")
 			}
 		case obs.State == "attended":
@@ -212,28 +220,56 @@ func newBriefUpcoming(items []mobileBriefCandidate, asOf time.Time) []mobileBrie
 // newBriefReserve gives a source an evidence ref, reusing the one the brief
 // has. It follows the ranked path's rules: copy-safe label, the document's
 // evidence limit and the calendar limit.
+// newBriefCalendarLimit is how many calendar rows the written words may cite.
+// The section builder keeps two for Day ahead; the words name more of the day.
+const newBriefCalendarLimit = 10
+
+// Reasons a source gets no evidence ref. A limit only drops the ref; a copy
+// check drops the words that rest on it.
+const (
+	newBriefReserveOK    = ""
+	newBriefReserveLimit = "limit"
+	newBriefReserveCopy  = "copy"
+)
+
 func newBriefReserve(brief *MobileBriefV1, src newBriefSource) (string, bool) {
+	ref, reason := newBriefReserveRef(brief, src)
+	return ref, reason == newBriefReserveOK
+}
+
+func newBriefReserveRef(brief *MobileBriefV1, src newBriefSource) (string, string) {
 	key := mobileBriefSourceKey(src.kind, src.id)
 	used := map[string]bool{}
 	for _, ref := range brief.Evidence {
 		if mobileBriefSourceKey(ref.SourceKind, ref.SourceID) == key {
-			return ref.Ref, true
+			return ref.Ref, newBriefReserveOK
 		}
 		used[ref.Ref] = true
 	}
+	if src.kind == mobileBriefCalendarSource {
+		// The same event may already be cited through its attendance row.
+		for _, ref := range brief.Evidence {
+			if ref.SourceKind == mobileBriefAttendanceSource && ref.SourceID == src.id {
+				return ref.Ref, newBriefReserveOK
+			}
+		}
+	}
 	if src.kind == mobileBriefAttendanceSource {
 		// Attendance rows are cited only through the refs the brief built.
-		return "", false
+		return "", newBriefReserveLimit
 	}
-	if src.kind == mobileBriefCalendarSource && mobileBriefEvidenceCounts(brief.Evidence)[mobileBriefCalendarSource] >= mobileBriefCalendarLimit {
-		return "", false
+	if src.kind == mobileBriefCalendarSource && mobileBriefEvidenceCounts(brief.Evidence)[mobileBriefCalendarSource] >= newBriefCalendarLimit {
+		return "", newBriefReserveLimit
+	}
+	if len(brief.Evidence) >= mobileBriefEvidenceLimit {
+		return "", newBriefReserveLimit
 	}
 	label := mobileBriefText(src.label, mobileBriefLabelLimit)
-	if label == "" || !mobileBriefCopySafe(label) || redactThreadOutcomeText(label) != label || len(brief.Evidence) >= mobileBriefEvidenceLimit {
-		return "", false
+	if label == "" || !mobileBriefCopySafe(label) || redactThreadOutcomeText(label) != label {
+		return "", newBriefReserveCopy
 	}
 	if mobileBriefText(src.kind, mobileBriefKindLimit) != src.kind || mobileBriefText(src.id, mobileBriefSourceIDLimit) != src.id {
-		return "", false
+		return "", newBriefReserveCopy
 	}
 	n := len(brief.Evidence) + 1
 	ref := "e" + strconv.Itoa(n)
@@ -242,14 +278,23 @@ func newBriefReserve(brief *MobileBriefV1, src newBriefSource) (string, bool) {
 		ref = "e" + strconv.Itoa(n)
 	}
 	brief.Evidence = append(brief.Evidence, MobileBriefRef{Ref: ref, SourceKind: src.kind, SourceID: src.id, Label: label, ObservedAt: brief.AsOf})
-	return ref, true
+	return ref, newBriefReserveOK
 }
 
 // newBriefParagraphs maps the draft's material ids to evidence refs and labels
 // each paragraph with its part. A ref that cannot be given evidence is dropped,
 // and a paragraph left with none is dropped; both are named in the codes.
 func newBriefParagraphs(brief *MobileBriefV1, draft briefcore.Draft, sources map[string]newBriefSource) ([]MobileBriefPara, []string) {
+	paragraphs, codes, _, _ := newBriefParagraphsTracked(brief, draft, sources)
+	return paragraphs, codes
+}
+
+// newBriefParagraphsTracked is newBriefParagraphs that also returns the
+// material ids that got no evidence and the material id behind each ref.
+func newBriefParagraphsTracked(brief *MobileBriefV1, draft briefcore.Draft, sources map[string]newBriefSource) ([]MobileBriefPara, []string, map[string]bool, map[string]string) {
 	var codes []string
+	failed := map[string]bool{}
+	refIDs := map[string]string{}
 	unknownAttendance := map[string]bool{}
 	for _, row := range brief.MeetingAttendance {
 		if row.State == "unknown" {
@@ -269,14 +314,24 @@ func newBriefParagraphs(brief *MobileBriefV1, draft briefcore.Draft, sources map
 					codes = append(codes, "ref_unmapped")
 					continue
 				}
-				ref, ok := newBriefReserve(brief, src)
-				if !ok {
-					// The label may have failed a copy check, so the words that
-					// rest on it go too.
+				ref, reason := newBriefReserveRef(brief, src)
+				switch reason {
+				case newBriefReserveLimit:
+					// A budget, not a refusal: only this ref goes.
+					codes = append(codes, "evidence_limit_"+src.kind)
+					failed[id] = true
+					continue
+				case newBriefReserveCopy:
+					// The label failed a copy check, so the words that rest on
+					// it go too.
 					codes = append(codes, "paragraph_evidence_unavailable_"+src.kind)
+					failed[id] = true
 					refs, dropped = nil, true
+				}
+				if dropped {
 					break
 				}
+				refIDs[ref] = id
 				// Hygiene drops an opening paragraph that cites an attendance
 				// row the computer could not confirm, so the opening keeps
 				// only its other refs.
@@ -300,7 +355,7 @@ func newBriefParagraphs(brief *MobileBriefV1, draft briefcore.Draft, sources map
 	}
 	mapPart(briefPartDone, draft.Done)
 	mapPart(briefPartNext, draft.Next)
-	return out, codes
+	return out, codes, failed, refIDs
 }
 
 // captureNewBriefModelSources binds the sources the written words rest on:
@@ -356,31 +411,80 @@ func (a *App) captureNewBriefModelSources(ctx context.Context, brief MobileBrief
 	return binding, unbound
 }
 
-// newBriefWithoutUnbound drops every paragraph that cites a ref whose source
-// could not be bound: its words may still describe that source, and the reason
-// may be a gate (protected, withdrawn, unreadable). The other paragraphs stay.
-// Each drop is named by the source kind.
-func newBriefWithoutUnbound(paragraphs []MobileBriefPara, unbound map[string]string) ([]MobileBriefPara, []string) {
+// newBriefWithoutUnbound drops the paragraphs that cite a ref whose source
+// could not be bound: their words may still describe that source, and the
+// reason may be a gate. A ref for which soft says yes (a calendar row, or a
+// summary that still exists and passes the gates) only leaves its paragraph,
+// which keeps its words while it has other refs. Each drop is named by kind.
+func newBriefWithoutUnbound(paragraphs []MobileBriefPara, unbound map[string]string, soft func(ref, kind string) bool) ([]MobileBriefPara, []string) {
 	if len(unbound) == 0 {
 		return paragraphs, nil
 	}
 	var codes []string
 	var out []MobileBriefPara
 	for _, p := range paragraphs {
-		bad := ""
+		hard := ""
+		var refs []string
 		for _, ref := range p.Refs {
-			if kind, ok := unbound[ref]; ok {
-				bad = kind
-				break
+			kind, bad := unbound[ref]
+			switch {
+			case !bad:
+				refs = append(refs, ref)
+			case soft != nil && soft(ref, kind):
+				codes = append(codes, "ref_unbound_"+kind)
+			default:
+				hard = kind
 			}
 		}
-		if bad != "" {
-			codes = append(codes, "paragraph_unbound_"+bad)
+		if hard != "" {
+			codes = append(codes, "paragraph_unbound_"+hard)
 			continue
 		}
+		if len(refs) == 0 {
+			codes = append(codes, "paragraph_unbound_all")
+			continue
+		}
+		p.Refs = refs
 		out = append(out, p)
 	}
 	return out, codes
+}
+
+// newBriefSoftUnbound says whether an unbound ref may leave its paragraph
+// without taking the words: a calendar row (its binding reads the day, which a
+// brief made ahead cannot), or a summary that is still there and passes the
+// privacy gates (not a conversation). Anything else is a refusal.
+func (a *App) newBriefSoftUnbound(brief MobileBriefV1, conversations map[string]bool) func(ref, kind string) bool {
+	byRef := mobileBriefEvidenceByRef(brief)
+	return func(ref, kind string) bool {
+		ev := byRef[ref]
+		switch kind {
+		case mobileBriefCalendarSource:
+			return true
+		case mobileBriefRecapSource:
+			if a == nil || a.activity == nil || a.activity.store == nil || conversations[ev.SourceID] {
+				return false
+			}
+			pauses, err := a.observationPauses()
+			if err != nil {
+				return false
+			}
+			reader := mobileBriefPurposeReader{app: a, store: a.activity.store, asOf: time.Now(), pauses: pauses, pausesReadable: true, cache: map[string]mobileBriefPurposeObservation{}}
+			id := ev.SourceID
+			if strings.HasPrefix(id, threadOutcomeMomentPrefix) {
+				if at := strings.LastIndex(id, ":"); at > 0 {
+					id = strings.TrimPrefix(id[:at], threadOutcomeMomentPrefix)
+				}
+			}
+			row, err := a.activity.store.GetActivityByID(id)
+			if err != nil || row == nil {
+				return false
+			}
+			obs := reader.source("activity", id, 0, false)
+			return !obs.Sensitive && !obs.Unavailable && len(a.filterComposerModelCandidatesContext(context.Background(), a.activity.store, []ActivityRow{*row})) == 1
+		}
+		return false
+	}
 }
 
 // newBriefAsk is the one model call. Tests replace it.
@@ -422,38 +526,96 @@ func (s *mobileBriefService) composeNewBrief(ctx context.Context, input mobileBr
 	if lang == "" {
 		lang = "en"
 	}
-	raw, err := ask(ctx, briefcore.WritePrompt(material, lang))
-	if err != nil {
-		logLine("model_call:"+mobileBriefWriterErrorClass(err), nil, 0)
-		return brief, nil, nil, err
+	conversations := map[string]bool{}
+	for _, c := range input.Conversations {
+		conversations[c.SourceID] = true
 	}
-	draft, codes, err := briefcore.RepairDraft(raw, material)
-	if err != nil {
-		logLine("draft_unusable", codes, 0)
-		return brief, nil, nil, err
-	}
-	brief.Evidence = append([]MobileBriefRef(nil), brief.Evidence...)
-	paragraphs, mapCodes := newBriefParagraphs(&brief, draft, sources)
-	codes = append(codes, mapCodes...)
-	if len(paragraphs) == 0 {
-		logLine("no_backed_paragraphs", codes, 0)
-		return brief, nil, nil, errNewBriefNoMaterial
-	}
-	var binding *mobileBriefModelBinding
-	if s.app != nil {
-		var unbound map[string]string
-		binding, unbound = s.app.captureNewBriefModelSources(ctx, brief, paragraphs, gathered)
-		var bindCodes []string
-		paragraphs, bindCodes = newBriefWithoutUnbound(paragraphs, unbound)
-		codes = append(codes, bindCodes...)
-		if binding == nil || len(paragraphs) == 0 {
-			logLine("binding", codes, len(paragraphs))
-			return brief, nil, nil, errNewBriefNoBinding
+	original := brief
+	var codes []string
+	for attempt := 0; attempt < 2; attempt++ {
+		if attempt > 0 {
+			codes = append(codes, "retry")
 		}
+		raw, err := ask(ctx, briefcore.WritePrompt(material, lang))
+		if err != nil {
+			logLine("model_call:"+mobileBriefWriterErrorClass(err), codes, 0)
+			return original, nil, nil, err
+		}
+		draft, draftCodes, err := briefcore.RepairDraft(raw, material)
+		codes = append(codes, draftCodes...)
+		if err != nil {
+			if attempt == 0 && ctx.Err() == nil {
+				continue
+			}
+			logLine("draft_unusable", codes, 0)
+			return original, nil, nil, err
+		}
+		brief = original
+		brief.Evidence = append([]MobileBriefRef(nil), original.Evidence...)
+		paragraphs, mapCodes, failed, refIDs := newBriefParagraphsTracked(&brief, draft, sources)
+		codes = append(codes, mapCodes...)
+		var binding *mobileBriefModelBinding
+		if s.app != nil && len(paragraphs) > 0 {
+			var unbound map[string]string
+			binding, unbound = s.app.captureNewBriefModelSources(ctx, brief, paragraphs, gathered)
+			var bindCodes []string
+			paragraphs, bindCodes = newBriefWithoutUnbound(paragraphs, unbound, s.app.newBriefSoftUnbound(brief, conversations))
+			codes = append(codes, bindCodes...)
+			for ref := range unbound {
+				failed[refIDs[ref]] = true
+			}
+			if binding == nil {
+				paragraphs = nil
+			}
+		}
+		// The same hygiene publication runs, so a draft it would empty is
+		// written again here instead of leaving the slot quiet.
+		if kept := newBriefHygieneKeeps(brief, paragraphs); kept < len(paragraphs) {
+			codes = append(codes, "hygiene_drops="+strconv.Itoa(len(paragraphs)-kept))
+			if kept == 0 {
+				paragraphs = nil
+			}
+		}
+		if len(paragraphs) > 0 && newBriefHasBothParts(paragraphs) || len(paragraphs) > 0 && attempt == 1 {
+			logLine("ok", codes, len(paragraphs))
+			brief.writerItems = len(material.Items)
+			return brief, paragraphs, binding, nil
+		}
+		if attempt == 0 && ctx.Err() == nil {
+			// Write once more without the items that could not be cited.
+			var kept []briefcore.MaterialItem
+			for _, item := range material.Items {
+				if !failed[item.ID] {
+					kept = append(kept, item)
+				}
+			}
+			material.Items = kept
+			continue
+		}
+		logLine("no_backed_paragraphs", codes, 0)
+		return original, nil, nil, errNewBriefNoMaterial
 	}
-	logLine("ok", codes, len(paragraphs))
-	brief.writerItems = len(material.Items)
-	return brief, paragraphs, binding, nil
+	logLine("no_backed_paragraphs", codes, 0)
+	return original, nil, nil, errNewBriefNoMaterial
+}
+
+// newBriefHasBothParts reports a narrative with a done and a next paragraph.
+func newBriefHasBothParts(paragraphs []MobileBriefPara) bool {
+	done, next := false, false
+	for _, p := range paragraphs {
+		done = done || p.Part == briefPartDone
+		next = next || p.Part == briefPartNext
+	}
+	return done && next
+}
+
+// newBriefHygieneKeeps counts the paragraphs the publication hygiene keeps.
+func newBriefHygieneKeeps(brief MobileBriefV1, paragraphs []MobileBriefPara) int {
+	if len(paragraphs) == 0 {
+		return 0
+	}
+	brief.Narrative, brief.NarrativeStatus = append([]MobileBriefPara(nil), paragraphs...), "ok"
+	return len(mobileBriefHygiene(brief).Narrative)
 }
 
 // newBriefEnabled reports the newBrief setting. A service without a config

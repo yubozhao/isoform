@@ -150,7 +150,7 @@ func TestNewBriefDropsParagraphsWithUnboundRefsNotTheBrief(t *testing.T) {
 		{Text: "Also done.", Refs: []string{"e1"}, Part: briefPartDone},
 		{Text: "Next.", Refs: []string{"e3"}, Part: briefPartNext},
 	}
-	out, codes := newBriefWithoutUnbound(paragraphs, map[string]string{"e2": "summary"})
+	out, codes := newBriefWithoutUnbound(paragraphs, map[string]string{"e2": "summary"}, nil)
 	if len(out) != 2 || out[0].Text != "Also done." || out[1].Text != "Next." {
 		t.Fatalf("a paragraph citing an unbound source must go whole: %+v", out)
 	}
@@ -197,5 +197,78 @@ func TestNewWriterShortBriefIsNotQuiet(t *testing.T) {
 	brief.writerItems = 0
 	if got := mobileBriefForPublication(brief); got.NarrativeStatus != "quiet" {
 		t.Fatalf("the old writer's word floor changed: %s", got.NarrativeStatus)
+	}
+}
+
+// The 2026-11-13 made-ahead morning: 39 items and next paragraphs that cite
+// calendar events. The section builder keeps two calendar rows, so the words
+// used to lose every other event and the slot went quiet.
+func TestMorningWithManyCalendarCitationsIsShownWithBothParts(t *testing.T) {
+	loc := time.UTC
+	asOf := time.Date(2026, 11, 13, 6, 55, 0, 0, loc)
+	in := mobileBriefInput{Slot: mobileBriefSlotMorning, WindowStart: asOf.Add(-16 * time.Hour), AsOf: asOf, Location: loc, Timezone: "UTC"}
+	for i := 0; i < 30; i++ {
+		in.Moved = append(in.Moved, mobileBriefCandidate{SourceKind: mobileBriefRecapSource, SourceID: fmt.Sprintf("act-%d", i), Title: fmt.Sprintf("Finished part %d of the launch checklist", i),
+			Status: "done", Kind: "recap", At: asOf.Add(-time.Duration(10+i) * time.Hour / 3), Apps: []string{"Safari"}})
+	}
+	for i := 0; i < 6; i++ {
+		in.Meetings = append(in.Meetings, mobileBriefCandidate{SourceKind: mobileBriefCalendarSource, SourceID: fmt.Sprintf("cal-%d", i), Title: fmt.Sprintf("Meeting %d with the design team", i),
+			Status: "upcoming", Kind: "meeting", At: asOf.Add(time.Duration(2+i) * time.Hour)})
+	}
+	for i := 0; i < 3; i++ {
+		in.Noticed = append(in.Noticed, mobileBriefCandidate{SourceKind: mobileBriefNoticedSource, SourceID: fmt.Sprintf("n-%d", i), Title: fmt.Sprintf("Send follow-up %d", i), Status: "follow_up", Kind: "noticed", At: asOf.Add(-2 * time.Hour)})
+	}
+	brief := buildMobileBriefV1(in)
+	m, _ := newBriefMaterial(in, brief, briefPartNext, "")
+	if len(m.Items) != 39 {
+		t.Fatalf("items = %d, want 39", len(m.Items))
+	}
+	var done, calendar []string
+	for _, item := range m.Items {
+		switch item.Group {
+		case briefcore.GroupDone:
+			done = append(done, item.ID)
+		case briefcore.GroupAhead:
+			calendar = append(calendar, item.ID)
+		}
+	}
+	ask := func(context.Context, string) (string, error) {
+		reply, _ := json.Marshal(map[string][]map[string]any{
+			"done": {{"text": "Yesterday you worked through most of the launch checklist.", "refs": done[:3]}},
+			"next": {
+				{"text": "Today starts with the design team at eight, so bring the checklist status.", "refs": []string{calendar[3]}},
+				{"text": "Two more design meetings follow before noon; keep the afternoon for the follow-ups.", "refs": []string{calendar[4], calendar[5]}},
+			},
+		})
+		return string(reply), nil
+	}
+	s := &mobileBriefService{}
+	out, paragraphs, _, err := s.composeNewBrief(context.Background(), in, brief, nil, ask)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out.Narrative, out.NarrativeStatus = paragraphs, "ok"
+	published := mobileBriefWithNarrativeParts(mobileBriefForPublication(out))
+	if published.NarrativeStatus == "quiet" || len(published.Narrative) != 3 {
+		t.Fatalf("the morning was not shown whole: status=%s paragraphs=%d", published.NarrativeStatus, len(published.Narrative))
+	}
+	parts := mobileBriefNarrativePartsOf(published.Narrative)
+	if len(parts) != 2 || parts[0].Kind != briefPartDone || parts[1].Kind != briefPartNext || parts[1].Count != 2 {
+		t.Fatalf("parts %+v", parts)
+	}
+	if n := mobileBriefEvidenceCounts(out.Evidence)[mobileBriefCalendarSource]; n <= mobileBriefCalendarLimit {
+		t.Fatalf("calendar evidence = %d; the words' events were not cited", n)
+	}
+}
+
+// A made-ahead morning reads its own day: the evening it was made is yesterday.
+func TestMadeAheadMorningUsesTheReadersDayWords(t *testing.T) {
+	loc := time.UTC
+	asOf := time.Date(2026, 11, 12, 21, 59, 0, 0, loc)
+	in := mobileBriefInput{Slot: mobileBriefSlotMorning, WindowStart: asOf.Add(-6 * time.Hour), AsOf: asOf, BriefDay: time.Date(2026, 11, 13, 0, 0, 0, 0, loc), Location: loc}
+	in.Moved = []mobileBriefCandidate{{SourceKind: mobileBriefRecapSource, SourceID: "act-1", Title: "Reviewed the brief fix", Status: "done", Kind: "recap", At: asOf.Add(-time.Hour), Apps: []string{"Safari"}}}
+	m, _ := newBriefMaterial(in, buildMobileBriefV1(in), briefPartNext, "")
+	if len(m.Items) != 1 || m.Items[0].When != "yesterday" {
+		t.Fatalf("made-ahead day word = %+v", m.Items)
 	}
 }
