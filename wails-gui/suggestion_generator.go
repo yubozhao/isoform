@@ -24,11 +24,11 @@ import (
 const (
 	// suggestionCheckInterval is the ticker cadence. The check is local; a
 	// model call happens only when suggestionMinInterval has passed.
-	suggestionCheckInterval = time.Hour
+	suggestionCheckInterval = cadenceCheck
 
 	// suggestionMinInterval is the floor between two successful generations:
 	// suggestions are derived work and refresh once a day (derived_cadence.go).
-	suggestionMinInterval = cadenceDaily
+	suggestionMinInterval = cadenceSuggestions
 
 	// suggestionCount is the target chip count surfaced to the UI.
 	suggestionCount = 5

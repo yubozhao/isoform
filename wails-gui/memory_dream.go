@@ -254,7 +254,7 @@ func (s *MemoryDreamService) runScheduler(ctx context.Context) {
 	}
 	s.scheduleTick(ctx)
 
-	ticker := time.NewTicker(time.Minute)
+	ticker := time.NewTicker(cadenceMemoryDreamCheck)
 	defer ticker.Stop()
 	for {
 		select {

@@ -17,7 +17,7 @@ import (
 
 const (
 	backgroundSchedulerInitialDelay  = 2 * time.Minute
-	backgroundSchedulerPollInterval  = 5 * time.Minute
+	backgroundSchedulerPollInterval  = cadenceCheck
 	backgroundRunTimeout             = 8 * time.Minute
 	backgroundQuietWindow            = 2 * time.Minute
 	backgroundFallbackHintTTL        = 30 * time.Minute
@@ -380,9 +380,14 @@ func (service *BackgroundUnderstandingService) runAutomatic(
 	if !eligible {
 		return
 	}
+	// Background learning is derived work: one automatic run a day
+	// (cadence.go). A run the person starts does not pass through here.
+	if !service.app.claimDerivedRun("background_learning", cadenceBackgroundLearning, now) {
+		return
+	}
 	key := fmt.Sprintf(
 		"automatic:%d",
-		now.UnixMilli()/max(int64(1), backgroundSchedulerPollInterval.Milliseconds()),
+		now.UnixMilli()/max(int64(1), cadenceBackgroundLearning.Milliseconds()),
 	)
 	ctx, cancel := context.WithTimeout(parent, backgroundRunTimeout)
 	defer cancel()

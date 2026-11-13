@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	telegramPollInterval  = 15 * time.Minute
+	telegramPollInterval  = cadenceMessageScan
 	telegramForceInterval = 1 * time.Hour
 )
 

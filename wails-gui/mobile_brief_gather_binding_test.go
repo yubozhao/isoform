@@ -17,9 +17,13 @@ import (
 
 // The mutation happens after a real collector read, before its callback returns.
 // Keep this on the production generation/storage path. The brief is built
-// from the memory snapshot pinned when it began. An edit or removal of a
-// cited note rejects that attempt, including an edit that restores the bytes.
-func TestMobileBriefGenerationRejectsEditsAndRemovalDuringCollection(t *testing.T) {
+// from the memory snapshot pinned when it began. Since #823 an edit or removal
+// of a cited note during collection is not a privacy action: the build
+// finishes. Chat over the brief re-reads its sources, so a removed note is
+// unavailable and a replaced title never reaches the model. A privacy action
+// still restarts the build (TestMobileBriefGenerationIgnoresBackgroundWrites-
+// ButNotPrivacyChanges).
+func TestMobileBriefGenerationFinishesAfterEditsAndRemovalDuringCollection(t *testing.T) {
 	for _, change := range []string{"unchanged", "title", "body", "restored bytes", "removed"} {
 		t.Run(change, func(t *testing.T) {
 			app, tag, _ := todaySendTestApp(t)
@@ -125,21 +129,21 @@ func TestMobileBriefGenerationRejectsEditsAndRemovalDuringCollection(t *testing.
 					t.Fatal("missing offer control")
 				}
 			} else {
-				if generationErr == nil {
-					t.Error("source changed during gathering, but generation was accepted")
+				// An edit or removal during collection is not a privacy
+				// action: the build finishes from the snapshot it collected.
+				if generationErr != nil {
+					t.Fatalf("an edit during gathering failed the build: %v", generationErr)
 				}
-				// Construct the identity the stale generation would have used.
-				brief = buildMobileBriefV1(collected)
-				brief.Narrative = mobileBriefNarrativeTemplate(brief, "en")
-				_, brief.Offers = mobileBriefClosing(brief, "en")
-				if _, ok := svc.store.load(brief.BriefID); ok {
-					t.Error("stale collected text reached storage")
+				if _, ok := svc.store.load(brief.BriefID); !ok {
+					t.Fatal("the finished build was not stored")
 				}
 			}
 			cache, err := app.store.GetUIState(t.Context(), mobileBriefAttendanceKeyPrefix+now.In(time.Local).Format("2006-01-02"))
-			if err != nil || (cache != "") != (change == "unchanged") {
-				t.Fatalf("attendance output crossed collection fence: cached=%v, change=%s, err=%v", cache != "", change, err)
+			if err != nil || cache == "" {
+				t.Fatalf("a finished build lost its attendance output: change=%s, err=%v", change, err)
 			}
+			available := change != "removed"
+			titleGone := change == "title" || change == "removed"
 			for _, kind := range []string{"brief"} {
 				t.Run(kind, func(t *testing.T) {
 					ref := TodayChatContextRef{SourceKind: kind, SourceID: mobileBriefConversationKey(app.mobileBriefForDelivery(brief)), BriefID: brief.BriefID}
@@ -148,11 +152,15 @@ func TestMobileBriefGenerationRejectsEditsAndRemovalDuringCollection(t *testing.
 					row := storage.StreamItemRow{ID: "gather-" + kind, Kind: "user", Content: "Let's go through this brief."}
 					result, _, admitErr := app.admitTodayChatTurn(t.Context(), tag, row, ref, nil)
 					for phase, err := range map[string]error{"resolve": resolveErr, "draft": draftErr, "admit": admitErr} {
-						if (err == nil) != (change == "unchanged") {
+						// Chat over the brief re-reads its sources at use: a
+						// note removed during collection is unavailable.
+						if (err == nil) != available {
 							t.Errorf("%s %s: %v", change, phase, err)
 						}
 					}
-					if change != "unchanged" && (strings.Contains(fmt.Sprint(item), privateTitle) || strings.Contains(fmt.Sprint(result), privateTitle)) {
+					// A title that is no longer the note's never enters model
+					// context, though the build that collected it finished.
+					if titleGone && (strings.Contains(fmt.Sprint(item), privateTitle) || strings.Contains(fmt.Sprint(result), privateTitle)) {
 						t.Error("removed collected title entered model context")
 					}
 					page, err := app.store.LoadStreamItemsLatest(t.Context(), tag, 100)
@@ -163,7 +171,7 @@ func TestMobileBriefGenerationRejectsEditsAndRemovalDuringCollection(t *testing.
 					for _, saved := range page.Items {
 						persisted = persisted || saved.ID == row.ID
 					}
-					if persisted != (change == "unchanged") {
+					if persisted != available {
 						t.Fatalf("atomic row persisted=%v, change=%s", persisted, change)
 					}
 				})
@@ -245,8 +253,8 @@ func TestMobileBriefGatherFenceCoversSourceAndPolicyRevisions(t *testing.T) {
 
 // 2026-10-27: a state database write every 20 to 30 seconds and activity rows
 // every few seconds failed most morning briefs. A steady background write
-// (every 5 s of a long collection) keeps the brief; a protect or delete during
-// collection still rejects it.
+// (every 5 s of a long collection) keeps the brief; a protect, delete or
+// withdrawal during collection (each moves the privacy print) still rejects it.
 func TestMobileBriefGenerationIgnoresBackgroundWritesButNotPrivacyChanges(t *testing.T) {
 	for _, change := range []string{"heartbeats", "protect", "delete", "withdrawal"} {
 		t.Run(change, func(t *testing.T) {
@@ -290,7 +298,8 @@ func TestMobileBriefGenerationIgnoresBackgroundWritesButNotPrivacyChanges(t *tes
 				}
 				switch change {
 				case "protect":
-					_, err = app.activity.store.db.ExecContext(ctx, `UPDATE activity_sessions SET triage_status='protected' WHERE id='earlier'`)
+					// The product's protect action, which moves the privacy print.
+					err = app.activity.store.UpdateTriageStatus("earlier", "protected")
 				case "delete":
 					err = app.deleteActivityWithPrivacyWithdrawal(app.activity.store, "earlier")
 				case "withdrawal":

@@ -114,7 +114,7 @@ func (a *App) startContactsSync() {
 	done := a.contactsSyncDone
 	go func() {
 		defer close(done)
-		ticker := time.NewTicker(6 * time.Hour)
+		ticker := time.NewTicker(cadenceContacts)
 		defer ticker.Stop()
 		s.run(ctx, ticker.C)
 	}()

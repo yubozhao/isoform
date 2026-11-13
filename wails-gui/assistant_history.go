@@ -24,7 +24,7 @@ import (
 const (
 	assistantHistoryEvent       = "assistant-history:updated"
 	assistantHistoryStaleAfter  = 15 * time.Minute
-	assistantHistoryLoopEvery   = 5 * time.Minute
+	assistantHistoryLoopEvery   = cadenceAssistantHistory
 	assistantHistoryPass2Top    = 5
 	assistantHistoryCacheFormat = 1
 	assistantHistoryShownCap    = 10

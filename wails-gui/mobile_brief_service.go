@@ -1092,6 +1092,11 @@ func (s *mobileBriefService) generateWithMetadata(ctx context.Context, slot, rea
 func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, slot, reason string, generation *MobileBriefGeneration, onStored func(MobileBriefV1)) (MobileBriefV1, error) {
 	useEpoch := s.app.contextUseEpoch()
 	asOf := s.now()
+	// A scheduled brief runs the hourly activity work it reads once, early,
+	// so it covers the last hour too. A brief asked for does not wait.
+	if s.app != nil {
+		s.app.prerunActivityForBrief(ctx, slot, asOf)
+	}
 	// A build works from the snapshot it collected. Edits to sources during
 	// the build (memory files, summaries, files) are not withdrawals; only an
 	// explicit privacy action, which moves the privacy print, restarts it.

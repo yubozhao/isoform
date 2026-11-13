@@ -889,7 +889,7 @@ func (bridge *mobileBridge) todayLoop() {
 	if interval <= 0 {
 		interval = 10 * time.Second
 	}
-	ticker := time.NewTicker(15 * time.Minute)
+	ticker := time.NewTicker(cadencePhoneToday)
 	defer ticker.Stop()
 	var expiry *time.Timer
 	var expiryC <-chan time.Time

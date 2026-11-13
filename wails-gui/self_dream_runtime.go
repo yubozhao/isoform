@@ -20,8 +20,8 @@ import (
 const (
 	selfDreamModelTimeout          = 3 * time.Minute
 	selfDreamSchedulerInitialDelay = 2 * time.Minute
-	selfDreamSchedulerInterval     = 30 * time.Minute
-	selfDreamSchedulerMinInterval  = cadenceDaily
+	selfDreamSchedulerInterval     = cadenceCheck
+	selfDreamSchedulerMinInterval  = cadenceSelfDream
 )
 
 type selfDreamFrozenInput struct {

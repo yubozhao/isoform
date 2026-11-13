@@ -21,7 +21,7 @@ import (
 // change, and on wake. It never asks for the Reminders permission itself:
 // only the Grant button and onboarding may, through RequestPermission.
 const (
-	remindersSyncInterval    = 15 * time.Minute
+	remindersSyncInterval    = cadenceReminders
 	remindersChangeDebounce  = 5 * time.Second
 	remindersCompletedWindow = 30 * 24 * time.Hour
 

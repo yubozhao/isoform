@@ -1887,7 +1887,7 @@ func (a *App) StartAgent() (AgentStatus, error) {
 	if a.runner != nil && a.ready {
 		status := a.statusLocked()
 		a.mu.Unlock()
-		if a.startPurposeUnderstanding() && a.claimDerivedRun("purpose_understanding", cadenceDaily, time.Now()) {
+		if a.startPurposeUnderstanding() && a.claimDerivedRun("purpose_understanding", cadencePurposeUnderstanding, time.Now()) {
 			a.triggerPurposeUnderstanding(PurposeUnderstandingTriggerStartup)
 		}
 		return status, nil
@@ -1935,7 +1935,7 @@ func (a *App) StartAgent() (AgentStatus, error) {
 
 	status := a.GetStatus()
 	a.emitAgentStatus(status)
-	if a.startPurposeUnderstanding() && a.claimDerivedRun("purpose_understanding", cadenceDaily, time.Now()) {
+	if a.startPurposeUnderstanding() && a.claimDerivedRun("purpose_understanding", cadencePurposeUnderstanding, time.Now()) {
 		a.triggerPurposeUnderstanding(PurposeUnderstandingTriggerStartup)
 	}
 	return status, nil

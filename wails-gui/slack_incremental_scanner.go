@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	incrementalPollInterval  = 15 * time.Minute
+	incrementalPollInterval  = cadenceMessageScan
 	incrementalForceInterval = 1 * time.Hour
 )
 

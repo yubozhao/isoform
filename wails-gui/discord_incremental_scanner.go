@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	discordIncrementalPollInterval  = 15 * time.Minute
+	discordIncrementalPollInterval  = cadenceMessageScan
 	discordIncrementalForceInterval = 1 * time.Hour
 )
 

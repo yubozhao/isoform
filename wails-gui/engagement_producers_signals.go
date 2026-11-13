@@ -17,12 +17,12 @@ import (
 
 const (
 	// engagementCaptureInterval is how often capture health is sampled.
-	engagementCaptureInterval = 5 * time.Minute
+	engagementCaptureInterval = cadenceEngagementCapture
 	// engagementCaptureOutageAfter is how long a capture source must stay off
 	// before capture_paused is submitted. Closed-eyes time never counts.
 	engagementCaptureOutageAfter = 15 * time.Minute
 	// engagementPurposeInterval is how often the Purpose Map is checked.
-	engagementPurposeInterval = 30 * time.Minute
+	engagementPurposeInterval = cadenceCheck
 	// engagementCommitmentWindow is how close to its due time a commitment must
 	// be before it counts as slipping, and how long the moment stays useful.
 	engagementCommitmentWindow = 24 * time.Hour
@@ -720,7 +720,9 @@ func (a *App) runEngagementSignals(ctx context.Context) {
 		case now := <-capture.C:
 			a.observeCaptureHealth(ctx, tracker, now, a.liveEngagementCaptureSnapshots)
 		case now := <-purpose.C:
-			a.checkPurposeEngagement(ctx, now)
+			if a.claimDerivedRun("engagement_purpose", cadenceEngagementPurpose, now) {
+				a.checkPurposeEngagement(ctx, now)
+			}
 		}
 	}
 }

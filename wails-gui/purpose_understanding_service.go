@@ -31,7 +31,7 @@ const (
 	PurposeUnderstandingStateCancelled     = "cancelled"
 	purposeUnderstandingInitialDelay       = 20 * time.Second
 	purposeUnderstandingMeaningfulDebounce = 10 * time.Second
-	purposeUnderstandingPeriodicInterval   = cadenceDaily
+	purposeUnderstandingPeriodicInterval   = cadencePurposeUnderstanding
 	purposeUnderstandingRunTimeout         = 5 * time.Minute
 )
 

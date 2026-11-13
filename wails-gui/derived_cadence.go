@@ -9,13 +9,11 @@ import (
 // Derived model work runs on a clock, not on events (Bo, 2026-11-12): daily by
 // default, hourly where the day moves. What the person asks for (a chat, a
 // brief on request) stays immediate. The last run of each background job is
-// kept in UI state, so restarting the app does not run it again.
-const (
-	cadenceDaily  = 24 * time.Hour
-	cadenceHourly = time.Hour
-	// derivedCadencePrefix keys the last run time of each job in UI state.
-	derivedCadencePrefix = "derived_cadence."
-)
+// kept in UI state, so restarting the app does not run it again. The
+// intervals are in cadence.go.
+
+// derivedCadencePrefix keys the last run time of each job in UI state.
+const derivedCadencePrefix = "derived_cadence."
 
 // derivedRunDue reports whether job last ran at least every ago, or never.
 func (a *App) derivedRunDue(job string, every time.Duration, now time.Time) bool {

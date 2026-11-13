@@ -492,7 +492,7 @@ func (s *ActivityStore) RunEmbeddingWorker(ctx context.Context, allowRead activi
 	s.BackfillEmbeddings(ctx, allowRead)
 
 	// Periodic backfill
-	ticker := time.NewTicker(5 * time.Minute)
+	ticker := time.NewTicker(cadenceActivityEmbedding)
 	defer ticker.Stop()
 
 	for {

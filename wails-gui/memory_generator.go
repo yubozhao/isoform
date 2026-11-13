@@ -20,7 +20,7 @@ import (
 // ── Constants ────────────────────────────────────────────────────────
 
 const (
-	memoryCheckInterval  = cadenceHourly
+	memoryCheckInterval  = cadenceSlackMemory
 	memoryBaseDebounce   = 20 * time.Second
 	memoryCooldown       = 5 * time.Minute
 	memoryMinRounds      = 2

@@ -24,9 +24,9 @@ import (
 // interest's name and its short queries ever leave the Mac, as searches.
 
 const (
-	interestsCheckEvery       = 30 * time.Minute
+	interestsCheckEvery       = cadenceCheck
 	interestsFirstCheck       = 3 * time.Minute
-	interestsRefreshGap       = 20 * time.Hour
+	interestsRefreshGap       = cadenceInterests
 	interestsRefreshesPerDay  = 1
 	interestsMinNewActivities = 5
 	interestsConsolidateEvery = 30 * 24 * time.Hour
