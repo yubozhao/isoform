@@ -147,6 +147,8 @@ func (im contactsImporter) listContacts(ctx context.Context, src contactSource) 
 // in the macOS address book. consentVersion must match the current consent
 // text; the import records that consent.
 func (a *App) ImportSystemContacts(ids []string, consentVersion int) (ContactsImportResult, error) {
+	// Who you know shows the person's own change at once.
+	defer a.touchDerivedViews(derivedPeopleOverview)
 	im, err := a.newContactsImporter()
 	if err != nil {
 		return ContactsImportResult{}, err
@@ -163,6 +165,8 @@ func (a *App) ImportSystemContacts(ids []string, consentVersion int) (ContactsIm
 // ImportContactsFromVCard imports every card in a .vcf or .vcard file. It is
 // the path on Windows and Linux, and works on macOS too.
 func (a *App) ImportContactsFromVCard(path string, consentVersion int) (ContactsImportResult, error) {
+	// Who you know shows the person's own change at once.
+	defer a.touchDerivedViews(derivedPeopleOverview)
 	im, err := a.newContactsImporter()
 	if err != nil {
 		return ContactsImportResult{}, err
@@ -188,6 +192,8 @@ func (a *App) PickVCardFile() (string, error) {
 // RemoveImportedContacts deletes only source=system_contacts principals.
 // Existing people and vCard imports remain, even when an import linked to them.
 func (a *App) RemoveImportedContacts() (ContactsImportResult, error) {
+	// Who you know shows the person's own change at once.
+	defer a.touchDerivedViews(derivedPeopleOverview)
 	store, err := a.requireStore()
 	if err != nil {
 		return ContactsImportResult{}, err

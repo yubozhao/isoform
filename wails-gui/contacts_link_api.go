@@ -163,6 +163,8 @@ func contactPhoto(value string) string {
 }
 
 func (a *App) LinkPersonToContact(personID, contactID string) error {
+	// Who you know shows the person's own change at once.
+	defer a.touchDerivedViews(derivedPeopleOverview)
 	im, err := a.newContactsImporter()
 	if err != nil {
 		return err
@@ -207,6 +209,8 @@ func (im contactsImporter) linkContact(ctx context.Context, personID, contactID 
 }
 
 func (a *App) UnlinkPersonContact(personID string) error {
+	// Who you know shows the person's own change at once.
+	defer a.touchDerivedViews(derivedPeopleOverview)
 	store, err := a.requireStore()
 	if err != nil {
 		return err

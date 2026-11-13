@@ -11,6 +11,7 @@ import {
     History,
     Languages,
     MoreHorizontal,
+    RefreshCw,
     PenLine,
     RotateCcw,
     Save,
@@ -48,7 +49,7 @@ import { PlaybookCards, type PlaybookRunState } from '@/components/playbooks/Pla
 import { PlaybookPageActions } from '@/components/playbooks/PlaybookPageActions';
 import { listConfirmedPlaybooks } from '@/components/playbooks/playbook-lists';
 import { usePlaybookLibrary } from '@/components/playbooks/usePlaybookLibrary';
-import { GenerateSOPFromDescription, RunPlaybookNow, type SopEntry, type SopRunResult } from '@/lib/wails-shim-app';
+import { GenerateSOPFromDescription, RefreshDerivedView, RunPlaybookNow, type SopEntry, type SopRunResult } from '@/lib/wails-shim-app';
 import {
     KNOW_HOW_KINDS,
     candidateDatesLabel,
@@ -1168,6 +1169,12 @@ export function KnowledgePage({
                                         setGlobalTranslateError(null);
                                         setGlobalTranslateOpen(true);
                                     }}
+                                    onRefresh={() => {
+                                        // How you do things is built once a day; this builds it now.
+                                        void RefreshDerivedView('know-how')
+                                            .then(() => pageQueryCache.invalidate(['ListKnowHow'], false))
+                                            .catch(() => undefined);
+                                    }}
                                 />
                             </div>
                         </div>
@@ -1624,11 +1631,13 @@ function PageMoreMenu({
     canTranslateAll,
     onToggleGrouped,
     onTranslateAll,
+    onRefresh,
 }: {
     grouped: boolean;
     canTranslateAll: boolean;
     onToggleGrouped: () => void;
     onTranslateAll: () => void;
+    onRefresh: () => void;
 }) {
     const { t } = useTranslation('knowledge');
     return (
@@ -1646,6 +1655,10 @@ function PageMoreMenu({
                 <DropdownMenuItem disabled={!canTranslateAll} onSelect={onTranslateAll}>
                     <Languages />
                     {t('more.translateAll')}
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={onRefresh}>
+                    <RefreshCw />
+                    {t('more.refresh')}
                 </DropdownMenuItem>
             </DropdownMenuContent>
         </DropdownMenu>

@@ -132,6 +132,8 @@ func (a *App) GetHoldSettings() (HoldSettings, error) {
 }
 
 func (a *App) SetOfferHolds(enabled bool) error {
+	// The Today strip shows the person's own hold change at once.
+	defer a.touchDerivedViews(derivedTodayDayShape)
 	if a == nil || a.store == nil {
 		return errors.New("the store is not ready")
 	}
@@ -160,5 +162,7 @@ func (a *App) setHoldCalendar(store holdEventStore, granted bool, id string) err
 
 // SetHoldCalendar remembers an explicitly selected writable calendar.
 func (a *App) SetHoldCalendar(id string) error {
+	// The Today strip shows the person's own hold change at once.
+	defer a.touchDerivedViews(derivedTodayDayShape)
 	return a.setHoldCalendar(eventKitHoldStore{}, calendarAccessGranted(), id)
 }

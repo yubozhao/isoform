@@ -285,6 +285,8 @@ func (a *App) noteUILanguageChanged() {
 	if a == nil {
 		return
 	}
+	derivedLanguageGeneration.Add(1)
+	a.derivedViews().wake()
 	t := &a.doingNow
 	t.mu.Lock()
 	t.lang = ""

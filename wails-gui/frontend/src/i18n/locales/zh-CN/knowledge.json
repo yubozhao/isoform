@@ -102,6 +102,7 @@
     },
     "more": {
         "page": "经验的更多操作",
+        "refresh": "立即刷新",
         "entry": "「{{title}}」的更多操作",
         "groupByTime": "按保存时间分组",
         "translateAll": "翻译全部经验",

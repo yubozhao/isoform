@@ -75,6 +75,17 @@ func (a *App) GetTodayDayShape(dateISO string) (perfValue TodayDayShape, perfErr
 	if err := validateTodayDayShapeDate(day, a.todayDayShapeNow()); err != nil {
 		return TodayDayShape{}, err
 	}
+	shape, err := derivedRead(a, derivedTodayDayShape, dateISO, func() (TodayDayShape, error) {
+		return a.todayDayShapeNowFor(day)
+	}, nil)
+	if err == nil {
+		// The clock moves; the snapshot does not carry it.
+		shape.Now = a.todayDayShapeNow().In(day.Location()).Format(time.RFC3339)
+	}
+	return shape, err
+}
+
+func (a *App) todayDayShapeNowFor(day time.Time) (TodayDayShape, error) {
 	var brief MobileBriefV1
 	if a != nil && a.store != nil {
 		if svc, ok := a.ensureMobileBriefService().(*mobileBriefService); ok && svc != nil && svc.store != nil {
@@ -92,17 +103,25 @@ func (a *App) GetTodayDayShape(dateISO string) (perfValue TodayDayShape, perfErr
 			}
 		}
 	}
-	if a != nil {
+	derived := a.derivedViews()
+	if a != nil && !derived.active() {
 		// Establish the update baseline without delaying the strip read: the
 		// fingerprint computes both days, which would otherwise double the
 		// work of this read. noteTodayDayShapeUpdate already tolerates an
-		// unset baseline.
+		// unset baseline. With snapshots, the scheduled build publishes
+		// changes instead.
 		go a.primeTodayDayShapeUpdates()
 	}
 	now := a.todayDayShapeNow()
 	shape, err := a.todayDayShapeAt(day, now, brief)
 	if err == nil && a != nil && a.store != nil && shape.CalendarConnected {
 		a.markTodayHeldEvents(&shape, day, now)
+	}
+	if err == nil && derived.active() {
+		shape.Now = ""
+		if !shape.CalendarConnected {
+			derived.dayShapeDisconnected.Store(true)
+		}
 	}
 	return shape, err
 }

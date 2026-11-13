@@ -630,6 +630,10 @@ func (s *ActivityStore) dropNoticedForMoment(tx *sql.Tx, momentID string) error 
 // against every rule now.
 func (a *App) GetDayNoticed(dateStr string) (perfValue []NoticedSuggestion, perfErr error) {
 	defer logPageBinding("GetDayNoticed", time.Now(), &perfValue)
+	return derivedRead(a, derivedDayNoticed, dateStr, func() ([]NoticedSuggestion, error) { return a.dayNoticedNow(dateStr) }, nil)
+}
+
+func (a *App) dayNoticedNow(dateStr string) ([]NoticedSuggestion, error) {
 	if a.activity == nil || a.activity.store == nil {
 		return []NoticedSuggestion{}, nil
 	}
@@ -706,6 +710,8 @@ func (a *App) noticedByID(dateStr, id string) (NoticedSuggestion, error) {
 // DismissNoticed is Not now: the suggestion, and the same words on any day,
 // are not suggested again.
 func (a *App) DismissNoticed(dateStr, id string) error {
+	// The person's own change shows at once.
+	defer a.touchDerivedViews(derivedDayNoticed)
 	if a.activity == nil || a.activity.store == nil {
 		return errNoticedNotFound
 	}
@@ -718,6 +724,8 @@ func (a *App) DismissNoticed(dateStr, id string) error {
 
 // UndoDismissNoticed takes Not now back.
 func (a *App) UndoDismissNoticed(dateStr, id string) error {
+	// The person's own change shows at once.
+	defer a.touchDerivedViews(derivedDayNoticed)
 	if a.activity == nil || a.activity.store == nil {
 		return errNoticedNotFound
 	}
@@ -836,6 +844,8 @@ func noticedRoutineKnowHow(draft NoticedRoutineDraft, dateStr string, now time.T
 // a Schedule on Upcoming; without one, a Know-how entry. Nothing is saved or
 // run before this call. The suggestion is then not shown again.
 func (a *App) SaveNoticedRoutine(dateStr, id string, draft NoticedRoutineDraft) (NoticedRoutineSaved, error) {
+	// The person's own change shows at once.
+	defer a.touchDerivedViews(derivedDayNoticed)
 	if a.activity == nil || a.activity.store == nil {
 		return NoticedRoutineSaved{}, errNoticedNotFound
 	}

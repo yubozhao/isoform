@@ -33,6 +33,10 @@ type TodayBeforeYouTalk struct {
 
 func (a *App) GetTodayBeforeYouTalk() (perfValue *TodayBeforeYouTalk, perfErr error) {
 	defer logPageBinding("GetTodayBeforeYouTalk", time.Now(), &perfValue)
+	return derivedRead(a, derivedBeforeYouTalk, time.Now().Format("2006-01-02"), a.todayBeforeYouTalkNow, nil)
+}
+
+func (a *App) todayBeforeYouTalkNow() (*TodayBeforeYouTalk, error) {
 	ctx := context.Background()
 	stamp, err := a.peopleReadStamp(ctx)
 	if err != nil {

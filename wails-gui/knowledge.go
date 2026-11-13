@@ -224,6 +224,20 @@ func (a *App) GetKnowledgeEntries() (perfValue []KnowledgeEntry, perfErr error) 
 	if err != nil {
 		return nil, err
 	}
+	// The list is parsed again only when a file really changed (a name, size
+	// or modification time, or the history folder).
+	stamp := knowledgeDirStamp(dir, entries)
+	if cached, ok := knowledgeEntriesMemo.get(dir, stamp); ok {
+		return cached, nil
+	}
+	result, err := readKnowledgeEntries(dir, entries)
+	if err == nil && stamp != "" {
+		knowledgeEntriesMemo.put(dir, stamp, result)
+	}
+	return result, err
+}
+
+func readKnowledgeEntries(dir string, entries []os.DirEntry) ([]KnowledgeEntry, error) {
 
 	var result []KnowledgeEntry
 	for _, e := range entries {
@@ -629,4 +643,65 @@ func (a *App) translateAllKnowledgeVersionsToLanguage(id, languageName string) (
 	}
 	a.markMemoryDirty("knowledge-translate-all-history")
 	return a.ListKnowledgeVersions(id)
+}
+
+// knowledgeEntriesMemo keeps the last parsed knowledge list with the stamp of
+// the files it was parsed from. Callers get their own copy.
+var knowledgeEntriesMemo knowledgeEntriesCache
+
+type knowledgeEntriesCache struct {
+	mu    sync.Mutex
+	dir   string
+	stamp string
+	rows  []KnowledgeEntry
+}
+
+func (c *knowledgeEntriesCache) get(dir, stamp string) ([]KnowledgeEntry, bool) {
+	if stamp == "" {
+		return nil, false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.dir != dir || c.stamp != stamp || c.rows == nil {
+		return nil, false
+	}
+	return cloneKnowledgeEntries(c.rows), true
+}
+
+func (c *knowledgeEntriesCache) put(dir, stamp string, rows []KnowledgeEntry) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.dir, c.stamp, c.rows = dir, stamp, cloneKnowledgeEntries(rows)
+	if c.rows == nil {
+		c.rows = []KnowledgeEntry{}
+	}
+}
+
+func cloneKnowledgeEntries(rows []KnowledgeEntry) []KnowledgeEntry {
+	if rows == nil {
+		return nil
+	}
+	out := make([]KnowledgeEntry, len(rows))
+	for i, row := range rows {
+		row.SessionIDs = append([]string(nil), row.SessionIDs...)
+		out[i] = row
+	}
+	return out
+}
+
+// knowledgeDirStamp names every markdown file by name, size and modification
+// time, plus the history folder; "" when a file cannot be stated.
+func knowledgeDirStamp(dir string, entries []os.DirEntry) string {
+	var b strings.Builder
+	for _, e := range entries {
+		info, err := e.Info()
+		if err != nil {
+			return ""
+		}
+		fmt.Fprintf(&b, "%s:%d:%d:%t;", e.Name(), info.Size(), info.ModTime().UnixNano(), e.IsDir())
+	}
+	if info, err := os.Stat(filepath.Join(dir, knowledgeHistoryDirName)); err == nil {
+		fmt.Fprintf(&b, "h:%d", info.ModTime().UnixNano())
+	}
+	return b.String()
 }

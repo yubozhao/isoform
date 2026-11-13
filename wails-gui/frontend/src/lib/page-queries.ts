@@ -59,7 +59,7 @@ on(['agency:updated'], ['GetGoalCheckIn', 'ListGoals']);
 on(['noticed:updated'], ['GetDayNoticed']);
 on(['session:items-appended'], ['LoadStreamItemsPage', 'ListMainChatAnswerChips']);
 on(['main-chat:chips'], ['ListMainChatAnswerChips']);
-on(['main-chat:waiting-changed'], ['ListMainChatWaitingItems']);
+on(['main-chat:waiting-changed', 'main-chat:waiting-items-updated'], ['ListMainChatWaitingItems']);
 on(['contacts:updated'], people);
 on(['people:research'], ['GetPersonResearch']);
 on(['insight:saved', 'knowledge:updated'], knowHow);
@@ -73,6 +73,11 @@ on(['automatic-meeting-recording:changed'], ['GetAutomaticMeetingRecordingEnable
 on(['cron:state'], ['ListCronJobs']);
 // A portrait written, failed or started in the background.
 on(['portrait:updated'], ['GetAboutYouPortrait', 'GetPortraitTodayCard']);
+// Scheduled snapshot builds that changed a page (Go derived_views.go). The
+// re-read returns the new snapshot; it never builds one.
+on(['about-you:updated'], ['GetAboutYou']);
+on(['people:overview-updated'], ['ListPeopleOverview', 'ListPrincipalsWithStats']);
+on(['today-before-you-talk:updated'], ['GetTodayBeforeYouTalk']);
 
 // These transitions change what the backend permits a reader to see. Never
 // return a pre-transition value, even to an in-flight caller or hidden page.
@@ -134,7 +139,7 @@ const cleanups: (() => void)[] = [];
 // Publications and progress keep the last checked display while their
 // replacement is read (a remount paints it at once); every other event,
 // privacy above all, erases it.
-const KEEP_SHOWN_EVENTS = new Set(['topics:updated', 'today-dayshape:updated', 'brief:building', 'portrait:updated']);
+const KEEP_SHOWN_EVENTS = new Set(['topics:updated', 'today-dayshape:updated', 'brief:building', 'portrait:updated', 'about-you:updated', 'people:overview-updated', 'main-chat:waiting-items-updated', 'today-before-you-talk:updated']);
 export function installPageQueryEvents() {
     if (installed) return;
     installed = true;

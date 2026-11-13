@@ -21,6 +21,7 @@ import {
 import {
     PrincipalDTO,
     ReassignMemoryAttribution,
+    RefreshDerivedView,
     type AboutYouBelief,
     type AboutYouView,
     type GoalItemView,
@@ -694,6 +695,14 @@ export function MemoryPage({
         ? { files: entries.length, bytes: entries.reduce((sum, entry) => sum + entry.sizeBytes, 0), chunks: status.chunks, vectorReady: status.vectorReady }
         : null);
 
+    // About you is built once a day; Refresh now builds it again (the page
+    // keeps showing the current version until the new one arrives).
+    const refreshAboutYou = () => {
+        void RefreshDerivedView('about-you')
+            .then(() => pageQueryCache.invalidate(['GetAboutYou', 'GetAboutYouPortrait', 'GetPortraitTodayCard'], false))
+            .catch(() => undefined);
+    };
+
     const pageMenu = (
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -722,6 +731,10 @@ export function MemoryPage({
                         {t('aboutYou.dream')}
                     </DropdownMenuItem>
                 )}
+                <DropdownMenuItem onSelect={refreshAboutYou}>
+                    <RefreshCw />
+                    {t('aboutYou.refresh')}
+                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem disabled={translateAllBusy || entries.length === 0} onSelect={() => setTranslateAllOpen(true)}>
                     <Languages />

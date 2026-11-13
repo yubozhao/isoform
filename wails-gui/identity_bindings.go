@@ -198,6 +198,8 @@ func (a *App) ListPrincipalsByKind(kind string) ([]PrincipalDTO, error) {
 // display name, the stored name is updated so the user can rename via
 // onboarding or settings.
 func (a *App) EnsureSelfProfile(displayName string, aliases []string) (PrincipalDTO, error) {
+	// Who you know shows the person's own change at once.
+	defer a.touchDerivedViews(derivedPeopleOverview)
 	store, err := a.requireStore()
 	if err != nil {
 		return PrincipalDTO{}, err
@@ -229,6 +231,8 @@ func (a *App) EnsureSelfProfile(displayName string, aliases []string) (Principal
 // per-app handles. Returns the newly inserted principal including a fresh
 // ID. handles is allowed to be nil for callers that bind handles separately.
 func (a *App) CreateContact(displayName, relationship string, aliases []string, handles []AppHandleDTO) (PrincipalDTO, error) {
+	// Who you know shows the person's own change at once.
+	defer a.touchDerivedViews(derivedPeopleOverview)
 	store, err := a.requireStore()
 	if err != nil {
 		return PrincipalDTO{}, err
@@ -283,6 +287,8 @@ func createContactRecordWithProvenance(ctx context.Context, store *storage.Store
 // adjust relationships from the management UI. Use PromoteAnonymous to
 // convert an anonymous bucket; this method refuses kind changes.
 func (a *App) UpdatePrincipal(dto PrincipalDTO) (PrincipalDTO, error) {
+	// Who you know shows the person's own change at once.
+	defer a.touchDerivedViews(derivedPeopleOverview)
 	store, err := a.requireStore()
 	if err != nil {
 		return PrincipalDTO{}, err
@@ -314,6 +320,8 @@ func (a *App) UpdatePrincipal(dto PrincipalDTO) (PrincipalDTO, error) {
 
 // DeletePrincipal removes a principal and all of its bindings.
 func (a *App) DeletePrincipal(id string) error {
+	// Who you know shows the person's own change at once.
+	defer a.touchDerivedViews(derivedPeopleOverview)
 	store, err := a.requireStore()
 	if err != nil {
 		return err
@@ -330,6 +338,8 @@ func (a *App) DeletePrincipal(id string) error {
 // either a stable handleID, a humanDisplayHandle, or both — the binding is
 // keyed by the (app, handleID, displayHandle) tuple.
 func (a *App) BindAppHandle(principalID, app, handleID, displayHandle string) (AppHandleDTO, error) {
+	// Who you know shows the person's own change at once.
+	defer a.touchDerivedViews(derivedPeopleOverview)
 	store, err := a.requireStore()
 	if err != nil {
 		return AppHandleDTO{}, err
@@ -343,6 +353,8 @@ func (a *App) BindAppHandle(principalID, app, handleID, displayHandle string) (A
 
 // UnbindAppHandle removes a handle binding by row id.
 func (a *App) UnbindAppHandle(id int64) error {
+	// Who you know shows the person's own change at once.
+	defer a.touchDerivedViews(derivedPeopleOverview)
 	store, err := a.requireStore()
 	if err != nil {
 		return err
@@ -496,6 +508,8 @@ type CleanupReportDTO struct {
 // to the same name. See storage.CleanupAnonymousPrincipals for the
 // detailed conflict-resolution semantics.
 func (a *App) CleanupAnonymousPrincipals() (CleanupReportDTO, error) {
+	// Who you know shows the person's own change at once.
+	defer a.touchDerivedViews(derivedPeopleOverview)
 	store, err := a.requireStore()
 	if err != nil {
 		return CleanupReportDTO{}, err
@@ -531,6 +545,8 @@ func (a *App) CleanupAnonymousPrincipals() (CleanupReportDTO, error) {
 // binding existed), or folding an Anonymous bucket into the real Contact
 // it turned out to be.
 func (a *App) MergePrincipals(srcID, dstID string) (PrincipalDTO, error) {
+	// Who you know shows the person's own change at once.
+	defer a.touchDerivedViews(derivedPeopleOverview)
 	store, err := a.requireStore()
 	if err != nil {
 		return PrincipalDTO{}, err
@@ -553,6 +569,8 @@ func (a *App) MergePrincipals(srcID, dstID string) (PrincipalDTO, error) {
 // PromoteAnonymousToContact converts an auto-created anonymous bucket into a
 // named Contact. Use from the onboarding "this is X" affordance.
 func (a *App) PromoteAnonymousToContact(principalID, displayName, relationship string, aliases []string) (PrincipalDTO, error) {
+	// Who you know shows the person's own change at once.
+	defer a.touchDerivedViews(derivedPeopleOverview)
 	store, err := a.requireStore()
 	if err != nil {
 		return PrincipalDTO{}, err
@@ -676,6 +694,10 @@ func (a *App) GetPrincipalStats(id string) (PrincipalStatsDTO, error) {
 // source lineage and per-app readability.
 func (a *App) ListPrincipalsWithStats() (perfValue []PrincipalWithStatsDTO, perfErr error) {
 	defer logPageBinding("ListPrincipalsWithStats", time.Now(), &perfValue)
+	return derivedRead(a, derivedPeopleStats, "", a.listPrincipalsWithStatsNow, nil)
+}
+
+func (a *App) listPrincipalsWithStatsNow() ([]PrincipalWithStatsDTO, error) {
 	ctx := context.Background()
 	stamp, err := a.peopleReadStamp(ctx)
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"math"
 	"strconv"
 	"strings"
@@ -335,9 +336,11 @@ func mainChatTodayCounts(rows []storage.StreamItemRow, projected []StreamItemDat
 // oldest first within the page; its exclusive cursor can be used to prepend.
 func (a *App) ListMainChatWaitingItems(cursor string, limit int) (perfValue MainChatWaitingPage, perfErr error) {
 	defer logPageBinding("ListMainChatWaitingItems", time.Now(), &perfValue)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	return a.listMainChatWaitingItems(withMainChatReadMemo(ctx), cursor, limit)
+	return derivedRead(a, derivedWaitingItems, fmt.Sprintf("%s|%d", cursor, limit), func() (MainChatWaitingPage, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		return a.listMainChatWaitingItems(withMainChatReadMemo(ctx), cursor, limit)
+	}, nil)
 }
 
 func (a *App) listMainChatWaitingItems(ctx context.Context, cursor string, limit int) (MainChatWaitingPage, error) {

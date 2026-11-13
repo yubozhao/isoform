@@ -1435,6 +1435,13 @@ func (a *App) markMemoryDirtyWithCorrelation(reason, correlation string) {
 	if store != nil {
 		store.MarkDirty(reason)
 	}
+	// The person's own edit rebuilds About you and How you do things before
+	// the page re-reads them; background learning waits for the daily build.
+	edit := derivedMemoryReasonIsEdit(reason)
+	if edit {
+		derivedMemoryEditGeneration.Add(1)
+		a.derivedViews().wake()
+	}
 
 	if a.ctx != nil {
 		payload := map[string]string{"reason": reason}
@@ -1443,7 +1450,12 @@ func (a *App) markMemoryDirtyWithCorrelation(reason, correlation string) {
 		}
 		a.emitBrowserEvent("memory:updated", payload)
 	}
-	a.portraitMemoryChanged()
+	// Background learning no longer wakes the portrait writer for each
+	// belief: its own tick decides. Only the first portrait, and the
+	// person's edits, wake it at once.
+	if edit || !portraitWritten() {
+		a.portraitMemoryChanged()
+	}
 }
 
 // MemoryVersion describes a single historical snapshot of a memory file. The

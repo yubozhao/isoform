@@ -355,6 +355,8 @@ type App struct {
 
 	pagePermissions pagePermissionCache
 	pageWarm        pageFirstReadWarmer
+	// derived holds the page snapshots (derived_views.go). Guarded by mu.
+	derived *derivedViews
 
 	memoryCanonicalizer func(prompt, model string) (string, error) // optional canonicalization adapter; nil uses the existing model runner
 }
@@ -420,6 +422,7 @@ func (a *App) emitBrowserEvent(eventName string, data ...interface{}) {
 			go a.refreshMobileBriefTodaySoon()
 		}
 	}
+	a.noteDerivedViewEvent(eventName)
 	a.noteStreamPageEvent(eventName)
 	if topicFindsSourceEvents[eventName] {
 		a.noteTopicFindsSourceChanged(eventName)
@@ -451,9 +454,17 @@ func (a *App) emitBrowserEvent(eventName string, data ...interface{}) {
 		a.topicsSvc().markTopicsStale()
 	}
 	switch eventName {
-	case "memory:updated", "sensitive-apps:updated", closedEyesModeChangedEvent,
+	case "sensitive-apps:updated", closedEyesModeChangedEvent,
 		"background-listening:changed", "permissions:changed":
 		a.markMainChatWaitingDirty("privacy:" + eventName)
+	case "memory:updated":
+		// A belief update is not a privacy action: a forget or correction
+		// advances the privacy epoch, and the derived scheduler marks the
+		// waiting state then. With snapshots off (tests, onboarding) every
+		// update still re-reads it, as before.
+		if !a.derivedViews().active() {
+			a.markMainChatWaitingDirty("privacy:" + eventName)
+		}
 	}
 	a.noteDoingNowEvent(eventName)
 	if eventName == PurposeUnderstandingTriggerMemory ||
@@ -1193,6 +1204,10 @@ func (a *App) startupServices(ctx context.Context) {
 	a.selfDream = selfDream
 	selfDream.Start(a.ctx)
 	a.portraitService().Start(a.ctx)
+	// Page projections are built by one scheduled job each (derived_views.go).
+	derived := a.derivedViews()
+	derivedViewsLive.Store(derived)
+	derived.Start(a.ctx)
 
 	// Start the composer-suggestions pipeline — hourly LLM-generated chips
 	// shown under the empty-state composer. Safe to start unconditionally;
@@ -1549,6 +1564,13 @@ func (a *App) shutdown(ctx context.Context) {
 	}
 	if a.aboutYouPortrait != nil {
 		a.aboutYouPortrait.Stop()
+	}
+	a.mu.Lock()
+	derived := a.derived
+	a.mu.Unlock()
+	if derived != nil {
+		derived.Stop()
+		derivedViewsLive.CompareAndSwap(derived, nil)
 	}
 	if a.selfDream != nil {
 		a.selfDream.Stop()

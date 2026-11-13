@@ -940,7 +940,7 @@ func (s *AboutYouPortraitService) withSources(ctx context.Context, use func([]Me
 // is returned, and anything that fell below the bar is removed for good.
 func (a *App) GetAboutYouPortrait() (perfValue AboutYouPortrait, perfErr error) {
 	defer logPageBinding("GetAboutYouPortrait", time.Now(), &perfValue)
-	return a.portraitService().read()
+	return derivedRead(a, derivedPortrait, "", a.portraitService().read, derivedPortraitStamp)
 }
 
 func (a *App) portraitService() *AboutYouPortraitService {
@@ -1201,6 +1201,9 @@ func (a *App) portraitMemoryChanged() {
 }
 
 func (a *App) emitPortraitUpdated() {
+	// The portrait service changed what the portrait shows (a write, a
+	// failure, That's me, Not quite): its snapshots build again.
+	a.touchDerivedViews(derivedPortrait, derivedPortraitTodayCard, derivedAboutYou)
 	if a.ctx != nil {
 		a.emitBrowserEvent(portraitEvent)
 	}
@@ -2162,7 +2165,11 @@ type PortraitTodayCard struct {
 // show. It reads the saved portrait through the same gates as About you.
 func (a *App) GetPortraitTodayCard() (perfValue *PortraitTodayCard, perfErr error) {
 	defer logPageBinding("GetPortraitTodayCard", time.Now(), &perfValue)
-	portrait, err := a.portraitService().read()
+	return derivedRead(a, derivedPortraitTodayCard, "", a.portraitTodayCardNow, derivedPortraitStamp)
+}
+
+func (a *App) portraitTodayCardNow() (*PortraitTodayCard, error) {
+	portrait, err := a.GetAboutYouPortrait()
 	if err != nil || portrait.State != "ready" || len(portrait.Sentences) == 0 {
 		return nil, nil
 	}
@@ -2185,6 +2192,7 @@ func (a *App) GetPortraitTodayCard() (perfValue *PortraitTodayCard, perfErr erro
 // the name changes.
 func (a *App) DismissPortraitTodayCard() error {
 	s := a.portraitService()
+	defer a.touchDerivedViews(derivedPortrait, derivedPortraitTodayCard)
 	path, err := portraitPath()
 	if err != nil {
 		return err
@@ -2204,6 +2212,7 @@ func (a *App) DismissPortraitTodayCard() error {
 // person has seen them.
 func (a *App) MarkAboutYouPortraitSeen() error {
 	s := a.portraitService()
+	defer a.touchDerivedViews(derivedPortrait, derivedPortraitTodayCard)
 	path, err := portraitPath()
 	if err != nil {
 		return err

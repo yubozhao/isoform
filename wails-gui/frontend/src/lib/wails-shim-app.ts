@@ -5959,6 +5959,7 @@ export const GetPortraitTodayCard = appBinding<[], PortraitTodayCard | null>("Ge
 export const DismissPortraitTodayCard = appBinding<[], void>("DismissPortraitTodayCard");
 // Structured know-how reads and the local previous-fix dismissal.
 export const ListKnowHow = appBinding<[], main.KnowHowCard[]>("ListKnowHow");
+export const RefreshDerivedView = appBinding<[string], void>("RefreshDerivedView");
 export const IdeaMeaningGroups = appBinding<[string[], number], { groups: number[] | null; pending: boolean } | null>("IdeaMeaningGroups");
 export const GetKnowHowMatch = appBinding<[], main.KnowHowMatch | null>("GetKnowHowMatch");
 export const DismissKnowHowMatch = appBinding<[string, string], void>("DismissKnowHowMatch");

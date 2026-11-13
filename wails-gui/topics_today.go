@@ -277,6 +277,10 @@ func (s *topicsService) ensureRegistryRefresh() {
 	s.scheduleRegistryRefresh(false)
 }
 
+// topicRegistryMinRescan is the shortest gap between background registry
+// scans (Bo 2026-11-12: periodic, not real-time).
+const topicRegistryMinRescan = 30 * time.Minute
+
 func (s *topicsService) markTopicsStale() {
 	s.registryWorkerMu.Lock()
 	s.registryStale = true
@@ -293,7 +297,16 @@ func (s *topicsService) scheduleRegistryRefresh(manual bool) {
 		s.registryNextRefresh = s.now()
 		s.registryManualBuildPending = true
 	} else if s.registryNextRefresh.IsZero() || s.registryNextRefresh.After(s.now()) {
-		s.registryNextRefresh = s.now()
+		// A background request (capture, a chat backfill, a recovery retry)
+		// rescans at most every topicRegistryMinRescan; only the person's
+		// Refresh and privacy withdrawals go sooner.
+		next := s.now()
+		if earliest := s.registryLastBuildStart.Add(topicRegistryMinRescan); !s.registryLastBuildStart.IsZero() && earliest.After(next) {
+			next = earliest
+		}
+		if s.registryNextRefresh.IsZero() || next.Before(s.registryNextRefresh) {
+			s.registryNextRefresh = next
+		}
 	}
 	s.registryBuildPending = true
 	select {

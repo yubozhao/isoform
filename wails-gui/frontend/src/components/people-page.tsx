@@ -10,6 +10,7 @@ import {
     CleanupAnonymousPrincipals,
     DeletePrincipal,
     MergePeople,
+    RefreshDerivedView,
     UnlinkPersonContact,
     type ContactsAccessStatus,
     type PeopleOverview,
@@ -586,10 +587,13 @@ export function PeoplePage({ escapeRef, initialSelection, devToolsUnlocked = fal
                                     onContacts={() => setContactsImportOpen(true)}
                                     onCleanup={() => setCleanupOpen(true)}
                                     onRefresh={() => {
-                                        // An explicit Refresh forces a re-read even
+                                        // Who you know is built once a day; an explicit
+                                        // Refresh builds it now, then re-reads it even
                                         // while the cached values are still fresh.
-                                        pageQueryCache.invalidate(['ListPeopleOverview', 'ListPrincipalsWithStats']);
-                                        void reload();
+                                        void RefreshDerivedView('people').catch(() => undefined).finally(() => {
+                                            pageQueryCache.invalidate(['ListPeopleOverview', 'ListPrincipalsWithStats']);
+                                            void reload();
+                                        });
                                     }}
                                 />
                             </div>

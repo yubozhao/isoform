@@ -1622,6 +1622,8 @@ func (a *App) runGenerateDailySummary(dateStr string) error {
 	// Notify frontend the summary text is ready — moments persistence happens
 	// asynchronously below and must not affect this latency or success rate.
 	if a.ctx != nil {
+		// A new summary can change the day's noticed items.
+		a.touchDerivedViews(derivedDayNoticed)
 		wailsRuntime.EventsEmit(a.ctx, "activity:summary-ready", dateStr)
 	}
 
@@ -1797,6 +1799,8 @@ func (a *App) GenerateWeeklySummary(dateStr string) error {
 	}
 
 	if a.ctx != nil {
+		// A new summary can change the day's noticed items.
+		a.touchDerivedViews(derivedDayNoticed)
 		wailsRuntime.EventsEmit(a.ctx, "activity:summary-ready", data.WeekStart)
 	}
 	return nil

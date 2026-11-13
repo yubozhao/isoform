@@ -62,6 +62,10 @@ type AboutYouView struct {
 // GetAboutYou projects the existing owner-visible memory list into belief metadata.
 func (a *App) GetAboutYou() (perfValue AboutYouView, perfErr error) {
 	defer logPageBinding("GetAboutYou", time.Now(), &perfValue)
+	return derivedRead(a, derivedAboutYou, "", a.getAboutYouNow, derivedPortraitStamp)
+}
+
+func (a *App) getAboutYouNow() (AboutYouView, error) {
 	all, err := a.GetMemoryEntries()
 	if err != nil {
 		return AboutYouView{}, err

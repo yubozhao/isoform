@@ -67,6 +67,11 @@ func (a *App) noteTodayDayShapeUpdate() {
 	if a == nil || a.store == nil {
 		return
 	}
+	if a.derivedViews().active() {
+		// The day shape is a snapshot now: the scheduled build compares and
+		// publishes today-dayshape:updated; a source event never builds it.
+		return
+	}
 	state := &a.todayDayShapeUpdates
 	state.mu.Lock()
 	defer state.mu.Unlock()

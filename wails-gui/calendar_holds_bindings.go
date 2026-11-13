@@ -189,6 +189,8 @@ func statusForHold(h holdRecord) HoldStatus {
 // HoldTime is called only on the person's Hold. The coordinator rechecks the
 // complete window and persists the five-second cancellation deadline.
 func (a *App) HoldTime(proposal HoldProposal, chosen FindTimeRange, calendarID string) (HoldStatus, error) {
+	// The Today strip shows the person's own hold change at once.
+	defer a.touchDerivedViews(derivedTodayDayShape)
 	return a.holdTimeWithAccess(proposal, chosen, calendarID, calendarAccessGranted())
 }
 
@@ -285,6 +287,8 @@ func (a *App) GetHoldStatus(id string) (HoldStatus, error) {
 }
 
 func (a *App) UndoHold(id string) error {
+	// The Today strip shows the person's own hold change at once.
+	defer a.touchDerivedViews(derivedTodayDayShape)
 	c, err := a.currentHoldCoordinator()
 	if err != nil {
 		return err
@@ -292,6 +296,8 @@ func (a *App) UndoHold(id string) error {
 	return c.undo(id)
 }
 func (a *App) RemoveHold(id string) error {
+	// The Today strip shows the person's own hold change at once.
+	defer a.touchDerivedViews(derivedTodayDayShape)
 	c, err := a.currentHoldCoordinator()
 	if err != nil {
 		return err
@@ -299,6 +305,8 @@ func (a *App) RemoveHold(id string) error {
 	return c.remove(id)
 }
 func (a *App) UndoRemoveHold(id string) error {
+	// The Today strip shows the person's own hold change at once.
+	defer a.touchDerivedViews(derivedTodayDayShape)
 	c, err := a.currentHoldCoordinator()
 	if err != nil {
 		return err

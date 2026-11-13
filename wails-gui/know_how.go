@@ -97,6 +97,10 @@ func updatedKnowHowKind(content, proposed string) string {
 // ListKnowHow returns the same owner-visible entries and order as GetKnowledgeEntries.
 func (a *App) ListKnowHow() (perfValue []KnowHowCard, perfErr error) {
 	defer logPageBinding("ListKnowHow", time.Now(), &perfValue)
+	return derivedRead(a, derivedKnowHow, "", a.listKnowHowNow, derivedMemoryEditStamp)
+}
+
+func (a *App) listKnowHowNow() ([]KnowHowCard, error) {
 	entries, err := a.GetKnowledgeEntries()
 	if err != nil {
 		return nil, err

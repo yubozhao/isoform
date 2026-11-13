@@ -17,6 +17,7 @@ func (a *App) MergePeople(targetID string, sourceIDs []string) (MergeResult, err
 	if err != nil {
 		return MergeResult{}, err
 	}
+	a.touchDerivedViews(derivedPeopleOverview)
 	// The merge is already durable; a failed enrichment must not hide its Undo ID.
 	result := MergeResult{MergeID: id, Target: PersonCard{ID: targetID, Kind: merged.Kind, Name: merged.DisplayName, Relationship: merged.Relationship, Loops: []PersonLoop{}}}
 	if overview, err := a.ListPeopleOverview(); err == nil {
@@ -32,6 +33,8 @@ func (a *App) MergePeople(targetID string, sourceIDs []string) (MergeResult, err
 
 // UndoMerge atomically restores the rows recorded by one People merge.
 func (a *App) UndoMerge(mergeID string) error {
+	// Who you know shows the person's own change at once.
+	defer a.touchDerivedViews(derivedPeopleOverview)
 	store, err := a.requireStore()
 	if err != nil {
 		return err
@@ -42,6 +45,8 @@ func (a *App) UndoMerge(mergeID string) error {
 // NotSamePeople is Not the same on a merge suggestion: Isoform never
 // suggests merging these profiles again.
 func (a *App) NotSamePeople(ids []string) error {
+	// Who you know shows the person's own change at once.
+	defer a.touchDerivedViews(derivedPeopleOverview)
 	store, err := a.requireStore()
 	if err != nil {
 		return err
@@ -51,6 +56,8 @@ func (a *App) NotSamePeople(ids []string) error {
 
 // UndoNotSamePeople takes Not the same back.
 func (a *App) UndoNotSamePeople(ids []string) error {
+	// Who you know shows the person's own change at once.
+	defer a.touchDerivedViews(derivedPeopleOverview)
 	store, err := a.requireStore()
 	if err != nil {
 		return err

@@ -300,9 +300,11 @@ func (a *App) ListPeopleOverview() (perfValue PeopleOverview, perfErr error) {
 	defer logPageBinding("ListPeopleOverview", time.Now(), &perfValue)
 	// A write during the read changes the revision it was checked against, and the
 	// activity database changes constantly: retry that one case briefly, then fail.
-	return retryPeopleRead(func() (PeopleOverview, error) {
-		return a.listPeopleOverviewOnce(context.Background())
-	}, peopleOverviewReadAttempts, peopleOverviewRetryWait)
+	return derivedRead(a, derivedPeopleOverview, "", func() (PeopleOverview, error) {
+		return retryPeopleRead(func() (PeopleOverview, error) {
+			return a.listPeopleOverviewOnce(context.Background())
+		}, peopleOverviewReadAttempts, peopleOverviewRetryWait)
+	}, nil)
 }
 
 // retryPeopleRead runs read again only when a concurrent write invalidated it; any

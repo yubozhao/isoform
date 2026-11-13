@@ -114,6 +114,8 @@ var mobileBriefWithdrawals briefWithdrawalLog
 // app stops before the copies are amended.
 func briefPrivacyChanged(keys ...briefWithdrawn) {
 	mobileBriefReadEpoch.Add(1)
+	// Page snapshots built before this change are dropped and rebuilt.
+	defer noteDerivedPrivacyChanged()
 	mobileBriefPrivacyEpochMu.Lock()
 	defer mobileBriefPrivacyEpochMu.Unlock()
 	value := mobileBriefPrivacyEpoch.Add(1)

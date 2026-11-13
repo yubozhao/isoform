@@ -7,6 +7,7 @@ import type { PeopleOverview, PersonCard, PersonDetail, PersonLoop, PrincipalDTO
 const mocks = vi.hoisted(() => ({
     overview: vi.fn(),
     principals: vi.fn(),
+    refreshDerived: vi.fn(async () => undefined),
     detail: vi.fn(),
     merge: vi.fn(),
     notSame: vi.fn(),
@@ -38,6 +39,7 @@ vi.mock("./tasks/TaskThreadPane", () => ({ TaskThreadPane: ({ id }: { id: string
 vi.mock("@/lib/wails-shim-app", () => ({
     ListPeopleOverview: mocks.overview,
     ListPrincipalsWithStats: mocks.principals,
+    RefreshDerivedView: mocks.refreshDerived,
     GetPersonDetail: mocks.detail,
     MergePeople: mocks.merge,
     UndoMerge: mocks.undo,
@@ -938,6 +940,8 @@ describe("Everything stays reachable", () => {
         openMenu("More Who you know actions");
         fireEvent.click(await screen.findByText("Refresh"));
         await waitFor(() => expect(mocks.overview.mock.calls.length).toBeGreaterThan(reads));
+        // Refresh builds the daily Who you know snapshot again first.
+        expect(mocks.refreshDerived).toHaveBeenCalledWith("people");
     }, MENU_TEST_TIMEOUT);
 
     it("a person's More menu edits, links, unlinks and deletes", async () => {

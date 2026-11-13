@@ -32,6 +32,7 @@ var menuBarPresentation struct {
 	open         bool
 	stopped      bool
 	revision     uint64
+	privacyEpoch uint64
 }
 
 // Privacy/source changes discard the transient native page immediately and
@@ -49,11 +50,29 @@ func (a *App) noteMenuBarEvent(event string) {
 		}
 		menuBarPresentation.presentedIDs = nil
 		menuBarPresentation.attention = menuBarAttention{}
-	case "memory:updated", "sensitive-apps:updated", closedEyesModeChangedEvent, "background-listening:changed", "permissions:changed":
-	case mainChatItemsAppendedEvent, mainChatWaitingChangedEvent:
-		// A main-chat row was added or changed: the next status tick reads
-		// the waiting list again. Nothing is withdrawn.
+	case "memory:updated":
+		// A belief update withdraws the held list only when it was a privacy
+		// action (a forget or correction advances the privacy epoch); the
+		// index emits memory:updated for every learned belief.
+		epoch := mobileBriefPrivacyEpoch.Load()
+		if a.derivedViews().active() && epoch == menuBarPresentation.privacyEpoch {
+			menuBarPresentation.Unlock()
+			return
+		}
+		menuBarPresentation.privacyEpoch = epoch
+	case "sensitive-apps:updated", closedEyesModeChangedEvent, "background-listening:changed", "permissions:changed":
+		menuBarPresentation.privacyEpoch = mobileBriefPrivacyEpoch.Load()
+	case mainChatWaitingChangedEvent, mainChatWaitingItemsUpdated:
+		// The waiting set changed: the next status tick reads the waiting
+		// list again (from the waiting snapshot). Nothing is withdrawn. A
+		// new chat row alone no longer re-reads it.
 		menuBarPresentation.waiting.changed()
+		menuBarPresentation.Unlock()
+		return
+	case mainChatItemsAppendedEvent:
+		if !a.derivedViews().active() {
+			menuBarPresentation.waiting.changed()
+		}
 		menuBarPresentation.Unlock()
 		return
 	default:

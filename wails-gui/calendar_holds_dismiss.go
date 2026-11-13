@@ -59,6 +59,8 @@ func (c *holdCoordinator) undoDismissOffer(id string) error {
 
 // DismissHoldOffer hides this item's offer for the rest of the local day.
 func (a *App) DismissHoldOffer(thing HoldThing) (string, error) {
+	// The Today strip shows the person's own hold change at once.
+	defer a.touchDerivedViews(derivedTodayDayShape)
 	c, err := a.currentHoldCoordinator()
 	if err != nil {
 		return "", err
@@ -68,6 +70,8 @@ func (a *App) DismissHoldOffer(thing HoldThing) (string, error) {
 
 // UndoDismissHoldOffer restores an offer during the five-second Undo window.
 func (a *App) UndoDismissHoldOffer(id string) error {
+	// The Today strip shows the person's own hold change at once.
+	defer a.touchDerivedViews(derivedTodayDayShape)
 	c, err := a.currentHoldCoordinator()
 	if err != nil {
 		return err

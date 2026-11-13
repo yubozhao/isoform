@@ -242,6 +242,8 @@ func (a *App) runAutoSummaryGeneration(date, backoffKey, flightKey string, gen f
 // EventsEmit treats that as fatal.
 func (a *App) emitAutoSummaryReady(date string) {
 	if a.ctx != nil && a.ctx.Value("events") != nil {
+		// A new summary can change the day's noticed items.
+		a.touchDerivedViews(derivedDayNoticed)
 		wailsRuntime.EventsEmit(a.ctx, "activity:summary-ready", date)
 	}
 	if a.eventBroadcaster != nil {

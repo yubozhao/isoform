@@ -239,7 +239,9 @@ type menuBarWaitingMemory struct {
 }
 
 const (
-	menuBarWaitingMaxAge = 15 * time.Minute
+	// The menu bar summary is periodic (at most hourly); a real change in
+	// the waiting set or opening the popover still reads it sooner.
+	menuBarWaitingMaxAge = time.Hour
 	menuBarWaitingRetry  = 30 * time.Second
 )
 
