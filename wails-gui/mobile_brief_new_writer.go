@@ -96,6 +96,17 @@ func newBriefMaterial(in mobileBriefInput, brief MobileBriefV1, larger, name str
 		if seen[key] {
 			return
 		}
+		if existing[mobileBriefSourceKey(c.SourceKind, c.SourceID)] == "" {
+			// A source whose label cannot become evidence can never be cited:
+			// keep it out, so a draft never rests its words on it.
+			label := mobileBriefText(c.Title, mobileBriefLabelLimit)
+			if c.EvidenceLabel != "" {
+				label = mobileBriefText(c.EvidenceLabel, mobileBriefLabelLimit)
+			}
+			if label == "" || !mobileBriefCopySafe(label) || redactThreadOutcomeText(label) != label {
+				return
+			}
+		}
 		agent = agent || briefcore.AgentDriven(c.Apps, c.Title+" "+c.Detail+" "+c.NextStep)
 		if agent && (group == briefcore.GroupDone || group == briefcore.GroupAttended) {
 			group = briefcore.GroupAgents
@@ -536,7 +547,11 @@ func (s *mobileBriefService) composeNewBrief(ctx context.Context, input mobileBr
 		if attempt > 0 {
 			codes = append(codes, "retry")
 		}
-		raw, err := ask(ctx, briefcore.WritePrompt(material, lang))
+		prompt := briefcore.WritePrompt(material, lang)
+		if attempt > 0 {
+			prompt += briefcore.RetryNote
+		}
+		raw, err := ask(ctx, prompt)
 		if err != nil {
 			logLine("model_call:"+mobileBriefWriterErrorClass(err), codes, 0)
 			return original, nil, nil, err

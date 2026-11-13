@@ -18,14 +18,21 @@ func TestRankedMorningClosingRequiresLeadAndGroundedAnswers(t *testing.T) {
 	}
 	missing := draft
 	missing.Answers = missing.Answers[:1]
-	if _, err := prepareRankedMorningDraft(brief, missing, selection, "English"); err == nil {
-		t.Fatal("closing without two answers was accepted")
+	// Since 2026-11-13 a closing that does not hold is dropped, not the brief.
+	if got, err := prepareRankedMorningDraft(brief, missing, selection, "English"); err != nil || len(got.Paragraphs) != 1 {
+		t.Fatalf("closing without two answers was kept or failed the brief: %v %+v", err, got.Paragraphs)
+	} else {
+		for _, card := range got.Cards {
+			if card.AnswerTo != "" {
+				t.Fatalf("an answer chip outlived its closing: %+v", card)
+			}
+		}
 	}
 	unrelated := draft
 	unrelated.Paragraphs = append([]MobileBriefPara(nil), draft.Paragraphs...)
 	unrelated.Paragraphs[1].Refs = []string{"e2"}
-	if _, err := prepareRankedMorningDraft(brief, unrelated, selection, "English"); err == nil {
-		t.Fatal("closing about an unselected subject was accepted")
+	if got, err := prepareRankedMorningDraft(brief, unrelated, selection, "English"); err != nil || len(got.Paragraphs) != 1 {
+		t.Fatalf("closing about an unselected subject was kept or failed the brief: %v %+v", err, got.Paragraphs)
 	}
 	unproven := draft
 	unproven.Paragraphs = append([]MobileBriefPara(nil), draft.Paragraphs...)

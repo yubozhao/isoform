@@ -140,3 +140,11 @@ func TestRepairDraftNeverCitesContext(t *testing.T) {
 		t.Fatalf("codes %v", codes)
 	}
 }
+
+func TestRepairDraftReadsFirstObjectAmidText(t *testing.T) {
+	raw := `Sure. {"done":[{"text":"You finished the interview.","refs":["m1"]}],"next":[{"text":"Coffee first.","refs":["m3"]}]}
+Here is a second take: {"done":[]}`
+	if _, codes, err := RepairDraft(raw, testMaterial()); err != nil {
+		t.Fatalf("a reply with words around its JSON was unusable: %v %v", err, codes)
+	}
+}

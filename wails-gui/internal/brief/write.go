@@ -357,8 +357,19 @@ func trimToSentences(text string, max int) string {
 // span from the first { to the last }.
 func extractJSON(raw string) string {
 	s := stripFence(raw)
-	if strings.HasPrefix(s, "{") {
-		return s
+	// The first whole JSON object in the reply wins, so words before it or
+	// after it (a second object, a note) do not make the draft unusable.
+	for start := strings.Index(s, "{"); start >= 0; {
+		dec := json.NewDecoder(strings.NewReader(s[start:]))
+		var obj json.RawMessage
+		if dec.Decode(&obj) == nil {
+			return string(obj)
+		}
+		next := strings.Index(s[start+1:], "{")
+		if next < 0 {
+			break
+		}
+		start += next + 1
 	}
 	start, end := strings.Index(s, "{"), strings.LastIndex(s, "}")
 	if start >= 0 && end > start {
@@ -366,6 +377,9 @@ func extractJSON(raw string) string {
 	}
 	return s
 }
+
+// RetryNote is added to the prompt when the first reply was not usable.
+const RetryNote = "\nYour previous reply could not be read. Reply with exactly one JSON object in the form above and nothing else.\n"
 
 // SummarizeCodes counts codes as "code=n" pairs in first-seen order, for one
 // log line.

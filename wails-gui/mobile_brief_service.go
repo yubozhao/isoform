@@ -1314,6 +1314,7 @@ func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, s
 	s.patchMu.Lock()
 	if reason == mobileBriefReasonAdaptive && !s.adaptiveDeliveryAllowed(asOf, slot) {
 		s.patchMu.Unlock()
+		log.Printf("[mobile-brief] the adaptive %s brief was built outside its delivery window and not stored", slot)
 		return MobileBriefV1{}, errMobileBriefTimingDeferred
 	}
 	if s.app != nil {

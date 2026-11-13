@@ -9,6 +9,10 @@ import (
 
 var errMobileBriefTimingDeferred = errors.New("adaptive brief is outside its delivery window")
 
+// mobileBriefDeferredRetry is how long an adaptive slot waits after a build
+// that could not be delivered.
+const mobileBriefDeferredRetry = 10 * time.Minute
+
 func (s *mobileBriefService) timingData(now time.Time) mobileBriefTimingInput {
 	if s.timing != nil {
 		return s.timing(now)
@@ -177,7 +181,15 @@ func (s *mobileBriefService) runAdaptiveSlot(ctx context.Context, occurrence mob
 	s.mu.Unlock()
 	s.notifyPhoneToday()
 	s.announceBuilding(false)
-	if ctx.Err() != nil || errors.Is(err, errMobileBriefTimingDeferred) {
+	if errors.Is(err, errMobileBriefTimingDeferred) {
+		// A deferred build cost a model call; the next try waits, so a slot
+		// that cannot deliver never rebuilds every minute.
+		s.mu.Lock()
+		s.retryFor, s.retryAfter = occurrence.BriefID, s.now().Add(mobileBriefDeferredRetry)
+		s.mu.Unlock()
+		return
+	}
+	if ctx.Err() != nil {
 		return
 	}
 	if err != nil {
@@ -228,8 +240,18 @@ func (s *mobileBriefService) adaptiveDeliveryAllowed(started time.Time, slot str
 	}
 	for _, p := range mobileBriefPredictDay(now, loc, settings, input) {
 		if p.Slot == slot {
-			return !p.ScheduledAt.IsZero() && !now.Before(p.ScheduledAt) && now.Before(p.Deadline) && !s.store.exists(p.BriefID)
+			// A copy made ahead does not count: the real build replaces it.
+			return !p.ScheduledAt.IsZero() && !now.Before(p.ScheduledAt) && now.Before(p.Deadline) && !s.finalCopyExists(p.BriefID)
 		}
 	}
 	return false
+}
+
+// finalCopyExists reports a stored brief for id that is not a copy made ahead.
+func (s *mobileBriefService) finalCopyExists(id string) bool {
+	stored, ok := s.store.load(id)
+	if !ok {
+		return s.store.exists(id)
+	}
+	return !mobileBriefIsAhead(stored)
 }

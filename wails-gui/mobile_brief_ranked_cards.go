@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -12,7 +13,7 @@ var morningBriefUnprovenSkip = regexp.MustCompile(`(?i)\b(skip|decline)\b|跳过
 // prepareRankedMorningDraft checks that the closing acts on the selected lead
 // or slip, and uses the existing prepared-card validation and source gates.
 func prepareRankedMorningDraft(brief MobileBriefV1, draft morningBriefDraft, selection morningBriefSelection, language string) (morningBriefDraft, error) {
-	if selection.Lead == nil || len(draft.Paragraphs) < 2 {
+	if selection.Lead == nil || len(draft.Paragraphs) < 1 {
 		return morningBriefDraft{}, codeError("brief requires a closing question")
 	}
 	if err := mobileBriefRejectHoldOffer(draft.Paragraphs); err != nil {
@@ -23,19 +24,31 @@ func prepareRankedMorningDraft(brief MobileBriefV1, draft morningBriefDraft, sel
 			return morningBriefDraft{}, codeError("no selected item is proven skippable")
 		}
 	}
+	// The closing question is optional: a draft whose closing does not hold is
+	// kept without it rather than failing the brief.
+	closing := len(draft.Paragraphs) >= 2
 	last := draft.Paragraphs[len(draft.Paragraphs)-1]
 	text := strings.TrimSpace(last.Text)
 	if strings.Count(text, "?")+strings.Count(text, "？") != 1 || !strings.HasSuffix(text, "?") && !strings.HasSuffix(text, "？") {
-		return morningBriefDraft{}, codeError("brief requires one closing question")
+		if strings.ContainsAny(text, "?？") {
+			draft.Paragraphs = draft.Paragraphs[:len(draft.Paragraphs)-1]
+		}
+		closing = false
 	}
 	allowed := append([]string(nil), selection.Lead.Refs...)
 	if selection.Slip != nil {
 		allowed = append(allowed, selection.Slip.Refs...)
 	}
-	for _, ref := range last.Refs {
-		if !containsString(allowed, ref) {
-			return morningBriefDraft{}, codeError("closing must refer to the lead or slipping item")
+	if closing {
+		for _, ref := range last.Refs {
+			if !containsString(allowed, ref) {
+				draft.Paragraphs, closing = draft.Paragraphs[:len(draft.Paragraphs)-1], false
+				break
+			}
 		}
+	}
+	if len(draft.Paragraphs) == 0 {
+		return morningBriefDraft{}, codeError("brief requires a closing question")
 	}
 	brief.Narrative = draft.Paragraphs
 	brief.Cards = nil
@@ -66,8 +79,25 @@ func prepareRankedMorningDraft(brief MobileBriefV1, draft morningBriefDraft, sel
 		}
 		draft.Cards = append(draft.Cards, card)
 	}
-	if len(mobileBriefClosingAnswers(brief, draft.Cards)) != 2 {
-		return morningBriefDraft{}, codeError("closing requires two grounded answers")
+	if closing && len(mobileBriefClosingAnswers(brief, draft.Cards)) != 2 {
+		// No two grounded answers: the closing question goes, with any answer
+		// chips, and the rest of the brief stands.
+		closing = false
+		draft.Paragraphs = draft.Paragraphs[:len(draft.Paragraphs)-1]
+	}
+	if !closing {
+		brief.Narrative = draft.Paragraphs
+		var kept []MobileBriefCard
+		for _, card := range draft.Cards {
+			if card.AnswerTo == "" {
+				kept = append(kept, card)
+			}
+		}
+		draft.Cards = kept
+		if len(draft.Paragraphs) == 0 {
+			return morningBriefDraft{}, codeError("closing requires two grounded answers")
+		}
+		log.Printf("[mobile-brief] ranked draft kept without its closing question")
 	}
 	for i := range draft.Paragraphs {
 		draft.Paragraphs[i].chipWords = nil
