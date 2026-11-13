@@ -29,7 +29,7 @@ const (
 	featureActivityComposer = true
 
 	activityComposerCheckInterval = 2 * time.Minute
-	activityComposerQueueBatch    = 12
+	activityComposerQueueBatch    = 4 * activityComposerBatchSize
 	activityComposerTimeout       = 2 * time.Minute
 
 	// activityIdleAfterMs: a bucket whose newest run ended longer ago than this
@@ -172,30 +172,11 @@ func (c *ActivityTriager) runActivityComposerPass(ctx context.Context) {
 		if len(ready) == 0 {
 			return
 		}
-		progressed := false
-		for _, run := range ready {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-			}
-			changed, err := c.composeRun(ctx, run, time.Now().UnixMilli())
-			if err != nil {
-				if isPermanentExtractionFailure(err) {
-					// Permanent (content moderation etc.) recurs identically — skip
-					// this run by linking it to no bucket at its current count.
-					if lerr := store.UpsertActivityRunLink(run.ID, "", run.SummarizedEventCount, now); lerr != nil {
-						log.Printf("[activity-composer] skip-mark run %s: %v", run.ID, lerr)
-					}
-					continue
-				}
-				// Transient: stop this pass, retry next tick (run stays ready).
-				log.Printf("[activity-composer] compose run %s (will retry): %v", run.ID, err)
-				return
-			}
-			if changed {
-				progressed = true
-			}
+		// Runs go to the model in ordered batches of
+		// activityComposerBatchSize (activity_compose_batch.go).
+		progressed, stop := c.composeRuns(ctx, store, ready, func() int64 { return time.Now().UnixMilli() })
+		if stop {
+			return
 		}
 		if !progressed {
 			return
@@ -245,6 +226,116 @@ func (c *ActivityTriager) purgeTrivialActivities(store *ActivityStore, now int64
 // evidence; activities are task abstractions, so the router considers every
 // identity-related open task rather than only the immediately previous segment.
 func (c *ActivityTriager) composeRun(ctx context.Context, run ActivityTimelineRunRow, now int64) (bool, error) {
+	item, changed, err := c.prepareComposeRun(run, now)
+	if item == nil {
+		return changed, err
+	}
+	prompt := buildComposerPrompt(item.candidates, item.run, item.summary, item.transition, c.composerLanguageInstruction())
+	if prompt != "" {
+		prompt += c.composerNamingCorrections()
+	}
+	resp, err := c.runComposerPrompt(ctx, prompt)
+	if err != nil {
+		return false, err
+	}
+	return c.applyComposerResponse(*item, resp, nil, now)
+}
+
+// composerItem is one run ready for a composer model decision.
+type composerItem struct {
+	run        ActivityTimelineRunRow
+	summary    ActivityTimelineGroupSummary
+	candidates []ActivityRow
+	transition composerTransition
+}
+
+// prepareComposeRun runs every step before the model call. A nil item means
+// the run was settled without a model (privacy, a glance, a missing summary)
+// or failed; changed and err report that outcome.
+func (c *ActivityTriager) prepareComposeRun(run ActivityTimelineRunRow, now int64) (*composerItem, bool, error) {
+	if !c.activityJoinsEnabled() {
+		return nil, false, nil
+	}
+	store := c.activityStore()
+	if store == nil {
+		return nil, false, fmt.Errorf("activity store not ready")
+	}
+
+	allowed, err := store.RefreshTimelineRunEvidence(&run)
+	if err != nil {
+		return nil, false, err
+	}
+	if c.app == nil {
+		return nil, false, fmt.Errorf("activity app not ready")
+	}
+	if allowed {
+		allowed, err = c.app.activityTimelineRunAllowsModelReadResult(store, run)
+		if err != nil {
+			// A failed read is retryable. Do not persist the same empty link
+			// used for a confirmed privacy rejection or trivial glance.
+			return nil, false, fmt.Errorf("check composer source privacy: %w", err)
+		}
+	}
+	if !allowed {
+		return nil, false, store.UpsertActivityRunLink(run.ID, "", run.SummarizedEventCount, now)
+	}
+
+	// Deterministic glance filter: a sub-threshold run (open app / switch
+	// window / login / momentary glance) is not a piece of work — skip it
+	// before spending an LLM call. Mark it composed so it isn't retried.
+	if run.ActiveMs < composerTrivialActiveMs {
+		return nil, false, store.UpsertActivityRunLink(run.ID, "", run.SummarizedEventCount, now)
+	}
+
+	summaries, err := store.GetTimelineGroupSummaries([]string{run.ID})
+	if err != nil {
+		return nil, false, fmt.Errorf("load run summary: %w", err)
+	}
+	runSummary, ok := summaries[run.ID]
+	if !ok {
+		// summary_status=done but no row (raced/deleted) — skip without churn.
+		return nil, false, store.UpsertActivityRunLink(run.ID, "", run.SummarizedEventCount, now)
+	}
+
+	common, err := store.commonComposerEvidence(max(run.StartMs, run.EndMs))
+	if err != nil {
+		return nil, false, err
+	}
+	candidates, err := c.activityAssignmentCandidates(store, run, runSummary, common)
+	if err != nil {
+		return nil, false, fmt.Errorf("load assignment candidates: %w", err)
+	}
+	candidates = c.app.filterComposerModelCandidates(store, candidates)
+	return &composerItem{
+		run: run, summary: runSummary, candidates: candidates,
+		transition: c.composeTransitionContext(store, run, common),
+	}, false, nil
+}
+
+func (c *ActivityTriager) composerLanguageInstruction() string {
+	if c.app == nil {
+		return ""
+	}
+	return responseLanguageInstruction(c.app.currentUILanguageName())
+}
+
+func (c *ActivityTriager) composerNamingCorrections() string {
+	store := c.activityStore()
+	if store == nil {
+		return ""
+	}
+	corrections, err := store.recentActivityNameCorrections(activityNamingCorrectionsInPrompt)
+	if err != nil {
+		log.Printf("[activity] reading naming corrections: %v", err)
+		return ""
+	}
+	return composerNamingCorrections(corrections)
+}
+
+// applyComposerResponse guards the model's route against the run's own
+// candidates (plus, in a batch, activities earlier runs just started) and
+// applies it.
+func (c *ActivityTriager) applyComposerResponse(item composerItem, resp composerResponse, extra []ActivityRow, now int64) (bool, error) {
 	if !c.activityJoinsEnabled() {
 		return false, nil
 	}
@@ -252,73 +343,9 @@ func (c *ActivityTriager) composeRun(ctx context.Context, run ActivityTimelineRu
 	if store == nil {
 		return false, fmt.Errorf("activity store not ready")
 	}
-
-	allowed, err := store.RefreshTimelineRunEvidence(&run)
-	if err != nil {
-		return false, err
-	}
-	if c.app == nil {
-		return false, fmt.Errorf("activity app not ready")
-	}
-	if allowed {
-		allowed, err = c.app.activityTimelineRunAllowsModelReadResult(store, run)
-		if err != nil {
-			// A failed read is retryable. Do not persist the same empty link
-			// used for a confirmed privacy rejection or trivial glance.
-			return false, fmt.Errorf("check composer source privacy: %w", err)
-		}
-	}
-	if !allowed {
-		return false, store.UpsertActivityRunLink(run.ID, "", run.SummarizedEventCount, now)
-	}
-
-	// Deterministic glance filter: a sub-threshold run (open app / switch
-	// window / login / momentary glance) is not a piece of work — skip it
-	// before spending an LLM call. Mark it composed so it isn't retried.
-	if run.ActiveMs < composerTrivialActiveMs {
-		return false, store.UpsertActivityRunLink(run.ID, "", run.SummarizedEventCount, now)
-	}
-
-	summaries, err := store.GetTimelineGroupSummaries([]string{run.ID})
-	if err != nil {
-		return false, fmt.Errorf("load run summary: %w", err)
-	}
-	runSummary, ok := summaries[run.ID]
-	if !ok {
-		// summary_status=done but no row (raced/deleted) — skip without churn.
-		return false, store.UpsertActivityRunLink(run.ID, "", run.SummarizedEventCount, now)
-	}
-
-	common, err := store.commonComposerEvidence(max(run.StartMs, run.EndMs))
-	if err != nil {
-		return false, err
-	}
-	candidates, err := c.activityAssignmentCandidates(store, run, runSummary, common)
-	if err != nil {
-		return false, fmt.Errorf("load assignment candidates: %w", err)
-	}
-	candidates = c.app.filterComposerModelCandidates(store, candidates)
-	languageInstruction := ""
-	if c.app != nil {
-		languageInstruction = responseLanguageInstruction(c.app.currentUILanguageName())
-	}
-	prompt := buildComposerPrompt(candidates, run, runSummary, c.composeTransitionContext(store, run, common), languageInstruction)
-	if prompt != "" {
-		if corrections, err := store.recentActivityNameCorrections(activityNamingCorrectionsInPrompt); err != nil {
-			log.Printf("[activity] reading naming corrections: %v", err)
-		} else {
-			prompt += composerNamingCorrections(corrections)
-		}
-	}
-	resp, err := c.runComposerPrompt(ctx, prompt)
-	if err != nil {
-		return false, err
-	}
-	if !c.activityJoinsEnabled() {
-		return false, nil
-	}
-	resp = c.guardComposerAssignment(resp, candidates)
-	return c.composeApply(store, run, runSummary, resp, now)
+	allowed := append(append([]ActivityRow{}, item.candidates...), extra...)
+	resp = c.guardComposerAssignment(resp, allowed)
+	return c.composeApply(store, item.run, item.summary, resp, now)
 }
 
 type activityRunIdentity struct {
@@ -860,14 +887,23 @@ func (c *ActivityTriager) composeTransitionContext(store *ActivityStore, run Act
 // runComposerPrompt keeps persisted task joins and merges on the chat-quality
 // model, with background priority so unattended work uses the paced route.
 func (c *ActivityTriager) runComposerPrompt(ctx context.Context, prompt string) (composerResponse, error) {
-	ctx, cancel := context.WithTimeout(ctx, activityComposerTimeout)
+	var resp composerResponse
+	if err := c.runComposerJSON(ctx, prompt, activityComposerTimeout, &resp); err != nil {
+		return composerResponse{}, err
+	}
+	return resp, nil
+}
+
+// runComposerJSON runs one composer call and decodes its JSON reply into out.
+func (c *ActivityTriager) runComposerJSON(ctx context.Context, prompt string, timeout time.Duration, out any) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	c.app.mu.Lock()
 	runner := c.app.runner
 	c.app.mu.Unlock()
 	if runner == nil {
-		return composerResponse{}, fmt.Errorf("runner not initialized")
+		return fmt.Errorf("runner not initialized")
 	}
 
 	var result strings.Builder
@@ -893,14 +929,13 @@ func (c *ActivityTriager) runComposerPrompt(ctx context.Context, prompt string) 
 		return nil
 	})
 	if err != nil {
-		return composerResponse{}, fmt.Errorf("execute activity composer: %w", err)
+		return fmt.Errorf("execute activity composer: %w", err)
 	}
 	raw := stripCodeFences(strings.TrimSpace(result.String()))
-	var resp composerResponse
-	if err := unmarshalJSONBestEffort(raw, &resp); err != nil {
-		return composerResponse{}, fmt.Errorf("parse composer response: %w", err)
+	if err := unmarshalJSONBestEffort(raw, out); err != nil {
+		return fmt.Errorf("parse composer response: %w", err)
 	}
-	return resp, nil
+	return nil
 }
 
 // composeApply mutates the store per the routing decision: optional bucket merge,
