@@ -623,6 +623,11 @@ func (a *App) mobileBriefDeliveryOnce(ctx context.Context, brief MobileBriefV1) 
 			case mobileBriefRecapSource:
 				if strings.HasPrefix(ref.SourceID, threadOutcomeMomentPrefix) {
 					allowed = mailErr == nil && a.threadOutcomeSourceReadable(context.Background(), ref.SourceID)
+					if !allowed && mailErr == nil && a.threadOutcomeSourceEdited(ctx, reader, ref.SourceID) {
+						// The summary was written again (the hourly batch, a new
+						// run): an edit, not a withdrawal (seal v2 rule 2).
+						goneInputs[ref.Ref] = true
+					}
 					break
 				}
 				allowed = reader.store != nil
@@ -633,7 +638,12 @@ func (a *App) mobileBriefDeliveryOnce(ctx context.Context, brief MobileBriefV1) 
 					}
 					row, err := reader.store.GetActivityByID(id)
 					observation := reader.source("activity", id, 0, false)
-					allowed = err == nil && row != nil && !observation.Sensitive && !observation.Unavailable && !observation.MissingEvidence && len(a.filterComposerModelCandidatesContext(ctx, reader.store, []ActivityRow{*row})) == 1
+					rowAllowed := err == nil && row != nil && !observation.Sensitive && !observation.Unavailable && len(a.filterComposerModelCandidatesContext(ctx, reader.store, []ActivityRow{*row})) == 1
+					allowed = rowAllowed && !observation.MissingEvidence
+					if rowAllowed && observation.MissingEvidence {
+						// Its runs were regrouped or retained away: an edit.
+						goneInputs[ref.Ref] = true
+					}
 				}
 			case taskContextSourceSelfKind, "activity", "activity_summary", "activity_run", "activity_timeline_group", "activity_session", "session", meetingFollowupSourceKind:
 				allowed = reader.store != nil

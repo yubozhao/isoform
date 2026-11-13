@@ -39,6 +39,39 @@ func (a *App) threadOutcomeSourceReadableUncached(ctx context.Context, sourceID 
 	return outcome != nil && threadOutcomeSourceID(row.ID, outcome) == sourceID
 }
 
+// threadOutcomeSourceEdited reports a cited thread outcome that no longer
+// matches because its summary was written again, not because a gate refused
+// it: the summary row is still there and passes the privacy gates, and either
+// it has a newer readable outcome or its stored outcome is stale (its input
+// changed). An outcome a gate refuses (mail echo, typed input) is not edited.
+func (a *App) threadOutcomeSourceEdited(ctx context.Context, reader mobileBriefPurposeReader, sourceID string) bool {
+	if a == nil || a.activity == nil || a.activity.store == nil || reader.store == nil || a.IsClosedEyesModeEnabled() {
+		return false
+	}
+	at := strings.LastIndex(sourceID, ":")
+	if at < 1 {
+		return false
+	}
+	row, err := a.activity.store.GetActivityByID(strings.TrimPrefix(sourceID[:at], threadOutcomeMomentPrefix))
+	if err != nil || row == nil {
+		return false
+	}
+	observation := reader.source("activity", row.ID, 0, false)
+	if observation.Sensitive || observation.Unavailable || len(a.filterComposerModelCandidatesContext(ctx, reader.store, []ActivityRow{*row})) != 1 {
+		return false
+	}
+	if outcome := a.readableThreadOutcome(ctx, *row); outcome != nil {
+		return threadOutcomeSourceID(row.ID, outcome) != sourceID
+	}
+	var record activityThreadOutcomeRecord
+	if json.Unmarshal([]byte(row.threadOutcomeRecord), &record) != nil || record.Outcome == nil {
+		// The rewrite cleared the outcome; the summary itself is readable.
+		return true
+	}
+	evidence, allowed := a.threadOutcomeEvidence(ctx, *row)
+	return allowed && record.InputHash != threadOutcomeInputHash(*row, evidence)
+}
+
 // Apply to both provider replies and deterministic copy; normalize typography
 // so curly apostrophes and whitespace cannot bypass the output contract.
 func mobileBriefBannedOutcomePhrase(value string) bool {
