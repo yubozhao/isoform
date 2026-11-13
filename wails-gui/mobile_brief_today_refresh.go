@@ -278,10 +278,18 @@ func (s *mobileBriefService) refreshToday(liveOnly bool) (MobileBriefV1, bool, b
 	// slices/maps. In-memory equality otherwise rewrites files on every read.
 	// Compared with the copy on disk, so a refusal that still holds rewrites
 	// nothing.
+	// A refresh never takes the build's words off the stored brief: the gates'
+	// answer goes to the seal (store.save seals through them), which is what
+	// every reader reads. The stored brief keeps the words, so a gate that
+	// later says yes can seal them again.
+	toSave := updated
+	if scheduled {
+		toSave = mobileBriefWithWordsOf(updated, base)
+	}
 	before, _ := json.Marshal(stored)
-	after, _ := json.Marshal(updated)
+	after, _ := json.Marshal(toSave)
 	changed := !bytes.Equal(before, after)
-	if changed && base.NarrativeStatus == "ok" && updated.NarrativeStatus != "ok" {
+	if base.NarrativeStatus == "ok" && updated.NarrativeStatus != "ok" {
 		// The text the model wrote is shown no longer. Say why, once.
 		if withheld.Reason == "" {
 			withheld.Reason = mobileBriefWithheldDependencies
@@ -324,7 +332,7 @@ func (s *mobileBriefService) refreshToday(liveOnly bool) (MobileBriefV1, bool, b
 	if changed {
 		var err error
 		if scheduled {
-			err = s.store.save(updated, now)
+			err = s.store.save(toSave, now)
 		} else {
 			err = s.store.saveCurrentToday(updated)
 		}
@@ -795,4 +803,30 @@ func (b *mobileBriefBuilder) reserveRecap(refs []MobileBriefRef) {
 	for _, ref := range refs {
 		b.refFor(mobileBriefCandidate{SourceKind: ref.SourceKind, SourceID: ref.SourceID, WebSource: ref.WebSource, Title: ref.Label, At: mobileBriefParseTime(ref.ObservedAt)})
 	}
+}
+
+// mobileBriefWithWordsOf is updated (the live sections) with the written words
+// of base: the narrative, its parts, offers, cards, weekly recap and recording.
+// It is what a refresh stores; the gated copy readers see is the seal.
+func mobileBriefWithWordsOf(updated, base MobileBriefV1) MobileBriefV1 {
+	if len(base.Narrative) == 0 || len(updated.Narrative) > 0 {
+		return updated
+	}
+	updated.Narrative, updated.NarrativeStatus, updated.NarrativeParts = base.Narrative, base.NarrativeStatus, base.NarrativeParts
+	updated.Offers, updated.Cards, updated.WeeklyRecap = base.Offers, base.Cards, base.WeeklyRecap
+	updated.WeekLead, updated.WeekLeadFacts = base.WeekLead, base.WeekLeadFacts
+	updated.modelBinding, updated.ownVoiceFacts = base.modelBinding, base.ownVoiceFacts
+	if updated.Audio == nil {
+		updated.Audio = base.Audio
+	}
+	have := map[string]bool{}
+	for _, ref := range updated.Evidence {
+		have[ref.Ref] = true
+	}
+	for _, ref := range base.Evidence {
+		if !have[ref.Ref] {
+			updated.Evidence = append(updated.Evidence, ref)
+		}
+	}
+	return updated
 }
