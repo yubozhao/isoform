@@ -369,13 +369,20 @@ func (a *App) postEngagementReport(m engagement.Moment, text engagementText) boo
 			return true
 		}
 	}
-	item, ok := a.proactiveItem(m, text)
-	if !ok {
-		return false
-	}
 	now := time.Now()
 	if a.engagement != nil {
 		now = a.engagement.now()
+	}
+	// Activity-driven cards wait for the hourly batch, which runs their voice
+	// check; the engagement service holds them until then. Their phone and
+	// desktop notifications are not held.
+	if !a.activityBatchAllowsVoice(m.Kind, now) {
+		logProactiveVoiceFallback("deferred_to_batch")
+		return false
+	}
+	item, ok := a.proactiveItem(m, text)
+	if !ok {
+		return false
 	}
 	key := engagementReportKey(m, now)
 	if engagementMomentIsStatus(m, now) {

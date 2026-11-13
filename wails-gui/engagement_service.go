@@ -86,6 +86,10 @@ type engagementService struct {
 	journey                func(context.Context, time.Time)
 	afterPass              func()
 
+	// chatReportRetry, when set, says when a failed chat report is tried
+	// again; activity-driven cards wait for the hourly batch.
+	chatReportRetry func(engagement.Kind, time.Time) time.Time
+
 	// deliveryMu serializes a quiet-mode change with a complete delivery pass.
 	// Once the setter returns, no older pass can publish on the previous mode.
 	// Dedicated handoff reports make a fast entry-time decision outside this lock.
@@ -725,7 +729,7 @@ func (s *engagementService) handle(ctx context.Context, row storage.EngagementMo
 	if row.Channel != "" && row.Reason == "chat report" {
 		if !report() {
 			_ = s.store.SetEngagementMomentState(ctx, row.ID, row.State, "chat report",
-				storage.EngagementMomentRow{HoldUntil: now.Add(engagementRetryDelay).UnixMilli()})
+				storage.EngagementMomentRow{HoldUntil: s.chatReportRetryAt(engagement.Kind(row.Kind), now).UnixMilli()})
 			return
 		}
 		if row.State == storage.EngagementStateSent {
@@ -810,7 +814,7 @@ func (s *engagementService) handle(ctx context.Context, row storage.EngagementMo
 		// chat report retry.
 		if !quiet && !report() {
 			reason = "chat report"
-			holdUntil = now.Add(engagementRetryDelay).UnixMilli()
+			holdUntil = s.chatReportRetryAt(engagement.Kind(row.Kind), now).UnixMilli()
 		}
 		if err := s.store.SetEngagementMomentState(ctx, row.ID, storage.EngagementStateSent, reason, storage.EngagementMomentRow{
 			Score: score, Channel: delivered, Level: string(verdict.Interruption), SentAt: now.UnixMilli(), HoldUntil: holdUntil,
@@ -861,7 +865,7 @@ func (s *engagementService) handle(ctx context.Context, row storage.EngagementMo
 		// explicit choices retain their ordinary delivery and retry path.
 		if !report() {
 			_ = s.store.SetEngagementMomentState(ctx, row.ID, storage.EngagementStateScheduled, "chat report",
-				storage.EngagementMomentRow{UpdatedAt: now.UnixMilli(), Score: score, HoldUntil: now.Add(engagementRetryDelay).UnixMilli()})
+				storage.EngagementMomentRow{UpdatedAt: now.UnixMilli(), Score: score, HoldUntil: s.chatReportRetryAt(engagement.Kind(row.Kind), now).UnixMilli()})
 			return
 		}
 		if len(m.Channels) == 0 {
@@ -880,7 +884,7 @@ func (s *engagementService) handle(ctx context.Context, row storage.EngagementMo
 	if s.deliver.Report != nil && m.Kind == engagement.KindBriefReady {
 		if !report() {
 			_ = s.store.SetEngagementMomentState(ctx, row.ID, storage.EngagementStateScheduled, "chat report",
-				storage.EngagementMomentRow{HoldUntil: now.Add(engagementRetryDelay).UnixMilli()})
+				storage.EngagementMomentRow{HoldUntil: s.chatReportRetryAt(engagement.Kind(row.Kind), now).UnixMilli()})
 			return
 		}
 		if holdForBudget() {
@@ -903,7 +907,7 @@ func (s *engagementService) handle(ctx context.Context, row storage.EngagementMo
 	if s.deliver.Report != nil && (m.Kind == engagement.KindFirstWeek || m.Kind == engagement.KindWeeklyRecap) {
 		if !report() {
 			_ = s.store.SetEngagementMomentState(ctx, row.ID, storage.EngagementStateScheduled, "chat report",
-				storage.EngagementMomentRow{HoldUntil: now.Add(engagementRetryDelay).UnixMilli()})
+				storage.EngagementMomentRow{HoldUntil: s.chatReportRetryAt(engagement.Kind(row.Kind), now).UnixMilli()})
 			return
 		}
 		delivered := string(engagement.ChannelChat)
@@ -1430,4 +1434,13 @@ func copyTimeMap(in map[engagement.Kind]time.Time) map[engagement.Kind]time.Time
 		out[k] = v
 	}
 	return out
+}
+
+// chatReportRetryAt is when a chat report that could not be posted is tried
+// again: the next hourly batch for activity-driven cards, else five minutes.
+func (s *engagementService) chatReportRetryAt(kind engagement.Kind, now time.Time) time.Time {
+	if s.chatReportRetry != nil {
+		return s.chatReportRetry(kind, now)
+	}
+	return now.Add(engagementRetryDelay)
 }

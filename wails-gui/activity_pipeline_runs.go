@@ -650,10 +650,10 @@ func (a *App) ClearActivityPipelineRuns() error {
 	return a.activity.store.ClearActivityPipelineRuns()
 }
 
-// RunActivityPipelineNow triggers an immediate evaluation cycle of the activity
-// triager. Wails-bound. Returns once the evaluation finishes (synchronous,
-// can be slow if there are many pending sessions). Useful for triggering a
-// pipeline run from the Settings UI without waiting for the 5-minute ticker.
+// RunActivityPipelineNow runs the hourly activity batch now. Wails-bound.
+// Returns once the batch finishes (synchronous, can be slow if there are many
+// pending sessions). Useful for triggering a pipeline run from the Settings UI
+// without waiting for the next hourly batch.
 func (a *App) RunActivityPipelineNow() error {
 	if a.activity == nil {
 		return fmt.Errorf("activity monitor not initialized")
@@ -670,7 +670,7 @@ func (a *App) RunActivityPipelineNow() error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return c.evaluate(ctx)
+	return c.runBatch(ctx, "manual")
 }
 
 // PruneActivityPipelineRuns enforces the retention window:

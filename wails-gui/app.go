@@ -72,6 +72,10 @@ var embeddedAppIconICO []byte
 var embeddedMenuBarIcons embed.FS
 
 type App struct {
+	// activityBatch is the schedule of the hourly activity batch
+	// (activity_hourly_batch.go).
+	activityBatch activityBatchClock
+
 	toolDownloads    toolDownloadPlans
 	launch           *launchStartup
 	setupModelsOnce  sync.Once

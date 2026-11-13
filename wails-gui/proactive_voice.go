@@ -122,6 +122,12 @@ func (a *App) voiceMainChatCopy(m engagement.Moment, item *mainChatProactive) bo
 	// Start every locale from source-free catalog copy; only validated output
 	// may replace it. A safe current source never authorizes older details.
 	resetProactiveVoiceToGeneric(item, lang)
+	// Outside the hourly batch an activity-driven card (a digest child) keeps
+	// its catalog copy: no source read and no model call.
+	if !a.activityBatchAllowsVoice(m.Kind, now) {
+		logProactiveVoiceFallback("deferred_to_batch")
+		return true
+	}
 	if !m.ExpiresAt.IsZero() && !now.Before(m.ExpiresAt) {
 		logProactiveVoiceFallback("late_result")
 		resetProactiveVoiceToGeneric(item, lang)

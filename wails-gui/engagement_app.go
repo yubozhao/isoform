@@ -51,6 +51,7 @@ func (a *App) startEngagement(ctx context.Context) {
 	svc.prepareSource = a.prepareEngagementRead
 	svc.sourceAllowsRead = a.engagementDeliveryAllowsRead
 	svc.holdStagedListReminder = a.holdStagedBrainDumpReminder
+	svc.chatReportRetry = a.engagementChatReportRetryAt
 	svc.completion = a.engagementItemCompletedAt
 	a.engagement = svc
 	a.initializeFirstWeek(context.Background(), svc.now())

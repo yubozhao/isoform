@@ -24,12 +24,11 @@ import (
 )
 
 const (
-	triagerCheckInterval = 5 * time.Minute
-	triagerIdleTrigger   = 2 * time.Minute
-	triagerMinSnapshots  = 3
-	triagerMinApps       = 2
-	triagerMinEvents     = 20
-	triagerMinDuration   = 30 * time.Second
+	triagerIdleTrigger  = 2 * time.Minute
+	triagerMinSnapshots = 3
+	triagerMinApps      = 2
+	triagerMinEvents    = 20
+	triagerMinDuration  = 30 * time.Second
 	// High-activity exemption thresholds for the apps prefilter. A session
 	// pinned to a single app (cmux/IDE/terminal focused work) normally fails
 	// the >=2 apps gate even when it carries rich signal. When BOTH event
@@ -81,7 +80,7 @@ type ActivityTriager struct {
 	wg sync.WaitGroup
 	// runMu is held for the entire duration of an evaluate() invocation and
 	// is acquired via TryLock so that a manual trigger (RunActivityPipelineNow)
-	// cannot collide with the 5-minute ticker and process the same pending
+	// cannot collide with the hourly batch and process the same pending
 	// sessions twice.
 	runMu sync.Mutex
 	// semanticMu serializes the independent semantic-event pass (its own
@@ -117,6 +116,10 @@ type ActivityTriager struct {
 	// unchanged window re-captured across sessions is described once. See
 	// activity_event_vision.go.
 	visionCache visionResultCache
+	// lastBatch is the start of the latest hourly batch (activity_hourly_batch.go);
+	// batchScheduled marks that the first batch after startup was scheduled.
+	lastBatch      time.Time
+	batchScheduled bool
 }
 
 // activityTriageResponse is the AI triage result for an activity session.
@@ -697,20 +700,9 @@ func (c *ActivityTriager) Run(ctx context.Context) {
 	go c.runThreadOutcomeLoop(ctx)
 	go c.runActivityThreadLoop(ctx)
 
-	// Run once at startup
-	_ = c.evaluate(ctx)
-
-	ticker := time.NewTicker(triagerCheckInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			_ = c.evaluate(ctx)
-		}
-	}
+	// Triage and learning run as one hourly batch over everything captured
+	// since the last batch (activity_hourly_batch.go).
+	c.runHourlyBatches(ctx)
 }
 
 // Stop cancels the triager loop and waits for any in-flight
@@ -731,7 +723,7 @@ func (c *ActivityTriager) Stop() {
 var errGeneratorBusy = fmt.Errorf("activity triager already running")
 
 // evaluate checks pending activity sessions and runs the triage pipeline.
-// TryLock-guards against re-entry so the 5-minute ticker and a manual trigger
+// TryLock-guards against re-entry so the hourly batch and a manual trigger
 // cannot process the same pending sessions concurrently. Returns
 // errGeneratorBusy if another invocation held the lock.
 func (c *ActivityTriager) evaluate(ctx context.Context) error {
@@ -789,6 +781,15 @@ func (c *ActivityTriager) evaluate(ctx context.Context) error {
 		return nil
 	}
 
+	// Coding agents at work are agent activity: no model reads them and they
+	// never become memories about the user.
+	sessions, agentSessions := c.splitAgentActivity(sessions)
+	c.recordAgentActivity(agentSessions)
+	tickRun.FilteredCount += len(agentSessions)
+	if len(sessions) == 0 {
+		return nil
+	}
+
 	// Step 1: Merge adjacent sessions that likely form a single workflow (no AI cost).
 	// Sessions are already sorted by start_time ASC from the query.
 	groups := mergeSessions(sessions)
@@ -835,9 +836,12 @@ func (c *ActivityTriager) evaluate(ctx context.Context) error {
 		return nil
 	}
 
-	// Step 3: AI triage for each candidate group. Skip groups whose previous
-	// triage failed within the cooldown window — re-running the same prompt
-	// burns ~60K input tokens for a result we already know fails.
+	// Step 3: one AI triage for the whole batch. Every candidate group since
+	// the last batch joins one group, so an hour of activity makes one triage
+	// call and at most one memory and one knowledge call. Skip the batch if
+	// its previous triage failed within the cooldown window — re-running the
+	// same prompt burns ~60K input tokens for a result we already know fails.
+	candidates = batchCandidateGroups(candidates)
 	now := time.Now()
 	for _, g := range candidates {
 		select {

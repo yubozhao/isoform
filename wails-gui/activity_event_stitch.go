@@ -89,7 +89,7 @@ func (c *ActivityTriager) activityStore() *ActivityStore {
 }
 
 // semanticCheckInterval is the independent cadence for the semantic-event pass,
-// separate from triagerCheckInterval — each extraction is cheaper than full triage.
+// separate from the hourly triage batch — each extraction is cheaper than full triage.
 const semanticCheckInterval = 2 * time.Minute
 
 // runSemanticLoop drives the semantic-event pass on its own goroutine + ticker,
