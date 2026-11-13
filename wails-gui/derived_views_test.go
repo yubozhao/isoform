@@ -90,8 +90,13 @@ func TestDerivedViewKnowHowBindingBuildsOnceAndOnEdit(t *testing.T) {
 	if cards, _ := app.ListKnowHow(); len(cards) != 1 || d.buildCount(derivedKnowHow) != 1 {
 		t.Fatalf("background change rebuilt: %d cards, %d builds", len(cards), d.buildCount(derivedKnowHow))
 	}
-	// The person's own save shows at once.
+	// The person's own save is served from the old snapshot while the
+	// scheduler rebuilds it at once (its event brings the new one).
 	app.markMemoryDirty("knowledge-save")
+	if cards, _ := app.ListKnowHow(); len(cards) != 1 || d.buildCount(derivedKnowHow) != 1 {
+		t.Fatalf("an edit blocked the read: %d cards, %d builds", len(cards), d.buildCount(derivedKnowHow))
+	}
+	d.tick(context.Background(), true)
 	if cards, _ := app.ListKnowHow(); len(cards) != 2 || d.buildCount(derivedKnowHow) != 2 {
 		t.Fatalf("after an edit: %d cards, %d builds, want 2 and 2", len(cards), d.buildCount(derivedKnowHow))
 	}
@@ -196,9 +201,9 @@ func TestDerivedViewPrivacyActionFencesSnapshot(t *testing.T) {
 	d.tick(context.Background(), true)
 	for _, c := range d.allCells() {
 		c.mu.Lock()
-		has, stamp := c.has, c.stampOf
+		has, stamp := c.has, c.privacyOf
 		c.mu.Unlock()
-		if has && stamp != c.stamp() {
+		if has && stamp != c.privacy() {
 			t.Fatalf("%s kept a snapshot from before the forget", c.view)
 		}
 	}
@@ -232,7 +237,7 @@ func TestDerivedViewClosedEyesReadsLive(t *testing.T) {
 	}
 }
 
-func TestDerivedViewPeopleEditShowsAtOnce(t *testing.T) {
+func TestDerivedViewPeopleEditRebuildsAtOnce(t *testing.T) {
 	app, d := derivedTestApp(t)
 	name := "Ada"
 	build := func() (derivedTestValue, error) { return derivedTestValue{Items: []string{name}}, nil }
@@ -242,6 +247,7 @@ func TestDerivedViewPeopleEditShowsAtOnce(t *testing.T) {
 		t.Fatalf("a source change showed before the hourly build: %v", got.Items)
 	}
 	d.touch(derivedPeopleOverview) // UpdatePrincipal, MergePeople, ...
+	d.tick(context.Background(), true)
 	if got := readDerivedTestValue(t, app, derivedPeopleOverview, build); got.Items[0] != "Ada Lovelace" {
 		t.Fatalf("the person's edit did not show: %v", got.Items)
 	}
@@ -269,7 +275,7 @@ func TestDerivedViewReadUnder100msWithBackgroundWriter(t *testing.T) {
 	c.mu.Lock()
 	c.at = time.Now().Add(-25 * time.Hour)
 	c.mu.Unlock()
-	go func() { _, _, _ = d.ensure(c, derivedDaily) }() // a scheduled build holding the view
+	go func() { _, _, _ = d.ensure(c, derivedDaily, false) }() // a scheduled build holding the view
 
 	stop := make(chan struct{})
 	writerDone := make(chan struct{})
@@ -444,4 +450,66 @@ func TestKnowledgeEntriesParsedOnlyOnFileChange(t *testing.T) {
 	if after, _ := app.GetKnowledgeEntries(); len(after) != 1 || after[0].ID != "two" {
 		t.Fatalf("after a delete = %+v", after)
 	}
+}
+
+// The startup pile-up seen on Bo's app (2026-11-12, build 1ae0757fc): page
+// reads queued behind the first portrait build, and each touch during that
+// build made the next queued reader build again (4 builds, up to 36 s). Every
+// reader waiting on a cold build now shares that one build.
+func TestDerivedViewColdReadersShareOneBuildDespiteTouches(t *testing.T) {
+	app, d := derivedTestApp(t)
+	release := make(chan struct{})
+	var builds atomic.Int64
+	build := func() (derivedTestValue, error) {
+		if builds.Add(1) == 1 {
+			<-release
+		}
+		return derivedTestValue{Items: []string{"portrait"}}, nil
+	}
+	var wg sync.WaitGroup
+	for range 12 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if got := readDerivedTestValue(t, app, derivedPortrait, build); len(got.Items) != 1 {
+				t.Errorf("read %v", got.Items)
+			}
+		}()
+	}
+	time.Sleep(20 * time.Millisecond)
+	// Publications and edits land while the first build runs.
+	for range 3 {
+		d.touch(derivedPortrait)
+		derivedMemoryEditGeneration.Add(1)
+	}
+	close(release)
+	wg.Wait()
+	if got := builds.Load(); got != 1 {
+		t.Fatalf("builds = %d for 12 readers queued on a cold build, want 1", got)
+	}
+}
+
+// A snapshot made out of date by an edit or a publication is served at once;
+// only the scheduler rebuilds it.
+func TestDerivedViewFreshnessChangeNeverBlocksARead(t *testing.T) {
+	app, d := derivedTestApp(t)
+	var slow atomic.Bool
+	release := make(chan struct{})
+	build := func() (derivedTestValue, error) {
+		if slow.Load() {
+			<-release
+		}
+		return derivedTestValue{Items: []string{"v"}}, nil
+	}
+	readDerivedTestValue(t, app, derivedPortrait, build)
+	slow.Store(true)
+	d.touch(derivedPortrait)
+	go d.tick(context.Background(), true) // the rebuild, held open
+	time.Sleep(20 * time.Millisecond)
+	started := time.Now()
+	readDerivedTestValue(t, app, derivedPortrait, build)
+	if took := time.Since(started); took > 100*time.Millisecond {
+		t.Fatalf("a read after a touch took %v while the rebuild ran", took)
+	}
+	close(release)
 }

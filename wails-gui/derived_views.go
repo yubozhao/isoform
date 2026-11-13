@@ -16,9 +16,11 @@ import (
 
 // Derived views are periodic, not real-time (Bo, 2026-11-12). Capture stays
 // real-time; each page projection below is built by one scheduled job and
-// kept as a snapshot in memory. A binding returns the snapshot and builds it
-// only when there is none, when a privacy action or the person's own edit
-// changed what it may show, or never more than its cadence allows:
+// kept as a snapshot in memory. A binding returns the snapshot and waits for
+// a build only when there is none or a privacy action changed what it may
+// show (all waiting callers share that one build). The person's own edits
+// and publications rebuild it at once behind the read, and otherwise it is
+// rebuilt no more often than its cadence:
 //
 //   - Daily (the default): About you (portrait, its Today card, the belief
 //     list), How you do things, Who you know (overview and stats), plus
@@ -67,15 +69,15 @@ type derivedViewSpec struct {
 }
 
 const (
-	aboutYouUpdatedEvent         = "about-you:updated"
-	peopleOverviewUpdatedEvent   = "people:overview-updated"
-	mainChatWaitingItemsUpdated  = "main-chat:waiting-items-updated"
+	aboutYouUpdatedEvent        = "about-you:updated"
+	peopleOverviewUpdatedEvent  = "people:overview-updated"
+	mainChatWaitingItemsUpdated = "main-chat:waiting-items-updated"
 	// todayBeforeYouTalkUpdatedEvent tells Today a scheduled Before you
 	// talk build changed it.
 	todayBeforeYouTalkUpdatedEvent = "today-before-you-talk:updated"
-	todayDayShapeUpdatedEvent    = "today-dayshape:updated"
-	knowledgeUpdatedEvent        = "knowledge:updated"
-	derivedViewRefreshedLogLabel = "[derived]"
+	todayDayShapeUpdatedEvent      = "today-dayshape:updated"
+	knowledgeUpdatedEvent          = "knowledge:updated"
+	derivedViewRefreshedLogLabel   = "[derived]"
 )
 
 var derivedViewSpecs = map[derivedViewName]derivedViewSpec{
@@ -132,16 +134,21 @@ type derivedCell struct {
 	every time.Duration
 	event string
 	build func() (any, error)
-	stamp func() string
+	// privacy is the stamp a snapshot must match to be served at all;
+	// fresh is the rest (the person's edits, publications). A snapshot whose
+	// fresh stamp moved is still served while it is rebuilt behind the read.
+	privacy func() string
+	fresh   func() string
 
 	buildMu sync.Mutex // one build at a time per snapshot
 
-	mu       sync.Mutex
-	has      bool
-	raw      []byte
-	stampOf  string
-	at       time.Time
-	lastRead time.Time
+	mu        sync.Mutex
+	has       bool
+	raw       []byte
+	privacyOf string
+	freshOf   string
+	at        time.Time
+	lastRead  time.Time
 }
 
 type derivedViews struct {
@@ -254,8 +261,9 @@ func (d *derivedViews) cell(view derivedViewName, key string, build func() (any,
 	spec := derivedViewSpecs[view]
 	touches := d.touches[view]
 	c := &derivedCell{view: view, key: key, every: spec.every, event: spec.event, build: build}
-	c.stamp = func() string {
-		stamp := d.app.derivedPrivacyStamp() + "|" + fmt.Sprint(touches.Load())
+	c.privacy = d.app.derivedPrivacyStamp
+	c.fresh = func() string {
+		stamp := fmt.Sprint(touches.Load())
 		if extra != nil {
 			stamp += "|" + extra()
 		}
@@ -273,14 +281,17 @@ func (d *derivedViews) cell(view derivedViewName, key string, build func() (any,
 }
 
 // ensure returns the snapshot, building it when it is missing, built under
-// another stamp, or older than maxAge. changed is true when a build replaced
-// an earlier snapshot with a different one.
-func (d *derivedViews) ensure(c *derivedCell, maxAge time.Duration) (raw []byte, changed bool, err error) {
+// another privacy stamp, or (unless servable) under another fresh stamp or
+// older than maxAge. servable is the foreground rule: any snapshot under the
+// current privacy stamp will do, so readers queued behind one build take its
+// result instead of each building again. changed is true when a build
+// replaced an earlier snapshot with a different one.
+func (d *derivedViews) ensure(c *derivedCell, maxAge time.Duration, servable bool) (raw []byte, changed bool, err error) {
 	c.buildMu.Lock()
 	defer c.buildMu.Unlock()
-	stamp := c.stamp()
+	privacy, fresh := c.privacy(), c.fresh()
 	c.mu.Lock()
-	if c.has && c.stampOf == stamp && time.Since(c.at) < maxAge {
+	if c.has && c.privacyOf == privacy && (servable || (c.freshOf == fresh && time.Since(c.at) < maxAge)) {
 		raw = c.raw
 		c.mu.Unlock()
 		return raw, false, nil
@@ -300,30 +311,33 @@ func (d *derivedViews) ensure(c *derivedCell, maxAge time.Duration) (raw []byte,
 	c.mu.Lock()
 	// The stamp is the one taken before the build: a privacy change during the
 	// build leaves this snapshot unserved, and the next read builds again.
-	c.has, c.raw, c.stampOf, c.at = true, raw, stamp, time.Now()
+	c.has, c.raw, c.privacyOf, c.freshOf, c.at = true, raw, privacy, fresh, time.Now()
 	c.mu.Unlock()
 	log.Printf("%s built view=%s ms=%d", derivedViewRefreshedLogLabel, c.view, time.Since(started).Milliseconds())
 	return raw, had && !bytes.Equal(previous, raw), nil
 }
 
-// read serves the snapshot. A missing or fenced-off snapshot is built while
-// the caller waits; one past its cadence is served and rebuilt behind it.
+// read serves the snapshot. Only a missing snapshot, or one from before a
+// privacy change, is built while the caller waits; every caller waiting then
+// shares that one build. A snapshot past its cadence, or one the person's
+// edit or a publication made out of date, is served at once and rebuilt
+// behind the read; the page's event brings the new one.
 func (d *derivedViews) read(c *derivedCell) ([]byte, error) {
 	now := time.Now()
 	d.lastRead.Store(now.UnixNano())
-	stamp := c.stamp()
+	privacy := c.privacy()
 	c.mu.Lock()
 	c.lastRead = now
-	if c.has && c.stampOf == stamp {
-		raw, stale := c.raw, now.Sub(c.at) >= c.every
+	if c.has && c.privacyOf == privacy {
+		raw, behind := c.raw, now.Sub(c.at) >= c.every || c.freshOf != c.fresh()
 		c.mu.Unlock()
-		if stale {
+		if behind {
 			d.wake()
 		}
 		return raw, nil
 	}
 	c.mu.Unlock()
-	raw, changed, err := d.ensure(c, time.Duration(math.MaxInt64))
+	raw, changed, err := d.ensure(c, time.Duration(math.MaxInt64), true)
 	if err == nil && changed {
 		d.publish(c)
 	}
@@ -543,12 +557,12 @@ func (d *derivedViews) tick(ctx context.Context, kicked bool) {
 			return
 		}
 		c.mu.Lock()
-		has, stampOf, at := c.has, c.stampOf, c.at
+		has, privacyOf, freshOf, at := c.has, c.privacyOf, c.freshOf, c.at
 		c.mu.Unlock()
 		if !has {
 			continue
 		}
-		fenced := stampOf != c.stamp()
+		fenced := privacyOf != c.privacy() || freshOf != c.fresh()
 		due := time.Since(at) >= c.every
 		if !fenced && !(due && (idle || kicked)) {
 			continue
@@ -557,7 +571,7 @@ func (d *derivedViews) tick(ctx context.Context, kicked bool) {
 		if fenced {
 			maxAge = time.Duration(math.MaxInt64)
 		}
-		if _, changed, err := d.ensure(c, maxAge); err == nil && changed {
+		if _, changed, err := d.ensure(c, maxAge, false); err == nil && changed {
 			d.publish(c)
 		}
 	}
@@ -588,7 +602,7 @@ func (d *derivedViews) drop(match func(*derivedCell) bool) {
 			continue
 		}
 		c.mu.Lock()
-		c.has, c.raw, c.stampOf = false, nil, ""
+		c.has, c.raw, c.privacyOf, c.freshOf = false, nil, "", ""
 		c.mu.Unlock()
 	}
 }
