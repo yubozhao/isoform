@@ -259,6 +259,12 @@ func (s *mobileBriefService) refreshToday(liveOnly bool) (MobileBriefV1, bool, b
 			base = buildMobileBriefV1(mobileBriefInput{Slot: mobileBriefSlotOnRequest, AsOf: now, WindowStart: start, Location: loc})
 		}
 	}
+	stored := base
+	if scheduled {
+		// The gates read the build's words, not a copy an earlier pass
+		// stripped: an earlier refusal that no longer holds gives them back.
+		base = s.store.withBuiltWords(base)
+	}
 	collectMobileBriefTodayShape(s.app, &in, base)
 	readable, withheld := mobileBriefTodayReadableSynthesis(s.app, base)
 	updated := projectMobileBriefToday(readable, in)
@@ -270,7 +276,9 @@ func (s *mobileBriefService) refreshToday(liveOnly bool) (MobileBriefV1, bool, b
 	}
 	// JSON is the persisted contract: omitempty normalizes nil and empty
 	// slices/maps. In-memory equality otherwise rewrites files on every read.
-	before, _ := json.Marshal(base)
+	// Compared with the copy on disk, so a refusal that still holds rewrites
+	// nothing.
+	before, _ := json.Marshal(stored)
 	after, _ := json.Marshal(updated)
 	changed := !bytes.Equal(before, after)
 	if changed && base.NarrativeStatus == "ok" && updated.NarrativeStatus != "ok" {

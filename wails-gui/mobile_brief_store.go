@@ -218,6 +218,86 @@ func (s *mobileBriefStore) load(briefID string) (MobileBriefV1, bool) {
 	return brief, true
 }
 
+// mobileBriefBuiltExt is the build's own copy of a brief. Only a build writes
+// it; a Today refresh, a read, an amend or a re-seal never does, so the words a
+// build wrote survive a later gate and can be sealed again when the gate says
+// yes. It stays on this computer and is never sent.
+const mobileBriefBuiltExt = ".built"
+
+// saveBuilt keeps the build's copy of brief. Called by generation only.
+func (s *mobileBriefStore) saveBuilt(brief MobileBriefV1) error {
+	if s.dir == "" || !mobileBriefIDPattern.MatchString(brief.BriefID) {
+		return errMobileBriefStateUnavailable
+	}
+	data, err := marshalStoredMobileBrief(brief)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return writeMobileBriefFileAtomic(s.dir, brief.BriefID+mobileBriefBuiltExt, data)
+}
+
+// loadBuilt reads the build's copy of a brief.
+func (s *mobileBriefStore) loadBuilt(briefID string) (MobileBriefV1, bool) {
+	if s.dir == "" || !mobileBriefIDPattern.MatchString(briefID) {
+		return MobileBriefV1{}, false
+	}
+	data, err := os.ReadFile(filepath.Join(s.dir, briefID+mobileBriefBuiltExt))
+	if err != nil {
+		return MobileBriefV1{}, false
+	}
+	var brief MobileBriefV1
+	if unmarshalStoredMobileBrief(data, &brief) != nil || brief.BriefID != briefID {
+		return MobileBriefV1{}, false
+	}
+	return brief, true
+}
+
+// withBuiltWords puts the build's written words back on a stored copy that a
+// refresh or gate stripped, when both are the same build. The result still
+// goes through the gates before anyone reads it.
+func (s *mobileBriefStore) withBuiltWords(stored MobileBriefV1) MobileBriefV1 {
+	if len(stored.Narrative) > 0 {
+		return stored
+	}
+	built, ok := s.loadBuilt(stored.BriefID)
+	if !ok || built.AsOf != stored.AsOf || len(built.Narrative) == 0 {
+		return stored
+	}
+	stored.Narrative, stored.NarrativeStatus, stored.NarrativeParts = built.Narrative, built.NarrativeStatus, built.NarrativeParts
+	stored.Offers, stored.Cards, stored.WeeklyRecap = built.Offers, built.Cards, built.WeeklyRecap
+	stored.WeekLead, stored.WeekLeadFacts = built.WeekLead, built.WeekLeadFacts
+	stored.modelBinding, stored.ownVoiceFacts = built.modelBinding, built.ownVoiceFacts
+	if stored.Audio == nil {
+		stored.Audio = built.Audio
+	}
+	// Evidence the words cite may have been dropped with them.
+	have := map[string]bool{}
+	for _, ref := range stored.Evidence {
+		have[ref.Ref] = true
+	}
+	for _, ref := range built.Evidence {
+		if !have[ref.Ref] {
+			stored.Evidence = append(stored.Evidence, ref)
+		}
+	}
+	return stored
+}
+
+// keepBuiltAudio adds the build's recording to its build copy, when the copy
+// is of the same build and still says the words the recording speaks.
+func (s *mobileBriefStore) keepBuiltAudio(stored MobileBriefV1) {
+	built, ok := s.loadBuilt(stored.BriefID)
+	if !ok || built.AsOf != stored.AsOf || stored.Audio == nil || mobileBriefNarrativeWords(built.Narrative) != mobileBriefNarrativeWords(stored.Narrative) {
+		return
+	}
+	built.Audio = stored.Audio
+	if err := s.saveBuilt(built); err != nil {
+		log.Printf("[mobile-brief] the %s brief's build copy could not keep its recording", stored.Slot)
+	}
+}
+
 func (s *mobileBriefStore) exists(briefID string) bool {
 	if s.dir == "" || !mobileBriefIDPattern.MatchString(briefID) {
 		return false
@@ -348,7 +428,7 @@ func (s *mobileBriefStore) sweepLocked(now time.Time) {
 		}
 		switch filepath.Ext(id) {
 		case ".json", mobileBriefAudioExtM4A, mobileBriefAudioExtWAV,
-			mobileBriefPackageExt, mobileBriefPackageMetaExt, mobileBriefPackageSrcExt, mobileBriefSealStateExt:
+			mobileBriefPackageExt, mobileBriefPackageMetaExt, mobileBriefPackageSrcExt, mobileBriefSealStateExt, mobileBriefBuiltExt:
 			id = strings.TrimSuffix(id, filepath.Ext(id))
 		default:
 			continue

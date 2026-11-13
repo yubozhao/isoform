@@ -1366,6 +1366,11 @@ func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, s
 	// A remake of a held early brief sends the phone no second notice either: its push is already due at the slot.
 	remadeAhead := hadPrior && mobileBriefIsAhead(prior) && mobileBriefIsAhead(brief)
 	err = s.store.saveDocument(brief, asOf)
+	if err == nil {
+		if builtErr := s.store.saveBuilt(brief); builtErr != nil {
+			log.Printf("[mobile-brief] the %s brief's build copy could not be kept", brief.Slot)
+		}
+	}
 	s.patchMu.Unlock()
 	if err == nil && replacedAhead {
 		logMobileBriefAhead("slot", brief.BriefID, true)
@@ -1639,6 +1644,7 @@ func (s *mobileBriefService) addAudioWithLatestGuard(ctx context.Context, brief 
 		return
 	}
 	saved = true
+	s.store.keepBuiltAudio(stored)
 	s.patchMu.Unlock()
 	s.saveFinishedRead(stored)
 	if s.app != nil {
