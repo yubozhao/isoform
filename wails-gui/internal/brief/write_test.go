@@ -124,3 +124,19 @@ func TestAgentDriven(t *testing.T) {
 		}
 	}
 }
+
+func TestRepairDraftNeverCitesContext(t *testing.T) {
+	m := testMaterial()
+	ctx := m.AddItem(MaterialItem{Group: GroupContext, Title: "You prefer short notes"})
+	raw := `{"done":[{"text":"You finished the interview.","refs":["m1","` + ctx + `"]},{"text":"You like short notes.","refs":["` + ctx + `"]}],"next":[{"text":"Coffee first.","refs":["m3"]}]}`
+	d, codes, err := RepairDraft(raw, m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(d.Done) != 1 || len(d.Done[0].Refs) != 1 || d.Done[0].Refs[0] != "m1" {
+		t.Fatalf("context cited: %+v", d.Done)
+	}
+	if !strings.Contains(SummarizeCodes(codes), CodeContextRef+"=2") {
+		t.Fatalf("codes %v", codes)
+	}
+}

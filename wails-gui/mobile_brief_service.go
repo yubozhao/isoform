@@ -1392,6 +1392,7 @@ func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, s
 	}
 	if brief.NarrativeStatus == "quiet" {
 		firstReadBriefMu.Unlock()
+		s.logBriefReady(brief)
 		if s.app != nil {
 			s.app.emitBrowserEvent("brief:stored", brief.BriefID)
 			s.app.emitBrowserEvent("mobile:updated")
@@ -1441,6 +1442,7 @@ func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, s
 	go func() {
 		defer s.wg.Done()
 		s.addAudio(ctx, brief, asOf)
+		s.logBriefReady(brief)
 	}()
 	return brief, nil
 }

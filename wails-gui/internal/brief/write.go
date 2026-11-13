@@ -135,6 +135,7 @@ const (
 	CodeNextFromPast  = "next_without_forward_ref"
 	CodeBalance       = "balance"
 	CodeNoNext        = "no_next"
+	CodeContextRef    = "context_ref_dropped"
 )
 
 // Writer limits. Paragraph bytes match the app's narrative limit.
@@ -163,7 +164,7 @@ func WritePrompt(m Material, lang string) string {
 	b.WriteString("- Group \"done\" and \"attended\" are the user's own work and meetings.\n")
 	b.WriteString("- Items marked \"agent\": true (and group \"agents\") are work AI agents did on the user's computer: Claude Code and Codex sessions, scheduled prompts, automations. The user directed them. Mention them only as context, in the done part, as what the agents did (for example \"your agents merged three fixes\"). Never present them as the user's own work, never as a habit of the user, and never make them a next step.\n")
 	b.WriteString("- A next step must cite at least one item from groups ahead, commitment, waiting, follow_up or open_loop.\n")
-	b.WriteString("- Group \"context\" is background. Use it to choose emphasis; do not report it as news.\n")
+	b.WriteString("- Group \"context\" is background. Use it to choose emphasis; do not report it as news and never cite it in refs.\n")
 	b.WriteString("- If a lot happened, say so. Never say nothing moved when the done or attended groups have items.\n")
 	b.WriteString("- No clock times for the past: use day words (today, yesterday). Clock times are fine for what is ahead.\n")
 	b.WriteString("- Address the user as you. Short sentences, plain words. No lists, no bullets, no headings, no emoji, no symbols. Say computer and phone, never Mac or iPhone.\n")
@@ -236,8 +237,15 @@ func RepairDraft(raw string, m Material) (Draft, []string, error) {
 		seen := map[string]bool{}
 		for _, r := range p.Refs {
 			r = strings.TrimSpace(r)
-			if _, ok := byID[r]; !ok {
+			item, ok := byID[r]
+			if !ok {
 				codes = append(codes, CodeRefUnknown)
+				continue
+			}
+			if item.Group == GroupContext {
+				// Context shapes emphasis only. Its sources (learned notes,
+				// people) are rewritten often, so the words never rest on them.
+				codes = append(codes, CodeContextRef)
 				continue
 			}
 			if !seen[r] {

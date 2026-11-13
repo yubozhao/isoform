@@ -67,6 +67,13 @@ func subscribePrivacyWithdrawals(subscriber func(privacyWithdrawal)) func() {
 	return privacyWithdrawals.subscribe(subscriber)
 }
 
+// publishRetentionRemoval tells the readers of raw sources that retention
+// removed one, without moving the brief privacy print: retention cleanup never
+// withdraws or amends a sealed brief (docs/design/brief-seal-v2.md rule 2).
+func publishRetentionRemoval(scope privacyWithdrawalScope) {
+	privacyWithdrawals.publish(privacyWithdrawal{Scope: scope})
+}
+
 func publishPrivacyWithdrawal(scope privacyWithdrawalScope) {
 	// A withdrawn source is named, so the briefs that cite it are amended from
 	// that alone. Other scopes (apps, sessions, accounts, time ranges) are not

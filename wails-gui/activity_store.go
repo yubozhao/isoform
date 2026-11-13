@@ -1142,9 +1142,17 @@ func (s *ActivityStore) deleteRetainedSession(sessionID string) error {
 func (s *ActivityStore) deleteSession(sessionID string, retainSummaries bool) error {
 	deleted := false
 	defer func() {
-		if deleted {
-			publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalSession, ID: sessionID})
+		if !deleted {
+			return
 		}
+		scope := privacyWithdrawalScope{Kind: privacyWithdrawalSession, ID: sessionID}
+		if retainSummaries {
+			// Retention is not a privacy action (seal v2 rule 2): readers drop
+			// their raw copies, but no sealed brief is amended.
+			publishRetentionRemoval(scope)
+			return
+		}
+		publishPrivacyWithdrawal(scope)
 	}()
 	s.readPrivacyMu.Lock()
 	defer s.readPrivacyMu.Unlock()

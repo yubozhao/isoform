@@ -184,3 +184,18 @@ func TestNewBriefMaterialCarriesConversationsOutsideSections(t *testing.T) {
 		t.Fatalf("a stated exclusion must remove the conversation: %d left", len(excluded.Conversations))
 	}
 }
+
+func TestNewWriterShortBriefIsNotQuiet(t *testing.T) {
+	in := newWriterTestInput()
+	in.Slot = mobileBriefSlotMorning
+	brief := buildMobileBriefV1(in)
+	brief.NarrativeStatus, brief.writerItems = "ok", 3
+	brief.Narrative = []MobileBriefPara{{Text: "A quiet day: coffee with Vaishant is the one thing ahead.", Refs: []string{brief.Evidence[0].Ref}, Part: briefPartNext}}
+	if got := mobileBriefForPublication(brief); got.NarrativeStatus == "quiet" || len(got.Narrative) == 0 {
+		t.Fatalf("a short new-writer brief was made quiet: %s", got.NarrativeStatus)
+	}
+	brief.writerItems = 0
+	if got := mobileBriefForPublication(brief); got.NarrativeStatus != "quiet" {
+		t.Fatalf("the old writer's word floor changed: %s", got.NarrativeStatus)
+	}
+}

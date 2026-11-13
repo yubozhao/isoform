@@ -235,8 +235,52 @@ func (s *mobileBriefService) finishAmendRequest() {
 // deleted outside the app (the memory watcher found them gone). Only the removed
 // sources are withdrawn. An edited file is not a withdrawal and is not reported here.
 func memorySourcesRemovedOnDisk(removed []briefWithdrawn) {
+	removed = withoutRewriteRemovals(removed, time.Now())
+	if len(removed) == 0 {
+		return
+	}
 	briefPrivacyChanged(removed...)
 	briefPrivacyAmendSoon()
+}
+
+// Isoform's own memory rewrites (a Dream merge archives the merged notes) take
+// files off disk too. They are edits, not withdrawals (seal v2 rule 2), so the
+// rewriter notes each id before it removes the file and the watcher's report
+// skips it.
+var rewriteRemovals = struct {
+	sync.Mutex
+	at map[string]time.Time
+}{at: map[string]time.Time{}}
+
+// rewriteRemovalWindow is how long a noted rewrite covers the watcher's report.
+const rewriteRemovalWindow = 10 * time.Minute
+
+// noteMemoryRemovedByRewrite records that Isoform is about to remove memory id
+// as part of a rewrite.
+func noteMemoryRemovedByRewrite(id string) {
+	rewriteRemovals.Lock()
+	defer rewriteRemovals.Unlock()
+	now := time.Now()
+	for key, at := range rewriteRemovals.at {
+		if now.Sub(at) > rewriteRemovalWindow {
+			delete(rewriteRemovals.at, key)
+		}
+	}
+	rewriteRemovals.at[id] = now
+}
+
+func withoutRewriteRemovals(removed []briefWithdrawn, now time.Time) []briefWithdrawn {
+	rewriteRemovals.Lock()
+	defer rewriteRemovals.Unlock()
+	out := removed[:0:0]
+	for _, item := range removed {
+		if at, ok := rewriteRemovals.at[item.ID]; ok && now.Sub(at) <= rewriteRemovalWindow {
+			delete(rewriteRemovals.at, item.ID)
+			continue
+		}
+		out = append(out, item)
+	}
+	return out
 }
 
 // noteMobileBriefReadCachesChanged records a freshness change (a new

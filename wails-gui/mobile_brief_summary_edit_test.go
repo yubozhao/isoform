@@ -58,3 +58,25 @@ func TestResummarizedSummaryLeavesSealedBriefShown(t *testing.T) {
 		})
 	}
 }
+
+// Retention is not a privacy action: it never moves the brief privacy print.
+func TestRetentionRemovalDoesNotMoveBriefPrint(t *testing.T) {
+	before := mobileBriefPrivacyEpoch.Load()
+	publishRetentionRemoval(privacyWithdrawalScope{Kind: privacyWithdrawalSession, ID: "old-session"})
+	if after := mobileBriefPrivacyEpoch.Load(); after != before {
+		t.Fatalf("retention moved the privacy epoch: %d -> %d", before, after)
+	}
+}
+
+// A Dream merge archives a note; the watcher's report of that removal is an
+// edit and withdraws nothing. A note the user deletes is still withdrawn.
+func TestDreamArchiveRemovalIsNotAWithdrawal(t *testing.T) {
+	noteMemoryRemovedByRewrite("merged-note")
+	got := withoutRewriteRemovals([]briefWithdrawn{{Kind: "memory", ID: "merged-note"}, {Kind: "memory", ID: "user-deleted"}}, time.Now())
+	if len(got) != 1 || got[0].ID != "user-deleted" {
+		t.Fatalf("withdrawals after a merge: %+v", got)
+	}
+	if again := withoutRewriteRemovals([]briefWithdrawn{{Kind: "memory", ID: "merged-note"}}, time.Now()); len(again) != 1 {
+		t.Fatal("one noted rewrite must cover one removal only")
+	}
+}

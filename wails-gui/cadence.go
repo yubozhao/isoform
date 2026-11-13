@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"log"
 	"time"
 )
 
@@ -46,6 +48,9 @@ const (
 	cadencePhoneToday           = cadenceHourly
 	cadenceBriefPrerunPerSlot   = 20 * time.Hour
 	cadenceBriefPrerunMinBudget = 5 * time.Minute
+	// cadenceBriefPrerunMaxWait bounds how long a scheduled brief waits for
+	// its activity pre-run.
+	cadenceBriefPrerunMaxWait = 3 * time.Minute
 )
 
 // prerunActivityForBrief runs the hourly activity batch once before a
@@ -65,7 +70,13 @@ func (a *App) prerunActivityForBrief(ctx context.Context, slot string, asOf time
 	if !a.claimDerivedRun("brief_prerun."+slot, cadenceBriefPrerunPerSlot, asOf) {
 		return
 	}
-	_ = triager.runBatch(ctx, "brief")
+	// The pre-run never holds the brief up for long: past its budget the
+	// brief goes ahead with what the hour before already summarized.
+	prerunCtx, cancel := context.WithTimeout(ctx, cadenceBriefPrerunMaxWait)
+	defer cancel()
+	started := time.Now()
+	err := triager.runBatch(prerunCtx, "brief")
+	log.Printf("[brief-prerun] slot=%s ms=%d timed_out=%t failed=%t", slot, time.Since(started).Milliseconds(), errors.Is(prerunCtx.Err(), context.DeadlineExceeded), err != nil)
 }
 
 func (a *App) currentActivityTriager() *ActivityTriager {

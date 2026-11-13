@@ -452,6 +452,7 @@ func (s *mobileBriefService) composeNewBrief(ctx context.Context, input mobileBr
 		}
 	}
 	logLine("ok", codes, len(paragraphs))
+	brief.writerItems = len(material.Items)
 	return brief, paragraphs, binding, nil
 }
 
@@ -462,4 +463,37 @@ func (s *mobileBriefService) newBriefEnabled() bool {
 		return defaultMobileBriefSettings().NewBrief
 	}
 	return s.config.load().NewBrief
+}
+
+// logBriefReady is the pre-flight line for a stored brief: which writer made
+// the words, how many items it read, the part counts, the audio status and
+// whether a reader is shown the words. Counts and states only.
+func (s *mobileBriefService) logBriefReady(brief MobileBriefV1) {
+	writer, items := "old", brief.writerItems
+	if items > 0 {
+		writer = "new"
+	}
+	audio, shown := "none", false
+	done, next := 0, 0
+	if s != nil && s.store != nil {
+		if stored, ok := s.store.load(brief.BriefID); ok {
+			brief = stored
+			if stored.Audio != nil {
+				audio = stored.Audio.Status
+			}
+			if read, _, err := s.finishedReadWithholding(stored); err == nil {
+				shown = len(read.Narrative) > 0
+			}
+		}
+	}
+	for _, part := range brief.NarrativeParts {
+		switch part.Kind {
+		case briefPartDone:
+			done = part.Count
+		case briefPartNext:
+			next = part.Count
+		}
+	}
+	log.Printf("[brief-ready] slot=%s writer=%s items=%d parts=done:%d,next:%d audio=%s shown=%t status=%s",
+		brief.Slot, writer, items, done, next, audio, shown, brief.NarrativeStatus)
 }

@@ -10,6 +10,9 @@ type MobileBriefV1 struct {
 	rankedEmpty     bool
 	ownVoiceFacts   bool
 	generationDebug *mobileBriefGenerationDebug
+	// writerItems is how many items the new writer read; zero when the old
+	// writer made the words. Local to the build, for the [brief-ready] line.
+	writerItems int
 
 	DisplaySlot string `json:"displaySlot,omitempty"`
 	// Kind names the card title (morning, evening, week, on_request) and

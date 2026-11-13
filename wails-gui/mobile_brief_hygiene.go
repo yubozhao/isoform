@@ -210,7 +210,10 @@ func mobileBriefForPublication(brief MobileBriefV1) MobileBriefV1 {
 	scheduled := brief.Slot == mobileBriefSlotMorning || brief.Slot == mobileBriefSlotEvening
 	// The word floor is for model text. A template opening is short by design (design
 	// R74) and publishes; a brief with no paragraphs has nothing in it, so it is quiet.
-	if scheduled && !brief.rankedEdition && (len(brief.Narrative) == 0 || brief.NarrativeStatus == "ok" && mobileBriefNarrativeWords(brief.Narrative) < mobileBriefPublishMinWords) {
+	// The new writer's words are short by design on a quiet day; only an empty
+	// narrative makes its slot quiet.
+	floor := !brief.rankedEdition && brief.writerItems == 0
+	if scheduled && (len(brief.Narrative) == 0 && brief.writerItems > 0 || floor && (len(brief.Narrative) == 0 || brief.NarrativeStatus == "ok" && mobileBriefNarrativeWords(brief.Narrative) < mobileBriefPublishMinWords)) {
 		brief.NarrativeStatus = "quiet"
 		brief = mobileBriefHygiene(brief)
 	}

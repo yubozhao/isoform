@@ -174,6 +174,9 @@ func (a *App) archiveMemoryFile(orig MemoryEntry, runID string, reason ArchiveRe
 		return "", fmt.Errorf("write archive %s: %w", dst, err)
 	}
 
+	// A merge is an edit: the watcher must not report this removal as a
+	// privacy withdrawal of the note.
+	noteMemoryRemovedByRewrite(orig.ID)
 	if err := os.Remove(src); err != nil && !os.IsNotExist(err) {
 		// Try to roll back the archive write so we don't leak a phantom
 		// archive entry pointing at a still-live memory. Best-effort:
