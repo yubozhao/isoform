@@ -115,6 +115,53 @@ func (a *App) GenerateActivityTimelineGroupSummary(groupID string) (*ActivityTim
 // or failed before returning. A nil summary with nil error means the run had
 // no loadable events and was marked skipped.
 func (a *App) generateTimelineRunSummary(ctx context.Context, run ActivityTimelineRunRow) (*ActivityTimelineGroupSummary, error) {
+	job, err := a.prepareTimelineRunSummary(run)
+	if job == nil {
+		return nil, err
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, timelineGroupSummaryTimeout)
+	defer cancel()
+
+	images := a.timelineGroupSummaryImages(job.snapshots, 8)
+	model := a.lightTaskModel()
+
+	raw, err := a.runTimelineGroupSummaryPrompt(ctx, job.prompt, images, model)
+	if err != nil && len(images) > 0 && isImageUnsupportedModelError(err) {
+		// The routed upstream cannot accept image blocks (a text-only provider
+		// behind the gateway). The prompt already carries the run's screen
+		// content as text, so a text-only summary is a faithful degradation —
+		// far better than parking the run as failed_permanent.
+		log.Printf("[timeline-summary] run %s: model rejected images, retrying text-only", run.ID)
+		raw, err = a.runTimelineGroupSummaryPrompt(ctx, job.prompt, nil, model)
+	}
+	if err != nil {
+		a.markTimelineRunSummaryError(run, err)
+		return nil, err
+	}
+
+	var resp timelineGroupSummaryResponse
+	if err := unmarshalJSONBestEffort(stripCodeFences(strings.TrimSpace(raw)), &resp); err != nil {
+		err = fmt.Errorf("parse timeline group summary response: %w", err)
+		a.markTimelineRunSummaryError(run, err)
+		return nil, err
+	}
+	return a.finishTimelineRunSummary(*job, resp, model, raw)
+}
+
+// timelineSummaryJob is one run ready for a summary model call.
+type timelineSummaryJob struct {
+	run       ActivityTimelineRunRow
+	group     ActivityTimelineGroup
+	snapshots []ActivitySnapshotRow
+	section   string
+	prompt    string
+}
+
+// prepareTimelineRunSummary loads a run and builds its prompt. A nil job
+// means the run needs no model call (protected or empty) or failed to load;
+// its status is already recorded.
+func (a *App) prepareTimelineRunSummary(run ActivityTimelineRunRow) (*timelineSummaryJob, error) {
 	store := a.activity.store
 	// Protected-app runs never get an LLM summary. Checked here — in the
 	// shared core — so BOTH the background worker and the on-demand UI
@@ -148,38 +195,22 @@ func (a *App) generateTimelineRunSummary(ctx context.Context, run ActivityTimeli
 		return nil, nil
 	}
 	group := timelineRunToGroup(run, events)
-
-	ctx, cancel := context.WithTimeout(ctx, timelineGroupSummaryTimeout)
-	defer cancel()
-
 	snapshots := a.timelineGroupSummarySnapshots(group)
+	screenContent := a.timelineGroupScreenContent(snapshots)
 	languageInstruction := responseLanguageInstruction(a.currentUILanguageName())
-	prompt := buildTimelineGroupSummaryPrompt(group, a.timelineGroupScreenContent(snapshots), languageInstruction)
-	images := a.timelineGroupSummaryImages(snapshots, 8)
-	model := a.lightTaskModel()
+	return &timelineSummaryJob{
+		run: run, group: group, snapshots: snapshots,
+		section: timelineSummaryRunSection(group, screenContent),
+		prompt:  buildTimelineGroupSummaryPrompt(group, screenContent, languageInstruction),
+	}, nil
+}
 
-	raw, err := a.runTimelineGroupSummaryPrompt(ctx, prompt, images, model)
-	if err != nil && len(images) > 0 && isImageUnsupportedModelError(err) {
-		// The routed upstream cannot accept image blocks (a text-only provider
-		// behind the gateway). The prompt already carries the run's screen
-		// content as text, so a text-only summary is a faithful degradation —
-		// far better than parking the run as failed_permanent.
-		log.Printf("[timeline-summary] run %s: model rejected images, retrying text-only", run.ID)
-		raw, err = a.runTimelineGroupSummaryPrompt(ctx, prompt, nil, model)
-	}
-	if err != nil {
-		a.markTimelineRunSummaryError(run, err)
-		return nil, err
-	}
-
-	var resp timelineGroupSummaryResponse
-	if err := unmarshalJSONBestEffort(stripCodeFences(strings.TrimSpace(raw)), &resp); err != nil {
-		err = fmt.Errorf("parse timeline group summary response: %w", err)
-		a.markTimelineRunSummaryError(run, err)
-		return nil, err
-	}
+// finishTimelineRunSummary stores a parsed summary and marks the run done.
+func (a *App) finishTimelineRunSummary(job timelineSummaryJob, resp timelineGroupSummaryResponse, model, raw string) (*ActivityTimelineGroupSummary, error) {
+	store := a.activity.store
+	run, group := job.run, job.group
 	summary := sanitizeTimelineGroupSummary(group, resp)
-	if err := store.UpsertTimelineGroupSummary(group, summary, model, prompt, raw); err != nil {
+	if err := store.UpsertTimelineGroupSummary(group, summary, model, job.prompt, raw); err != nil {
 		a.markTimelineRunSummaryError(run, err)
 		return nil, err
 	}
@@ -270,6 +301,16 @@ func buildTimelineGroupSummaryPrompt(group ActivityTimelineGroup, screenContent,
 		return ""
 	}
 	var b strings.Builder
+	b.WriteString(timelineSummaryInstructions(languageInstruction))
+	b.WriteString(timelineSummaryRunSection(group, screenContent))
+	b.WriteString("\nRespond immediately with the JSON object.")
+	return redactActivityModelText(b.String())
+}
+
+// timelineSummaryInstructions is the instruction text shared by the one-run
+// and the batched prompt; it ends with the "App run:" heading.
+func timelineSummaryInstructions(languageInstruction string) string {
+	var b strings.Builder
 	if strings.TrimSpace(languageInstruction) != "" {
 		b.WriteString(languageInstruction)
 		b.WriteString("\n\n")
@@ -321,6 +362,16 @@ JSON shape:
 
 App run:
 `)
+	return b.String()
+}
+
+// timelineSummaryRunSection renders one run's facts, screen content and
+// events, the body under an "App run:" heading. Empty for a sensitive app.
+func timelineSummaryRunSection(group ActivityTimelineGroup, screenContent string) string {
+	if activitySourceAppIsSensitive(group.AppKey, group.AppName) {
+		return ""
+	}
+	var b strings.Builder
 	b.WriteString(fmt.Sprintf("- groupId: %s\n", group.ID))
 	b.WriteString(fmt.Sprintf("- app: %s\n", group.AppName))
 	b.WriteString(fmt.Sprintf("- appKey: %s\n", group.AppKey))
@@ -339,8 +390,7 @@ App run:
 		b.WriteString(renderTimelineSummaryEvent(evt))
 		b.WriteString("\n")
 	}
-	b.WriteString("\nRespond immediately with the JSON object.")
-	return redactActivityModelText(b.String())
+	return b.String()
 }
 
 func renderTimelineSummaryEvent(evt ActivityTimelineEvent) string {

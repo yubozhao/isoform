@@ -174,16 +174,16 @@ func TestInterestsTimingAndMode(t *testing.T) {
 		{"first pass with little activity is a refresh", interestsStateFile{}, activities(6, now.Add(-time.Hour)), interests.ModeRefresh, true},
 		{"too little activity waits", interestsStateFile{}, activities(3, now.Add(-time.Hour)), "", false},
 		{"refresh needs new activity since the last pass",
-			interestsStateFile{Interests: stored, RefreshedAt: stamp(5 * time.Hour), ConsolidatedAt: stamp(24 * time.Hour)},
-			append(activities(4, now.Add(-time.Hour)), activities(10, now.Add(-10*time.Hour))...), "", false},
+			interestsStateFile{Interests: stored, RefreshedAt: stamp(21 * time.Hour), ConsolidatedAt: stamp(48 * time.Hour)},
+			append(activities(4, now.Add(-time.Hour)), activities(10, now.Add(-30*time.Hour))...), "", false},
 		{"refresh with enough new activity",
-			interestsStateFile{Interests: stored, RefreshedAt: stamp(5 * time.Hour), ConsolidatedAt: stamp(24 * time.Hour)},
+			interestsStateFile{Interests: stored, RefreshedAt: stamp(21 * time.Hour), ConsolidatedAt: stamp(48 * time.Hour)},
 			activities(5, now.Add(-time.Hour)), interests.ModeRefresh, true},
 		{"too soon after the last pass",
-			interestsStateFile{Interests: stored, RefreshedAt: stamp(2 * time.Hour), ConsolidatedAt: stamp(24 * time.Hour)},
+			interestsStateFile{Interests: stored, RefreshedAt: stamp(5 * time.Hour), ConsolidatedAt: stamp(24 * time.Hour)},
 			activities(9, now.Add(-time.Hour)), "", false},
-		{"three passes today are the limit",
-			interestsStateFile{Interests: stored, RefreshedAt: stamp(5 * time.Hour), ConsolidatedAt: stamp(24 * time.Hour), RunsOn: today, RunsToday: 3},
+		{"one pass a day is the limit",
+			interestsStateFile{Interests: stored, RefreshedAt: stamp(21 * time.Hour), ConsolidatedAt: stamp(48 * time.Hour), RunsOn: today, RunsToday: 1},
 			activities(9, now.Add(-time.Hour)), "", false},
 		{"a month after the last review",
 			interestsStateFile{Interests: stored, RefreshedAt: stamp(time.Hour), ConsolidatedAt: stamp(31 * 24 * time.Hour), RunsOn: today, RunsToday: 3},
@@ -322,9 +322,9 @@ func TestInterestsServiceRunsChecksAndKeepsTheList(t *testing.T) {
 	if svc.maybeRun(context.Background(), "test") {
 		t.Fatal("a second pass ran right away")
 	}
-	// Six hours later new activity came in: a light refresh keeps the id
-	// and the name of the hat interest and adds a new one.
-	later := interestTestNow.Add(6 * time.Hour)
+	// The next day new activity came in: a light refresh keeps the id and
+	// the name of the hat interest and adds a new one.
+	later := interestTestNow.Add(21 * time.Hour)
 	svc.now = func() time.Time { return later }
 	if !svc.maybeRun(context.Background(), "test") {
 		t.Fatal("the refresh did not run")
@@ -340,12 +340,13 @@ func TestInterestsServiceRunsChecksAndKeepsTheList(t *testing.T) {
 	if got := byID[hat.ID]; got.Name != "wearable AI camera hats" || got.Why != "Still building it." {
 		t.Fatalf("the hat interest lost its id or name: %+v", st.Interests)
 	}
-	if len(st.Interests) != 3 || st.RunsToday != 2 {
+	// A new day: the refresh is the day's first pass.
+	if len(st.Interests) != 3 || st.RunsToday != 1 {
 		t.Fatalf("after the refresh: %d interests, %d runs", len(st.Interests), st.RunsToday)
 	}
 
 	// The model fails: the list stays and the next pass backs off.
-	svc.now = func() time.Time { return later.Add(6 * time.Hour) }
+	svc.now = func() time.Time { return later.Add(21 * time.Hour) }
 	if svc.maybeRun(context.Background(), "test") {
 		t.Fatal("a failed pass reported success")
 	}

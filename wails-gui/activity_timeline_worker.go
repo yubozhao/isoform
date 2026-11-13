@@ -2,17 +2,11 @@ package main
 
 import (
 	"context"
-	"errors"
 	"log"
 	"time"
 )
 
 const (
-	// timelineSummaryCheckInterval is the fallback wake-up cadence. The worker
-	// is primarily kick-driven (a session save that changed the run table
-	// wakes it immediately); the ticker only exists to pick up scheduled
-	// retries (next_retry_at) and quiet open runs without a save event.
-	timelineSummaryCheckInterval = 2 * time.Minute
 	// timelineSummaryQueueBatch is the fetch page size while draining the
 	// queue — a pass keeps pulling pages until no due runs remain, so this
 	// bounds memory per query, not throughput.
@@ -30,38 +24,9 @@ const (
 	timelineSummaryMaxAttempts = 4
 )
 
-// KickTimelineSummaries wakes the summary worker without waiting for the
-// fallback ticker. Non-blocking: a pending kick already covers the change.
-func (c *ActivityTriager) KickTimelineSummaries() {
-	if c.timelineSummaryKick == nil {
-		return
-	}
-	select {
-	case c.timelineSummaryKick <- struct{}{}:
-	default:
-	}
-}
-
-// runTimelineSummaryLoop drives the timeline-run summary worker on its own
-// goroutine, decoupled from triage evaluate()/runMu and from the
-// semantic-event pass, so neither can starve it. Wakes on session-save kicks
-// and on the fallback ticker; each pass drains the whole due queue. Exits
-// when ctx is cancelled.
-func (c *ActivityTriager) runTimelineSummaryLoop(ctx context.Context) {
-	c.runTimelineSummaryPassGuarded(ctx)
-	ticker := time.NewTicker(timelineSummaryCheckInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			c.runTimelineSummaryPassGuarded(ctx)
-		case <-c.timelineSummaryKick:
-			c.runTimelineSummaryPassGuarded(ctx)
-		}
-	}
-}
+// KickTimelineSummaries is kept for the session-save path: run summaries are
+// derived work and wait for the hourly batch, so a save needs no wake-up.
+func (c *ActivityTriager) KickTimelineSummaries() {}
 
 // runTimelineSummaryPassGuarded runs one worker pass under timelineSummaryMu
 // (non-blocking — a still-running pass is already draining the queue and will
@@ -82,8 +47,8 @@ func (c *ActivityTriager) notifyTimelineGroupsUpdated() {
 }
 
 // runTimelineSummaryPass self-heals the run table, then drains the due queue
-// newest-first: every eligible per-app run is summarized serially (one model
-// call at a time) until nothing is due. The UI is notified after each run so
+// newest-first: eligible per-app runs are summarized in batches (one model
+// call per timelineSummaryBatchSize runs) until nothing is due. The UI is notified after each run so
 // titles stream into the sidebar as the queue drains. Failures are recorded
 // on the run (with backoff) and never abort the pass.
 func (c *ActivityTriager) runTimelineSummaryPass(ctx context.Context) {
@@ -138,6 +103,7 @@ func (c *ActivityTriager) runTimelineSummaryPass(ctx context.Context) {
 			return
 		}
 		progressed := false
+		var claimedRuns []ActivityTimelineRunRow
 		for _, run := range due {
 			select {
 			case <-ctx.Done():
@@ -158,14 +124,11 @@ func (c *ActivityTriager) runTimelineSummaryPass(ctx context.Context) {
 				continue
 			}
 			progressed = true
-			// Protected-app runs are skipped inside generateTimelineRunSummary
-			// (the shared core); the sentinel is an expected outcome, not an
-			// error worth logging.
-			if _, err := c.app.generateTimelineRunSummary(ctx, run); err != nil && !errors.Is(err, errTimelineRunProtected) {
-				log.Printf("[timeline-summary] generate for run %s (app %s): %v", run.ID, run.AppName, err)
-			}
-			c.notifyTimelineGroupsUpdated()
+			claimedRuns = append(claimedRuns, run)
 		}
+		// One model call covers up to timelineSummaryBatchSize runs.
+		// Protected-app runs are skipped inside prepareTimelineRunSummary.
+		c.app.generateTimelineRunSummaries(ctx, claimedRuns, c.notifyTimelineGroupsUpdated)
 		// Every fetched run was claimed by the on-demand path in the
 		// meantime — nothing left for this pass to make progress on.
 		if !progressed {

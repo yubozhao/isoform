@@ -369,7 +369,7 @@ func TestInterestsPassFoldsStoredNearDuplicates(t *testing.T) {
 	newer.FirstAt = interestTestNow.Add(-24 * time.Hour).UnixMilli()
 	if _, err := svc.store.update(func(st *interestsStateFile) {
 		st.Interests = []interests.Interest{older, newer}
-		st.RefreshedAt = interestTestNow.Add(-10 * time.Hour).UTC().Format(time.RFC3339Nano)
+		st.RefreshedAt = interestTestNow.Add(-21 * time.Hour).UTC().Format(time.RFC3339Nano)
 		st.ConsolidatedAt = interestTestNow.UTC().Format(time.RFC3339Nano)
 	}); err != nil {
 		t.Fatal(err)

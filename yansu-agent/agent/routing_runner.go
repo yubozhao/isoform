@@ -500,6 +500,7 @@ func (r *RoutingAgentRunner) ExecuteTask(ctx context.Context, input *TaskInput, 
 	if input == nil {
 		return "", fmt.Errorf("nil task input")
 	}
+	callerLabel := CallerLabel(input)
 	if callback == nil {
 		callback = func(*StreamEvent) error { return nil }
 	}
@@ -662,7 +663,7 @@ func (r *RoutingAgentRunner) ExecuteTask(ctx context.Context, input *TaskInput, 
 			}
 			return lastRunID, err
 		}
-		log.Printf("[routing] backend=%s reason=%q hint=%q", backend, reason, input.BackendHint)
+		log.Printf("[routing] backend=%s reason=%q hint=%q caller=%s", backend, reason, input.BackendHint, callerLabel)
 		var eventMu sync.Mutex
 		var provisional, terminal []*StreamEvent
 		var callbackErr, streamErr error

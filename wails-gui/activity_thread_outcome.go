@@ -675,20 +675,6 @@ func (a *App) runThreadOutcomePrompt(ctx context.Context, prompt string) (string
 	return result.String(), err
 }
 
-func (c *ActivityTriager) runThreadOutcomeLoop(ctx context.Context) {
-	c.app.fillThreadOutcomes(ctx, time.Now(), time.Local)
-	ticker := time.NewTicker(15 * time.Minute)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case now := <-ticker.C:
-			c.app.fillThreadOutcomes(ctx, now, time.Local)
-		}
-	}
-}
-
 func threadOutcomeUnfinished(outcome *ActivityThreadOutcome) bool {
 	if outcome == nil {
 		return false

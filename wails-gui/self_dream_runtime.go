@@ -21,7 +21,7 @@ const (
 	selfDreamModelTimeout          = 3 * time.Minute
 	selfDreamSchedulerInitialDelay = 2 * time.Minute
 	selfDreamSchedulerInterval     = 30 * time.Minute
-	selfDreamSchedulerMinInterval  = 6 * time.Hour
+	selfDreamSchedulerMinInterval  = cadenceDaily
 )
 
 type selfDreamFrozenInput struct {
@@ -92,7 +92,8 @@ func (s *SelfDreamService) runScheduler(ctx context.Context) {
 func (s *SelfDreamService) schedule(parent context.Context) {
 	s.mu.Lock()
 	if s.running || (!s.lastStart.IsZero() &&
-		time.Since(s.lastStart) < selfDreamSchedulerMinInterval) {
+		time.Since(s.lastStart) < selfDreamSchedulerMinInterval) ||
+		!s.app.claimDerivedRun("self_dream", selfDreamSchedulerMinInterval, time.Now()) {
 		s.mu.Unlock()
 		return
 	}

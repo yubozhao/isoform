@@ -22,7 +22,6 @@ import (
 // user rows, so a move survives.
 
 const (
-	activityThreadLoopInterval = 5 * time.Minute
 	// activityThreadModelGap spaces today's model calls; sure joins still apply
 	// on every pass. Past days get at most one call, the first time they open.
 	activityThreadModelGap  = 10 * time.Minute
@@ -846,29 +845,6 @@ func (a *App) activityThreadsCanUseModel() bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.runner != nil
-}
-
-// runActivityThreadLoop keeps today's threads current: sure joins every pass,
-// the model at most every activityThreadModelGap when new moments wait.
-func (c *ActivityTriager) runActivityThreadLoop(ctx context.Context) {
-	// Let the composer settle first after launch, then group today once
-	// before the regular ticks.
-	select {
-	case <-ctx.Done():
-		return
-	case now := <-time.After(time.Minute):
-		c.app.runTodayThreadPass(ctx, now)
-	}
-	ticker := time.NewTicker(activityThreadLoopInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case now := <-ticker.C:
-			c.app.runTodayThreadPass(ctx, now)
-		}
-	}
 }
 
 func (a *App) runTodayThreadPass(ctx context.Context, now time.Time) {

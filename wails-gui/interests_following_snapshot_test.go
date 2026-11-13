@@ -90,7 +90,7 @@ func TestInterestsPassWithdrawalDuringModelCallPublishesNoStaleDecisions(t *test
 	svc.allowed = func() bool { return true }
 	if _, err := svc.store.update(func(st *interestsStateFile) {
 		st.Interests = stored
-		st.RefreshedAt = topicRegistryTestNow.Add(-5 * time.Hour).UTC().Format(time.RFC3339Nano)
+		st.RefreshedAt = topicRegistryTestNow.Add(-21 * time.Hour).UTC().Format(time.RFC3339Nano)
 		st.ConsolidatedAt = topicRegistryTestNow.UTC().Format(time.RFC3339Nano)
 	}); err != nil {
 		t.Fatal(err)

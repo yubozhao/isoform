@@ -17,7 +17,7 @@ import (
 // The interests behind Today's "Your topics": what the user is genuinely
 // into, named by a model from what the Mac already summarized, instead of
 // phrases counted across titles. A light-model pass refreshes them up to
-// three times a day when enough new activity came in, anchored on the
+// once a day when enough new activity came in, anchored on the
 // stored list so ids and names stay put; once a month the main model
 // reviews the whole month, merging, renaming and dropping. Every pass is
 // checked on the Mac (internal/interests) before it is stored, and only an
@@ -26,8 +26,8 @@ import (
 const (
 	interestsCheckEvery       = 30 * time.Minute
 	interestsFirstCheck       = 3 * time.Minute
-	interestsRefreshGap       = 4 * time.Hour
-	interestsRefreshesPerDay  = 3
+	interestsRefreshGap       = 20 * time.Hour
+	interestsRefreshesPerDay  = 1
 	interestsMinNewActivities = 5
 	interestsConsolidateEvery = 30 * 24 * time.Hour
 	interestsConsolidateMin   = 15

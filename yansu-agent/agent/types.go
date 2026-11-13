@@ -318,6 +318,11 @@ type TaskInput struct {
 	// loop. Upstream response bodies are never exported to telemetry, even
 	// after redaction, so the loop no longer calls it for error bodies.
 	Redactor func(string) string `json:"-"`
+
+	// Caller names the code path asking for this run, for the routing log
+	// and cost attribution. Code identifiers only, never content. Empty means
+	// CallerLabel derives it from the stack.
+	Caller string
 }
 
 var ErrTokenBudgetExceeded = native.ErrTokenBudgetExceeded

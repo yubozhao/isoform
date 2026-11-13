@@ -22,15 +22,13 @@ import (
 // ── Constants ────────────────────────────────────────────────────────
 
 const (
-	// suggestionCheckInterval is the ticker cadence. We evaluate often enough
-	// that a newly-produced activity summary can feed the next batch within
-	// half an hour, without burning a slot on every minute.
-	suggestionCheckInterval = 30 * time.Minute
+	// suggestionCheckInterval is the ticker cadence. The check is local; a
+	// model call happens only when suggestionMinInterval has passed.
+	suggestionCheckInterval = time.Hour
 
-	// suggestionMinInterval is the hard floor between two successful
-	// generations. Even if new activity lands continuously, we cap the
-	// refresh rate to avoid thrashing tokens.
-	suggestionMinInterval = 60 * time.Minute
+	// suggestionMinInterval is the floor between two successful generations:
+	// suggestions are derived work and refresh once a day (derived_cadence.go).
+	suggestionMinInterval = cadenceDaily
 
 	// suggestionCount is the target chip count surfaced to the UI.
 	suggestionCount = 5

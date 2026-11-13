@@ -539,17 +539,16 @@ func TestPurposeUnderstandingStopCancelsActiveModelCall(t *testing.T) {
 	}
 }
 
-func TestMemoryAndSelfEventsTriggerPurposeUnderstanding(t *testing.T) {
+// Purpose understanding is derived work: a belief or self-model update waits
+// for the daily cycle instead of starting a model run (derived_cadence.go).
+func TestMemoryAndSelfEventsWaitForDailyPurposeUnderstanding(t *testing.T) {
 	activity := newTestStore(t)
 	service, app := purposeUnderstandingTestService(t, activity)
 	app.purposeUnderstanding = service
 	app.emitBrowserEvent(PurposeUnderstandingTriggerMemory)
 	app.emitBrowserEvent(PurposeUnderstandingTriggerSelf)
-	pending := service.Snapshot().PendingTriggers
-	if len(pending) != 2 ||
-		pending[0] != PurposeUnderstandingTriggerMemory ||
-		pending[1] != PurposeUnderstandingTriggerSelf {
-		t.Fatalf("durable context events did not trigger Purpose understanding: %v", pending)
+	if pending := service.Snapshot().PendingTriggers; len(pending) != 0 {
+		t.Fatalf("context events started Purpose understanding: %v", pending)
 	}
 }
 

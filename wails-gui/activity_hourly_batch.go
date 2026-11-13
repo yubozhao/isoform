@@ -197,6 +197,7 @@ func (c *ActivityTriager) runBatch(ctx context.Context, trigger string) error {
 	if errors.Is(err, errGeneratorBusy) {
 		return err
 	}
+	c.runDerivedActivityLayers(ctx)
 	if c.app != nil {
 		c.app.runActivityVoiceBatch(ctx)
 	}
@@ -314,4 +315,27 @@ func batchCandidateGroups(groups []sessionGroup) []sessionGroup {
 		return batch.Sessions[i].StartTime < batch.Sessions[j].StartTime
 	})
 	return []sessionGroup{batch}
+}
+
+// runDerivedActivityLayers runs the activity layers built from capture once,
+// in dependency order: semantic events, run summaries, the composer that
+// groups summarized runs, today's threads and their outcomes. Each used to
+// run on its own 2 to 15 minute ticker.
+func (c *ActivityTriager) runDerivedActivityLayers(ctx context.Context) {
+	if c == nil || c.app == nil || c.app.activity == nil || c.app.activity.store == nil {
+		return
+	}
+	steps := []func(){
+		func() { c.runSemanticPassGuarded(ctx) },
+		func() { c.runTimelineSummaryPassGuarded(ctx) },
+		func() { c.runActivityComposerPassGuarded(ctx) },
+		func() { c.app.runTodayThreadPass(ctx, time.Now()) },
+		func() { c.app.fillThreadOutcomes(ctx, time.Now(), time.Local) },
+	}
+	for _, step := range steps {
+		if ctx.Err() != nil {
+			return
+		}
+		step()
+	}
 }

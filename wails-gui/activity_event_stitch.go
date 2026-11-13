@@ -88,27 +88,6 @@ func (c *ActivityTriager) activityStore() *ActivityStore {
 	return c.app.activity.store
 }
 
-// semanticCheckInterval is the independent cadence for the semantic-event pass,
-// separate from the hourly triage batch — each extraction is cheaper than full triage.
-const semanticCheckInterval = 2 * time.Minute
-
-// runSemanticLoop drives the semantic-event pass on its own goroutine + ticker,
-// fully decoupled from triage evaluate()/runMu so a slow main triage can never
-// starve it. Exits when ctx is cancelled.
-func (c *ActivityTriager) runSemanticLoop(ctx context.Context) {
-	c.runSemanticPassGuarded(ctx)
-	ticker := time.NewTicker(semanticCheckInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			c.runSemanticPassGuarded(ctx)
-		}
-	}
-}
-
 // runSemanticPassGuarded runs one semantic pass under semanticMu (non-blocking —
 // a still-running pass means this tick is skipped) and settles stale events.
 func (c *ActivityTriager) runSemanticPassGuarded(ctx context.Context) {

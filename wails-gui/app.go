@@ -471,10 +471,8 @@ func (a *App) emitBrowserEvent(eventName string, data ...interface{}) {
 		}
 	}
 	a.noteDoingNowEvent(eventName)
-	if eventName == PurposeUnderstandingTriggerMemory ||
-		eventName == PurposeUnderstandingTriggerSelf {
-		a.triggerPurposeUnderstanding(eventName)
-	}
+	// Purpose understanding no longer reruns on every belief or self-model
+	// update: it reads them on its daily cycle (derived_cadence.go).
 	// Unit and browser-mode callers may provide an ordinary context without
 	// Wails' event bus. EventsEmit treats that as fatal rather than returning
 	// an error, so only address the native runtime when its event value exists.
@@ -1889,7 +1887,7 @@ func (a *App) StartAgent() (AgentStatus, error) {
 	if a.runner != nil && a.ready {
 		status := a.statusLocked()
 		a.mu.Unlock()
-		if a.startPurposeUnderstanding() {
+		if a.startPurposeUnderstanding() && a.claimDerivedRun("purpose_understanding", cadenceDaily, time.Now()) {
 			a.triggerPurposeUnderstanding(PurposeUnderstandingTriggerStartup)
 		}
 		return status, nil
@@ -1937,7 +1935,7 @@ func (a *App) StartAgent() (AgentStatus, error) {
 
 	status := a.GetStatus()
 	a.emitAgentStatus(status)
-	if a.startPurposeUnderstanding() {
+	if a.startPurposeUnderstanding() && a.claimDerivedRun("purpose_understanding", cadenceDaily, time.Now()) {
 		a.triggerPurposeUnderstanding(PurposeUnderstandingTriggerStartup)
 	}
 	return status, nil

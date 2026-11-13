@@ -91,11 +91,6 @@ type ActivityTriager struct {
 	// (its own goroutine/ticker), with the same decoupling rationale as
 	// semanticMu.
 	timelineSummaryMu sync.Mutex
-	// timelineSummaryKick wakes the summary worker as soon as a session save
-	// changes the run table, so closed runs queue immediately instead of
-	// waiting for the fallback ticker. Buffered(1): one pending kick covers
-	// any number of coalesced changes.
-	timelineSummaryKick chan struct{}
 	// activityComposerMu serializes the independent activity-composer pass
 	// (layer 3) — its own goroutine/ticker, decoupled like the others so a slow
 	// compose pass cannot starve the run-summary or triage layers.
@@ -648,12 +643,11 @@ func logSpeechMemorySaved(group sessionGroup, sessionID, action, title, filePath
 // NewActivityTriager creates a new triager instance.
 func NewActivityTriager(app *App, mc *MemoryGenerator) *ActivityTriager {
 	return &ActivityTriager{
-		app:                 app,
-		mc:                  mc,
-		aiSem:               make(chan struct{}, maxTriagerGoroutines),
-		shadowExecutionSem:  make(chan struct{}, 1),
-		taskShadowSem:       make(chan struct{}, 1),
-		timelineSummaryKick: make(chan struct{}, 1),
+		app:                app,
+		mc:                 mc,
+		aiSem:              make(chan struct{}, maxTriagerGoroutines),
+		shadowExecutionSem: make(chan struct{}, 1),
+		taskShadowSem:      make(chan struct{}, 1),
 	}
 }
 
@@ -683,22 +677,9 @@ func (c *ActivityTriager) Run(ctx context.Context) {
 		}
 	}
 
-	// Semantic event extraction runs on its OWN goroutine + ticker + lock, fully
-	// decoupled from triage evaluate(), so a slow/timing-out main triage can never
-	// starve it. Start it BEFORE the synchronous startup evaluate(): that first
-	// evaluate can take minutes (large triage prompts), and the loop must not wait
-	// on it to begin — otherwise the startup path itself starves the very loop this
-	// design promises never to starve.
-	go c.runSemanticLoop(ctx)
-
-	// Timeline-run summaries follow the same decoupled-loop design.
-	go c.runTimelineSummaryLoop(ctx)
-
-	// The activity composer (layer 3) groups summarized runs into activities on
-	// its own decoupled loop, consuming run summaries the timeline loop produces.
-	go c.runActivityComposerLoop(ctx)
-	go c.runThreadOutcomeLoop(ctx)
-	go c.runActivityThreadLoop(ctx)
+	// Semantic events, timeline-run summaries, the activity composer, today's
+	// threads and their outcomes are derived from capture, so they run inside
+	// the hourly batch, after triage, in that order (activity_hourly_batch.go).
 
 	// Triage and learning run as one hourly batch over everything captured
 	// since the last batch (activity_hourly_batch.go).
