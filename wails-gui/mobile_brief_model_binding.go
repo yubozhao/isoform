@@ -211,38 +211,6 @@ func (a *App) captureMobileBriefModelSources(ctx context.Context, brief MobileBr
 	return binding
 }
 
-// captureRankedBriefModelSources binds every admitted scorer input inside the
-// collection fence, including items the scorer later omits. The caller binds
-// any additional profile, history or activity context before model use.
-func (a *App) captureRankedBriefModelSources(ctx context.Context, brief MobileBriefV1, gathered *mobileBriefGatherRevision, inputs []morningBriefBoundInput) *mobileBriefModelBinding {
-	return a.captureRankedBriefModelSourcesWithLedger(ctx, brief, gathered, inputs, nil, nil)
-}
-
-func (a *App) captureRankedBriefModelSourcesWithLedger(ctx context.Context, brief MobileBriefV1, gathered *mobileBriefGatherRevision, inputs []morningBriefBoundInput, store *mobileBriefStore, proofs []morningBriefLedgerProof) *mobileBriefModelBinding {
-	if !brief.rankedEdition || len(inputs) == 0 || !a.validateMobileBriefGatherRevision(ctx, gathered) ||
-		!a.morningBriefRankedInputsReadableWithLedger(ctx, brief, inputs, store, proofs) {
-		return nil
-	}
-	raw, err := json.Marshal(inputs)
-	if err != nil {
-		return nil
-	}
-	var frozen []morningBriefBoundInput
-	if json.Unmarshal(raw, &frozen) != nil || !a.morningBriefRankedInputsReadableWithLedger(ctx, brief, frozen, store, proofs) {
-		return nil
-	}
-	_, weekly := a.yourWeekForBinding(brief)
-	binding := &mobileBriefModelBinding{Version: 2, WeeklyRecap: mobileBriefModelDigest(weekly), RankedInputs: frozen, RankedInputsDigest: mobileBriefModelDigest(frozen),
-		RankedLedgerProofs: append([]morningBriefLedgerProof(nil), proofs...)}
-	if len(binding.RankedLedgerProofs) > 0 {
-		binding.RankedLedgerDigest = mobileBriefModelDigest(binding.RankedLedgerProofs)
-	}
-	if !a.validateMobileBriefGatherRevision(ctx, gathered) {
-		return nil
-	}
-	return binding
-}
-
 // The ranked manifest is the exact candidate snapshot used by the scorer and
 // is also the future diff ledger. Its digest prevents later edits from being
 // mistaken for facts the model actually read.

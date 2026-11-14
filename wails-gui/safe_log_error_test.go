@@ -20,7 +20,7 @@ func TestSafeLogErrorKeepsCodeTextAndDropsUserContent(t *testing.T) {
 		want string
 	}{
 		{withLogStage("read main chat view", context.DeadlineExceeded), "read main chat view: context deadline exceeded"},
-		{withLogStage("ranked morning", withLogStage("score", errMorningBriefNoEligibleLead)), "ranked morning: score: morning brief has no source-backed eligible lead"},
+		{withLogStage("brief", withLogStage("seal", errMobileBriefSourcesChanged)), "brief: seal: " + errMobileBriefSourcesChanged.Error()},
 		{withLogStage("project topic membership", storage.ErrReadRevisionChanged), "project topic membership: source database changed before publication"},
 		{withLogStage("ranked morning", withLogStage("write and judge", codeError("draft exceeds word ceiling"))), "ranked morning: write and judge: draft exceeds word ceiling"},
 		{withLogStage("gather", pathErr), "gather: file open: errno no such file or directory"},

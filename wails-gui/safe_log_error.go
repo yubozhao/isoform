@@ -42,7 +42,7 @@ func withLogStage(stage string, err error) error {
 var safeLogSentinels = []error{
 	context.Canceled, context.DeadlineExceeded, sql.ErrNoRows, sql.ErrConnDone, sql.ErrTxDone,
 	storage.ErrReadRevisionChanged, errMobileBriefSourcesChanged, errMobileBriefStateUnavailable,
-	errMobileBriefTimingDeferred, errMorningBriefNoEligibleLead, errTopicRegistryChanged,
+	errMobileBriefTimingDeferred, errTopicRegistryChanged,
 	fs.ErrNotExist, fs.ErrPermission, fs.ErrClosed,
 }
 

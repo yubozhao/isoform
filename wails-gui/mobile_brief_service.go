@@ -70,8 +70,6 @@ type mobileBriefService struct {
 	// compose is the narrative boundary, like gather and publish.
 	compose         func(context.Context, *App, MobileBriefV1, []MobileBriefCard) ([]MobileBriefPara, string, []mobileBriefCardWords)
 	composeWithLead func(context.Context, *App, MobileBriefV1, []MobileBriefCard) ([]MobileBriefPara, string, []mobileBriefCardWords, string, string)
-	// modelCall is a test seam; production uses the existing assistant route.
-	modelCall func(context.Context, string) (string, error)
 	// assistantState reads the same cached sign-in probe used by routing.
 	assistantState func(context.Context, string) string
 	authResumed    map[string]bool
@@ -1179,15 +1177,12 @@ func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, s
 	if s.app != nil {
 		brief = s.app.mobileBriefForGeneration(brief)
 	}
-	// Existing composer overrides are test seams; production always uses the
-	// ranked route for scheduled mornings.
+	// Existing composer overrides are test seams; production uses the new
+	// writer (newBrief, on by default) for every slot that has material.
 	calendarOnlyFallback := s.compose == nil && s.composeWithLead == nil && len(mobileBriefPicks(brief)) == 0 && len(mobileBriefDayItems(brief)) > 0 && len(mobileBriefNarrativeTemplateOnly(brief, s.app.currentUILanguageName())) == 0
-	// The ranked writer serves the scheduled morning and evening (the evening
-	// reflects back) and a brief made on request; rankedBalanceSlot picks the
-	// balance for an on-request brief from the local time it is made.
-	rankedMorning := (slot == mobileBriefSlotMorning || slot == mobileBriefSlotEvening || slot == mobileBriefSlotOnRequest) && s.compose == nil && s.composeWithLead == nil && !calendarOnlyFallback
+	useNewWriter := s.compose == nil && s.composeWithLead == nil && !brief.ColdStart && !calendarOnlyFallback && s.newBriefEnabled() && mobileBriefNarrativeAvailable(s.app)
 	var modelBinding *mobileBriefModelBinding
-	if !rankedMorning && !calendarOnlyFallback {
+	if !useNewWriter && !calendarOnlyFallback {
 		modelBinding = s.app.captureMobileBriefModelSources(ctx, brief, gathered)
 	}
 	if gathered != nil {
@@ -1203,74 +1198,44 @@ func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, s
 	// share its goal; Isoform's own sentences stand in for any the model
 	// does not write well (mobile_brief_cards.go).
 	language := s.app.currentUILanguageName()
-	if !rankedMorning {
-		_, brief.Offers = mobileBriefClosing(brief, language)
-	}
+	_, brief.Offers = mobileBriefClosing(brief, language)
 	cards := mobileBriefPatternCards(brief, language)
 	var paragraphs []MobileBriefPara
 	var status string
 	var words []mobileBriefCardWords
-	var rankedCards []MobileBriefCard
 	var weekLead, weekLeadFacts string
-	// The new writer (newBrief, on by default) makes the narrative in one model
-	// call over everything the window holds. When it fails, the old path below
-	// runs as before.
+	// The new writer makes the narrative in one model call over everything the
+	// window holds. When it fails, the composer below writes the brief.
 	wroteNew := false
-	if s.compose == nil && s.composeWithLead == nil && !brief.ColdStart && !calendarOnlyFallback && s.newBriefEnabled() && mobileBriefNarrativeAvailable(s.app) {
+	if useNewWriter {
 		composed, written, binding, newErr := s.composeNewBrief(ctx, input, brief, gathered, s.app.mobileBriefModelCall)
 		switch {
 		case newErr == nil:
 			brief, paragraphs, status, modelBinding = composed, written, "ok", binding
-			rankedMorning, wroteNew = false, true
+			wroteNew = true
 			_, brief.Offers = mobileBriefClosing(brief, language)
 			cards = mobileBriefPatternCards(brief, language)
 		case ctx.Err() != nil:
 			return MobileBriefV1{}, ctx.Err()
 		default:
-			log.Printf("[brief-new] %s brief falls back to the old writer", slot)
+			log.Printf("[brief-new] %s brief falls back to the composer", slot)
+			modelBinding = s.app.captureMobileBriefModelSources(ctx, brief, gathered)
 		}
 	}
-	if wroteNew {
+	switch {
+	case wroteNew:
 		// The narrative is written; cards take Isoform's own sentences below.
-	} else if rankedMorning {
-		var draft morningBriefDraft
-		original := brief
-		brief, modelBinding, draft, err = s.composeRankedMorning(ctx, input, brief, gathered)
-		if err != nil {
-			// No source-backed lead (a quiet or empty day, a cold start, or
-			// candidates that did not bind) is not a failure: the brief takes
-			// the template composer, as a failed write does.
-			noLead := errors.Is(err, errMorningBriefNoEligibleLead)
-			if ctx.Err() != nil || errors.Is(err, errMobileBriefSourcesChanged) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || !noLead && !mobileBriefWriteJudgeFailed(err) {
-				return MobileBriefV1{}, withLogStage("ranked morning", err)
-			}
-			if noLead {
-				log.Printf("[mobile-brief] %s brief has no source-backed lead; using the template composer", slot)
-			} else {
-				log.Printf("[mobile-brief] ranked morning writing failed (%s); using on-request composer", safeLogError(err))
-			}
-			brief, rankedMorning = original, false
-			modelBinding = s.app.captureMobileBriefModelSources(ctx, brief, gathered)
-			_, brief.Offers = mobileBriefClosing(brief, language)
-			cards = mobileBriefPatternCards(brief, language)
-			paragraphs, status, words, weekLead, weekLeadFacts = composeMobileBriefNarrativeWithLeadAt(ctx, s.app, brief, cards, s.now)
-		} else {
-			paragraphs, status = draft.Paragraphs, "ok"
-			rankedCards = draft.Cards
-		}
-	} else if s.composeWithLead != nil {
+	case s.composeWithLead != nil:
 		paragraphs, status, words, weekLead, weekLeadFacts = s.composeWithLead(ctx, s.app, brief, cards)
-	} else if s.compose != nil {
+	case s.compose != nil:
 		paragraphs, status, words = s.compose(ctx, s.app, brief, cards)
-	} else {
+	default:
 		paragraphs, status, words, weekLead, weekLeadFacts = composeMobileBriefNarrativeWithLeadAt(ctx, s.app, brief, cards, s.now)
 	}
 	brief.Narrative = paragraphs
 	brief.NarrativeStatus = status
 	brief.WeekLead, brief.WeekLeadFacts = weekLead, weekLeadFacts
-	if !rankedMorning {
-		_, brief.Offers = mobileBriefClosing(brief, language)
-	}
+	_, brief.Offers = mobileBriefClosing(brief, language)
 	// Composition can overlap an edit. Retry before later navigation reads
 	// refresh their own topic state.
 	if gathered != nil {
@@ -1289,19 +1254,7 @@ func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, s
 		sources = s.app.collectTodayChatSources(ctx, time.Now())
 	}
 	brief = s.app.mobileBriefWithParagraphTopicsFrom(ctx, brief, sources)
-	if rankedMorning {
-		brief.Cards, brief.Offers = rankedCards, nil
-		// The delivery gate rejects unbound ranked prose, so bind it before
-		// its first delivery projection as well as before publication.
-		if !mobileBriefStaticEmpty(brief) {
-			s.app.finishMobileBriefModelBindingFrom(ctx, &brief, modelBinding, sources)
-			if brief.modelBinding == nil {
-				return MobileBriefV1{}, errMobileBriefSourcesChanged
-			}
-		}
-	} else {
-		brief.Cards = mobileBriefApplyCardWords(brief, mobileBriefPatternCards(brief, language), words, language)
-	}
+	brief.Cards = mobileBriefApplyCardWords(brief, mobileBriefPatternCards(brief, language), words, language)
 	if s.app != nil {
 		// Filter the newly written card words too, then restore navigation from
 		// this request's already validated links. No second collection is needed.
@@ -2239,18 +2192,6 @@ func mobileBriefPendingSlot(
 		missed = append(missed, briefID)
 	}
 	return "", false, missed
-}
-
-// Only a writing failure can use the ordinary composer; source admission and
-// withdrawal failures must retain their existing fail-closed behavior.
-func mobileBriefWriteJudgeFailed(err error) bool {
-	for err != nil {
-		if stage, ok := err.(*logStageError); ok && stage.stage == "write and judge" {
-			return true
-		}
-		err = errors.Unwrap(err)
-	}
-	return false
 }
 
 // briefFailureText is the failure's first line for the run record and the log:

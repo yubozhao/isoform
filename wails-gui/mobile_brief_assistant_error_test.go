@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"strconv"
 	"testing"
 
@@ -37,34 +36,6 @@ func TestMobileBriefAssistantFailureAttribution(t *testing.T) {
 				t.Fatal("lost the original error")
 			}
 		})
-	}
-}
-
-func TestMobileBriefAssistantFailureSurvivesWriterAndRunStore(t *testing.T) {
-	cause := mobileBriefAttributeAssistantError(&native.HTTPError{Status: 401}, "codex")
-	writes := 0
-	_, _, err := writeAndJudgeMorningBrief(context.Background(), morningBriefJudgeInput{}, nil,
-		func(context.Context, string) (morningBriefDraft, error) {
-			writes++
-			return morningBriefDraft{}, cause
-		}, nil)
-	if !errors.Is(err, cause) || writes != 1 {
-		t.Fatalf("writer calls=%d error=%v", writes, err)
-	}
-	clock := &fakeMobileBriefClock{now: mobileBriefTestDay(7, 0)}
-	svc, _ := missedBriefRig(t, clock)
-	occurrence := mobileBriefSlotOccurrence{BriefID: "2026-10-09-morning", Slot: mobileBriefSlotMorning, ScheduledAt: clock.Now()}
-	svc.recordFailure(occurrence, withLogStage("write", err))
-	runs := newMobileBriefRunStore(filepath.Dir(svc.runs.path))
-	stored := runs.list()
-	if len(stored) != 1 || stored[0].FailureCause != "signed_out" || stored[0].FailureAssistant != "codex" {
-		t.Fatalf("stored runs = %+v", stored)
-	}
-	if _, err := runs.record(mobileBriefRun{BriefID: occurrence.BriefID, Status: mobileBriefRunMissed}); err != nil {
-		t.Fatal(err)
-	}
-	if got := runs.list()[0].FailureAssistant; got != "codex" {
-		t.Fatalf("missed run lost assistant: %q", got)
 	}
 }
 

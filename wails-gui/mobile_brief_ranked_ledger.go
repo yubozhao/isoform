@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"sort"
 	"time"
 )
 
@@ -72,51 +71,6 @@ func (a *App) morningBriefLedgerInputReadable(ctx context.Context, input morning
 	}
 }
 
-// morningBriefHistoricalLedger reads only the last three earlier stored briefs.
-// It uses their frozen ranked inputs for code-side comparisons, independently
-// of whether their old prose is still eligible for model use.
-func (a *App) morningBriefHistoricalLedger(ctx context.Context, briefs []MobileBriefV1, cutoff time.Time) []morningBriefLedgerFact {
-	if a == nil || a.IsClosedEyesModeEnabled() || ctx.Err() != nil || cutoff.IsZero() {
-		return nil
-	}
-	subjects, err := mobileBriefMailSubjects(a)
-	if err != nil {
-		return nil
-	}
-	ordered := append([]MobileBriefV1(nil), briefs...)
-	sort.SliceStable(ordered, func(i, j int) bool { return mobileBriefAsOfTime(ordered[i]).After(mobileBriefAsOfTime(ordered[j])) })
-	seen := map[string]bool{}
-	considered := 0
-	var facts []morningBriefLedgerFact
-	for _, brief := range ordered {
-		at := mobileBriefAsOfTime(brief)
-		if brief.BriefID == "" || seen[brief.BriefID] || at.IsZero() || !at.Before(cutoff) {
-			continue
-		}
-		seen[brief.BriefID] = true
-		considered++
-		binding := brief.modelBinding
-		if brief.rankedEdition && brief.NarrativeStatus == "ok" && binding != nil && binding.Version == 2 && binding.Synthesis != "" && mobileBriefRankedManifestValid(brief, binding) && mobileBriefSynthesisDigest(brief) == binding.Synthesis {
-			for _, input := range binding.RankedInputs {
-				if !a.morningBriefLedgerInputReadable(ctx, input, subjects) {
-					continue
-				}
-				facts = append(facts, morningBriefLedgerFact{at: at, kind: input.Kind, id: input.ID,
-					title: input.Candidate.Title, status: input.Candidate.Status, due: input.Candidate.Due, lastTouch: input.Candidate.LastTouch,
-					proof: morningBriefLedgerProof{BriefID: brief.BriefID, CandidateID: input.Candidate.ID, SourceKind: input.Kind, SourceID: input.ID,
-						OriginDigest: input.OriginDigest, ManifestDigest: binding.RankedInputsDigest, Synthesis: binding.Synthesis}})
-			}
-		}
-		if considered == 3 || ctx.Err() != nil {
-			break
-		}
-	}
-	if ctx.Err() != nil {
-		return nil
-	}
-	return facts
-}
-
 // morningBriefApplyLedger compares only yesterday's latest frozen fact for the
 // same source. Call it on candidates gathered without unbound prior briefs;
 // the returned proofs must be bound and rechecked before any model call.
@@ -154,14 +108,6 @@ func morningBriefApplyLedger(candidates []morningBriefCandidate, facts []morning
 		proofs = append(proofs, prior.proof)
 	}
 	return out, proofs
-}
-
-// morningBriefLedgerProofsReadable reopens every exact prior snapshot and
-// rechecks its original source policy. The caller keeps these proofs local and
-// must reject the model call or stored synthesis if this check fails.
-func (a *App) morningBriefLedgerProofsReadable(ctx context.Context, store *mobileBriefStore, cutoff time.Time, proofs []morningBriefLedgerProof) bool {
-	_, ok := a.morningBriefLedgerProofFacts(ctx, store, cutoff, proofs)
-	return ok
 }
 
 func (a *App) morningBriefLedgerProofFacts(ctx context.Context, store *mobileBriefStore, cutoff time.Time, proofs []morningBriefLedgerProof) ([]morningBriefLedgerFact, bool) {

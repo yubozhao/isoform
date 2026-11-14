@@ -208,15 +208,6 @@ func CheckNarrativeParts(larger string, done, next []Paragraph) error {
 	return checkParts(larger, false, done, next)
 }
 
-// CheckThinNarrativeParts is the evening check for a thin day, when the evidence
-// is too little to fill two done paragraphs. One short done paragraph is enough:
-// the done part may be shorter than the default balance, but not shorter than
-// next. The other checks still apply: next is not empty, the done part is not
-// empty, and it names no clock time.
-func CheckThinNarrativeParts(done, next []Paragraph) error {
-	return checkParts(PartDone, true, done, next)
-}
-
 func checkParts(larger string, thin bool, done, next []Paragraph) error {
 	if len(next) == 0 {
 		return errors.New("next part is empty")
