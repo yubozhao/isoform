@@ -1852,10 +1852,9 @@ const (
 
 // checkPendingSummaries scans the last pendingSummaryDaysBack days for daily
 // summaries that are missing, partial, or have stale Moments, and regenerates
-// each one with retries. Runs as a launch task queued right after the
-// credential probe (deferAgentProbe), so it only checks the probe result
-// (probeAndGreet sets a.probeSucceeded = true) instead of waiting for it:
-// launch tasks run one at a time, so waiting here would hold the queue.
+// each one with retries. Runs as a launch task queued right after the agent
+// probe (deferAgentProbe) and only checks that the model runner is up: launch
+// tasks run one at a time, so waiting here would hold the queue.
 func (a *App) checkPendingSummaries() {
 	am := a.activity
 	if am == nil || am.store == nil {
@@ -1864,11 +1863,8 @@ func (a *App) checkPendingSummaries() {
 	if a.launch.isStopped() {
 		return
 	}
-	a.mu.Lock()
-	ready := a.probeSucceeded
-	a.mu.Unlock()
-	if !ready {
-		log.Printf("[activity-summary] credentials not verified, skipping pending summaries")
+	if !a.pendingSummariesCanRun() {
+		log.Printf("[activity-summary] model runner not ready, skipping pending summaries")
 		return
 	}
 
@@ -1896,6 +1892,17 @@ func (a *App) checkPendingSummaries() {
 			}
 		}
 	}
+}
+
+// pendingSummariesCanRun reports whether the model runner is up. It does not
+// use probeSucceeded: probeAndGreet returns before setting it whenever
+// UseYansuGateway is on, and loadConfig forces that on for every install, so
+// gating on it skipped the pass on every launch. A failed model call is
+// already retried and logged by generateDailySummaryWithRetry.
+func (a *App) pendingSummariesCanRun() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.runner != nil && a.ready
 }
 
 // generateDailySummaryWithRetry calls GenerateDailySummary up to

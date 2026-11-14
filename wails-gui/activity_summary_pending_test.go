@@ -402,8 +402,7 @@ func TestWaitForMomentsPersisted_GenerationDriftReturnsDrift(t *testing.T) {
 }
 
 // Launch tasks run one at a time, so the pending-summaries task must never
-// wait for the credential probe: it is queued after the probe and only reads
-// its result. Unverified credentials skip at once instead of holding the queue.
+// wait: with no runner up it skips at once instead of holding the queue.
 func TestCheckPendingSummariesDoesNotWaitForProbe(t *testing.T) {
 	app := &App{activity: &activityMonitorState{store: newTestStore(t)}, launch: newLaunchStartup()}
 	done := make(chan struct{})
@@ -412,6 +411,28 @@ func TestCheckPendingSummariesDoesNotWaitForProbe(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("pending summaries waited for the credential probe")
+	}
+}
+
+// The pass runs once the model runner is up, whether or not the credential
+// probe set probeSucceeded: the probe never sets it while UseYansuGateway is
+// on, which loadConfig forces for every install (the pass was skipped on
+// every launch, before and after it moved behind the probe).
+func TestPendingSummariesRunWithReadyRunnerWithoutProbeFlag(t *testing.T) {
+	if !loadConfig().UseYansuGateway {
+		t.Fatal("loadConfig no longer forces UseYansuGateway; revisit this gate")
+	}
+	app := &App{}
+	if app.pendingSummariesCanRun() {
+		t.Fatal("pending summaries may not run before the runner is up")
+	}
+	app.runner = &purposeExtractionFakeRunner{}
+	app.ready = true
+	if app.probeSucceeded {
+		t.Fatal("fixture must leave probeSucceeded unset")
+	}
+	if !app.pendingSummariesCanRun() {
+		t.Fatal("a ready runner without the probe flag skipped pending summaries")
 	}
 }
 
