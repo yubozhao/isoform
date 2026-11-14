@@ -128,3 +128,36 @@ func TestMobileBriefAudioBoundRecordingIsNotMarked(t *testing.T) {
 		t.Fatal("a playable recording was replaced by the rendering mark")
 	}
 }
+
+// The recording yields to the app for its first 45 seconds, then runs at
+// default priority so it still finishes in time on a loaded computer.
+func TestMobileBriefAudioLowPriorityHasABudget(t *testing.T) {
+	start := time.Date(2026, 11, 13, 20, 0, 0, 0, time.UTC)
+	ctx := withMobileBriefAudioUtilityBudget(context.Background(), start)
+	if !mobileBriefAudioLowPriority(ctx, start.Add(44*time.Second)) {
+		t.Fatal("a recording within its budget did not run at low priority")
+	}
+	if mobileBriefAudioLowPriority(ctx, start.Add(mobileBriefAudioUtilityBudget)) {
+		t.Fatal("a recording past its budget still ran at low priority")
+	}
+	if !mobileBriefAudioLowPriority(context.Background(), start) {
+		t.Fatal("brief synthesis without a budget did not run at low priority")
+	}
+}
+
+// The service sets the budget on the context the voice reads.
+func TestMobileBriefAudioCarriesTheBudget(t *testing.T) {
+	svc, brief, _, _ := newAudioBackfillFixture(t)
+	var budgeted atomic.Bool
+	speaker := fakeSpeaker("en", testWAV(1), nil)
+	speaker.synthesize = func(ctx context.Context, _, _ string) ([]byte, error) {
+		_, ok := ctx.Value(mobileBriefAudioUtilityUntilKey{}).(time.Time)
+		budgeted.Store(ok)
+		return testWAV(1), nil
+	}
+	svc.speaker = speaker
+	svc.addAudio(context.Background(), brief, svc.now())
+	if !budgeted.Load() {
+		t.Fatal("the recording ran without its low-priority budget")
+	}
+}

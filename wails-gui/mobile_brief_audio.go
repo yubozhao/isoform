@@ -119,11 +119,40 @@ func appMobileBriefSpeaker(a *App) mobileBriefSpeaker {
 			if err != nil {
 				return nil, err
 			}
-			return engine.Synthesize(text)
+			// The recording is background work: at utility QoS it yields to
+			// the window under load (about 0.45 to 0.5 s per spoken second at
+			// load average 60, against 0.35 at default). Past its budget it
+			// runs at default QoS, so a heavily loaded computer still
+			// finishes the recording in time.
+			if !mobileBriefAudioLowPriority(ctx, time.Now()) {
+				return engine.Synthesize(text)
+			}
+			var wav []byte
+			runAtUtilityQoS(func() { wav, err = engine.Synthesize(text) })
+			return wav, err
 		},
 		ffmpeg:   installedFFmpegPath,
 		language: a.currentUILanguage,
 	}
+}
+
+// mobileBriefAudioUtilityBudget is how long a recording runs at utility QoS
+// before the rest of it runs at default QoS.
+const mobileBriefAudioUtilityBudget = 45 * time.Second
+
+type mobileBriefAudioUtilityUntilKey struct{}
+
+// withMobileBriefAudioUtilityBudget marks the recording started now as low
+// priority until its budget ends.
+func withMobileBriefAudioUtilityBudget(ctx context.Context, now time.Time) context.Context {
+	return context.WithValue(ctx, mobileBriefAudioUtilityUntilKey{}, now.Add(mobileBriefAudioUtilityBudget))
+}
+
+// mobileBriefAudioLowPriority reports whether synthesis at now still runs at
+// utility QoS: within its budget, or always when no budget was set.
+func mobileBriefAudioLowPriority(ctx context.Context, now time.Time) bool {
+	until, ok := ctx.Value(mobileBriefAudioUtilityUntilKey{}).(time.Time)
+	return !ok || now.Before(until)
 }
 
 // mobileBriefVoiceLang maps the UI language to a voice engine.
