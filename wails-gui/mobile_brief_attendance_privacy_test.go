@@ -136,6 +136,16 @@ func TestMobileBriefAttendanceDeliveryRechecksStoredSessions(t *testing.T) {
 						t.Fatalf("wire leaked local dependencies: %s", wire)
 					}
 				}
+				// Seal v2: retention removing a source is not a privacy action. The
+				// phone reads the sealed copy, so it shows what the computer shows.
+				// Every explicit privacy action still withdraws.
+				if privacy == "expired" {
+					computer, ok := svc.GetMobileBrief(brief.BriefID)
+					if !ok || len(computer.MeetingAttendance) != len(delivered.MeetingAttendance) {
+						t.Fatalf("the phone and the computer read different attendance: %d, %d", len(delivered.MeetingAttendance), len(computer.MeetingAttendance))
+					}
+					return
+				}
 				if privacy == "readable" {
 					if len(delivered.MeetingAttendance) != 1 || delivered.MeetingAttendance[0].State != "skipped" || len(delivered.Sections.Review) != 0 {
 						t.Fatalf("readable attendance lost: %+v", delivered)

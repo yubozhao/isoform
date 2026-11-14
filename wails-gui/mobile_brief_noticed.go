@@ -141,7 +141,11 @@ func (a *App) mobileBriefForPhone(brief MobileBriefV1) MobileBriefV1 {
 // Retain the original offers only in the local queued frame: revalidation
 // must reconstruct the same desktop revision before stripping navigation.
 func (a *App) mobileBriefPhoneProjection(brief MobileBriefV1) (MobileBriefV1, []MobileBriefOffer) {
-	brief = a.mobileBriefWithCards(a.mobileBriefForDelivery(brief))
+	if sealed, ok := a.mobileBriefSealedRead(brief); ok {
+		brief = sealed
+	} else {
+		brief = a.mobileBriefWithCards(a.mobileBriefForDelivery(brief))
+	}
 	var desktopOffers []MobileBriefOffer
 	if brief.Offers != nil {
 		offers := make([]MobileBriefOffer, 0, len(brief.Offers))

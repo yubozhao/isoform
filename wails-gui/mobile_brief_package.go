@@ -357,11 +357,86 @@ func (a *App) mobileBriefPackageGateKeyContext(ctx context.Context, source Mobil
 	if a == nil {
 		return ""
 	}
+	if key, ok := a.mobileBriefSealedGateKey(source); ok {
+		return key
+	}
 	encoded, err := json.Marshal(a.mobileBriefForDeliveryContext(ctx, source))
 	if err != nil {
 		return ""
 	}
 	return mobileBriefPackageVersion(encoded)
+}
+
+// mobileBriefSealedRead is a stored brief as the computer reads it: its sealed
+// copy (mobile_brief_finished_read.go), so the phone follows seal v2. Only an
+// explicit privacy action changes the copy, and a belief correction shows its
+// new wording instead of only dropping the old row. It reports false when
+// source is not the stored brief (a draft, a test document), there is no brief
+// service, or the read is held for a passing reason (a store still opening);
+// the caller then projects source itself, as before.
+func (a *App) mobileBriefSealedRead(source MobileBriefV1) (MobileBriefV1, bool) {
+	service, stored, ok := a.mobileBriefSealedSource(source)
+	if !ok {
+		return MobileBriefV1{}, false
+	}
+	brief, withheld, err := service.finishedReadWithholding(stored)
+	if err != nil || withheld.Transient() || brief.BriefID != source.BriefID {
+		return MobileBriefV1{}, false
+	}
+	return brief, true
+}
+
+// mobileBriefSealedSource is the brief service and the stored brief source
+// names, when the phone may read its sealed copy. Closed Eyes is a passing
+// state the live projection already withholds for, so it keeps that path.
+func (a *App) mobileBriefSealedSource(source MobileBriefV1) (*mobileBriefService, MobileBriefV1, bool) {
+	if a == nil || a.IsClosedEyesModeEnabled() {
+		return nil, MobileBriefV1{}, false
+	}
+	service, ok := a.mobileBriefSource().(*mobileBriefService)
+	if !ok || service == nil || service.store == nil {
+		return nil, MobileBriefV1{}, false
+	}
+	stored, found := service.storedSource(source.BriefID)
+	if !found || stored.AsOf != source.AsOf {
+		return nil, MobileBriefV1{}, false
+	}
+	return service, stored, true
+}
+
+// mobileBriefSealedGateKey names the privacy state a package read from the
+// sealed copy depends on: the print and day the copy is sealed under, and the
+// display language, and the copy's words. It changes when an explicit privacy
+// action amends the copy (seal v2), never when a Today refresh re-seals live
+// rows, so those never change a package by themselves. The read first brings
+// the copy up to date.
+func (a *App) mobileBriefSealedGateKey(source MobileBriefV1) (string, bool) {
+	service, stored, ok := a.mobileBriefSealedSource(source)
+	if !ok {
+		return "", false
+	}
+	read, withheld, err := service.finishedReadWithholding(stored)
+	if err != nil || withheld.Transient() {
+		return "", false
+	}
+	saved, found, err := service.store.loadFinishedRead(source.BriefID)
+	if err != nil || !found || saved.Schema != mobileBriefSealedSchema {
+		return "", false
+	}
+	// The words and the parts a gate can withdraw also name the key, so a copy
+	// sealed again with less in it reaches the phone. Live rows (the day's
+	// shape, finds) stay out of it.
+	words, err := json.Marshal(struct {
+		Narrative         []MobileBriefPara
+		WeeklyRecap       []MobileBriefPara
+		YourWeek          *MobileBriefWeek
+		MeetingAttendance []MobileBriefAttendance
+		Audio             bool
+	}{read.Narrative, read.WeeklyRecap, read.YourWeek, read.MeetingAttendance, read.Audio != nil})
+	if err != nil {
+		return "", false
+	}
+	return mobileBriefPackageVersion([]byte("sealed\x00" + saved.Print + "\x00" + saved.Day + "\x00" + a.modelDisplayLanguage() + "\x00" + string(words))), true
 }
 
 // buildMobileBriefPackage makes a package from a source brief without

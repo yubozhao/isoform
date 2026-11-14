@@ -272,3 +272,36 @@ func TestMadeAheadMorningUsesTheReadersDayWords(t *testing.T) {
 		t.Fatalf("made-ahead day word = %+v", m.Items)
 	}
 }
+
+// Nov 13: "You also built the Scrollback app" was an agent's work, seen only in
+// Claude. Building seen only in an agent host goes to the agents group; planning
+// there stays the user's.
+func TestNewBriefMaterialMarksBuildingInAgentHosts(t *testing.T) {
+	in := newWriterTestInput()
+	asOf := in.AsOf
+	in.Moved = append(in.Moved,
+		mobileBriefCandidate{SourceKind: mobileBriefRecapSource, SourceID: "act-build", Title: "Build Scrollback app and Doomscroll launch kit in Scrollback Phase 0 spike",
+			Status: "done", Kind: "recap", At: asOf.Add(-2 * time.Hour), Apps: []string{"Claude"}},
+		mobileBriefCandidate{SourceKind: mobileBriefRecapSource, SourceID: "act-plan", Title: "Plan sponsorship for Scrollback Phase 0 spike",
+			Status: "done", Kind: "recap", At: asOf.Add(-3 * time.Hour), Apps: []string{"Claude"}})
+	brief := buildMobileBriefV1(in)
+	m, _ := newBriefMaterial(in, brief, briefPartDone, "")
+	found := 0
+	for _, item := range m.Items {
+		switch {
+		case strings.HasPrefix(item.Title, "Build Scrollback"):
+			found++
+			if !item.Agent || item.Group != briefcore.GroupAgents {
+				t.Fatalf("agent-built work credited to the user: %+v", item)
+			}
+		case strings.HasPrefix(item.Title, "Plan sponsorship"):
+			found++
+			if item.Agent || item.Group != briefcore.GroupDone {
+				t.Fatalf("the user's planning marked as agent work: %+v", item)
+			}
+		}
+	}
+	if found != 2 {
+		t.Fatalf("items found = %d, want 2", found)
+	}
+}

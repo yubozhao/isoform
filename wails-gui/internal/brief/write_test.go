@@ -117,6 +117,15 @@ func TestAgentDriven(t *testing.T) {
 		{nil, "You have the assistant check hourly for open PRs", true},
 		{nil, "AFO calf raises, every day", false},
 		{[]string{"Claude", "iTerm2"}, "Refine the isoform hub morning brief", true},
+		// Nov 13: work built in Claude was credited to the user.
+		{[]string{"Claude"}, "Build Scrollback app and Doomscroll launch kit in Scrollback Phase 0 spike", true},
+		{[]string{"Terminal"}, "Implemented the relay retry", true},
+		{[]string{"Claude"}, "Plan sponsorship for Scrollback Phase 0 spike", false},
+		{[]string{"Claude"}, "Plan sponsorship for the launch", false},
+		{[]string{"Claude"}, "Design a relationship map for the launch", false},
+		{[]string{"Claude", "Figma"}, "Build a prototype of the onboarding", false},
+		{[]string{"Google Chrome"}, "Build the launch slide deck", false},
+		{nil, "Build the garden shed", false},
 	}
 	for _, c := range cases {
 		if got := AgentDriven(c.apps, c.text); got != c.want {

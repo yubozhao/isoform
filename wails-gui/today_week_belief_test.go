@@ -147,7 +147,24 @@ func TestTodayWeekBeliefCorrectionKeepsOtherWeekRows(t *testing.T) {
 	if phone.YourWeek == nil || len(phone.YourWeek.Time) == 0 {
 		t.Fatalf("phone read lost the week's other rows: %+v", phone.YourWeek)
 	}
-	for surface, value := range map[string]any{"computer": computer.Brief, "phone": phone} {
+	// The phone reads the sealed copy, as the computer does: the corrected
+	// wording takes the old row's place, not just the old row leaving.
+	if len(phone.YourWeek.Learned) != 1 || phone.YourWeek.Learned[0].Text != "I prefer afternoons." {
+		t.Fatalf("phone week learned rows = %+v, want the corrected wording", phone.YourWeek.Learned)
+	}
+	service := app.ensureMobileBriefService().(*mobileBriefService)
+	pkg, ok := service.BriefPackage(brief.BriefID)
+	if !ok {
+		t.Fatal("no phone package after the correction")
+	}
+	var packaged MobileBriefV1
+	if err := json.Unmarshal(pkg.Bytes, &packaged); err != nil {
+		t.Fatal(err)
+	}
+	if packaged.YourWeek == nil || len(packaged.YourWeek.Learned) != 1 || packaged.YourWeek.Learned[0].Text != "I prefer afternoons." {
+		t.Fatalf("phone package week = %+v, want the corrected wording", packaged.YourWeek)
+	}
+	for surface, value := range map[string]any{"computer": computer.Brief, "phone": phone, "package": packaged} {
 		raw, err := json.Marshal(value)
 		if err != nil {
 			t.Fatal(err)
