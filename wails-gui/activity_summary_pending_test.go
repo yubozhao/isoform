@@ -1,7 +1,10 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 )
@@ -398,18 +401,93 @@ func TestWaitForMomentsPersisted_GenerationDriftReturnsDrift(t *testing.T) {
 	}
 }
 
-// A quit while the launch task still waits for the credential probe must
-// not hold shutdown (which waits for this task) for the 60 s probe wait.
-func TestCheckPendingSummariesStopsWaitingOnQuit(t *testing.T) {
-	launch := newLaunchStartup()
-	app := &App{activity: &activityMonitorState{store: newTestStore(t)}, launch: launch}
+// Launch tasks run one at a time, so the pending-summaries task must never
+// wait for the credential probe: it is queued after the probe and only reads
+// its result. Unverified credentials skip at once instead of holding the queue.
+func TestCheckPendingSummariesDoesNotWaitForProbe(t *testing.T) {
+	app := &App{activity: &activityMonitorState{store: newTestStore(t)}, launch: newLaunchStartup()}
 	done := make(chan struct{})
 	go func() { app.checkPendingSummaries(); close(done) }()
-	time.Sleep(150 * time.Millisecond)
-	launch.cancelPending()
 	select {
 	case <-done:
 	case <-time.After(time.Second):
-		t.Fatal("pending summaries kept waiting after quit")
+		t.Fatal("pending summaries waited for the credential probe")
+	}
+}
+
+// The probe launch task queues the pending summaries after the probe ran, so
+// they see verified credentials instead of timing out ahead of the probe.
+func TestDeferAgentProbeQueuesPendingSummariesAfterProbe(t *testing.T) {
+	launch := newLaunchStartup()
+	app := &App{launch: launch}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	launch.startWorker(ctx)
+	defer launch.stop()
+
+	var mu sync.Mutex
+	var order []string
+	record := func(step string) {
+		mu.Lock()
+		order = append(order, step)
+		mu.Unlock()
+	}
+	summariesDone := make(chan struct{})
+	app.deferAgentProbe(
+		func() error { record("start"); return nil },
+		func() {
+			app.mu.Lock()
+			app.probeSucceeded = true
+			app.mu.Unlock()
+			record("probe")
+		},
+		func() {
+			app.mu.Lock()
+			verified := app.probeSucceeded
+			app.mu.Unlock()
+			record(fmt.Sprintf("summaries verified=%t", verified))
+			close(summariesDone)
+		},
+	)
+	select {
+	case <-summariesDone:
+	case <-time.After(3 * time.Second):
+		t.Fatal("pending summaries never ran after the probe")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	want := []string{"start", "probe", "summaries verified=true"}
+	if fmt.Sprint(order) != fmt.Sprint(want) {
+		t.Fatalf("launch order = %v, want %v", order, want)
+	}
+}
+
+// A failed agent start queues no summaries: there is no runner to write them.
+func TestDeferAgentProbeSkipsSummariesWhenAgentFails(t *testing.T) {
+	launch := newLaunchStartup()
+	app := &App{launch: launch}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	launch.startWorker(ctx)
+	defer launch.stop()
+
+	ran := make(chan string, 2)
+	app.deferAgentProbe(
+		func() error { return fmt.Errorf("no agent") },
+		func() { ran <- "probe" },
+		func() { ran <- "summaries" },
+	)
+	// Two markers: anything the probe task queued lands before the second.
+	for _, name := range []string{"marker_1", "marker_2"} {
+		select {
+		case <-app.deferLaunchTask(name, func() {}):
+		case <-time.After(3 * time.Second):
+			t.Fatal("launch queue stalled")
+		}
+	}
+	select {
+	case step := <-ran:
+		t.Fatalf("%s ran after a failed agent start", step)
+	default:
 	}
 }

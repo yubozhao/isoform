@@ -162,6 +162,7 @@ type App struct {
 	autoSummaryNow            func() time.Time                // test seam; nil → time.Now
 	autoSummaryGenDaily       func(dateStr string) error      // test seam; nil → GenerateDailySummary
 	autoSummaryGenWeekly      func(dateStr string) error      // test seam; nil → GenerateWeeklySummary
+	autoSummaryRunnerWait     time.Duration                   // test seam; 0 → autoSummaryRunnerWait
 	generateTodayNewsSF       singleflight.Group              // dedups concurrent GenerateTodayNews calls per date+language
 	shadowTaskEvaluationSF    singleflight.Group              // dedups task-mirror comparison when runtime and lifecycle finish together
 	purposeUnderstandingMu    sync.RWMutex                    // guards ambient Purpose-understanding lifecycle and event reads
@@ -1139,8 +1140,9 @@ func (a *App) startupServices(ctx context.Context) {
 	}
 	recordLaunchStage("models_ready")
 
-	// Generate pending activity summaries (yesterday, last week) in the background.
-	a.deferLaunchTask("pending_summaries", a.checkPendingSummaries)
+	// Pending activity summaries (yesterday, last week) are queued by the
+	// agent_probe launch task once credentials are verified; see
+	// deferAgentProbe.
 
 	// Keep each day's and week's summary ready on its own: once after local
 	// midnight, finish yesterday's daily (and on Mondays last week's weekly)
@@ -1364,15 +1366,28 @@ func (a *App) startupServices(ctx context.Context) {
 			a.emitBrowserEvent("brief:stored", "")
 		}
 	})
+	a.deferAgentProbe(func() error {
+		_, err := a.StartAgent()
+		return err
+	}, a.probeAndGreet, a.checkPendingSummaries)
+
+	a.pageFirstReadsReady()
+}
+
+// deferAgentProbe queues the credential probe and, once it has run, the
+// pending activity summaries. The summaries need verified credentials, and
+// launch tasks run one at a time: queued ahead of the probe, they waited 60 s
+// for a probe that could only start after them, always skipped, and held every
+// later launch task for that minute.
+func (a *App) deferAgentProbe(start func() error, probe func(), pendingSummaries func()) {
 	a.deferLaunchTask("agent_probe", func() {
-		if _, err := a.StartAgent(); err != nil {
+		if err := start(); err != nil {
 			a.emitAgentStatus(AgentStatus{Running: false, Ready: false, Message: err.Error()})
 			return
 		}
-		a.probeAndGreet()
+		probe()
+		a.deferLaunchTask("pending_summaries", pendingSummaries)
 	})
-
-	a.pageFirstReadsReady()
 }
 
 // handleSingletonMessages drains the IPC channel populated by second-launch
