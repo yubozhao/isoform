@@ -8,6 +8,7 @@ vi.hoisted(() => {
 
 const mocks = vi.hoisted(() => ({
     getStartAtLogin: vi.fn(),
+    getAutoSpeakEnabled: vi.fn().mockResolvedValue(false),
     setStartAtLogin: vi.fn(),
     setThemePreference: vi.fn(),
     loadUIState: vi.fn().mockResolvedValue(""),
@@ -19,7 +20,7 @@ vi.mock("../../../../wailsjs/go/main/App", () => ({
     SaveUIState: mocks.saveUIState,
     GetStartAtLogin: mocks.getStartAtLogin,
     SetStartAtLogin: mocks.setStartAtLogin,
-    GetAutoSpeakEnabled: vi.fn().mockResolvedValue(false),
+    GetAutoSpeakEnabled: mocks.getAutoSpeakEnabled,
     SetAutoSpeakEnabled: vi.fn().mockResolvedValue(undefined),
     GetAutoSpeakAutomationEnabled: vi.fn().mockResolvedValue(false),
     SetAutoSpeakAutomationEnabled: vi.fn().mockResolvedValue(undefined),
@@ -115,6 +116,32 @@ describe("GeneralPage", () => {
         expect(screen.queryByRole("switch", { name: "Open Isoform when you log in" })).toBeNull();
         fireEvent.click(screen.getByRole("button", { name: "Try again" }));
         expect(await screen.findByRole("switch", { name: "Open Isoform when you log in" })).toBeChecked();
+    });
+
+    it("keeps the login switch disabled while its save runs", async () => {
+        let finish: () => void = () => {};
+        mocks.setStartAtLogin.mockReturnValueOnce(new Promise<void>((resolve) => { finish = resolve; }));
+        render(<Harness />);
+        const toggle = await screen.findByRole("switch", { name: "Open Isoform when you log in" });
+        await waitFor(() => expect(toggle).toBeChecked());
+
+        fireEvent.click(toggle);
+        expect(toggle).toBeDisabled();
+        fireEvent.click(toggle);
+        expect(mocks.setStartAtLogin).toHaveBeenCalledTimes(1);
+        finish();
+        await waitFor(() => expect(toggle).toBeEnabled());
+        expect(toggle).not.toBeChecked();
+    });
+
+    it("reports a failed read-aloud setting read instead of showing it off", async () => {
+        mocks.getAutoSpeakEnabled.mockRejectedValueOnce(new Error("offline"));
+        render(<Harness />);
+        fireEvent.click(screen.getByRole("button", { name: /Advanced/ }));
+        expect(await screen.findByText("Couldn't read this setting.")).toBeInTheDocument();
+        expect(screen.queryByRole("switch", { name: "Read chat replies aloud" })).toBeNull();
+        fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+        expect(await screen.findByRole("switch", { name: "Read chat replies aloud" })).not.toBeChecked();
     });
 
     it("turns opening at login off", async () => {

@@ -50,6 +50,7 @@ function StartAtLoginSettings() {
 
     const [startAtLogin, setStartAtLoginState] = useState<boolean | null>(null);
     const [readFailed, setReadFailed] = useState(false);
+    const [saving, setSaving] = useState(false);
 
     const read = useCallback(() => {
         setStartAtLoginState(null);
@@ -65,14 +66,19 @@ function StartAtLoginSettings() {
 
     if (!isSupported) return null;
 
+    // One save at a time: a quick second click used to send a second save
+    // that could land before the first.
     const handleLoginToggle = () => {
-        if (startAtLogin === null) return;
+        if (startAtLogin === null || saving) return;
         const next = !startAtLogin;
         setStartAtLoginState(next);
-        SetStartAtLogin(next).catch(() => {
-            read();
-            failChange(t("general.startAtLogin.saveFailed"), () => void handleLoginToggle());
-        });
+        setSaving(true);
+        SetStartAtLogin(next)
+            .catch(() => {
+                read();
+                failChange(t("general.startAtLogin.saveFailed"), () => void handleLoginToggle());
+            })
+            .finally(() => setSaving(false));
     };
 
     // Render the full card layout on first paint even before the async
@@ -94,6 +100,7 @@ function StartAtLoginSettings() {
                     ) : (
                         <Switch
                             checked={startAtLogin}
+                            disabled={saving}
                             onCheckedChange={handleLoginToggle}
                             aria-label={t("general.startAtLogin.title")}
                         />
@@ -222,15 +229,27 @@ function AutoSpeakCategoryRow({
     const { failure: changeFailure, fail: failChange } = useSettingsFailure();
     const [enabled, setEnabledState] = useState(false);
     const [loading, setLoading] = useState(true);
+    const [readFailed, setReadFailed] = useState(false);
 
-    useEffect(() => {
+    // A failed read has no switch state to show: an "off" switch would be a
+    // guess, so the row offers a retry instead (same as Open at login).
+    const read = useCallback(() => {
+        setLoading(true);
+        setReadFailed(false);
         get()
             .then((v) => {
                 setEnabledState(v);
                 setLoading(false);
             })
-            .catch(() => setLoading(false));
+            .catch(() => {
+                setReadFailed(true);
+                setLoading(false);
+            });
     }, [get]);
+
+    useEffect(() => {
+        read();
+    }, [read]);
 
     const handleToggle = () => {
         const next = !enabled;
@@ -252,12 +271,14 @@ function AutoSpeakCategoryRow({
             failure={changeFailure}
             description={description}
             control={
-                <Switch
-                    checked={enabled}
-                    disabled={loading}
-                    onCheckedChange={handleToggle}
-                    aria-label={title}
-                />
+                readFailed ? <SettingReadError retry={read} /> : (
+                    <Switch
+                        checked={enabled}
+                        disabled={loading}
+                        onCheckedChange={handleToggle}
+                        aria-label={title}
+                    />
+                )
             }
         />
     );
