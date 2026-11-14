@@ -4,12 +4,14 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -88,6 +90,20 @@ func TestBashRenamedLaunchctlCannotCreateJob(t *testing.T) {
 	// Ad-hoc sign only this disposable copy so the control proves it can run.
 	if output, err := exec.Command("/usr/bin/codesign", "--force", "--sign", "-", launcher).CombinedOutput(); err != nil {
 		t.Fatalf("sign disposable launchctl copy: %v: %s", err, output)
+	}
+	// Some macOS releases (26.x) ship launchctl as arm64e only and kill any
+	// ad-hoc-signed arm64e binary at exec, sandbox or not, so no runnable
+	// renamed copy can exist there and this end-to-end case has nothing to
+	// prove. The kernel rule itself stays covered on every release by
+	// TestBashLauncherOperationPolicy's "approved unknown binary" case.
+	if err := exec.Command(launcher, "version").Run(); err != nil {
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			if status, ok := exit.Sys().(syscall.WaitStatus); ok && status.Signaled() && status.Signal() == syscall.SIGKILL {
+				t.Skipf("this macOS kills an ad-hoc-signed copy of launchctl outside any sandbox: %v", err)
+			}
+		}
+		t.Fatalf("unsandboxed launchctl copy failed: %v", err)
 	}
 	labelPrefix := fmt.Sprintf("dev.isoform.guard-copy.%d.%d", os.Getpid(), time.Now().UnixNano())
 	controlLabel, blockedLabel := labelPrefix+".control", labelPrefix+".blocked"
