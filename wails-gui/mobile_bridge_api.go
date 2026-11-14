@@ -32,8 +32,10 @@ var (
 type mobileStatusView struct {
 	Topics    bool `json:"topics,omitempty"`
 	BrainDump bool `json:"brainDump,omitempty"`
-	FirstRead bool `json:"firstRead,omitempty"`
-	Holds     bool `json:"holds,omitempty"`
+	// Recordings is true when this computer takes watch and phone recordings (24).
+	Recordings bool `json:"recordings,omitempty"`
+	FirstRead  bool `json:"firstRead,omitempty"`
+	Holds      bool `json:"holds,omitempty"`
 	// Sees is true when this Mac serves What Isoform sees (20.7e).
 	Sees bool `json:"sees,omitempty"`
 	// TaskThreads is true when this Mac serves task threads (20.7b): thread
@@ -234,6 +236,16 @@ func (bridge *mobileBridge) handleAuthorized(w http.ResponseWriter, r *http.Requ
 			return
 		}
 		bridge.serveTaskListForDevice(w, device)
+	case "POST /recordings":
+		if !mobileRequireScope(w, device, mobileScopeChatWrite) {
+			return
+		}
+		bridge.serveRecordingPost(w, r, device)
+	case "GET /recordings":
+		if !mobileRequireScope(w, device, mobileScopeChatWrite) {
+			return
+		}
+		bridge.serveRecordingList(w, r, device)
 	case "POST /tasks/parse":
 		if !mobileRequireScope(w, device, mobileScopeHandoff) {
 			return
@@ -566,7 +578,7 @@ func mobileRequireScope(w http.ResponseWriter, device mobileDeviceRecord, scope 
 
 func (bridge *mobileBridge) serveStatus(w http.ResponseWriter) {
 	view := mobileStatusView{
-		HubName: mobileHubName(), AppVersion: Version, ProtocolVersion: 1, Topics: true, TaskThreads: true, BrainDump: true, Sees: true, FirstRead: true, TodayMeetingPrep: true, ChatMainSend: true, NotificationTest: true, BriefRelevanceFeedback: true, BriefAsk: true, BriefWeekDecline: true,
+		HubName: mobileHubName(), AppVersion: Version, ProtocolVersion: 1, Topics: true, TaskThreads: true, BrainDump: true, Recordings: true, Sees: true, FirstRead: true, TodayMeetingPrep: true, ChatMainSend: true, NotificationTest: true, BriefRelevanceFeedback: true, BriefAsk: true, BriefWeekDecline: true,
 		KeepAwake: bridge.keepAwakeSetting(), InstantPush: mobileInstantPushConfigured(),
 		BriefSchedule: []mobileBriefSlotTime{},
 	}
