@@ -1622,6 +1622,9 @@ func (s *Store) ensureProactiveStructures() error {
 	if err := s.ensureStreamItemVersions(); err != nil {
 		return err
 	}
+	if err := s.ensureVoiceSourceVersion(); err != nil {
+		return err
+	}
 	return nil
 }
 

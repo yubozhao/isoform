@@ -429,6 +429,7 @@ func (a *App) emitBrowserEvent(eventName string, data ...interface{}) {
 	}
 	a.noteDerivedViewEvent(eventName)
 	a.noteStreamPageEvent(eventName)
+	noteProactiveReadEvent(eventName)
 	if topicFindsSourceEvents[eventName] {
 		a.noteTopicFindsSourceChanged(eventName)
 	}

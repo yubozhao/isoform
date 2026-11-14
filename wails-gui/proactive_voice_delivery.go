@@ -117,6 +117,15 @@ func (a *App) proactiveVoiceReceiptAllowsRead(ctx context.Context, id, kind, pre
 	if a == nil || a.store == nil || ctx.Err() != nil || !proactivevoice.Supported(kind) {
 		return false
 	}
+	key := proactiveReadVerdictKey{id: id, kind: kind, presentation: presentationHash, status: status}
+	return a.proactiveReadVerdict(ctx, key, func() bool {
+		return a.proactiveVoiceReceiptAllowsReadLive(ctx, id, kind, presentationHash, status)
+	})
+}
+
+// proactiveVoiceReceiptAllowsReadLive is the gate itself: it reloads the
+// receipt's sources and checks them again.
+func (a *App) proactiveVoiceReceiptAllowsReadLive(ctx context.Context, id, kind, presentationHash string, status bool) bool {
 	if _, err := uuid.Parse(id); err != nil {
 		return false
 	}
