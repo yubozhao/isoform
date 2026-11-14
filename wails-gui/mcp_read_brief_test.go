@@ -404,3 +404,46 @@ func TestMCPReadBriefExplicitPurposeAndURLPrivacy(t *testing.T) {
 		t.Fatal("non-web URL escaped")
 	}
 }
+
+// The MCP read goes through the brief reader: when a sealed copy may be shown,
+// it reads the copy the computer and the phone show, so an item the copy left
+// out stays out. A copy sealed under another privacy print is not used, and
+// the stored brief is checked item by item, as before.
+func TestMCPReadBriefReadsTheSealedCopy(t *testing.T) {
+	a := newMCPReadTestApp(t)
+	brief := seedMCPBriefSources(t, a)
+	storeMCPBrief(t, brief)
+	stateDir, err := mobileBriefStateDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealed := brief
+	sealed.Sections.Moved = append([]MobileBriefItem{}, brief.Sections.Moved[1:]...)
+	raw, err := marshalStoredMobileBrief(sealed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := newMobileBriefStore(stateDir)
+	save := func(print string) {
+		t.Helper()
+		read := mobileBriefFinishedRead{Schema: mobileBriefSealedSchema, Rule: mobileBriefSealRule, Epoch: mobileBriefPrivacyEpoch.Load(), Print: print, Day: time.Now().Format("2006-01-02"), Brief: raw}
+		if err := store.saveFinishedRead(brief.BriefID, read); err != nil {
+			t.Fatal(err)
+		}
+	}
+	save(a.briefPrivacyPrint())
+	got := callMCPReadTest(t, a, "brief_today", map[string]any{})
+	if len(got.Items) != 11 || got.Withheld != 1 || got.Total != 12 {
+		t.Fatalf("sealed read: %+v", got)
+	}
+	for _, item := range got.Items {
+		if item.Source == "history" {
+			t.Fatal("an item the sealed copy left out came back")
+		}
+	}
+	save("another-print")
+	got = callMCPReadTest(t, a, "brief_today", map[string]any{})
+	if len(got.Items) != 12 || got.Withheld != 1 || got.Total != 13 {
+		t.Fatalf("a copy under another print must not be read: %+v", got)
+	}
+}

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	briefcore "wails-gui/internal/brief"
 	"wails-gui/internal/handoff"
 	"wails-gui/internal/interests"
 	"wails-gui/internal/pii"
@@ -46,7 +47,7 @@ func (p *mcpReadPrivacy) briefToday(result *mcpReadResult) error {
 	if err != nil {
 		return err
 	}
-	brief, ok := newMobileBriefStore(dir).latest()
+	brief, ok := p.mcpBriefLatest(dir)
 	if !ok || brief.LocalDate != time.Now().Format("2006-01-02") {
 		return nil
 	}
@@ -122,6 +123,31 @@ func (p *mcpReadPrivacy) briefToday(result *mcpReadResult) error {
 		return errors.New("Isoform privacy settings changed; retry the read")
 	}
 	return nil
+}
+
+// mcpBriefLatest is the latest brief through the brief reader
+// (internal/brief): the sealed copy the computer and the phone show when it
+// may be shown as it is, else the stored brief. Either way every item below is
+// checked again against its current source, so a copy that needs an amend
+// first (its privacy print moved) reads no less safely than before.
+func (p *mcpReadPrivacy) mcpBriefLatest(stateDir string) (MobileBriefV1, bool) {
+	dir := filepath.Join(stateDir, mobileBriefDirName)
+	options := briefcore.ReaderOptions{Dir: dir, Day: func() string { return time.Now().Format("2006-01-02") }}
+	if p.app != nil {
+		options.Print = p.app.briefPrivacyPrint
+	}
+	reader := briefcore.NewReader(options)
+	latest, ok := reader.LatestBuilt()
+	if !ok {
+		return MobileBriefV1{}, false
+	}
+	if sealed, shown := reader.Get(latest.BriefID); shown {
+		var brief MobileBriefV1
+		if unmarshalStoredMobileBrief(sealed.Raw, &brief) == nil && brief.BriefID == latest.BriefID {
+			return brief, true
+		}
+	}
+	return newMobileBriefStore(stateDir).load(latest.BriefID)
 }
 
 func (p *mcpReadPrivacy) briefReferenceItem(ref MobileBriefRef) (mcpReadItem, bool) {
