@@ -256,6 +256,11 @@ func newContextSignalService(a *App) *contextSignalService {
 			if a.mailSync != nil {
 				a.mailSync.RequestSync("wake")
 			}
+			// A recording cut short by sleep is made again; a bound one is
+			// left as it is (backfillTodayAudio).
+			if service, ok := a.mobileBriefSource().(*mobileBriefService); ok && service != nil {
+				service.remakeAudioSoon()
+			}
 		},
 		onSystemState: func(change activitymon.SystemStateChange) {
 			// The window does no work while the Mac is locked or asleep

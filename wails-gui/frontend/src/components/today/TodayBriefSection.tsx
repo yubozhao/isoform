@@ -1496,6 +1496,9 @@ function briefParts({
     }
     // Play needs the words on the same brief: a recording never plays alone.
     const audio = !hasHoldOffer && brief.audio && (!brief.audio.status || brief.audio.status === "ok") && brief.audio.bytes > 0 && briefHasWords(brief) ? brief.audio : null;
+    // The words are stored first and the voice follows within about a minute:
+    // until it is saved, the brief says the recording is on its way.
+    const audioPreparing = !audio && !hasHoldOffer && brief.audio?.status === "rendering" && briefHasWords(brief);
     const asOf = firstBrief?.caption ?? title;
     const hasClosing = !!briefHold.offer || !!closing || actionCards.length > 0;
 
@@ -1591,6 +1594,8 @@ function briefParts({
                     // Keyed by brief: a file still loading for the last brief
                     // never plays under this one.
                     <BriefAudioPlayer key={brief.briefId} briefId={brief.briefId} audio={audio} caption={asOf} />
+                ) : audioPreparing ? (
+                    <div role="status" className="text-[12px] text-muted" data-testid="brief-audio-preparing">{tr("todayBrief.preparingAudio", { brief: asOf })}</div>
                 ) : (
                     <div className="text-[12px] text-muted" data-testid="brief-no-recording">{asOf}</div>
                 )}
