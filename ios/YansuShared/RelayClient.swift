@@ -314,6 +314,22 @@ final class RelayClient: PairingTransport, @unchecked Sendable {
         throw RelayClientError.invalidResponse
     }
 
+    // MARK: Uploads (PROTOCOL.md section 24)
+
+    /// Puts one sealed recording part on the relay for the computer to take. The body is
+    /// ciphertext; the key travels to the computer inside the sealed POST /recordings request.
+    func putUpload(_ credentials: RelayCredentials, id: String, sealed: Data) async throws {
+        var request = URLRequest(url: try Self.endpoint(credentials.origin, ["v1", "uploads", id]))
+        request.httpMethod = Method.PUT.rawValue
+        request.setValue("Bearer \(credentials.bearer)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+        request.httpBody = sealed
+        request.timeoutInterval = 120
+        let (data, http) = try await send(request)
+        try check(http: http, data: data)
+    }
+
     private func call<T: Decodable>(_ method: Method, _ credentials: RelayCredentials, _ segments: [String],
                                     query: [URLQueryItem] = [], body: Data? = nil,
                                     timeout: TimeInterval? = nil, as type: T.Type) async throws -> T {

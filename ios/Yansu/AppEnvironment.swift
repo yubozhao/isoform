@@ -269,6 +269,7 @@ final class AppEnvironment: ObservableObject {
                     heardChat.heardFromComputer()
                     await heardTasks.retryDraftSends(computerResponded: true)
                     await heardWeekDeclines.retryPending()
+                    WatchLink.shared.drain()
                 }
             }
         }

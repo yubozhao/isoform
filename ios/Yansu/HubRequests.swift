@@ -37,10 +37,12 @@ enum HubRoute: Equatable, Sendable {
     case privacy
     case topic(id: String, cursor: String?, limit: Int)
     case write(path: String, body: String)
+    /// The state of this phone's recordings on the computer (PROTOCOL.md 24.3).
+    case recordings(ids: [String])
 
     var method: String {
         switch self {
-        case .yourAgent: return "GET"
+        case .yourAgent, .recordings: return "GET"
         case .refreshBrief, .write, .briefReceived: return "POST"
         case .status, .today, .todayMeetingPrep, .findTime, .findTimeLegacy, .holdProposal, .holdStatus, .todayPart, .latestBrief, .briefList, .brief, .briefPackage, .briefPart, .briefAudio, .briefAskAnswer, .briefCardAskAnswer, .briefWeekDecline, .briefWeekAskAnswer, .chats, .chat, .notifications, .keepAwake, .tasks, .task, .goals, .goal, .offers, .offersWithHolds,
              .topics, .topic, .privacy: return "GET"
@@ -50,6 +52,7 @@ enum HubRoute: Equatable, Sendable {
     var path: String {
         switch self {
         case .yourAgent: return "/your-agent"
+        case .recordings: return "/recordings"
         case .status: return "/status"
         case .today, .todayPart: return "/today"
         case .todayMeetingPrep: return "/today/meeting-prep"
@@ -87,6 +90,7 @@ enum HubRoute: Equatable, Sendable {
     var query: String {
         switch self {
         case .yourAgent: return ""
+        case .recordings(let ids): return ids.isEmpty ? "" : "ids=" + ids.joined(separator: ",")
         case .todayPart(let version, let part): return "version=\(version)&part=\(part)"
         case .todayMeetingPrep(let id):
             var components = URLComponents()
@@ -150,7 +154,7 @@ enum HubRoute: Equatable, Sendable {
 
     var body: String {
         switch self {
-        case .yourAgent: return ""
+        case .yourAgent, .recordings: return ""
         case .refreshBrief: return "{}"
         case .write(_, let body): return body
         case .briefReceived(_, let version): return "{\"version\":\"\(version)\"}"
@@ -162,6 +166,7 @@ enum HubRoute: Equatable, Sendable {
     var traceName: String {
         switch self {
         case .yourAgent: return "your-agent"
+        case .recordings: return "recordings.list"
         case .status: return "status"
         case .today, .todayPart: return "today"
         case .todayMeetingPrep: return "today.meeting-prep"
@@ -297,6 +302,8 @@ struct HubStatus: Decodable, Equatable, Sendable {
     var keepAwake: Bool? = nil
     var instantPush: Bool? = nil
     var brainDump: Bool? = nil
+    /// The computer takes watch and phone recordings (PROTOCOL.md 24). Older computers omit it.
+    var recordings: Bool? = nil
     var briefSchedule: [ScheduledPhoneBrief]? = nil
 }
 
