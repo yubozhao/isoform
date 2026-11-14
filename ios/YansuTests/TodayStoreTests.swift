@@ -518,6 +518,48 @@ final class TodayStoreTests: XCTestCase {
         XCTAssertTrue(entries.isEmpty)
     }
 
+    /// The first read waits until released and answers the snapshot from before a change; later reads answer
+    /// the newer one.
+    private actor GatedTodayHub: TodayHubAPI {
+        let old: MobileTodaySnapshot
+        let new: MobileTodaySnapshot
+        private(set) var reads = 0
+        private var gate: CheckedContinuation<Void, Never>?
+        private var waiting: CheckedContinuation<Void, Never>?
+        init(old: MobileTodaySnapshot, new: MobileTodaySnapshot) { self.old = old; self.new = new }
+        func today() async throws -> MobileTodaySnapshot {
+            reads += 1
+            guard reads == 1 else { return new }
+            await withCheckedContinuation { gate = $0; waiting?.resume(); waiting = nil }
+            return old
+        }
+        func pollTodayEvents() async throws -> [MobileTodayEvent] { [] }
+        func requestTodayBrief(key: String) async throws -> BriefRefreshResult { throw HubRequestError.noAnswer }
+        func waitUntilHeld() async { if gate == nil { await withCheckedContinuation { waiting = $0 } } }
+        func release() { gate?.resume(); gate = nil }
+    }
+
+    /// A change event arrives while a read is in flight: its refresh used to be dropped, and the read in flight,
+    /// served before the change, left Today stale until the next event or the 15-minute resync.
+    @MainActor
+    func testARefreshAskedForDuringARefreshReadsAgain() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var newer = snapshot()
+        newer.generatedAt = "2026-10-27T12:05:00Z"
+        newer.needsYouCount = 3
+        let hub = GatedTodayHub(old: snapshot(), new: newer)
+        let store = makeStore(directory: directory, hub: hub)
+        let first = Task { await store.refresh() }
+        await hub.waitUntilHeld()
+        await store.refresh()
+        await hub.release()
+        await first.value
+        let reads = await hub.reads
+        XCTAssertEqual(reads, 2, "one more read after the one in flight")
+        XCTAssertEqual(store.snapshot?.needsYouCount, 3, "Today shows the change")
+    }
+
     private actor SlowHub: TodayHubAPI {
         func today() async throws -> MobileTodaySnapshot { throw HubRequestError.noAnswer }
         func pollTodayEvents() async throws -> [MobileTodayEvent] { [] }

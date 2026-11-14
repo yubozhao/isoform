@@ -1258,6 +1258,7 @@ final class ChatStore: ObservableObject {
                 // An unanswered request cannot support a live "working" claim from a cached chat header.
                 invalidatePresence()
                 markWaiting(id, chatID: chatID, issue: .waitingForComputer)
+                if Self.relayMayHold(error) { markRelayHolds(id, chatID: chatID) }
                 if announce { notice = ChatDeliveryStatus.waitingForComputer.explanation }
                 return .waiting
             case .changed:
@@ -1364,7 +1365,7 @@ final class ChatStore: ObservableObject {
 
     /// Whether Undo applies: the message is still waiting for the computer. A brief's question is queued the same way.
     func canUndoWaiting(_ message: ChatOutgoingMessage) -> Bool {
-        message.isQueued && (message.askUndispatched == true || message.deliveryIssue == .waitingForComputer || hubOnline == false)
+        message.isQueued && message.relayHolds != true && (message.askUndispatched == true || message.deliveryIssue == .waitingForComputer || hubOnline == false)
     }
 
     /// Messages the computer has not taken within a day, across every chat on this phone (PROTOCOL.md section 23).
@@ -1447,6 +1448,26 @@ final class ChatStore: ObservableObject {
             }
             return heard ? ChatDelivery.markSeen(accepted, turnID: answer.turnId) : accepted
         } && recordWentOut(id, chatID: chatID, seq: answer.seq)
+    }
+
+    /// Whether the relay may have taken the request though no answer came: it accepted the envelope and the computer
+    /// did not answer in time, or the send timed out after the relay may have queued it. Either way the computer
+    /// may run it when it is back, so Undo would promise something the phone cannot keep.
+    static func relayMayHold(_ error: Error) -> Bool {
+        if case .noAnswer? = error as? HubRequestError { return true }
+        if case .timedOut? = error as? RelayClientError { return true }
+        return false
+    }
+
+    private func markRelayHolds(_ id: String, chatID: String) {
+        updateOutgoing(chatID) { messages in
+            messages.map { message in
+                guard message.id == id, message.isQueued else { return message }
+                var held = message
+                held.relayHolds = true
+                return held
+            }
+        }
     }
 
     private func markWaiting(_ id: String, chatID: String, issue: ChatDeliveryIssue) {

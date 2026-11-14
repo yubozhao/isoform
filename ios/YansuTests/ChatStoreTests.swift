@@ -785,12 +785,11 @@ final class ChatStoreTests: XCTestCase {
         await h.store.send("First")
         await h.store.send("Second")
         XCTAssertEqual(h.store.queuedMessageCount(in: "chat-1"), 2)
-        XCTAssertTrue(h.store.outgoingMessages(in: "chat-1").allSatisfy {
-            $0.deliveryStatus(computerOnline: h.store.hubOnline) == .waitingForComputer
-        })
-        XCTAssertTrue(h.store.outgoingMessages(in: "chat-1").allSatisfy {
-            $0.deliveryStatus(computerOnline: true) == .waitingForComputer
-        }, "later queued messages wait behind the unanswered head even when presence returns")
+        let queued = h.store.outgoingMessages(in: "chat-1")
+        XCTAssertEqual(queued.first { $0.text == "First" }?.deliveryStatus(computerOnline: h.store.hubOnline), .sent,
+                       "the relay holds the unanswered head: it shows as sent, without Undo")
+        XCTAssertEqual(queued.first { $0.text == "Second" }?.deliveryStatus(computerOnline: true), .waitingForComputer,
+                       "later queued messages wait behind the unanswered head even when presence returns")
 
         try await drainQueue(h)
         XCTAssertEqual(h.store.queuedMessageCount(in: "chat-1"), 0)
@@ -3993,6 +3992,34 @@ final class ChatAwayStoreTests: XCTestCase {
         XCTAssertEqual(h.hub.storedUserTexts, ["Second question", "Third question"])
         let late = await h.store.undoWaiting(first.id, in: "chat-1")
         XCTAssertFalse(late)
+    }
+
+    /// The relay took the message but the asleep computer did not answer: it will run when the computer wakes, so
+    /// the bubble says sent and offers no Undo (an undone message used to go out anyway). A message the relay never
+    /// got (offline) can still be undone, and a later try keeps the key.
+    func testAMessageTheRelayHoldsShowsSentWithoutUndo() async throws {
+        let presence = ScriptedPresence()
+        let h = try await awayHarness(presence)
+        h.hub.failSends([HubRequestError.noAnswer] + Array(repeating: RelayClientError.offline, count: 20))
+        _ = await h.store.send("Held at the relay")
+        _ = await h.store.send("Never left the phone")
+        let messages = h.store.outgoingMessages(in: "chat-1")
+        let held = try XCTUnwrap(messages.first { $0.text == "Held at the relay" })
+        let local = try XCTUnwrap(messages.first { $0.text == "Never left the phone" })
+        XCTAssertEqual(held.relayHolds, true)
+        XCTAssertFalse(h.store.canUndoWaiting(held))
+        XCTAssertEqual(held.deliveryStatus(computerOnline: false), .sent)
+        let undone = await h.store.undoWaiting(held.id, in: "chat-1")
+        XCTAssertFalse(undone, "the computer will run it, so it cannot be taken back")
+        XCTAssertNotEqual(local.relayHolds, true)
+        XCTAssertTrue(h.store.canUndoWaiting(local))
+        let firstKey = try XCTUnwrap(keys(h, for: "Held at the relay").first)
+
+        h.hub.failSends([])
+        presence.setOnline(true)
+        h.store.resumeQueuedMessages()
+        try await waitForSends(h, count: 2)
+        XCTAssertEqual(keys(h, for: "Held at the relay"), [firstKey], "the retry reuses the key the relay holds")
     }
 
     func testAfterADayAwayTheMessagesStillWaitAndTheLineSaysSinceWhen() async throws {

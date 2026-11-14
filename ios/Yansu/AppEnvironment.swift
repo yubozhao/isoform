@@ -483,6 +483,7 @@ final class AppEnvironment: ObservableObject {
         // check can clear them; importing them after its marker is saved could restore another Mac's cache.
         if vault.loadError == nil, let legacyBriefDirectory, !FileManager.default.fileExists(atPath: hubStateURL.path) {
             BriefCacheMigration.moveLegacyFiles(from: legacyBriefDirectory, to: briefDirectory)
+            cache.reload()
         }
         synchronizeLocalHubState()
     }

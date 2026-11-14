@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 const site = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'website');
 export const pages = ['index.html', 'about/index.html', 'agents/index.html', '404.html'];
 // Server code that writes asset tags into pages it serves (Agent of You chat).
-export const fragments = ['functions/_lib/aoy-hire-route.js'];
+export const fragments = ['functions/_lib/aoy-hire-route.js', 'functions/_lib/aoy-owner-route.js'];
 const ref = /\b(href|src)="((?!https?:|\/\/)[^"?#]+\.(?:css|js))(?:\?v=[0-9a-f]*)?"/g;
 
 export function hashOf(file) {

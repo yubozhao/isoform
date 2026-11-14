@@ -61,6 +61,14 @@ private final class HeldPushURLProtocol: URLProtocol {
 }
 
 // Pauses retry backoff without a real clock delay; cancellation is checked by the registration loop.
+/// The direct tunnel's local origin: nil until it opens.
+private final class TunnelOrigin: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: URL?
+    var origin: URL? { lock.lock(); defer { lock.unlock() }; return value }
+    func open(_ url: URL) { lock.lock(); value = url; lock.unlock() }
+}
+
 private actor PushRetryGate {
     private var sleeping: [CheckedContinuation<Void, Never>] = []
     private var waiting: [(Int, CheckedContinuation<Void, Never>)] = []
@@ -303,7 +311,7 @@ final class AgentPushTests: XCTestCase {
         XCTAssertTrue(defaults.dictionaryRepresentation().keys.allSatisfy { !$0.contains("token") })
     }
 
-    func testRegistrationFailureKeepsSwitchOffThroughoutPermissionAndAPNsRegistration() async throws {
+    func testRegistrationFailureKeepsTheSwitchOnAndTriesAgainOnTheNextLaunch() async throws {
         let vault = try makePairedVault()
         let permission = PushRetryGate()
         var registrations = 0
@@ -324,29 +332,23 @@ final class AgentPushTests: XCTestCase {
         XCTAssertTrue(registration.isOptedIn)
         XCTAssertFalse(registration.isEnabled, "APNs has not accepted this build yet")
 
-        let stopped = expectation(description: "failed registration cleanup finished")
-        registration.onRegistrationReady = { stopped.fulfill() }
+        // One failed launch (no connection, a passing APNs error) leaves the person's switch on.
         registration.receiveRegistrationFailure()
         XCTAssertFalse(registration.isEnabled)
-        XCTAssertFalse(registration.isOptedIn)
+        XCTAssertTrue(registration.isOptedIn, "only the switch or iOS Settings turns notifications off")
+        XCTAssertEqual(registration.state, .unavailable)
         XCTAssertEqual(registration.statusMessage,
                        "This phone couldn't register for push notifications. The test notification still works.")
-        await fulfillment(of: [stopped], timeout: 2)
-        XCTAssertEqual(registration.state, .unavailable)
-        XCTAssertNotNil(registration.statusMessage, "Cleanup must preserve the explanation")
 
-        await registration.receiveToken(Data([0x02]))
-        XCTAssertFalse(registration.isEnabled, "A late APNs callback cannot restore the failed opt-in")
-        XCTAssertEqual(registration.state, .unavailable)
-
+        // The next launch asks APNs again.
+        var retried = 0
         let restored = PushRegistration(vault: vault, defaults: try XCTUnwrap(UserDefaults(suiteName: suiteName)),
-                                        registerRemoteNotifications: { XCTFail("A failed opt-in must stay off after relaunch") })
+                                        authorizationStatus: { .authorized },
+                                        registerRemoteNotifications: { retried += 1 })
         await restored.resumeIfOptedIn()
-        XCTAssertFalse(restored.isEnabled)
-        XCTAssertFalse(restored.isOptedIn)
-        XCTAssertEqual(restored.state, .unavailable)
-        XCTAssertEqual(restored.failureReason, .registration)
-        XCTAssertEqual(restored.statusMessage, registration.statusMessage)
+        XCTAssertTrue(restored.isOptedIn)
+        XCTAssertEqual(retried, 1, "a failed registration is tried again, not left off")
+        XCTAssertEqual(restored.state, .registering)
     }
 
     func testDeniedPermissionKeepsSwitchOffWithAnIOSSettingsReason() async throws {
@@ -871,6 +873,40 @@ final class AgentPushTests: XCTestCase {
                        ["Bearer old-bearer", "Bearer new-bearer", "Bearer new-bearer"])
     }
 
+    /// A pairing over the computer's direct path: at launch the APNs token arrives before the tunnel opens, so the
+    /// vault has no session yet. The upload is tried again once the tunnel is up, instead of never.
+    func testATokenThatArrivesBeforeTheDirectTunnelOpensIsUploadedWhenItDoes() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let tunnel = TunnelOrigin()
+        let vault = PairingVault(directory: directory, secrets: InMemorySecretStore(),
+                                 remoteOrigin: { _ in tunnel.origin }, startRemote: { _ in })
+        let hub = TestHub()
+        let device = RelayCrypto.makeDeviceKeyPair()
+        let record = PairedDevice(hubID: hub.hubID, hubName: "Test Mac", hubPublicKey: hub.hubPublicText,
+                                  relayOrigin: hub.relay, deviceID: "device-new", deviceName: "iPhone", scopes: ["push"],
+                                  pairedAt: Date(), counters: SequenceCounters())
+        try vault.store(record, devicePrivateKey: RelayCrypto.base64URLEncode(device.privateKey), bearer: "new-bearer",
+                        irohTicket: "endpointabcdefghijklmnopqrst")
+        defaults.set(true, forKey: PushRegistration.optInKey)
+        StubURLProtocol.install { request, _ in
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: nil)!
+            return (response, Data("{\"ok\":true,\"data\":{\"enabled\":true}}".utf8))
+        }
+        let retry = PushRetryGate()
+        let registration = PushRegistration(vault: vault, relay: RelayClient(session: StubURLProtocol.session()),
+                                            defaults: defaults, retrySleep: { await retry.sleep($0) })
+        await registration.receiveToken(Data([0x01]))
+        XCTAssertTrue(StubURLProtocol.requests.isEmpty, "no session yet, nothing sent")
+        await retry.waitUntilSleeping()
+        tunnel.open(URL(string: "http://127.0.0.1:41239")!)
+        await retry.release()
+        for _ in 0..<100 where registration.state != .on { try await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertEqual(registration.state, .on)
+        XCTAssertEqual(StubURLProtocol.requests.count, 1)
+        XCTAssertEqual(StubURLProtocol.requests.first?.0.url?.host, "127.0.0.1")
+    }
+
     func testUnavailableAndServerTokenFailuresBackOffAndStopAfterSuccess() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -1021,7 +1057,7 @@ final class AgentPushTests: XCTestCase {
         }
     }
 
-    func testAPNsRegistrationFailureClearsOptInBeforeReleasingRevocation() async throws {
+    func testAPNsRegistrationFailureKeepsOptInAndLeavesCleanupToTheGracePeriod() async throws {
         StubURLProtocol.install { request, _ in
             let response = HTTPURLResponse(url: request.url!, statusCode: 200,
                                            httpVersion: "HTTP/1.1", headerFields: nil)!
@@ -1034,24 +1070,17 @@ final class AgentPushTests: XCTestCase {
         defaults.set(true, forKey: PushRegistration.optInKey)
         let registration = PushRegistration(vault: vault, relay: RelayClient(session: StubURLProtocol.session()),
                                                 defaults: defaults, unregisterRemoteNotifications: {})
-        let ready = expectation(description: "cleanup resumes after failed push registration stops")
-        registration.onRegistrationReady = {
-            XCTAssertFalse(registration.isOptedIn)
-            XCTAssertTrue(registration.isReadyForRevocation)
-            ready.fulfill()
-        }
-
         registration.receiveRegistrationFailure()
 
-        XCTAssertFalse(registration.isOptedIn)
+        // The opt-in stays, so the old device's cleanup waits for this phone's registration or the grace deadline,
+        // as it does for any other registration still in progress.
+        XCTAssertTrue(registration.isOptedIn)
         XCTAssertFalse(registration.isEnabled)
         XCTAssertFalse(registration.isReadyForRevocation)
         XCTAssertEqual(registration.state, .unavailable)
-        await fulfillment(of: [ready], timeout: 2)
-        XCTAssertEqual(registration.state, .unavailable)
     }
 
-    func testAPNsFailureDrainsAnUploadAndRejectsItsLateSuccess() async throws {
+    func testAPNsFailureIgnoresTheLateSuccessOfAnUploadInFlight() async throws {
         let vault = try makePairedVault()
         defaults.set(true, forKey: PushRegistration.optInKey)
         HeldPushURLProtocol.reset()
@@ -1065,23 +1094,15 @@ final class AgentPushTests: XCTestCase {
                                             defaults: defaults, unregisterRemoteNotifications: {})
         let upload = Task { await registration.receiveToken(Data([0x01])) }
         await fulfillment(of: [started], timeout: 2)
-        let cleanedUp = expectation(description: "failed registration deletes its settled upload")
-        registration.onRegistrationReady = { cleanedUp.fulfill() }
-
         registration.receiveRegistrationFailure()
 
-        XCTAssertFalse(registration.isEnabled)
-        XCTAssertFalse(registration.isReadyForRevocation)
+        XCTAssertTrue(registration.isOptedIn, "the switch stays on")
         HeldPushURLProtocol.releaseFirst()
         await upload.value
-        await fulfillment(of: [cleanedUp], timeout: 2)
-        XCTAssertEqual(HeldPushURLProtocol.requests.map(\.httpMethod), ["PUT", "DELETE"])
-        XCTAssertFalse(registration.isOptedIn)
-        XCTAssertFalse(registration.isEnabled)
-        XCTAssertNil(registration.token)
-        XCTAssertEqual(registration.state, .unavailable)
+        XCTAssertEqual(HeldPushURLProtocol.requests.map(\.httpMethod), ["PUT"], "nothing deletes the token")
+        XCTAssertTrue(registration.isOptedIn)
+        XCTAssertEqual(registration.state, .unavailable, "the upload sent before the failure does not turn it on")
         XCTAssertNotNil(registration.statusMessage)
-        XCTAssertTrue(registration.isReadyForRevocation)
     }
 
     func testEnableWaitsForDisableToDrainAndThenRegistersAgain() async throws {

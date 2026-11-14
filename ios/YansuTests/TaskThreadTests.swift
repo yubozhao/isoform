@@ -187,6 +187,35 @@ final class TaskThreadTests: XCTestCase {
         XCTAssertEqual(store.threadNotice, "Update Isoform on your computer to reply here")
     }
 
+    /// The computer was asleep: the relay took the reply but no answer came, so the words went back to the box.
+    /// Sending them again uses the same key, so the computer posts the reply once when it wakes. Other words,
+    /// or the same words after a refusal or a success, are a new reply.
+    @MainActor
+    func testARetypedReplyAfterNoAnswerKeepsItsKey() async throws {
+        let detail = MobileTaskDetail(id: "t", title: "T", status: "needs_review", group: "needs_you", blockedReason: nil,
+                                      runner: nil, progress: nil, createdAt: "", updatedAt: "", startedAt: nil, steps: [],
+                                      actions: ["rename"])
+        let hub = ThreadTestHub(detail: detail)
+        let store = TasksStore(hub: hub, isPaired: { true }, hubID: { "hub" },
+                               fileURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+        _ = await store.loadDetail(id: "t")
+        await hub.goQuiet()
+        let unanswered = await store.reply(id: "t", text: "Keep it short")
+        XCTAssertFalse(unanswered)
+        await hub.wake()
+        let resent = await store.reply(id: "t", text: "Keep it short")
+        XCTAssertTrue(resent)
+        let other = await store.reply(id: "t", text: "And friendly")
+        XCTAssertTrue(other)
+        let again = await store.reply(id: "t", text: "Keep it short")
+        XCTAssertTrue(again)
+        let keys = await hub.attemptKeys
+        XCTAssertEqual(keys.count, 4)
+        XCTAssertEqual(keys[0], keys[1], "the retyped reply is the same request to the computer")
+        XCTAssertNotEqual(keys[1], keys[2])
+        XCTAssertNotEqual(keys[1], keys[3], "a reply the computer answered is not reused")
+    }
+
     @MainActor
     func testStopFailureCanBeRetriedInThread() async {
         let detail = MobileTaskDetail(id: "t", title: "T", status: "in_progress", group: "running", blockedReason: nil,
@@ -234,8 +263,13 @@ private actor ThreadTestHub: TasksHubAPI {
     var detail: MobileTaskDetail
     var replies: [MobileTaskReplyRequest] = []
     private var failing = false
+    private var quiet = false
+    private(set) var attemptKeys: [String] = []
 
     init(detail: MobileTaskDetail) { self.detail = detail }
+
+    func goQuiet() { quiet = true }
+    func wake() { quiet = false }
 
     func failNext() { failing = true }
 
@@ -255,6 +289,8 @@ private actor ThreadTestHub: TasksHubAPI {
     }
 
     func replyToTask(id: String, request: MobileTaskReplyRequest) async throws -> MobileTaskDetail {
+        attemptKeys.append(request.idempotencyKey)
+        if quiet { throw HubRequestError.noAnswer }
         if failing {
             failing = false
             throw HubRequestError.rejected(status: 404, message: "not found")

@@ -516,6 +516,31 @@ final class BriefLibraryTests: XCTestCase {
         XCTAssertEqual(h.cache.current()?.brief.identifier, "kept")
     }
 
+    /// The library reads its folder once and keeps it in step with every save, removal and prune, instead of
+    /// decoding every brief file on the main actor for each read. A fresh read of the folder always agrees.
+    func testTheLibraryIndexMatchesTheFolder() throws {
+        let h = try harness()
+        let folder = h.directory.appendingPathComponent("briefs")
+        try h.cache.save(full("a", asOf: "2026-10-18T07:00:00Z"))
+        try h.cache.save(full("b", asOf: "2026-10-19T07:00:00Z", text: "First words."))
+        try h.cache.save(full("b", asOf: "2026-10-19T07:00:00Z", text: "Second words."))
+        try h.cache.remove(identifier: "a")
+        try h.cache.save(full("old", asOf: "2026-09-01T07:00:00Z"))
+        let fixed = now
+        let fromDisk = BriefCache(directory: folder, now: { fixed })
+        XCTAssertEqual(h.cache.all().map(\.brief), fromDisk.all().map(\.brief))
+        XCTAssertEqual(h.cache.all().map(\.brief.identifier), ["b"])
+        XCTAssertEqual(h.cache.load(identifier: "b")?.brief.narrative.first?.text, "Second words.")
+
+        // A file moved in from outside (the legacy migration) shows after a reload.
+        let other = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: other) }
+        try BriefCache(directory: other).save(full("moved", asOf: "2026-10-19T08:00:00Z"))
+        BriefCacheMigration.moveLegacyFiles(from: other, to: folder)
+        h.cache.reload()
+        XCTAssertEqual(Set(h.cache.all().map(\.brief.identifier)), ["b", "moved"])
+    }
+
     func testTextIsKeptThirtyDaysAndAudioSevenDays() throws {
         XCTAssertEqual(BriefCache.textRetentionInterval, 30 * 24 * 60 * 60)
         XCTAssertEqual(BriefAudioCache.retentionInterval, 7 * 24 * 60 * 60)

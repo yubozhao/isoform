@@ -23,6 +23,8 @@ final class TasksStore: ObservableObject {
     @Published private(set) var detailResetGeneration = 0
     /// Why the last reply or ··· action in a thread did not go through.
     @Published var threadNotice: String?
+    /// The key of each reply the computer has not answered, by Mac, task and words.
+    private var unansweredReplyKeys: [String: String] = [:]
     /// A send the computer held for the person's yes (PROTOCOL.md section 23).
     @Published var sendConfirmation: TaskSendConfirmation?
     @Published private(set) var stopFailureID: String?
@@ -423,14 +425,22 @@ final class TasksStore: ObservableObject {
             detail.events.append(pending)
             detailLoadState = .loaded(detail)
         }
+        // A reply the computer did not answer may still be queued at the relay and run when the computer wakes.
+        // Sending the same words to the same task again reuses its key, so the computer runs it once (PROTOCOL.md
+        // section 23); a new key posted the reply twice.
+        let replyKey = "\(hubID)\n\(id)\n\(trimmed)"
+        let idempotencyKey = unansweredReplyKeys[replyKey] ?? UUID().uuidString.lowercased()
         do {
-            let request = MobileTaskReplyRequest(idempotencyKey: UUID().uuidString.lowercased(), text: trimmed)
+            let request = MobileTaskReplyRequest(idempotencyKey: idempotencyKey, text: trimmed)
+            unansweredReplyKeys[replyKey] = idempotencyKey
             let updated = try await HubRequestScope.$hubID.withValue(hubID) { try await hub.replyToTask(id: id, request: request) }
+            unansweredReplyKeys[replyKey] = nil
             guard self.hubID() == hubID else { return false }
             accept(updated)
             threadNotice = nil
             return true
         } catch {
+            if JournaledWriter.disposition(for: error) != .keep { unansweredReplyKeys[replyKey] = nil }
             if case .loaded(var detail) = detailLoadState, detail.id == id {
                 detail.events.removeAll { $0.id == pending.id }
                 detailLoadState = .loaded(detail)

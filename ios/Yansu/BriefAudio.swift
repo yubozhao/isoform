@@ -438,6 +438,18 @@ final class BriefAudioCache: @unchecked Sendable {
         return authorized
     }
 
+    /// `store` off the main actor: hashing and writing a clip of up to 16 MB there held up scrolling and taps
+    /// while a brief's audio arrived.
+    @discardableResult
+    func storeInBackground(_ data: Data, brief: MobileBriefV1, hubID: String, audio: BriefAudio,
+                           reauthorizedAfterWithdrawal: Bool = false,
+                           withdrawalReceipt: BriefAudioReceipt? = nil) async throws -> URL {
+        try await Task.detached(priority: .userInitiated) { [self] in
+            try self.store(data, brief: brief, hubID: hubID, audio: audio,
+                           reauthorizedAfterWithdrawal: reauthorizedAfterWithdrawal, withdrawalReceipt: withdrawalReceipt)
+        }.value
+    }
+
     @discardableResult
     func store(_ data: Data, brief: MobileBriefV1, hubID: String, audio: BriefAudio,
                reauthorizedAfterWithdrawal: Bool = false, withdrawalReceipt: BriefAudioReceipt? = nil) throws -> URL {
@@ -943,7 +955,7 @@ final class BriefAudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate 
             if let latestWithdrawal {
                 guard reauthorized, let requestReceipt, requestReceipt.covers(latestWithdrawal) else { return }
             }
-            _ = try destination.store(data, brief: brief, hubID: hubID, audio: resource.audio,
+            _ = try await destination.storeInBackground(data, brief: brief, hubID: hubID, audio: resource.audio,
                                 reauthorizedAfterWithdrawal: reauthorized,
                                 withdrawalReceipt: reauthorized ? requestReceipt : receipt)
             onAudioStored?(brief, hubID)
@@ -1063,7 +1075,7 @@ final class BriefAudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate 
                 let plaintext = try await downloadAudio(audio)
                 try Task.checkCancellation()
                 guard token == generation, let hubID else { return }
-                localURL = try cache.store(plaintext, brief: brief, hubID: hubID, audio: audio,
+                localURL = try await cache.storeInBackground(plaintext, brief: brief, hubID: hubID, audio: audio,
                                           reauthorizedAfterWithdrawal: reauthorizedAfterWithdrawal,
                                           withdrawalReceipt: requestedWithdrawalReceipt)
                 onAudioStored?(brief, hubID)

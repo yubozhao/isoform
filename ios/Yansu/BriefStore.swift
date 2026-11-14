@@ -124,7 +124,22 @@ final class BriefStore: ObservableObject {
     }
 
     // Latest brief from the relay, verified and saved. Used on becoming active, pull to refresh and push taps.
+    // One asked for while a read runs (a push tap) is not dropped: one more read follows the one in flight.
     func refresh() async {
+        guard pairing.isPaired else { return }
+        if isRefreshing {
+            refreshAgain = true
+            return
+        }
+        repeat {
+            refreshAgain = false
+            await refreshOnce()
+        } while refreshAgain && !isRefreshing && pairing.isPaired
+    }
+
+    private var refreshAgain = false
+
+    private func refreshOnce() async {
         guard pairing.isPaired, !isRefreshing else { return }
         let currentGeneration = generation
         isRefreshing = true
