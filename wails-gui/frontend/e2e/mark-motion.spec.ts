@@ -157,6 +157,35 @@ for (const [theme, name] of THEMES) {
     });
 }
 
+// Bo, Nov 13: the window on screen while another app is active. A WKWebView
+// then reports document.hasFocus() false, and the mark used to stay still.
+test('moves on screen while another app has focus', async ({ page }) => {
+    await page.addInitScript(() => { Document.prototype.hasFocus = () => false; });
+    await corner(page, 'paper');
+    expect(await page.evaluate(() => document.hasFocus())).toBe(false);
+    const mark = page.locator('[data-mark-motion]');
+    const frames: string[] = [];
+    const grab = async (label: string) => {
+        frames.push(await mark.innerHTML());
+        await shot(page, `20-unfocused-${label}.png`);
+    };
+    await grab('00-rest');
+    await emit(page, 'doing-now:changed', { kind: 'working', title: 'Pricing page copy' });
+    for (const ms of [250, 500, 750, 1000, 1250, 1500]) {
+        await page.clock.runFor(250);
+        await grab(`01-working-${ms}ms`);
+    }
+    await emit(page, 'doing-now:changed', { kind: 'watching' });
+    await page.clock.runFor(4_000);
+    await page.evaluate(() => (window as any).__mark.setWaiting(2));
+    await page.clock.runFor(700);
+    await grab('02-needs');
+    expect(new Set(frames).size).toBeGreaterThanOrEqual(6);
+    // Rest blinks on its own, 20 to 40 seconds apart.
+    await page.clock.runFor(5_000);
+    expect(await page.evaluate(() => (window as any).__isoformMark.timerPending)).toBe('blink');
+});
+
 test('reduced motion shows the pose in one step and plays nothing', async ({ browser }) => {
     const context = await browser.newContext({ reducedMotion: 'reduce', deviceScaleFactor: 2, viewport: { width: 1180, height: 700 } });
     const page = await context.newPage();
