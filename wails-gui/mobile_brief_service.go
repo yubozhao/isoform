@@ -1523,11 +1523,24 @@ func (s *mobileBriefService) addAudio(ctx context.Context, brief MobileBriefV1, 
 }
 
 func (s *mobileBriefService) addAudioWithLatestGuard(ctx context.Context, brief MobileBriefV1, asOf time.Time, requireLatest bool) {
+	asked := time.Now()
 	s.audioMu.Lock()
 	defer s.audioMu.Unlock()
 	if ctx.Err() != nil {
 		return
 	}
+	// The recording is held to the same rule as the words: the Mac stays
+	// awake and the app out of App Nap until it is saved. Released with the
+	// text alone, a locked screen let the voice run about twentyfold slower.
+	if s.speaker.synthesize != nil && s.speaker.voiceReady != nil {
+		release := s.holdPower("Isoform is recording your brief")
+		defer release()
+	}
+	started := time.Now()
+	attempts := 0
+	defer func() {
+		log.Printf("[brief-audio] slot=%s wait_ms=%d total_ms=%d attempts=%d", brief.Slot, started.Sub(asked).Milliseconds(), time.Since(asked).Milliseconds(), attempts)
+	}()
 	lang := s.speaker.voiceLang()
 	// Start with the latest stored and privacy-projected text, including any
 	// amendment made after this generation was sealed.
@@ -1548,6 +1561,10 @@ func (s *mobileBriefService) addAudioWithLatestGuard(ctx context.Context, brief 
 	// final audio clears that mark again (P138).
 	saved := false
 	marked := s.markAudioRendering(brief.BriefID, input, lang, asOf)
+	if marked && s.app != nil {
+		// Today reads the brief again and says the recording is on its way.
+		s.app.emitBrowserEvent("brief:stored", brief.BriefID)
+	}
 	defer func() {
 		if marked && !saved {
 			s.clearAudioRendering(brief.BriefID, asOf)
@@ -1557,6 +1574,7 @@ func (s *mobileBriefService) addAudioWithLatestGuard(ctx context.Context, brief 
 	var ok bool
 	for attempt := 0; ; attempt++ {
 		var reason string
+		attempts++
 		audio, ok, reason = renderMobileBriefAudio(ctx, s.speaker, s.store.dir, brief)
 		if !ok {
 			if reason != "nothing to say" && reason != "no audio store" {
@@ -1691,7 +1709,7 @@ func (s *mobileBriefService) markAudioRendering(briefID, input, lang string, asO
 	s.patchMu.Lock()
 	defer s.patchMu.Unlock()
 	stored, found := s.store.load(briefID)
-	if !found || (stored.Audio != nil && stored.Audio.Status == mobileBriefAudioStatusOK) {
+	if !found {
 		return false
 	}
 	current := stored
@@ -1699,6 +1717,12 @@ func (s *mobileBriefService) markAudioRendering(briefID, input, lang string, asO
 		current = s.app.mobileBriefForDelivery(stored)
 	}
 	if input != mobileBriefAudioBinding(current, lang) {
+		return false
+	}
+	// A recording still bound to these words keeps playing. One bound to
+	// words the brief no longer says cannot play (mobileBriefAudioForRead), so
+	// while it is made again the brief says so instead of showing no player.
+	if stored.Audio != nil && stored.Audio.Status == mobileBriefAudioStatusOK && stored.Audio.binding == input {
 		return false
 	}
 	stored.Audio = &MobileBriefAudio{Status: mobileBriefAudioStatusRendering}

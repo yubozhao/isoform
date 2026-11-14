@@ -237,8 +237,11 @@ func renderMobileBriefAudio(ctx context.Context, speaker mobileBriefSpeaker, dir
 		}
 		return mobileBriefAudioFile{}, false, "no voice installed"
 	}
+	synthStart := time.Now()
 	wav, starts, err := synthesizeMobileBriefParagraphs(ctx, speaker, lang, text)
+	synthMs := time.Since(synthStart).Milliseconds()
 	if err != nil || len(wav) == 0 {
+		log.Printf("[brief-audio] slot=%s synthesis failed after synth_ms=%d", brief.Slot, synthMs)
 		return mobileBriefAudioFile{}, false, "synthesis failed"
 	}
 	var paragraphs []MobileBriefAudioParagraph
@@ -250,6 +253,10 @@ func renderMobileBriefAudio(ctx context.Context, speaker mobileBriefSpeaker, dir
 		return mobileBriefAudioFile{}, false, "synthesis produced no audio"
 	}
 	data, ext, mime := wav, mobileBriefAudioExtWAV, mobileBriefAudioMimeWAV
+	encodeStart := time.Now()
+	defer func() {
+		log.Printf("[brief-audio] slot=%s paragraphs=%d spoken_s=%.0f synth_ms=%d encode_ms=%d", brief.Slot, len(mobileBriefSpokenSegments(text)), duration, synthMs, time.Since(encodeStart).Milliseconds())
+	}()
 	if speaker.ffmpeg != nil {
 		if ffmpegPath := speaker.ffmpeg(); ffmpegPath != "" {
 			if encoded, encodeErr := encodeAACWithFFmpeg(ctx, ffmpegPath, wav); encodeErr == nil {

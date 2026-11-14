@@ -1128,6 +1128,17 @@ describe("the brief's card (RC 1)", () => {
         expect(screen.getByTestId("brief-card")).toHaveTextContent("Morning brief · 7:00 AM");
     });
 
+    it.each(['en', 'zh-CN'])('says the recording is on its way while it is made in %s', async (language) => {
+        await i18n.changeLanguage(language);
+        renderSection({ view: view({ brief: brief({ audio: { status: "rendering", mime: "", bytes: 0, durationSeconds: 0 } }) }) });
+        const preparing = screen.getByTestId("brief-audio-preparing");
+        expect(preparing).toHaveTextContent(language === 'en' ? "Morning brief · 7:00 AM · Preparing audio" : "正在准备音频");
+        expect(preparing).toHaveAttribute("role", "status");
+        expect(screen.queryByTestId("brief-audio-toggle")).not.toBeInTheDocument();
+        expect(screen.queryByTestId("brief-no-recording")).not.toBeInTheDocument();
+        await i18n.changeLanguage('en');
+    });
+
     it("offers no player for audio that is not ready", () => {
         renderSection({ view: view({ brief: brief({ audio: { ...audio, status: "downloading" } }) }) });
         expect(screen.queryByTestId("brief-audio-toggle")).not.toBeInTheDocument();
