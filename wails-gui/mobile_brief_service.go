@@ -1545,6 +1545,7 @@ func (s *mobileBriefService) addAudioWithLatestGuard(ctx context.Context, brief 
 		defer release()
 	}
 	started := time.Now()
+	ctx = withMobileBriefAudioUtilityBudget(ctx, started)
 	attempts := 0
 	defer func() {
 		log.Printf("[brief-audio] slot=%s wait_ms=%d total_ms=%d attempts=%d", brief.Slot, started.Sub(asked).Milliseconds(), time.Since(asked).Milliseconds(), attempts)
