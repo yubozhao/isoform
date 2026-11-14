@@ -11,6 +11,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // The first page of a chat stream (LoadStreamItemsPage at the latest cursor)
@@ -21,16 +23,22 @@ import (
 //     withdrawal drops it at once), and
 //   - the stream's item version it was read at (storage.StreamItemVersion, bumped
 //     by triggers on every insert, edit, withdrawal and removal). A version that
-//     differs is recomputed under a short deadline; on timeout the copy is served
-//     and the event that changed the stream adds what is missing.
+//     differs is recomputed under a short deadline; on timeout the copy is served,
+//     the recompute goes on in the background, and when the live page it saves
+//     differs from the copy the page is told to read again.
+//
+// The read path stays under 100 ms with a writer busy on the stream: the version
+// read and the recompute wait share about 80 ms, cards are confirmed after the
+// paint (stream_page_cards.go), and a save keeps the full privacy check of the
+// copy it replaces until the verify pass checks it again.
 //
 // Reads of one page share the next run (trailingCall), so a burst of reads costs
 // two runs, not one per caller, and no caller gets a page computed before it
 // asked. Older pages always read live.
 const (
 	streamPageDirName         = "stream-pages"
-	streamPageVersionDeadline = 200 * time.Millisecond
-	streamPageRecomputeWait   = 400 * time.Millisecond
+	streamPageVersionDeadline = 40 * time.Millisecond
+	streamPageRecomputeWait   = 40 * time.Millisecond
 	streamPageRefreshAge      = 15 * time.Minute
 	streamPageLaunchDelay     = 30 * time.Second
 	streamPageEventDelay      = time.Second
@@ -93,6 +101,10 @@ type streamPageState struct {
 	// full check; dueRecompute asks the next pass to recompute every page.
 	verifyKeys   map[streamPageKey]bool
 	dueRecompute bool
+	// cardChecks are the pages whose served copy has a card check running;
+	// cardChecksQueued and cardChecksDone count them, so tests can wait.
+	cardChecks                       map[streamPageKey]bool
+	cardChecksQueued, cardChecksDone atomic.Int64
 	// computes and retries count background work, so tests can prove reads
 	// within the window do no work.
 	computes atomic.Int64
@@ -238,46 +250,31 @@ func (a *App) loadLatestStreamPageNow(key streamPageKey) (StreamItemPageData, er
 		return page, err
 	}
 	versionStart := time.Now()
-	verCtx, cancel := context.WithTimeout(context.Background(), versionWait)
-	version, verErr := a.persistenceService().StreamItemVersion(verCtx, key.session)
-	cancel()
+	version, verErr := a.streamItemVersionWithin(key.session, versionWait)
 	versionMs := time.Since(versionStart).Milliseconds()
 	log.Printf("[perf] binding=LoadStreamItemsPage stage=version ms=%d", versionMs)
 	saved, reason := readStreamPageSnapshot(key, stamp)
-	cards, cardCheckMs := 0, int64(0)
+	cards := 0
 	if reason == "" {
 		cards = streamPageCardCount(saved.Page)
 	}
-	if reason == "" && cards > 0 {
-		// A copy with cards is served only when the version holds and every card
-		// is confirmed by the live gates within the card budget (stream_page_cards.go).
-		if verErr == nil && saved.Version == version {
-			page, ms, why := a.confirmProactiveCards(key, saved, now, cardBudget)
-			cardCheckMs = ms
-			if why == "" {
-				a.scheduleStreamPageRefresh(a.streamPageDueFor(now, saved.SavedAt))
-				logStreamPage("copy", "version-held", stampMs, versionMs, 0, cards, cardCheckMs)
-				return page, nil
-			}
-			reason = why
-		} else {
-			reason = "proactive-card"
-		}
-		if reason != "" {
-			// Not served: drop the copy now, so a withdrawn card's raw row does
-			// not stay in the file until the next save.
-			removeStreamPageCopy(key)
-		}
-	}
+	// A copy with cards is served at once; its cards are confirmed by the live
+	// gates in the background (confirmStreamPageCardsLater). A card the gates
+	// change drops the copy and reloads the page, as the full privacy check does.
+	// The live projection of a page of cards took 1 to 16 s on a real stream, so
+	// a check before the first paint never fit its budget and the copy was never
+	// served.
 	switch {
 	case reason == "" && verErr == nil && saved.Version == version:
+		a.confirmStreamPageCardsLater(key, saved, cardBudget)
 		a.scheduleStreamPageRefresh(a.streamPageDueFor(now, saved.SavedAt))
-		logStreamPage("copy", "version-held", stampMs, versionMs, 0, 0, 0)
+		logStreamPage("copy", "version-held", stampMs, versionMs, 0, cards, 0)
 		return saved.Page, nil
 	case reason == "" && verErr != nil:
 		// The version could not be read in time: serve the copy and refresh.
+		a.confirmStreamPageCardsLater(key, saved, cardBudget)
 		a.scheduleStreamPageRefresh(now)
-		logStreamPage("copy", "version-timeout", stampMs, versionMs, 0, 0, 0)
+		logStreamPage("copy", "version-timeout", stampMs, versionMs, 0, cards, 0)
 		return saved.Page, nil
 	case reason != "":
 		// No usable copy: compute before the first paint, then refresh later.
@@ -287,7 +284,7 @@ func (a *App) loadLatestStreamPageNow(key streamPageKey) (StreamItemPageData, er
 			a.scheduleStreamVerify(key)
 		}
 		a.scheduleStreamPageRefresh(a.streamPageDueFor(now, time.Time{}))
-		logStreamPage("recompute", reason, stampMs, versionMs, time.Since(computeStart).Milliseconds(), cards, cardCheckMs)
+		logStreamPage("recompute", reason, stampMs, versionMs, time.Since(computeStart).Milliseconds(), cards, 0)
 		return page, err
 	}
 	// The copy is from an older version: recompute under a short deadline. On
@@ -298,12 +295,19 @@ func (a *App) loadLatestStreamPageNow(key streamPageKey) (StreamItemPageData, er
 	}
 	done := make(chan result, 1)
 	computeStart := time.Now()
+	var servedCopy atomic.Bool
+	served := saved.Page
 	go func() {
-		page, saved, err := a.computeLatestStreamPage(key, stamp)
-		if saved {
+		page, wrote, err := a.computeLatestStreamPage(key, stamp)
+		if wrote {
 			a.scheduleStreamVerify(key)
 		}
 		done <- result{page, err}
+		// The copy was painted while this ran: when the live page differs, tell
+		// the page to read again; the read then serves the copy just saved.
+		if servedCopy.Load() && err == nil && !streamPagesSame(served, page) {
+			a.emitStreamPageReload(key.session, "stream-page-refresh")
+		}
 	}()
 	select {
 	case r := <-done:
@@ -311,12 +315,18 @@ func (a *App) loadLatestStreamPageNow(key streamPageKey) (StreamItemPageData, er
 			logStreamPage("recompute", "version-changed", stampMs, versionMs, time.Since(computeStart).Milliseconds(), 0, 0)
 			return r.page, nil
 		}
+		servedCopy.Store(true)
+		a.confirmStreamPageCardsLater(key, saved, cardBudget)
 		a.scheduleStreamPageRefresh(now)
-		logStreamPage("copy", "recompute-error", stampMs, versionMs, time.Since(computeStart).Milliseconds(), 0, 0)
+		logStreamPage("copy", "recompute-error", stampMs, versionMs, time.Since(computeStart).Milliseconds(), cards, 0)
 		return saved.Page, nil
 	case <-time.After(recomputeWait):
+		// The recompute keeps running and saves the live page; the cards of the
+		// copy served meanwhile are confirmed in the background.
+		servedCopy.Store(true)
+		a.confirmStreamPageCardsLater(key, saved, cardBudget)
 		a.scheduleStreamPageRefresh(now)
-		logStreamPage("copy", "recompute-timeout", stampMs, versionMs, time.Since(computeStart).Milliseconds(), 0, 0)
+		logStreamPage("copy", "recompute-timeout", stampMs, versionMs, time.Since(computeStart).Milliseconds(), cards, 0)
 		return saved.Page, nil
 	}
 }
@@ -392,7 +402,16 @@ func (a *App) computeLatestStreamPage(key streamPageKey, stamp string) (StreamIt
 	if incomplete || verr != nil || stamp == "" || a.streamPageStamp(ctx) != stamp {
 		return page, false, nil
 	}
-	_ = writeStreamPageSnapshot(key, streamPageSnapshot{Format: streamPageSnapshotFormat, Version: version, ReadStamp: stamp, SavedAt: time.Now(), Page: page, Cards: cardsRaw})
+	next := streamPageSnapshot{Format: streamPageSnapshotFormat, Version: version, ReadStamp: stamp, SavedAt: time.Now(), Page: page, Cards: cardsRaw}
+	// The full check is of the app's privacy state, not of the page: a copy made
+	// under the same cheap stamp as a checked copy keeps that check, and the
+	// verify pass the caller schedules confirms it again (verifyStreamPageCopy
+	// drops the copy and reloads the page when it no longer matches). Without
+	// this every save made the next read "unverified" and recompute.
+	if prev, why := readRawStreamPageSnapshot(key); why == "" && prev.Deep != "" && prev.ReadStamp == stamp {
+		next.Deep = prev.Deep
+	}
+	_ = writeStreamPageSnapshot(key, next)
 	return page, true, nil
 }
 
@@ -551,5 +570,61 @@ func (a *App) noteStreamPageEvent(eventName string) {
 		delay := st.eventDelay
 		st.mu.Unlock()
 		a.scheduleStreamPageRefresh(time.Now().Add(delay))
+	}
+}
+
+// streamItemVersionWithin reads the stream's item version, giving up after
+// wait even when the store does not honor its context (a busy writer held one
+// read for 2 s past its 200 ms deadline). A late answer is dropped.
+func (a *App) streamItemVersionWithin(session string, wait time.Duration) (int64, error) {
+	type result struct {
+		version int64
+		err     error
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), wait)
+	done := make(chan result, 1)
+	go func() {
+		defer cancel()
+		version, err := a.persistenceService().StreamItemVersion(ctx, session)
+		done <- result{version, err}
+	}()
+	select {
+	case r := <-done:
+		return r.version, r.err
+	case <-ctx.Done():
+		select {
+		case r := <-done:
+			return r.version, r.err
+		default:
+			return 0, ctx.Err()
+		}
+	}
+}
+
+// streamPagesSame reports whether two pages show the same rows, every
+// projected field included.
+func streamPagesSame(left, right StreamItemPageData) bool {
+	l, lerr := json.Marshal(left)
+	r, rerr := json.Marshal(right)
+	return lerr == nil && rerr == nil && string(l) == string(r)
+}
+
+// streamPageReloadHook, when set, sees each reload the saved first page asks
+// for; tests use it.
+var streamPageReloadHook func(session, source string)
+
+// emitStreamPageReload tells the chat to read its first page again. It goes to
+// the window only: the rows did not change, so none of the work that follows a
+// real append (Today, the phone, the stream refresh) runs for it.
+func (a *App) emitStreamPageReload(session, source string) {
+	if hook := streamPageReloadHook; hook != nil {
+		hook(session, source)
+	}
+	data := map[string]any{"sessionId": session, "source": source}
+	if a.ctx != nil && a.ctx.Value("events") != nil {
+		runtime.EventsEmit(a.ctx, mainChatItemsAppendedEvent, data)
+	}
+	if a.eventBroadcaster != nil {
+		a.eventBroadcaster.Broadcast(mainChatItemsAppendedEvent, data)
 	}
 }
