@@ -146,3 +146,53 @@ func TestSetupWindowStateLaunchHasNoFrame(t *testing.T) {
 		t.Fatalf("leave after launch = (hasFrame %v, wasActive %v), want (false, true)", hasFrame, wasActive)
 	}
 }
+
+// A mode change the window could not apply yet ("not ready") must not be
+// recorded: the retry then still resizes the window. Recording it first sent
+// the retry down the "already in setup mode" path, so the window kept its
+// size, and a failed leave left the window at the setup size for good.
+func TestSetupWindowApplyRecordsOnlyAfterTheWindowChanged(t *testing.T) {
+	var s setupWindowState
+	main := setupWindowRect{X: 100, Y: 200, W: 1200, H: 800}
+	frame := func() (setupWindowRect, bool) { return main, true }
+	mainSize := func() (float64, float64) { return 1200, 800 }
+	var modes []int
+	var targets []setupWindowRect
+	ready := false
+	native := func(mode int, target setupWindowRect) bool {
+		modes = append(modes, mode)
+		targets = append(targets, target)
+		return ready
+	}
+
+	if err := s.apply(true, frame, native, mainSize); err == nil {
+		t.Fatal("enter before the window is ready must report not ready")
+	}
+	if s.isActive() {
+		t.Fatal("a failed enter was recorded")
+	}
+	ready = true
+	if err := s.apply(true, frame, native, mainSize); err != nil {
+		t.Fatalf("retried enter: %v", err)
+	}
+	if modes[1] != setupApplyEnter || !s.isActive() {
+		t.Fatalf("retried enter mode = %d active = %v, want %d and true", modes[1], s.isActive(), setupApplyEnter)
+	}
+
+	ready = false
+	if err := s.apply(false, frame, native, mainSize); err == nil {
+		t.Fatal("leave before the window is ready must report not ready")
+	}
+	if !s.isActive() {
+		t.Fatal("a failed leave was recorded")
+	}
+	ready = true
+	if err := s.apply(false, frame, native, mainSize); err != nil {
+		t.Fatalf("retried leave: %v", err)
+	}
+	last := len(modes) - 1
+	if modes[last] != setupApplyLeaveFrame || targets[last] != main || s.isActive() {
+		t.Fatalf("retried leave mode = %d target = %+v active = %v, want %d, %+v, false",
+			modes[last], targets[last], s.isActive(), setupApplyLeaveFrame, main)
+	}
+}

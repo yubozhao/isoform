@@ -176,6 +176,7 @@ func onboardingStateDone(raw string) bool {
 // setupWindowState remembers the main window's frame while setup mode is on, so that
 // leaving setup mode puts the window back where the person left it.
 type setupWindowState struct {
+	applyMu  sync.Mutex // serializes apply: read state, change the window, record
 	mu       sync.Mutex
 	active   bool
 	hasFrame bool
@@ -220,6 +221,13 @@ func (s *setupWindowState) leave() (setupWindowRect, bool, bool) {
 	frame, hasFrame := s.frame, s.hasFrame
 	s.active, s.hasFrame, s.frame = false, false, setupWindowRect{}
 	return frame, hasFrame, true
+}
+
+// peek returns what leave would return without changing the state.
+func (s *setupWindowState) peek() (setupWindowRect, bool, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.frame, s.hasFrame, s.active
 }
 
 func (s *setupWindowState) isActive() bool {
@@ -269,33 +277,54 @@ func (a *App) SetSetupWindowMode(on bool) error {
 	if !setupWindowNativeAvailable {
 		return nil
 	}
+	return setupWindowMode.apply(on, nativeSetupWindowFrame, nativeSetupWindowApply, a.setupMainWindowSize)
+}
+
+// apply records a mode change only after the native side applied it. When
+// the window is not ready yet the state is left as it was, so a retry still
+// resizes the window instead of taking the "already in this mode" path.
+func (s *setupWindowState) apply(
+	on bool,
+	frame func() (setupWindowRect, bool),
+	native func(int, setupWindowRect) bool,
+	mainSize func() (float64, float64),
+) error {
+	s.applyMu.Lock()
+	defer s.applyMu.Unlock()
 	if on {
-		current, haveCurrent := nativeSetupWindowFrame()
 		mode := setupApplyEnterStay
-		if setupWindowMode.enter(current, haveCurrent) {
+		entering := !s.isActive()
+		var current setupWindowRect
+		var haveCurrent bool
+		if entering {
+			current, haveCurrent = frame()
 			mode = setupApplyEnter
 		}
-		if !nativeSetupWindowApply(mode, setupWindowRect{}) {
+		if !native(mode, setupWindowRect{}) {
 			return errSetupWindowNotReady
+		}
+		if entering {
+			s.enter(current, haveCurrent)
 		}
 		return nil
 	}
-	frame, hasFrame, wasActive := setupWindowMode.leave()
+	remembered, hasFrame, wasActive := s.peek()
 	mode := setupApplyLeaveStay
 	var target setupWindowRect
 	if wasActive {
 		if hasFrame {
 			mode = setupApplyLeaveFrame
-			target = frame
+			target = remembered
 		} else {
-			w, h := a.setupMainWindowSize()
+			w, h := mainSize()
 			mode = setupApplyLeaveCentered
 			target = setupWindowRect{W: w, H: h}
 		}
 	}
-	if !nativeSetupWindowApply(mode, target) {
+	if !native(mode, target) {
 		return errSetupWindowNotReady
 	}
+	s.leave()
 	return nil
 }
 
