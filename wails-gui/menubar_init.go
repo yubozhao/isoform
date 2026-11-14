@@ -31,6 +31,7 @@ func runMenuBarInit(ctx context.Context, schedule func(int), results <-chan menu
 		schedule(attempt)
 		timer := time.NewTimer(timeout)
 		var failure error
+		timedOut := false
 	wait:
 		for {
 			select {
@@ -49,15 +50,21 @@ func runMenuBarInit(ctx context.Context, schedule func(int), results <-chan menu
 				}
 			case <-timer.C:
 				failure = fmt.Errorf("main-thread setup did not acknowledge within %s", timeout)
+				timedOut = true
 				break wait
 			}
 		}
 		timer.Stop()
-		log.Printf("[menubar] initialization attempt %d failed: %v", attempt, failure)
 		if attempt > len(backoffs) {
+			log.Printf("[menubar] initialization attempt %d failed: %v", attempt, failure)
 			return fmt.Errorf("menu bar initialization failed after %d attempts: %w", attempt, failure)
 		}
-		log.Printf("[menubar] retrying after %s", backoffs[attempt-1])
+		// A slow acknowledgement usually lands during the backoff and counts
+		// as success, so a timeout is logged only once the backoff ends
+		// without one. A reported error is a real failure: log it now.
+		if !timedOut {
+			log.Printf("[menubar] initialization attempt %d failed: %v", attempt, failure)
+		}
 		delay := time.NewTimer(backoffs[attempt-1])
 	backoff:
 		for {
@@ -72,6 +79,10 @@ func runMenuBarInit(ctx context.Context, schedule func(int), results <-chan menu
 					return nil
 				}
 			case <-delay.C:
+				if timedOut {
+					log.Printf("[menubar] initialization attempt %d failed: %v", attempt, failure)
+				}
+				log.Printf("[menubar] retrying after %s", backoffs[attempt-1])
 				break backoff
 			}
 		}
