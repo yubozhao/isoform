@@ -119,7 +119,8 @@ func mobileBriefWithoutExcluded(in mobileBriefInput, terms []string) mobileBrief
 		}
 		out := make([]mobileBriefCandidate, 0, len(items))
 		for _, item := range items {
-			if !mobileBriefExcluded(terms, item.Title, item.Detail, item.Kind, item.EvidenceLabel, item.NextStep) {
+			// The person and the screen summary reach the writer too.
+			if !mobileBriefExcluded(terms, item.Title, item.Detail, item.Kind, item.EvidenceLabel, item.NextStep, item.Person, item.writerDetail) {
 				out = append(out, item)
 			}
 		}
@@ -130,6 +131,17 @@ func mobileBriefWithoutExcluded(in mobileBriefInput, terms []string) mobileBrief
 	in.Learned, in.Deliverables, in.Schedules = keep(in.Learned), keep(in.Deliverables), keep(in.Schedules)
 	in.WorkingToward, in.Commitments, in.Noticed, in.WaitingOnYou = keep(in.WorkingToward), keep(in.Commitments), keep(in.Noticed), keep(in.WaitingOnYou)
 	in.Conversations = keep(in.Conversations)
+	// Attendance comes from the calendar, not from in.Meetings, so an excluded
+	// meeting is removed here as well.
+	if in.Attendance != nil {
+		attendance := make([]mobileBriefAttendanceObservation, 0, len(in.Attendance))
+		for _, obs := range in.Attendance {
+			if !mobileBriefExcluded(terms, obs.Title) {
+				attendance = append(attendance, obs)
+			}
+		}
+		in.Attendance = attendance
+	}
 	return in
 }
 

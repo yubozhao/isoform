@@ -30,8 +30,44 @@ private actor AwayThenBackHub: HoldsHubAPI {
     }
 }
 
+/// Every hold action fails with `error`, as when the computer is away.
+private actor AwayHoldsHub: HoldsHubAPI {
+    let error: Error
+    init(error: Error) { self.error = error }
+    func holdProposal(kind: String, id: String) async throws -> PhoneHoldOffer { throw HubRequestError.invalidIdentifier }
+    func holdStatus(id: String) async throws -> PhoneHoldStatus { throw error }
+    func holdAction(_ action: PhoneHoldAction) async throws -> PhoneHoldStatus { throw error }
+}
+
 @MainActor
 final class HoldsStoreTests: XCTestCase {
+    /// The relay took the hold but the asleep computer did not answer: it will be written when the computer wakes,
+    /// so Undo is gone (hub decision: a Sent state, no cancel route). A hold the relay never got still undoes.
+    func testAQueuedHoldTheRelayHoldsCannotBeUndone() async throws {
+        let slot = PhoneHoldSlot(start: "2030-01-02T14:00:00Z", end: "2030-01-02T16:00:00Z")
+        let proposal = PhoneHoldProposal(id: "hold-1", thing: PhoneHoldThing(title: "Q4 plan", sourceKind: "up_next", sourceId: "offer"), calendarId: "work", slots: [slot])
+        let offer = PhoneHoldOffer(proposal: proposal, calendars: [PhoneHoldCalendar(id: "work", title: "Work")], token: "signed")
+        for (error, held) in [(HubRequestError.noAnswer as Error, true), (RelayClientError.offline as Error, false)] {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let url = root.appendingPathComponent("writes.json")
+            let journal = PendingWriteJournal(fileURL: url, hubID: { "hub" })
+            let store = HoldsStore(hub: AwayHoldsHub(error: error), journal: journal, pairingID: { "hub/phone" })
+            let placed = await store.place(offer, slot: slot, calendarID: "work")
+            let status = try XCTUnwrap(placed)
+            XCTAssertEqual(status.state, HoldsStore.queuedState)
+            XCTAssertEqual(status.canUndoHold, !held, "\(error)")
+            let undone = await store.undo(id: "hold-1")
+            XCTAssertEqual(undone, !held, "\(error)")
+            let remaining = await journal.entries()
+            XCTAssertEqual(remaining.isEmpty, !held, "\(error): a held hold keeps its key, so a retry reuses it")
+            if held {
+                XCTAssertEqual(remaining.first?.calendarHold?.relayHolds, true, "it stays held after a relaunch")
+            }
+        }
+    }
+
     private func offer() -> (PhoneHoldOffer, PhoneHoldSlot) {
         let slot = PhoneHoldSlot(start: "2030-01-02T14:00:00Z", end: "2030-01-02T16:00:00Z")
         let proposal = PhoneHoldProposal(id: "hold-1", thing: PhoneHoldThing(title: "Q4 plan", sourceKind: "up_next", sourceId: "offer"), calendarId: "work", slots: [slot])

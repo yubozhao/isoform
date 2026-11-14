@@ -80,3 +80,21 @@ func AgentDriven(apps []string, text string) bool {
 	}
 	return AgentCue(text) || known && AgentBuildCue(text)
 }
+
+// agentDoers are words that name who did agent work: the agents, not the
+// user. Narrower than agentCues, which also hold the work itself ("merge").
+var agentDoers = []string{
+	"agent", "claude", "codex", "devin", "kimi", "assistant", "automation", "automated",
+	"scheduled", "the hub", "isoform", "智能体", "代理", "助手", "自动",
+}
+
+// NamesAgents reports whether text says agents did the work.
+func NamesAgents(text string) bool {
+	lower := strings.ToLower(text)
+	for _, doer := range agentDoers {
+		if strings.Contains(lower, doer) {
+			return true
+		}
+	}
+	return false
+}

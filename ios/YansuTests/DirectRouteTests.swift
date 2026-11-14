@@ -31,6 +31,36 @@ final class DirectRouteTests: XCTestCase {
         XCTAssertEqual(try vault.session().route, .relay)
     }
 
+    /// The relay was down and the direct path worked: the next launch starts on the direct path instead of paying
+    /// a relay timeout first. The preference belongs to the pairing; a new pairing starts on the relay.
+    func testTheNextLaunchStartsOnThePathThatWorkedLast() throws {
+        let directory = try makeTemporaryDirectory()
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let secrets = InMemorySecretStore()
+        let origin = directOrigin
+        let ticket = self.ticket
+        let launch = { PairingVault(directory: directory, secrets: secrets,
+                                    remoteOrigin: { $0 == ticket ? origin : nil }, startRemote: { _ in }) }
+        let first = launch()
+        try storePairing(in: first)
+        let relay = try first.session()
+        try first.storeDirectRoute(DirectRoute(ticket: ticket, bearer: RelayCrypto.base64URLEncode(RelayCrypto.randomBytes(32))),
+                                   deviceID: relay.deviceID)
+        XCTAssertEqual(try launch().session().route, .relay, "nothing failed yet: the relay first")
+        XCTAssertTrue(first.switchRoute(after: relay))
+
+        let second = launch()
+        let direct = try second.session()
+        XCTAssertEqual(direct.route, .direct, "the path that worked last")
+        XCTAssertTrue(second.switchRoute(after: direct))
+        XCTAssertEqual(try launch().session().route, .relay, "and back, once the direct path failed")
+
+        let third = launch()
+        XCTAssertTrue(third.switchRoute(after: try third.session()))
+        try storePairing(in: launch())
+        XCTAssertEqual(try launch().session().route, .relay, "a new pairing starts on the relay")
+    }
+
     func testADirectPathThatIsStillOpeningLeavesTheRelayInCharge() throws {
         let (vault, started) = try makeVault(mapped: false)
         let relay = try vault.session()

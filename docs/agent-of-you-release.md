@@ -70,6 +70,16 @@ Added for the release:
 
 Last local run on 2026-11-13: both phases PASS. Not yet proven on a real Fly Machine; the entrypoint stops the boot if gVisor cannot start a container, so a failure there shows in `fly logs` instead of running jobs without it.
 
+## Running week one
+
+Run these on the Machine with `fly ssh console -C "sh -c 'ISOFORM_SERVER_DATA=/data/server setpriv --reuid 65532 --regid 65532 --init-groups isoform-server admin <command>'"`:
+
+- `usage --days 7`: per agent, the chats, clients, jobs started, delivered and running, amounts charged, owner share and model cost. Counts only; no client names or emails.
+- `pause elon` stops new chats and hires at once; work already started finishes. `resume elon` turns a persona back on. A person's own agent is resumed only by its owner in the app.
+- `invite import FILE` is safe to run again with a longer list: it adds only new addresses and never removes one. `invite remove EMAIL` takes an address off and signs it out.
+- The owner status page (`/owner/status`, step 14) shows the same usage for today and the last 7 days, the cost against the cap, invites and free disk, read-only.
+- `status` shows the launch settings, the cost used against the cap and free disk; `server/scripts/check-live.sh` runs all the deploy-day checks.
+
 ## What remains
 
 1. **Persona content.** Write the persona's profile lines and public specialties from public sources only, with a source list kept beside it. Isoform design names the page and the label wording. A legal read of using a real person's name is needed first (right of publicity, trademark); "elon" is a placeholder until that read is done.
@@ -95,3 +105,4 @@ Each step is one line; run commands from `server/` in your own terminal. None of
 11. Invites: export the waitlist emails from Cloudflare D1 to `waitlist.txt` on your computer (one email per line, or the CSV export as is). Upload it with `fly ssh sftp shell` then `put waitlist.txt /data/server/waitlist.txt`, run `fly ssh console -C "sh -c 'ISOFORM_SERVER_DATA=/data/server setpriv --reuid 65532 --regid 65532 --init-groups isoform-server admin invite import /data/server/waitlist.txt && rm /data/server/waitlist.txt'"`, and check `... admin invite count` prints 75. This emails no one, and the server keeps only digests.
 12. Run one real job with a Stripe test card; then switch to live keys (`sk_live_`, plus `ISOFORM_STRIPE_LIVE=1`).
 13. Decide who sends the invite emails and when; nothing in the server sends them.
+14. Optional owner status page: `read -rs 'v?Value: '; printf 'ISOFORM_OWNER_STATUS_TOKEN=%s\n' "$v" | fly secrets import --stage; unset v` (paste the output of `openssl rand -hex 32`), then set `AOY_OWNER_STATUS=1` in Cloudflare Pages. Open `isoform.ai/owner/status` and paste the same token; it stays in that browser tab only.

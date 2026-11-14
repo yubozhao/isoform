@@ -85,9 +85,11 @@ final class PairingVault: @unchecked Sendable {
     private var record: PairedDevice?
     private var loaded = false
     private var cachedSession: SessionContext?
-    /// Whether a relay pairing with a direct route should use it first. It starts on the relay at launch and
-    /// moves only after a failed request.
+    /// Whether a relay pairing with a direct route should use it first: the path that worked last, kept across
+    /// launches (`route.json`, per pairing), so a launch with the relay down does not pay a relay timeout first.
+    /// It moves only after a failed request.
     private var preferDirect = false
+    private var preferenceLoadedFor: String?
     private var recordLoadError: PairingVaultError?
 
     init(directory: URL, secrets: SecretStore,
@@ -210,6 +212,7 @@ final class PairingVault: @unchecked Sendable {
             guard let ticket = try secrets.read(PairingSecretAccount.irohTicket(hubID: record.hubID)) else {
                 // A relay pairing that also holds a direct route uses whichever path worked last. While the
                 // direct tunnel is still opening, the relay serves the request.
+                loadRoutePreferenceLocked(record)
                 guard preferDirect, let direct = try readDirectRouteLocked(record) else { return baseContext }
                 guard let origin = remoteOrigin(direct.ticket) else {
                     startRemote(direct.ticket)
@@ -238,17 +241,48 @@ final class PairingVault: @unchecked Sendable {
             guard let record, record.deviceID == context.deviceID,
                   (try? secrets.read(PairingSecretAccount.irohTicket(hubID: record.hubID))) == nil,
                   let direct = try? readDirectRouteLocked(record) else { return (false, nil) }
+            loadRoutePreferenceLocked(record)
             switch context.route {
             case .relay:
                 preferDirect = true
+                saveRoutePreferenceLocked(record)
                 return (true, direct.ticket)
             case .direct:
                 preferDirect = false
+                saveRoutePreferenceLocked(record)
                 return (true, nil)
             }
         }
         if let ticket { startRemote(ticket) }
         return switched
+    }
+
+    private struct RoutePreference: Codable {
+        let pairing: String
+        let direct: Bool
+    }
+
+    private var routePreferenceURL: URL {
+        directory.appendingPathComponent("route.json")
+    }
+
+    private static func pairingKey(_ record: PairedDevice) -> String {
+        "\(record.hubID)/\(record.deviceID)"
+    }
+
+    /// Reads the saved path once per pairing. A preference saved for another pairing, or none, means the relay.
+    private func loadRoutePreferenceLocked(_ record: PairedDevice) {
+        let key = Self.pairingKey(record)
+        guard preferenceLoadedFor != key else { return }
+        preferenceLoadedFor = key
+        let saved = (try? readRecord(routePreferenceURL)).flatMap { try? Self.decoder.decode(RoutePreference.self, from: $0) }
+        preferDirect = saved?.pairing == key && saved?.direct == true
+    }
+
+    /// Best effort: a preference that cannot be saved only costs the next launch one try on the other path.
+    private func saveRoutePreferenceLocked(_ record: PairedDevice) {
+        guard let data = try? Self.encoder.encode(RoutePreference(pairing: Self.pairingKey(record), direct: preferDirect)) else { return }
+        try? writeRecord(data, routePreferenceURL)
     }
 
     /// The other path's session for a one-off read, such as an attachment, without changing which path comes

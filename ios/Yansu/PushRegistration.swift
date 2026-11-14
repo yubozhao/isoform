@@ -407,8 +407,19 @@ final class PushRegistration: ObservableObject {
     }
 
     private func uploadCurrentToken(generation: UUID, attempt: Int) async -> Bool {
-        guard !disabling, isOptedIn, generation == uploadGeneration,
-              let token, let session = try? vault.session() else { return false }
+        guard !disabling, isOptedIn, generation == uploadGeneration, let token else { return false }
+        let session: SessionContext
+        do {
+            session = try vault.session()
+        } catch RelayClientError.offline {
+            // A pairing over the computer's direct path has no session until its tunnel opens, and at launch the
+            // APNs token usually arrives first. Try again with the usual backoff instead of leaving notifications
+            // "Turning on" until the next time the app opens.
+            scheduleRetry(generation: generation, attempt: attempt)
+            return false
+        } catch {
+            return false
+        }
         rememberTokenCredentials(session.credentials)
         do {
             _ = try await relay.registerPushToken(session.credentials, deviceToken: token, environment: PushEnvironment.current)
@@ -500,17 +511,14 @@ final class PushRegistration: ObservableObject {
         }
     }
 
+    /// APNs could not register this launch: no connection yet, or a passing service error. The person's switch
+    /// stays on and the next launch or return to the app asks APNs again (`resumeIfOptedIn`); only the switch or
+    /// permission denied in iOS Settings turns notifications off. It used to clear the opt-in, so one failed launch
+    /// turned notifications off for good. An upload still in flight is no longer trusted to turn the state on.
     func receiveRegistrationFailure() {
         guard isOptedIn, !disabling else { return }
-        let intent = UUID()
-        toggleIntent = intent
-        let drain = stopRegistration()
+        uploadGeneration = UUID()
         reportUnavailable(reason: .registration)
-        Task {
-            await drain.value
-            guard toggleIntent == intent, isReadyForRevocation else { return }
-            await onRegistrationReady?()
-        }
     }
 
     private func reportUnavailable(reason: FailureReason) {

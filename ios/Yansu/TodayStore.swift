@@ -253,6 +253,7 @@ final class TodayStore: ObservableObject {
     private var revision = 0
     private var refreshing = false
     private var sendingFresh = false
+    private var refreshAgain = false
     private var prefetchTask: Task<Void, Never>?
     private var eventTask: Task<Void, Never>?
     private var resyncTask: Task<Void, Never>?
@@ -319,7 +320,21 @@ final class TodayStore: ObservableObject {
         [snapshot?.generatedDate, newestBrief()?.asOfDate].compactMap { $0 }.max()
     }
 
+    /// A refresh asked for while one runs (a change event, a push) is not dropped: the read in flight may have been
+    /// served before the change, so one more read follows it.
     func refresh() async {
+        guard identity() != nil else { return }
+        if refreshing {
+            refreshAgain = true
+            return
+        }
+        repeat {
+            refreshAgain = false
+            await refreshOnce()
+        } while refreshAgain && !refreshing && identity() != nil
+    }
+
+    private func refreshOnce() async {
         guard identity() != nil, !refreshing else { return }
         let currentGeneration = generation
         let initialRevision = revision

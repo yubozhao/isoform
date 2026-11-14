@@ -86,6 +86,9 @@ struct ChatOutgoingMessage: Codable, Equatable, Sendable, Identifiable {
     var failureDraftRecovered: Bool? = nil
     /// A brief Ask queued while offline has not reached the transport and may still be undone.
     var askUndispatched: Bool? = nil
+    /// The relay took it for a computer that did not answer (PROTOCOL.md section 23): the computer runs it when it
+    /// is back, so it can no longer be taken back and shows as sent, without Undo. Optional so saved messages decode.
+    var relayHolds: Bool? = nil
 
     var isReturnedDraft: Bool { returnedToDraft == true && failureDraftRecovered != true }
     var hasFailed: Bool { deliveryIssue == .failed }
@@ -115,6 +118,7 @@ struct ChatOutgoingMessage: Codable, Equatable, Sendable, Identifiable {
         case .seen: return .seen
         case .sent: return .sent
         case .sending:
+            if relayHolds == true { return .sent }
             if computerOnline == false || deliveryIssue == .waitingForComputer { return .waitingForComputer }
             if deliveryIssue == .waitingForTurn { return .waitingForTurn }
             return .sending

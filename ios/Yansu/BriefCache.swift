@@ -39,6 +39,11 @@ final class BriefCache: @unchecked Sendable {
     private let removeItem: (URL) throws -> Void
     private let lock = NSLock()
     private var removalPending = false
+    /// Every entry on disk by file name, kept in step by this cache's writes and removals and read again when the
+    /// folder changed some other way (its modification time moved: another cache, the legacy migration). Without
+    /// it each read decoded every brief file, on the main actor, several times a snapshot.
+    private var index: [String: CachedBrief]?
+    private var indexStamp: Date?
 
     init(directory: URL, now: @escaping () -> Date = { Date() },
          removeItem: @escaping (URL) throws -> Void = { try FileManager.default.removeItem(at: $0) }) {
@@ -148,8 +153,7 @@ final class BriefCache: @unchecked Sendable {
     func load(identifier: String) -> CachedBrief? {
         locked {
             guard (try? finishPendingRemovalLocked()) != nil else { return nil }
-            guard let data = try? Data(contentsOf: fileURL(for: identifier)) else { return nil }
-            return try? Self.decoder.decode(CachedBrief.self, from: data)
+            return indexLocked()[fileURL(for: identifier).lastPathComponent]
         }
     }
 
@@ -164,6 +168,11 @@ final class BriefCache: @unchecked Sendable {
     /// The current brief under the one rule (`current(in:)`).
     func current() -> CachedBrief? {
         Self.current(in: all())
+    }
+
+    /// Reads the folder again on the next access: after files were moved into it from outside the cache.
+    func reload() {
+        locked { index = nil }
     }
 
     func prune() throws {
@@ -185,6 +194,8 @@ final class BriefCache: @unchecked Sendable {
             try finishPendingRemovalLocked()
             let url = fileURL(for: identifier)
             if FileManager.default.fileExists(atPath: url.path) { try removeItem(url) }
+            index?[url.lastPathComponent] = nil
+            noteOwnChangeLocked()
         }
     }
 
@@ -194,8 +205,7 @@ final class BriefCache: @unchecked Sendable {
                              version: String?, package: Data?) throws {
         try finishPendingRemovalLocked()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let prior = (try? Data(contentsOf: fileURL(for: brief.identifier)))
-            .flatMap { try? Self.decoder.decode(CachedBrief.self, from: $0) }
+        let prior = indexLocked()[fileURL(for: brief.identifier).lastPathComponent]
         let same = prior?.brief == brief
         // Without new bytes, an identical brief keeps the version and package it was stored with.
         let keepsPackage = same && package == nil && version == nil
@@ -204,8 +214,10 @@ final class BriefCache: @unchecked Sendable {
                                 version: version ?? (keepsPackage ? prior?.version : nil),
                                 package: package ?? (keepsPackage ? prior?.package : nil))
         let data = try Self.encoder.encode(entry)
-        try data.write(to: fileURL(for: brief.identifier),
-                       options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        let url = fileURL(for: brief.identifier)
+        try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        index?[url.lastPathComponent] = entry
+        noteOwnChangeLocked()
         try pruneLocked()
     }
 
@@ -215,6 +227,7 @@ final class BriefCache: @unchecked Sendable {
         if FileManager.default.fileExists(atPath: directory.path) {
             try removeItem(directory)
         }
+        index = nil
         removalPending = false
     }
 
@@ -223,15 +236,46 @@ final class BriefCache: @unchecked Sendable {
     }
 
     private func entriesLocked() -> [CachedBrief] {
+        Array(indexLocked().values)
+    }
+
+    /// Reads the folder the first time. A file that cannot be read now (before first unlock) leaves the index
+    /// unbuilt, so the next call reads the folder again.
+    private func folderStamp() -> Date? {
+        (try? directory.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+    }
+
+    /// After this cache changed the folder itself, its index is already current.
+    private func noteOwnChangeLocked() {
+        if index != nil { indexStamp = folderStamp() }
+    }
+
+    private func indexLocked() -> [String: CachedBrief] {
+        let stamp = folderStamp()
+        if let index, stamp == indexStamp { return index }
+        index = nil
+        indexStamp = stamp
+        var built: [String: CachedBrief] = [:]
+        var complete = true
         let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
-        return files.filter { $0.pathExtension == "json" }.compactMap { url in
-            guard let data = try? Data(contentsOf: url) else { return nil }
-            return try? Self.decoder.decode(CachedBrief.self, from: data)
+        for url in files where url.pathExtension == "json" {
+            guard let data = try? Data(contentsOf: url) else { complete = false; continue }
+            if let entry = try? Self.decoder.decode(CachedBrief.self, from: data) { built[url.lastPathComponent] = entry }
         }
+        if complete { index = built }
+        return built
     }
 
     private func pruneLocked() throws {
         let cutoff = now().addingTimeInterval(-Self.textRetentionInterval)
+        if let index {
+            for (name, entry) in index where Self.sortDate(entry) < cutoff {
+                try FileManager.default.removeItem(at: directory.appendingPathComponent(name))
+                self.index?[name] = nil
+            }
+            noteOwnChangeLocked()
+            return
+        }
         let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
         for url in files where url.pathExtension == "json" {
             guard let data = try? Data(contentsOf: url),

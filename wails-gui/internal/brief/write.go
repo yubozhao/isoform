@@ -143,6 +143,7 @@ const (
 	CodeBalance       = "balance"
 	CodeNoNext        = "no_next"
 	CodeContextRef    = "context_ref_dropped"
+	CodeAgentCredited = "agent_work_credited"
 )
 
 // Writer limits. Paragraph bytes match the app's narrative limit.
@@ -275,6 +276,12 @@ func RepairDraft(raw string, m Material) (Draft, []string, error) {
 			codes = append(codes, CodeNoRefs)
 			return Paragraph{}, false
 		}
+		if done && agentOnly(refs, byID) && !NamesAgents(text) {
+			// Resting on agent work alone, the words must say the agents did
+			// it; "you merged two fixes" credits it to the user.
+			codes = append(codes, CodeAgentCredited)
+			return Paragraph{}, false
+		}
 		return Paragraph{Text: text, Refs: refs}, true
 	}
 	var out Draft
@@ -292,13 +299,12 @@ func RepairDraft(raw string, m Material) (Draft, []string, error) {
 		if !ok {
 			continue
 		}
-		forward, allAgent := false, true
+		forward := false
 		for _, r := range c.Refs {
 			item := byID[r]
 			forward = forward || forwardGroups[item.Group] && !item.Agent
-			allAgent = allAgent && (item.Agent || item.Group == GroupAgents)
 		}
-		if allAgent {
+		if agentOnly(c.Refs, byID) {
 			codes = append(codes, CodeNextAgentOnly)
 			continue
 		}
@@ -335,6 +341,16 @@ func RepairDraft(raw string, m Material) (Draft, []string, error) {
 		codes = append(codes, CodeBalance)
 	}
 	return out, codes, nil
+}
+
+// agentOnly reports refs that all name agent work.
+func agentOnly(refs []string, byID map[string]MaterialItem) bool {
+	for _, r := range refs {
+		if item := byID[r]; !item.Agent && item.Group != GroupAgents {
+			return false
+		}
+	}
+	return len(refs) > 0
 }
 
 func runeCount(d Draft) int {

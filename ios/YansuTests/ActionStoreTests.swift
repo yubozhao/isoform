@@ -1078,3 +1078,37 @@ final class TodayDraftUndoTests: XCTestCase {
         XCTAssertFalse(PendingWriteJournal.draftSendCanBeUndone(nil, now: sent))
     }
 }
+
+/// The journal read before the phone's first unlock after a restart: the file is there but cannot be read.
+final class PendingWriteUnreadableTests: XCTestCase {
+    func testAnUnreadableJournalIsNeverReplacedAndIsReadAgainLater() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600],
+                                                   ofItemAtPath: directory.appendingPathComponent("journal.json").path)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let url = directory.appendingPathComponent("journal.json")
+        let first = PendingWriteJournal(fileURL: url, hubID: { "mac" })
+        let waiting = try await first.reserve(operation: .chatMessage, target: "chat-1", choice: "send", fingerprint: "a",
+                                              makeKey: { "unanswered" }, createdAt: Date())
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: url.path)
+
+        let locked = PendingWriteJournal(fileURL: url, hubID: { "mac" })
+        do {
+            _ = try await locked.reserve(operation: .chatMessage, target: "chat-2", choice: "send", fingerprint: "b",
+                                         makeKey: { "new" }, createdAt: Date())
+            XCTFail("A write must not replace a journal it could not read")
+        } catch {}
+        let whileLocked = await locked.entries()
+        XCTAssertFalse(whileLocked.contains { $0.key == "new" }, "nothing unsaved is shown as waiting")
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+        let unlocked = await locked.entries()
+        XCTAssertEqual(unlocked.map(\.key), [waiting.key], "the unanswered key survives, so a retry reuses it")
+        let next = try await locked.reserve(operation: .chatMessage, target: "chat-2", choice: "send", fingerprint: "b",
+                                            makeKey: { "new" }, createdAt: Date())
+        let saved = await PendingWriteJournal(fileURL: url, hubID: { "mac" }).entries()
+        XCTAssertEqual(Set(saved.map(\.key)), [waiting.key, next.key])
+    }
+}

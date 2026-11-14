@@ -49,9 +49,13 @@ struct PhoneHoldStatus: Codable, Equatable, Sendable {
     /// The event that filled the chosen slot, when the computer named it.
     var conflictTitle: String? = nil
     var conflictStart: String? = nil
+    /// Set on this phone for a queued hold the relay may already hold for the computer: it runs when the computer is
+    /// back, so it can no longer be taken back.
+    var relayHolds: Bool? = nil
 
     var canUndoHold: Bool {
-        state == HoldsStore.queuedState || state == "pending_write" && (writeAfter.flatMap(RelayTime.parse).map { $0 > Date() } ?? false)
+        state == HoldsStore.queuedState && relayHolds != true
+            || state == "pending_write" && (writeAfter.flatMap(RelayTime.parse).map { $0 > Date() } ?? false)
     }
 }
 
@@ -144,9 +148,13 @@ final class HoldsStore: ObservableObject {
             failures[id] = nil
         case .failed(let error, .keep) where Self.isAway(error):
             // Only a journaled write may promise to go later; the key and what it carries stay on the phone.
+            // A hold the relay may already hold (no answer, or a send that timed out) runs when the computer wakes;
+            // once held there it stays held, whatever a later try says.
+            let wasHeld = states[id]?.relayHolds == true
             let replay = PendingWrite.CalendarHoldReplay(proposalID: id, token: offer.token, title: offer.proposal.thing.title,
                                                          sourceKind: offer.proposal.thing.sourceKind, sourceID: offer.proposal.thing.sourceId,
-                                                         start: slot.start, end: slot.end, calendarID: calendarID)
+                                                         start: slot.start, end: slot.end, calendarID: calendarID,
+                                                         relayHolds: wasHeld || Self.relayMayHold(error) ? true : nil)
             try? await journal.attachCalendarHold(target: id, fingerprint: fingerprint, replay: replay)
             status = Self.status(replay, state: Self.queuedState)
             failures[id] = nil
@@ -223,6 +231,8 @@ final class HoldsStore: ObservableObject {
 
     func undo(id: String) async -> Bool {
         guard let pairing = pairingID() else { return false }
+        // Hub decision: no cancel route. A hold the relay holds will be written when the computer is back.
+        if states[id]?.state == Self.queuedState, states[id]?.relayHolds == true { return false }
         if states[id]?.state == Self.queuedState {
             // The computer never saw it: dropping the key is the whole undo.
             let keys = await journal.entries().filter { $0.operation == .calendarHold && $0.target == id && $0.choice == "hold" }.map(\.key)
@@ -324,7 +334,15 @@ final class HoldsStore: ObservableObject {
     private static func status(_ replay: PendingWrite.CalendarHoldReplay, state: String) -> PhoneHoldStatus {
         PhoneHoldStatus(id: replay.proposalID, state: state, taskId: replay.sourceKind == "task" ? replay.sourceID : nil,
                         calendarId: replay.calendarID, title: replay.title,
-                        start: replay.start, end: replay.end)
+                        start: replay.start, end: replay.end, relayHolds: replay.relayHolds)
+    }
+
+    /// Whether the relay may have taken the request though no answer came: it accepted the envelope and the computer
+    /// did not answer in time, or the send timed out after the relay may have queued it.
+    static func relayMayHold(_ error: Error) -> Bool {
+        if case .noAnswer? = error as? HubRequestError { return true }
+        if case .timedOut? = error as? RelayClientError { return true }
+        return false
     }
 
     private func follow(id: String, pairing: String) async {

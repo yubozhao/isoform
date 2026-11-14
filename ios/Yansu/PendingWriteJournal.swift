@@ -40,6 +40,8 @@ struct PendingWrite: Codable, Equatable, Sendable {
         let start: String
         let end: String
         let calendarID: String
+        /// The relay may already hold it for the computer (no answer came): it can no longer be undone.
+        var relayHolds: Bool? = nil
     }
     struct TodayDraftSend: Codable, Equatable, Sendable {
         let taskID: String
@@ -537,10 +539,20 @@ actor PendingWriteJournal {
         try? persist()
     }
 
+    /// A file that exists but cannot be read (before the phone's first unlock after a restart, or an I/O error) is
+    /// not taken as empty: the journal stays unloaded, reads it again on the next access, and `persist` refuses to
+    /// replace it. Treated as empty, the next write replaced the file with only itself and every unanswered key was
+    /// lost, so retries went out under new keys and could run twice. A file that reads but does not decode is
+    /// damaged beyond saving and is replaced as before.
     private func loadIfNeeded() {
         guard !loaded else { return }
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            loaded = true
+            return
+        }
+        guard let data = try? Data(contentsOf: fileURL) else { return }
         loaded = true
-        if let decoded = Self.readWrites(from: fileURL) { writes = decoded }
+        writes = (try? Self.decoder.decode([DecodedWrite].self, from: data))?.compactMap(\.write) ?? []
     }
 
     /// Entries decode one by one: an operation this build does not know (from a newer build, or one retired without
@@ -560,6 +572,11 @@ actor PendingWriteJournal {
     }
 
     private func persist() throws {
+        guard loaded else {
+            // The file could not be read, so what is in memory was never saved and is not the whole list.
+            writes = []
+            throw CocoaError(.fileReadNoPermission)
+        }
         try Self.persist(writes, to: fileURL, writeData: writeData)
     }
 

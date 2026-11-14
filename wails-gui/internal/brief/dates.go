@@ -132,8 +132,13 @@ func (m Material) withoutPastDates(text string, codes *[]string) string {
 			continue
 		}
 		date := time.Date(m.Today.Year(), month, day, 0, 0, 0, 0, m.Today.Location())
-		if date.After(m.Today.AddDate(0, 6, 0)) {
+		// A date without a year is the nearest one: in November, January is
+		// next year's, and in January, December is last year's.
+		switch {
+		case date.After(m.Today.AddDate(0, 6, 0)):
 			date = date.AddDate(-1, 0, 0)
+		case date.Before(m.Today.AddDate(0, -6, 0)):
+			date = date.AddDate(1, 0, 0)
 		}
 		if !date.Before(m.Today) || match[2] < 0 && reasonWords[strings.ToLower(lastWord(text[:start]))] {
 			continue
