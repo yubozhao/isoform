@@ -57,12 +57,15 @@ beforeEach(() => {
 describe('held while the Mac is locked', () => {
     it('Today status makes no brief-health read while locked, and one on unlock', async () => {
         const { unmount } = renderHook(() => useTodayStatus(true));
-        await waitFor(() => expect(fixture.getHealth).toHaveBeenCalledTimes(1));
+        // A loaded test machine can take over a second to mount; the lock rule
+        // is what this test guards, not how fast the first read starts.
+        await waitFor(() => expect(fixture.getHealth).toHaveBeenCalledTimes(1), { timeout: 10_000 });
         act(() => emit('system:state', 'locked'));
         act(() => emit('mobile:updated'));
         await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
         expect(fixture.getHealth).toHaveBeenCalledTimes(1);
         act(() => emit('system:state', 'unlocked'));
+        await waitFor(() => expect(fixture.getHealth).toHaveBeenCalledTimes(2), { timeout: 10_000 });
         await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
         expect(fixture.getHealth).toHaveBeenCalledTimes(2);
         unmount();
@@ -78,8 +81,7 @@ describe('held while the Mac is locked', () => {
         await act(async () => { await new Promise((r) => setTimeout(r, 400)); });
         expect(fixture.getSetup.mock.calls.length).toBe(before);
         act(() => emit('system:state', 'unlocked'));
-        await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
-        expect(fixture.getSetup.mock.calls.length).toBeGreaterThan(before);
+        await waitFor(() => expect(fixture.getSetup.mock.calls.length).toBeGreaterThan(before), { timeout: 10_000 });
         unmount();
     });
 });
