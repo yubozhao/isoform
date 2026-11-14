@@ -1228,15 +1228,14 @@ describe("the brief's card (RC 1)", () => {
                 { id: "week:ask:commitments:q4", kind: "item", mode: "send", message: "Help me plan how to start Monday on the Q4 plan. Don't write to my calendar.", refs: ["e1"] }] };
         };
 
-        it("is the brief that evening: open, in place of the daily text and its closing question", () => {
+        it("is open that evening, after the written brief (Bo, Nov 13: the written brief must show)", () => {
             renderSection({ view: view({ brief: week() }), observationPaused: false });
             const card = screen.getByTestId("brief-card");
             const yourWeek = within(card).getByTestId("brief-your-week");
             expect(yourWeek.tagName).not.toBe("DETAILS");
             expect(within(yourWeek).getByRole("heading", { name: "Your week · Oct 19 to 23" })).toBeInTheDocument();
             expect(within(yourWeek).getByTestId("your-week-lead")).toHaveTextContent("A Halcyon week: most of your time went there.");
-            expect(screen.queryByTestId("brief-narrative")).not.toBeInTheDocument();
-            expect(screen.queryByTestId("brief-closing-question")).not.toBeInTheDocument();
+            expect(screen.getByTestId("brief-narrative")).toBeInTheDocument();
             expect(screen.queryByText("Your week with Isoform")).not.toBeInTheDocument();
             expect(screen.queryByRole("button", { name: "Draft the memo" })).not.toBeInTheDocument();
         });

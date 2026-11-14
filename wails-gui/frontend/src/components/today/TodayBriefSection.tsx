@@ -1471,7 +1471,8 @@ function briefParts({
     // The brief ends on one question (mobileBriefDeliveredClosing in Go): its
     // last paragraph when that asks something. It closes the card, with the
     // answers under it.
-    const paragraphs = week ? [] : rawClosing ? narrative.slice(0, -1) : narrative;
+    // The written brief always shows; on a week day the week section follows it.
+    const paragraphs = rawClosing ? narrative.slice(0, -1) : narrative;
     const learnedRefs = new Set((brief.sections.learned ?? []).filter((item) => item.kind !== "find").flatMap((item) => item.refs ?? []));
     const paragraphCards = cards.filter((card) =>
         (card.kind === "question" && card.mode === "send" || card.kind === "item" && card.paragraph !== undefined) &&
