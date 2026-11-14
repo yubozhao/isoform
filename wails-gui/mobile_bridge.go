@@ -746,6 +746,8 @@ func (bridge *mobileBridge) notify() {
 func (bridge *mobileBridge) relayRegistered(client *mobileRelayClient, presence []mobileRelayPresence, listed bool) {
 	bridge.briefDeliveryMu.Lock()
 	defer bridge.briefDeliveryMu.Unlock()
+	// Recordings received before a quit or a pause are transcribed now.
+	defer bridge.resumeRecordingTranscription()
 	bridge.mu.Lock()
 	if bridge.stopped || bridge.client != client {
 		bridge.mu.Unlock()

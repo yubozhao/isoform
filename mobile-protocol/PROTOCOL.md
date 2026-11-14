@@ -3311,3 +3311,98 @@ versions cannot receive a decision through this route.
 the owner has seen the terms; `settings` carries the owner `settings` object.
 Turning on requires an agreement recorded by the server. These writes are not
 automatically retried after an ambiguous network failure.
+
+## 24. Recordings from the watch and the phone (v1, 2026-11-13)
+
+A recording made on the watch (or on the phone) is the one kind of file that travels from the
+phone to the computer. It is an attachment (section 17) in the other direction: the phone seals
+it, the relay holds ciphertext until the computer takes it, and the key travels inside the sealed
+request. The computer transcribes it locally; audio is never sent to a model or kept on the relay.
+`GET /status` advertises `recordings: true` when the computer serves these routes; a phone keeps
+recordings on the phone, and says so, while the flag is absent.
+
+### 24.1 Sealing and upload (phone to relay)
+
+```
+key   = 32 random bytes, nonce = 12 random bytes, drawn per part
+aad   = "yansu-upload-v1|" + hubId + "|" + deviceId + "|" + uploadId     (ASCII)
+body  = ChaCha20-Poly1305(key, nonce, plaintext, aad)                     (ciphertext || 16-byte tag)
+```
+
+- `uploadId` is a lowercase UUID version 4 drawn by the phone. A recording longer than one part
+  (plaintext at most 16 MiB minus the tag) is cut into parts, each sealed and uploaded on its own;
+  at most 64 parts.
+- The plaintext of a part is a complete, playable audio file: `audio/mp4` (AAC, mono) or
+  `audio/wav`. Parts are never a byte split of one file.
+
+| Method and path | Auth | Scope | Body / result |
+| --- | --- | --- | --- |
+| `PUT /v1/uploads/{uploadId}` | device bearer | `chat:write` | body `application/octet-stream`, at most 16 MiB → `201 {"id"}` |
+| `GET /v1/hub/uploads/{uploadId}` | `X-Yansu-Hub` and the hub credential | | the stored bytes as `application/octet-stream`, `Cache-Control: no-store`; 404 when unknown, expired or sent to another hub |
+| `DELETE /v1/hub/uploads/{uploadId}` | `X-Yansu-Hub` and the hub credential | | `200 {"deleted":true}`, also for an id already gone |
+
+- Upload errors: `401` without a valid bearer; `403` without `chat:write`; `404` malformed id;
+  `405` other methods; `409` the id belongs to another device; `413` empty or over 16 MiB; `415`
+  wrong content type; `429` with `Retry-After` over 60 uploads an hour per device, the device
+  request limit, or a full device quota; `507` when the relay's upload storage is full. A repeat
+  under the same id from the same device replaces the body.
+- Quotas: a device keeps at most 48 waiting uploads and 192 MiB. A full quota refuses the new
+  upload and never evicts a waiting one, because the computer has not received it yet; the phone
+  keeps the recording and tries again later. The whole relay keeps at most 2 GiB. An upload
+  expires 48 hours after it was stored, longer than the 24-hour request TTL (section 23), so a
+  request replayed late still finds its body. Unpairing the device removes its uploads.
+
+### 24.2 `POST /recordings` (hub route, scope `chat:write`)
+
+One request per part, sent after its upload succeeded:
+
+```json
+{"idempotencyKey":"<1..128 bytes>","recordingId":"<uuid>","part":0,"last":true,
+ "upload":{"id":"<uploadId>","key":"<base64url>","nonce":"<base64url>"},
+ "sha256":"<lowercase hex of the plaintext>","bytes":123456,"mime":"audio/mp4",
+ "startedAt":"2026-11-13T09:00:00Z","durationSeconds":61.5,"source":"watch",
+ "title":"", "device":{"model":"Watch7,1"}}
+```
+
+- `part` is zero-based (0 to 63) and `last` marks the final part: a recording still running does
+  not know its part count, so each finished part is sent as it is cut. The recording is complete
+  when the last part and every part before it are stored. `startedAt` and `durationSeconds`
+  describe this part. `source` is `watch`
+  or `phone`. `title` (at most 200 bytes) and `device` are optional. No location is sent.
+- The computer fetches the upload, opens it with the key, nonce and the AAD built from its hub id,
+  the requesting device's id and the upload id, checks `bytes` and `sha256`, stores the part
+  under `mobile/recordings/<recordingId>/` (files 0600, folders 0700), deletes the upload from the
+  relay, and answers `202` with the recording view (24.3). A part it already holds is answered
+  the same way without fetching again, so the route is safe to repeat and keeps no separate
+  receipt. A recording belongs to the device that sent its first part.
+- Errors: `400` invalid fields, a body that fails authentication, or a checksum mismatch; `403`
+  without `chat:write`; `404` with `data: {"code":"upload_missing"}` when the relay no longer has
+  the upload (the phone uploads the part again under a new upload id); `409` with
+  `data: {"code":"observation_paused"}` while observing is paused on the computer (the phone keeps
+  the recording and sends it later; nothing is fetched or stored); `503` when the relay could not
+  be reached or the store is not ready.
+- When the last part arrives the computer transcribes the recording in the background with its
+  after-call speech engine (the larger local model when installed, else the live one). The
+  transcript is saved as an activity session of microphone speech with trigger
+  `watch_recording`, at the recording's own wall-clock times, so memory and the brief read it
+  through the same gates as speech heard on the computer. A recording received while observing
+  is paused, or interrupted by a quit, is transcribed after resume or restart.
+- A recording whose last part never arrives (the watch lost power) is closed after 6 hours when
+  its parts run from 0 without a gap. A failed transcription is tried again at the next launch.
+  The computer deletes a recording's audio 14 days after it was transcribed; the transcript and
+  the recording's row stay.
+
+### 24.3 `GET /recordings?ids=<uuid,uuid>` (hub route, scope `chat:write`)
+
+Answers `{"recordings":[view]}` for the requesting device's recordings, newest first, at most 50;
+`ids` (optional, at most 50) narrows it. A view is
+
+```json
+{"id":"<recordingId>","state":"received","partsReceived":1,"parts":1,"durationSeconds":61.5,
+ "startedAt":"...","words":0,"receivedAt":"...","updatedAt":"..."}
+```
+
+`parts` is 0 until the last part arrived. `state` is `received` (some or all parts stored), `transcribing`, `transcribed` (`words` is the
+transcript's word count; 0 means nothing was said) or `failed`. The view carries no transcript
+text; the phone reads what was said through chat and the brief like everything else. Unknown
+states must be shown as "On your computer".

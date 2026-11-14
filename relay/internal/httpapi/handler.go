@@ -146,6 +146,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.attachmentRoute(w, r)
 		return
 	}
+	if strings.HasPrefix(r.URL.Path, "/v1/uploads/") {
+		h.uploadRoute(w, r)
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/v1/hub/uploads/") {
+		h.hubUploadRoute(w, r)
+		return
+	}
 	reply(w, http.StatusNotFound, nil, "Route not found")
 }
 

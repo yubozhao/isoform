@@ -10,13 +10,13 @@ import (
 
 // Swept counts the rows one maintenance pass removed.
 type Swept struct {
-	Pairings, Requests, Devices, Briefs, Pushes, Receipts, Attachments, SMS, Email int64
+	Pairings, Requests, Devices, Briefs, Pushes, Receipts, Attachments, Uploads, SMS, Email int64
 }
 
 // Sweep removes expired pairings, requests and devices, briefs beyond the
 // newest KeptBriefs due and KeptHeldBriefs held per device, finished push rows
 // older than a day, notice receipts older than NoticeReceiptKeep, expired
-// attachments, and the text message rows sweepSMS names.
+// attachments and uploads, and the text message rows sweepSMS names.
 func (s *Store) Sweep(ctx context.Context, now time.Time) (Swept, error) {
 	var swept Swept
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -60,6 +60,9 @@ func (s *Store) Sweep(ctx context.Context, now time.Time) (Swept, error) {
 	}
 	// Attachments touch the file system, so they go after the transaction.
 	if swept.Attachments, err = s.sweepAttachments(ctx, now); err != nil {
+		return Swept{}, err
+	}
+	if swept.Uploads, err = s.sweepUploads(ctx, now); err != nil {
 		return Swept{}, err
 	}
 	return swept, nil

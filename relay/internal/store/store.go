@@ -186,6 +186,10 @@ func Open(path string) (*Store, error) {
 		_ = db.Close()
 		return nil, err
 	}
+	if _, err = db.Exec(uploadsSchema); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	if _, err = db.Exec(smsSchema); err != nil {
 		_ = db.Close()
 		return nil, err

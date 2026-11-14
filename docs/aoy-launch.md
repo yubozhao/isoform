@@ -1,5 +1,7 @@
 # Agent of You launch checklist
 
+The current plan, hosting choice and the "Needs Bo" list are in `docs/agent-of-you-release.md`. The hosted sandbox, private model proxy, per-visitor rate limits behind Fly and the waitlist gate described below are now built; this file keeps the full settings table.
+
 Target: Thursday, November 19, 2026. **Do not launch yet.** The Fly files are a deployment scaffold, not a working hosted runner. The deployment script is deliberately blocked until the sandbox, isolation, storage and operational checks below are resolved. `/healthz` only reports that the HTTP server is running; it does not test a job or a payment.
 
 ## Before launch
