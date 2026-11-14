@@ -175,3 +175,32 @@ private actor BrokenRelayTransport: HubTransport {
         pending.removeAll { $0.seq <= upTo }
     }
 }
+
+final class DirectRouteOtherSessionTests: XCTestCase {
+    func testAnAttachmentReadCanUseTheOtherPathWithoutMovingThePreference() throws {
+        let directory = try makeTemporaryDirectory()
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let ticket = "endpointabcdefghijklmnopqrstuvwxyz"
+        let directOrigin = URL(string: "http://127.0.0.1:41998")!
+        let vault = PairingVault(directory: directory, secrets: InMemorySecretStore(),
+                                 remoteOrigin: { $0 == ticket ? directOrigin : nil }, startRemote: { _ in })
+        let hub = TestHub()
+        let device = RelayCrypto.makeDeviceKeyPair()
+        let record = PairedDevice(hubID: hub.hubID, hubName: "Test Mac", hubPublicKey: hub.hubPublicText,
+                                  relayOrigin: hub.relay, deviceID: UUID().uuidString.lowercased(),
+                                  deviceName: "Test iPhone", scopes: ["brief:read"], pairedAt: Date(),
+                                  counters: SequenceCounters())
+        try vault.store(record, devicePrivateKey: RelayCrypto.base64URLEncode(device.privateKey),
+                        bearer: RelayCrypto.base64URLEncode(RelayCrypto.randomBytes(32)))
+        let relay = try vault.session()
+        XCTAssertNil(vault.otherSession(than: relay), "One path, nothing else to try")
+        let bearer = RelayCrypto.base64URLEncode(RelayCrypto.randomBytes(32))
+        try vault.storeDirectRoute(DirectRoute(ticket: ticket, bearer: bearer), deviceID: relay.deviceID)
+        let other = try XCTUnwrap(vault.otherSession(than: relay))
+        XCTAssertEqual(other.route, .direct)
+        XCTAssertEqual(other.credentials.origin, directOrigin)
+        XCTAssertEqual(other.credentials.bearer, bearer)
+        XCTAssertEqual(try vault.session().route, .relay, "A one-off read leaves the relay first")
+        XCTAssertEqual(vault.otherSession(than: other)?.credentials.origin, relay.credentials.origin)
+    }
+}

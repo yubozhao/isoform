@@ -170,7 +170,7 @@ final class AppEnvironment: ObservableObject {
             }
             let sealed: Data
             do {
-                sealed = try await RelayClient.shared.attachment(session.credentials, id: id)
+                sealed = try await AppEnvironment.attachment(id: id, session: session, vault: vault)
             } catch RelayClientError.notFound {
                 throw BriefAudioError.notAvailable
             } catch RelayClientError.offline {
@@ -491,6 +491,18 @@ final class AppEnvironment: ObservableObject {
             return try await relay.presence(session.credentials)
         } catch let error where SessionContext.isPathFailure(error) && vault.switchRoute(after: session) {
             return try await relay.presence(try vault.session().credentials)
+        }
+    }
+
+    /// An attachment from the session's path, or from the other path when this one cannot reach it or does not
+    /// hold it. The computer uploads to both, so either may have it.
+    nonisolated static func attachment(id: String, session: SessionContext, vault: PairingVault,
+                                       relay: RelayClient = .shared) async throws -> Data {
+        do {
+            return try await relay.attachment(session.credentials, id: id)
+        } catch let error where SessionContext.isPathFailure(error) || (error as? RelayClientError) == .notFound {
+            guard let other = vault.otherSession(than: session) else { throw error }
+            return try await relay.attachment(other.credentials, id: id)
         }
     }
 
