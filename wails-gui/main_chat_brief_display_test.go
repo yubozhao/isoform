@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -112,5 +113,53 @@ func TestMainChatBriefDisplayLeadFollowsTheFinishedRead(t *testing.T) {
 	}
 	if _, leaked := shown["briefLead"]; leaked {
 		t.Fatalf("a withdrawn card carried words: %+v", shown)
+	}
+}
+
+// The card's lead reads the brief's sealed copy only: no finished read (and so
+// no gate or amend) runs on the projection path while the copy holds. When the
+// privacy print moves, the card draws without its lead at once, and the
+// background amend brings the lead back.
+func TestMainChatBriefLeadReadsTheSealedCopyAndAmendsInTheBackground(t *testing.T) {
+	_, svc, stored := newStoredMobileBriefPrivacyFixture(t)
+	svc.todayRefreshWG.Wait()
+	svc.wg.Wait()
+	svc.app.mobileBriefSvc = svc
+	finished, withheld, err := svc.finishedReadWithholding(stored)
+	want := mainChatBriefLead(finished)
+	if err != nil || withheld.Reason != "" || want == "" {
+		t.Fatalf("fixture was not shown: reason=%s error=%v", withheld.Reason, err)
+	}
+	var finishedReads atomic.Int64
+	previous := mobileBriefAfterSealedRead
+	mobileBriefAfterSealedRead = func(string) { finishedReads.Add(1) }
+	t.Cleanup(func() { mobileBriefAfterSealedRead = previous })
+	input := `{"kind":"brief_ready","briefId":"` + stored.BriefID + `","evidence":[{"kind":"brief"}]}`
+	lead := func() any {
+		var shown map[string]any
+		if err := json.Unmarshal([]byte(svc.app.mainChatBriefDisplayProjector()(mainChatProactiveTool, input)), &shown); err != nil {
+			t.Fatal(err)
+		}
+		return shown["briefLead"]
+	}
+	if got := lead(); got != want {
+		t.Fatalf("lead from the sealed copy: got %v want %q", got, want)
+	}
+	if n := finishedReads.Load(); n != 0 {
+		t.Fatalf("the projection ran %d finished reads; it must read the sealed copy only", n)
+	}
+	briefPrivacyChanged()
+	if got := lead(); got != nil {
+		t.Fatalf("a copy sealed under an older print showed its lead: %v", got)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for lead() != want {
+		if time.Now().After(deadline) {
+			t.Fatal("the background amend never brought the lead back")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if finishedReads.Load() == 0 {
+		t.Fatal("the amend did not run through the finished read")
 	}
 }

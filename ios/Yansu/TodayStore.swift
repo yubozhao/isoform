@@ -190,13 +190,36 @@ final class TodayStore: ObservableObject {
 
         /// The Computer sheet's first line, and Today's away line under the date (P133). A sleep with a known reason
         /// reads "since" when the goodbye time is known and "as of" otherwise; other causes read "{title} · as of {time}".
-        static func firstLine(_ cause: ConnectionCause, reason: ComputerSleepReason?, sleptAt: String?, asOf: String?) -> String {
-            if cause == .sleeping, let reason { return reason.status(sleptAt: sleptAt, asOf: asOf) }
+        /// `lastConnected` is when this phone last heard from the computer. A cause other than sleep shows it in place
+        /// of `asOf`, which is when the computer made its last snapshot and says nothing about the connection.
+        static func firstLine(_ cause: ConnectionCause, reason: ComputerSleepReason?, sleptAt: String?, asOf: String?,
+                              lastConnected: String? = nil) -> String {
+            if cause == .sleeping, let reason { return reason.status(sleptAt: sleptAt, asOf: lastConnected ?? asOf) }
             if cause == .sleeping, let sleptAt {
                 return String.localizedStringWithFormat(String(localized: "connection.sleepingSince"), sleptAt)
             }
+            if cause != .sleeping, let lastConnected {
+                return String.localizedStringWithFormat(String(localized: "connection.causeLastConnected"), cause.title, lastConnected)
+            }
             if let asOf { return String.localizedStringWithFormat(String(localized: "connection.causeAsOf"), cause.title, asOf) }
             return cause.title
+        }
+
+        /// A connection gone for longer than this tells the person what to do, not only that Isoform keeps trying.
+        static let longAway: TimeInterval = 24 * 60 * 60
+
+        /// The directions under the first line. After a day without the computer, a cause the phone cannot fix by
+        /// waiting says to check the computer and, failing that, to pair again.
+        static func directions(_ cause: ConnectionCause, lastConnected: Date?, now: Date = Date()) -> String {
+            switch cause {
+            case .cantConnect, .notAnswering:
+                if let lastConnected, now.timeIntervalSince(lastConnected) >= longAway {
+                    return String(localized: "connection.longAway.directions")
+                }
+            default:
+                break
+            }
+            return cause.directions
         }
     }
     @Published private(set) var snapshot: MobileTodaySnapshot?
@@ -205,6 +228,9 @@ final class TodayStore: ObservableObject {
     /// The relay goodbye's optional reason and time, for Chat's thread line.
     @Published private(set) var connectionReason: String?
     @Published private(set) var connectionSince: Date?
+    /// When this phone last heard anything from the computer, kept across launches per pairing.
+    @Published private(set) var lastConnected: Date?
+    private let lastConnectedDefaults: UserDefaults
     private var probedGoodbye: (reason: String?, at: Date?) = (nil, nil)
     @Published private(set) var pendingFresh: PendingWrite?
     /// True once the Mac refused a request for a new brief, until the person asks again or a request is accepted.
@@ -250,7 +276,9 @@ final class TodayStore: ObservableObject {
          identity: @escaping @MainActor () -> TodayPairingIdentity?,
          presence: @escaping @Sendable () async throws -> Bool = { true },
          connectionPresence: (@Sendable () async throws -> RelayPresence)? = nil,
-         prefetchAudio: @escaping @MainActor (MobileBriefV1, String) async -> Void = { _, _ in }) {
+         prefetchAudio: @escaping @MainActor (MobileBriefV1, String) async -> Void = { _, _ in },
+         lastConnectedDefaults: UserDefaults = .standard) {
+        self.lastConnectedDefaults = lastConnectedDefaults
         self.presence = presence
         self.connectionPresence = connectionPresence
         self.hub = hub
@@ -261,8 +289,22 @@ final class TodayStore: ObservableObject {
         self.prefetchAudio = prefetchAudio
     }
 
+    private static func lastConnectedKey(_ identity: TodayPairingIdentity) -> String {
+        "isoform.lastConnected.\(identity.hubID).\(identity.deviceID)"
+    }
+
+    /// Records that the computer answered. Saved at most once a minute.
+    func noteHeardFromComputer(at now: Date = Date()) {
+        guard let identity = identity() else { return }
+        if let lastConnected, now.timeIntervalSince(lastConnected) < 60, now >= lastConnected { return }
+        lastConnected = now
+        lastConnectedDefaults.set(now.timeIntervalSince1970, forKey: Self.lastConnectedKey(identity))
+    }
+
     func loadCached() {
-        guard let identity = identity() else { snapshot = nil; return }
+        guard let identity = identity() else { snapshot = nil; lastConnected = nil; return }
+        let saved = lastConnectedDefaults.double(forKey: Self.lastConnectedKey(identity))
+        lastConnected = saved > 0 ? Date(timeIntervalSince1970: saved) : nil
         snapshot = cache.load(for: identity)
         if let snapshot { brief.reconcileToday(snapshot) }
     }
@@ -288,6 +330,7 @@ final class TodayStore: ObservableObject {
             do { value = try await hub.today() }
             catch HubRequestError.conflict { value = try await hub.today() }
             guard generation == currentGeneration, revision == initialRevision else { return }
+            noteHeardFromComputer()
             hubUnreachable = false
             clearConnectionCause()
             retryAttempt = 0

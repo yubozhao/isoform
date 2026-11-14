@@ -280,6 +280,7 @@ Hub to relay:
 | `out` | `env`; for a moment push also `notify`, `push:"moment"`, `noticeId`, `kind`, `ct`, `category`, `collapse`, `level` | an `h2d` envelope of kind `res` or `event`; stored and delivered to the device poll; the notice fields queue one sealed push per enabled token (14.3, 14.4) |
 | `brief` | `env`, `asOf`, `notify`, optional `deliverAt` | an `h2d` envelope of kind `brief`; stored as a brief; `notify:true` queues one push per enabled token; a `deliverAt` (RFC 3339 UTC, at most 24 hours after relay time) holds the brief from every read and makes its push due then, for a brief made ahead of its slot |
 | `revoke` | `deviceId` | deletes the device and everything stored for it |
+| `grant` | `deviceId`, `bearerHash`, `scopes`, `expiresAt` | records a device this hub paired through another relay (its direct-path relay, section 21.4), or replaces that device's bearer, scopes and expiry; a device ID of another hub or a bearer digest held by another device is refused |
 | `ack` | `dev`, `upTo` | the hub consumed `d2h` envelopes of device `dev` up to `upTo` (relay deletes them); a frame without `dev` is refused |
 | `sms_ack` | `id` | the hub took a text reply (18.5); the relay deletes it |
 
@@ -3198,6 +3199,34 @@ The phone stores the grant per paired hub and submits it as `gatewayGrant` to `P
 It re-registers within 30 days of expiry and whenever the relay reports an invalid grant. Gateway
 key rotation invalidates grants and all hub MAC keys, requiring registration again. The gateway
 returns only push outcomes; it never receives relay ciphertext or tunnel secrets.
+
+### 21.4 The direct path beside a pinned relay
+
+A desktop pinned to an HTTPS relay (a saved relay, `ISOFORM_RELAY_URL`, or a build stamp) also runs
+the sidecar relay and dumbpipe of 21.1 whenever remote access is enabled (21.2) and the binaries are
+bundled. It keeps a second hub connection to that sidecar, so one hub is reachable two ways.
+
+- Pairing stays on the pinned relay; its invitation carries no `iroh`.
+- `POST /remote-access` (hub route, any paired device, body `{}`) answers
+  `{"ticket","bearer","expiresAt"}`: the endpoint ticket and a new 32-byte base64url bearer that only
+  the sidecar knows. The hub keeps the bearer's digest in `direct-grants.json` (mode 0600) and sends
+  the sidecar a `grant` frame (section 6). Each call replaces the device's previous direct bearer. A
+  desktop without a direct path answers 503.
+- The hub copies to the sidecar every `out`, `brief` and `ack` frame of a device that holds a grant,
+  and every `revoke` and `goodbye`. Push fields are dropped (`notify:false`, no notice fields), so a
+  push is queued only at the pinned relay. Pairing frames and text messages stay on the pinned relay.
+- On each sidecar registration the hub re-sends every live grant and revokes listed devices it has
+  no grant for. Removing a device removes its grant.
+- Requests from either relay join the same per-device queue, so sequence numbers, replay rules and
+  the receive cursor are shared. A phone may send on one path and read the answer on the other.
+
+The phone keeps the direct route (ticket and bearer) in its Keychain under
+`direct-route.<secretID>`, so pairing again drops it. It asks for the route over the relay when it
+hears from the computer and has none, at most every 15 minutes. Requests start on the relay; a
+failure on the way (offline, timeout, a non-JSON reply such as a tunnel's HTML page, 401, 503 or
+another 5xx) switches to the other path once per request, and the path that worked stays first.
+While the direct tunnel is still opening, the relay serves. Relay requests carry
+`skip_zrok_interstitial: 1`, which a zrok public share needs to pass requests through.
 
 ## 22. Calendar holds on the phone (H2 placeholder)
 

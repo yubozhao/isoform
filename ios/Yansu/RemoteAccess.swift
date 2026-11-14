@@ -53,7 +53,7 @@ final class RemoteAccess: ObservableObject, @unchecked Sendable {
 
     func configure(vault: PairingVault) {
         withLock {
-            ticketProvider = { try? vault.irohTicket() }
+            ticketProvider = { vault.forwarderTicket() }
         }
         startPathMonitor()
         startFromVault()

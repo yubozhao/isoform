@@ -203,8 +203,7 @@ final class AppEnvironment: ObservableObject {
                                 },
                                 presence: presence,
                                 connectionPresence: {
-                                    let session = try vault.session()
-                                    return try await RelayClient.shared.presence(session.credentials)
+                                    try await AppEnvironment.presence(vault: vault)
                                 },
                                 prefetchAudio: { [weak audioPlayer, weak briefStore] brief, hubID in
                                     // Every brief of the last 7 days keeps its audio, the newest first.
@@ -258,11 +257,15 @@ final class AppEnvironment: ObservableObject {
             if let id = heardTasks.detail?.id { _ = await heardTasks.loadDetail(id: id) }
         }
         let heardWeekDeclines = self.weekDeclines
+        let heardToday = self.today
+        let directRoutes = DirectRouteKeeper(vault: vault, fetch: { try await hub.remoteAccess() })
         Task {
             await heardTasks.loadPendingDraftSends()
             await heardTasks.retryDraftSends()
             await hub.onHeardFromComputer {
                 Task { @MainActor in
+                    heardToday.noteHeardFromComputer()
+                    await directRoutes.ensure()
                     heardChat.heardFromComputer()
                     await heardTasks.retryDraftSends(computerResponded: true)
                     await heardWeekDeclines.retryPending()
@@ -480,10 +483,20 @@ final class AppEnvironment: ObservableObject {
         synchronizeLocalHubState()
     }
 
+    /// The relay's presence answer over whichever path works: a pairing with the computer's direct path tries the
+    /// other path once when the first cannot be reached.
+    nonisolated static func presence(vault: PairingVault, relay: RelayClient = .shared) async throws -> RelayPresence {
+        let session = try vault.session()
+        do {
+            return try await relay.presence(session.credentials)
+        } catch let error where SessionContext.isPathFailure(error) && vault.switchRoute(after: session) {
+            return try await relay.presence(try vault.session().credentials)
+        }
+    }
+
     nonisolated private static func hubOnline(vault: PairingVault) async throws -> Bool {
         do {
-            let session = try vault.session()
-            return try await RelayClient.shared.presence(session.credentials).hubOnline
+            return try await presence(vault: vault).hubOnline
         } catch {
             if let status = RemoteStatus.offline(for: error, remote: vault.isRemote) { return status }
             throw error

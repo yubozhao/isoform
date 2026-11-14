@@ -301,7 +301,8 @@ struct FeedView: View {
                                     .font(.body).foregroundStyle(YansuTheme.secondary)
                                     .accessibilityIdentifier("today.connection.canStillAct")
                             } else {
-                                Text(cause.directions).font(.body).foregroundStyle(YansuTheme.secondary)
+                                Text(TodayStore.ConnectionCause.directions(cause, lastConnected: todayStore.lastConnected)).font(.body).foregroundStyle(YansuTheme.secondary)
+                                    .accessibilityIdentifier("today.connection.directions")
                             }
                             // Shown only when the computer says keep awake is off; an unknown setting hides it.
                             if cause == .sleeping && keepAwake.on == false && !keepAwakeOfferDismissed {
@@ -608,7 +609,8 @@ struct FeedView: View {
     }
 
     private func awayFirstLine(_ cause: TodayStore.ConnectionCause) -> String {
-        TodayStore.ConnectionCause.firstLine(cause, reason: sleepReason, sleptAt: sleptAt.map(todayTime), asOf: todayStore.asOf.map(todayTime))
+        TodayStore.ConnectionCause.firstLine(cause, reason: sleepReason, sleptAt: sleptAt.map(todayTime), asOf: todayStore.asOf.map(todayTime),
+                                             lastConnected: todayStore.lastConnected.map(todayTime))
     }
 
     private var connectionCause: TodayStore.ConnectionCause? {

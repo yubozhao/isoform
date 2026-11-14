@@ -66,3 +66,24 @@ func TestMenuBarInitStateMachine(t *testing.T) {
 		}
 	})
 }
+
+// A main thread that acknowledges 300 ms after launch, as most launches in
+// the app log did, initializes on the first attempt with no retry and no
+// "attempt 1 failed" line.
+func TestMenuBarInitAcceptsSlowFirstAcknowledgement(t *testing.T) {
+	results := make(chan menuBarInitResult, 3)
+	var attempts []int
+	err := runMenuBarInit(context.Background(), func(attempt int) {
+		attempts = append(attempts, attempt)
+		go func() {
+			time.Sleep(300 * time.Millisecond)
+			results <- menuBarInitResult{attempt: attempt}
+		}()
+	}, results, menuBarInitAckTimeout, menuBarInitBackoffs)
+	if err != nil {
+		t.Fatalf("runMenuBarInit: %v", err)
+	}
+	if !reflect.DeepEqual(attempts, []int{1}) {
+		t.Fatalf("attempts = %v, want [1]", attempts)
+	}
+}

@@ -285,8 +285,21 @@ func TestEnableMobileConnectionUsingRelayClearsURLAndSwitchesRemoteAccess(t *tes
 		status.RelayURL != explicitRelay.url() || status.RemoteAccess != nil {
 		t.Fatalf("explicit relay did not replace remote access: %+v %v", status, err)
 	}
-	if supervisor.stops.Load() != 1 {
-		t.Fatalf("remote supervisor stops = %d, want 1", supervisor.stops.Load())
+	// The supervisor keeps serving the direct path beside the explicit relay
+	// (PROTOCOL.md section 21.4); it stops only when remote access is off.
+	if supervisor.stops.Load() != 0 {
+		t.Fatalf("remote supervisor stops = %d, want 0 while it serves the direct path", supervisor.stops.Load())
+	}
+	bridge := app.mobileBridgeForUse()
+	mobileTestWaitFor(t, "the direct path beside the explicit relay", func() bool {
+		link := bridge.direct.Load()
+		return link != nil && link.origin == remoteRelay.url()
+	})
+	if _, err := app.DisableMobileConnection(); err != nil {
+		t.Fatal(err)
+	}
+	if supervisor.stops.Load() != 1 || bridge.direct.Load() != nil {
+		t.Fatalf("turning the connection off left the direct path running: stops %d", supervisor.stops.Load())
 	}
 }
 

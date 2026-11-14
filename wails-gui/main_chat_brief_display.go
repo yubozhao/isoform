@@ -3,7 +3,10 @@ package main
 import (
 	"encoding/json"
 	"strings"
+	"sync"
 	"time"
+
+	"wails-gui/internal/brief"
 )
 
 // Title metadata and the card's first words are projected. The words come from
@@ -61,6 +64,7 @@ func (a *App) mainChatBriefDisplayProjector() func(string, string) string {
 	loaded := false
 	cache := map[string]*mainChatBriefDisplay{}
 	leads := map[string]string{}
+	var reader *brief.Reader
 	return func(tool, input string) string {
 		if tool != mainChatProactiveTool {
 			return input
@@ -137,9 +141,10 @@ func (a *App) mainChatBriefDisplayProjector() func(string, string) string {
 					// privacy-processed read Today uses, so the card draws whole.
 					lead, seenLead := leads[briefID]
 					if !seenLead {
-						if brief, found, err := service.finishedBrief(briefID); err == nil && found {
-							lead = mainChatBriefLead(brief)
+						if reader == nil {
+							reader = a.mainChatSealedBriefReader(service)
 						}
+						lead = a.mainChatSealedBriefLead(service, reader, briefID)
 						leads[briefID] = lead
 					}
 					if lead != "" {
@@ -177,4 +182,54 @@ func mainChatBriefLead(brief MobileBriefV1) string {
 		}
 	}
 	return ""
+}
+
+// The card's first words come from the brief's sealed copy, read through the
+// brief package's Reader: one file read, no gate and no seal. A copy sealed
+// under another privacy print or day is not shown here; the card draws without
+// its lead and the finished read Today uses amends the copy in the background
+// (mainChatAmendBriefLater). The background stream refresh then saves the page
+// with the lead and tells the chat to read it again. Running that amend on the
+// projection path held a page of brief cards for 6 to 14 s.
+func (a *App) mainChatSealedBriefReader(service *mobileBriefService) *brief.Reader {
+	return brief.NewReader(brief.ReaderOptions{Dir: service.store.dir, Print: a.briefPrivacyPrint, Day: service.readDay})
+}
+
+func (a *App) mainChatSealedBriefLead(service *mobileBriefService, reader *brief.Reader, briefID string) string {
+	if a.IsClosedEyesModeEnabled() {
+		// Closed Eyes: nothing the brief says stays readable.
+		return ""
+	}
+	sealed, ok := reader.Get(briefID)
+	if !ok {
+		a.mainChatAmendBriefLater(service, briefID)
+		return ""
+	}
+	var copy MobileBriefV1
+	if unmarshalStoredMobileBrief(sealed.Raw, &copy) != nil || copy.BriefID != briefID {
+		return ""
+	}
+	if a.store == nil || a.store.Closing() {
+		// As the finished read does: with the policy store closed, a web source's
+		// hold cannot be confirmed, so its items are left out.
+		copy = mobileBriefWithoutWebSources(copy)
+	}
+	return mainChatBriefLead(copy)
+}
+
+// mainChatBriefAmends are the briefs whose background finished read is running.
+var mainChatBriefAmends sync.Map
+
+// mainChatAmendBriefLater runs the finished read of one brief off the
+// projection path, once at a time per brief, so its copy is sealed or amended.
+func (a *App) mainChatAmendBriefLater(service *mobileBriefService, briefID string) {
+	if _, running := mainChatBriefAmends.LoadOrStore(briefID, true); running {
+		return
+	}
+	go func() {
+		defer mainChatBriefAmends.Delete(briefID)
+		if _, found, err := service.finishedBrief(briefID); err == nil && found {
+			a.scheduleStreamPageRefresh(time.Now())
+		}
+	}()
 }

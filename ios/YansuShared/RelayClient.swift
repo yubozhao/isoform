@@ -349,6 +349,10 @@ final class RelayClient: PairingTransport, @unchecked Sendable {
     }
 
     private func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        // A zrok public share serves an HTML warning page instead of the relay to browser-like clients; this
+        // header asks it not to. Other relays ignore it.
+        var request = request
+        request.setValue("1", forHTTPHeaderField: "skip_zrok_interstitial")
         let phase: String
         switch request.url?.path {
         case "/v1/requests": phase = "relay.http.request"

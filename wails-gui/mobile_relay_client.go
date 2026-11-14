@@ -81,6 +81,12 @@ type mobileRelayClient struct {
 	hubName    string
 	timing     mobileRelayTiming
 	handler    mobileRelayHandler
+	// logPrefix names this connection in logs ("[mobile-relay]" by default).
+	logPrefix string
+	// mirror, when set, receives every frame passed to send, before the
+	// connection is checked: the bridge copies phone traffic to its direct
+	// path with it (mobile_direct_link.go). It must not block or take bridge.mu.
+	mirror func(raw []byte)
 
 	mu          sync.Mutex
 	state       string
@@ -115,6 +121,7 @@ func newMobileRelayClient(origin string, identity mobileHubIdentity, hubName str
 		hubName:    hubName,
 		timing:     mobileRelayTimes,
 		handler:    handler,
+		logPrefix:  "[mobile-relay]",
 		state:      mobileRelayDisabled,
 		done:       make(chan struct{}),
 		retryNow:   make(chan struct{}, 1),
@@ -184,6 +191,9 @@ func (c *mobileRelayClient) send(frame any) error {
 	if len(raw) > mobileRelayMaxFrame {
 		return errMobileRelayFrameSize
 	}
+	if c.mirror != nil {
+		c.mirror(raw)
+	}
 	c.mu.Lock()
 	conn, ready := c.conn, c.ready
 	c.mu.Unlock()
@@ -237,7 +247,7 @@ func (c *mobileRelayClient) run(ctx context.Context) {
 		}
 		if errors.Is(err, errMobileRelayReplaced) {
 			// PROTOCOL.md section 6: a replaced hub goes dormant before it reconnects.
-			log.Printf("[mobile-relay] a newer connection took over; pausing for %s", c.timing.Dormancy)
+			log.Printf("%s a newer connection took over; pausing for %s", c.logPrefix, c.timing.Dormancy)
 			if !mobileSleep(ctx, c.timing.Dormancy) {
 				return
 			}
@@ -249,7 +259,7 @@ func (c *mobileRelayClient) run(ctx context.Context) {
 		if time.Since(started) > c.timing.StableAfter {
 			backoff = c.timing.InitialBackoff
 		}
-		log.Printf("[mobile-relay] offline: %v; retrying in %s", err, backoff)
+		log.Printf("%s offline: %v; retrying in %s", c.logPrefix, err, backoff)
 		var retry bool
 		backoff, retry = c.waitRetry(ctx, backoff)
 		if !retry {
@@ -348,7 +358,7 @@ func (c *mobileRelayClient) connectOnce(ctx context.Context) error {
 	c.state = mobileRelayConnected
 	c.connectedAt = time.Now()
 	c.mu.Unlock()
-	log.Printf("[mobile-relay] connected")
+	log.Printf("%s connected", c.logPrefix)
 	c.handler.relayStateChanged()
 
 	conn.SetPingHandler(func(data string) error {

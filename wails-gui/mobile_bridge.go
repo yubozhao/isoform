@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -59,9 +60,17 @@ type mobileBridge struct {
 	remoteRelayURL     string
 	remoteRetrying     bool
 	remoteRetryBackoff func(attempt int) time.Duration
-	devices            map[string]*mobileDeviceRecord
-	pairing            *mobileOpenPairing
-	pendingBriefs      map[string]mobileBriefFrame
+	// direct is the second hub connection, to this computer's own relay
+	// sidecar, kept beside a pinned relay (mobile_direct_link.go). It is an
+	// atomic pointer because mirroring reads it inside relay sends.
+	direct         atomic.Pointer[mobileRelayClient]
+	directStarting bool
+	// directMu guards directGrants. Acquire it after mu, never before.
+	directMu      sync.Mutex
+	directGrants  map[string]mobileDirectGrant
+	devices       map[string]*mobileDeviceRecord
+	pairing       *mobileOpenPairing
+	pendingBriefs map[string]mobileBriefFrame
 	// briefOutbox keeps each phone's newest brief on disk until the phone
 	// confirms it (mobile_brief_outbox.go).
 	briefOutbox    *mobileBriefOutbox
@@ -220,6 +229,7 @@ func newMobileBridge(app *App, stateDir string) (*mobileBridge, error) {
 		pendingBriefs: make(map[string]mobileBriefFrame),
 		briefOutbox:   loadMobileBriefOutbox(stateDir),
 		workers:       make(map[string]chan mobileEnvelope),
+		directGrants:  loadMobileDirectGrants(stateDir),
 	}
 	if changed {
 		bridge.mu.Lock()
@@ -454,6 +464,7 @@ func (bridge *mobileBridge) startRelayLocked() error {
 	if err != nil {
 		return err
 	}
+	client.mirror = bridge.mirrorToDirect
 	bridge.client = client
 	client.start(bridge.ctx)
 	return nil
@@ -517,7 +528,14 @@ func (bridge *mobileBridge) enableRelayWithRemoteRetryGuard(requested string, re
 	}
 	remote := mobileRemoteAccessMode(next.URL)
 	var stopSupervisor mobileRemoteAccessSupervisor
+	var stopDirect *mobileRelayClient
 	if remote {
+		// The primary connection becomes the direct path itself.
+		if direct := bridge.takeDirectLinkLocked(); direct != nil {
+			bridge.mu.Unlock()
+			direct.stop()
+			bridge.mu.Lock()
+		}
 		bridge.mu.Unlock()
 		snapshot, err := bridge.ensureRemoteAccess(bridge.ctx)
 		bridge.mu.Lock()
@@ -541,15 +559,25 @@ func (bridge *mobileBridge) enableRelayWithRemoteRetryGuard(requested string, re
 			return err
 		}
 		bridge.remoteRelayURL = snapshot.RelayURL
-	} else {
+	} else if !bridge.directPathWantedLocked() {
 		stopSupervisor = bridge.remoteAccess
+		stopDirect = bridge.takeDirectLinkLocked()
 		bridge.remoteAccess = nil
+		bridge.remoteRelayURL = ""
+	} else {
+		// The supervisor keeps serving the direct path beside the pinned relay.
 		bridge.remoteRelayURL = ""
 	}
 	err = bridge.startRelayLocked()
 	bridge.mu.Unlock()
+	if stopDirect != nil {
+		stopDirect.stop()
+	}
 	if stopSupervisor != nil {
 		stopSupervisor.Stop()
+	}
+	if err == nil && !remote {
+		bridge.startDirectLink()
 	}
 	bridge.notify()
 	return err
@@ -626,6 +654,7 @@ func (bridge *mobileBridge) disableRelay() error {
 	}
 	bridge.relay = next
 	client, pairing, supervisor := bridge.client, bridge.pairing, bridge.remoteAccess
+	direct := bridge.takeDirectLinkLocked()
 	bridge.client, bridge.pairing = nil, nil
 	bridge.remoteAccess, bridge.remoteRelayURL = nil, ""
 	bridge.mu.Unlock()
@@ -634,6 +663,9 @@ func (bridge *mobileBridge) disableRelay() error {
 			_ = client.send(closePairingFrame(pairing))
 		}
 		client.stop()
+	}
+	if direct != nil {
+		direct.stop()
 	}
 	if supervisor != nil {
 		supervisor.Stop()
@@ -659,6 +691,7 @@ func (bridge *mobileBridge) Stop() {
 	}
 	client := bridge.client
 	supervisor := bridge.remoteAccess
+	direct := bridge.takeDirectLinkLocked()
 	bridge.client, bridge.pairing = nil, nil
 	bridge.remoteAccess, bridge.remoteRelayURL = nil, ""
 	workers := bridge.workers
@@ -673,6 +706,9 @@ func (bridge *mobileBridge) Stop() {
 	}
 	if client != nil {
 		client.stop()
+	}
+	if direct != nil {
+		direct.stop()
 	}
 	if supervisor != nil {
 		supervisor.Stop()
@@ -836,6 +872,7 @@ func (bridge *mobileBridge) dropDevice(id string) error {
 	delete(bridge.pendingBriefs, id)
 	bridge.briefOutbox.drop(id)
 	bridge.closeWorkerLocked(id)
+	bridge.dropDirectGrant(id)
 	return nil
 }
 
@@ -846,6 +883,7 @@ func (bridge *mobileBridge) removeDeviceLocked(id string) {
 	delete(bridge.pendingBriefs, id)
 	bridge.briefOutbox.drop(id)
 	bridge.closeWorkerLocked(id)
+	bridge.dropDirectGrant(id)
 }
 
 // reconcileLocked applies the relay's device list (PROTOCOL.md section 6). A local
