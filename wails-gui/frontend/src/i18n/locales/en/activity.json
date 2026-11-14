@@ -224,6 +224,8 @@
         "linking": "Linking stretches of work…",
         "linkingNote": "Short moments stay together while Isoform links the work. The As recorded list is already complete.",
         "subline": "From {{start}} to {{end}} · {{active}} active",
+        "agentsLine_one": "Your agents worked {{duration}} in {{count}} session. It is not counted as your work.",
+        "agentsLine_other": "Your agents worked {{duration}} in {{count}} sessions. It is not counted as your work.",
         "laneDetailMeta": "{{detail}} · {{active}} active",
         "gapTip": "Away {{duration}} · {{span}} · {{label}}",
         "gapTipPlain": "Away {{duration}} · {{span}}",

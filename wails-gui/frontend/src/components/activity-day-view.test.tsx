@@ -889,6 +889,25 @@ describe('Activity Day view — threads', () => {
         expect(screen.queryByText('In progress')).toBeNull();
     });
 
+    it('shows agent work as one labelled line, apart from the threads', async () => {
+        binding('GetDayThreads').mockResolvedValue({
+            grouped: true,
+            threads: [isoformThread, hatsThread],
+            agents: { runs: 3, activeMs: 42 * 60_000 },
+        });
+        renderDay({ automationRuns: [], workedOnView: 'stitched' });
+        expect(await screen.findByText('Isoform: brief fix, workers')).toBeInTheDocument();
+        expect(screen.getByTestId('activity-agents-line')).toHaveTextContent(
+            'Your agents worked 42m in 3 sessions. It is not counted as your work.',
+        );
+    });
+
+    it('shows no agent line on a day without agent work', async () => {
+        renderDay({ automationRuns: [], workedOnView: 'stitched' });
+        expect(await screen.findByText('Isoform: brief fix, workers')).toBeInTheDocument();
+        expect(screen.queryByTestId('activity-agents-line')).toBeNull();
+    });
+
     it('clips the recorded thread span at the same local day edge', async () => {
         binding('GetDayThreads').mockResolvedValue({ grouped: true, threads: [{ ...isoformThread,
             endMs: new Date(2026, 9, 20, 12).getTime() }] });

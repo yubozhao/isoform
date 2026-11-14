@@ -56,8 +56,11 @@ type ActivityThreadView struct {
 // ActivityDayThreads is a day's threads. Grouped is false while a past day
 // waits for its first grouping; the screen then shows moments ungrouped.
 type ActivityDayThreads struct {
-	Grouped   bool                 `json:"grouped"`
-	Threads   []ActivityThreadView `json:"threads"`
+	Grouped bool                 `json:"grouped"`
+	Threads []ActivityThreadView `json:"threads"`
+	// Agents is the day's agent work, shown only as one labelled line; it is
+	// never part of the person's threads.
+	Agents    ActivityAgentDay `json:"agents"`
 	carryDays []int64
 }
 
@@ -232,6 +235,10 @@ func (s *ActivityStore) dayActivityRows(ctx context.Context, day int64) ([]Activ
 		if row.DayStartMs == day {
 			out = append(out, row)
 		}
+	}
+	// Moments made only of agent runs are not the person's work.
+	if agentRuns, err := s.agentRunIDs(ctx, day); err == nil {
+		out = withoutAgentMoments(out, agentRuns)
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].StartMs < out[j].StartMs })
 	return out, nil
@@ -1043,6 +1050,9 @@ type activityThreadDayRead struct {
 func (a *App) buildActivityThreadDay(ctx context.Context, day int64) (activityThreadDayRead, error) {
 	store := a.activity.store
 	out := activityThreadDayRead{ActivityDayThreads: ActivityDayThreads{Threads: []ActivityThreadView{}}}
+	if agents, err := store.agentRunDay(ctx, day); err == nil {
+		out.Agents = agents
+	}
 	threads, members, err := store.loadActivityThreads(ctx, day)
 	out.threads, out.members = threads, members
 	if err != nil || len(members) == 0 {

@@ -4133,6 +4133,8 @@ export interface ActivityThreadView {
 export interface ActivityDayThreads {
     grouped: boolean;
     threads: ActivityThreadView[];
+    // The day's agent work, shown only as a labelled line, never as threads.
+    agents?: { runs: number; activeMs: number };
 }
 
 export const GetDayThreads = appBinding<[number, number], ActivityDayThreads>("GetDayThreads");
