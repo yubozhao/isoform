@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -68,6 +69,9 @@ type assistantHistorySession struct {
 	CWD       string
 	Root      string
 	At        time.Time
+	// Agent is a session an agent started: its first prompt is not the
+	// person's (see assistant_history_origin.go).
+	Agent bool
 }
 
 // assistantHistoryScan is pass 1's output. Sessions are kept in memory for
@@ -103,11 +107,20 @@ func scanAssistantHistory(roots assistantHistoryRoots, now time.Time) assistantH
 			project = &HistoryProject{ID: id, Name: filepath.Base(root), Path: root, Assistants: []string{}}
 			projects[id] = project
 		}
-		if !containsString(project.Assistants, session.Assistant) {
+		if !session.Agent && !containsString(project.Assistants, session.Assistant) {
 			project.Assistants = append(project.Assistants, session.Assistant)
 		}
-		seenAssistant[session.Assistant] = true
+		sessions[id] = append(sessions[id], session)
 		age := now.Sub(session.At)
+		if session.Agent {
+			// Agent sessions are context, never the person's own work.
+			if age <= assistantHistoryTwoWeeks {
+				project.AgentSessions14d++
+			}
+			continue
+		}
+		project.human = true
+		seenAssistant[session.Assistant] = true
 		if age <= assistantHistoryWeek {
 			project.SessionsThisWeek++
 		}
@@ -117,7 +130,6 @@ func scanAssistantHistory(roots assistantHistoryRoots, now time.Time) assistantH
 		if ms := session.At.UnixMilli(); ms > project.LastAt {
 			project.LastAt = ms
 		}
-		sessions[id] = append(sessions[id], session)
 	}
 
 	out := assistantHistoryScan{
@@ -131,7 +143,12 @@ func scanAssistantHistory(roots assistantHistoryRoots, now time.Time) assistantH
 			out.Assistants = append(out.Assistants, name)
 		}
 	}
-	for _, project := range projects {
+	for id, project := range projects {
+		if !project.human {
+			// Only agents worked here: not one of the person's projects.
+			delete(sessions, id)
+			continue
+		}
 		sort.SliceStable(project.Assistants, func(i, j int) bool {
 			return assistantHistoryOrder(project.Assistants[i]) < assistantHistoryOrder(project.Assistants[j])
 		})
@@ -203,7 +220,7 @@ func scanClaudeHistorySessions(dir string, cutoff time.Time) []assistantHistoryS
 			if cwd == "" {
 				continue
 			}
-			out = append(out, assistantHistorySession{Assistant: "claude", Path: path, CWD: cwd, At: info.ModTime()})
+			out = append(out, assistantHistorySession{Assistant: "claude", Path: path, CWD: cwd, At: info.ModTime(), Agent: readAssistantHistorySessionAgent("claude", path)})
 		}
 	}
 	return out
@@ -225,7 +242,7 @@ func scanCodexHistorySessions(dir string, cutoff time.Time) []assistantHistorySe
 		}
 		cwd := readCodexHistoryCWD(path)
 		if cwd != "" {
-			out = append(out, assistantHistorySession{Assistant: "codex", Path: path, CWD: cwd, At: info.ModTime()})
+			out = append(out, assistantHistorySession{Assistant: "codex", Path: path, CWD: cwd, At: info.ModTime(), Agent: readAssistantHistorySessionAgent("codex", path)})
 		}
 		return nil
 	})
@@ -369,6 +386,13 @@ type assistantHistoryTurn struct {
 	Text string
 }
 
+// assistantHistoryOriginTurn is a turn with the origin of the prompt it
+// answers, for the filter in readAssistantHistoryTurns.
+type assistantHistoryOriginTurn struct {
+	turn   assistantHistoryTurn
+	origin historyTurnOrigin
+}
+
 type claudeHistoryTurnLine struct {
 	Type    string `json:"type"`
 	IsMeta  bool   `json:"isMeta"`
@@ -416,19 +440,57 @@ func readAssistantHistoryTurns(session assistantHistorySession) []assistantHisto
 		// The first line of a tail read is usually cut in half; drop it.
 		_, _ = reader.ReadBytes('\n')
 	}
-	var turns []assistantHistoryTurn
+	if session.Agent && session.Assistant != "claude" {
+		// A Codex exec or subagent session: no prompt in it is the person's.
+		return nil
+	}
+	var tagged []assistantHistoryOriginTurn
+	current := historyOriginUnknown
 	for {
 		line, err := reader.ReadBytes('\n')
 		if len(line) > 0 {
+			if session.Assistant == "claude" {
+				if origin, ok := claudeHistoryLineOrigin(line); ok {
+					current = origin
+				}
+			}
 			if turn, ok := parseAssistantHistoryTurn(session.Assistant, line); ok {
-				turns = append(turns, turn)
+				tagged = append(tagged, assistantHistoryOriginTurn{turn: turn, origin: current})
 			}
 		}
 		if err != nil {
 			break
 		}
 	}
+	// Turns before the first prompt in the tail answer a prompt further up
+	// the file; the session's own start stands in for it.
+	before := historyOriginHuman
+	if session.Agent {
+		before = historyOriginAgent
+	}
+	var turns []assistantHistoryTurn
+	for _, t := range tagged {
+		origin := t.origin
+		if origin == historyOriginUnknown {
+			origin = before
+		}
+		if origin == historyOriginHuman {
+			turns = append(turns, t.turn)
+		}
+	}
 	return turns
+}
+
+// claudeHistoryLineOrigin classifies a Claude Code line that opens a prompt.
+func claudeHistoryLineOrigin(line []byte) (historyTurnOrigin, bool) {
+	if !bytes.Contains(line, []byte(`"user"`)) {
+		return historyOriginUnknown, false
+	}
+	var row claudeHistoryTurnLine
+	if json.Unmarshal(line, &row) != nil || row.Type != "user" {
+		return historyOriginUnknown, false
+	}
+	return claudeHistoryPromptOrigin(line, row.IsMeta, row.Message.Content, claudeHistoryText(row.Message.Content))
 }
 
 func parseAssistantHistoryTurn(assistant string, line []byte) (assistantHistoryTurn, bool) {

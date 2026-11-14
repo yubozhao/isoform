@@ -59,6 +59,11 @@ type HistoryProject struct {
 	OpenProblemAt    int64    `json:"openProblemAt"`
 	OpenQuestion     string   `json:"openQuestion"`
 	OpenChip         string   `json:"openChip"`
+	// AgentSessions14d counts sessions agents ran here (side sessions,
+	// scheduled prompts, Codex exec workers). It is labelled context only;
+	// nothing is learned from them.
+	AgentSessions14d int `json:"agentSessions14d"`
+	human            bool
 }
 
 // assistantHistoryState guards the in-memory copy of the cache and the single
