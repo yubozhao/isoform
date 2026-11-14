@@ -407,71 +407,179 @@ func appendStreamPageCard(t *testing.T, a *App, session, id string) {
 	}
 }
 
-// A copy that holds a card is served without a computation only when the live
-// gates confirm the card within the card budget.
-func TestProactiveCardCopyIsServedWhenItsChecksFinish(t *testing.T) {
+// waitStreamPageCardChecks waits until every background card check has finished.
+func waitStreamPageCardChecks(t *testing.T, a *App) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for a.streamPages.cardChecksDone.Load() != a.streamPages.cardChecksQueued.Load() {
+		if time.Now().After(deadline) {
+			t.Fatal("the background card check did not finish")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func captureStreamPageReloads(t *testing.T) *atomic.Int64 {
+	t.Helper()
+	var n atomic.Int64
+	previous := streamPageReloadHook
+	streamPageReloadHook = func(string, string) { n.Add(1) }
+	t.Cleanup(func() { streamPageReloadHook = previous })
+	return &n
+}
+
+// A copy that holds a card is served at once, with no computation; the live
+// gates confirm its card in the background and the copy stays.
+func TestProactiveCardCopyIsServedAtOnceAndConfirmedLater(t *testing.T) {
 	a, session := streamPageTestApp(t)
+	reloads := captureStreamPageReloads(t)
 	appendStreamPageCard(t, a, session, "card-served")
 	latestPage(t, a, session)
 	waitStreamPageVerified(t, a)
+	waitStreamPageCardChecks(t, a)
 	computes := a.streamPages.computes.Load()
 	page, err := a.LoadStreamItemsPage(session, -1, 50)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if n := a.streamPages.computes.Load(); n != computes {
-		t.Fatalf("a confirmed card copy recomputed the page (%d computes)", n-computes)
+		t.Fatalf("a card copy recomputed the page (%d computes)", n-computes)
 	}
 	if !pageHas(page, "card-served") {
-		t.Fatal("the confirmed card is missing from the served page")
+		t.Fatal("the card is missing from the served page")
+	}
+	waitStreamPageCardChecks(t, a)
+	if _, reason := readRawStreamPageSnapshot(streamPageKey{session: session, limit: 50}); reason != "" {
+		t.Fatalf("a confirmed card copy was dropped: %s", reason)
+	}
+	if reloads.Load() != 0 {
+		t.Fatal("a confirmed card asked the page to reload")
 	}
 }
 
-// When the card check cannot finish in its budget, the read recomputes; the
-// copy's card is never served unconfirmed.
-func TestProactiveCardCopyRecomputesWhenTheCheckRunsOut(t *testing.T) {
+// When the background check cannot confirm a card, the copy is deleted and the
+// page is told to reload; the next read recomputes the live page, so the copy's
+// card is never served again.
+func TestProactiveCardCopyIsDroppedWhenItsCheckFails(t *testing.T) {
 	a, session := streamPageTestApp(t)
-	appendStreamPageCard(t, a, session, "card-late")
+	appendStreamPageCard(t, a, session, "card-unconfirmed")
 	latestPage(t, a, session)
 	waitStreamPageVerified(t, a)
+	waitStreamPageCardChecks(t, a)
+	reloads := captureStreamPageReloads(t)
+	key := streamPageKey{session: session, limit: 50}
 	a.streamPages.mu.Lock()
 	a.streamPages.cardBudget = 0
 	a.streamPages.mu.Unlock()
+	if _, err := a.LoadStreamItemsPage(session, -1, 50); err != nil {
+		t.Fatal(err)
+	}
+	waitStreamPageCardChecks(t, a)
+	if _, reason := readRawStreamPageSnapshot(key); reason != "no-copy" {
+		t.Fatalf("the copy with an unconfirmed card stayed on disk (%q)", reason)
+	}
+	if reloads.Load() == 0 {
+		t.Fatal("the page was not told to reload after its card check failed")
+	}
 	computes := a.streamPages.computes.Load()
 	if _, err := a.LoadStreamItemsPage(session, -1, 50); err != nil {
 		t.Fatal(err)
 	}
 	if n := a.streamPages.computes.Load(); n != computes+1 {
-		t.Fatalf("a card check that ran out of time did not recompute (%d computes)", n-computes)
+		t.Fatalf("the read after a failed card check did not recompute (%d computes)", n-computes)
 	}
 }
 
-// A copy whose card the live gates do not confirm is deleted before the page is
-// recomputed. The copy's raw card row must not stay on disk until the next save.
-func TestProactiveCardCopyIsDeletedBeforeTheRecompute(t *testing.T) {
+// A save keeps the full check of the copy it replaces, so the read after a
+// background refresh serves the copy instead of recomputing it as unverified.
+func TestASavedCopyKeepsItsFullCheckAcrossSaves(t *testing.T) {
 	a, session := streamPageTestApp(t)
-	appendStreamPageCard(t, a, session, "card-unconfirmed")
+	key := streamPageKey{session: session, limit: 50}
 	latestPage(t, a, session)
 	waitStreamPageVerified(t, a)
-	path, err := streamPageFile(streamPageKey{session: session, limit: 50})
+	appendStreamPageItem(t, a, session, "two", "second words")
+	if _, saved, err := a.computeLatestStreamPage(key, a.streamPageStamp(t.Context())); err != nil || !saved {
+		t.Fatalf("the refresh did not save: %v", err)
+	}
+	if snap, reason := readRawStreamPageSnapshot(key); reason != "" || snap.Deep == "" {
+		t.Fatalf("the new copy lost its full check (%q)", reason)
+	}
+	computes := a.streamPages.computes.Load()
+	page, err := a.LoadStreamItemsPage(session, -1, 50)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(path); err != nil {
-		t.Fatal("no copy was saved with the card")
+	if n := a.streamPages.computes.Load(); n != computes || !pageHas(page, "two") {
+		t.Fatalf("the read after a save recomputed (%d) or lost the new item", n-computes)
 	}
-	var onDisk atomic.Bool
+}
+
+// With a writer appending to the chat all the time and a slow projection, the
+// first page still paints from its copy in under 100 ms, and the page is told
+// to reload once the live page is saved.
+func TestLatestStreamPagePaintsFastWithABackgroundWriter(t *testing.T) {
+	a, session := streamPageTestApp(t)
+	for i := 0; i < 30; i++ {
+		appendStreamPageCard(t, a, session, "card-"+string(rune('a'+i)))
+	}
+	latestPage(t, a, session)
+	waitStreamPageVerified(t, a)
+	waitStreamPageCardChecks(t, a)
+	reloads := captureStreamPageReloads(t)
+	// The projection of Bo's page took 1 to 16 s; stand in for it.
 	a.streamPages.mu.Lock()
-	a.streamPages.cardBudget = 0
-	a.streamPages.computeGate = func() {
-		_, statErr := os.Stat(path)
-		onDisk.Store(statErr == nil)
-	}
+	a.streamPages.computeGate = func() { time.Sleep(1500 * time.Millisecond) }
 	a.streamPages.mu.Unlock()
-	if _, err := a.LoadStreamItemsPage(session, -1, 50); err != nil {
-		t.Fatal(err)
+
+	stop := make(chan struct{})
+	var writer sync.WaitGroup
+	writer.Add(1)
+	go func() {
+		defer writer.Done()
+		for n := 0; ; n++ {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			if _, err := a.store.AppendUserStreamItemAtomic(t.Context(), session, storage.StreamItemRow{ID: "w" + time.Now().Format("150405.000000000"), Kind: "user", Content: "writer words"}); err != nil {
+				t.Error(err)
+				return
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}()
+	var worst time.Duration
+	for i := 0; i < 20; i++ {
+		start := time.Now()
+		page, err := a.LoadStreamItemsPage(session, -1, 50)
+		took := time.Since(start)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(page.Items) == 0 {
+			t.Fatal("an empty first page was painted")
+		}
+		worst = max(worst, took)
+		time.Sleep(20 * time.Millisecond)
 	}
-	if onDisk.Load() {
-		t.Fatal("the copy with an unconfirmed card was still on disk when the page was recomputed")
+	close(stop)
+	writer.Wait()
+	t.Logf("worst first-page read with a background writer: %s", worst)
+	if worst >= 100*time.Millisecond {
+		t.Fatalf("a first-page read took %s with a background writer; want under 100 ms", worst)
 	}
+	deadline := time.Now().Add(10 * time.Second)
+	for reloads.Load() == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("the page was never told to reload after the live page was saved")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	a.streamPages.mu.Lock()
+	a.streamPages.computeGate = nil
+	a.streamPages.mu.Unlock()
+	waitStreamPageCardChecks(t, a)
+	// Let the detached recomputes finish before the store closes.
+	time.Sleep(2 * time.Second)
 }

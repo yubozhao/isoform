@@ -610,7 +610,14 @@ func readMemoryEntries(dir string) ([]MemoryEntry, error) {
 			}
 			return nil, err
 		}
-		data, err := memoryFiles.ReadFile(filepath.Join(dir, e.Name()))
+		path := filepath.Join(dir, e.Name())
+		id := strings.TrimSuffix(e.Name(), ".md")
+		if entry, ok := parsedNotes.lookup(path, info); ok {
+			entry.HasHistory = history[id]
+			result = append(result, entry)
+			continue
+		}
+		data, err := memoryFiles.ReadFile(path)
 		if err != nil {
 			if os.IsNotExist(err) {
 				// Deleted after enumeration.
@@ -619,7 +626,6 @@ func readMemoryEntries(dir string) ([]MemoryEntry, error) {
 			return nil, err
 		}
 
-		id := strings.TrimSuffix(e.Name(), ".md")
 		content := string(data)
 		doc := parseMemoryEntryDocument(content)
 		title := doc.title()
@@ -628,7 +634,7 @@ func readMemoryEntries(dir string) ([]MemoryEntry, error) {
 		}
 		fm := doc.frontmatter
 
-		result = append(result, MemoryEntry{
+		entry := MemoryEntry{
 			ID:                 id,
 			Title:              pii.DisplayText(title),
 			Content:            content,
@@ -641,9 +647,12 @@ func readMemoryEntries(dir string) ([]MemoryEntry, error) {
 			Source:             fm.Source,
 			ActivitySessionIDs: memoryEvidenceSessionIDsFromDocument(doc),
 			Apps:               fm.Apps,
-			HasHistory:         history[id],
-		})
+		}
+		parsedNotes.store(path, info, entry, int64(len(data)))
+		entry.HasHistory = history[id]
+		result = append(result, entry)
 	}
+	parsedNotes.prune(dir, result)
 
 	// Sort by best-known update time: prefer frontmatter `Updated` (stable
 	// across reindex / touch), fall back to filesystem modTime when absent.

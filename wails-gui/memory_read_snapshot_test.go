@@ -313,3 +313,70 @@ func BenchmarkGetMemoryEntries(b *testing.B) {
 		}
 	})
 }
+
+// A background writer (the memory updater) saves notes many times a minute,
+// and each save bumps the read revision. The next read must parse only the
+// notes that changed on disk, not every note again.
+func TestMemoryReadsParseOnlyChangedNotesWithABackgroundWriter(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	parsedNotes.reset()
+	t.Cleanup(parsedNotes.reset)
+	writeFictionalMemoryFolder(t, fictionalMemoryNotes)
+	app := &App{}
+	if _, err := app.GetMemoryEntries(); err != nil {
+		t.Fatal(err)
+	}
+	files := countMemoryFiles(t)
+
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	var writes atomic.Int64
+	go func() {
+		defer close(done)
+		for n := 0; ; n++ {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			id := fmt.Sprintf("harbor-note-%04d", n%20)
+			if _, err := app.SaveMemoryEntry(id, fmt.Sprintf("# Harbor note %d\n\nRowan Vale moved the walk, take %d.\n", n%20, n)); err != nil {
+				t.Error(err)
+				return
+			}
+			writes.Add(1)
+			time.Sleep(10 * time.Millisecond)
+		}
+	}()
+	var worst time.Duration
+	var worstFiles int64
+	for i := 0; i < 30; i++ {
+		files.take()
+		start := time.Now()
+		got, err := app.GetMemoryEntries()
+		took := time.Since(start)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got) != fictionalMemoryNotes {
+			t.Fatalf("read %d: %d notes", i, len(got))
+		}
+		opens, _ := files.take()
+		worst, worstFiles = max(worst, took), max(worstFiles, opens)
+		time.Sleep(15 * time.Millisecond)
+	}
+	close(stop)
+	<-done
+	t.Logf("%d writes; worst read %s, at most %d files opened in one read", writes.Load(), worst, worstFiles)
+	// Folder listings plus the notes the writer touched; never every note.
+	if worstFiles > 100 {
+		t.Fatalf("a read during background writes opened %d files; want only the changed notes", worstFiles)
+	}
+	// The writer's last words are what is read.
+	got, _ := app.GetMemoryEntries()
+	for _, entry := range got {
+		if entry.ID == "harbor-note-0000" && !strings.Contains(entry.Content, "Rowan Vale moved the walk") {
+			t.Fatalf("a changed note kept its old words: %q", entry.Content)
+		}
+	}
+}

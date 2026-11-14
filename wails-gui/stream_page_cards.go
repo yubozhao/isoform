@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"log"
 	"os"
 	"time"
 )
@@ -14,10 +15,14 @@ import (
 // the page view, projectMainChatView), on the card rows alone. The gates read
 // the same state the live path reads, so they cannot drift from it.
 //
-// All the card checks share one deadline. When they do not all finish in time,
-// or any card cannot be confirmed, the read recomputes and serves the live page,
-// never the copy's cards.
-const streamPageCardBudget = 100 * time.Millisecond
+// The check runs after the copy is served (confirmStreamPageCardsLater): on a
+// real stream of 48 cards the live gates took 1 to 16 s, so a check before the
+// first paint never finished in time and the copy was never served. All the card
+// checks share one deadline. When they do not all finish in time, or any card
+// cannot be confirmed, the copy is dropped and the page is told to reload, so
+// it shows the live page, never the copy's cards again. This is the same rule
+// as the full privacy check of a copy (verifyStreamPageCopy).
+const streamPageCardBudget = 30 * time.Second
 
 // streamPageCardCount counts the proactive cards at the top level of a page.
 func streamPageCardCount(page StreamItemPageData) int {
@@ -112,4 +117,51 @@ func removeStreamPageCopy(key streamPageKey) {
 	if path, err := streamPageFile(key); err == nil {
 		_ = os.Remove(path)
 	}
+}
+
+// confirmStreamPageCardsLater confirms the cards of a served copy in the
+// background, one check per page at a time. A card the live gates do not
+// reproduce drops the copy and reloads the page.
+func (a *App) confirmStreamPageCardsLater(key streamPageKey, saved streamPageSnapshot, budget time.Duration) {
+	if streamPageCardCount(saved.Page) == 0 {
+		return
+	}
+	st := &a.streamPages
+	st.mu.Lock()
+	if st.cardChecks == nil {
+		st.cardChecks = map[streamPageKey]bool{}
+	}
+	if st.cardChecks[key] {
+		st.mu.Unlock()
+		return
+	}
+	st.cardChecks[key] = true
+	st.cardChecksQueued.Add(1)
+	st.mu.Unlock()
+	go func() {
+		defer func() {
+			st.mu.Lock()
+			delete(st.cardChecks, key)
+			st.mu.Unlock()
+			st.cardChecksDone.Add(1)
+		}()
+		_, ms, why := a.confirmProactiveCards(key, saved, time.Now(), budget)
+		log.Printf("[stream-page] card_check reason=%s cards=%d card_check_ms=%d", streamPageReasonOrHeld(why), streamPageCardCount(saved.Page), ms)
+		if why == "" {
+			return
+		}
+		// Drop the copy only when it is still the one that was served; a newer
+		// save is the live page already.
+		if current, reason := readRawStreamPageSnapshot(key); reason == "" && current.SavedAt.Equal(saved.SavedAt) {
+			removeStreamPageCopy(key)
+		}
+		a.emitStreamPageReload(key.session, "card-check")
+	}()
+}
+
+func streamPageReasonOrHeld(why string) string {
+	if why == "" {
+		return "confirmed"
+	}
+	return why
 }
