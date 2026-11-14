@@ -42,6 +42,11 @@ type mobileBriefSettings struct {
 	// (mobile_brief_new_writer.go), the old path as its fallback. On by
 	// default; "newBrief": false rolls back to the old path.
 	NewBrief bool
+	// MessagingOutcomes lets thread outcomes read chat apps (WeChat, Slack,
+	// Messages) for asks and commitments that involve the user, paraphrased
+	// (activity_thread_outcome.go). On by default; "messagingOutcomes": false
+	// leaves every chat segment unread again.
+	MessagingOutcomes bool
 }
 
 // mobileBriefScheduleFile is the on-disk shape of brief-schedule.json.
@@ -57,6 +62,8 @@ type mobileBriefScheduleFile struct {
 	ShadowCompose *bool `json:"shadowCompose,omitempty"`
 	// A missing key reads as on.
 	NewBrief *bool `json:"newBrief,omitempty"`
+	// A missing key reads as on.
+	MessagingOutcomes *bool `json:"messagingOutcomes,omitempty"`
 }
 
 func defaultMobileBriefSettings() mobileBriefSettings {
@@ -66,6 +73,8 @@ func defaultMobileBriefSettings() mobileBriefSettings {
 		Evening:  mobileBriefDefaultEvening,
 		Adaptive: appFlavor() == appFlavorIsoform,
 		NewBrief: true,
+
+		MessagingOutcomes: true,
 	}
 }
 
@@ -143,6 +152,9 @@ func (c *mobileBriefConfigStore) load() mobileBriefSettings {
 	if file.NewBrief != nil {
 		settings.NewBrief = *file.NewBrief
 	}
+	if file.MessagingOutcomes != nil {
+		settings.MessagingOutcomes = *file.MessagingOutcomes
+	}
 	if _, err := time.Parse(time.RFC3339Nano, file.EnabledAt); err == nil {
 		settings.EnabledAt = file.EnabledAt
 	}
@@ -163,7 +175,7 @@ func (c *mobileBriefConfigStore) save(settings mobileBriefSettings) error {
 	if err := validateMobileBriefSettings(settings); err != nil {
 		return err
 	}
-	enabled, feed, adaptive, shadow, newBrief := settings.Enabled, settings.Feed, settings.Adaptive, settings.ShadowCompose, settings.NewBrief
+	enabled, feed, adaptive, shadow, newBrief, messaging := settings.Enabled, settings.Feed, settings.Adaptive, settings.ShadowCompose, settings.NewBrief, settings.MessagingOutcomes
 	data, err := json.MarshalIndent(mobileBriefScheduleFile{
 		Version:       mobileBriefScheduleVersion,
 		Enabled:       &enabled,
@@ -174,6 +186,8 @@ func (c *mobileBriefConfigStore) save(settings mobileBriefSettings) error {
 		Adaptive:      &adaptive,
 		ShadowCompose: &shadow,
 		NewBrief:      &newBrief,
+
+		MessagingOutcomes: &messaging,
 	}, "", "  ")
 	if err != nil {
 		return err

@@ -602,6 +602,22 @@ func (r *mobileBriefPurposeReader) retainedSource(kind, id string) mobileBriefPu
 	return result
 }
 
+// sessionRemovedByRetention reports a session that is gone from the store and
+// whose retained receipt (if any) does not mark it excluded. A protected
+// session is still in the store, so it is not removed; an explicit delete moves
+// the brief privacy print, which ends the re-seal leniency that uses this.
+func (r *mobileBriefPurposeReader) sessionRemovedByRetention(id string) bool {
+	if r.store == nil {
+		return false
+	}
+	rows, err := r.store.GetSessionsByIDsIncludingProtected([]string{id})
+	if err != nil || rows[id] != nil {
+		return false
+	}
+	observation := r.retainedSource("activity_session", id)
+	return !observation.Sensitive && !observation.Unavailable
+}
+
 // Missing historical provenance permits the content-free fallback. A failed
 // availability lookup is unreadable evidence and must still fail closed.
 func (r *mobileBriefPurposeReader) retentionAvailability(kind, id string) mobileBriefPurposeObservation {

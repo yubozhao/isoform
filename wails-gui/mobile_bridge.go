@@ -66,8 +66,11 @@ type mobileBridge struct {
 	direct         atomic.Pointer[mobileRelayClient]
 	directStarting bool
 	// directMu guards directGrants. Acquire it after mu, never before.
-	directMu      sync.Mutex
-	directGrants  map[string]mobileDirectGrant
+	directMu     sync.Mutex
+	directGrants map[string]mobileDirectGrant
+	// replayWindows holds each phone's accepted request numbers
+	// (mobile_replay_window.go). Guarded by mu.
+	replayWindows map[string]*mobileReplayWindow
 	devices       map[string]*mobileDeviceRecord
 	pairing       *mobileOpenPairing
 	pendingBriefs map[string]mobileBriefFrame
@@ -234,6 +237,7 @@ func newMobileBridge(app *App, stateDir string) (*mobileBridge, error) {
 		briefOutbox:   loadMobileBriefOutbox(stateDir),
 		workers:       make(map[string]chan mobileEnvelope),
 		directGrants:  loadMobileDirectGrants(stateDir),
+		replayWindows: loadMobileReplayWindows(stateDir, devices),
 	}
 	if changed {
 		bridge.mu.Lock()
@@ -875,6 +879,7 @@ func (bridge *mobileBridge) dropDevice(id string) error {
 		bridge.devices[id] = record
 		return err
 	}
+	delete(bridge.replayWindows, id)
 	delete(bridge.pendingBriefs, id)
 	bridge.briefOutbox.drop(id)
 	bridge.closeWorkerLocked(id)
@@ -885,6 +890,7 @@ func (bridge *mobileBridge) dropDevice(id string) error {
 // removeDeviceLocked forgets a device and its queued state without saving. The
 // caller holds bridge.mu and saves once afterwards.
 func (bridge *mobileBridge) removeDeviceLocked(id string) {
+	delete(bridge.replayWindows, id)
 	delete(bridge.devices, id)
 	delete(bridge.pendingBriefs, id)
 	bridge.briefOutbox.drop(id)
@@ -944,6 +950,12 @@ func mobileSkipAhead(seq uint64) uint64 {
 // handleInboundFrame queues one device envelope on that device's worker. It never
 // blocks the socket reader.
 func (bridge *mobileBridge) handleInboundFrame(raw []byte) {
+	bridge.handleInboundFrameFrom(raw, nil)
+}
+
+// handleInboundFrameFrom is handleInboundFrame for a frame from a given relay
+// connection; nil is the pinned relay.
+func (bridge *mobileBridge) handleInboundFrameFrom(raw []byte, from *mobileRelayClient) {
 	var frame struct {
 		T   string         `json:"t"`
 		Env mobileEnvelope `json:"env"`
@@ -952,6 +964,7 @@ func (bridge *mobileBridge) handleInboundFrame(raw []byte) {
 		log.Printf("[mobile-relay] ignored a malformed request frame")
 		return
 	}
+	frame.Env.from = from
 	bridge.enqueueInbound(frame.Env)
 }
 
@@ -1030,7 +1043,7 @@ func (bridge *mobileBridge) serveInbound(env mobileEnvelope) {
 		return
 	}
 	if !fresh {
-		bridge.ackInbound(env.Dev, env.Seq)
+		bridge.ackInbound(env)
 		return
 	}
 	request, err := decodeMobileRequest(plaintext)
@@ -1038,14 +1051,14 @@ func (bridge *mobileBridge) serveInbound(env mobileEnvelope) {
 		if mobileValidUUID(request.ID) {
 			_ = bridge.sendMobileResponse(device.DeviceID, request.ID, http.StatusBadRequest, mobileErrorBody("the request is not valid"))
 		}
-		bridge.ackInbound(env.Dev, env.Seq)
+		bridge.ackInbound(env)
 		return
 	}
 	status, body := bridge.serveRequest(device, request)
 	if err := bridge.sendMobileResponse(device.DeviceID, request.ID, status, body); err != nil {
 		log.Printf("[mobile-bridge] could not send a response: %v", err)
 	}
-	bridge.ackInbound(env.Dev, env.Seq)
+	bridge.ackInbound(env)
 	audit := mobileAuditEntry{TS: mobileTimestamp(time.Now()), DeviceID: device.DeviceID, Method: request.Method, Path: request.Path, Status: status}
 	if err := appendMobileAudit(bridge.stateDir, audit); err != nil {
 		log.Printf("[mobile-bridge] could not write the audit log: %v", err)
@@ -1062,23 +1075,52 @@ func (bridge *mobileBridge) acceptRequest(env mobileEnvelope) (bool, error) {
 		return false, errMobileDeviceNotFound
 	}
 	stream := mobileStreamForKind(mobileKindRequest)
-	if env.Seq <= record.lastAccepted(stream) {
+	// The replay window, not a high-water mark: a request the relay held can
+	// arrive after a newer one from the direct path (mobile_replay_window.go).
+	window := bridge.replayWindowLocked(record)
+	next := window.clone()
+	if !next.accept(env.Seq) {
 		return false, nil
 	}
+	// The window is saved before the request runs and before devices.json, so
+	// a crash at any point never lets the same request run twice.
+	bridge.replayWindows[record.DeviceID] = next
+	if err := bridge.persistReplayWindowsLocked(bridge.replayWindows); err != nil {
+		bridge.replayWindows[record.DeviceID] = window
+		return false, err
+	}
 	previous, previousSeen := record.lastAccepted(stream), record.LastSeenAt
-	record.setLastAccepted(stream, env.Seq)
+	if next.top > previous {
+		record.setLastAccepted(stream, next.top)
+	}
 	record.LastSeenAt = mobileTimestamp(time.Now())
 	if err := bridge.persistDevicesLocked(); err != nil {
+		// Undo both, so the relay's redelivery runs the request. If the window
+		// cannot be written back, the request stays recorded: it is then never
+		// run, which is safer than running it twice.
 		record.setLastAccepted(stream, previous)
 		record.LastSeenAt = previousSeen
+		bridge.replayWindows[record.DeviceID] = window
+		if rollbackErr := bridge.persistReplayWindowsLocked(bridge.replayWindows); rollbackErr != nil {
+			bridge.replayWindows[record.DeviceID] = next
+		}
 		return false, err
 	}
 	return true, nil
 }
 
-func (bridge *mobileBridge) ackInbound(deviceID string, seq uint64) {
+// ackInbound acknowledges a request on the relay that delivered it, and only
+// there. An ack deletes every queued request up to its number, so acking on the
+// other path could delete a held request with a lower number that relay has not
+// delivered yet. Each relay delivers its own queue in order, so acking up to the
+// number it just delivered is safe there.
+func (bridge *mobileBridge) ackInbound(env mobileEnvelope) {
+	deviceID, seq := env.Dev, env.Seq
 	bridge.mu.Lock()
 	client := bridge.client
+	if env.from != nil {
+		client = env.from
+	}
 	exists := bridge.devices[deviceID] != nil
 	bridge.mu.Unlock()
 	if client == nil || !exists {
@@ -1087,7 +1129,7 @@ func (bridge *mobileBridge) ackInbound(deviceID string, seq uint64) {
 	// The device id is part of the ack: sequence numbers are per device, so an ack
 	// without it could delete another phone's queued requests.
 	if err := client.send(map[string]any{"t": "ack", "dev": deviceID, "upTo": seq}); err != nil {
-		log.Printf("[mobile-relay] could not acknowledge a request: %v", err)
+		log.Printf("%s could not acknowledge a request: %v", client.logPrefix, err)
 	}
 }
 

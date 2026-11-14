@@ -522,6 +522,8 @@ Three SQLite databases under `~/.yansu-agent/`:
 
 Schema is auto-migrated on startup. See [`storage/README.md`](storage/README.md) for the sessions.db migration history.
 
+Page snapshots (About you, How you do things, Who you know, and the other views in `derived_views.go`) are also saved in `derived-snapshots/` under the data folder (`0700` folder, `0600` files), so the first visit after a launch paints from the last one. Each file carries a durable privacy stamp (saved privacy epoch, forget markers, UI language) and is served only while it matches; every privacy action (withdrawal, forget, Closed Eyes, sensitive-app or permission change, language change) deletes the folder in the same step, and nothing is saved or served while Closed Eyes is on (`derived_views_disk.go`). `YANSU_DERIVED_SNAPSHOTS=memory` turns this off and restores memory-only snapshots that wait for the first paint.
+
 ## Getting Started
 
 ### Prerequisites

@@ -733,3 +733,57 @@ func TestLocateOverrideMustBeExecutable(t *testing.T) {
 		t.Fatal("non-executable override accepted")
 	}
 }
+
+// The ticket is parsed for the snapshot but never logged: not through Logf
+// (the app log) and not in dumbpipe's own log file.
+func TestDumbpipeTicketIsParsedButNeverLogged(t *testing.T) {
+	dir := t.TempDir()
+	s := newTestSupervisor(t, dir, nil)
+	var mu sync.Mutex
+	var logged []string
+	s.cfg.Logf = func(format string, args ...any) {
+		mu.Lock()
+		logged = append(logged, fmt.Sprintf(format, args...))
+		mu.Unlock()
+	}
+	if err := s.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s.Stop)
+	snapshot := waitReady(t, s)
+	if !ticketPattern.MatchString(snapshot.Ticket) {
+		t.Fatalf("ticket was not parsed: %q", snapshot.Ticket)
+	}
+	mu.Lock()
+	lines := append([]string(nil), logged...)
+	mu.Unlock()
+	sawRedacted := false
+	for _, line := range lines {
+		if strings.Contains(line, snapshot.Ticket) {
+			t.Fatalf("the app log received the ticket: %q", line)
+		}
+		sawRedacted = sawRedacted || strings.Contains(line, redactedTicket)
+	}
+	if !sawRedacted {
+		t.Fatalf("the ticket line was not logged in redacted form: %q", lines)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "dumbpipe.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), snapshot.Ticket) {
+		t.Fatal("dumbpipe.log holds the ticket")
+	}
+}
+
+func TestTicketRedactingWriterReplacesTickets(t *testing.T) {
+	var out bytes.Buffer
+	input := "connect with endpointabcdefghijklmnopqrstuvwxyz234567 now\n"
+	n, err := ticketRedactingWriter{writer: &out}.Write([]byte(input))
+	if err != nil || n != len(input) {
+		t.Fatalf("write = %d, %v", n, err)
+	}
+	if out.String() != "connect with "+redactedTicket+" now\n" {
+		t.Fatalf("redacted output = %q", out.String())
+	}
+}

@@ -11,6 +11,8 @@
 		F10000000000000000000002 /* SystemConfiguration.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F20000000000000000000001 /* SystemConfiguration.framework */; };
 		D30000000000000000000001 /* YansuNotificationService.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = D20000000000000000000001 /* YansuNotificationService.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		E30000000000000000000001 /* YansuWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = E20000000000000000000001 /* YansuWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		930000000000000000000001 /* YansuWatchComplication.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 920000000000000000000002 /* YansuWatchComplication.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		930000000000000000000002 /* YansuWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 920000000000000000000001 /* YansuWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -42,6 +44,13 @@
 			remoteGlobalIDString = E70000000000000000000001;
 			remoteInfo = YansuWidget;
 		};
+		931000000000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A80000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 970000000000000000000002;
+			remoteInfo = YansuWatchComplication;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -57,6 +66,28 @@
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		980000000000000000000001 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				930000000000000000000001 /* YansuWatchComplication.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		980000000000000000000002 /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				930000000000000000000002 /* YansuWatch.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
@@ -67,6 +98,7 @@
 		E20000000000000000000001 /* YansuWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = YansuWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		F20000000000000000000001 /* SystemConfiguration.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SystemConfiguration.framework; path = SystemConfiguration.framework; sourceTree = SDKROOT; };
 		920000000000000000000001 /* YansuWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = YansuWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		920000000000000000000002 /* YansuWatchComplication.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = YansuWatchComplication.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -125,6 +157,13 @@
 				Info.plist,
 			);
 			target = 970000000000000000000001 /* YansuWatch */;
+		};
+		910000000000000000000002 /* Exceptions for "YansuWatchComplication" folder in "YansuWatchComplication" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 970000000000000000000002 /* YansuWatchComplication */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -218,6 +257,18 @@
 			path = YansuWatchShared;
 			sourceTree = "<group>";
 		};
+		950000000000000000000003 /* YansuWatchComplication */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				910000000000000000000002 /* Exceptions for "YansuWatchComplication" folder in "YansuWatchComplication" target */,
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = YansuWatchComplication;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -265,6 +316,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		940000000000000000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -279,6 +337,7 @@
 				E50000000000000000000001 /* YansuWidget */,
 				950000000000000000000001 /* YansuWatch */,
 				950000000000000000000002 /* YansuWatchShared */,
+				950000000000000000000003 /* YansuWatchComplication */,
 				A50000000000000000000004 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -292,6 +351,7 @@
 				D20000000000000000000001 /* YansuNotificationService.appex */,
 				E20000000000000000000001 /* YansuWidget.appex */,
 				920000000000000000000001 /* YansuWatch.app */,
+				920000000000000000000002 /* YansuWatchComplication.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -307,6 +367,7 @@
 				A40000000000000000000001 /* Frameworks */,
 				A60000000000000000000001 /* Resources */,
 				D80000000000000000000001 /* Embed Foundation Extensions */,
+				980000000000000000000002 /* Embed Watch Content */,
 			);
 			buildRules = (
 			);
@@ -417,10 +478,12 @@
 				990000000000000000000001 /* Sources */,
 				940000000000000000000001 /* Frameworks */,
 				960000000000000000000001 /* Resources */,
+				980000000000000000000001 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				9B0000000000000000000001 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				950000000000000000000001 /* YansuWatch */,
@@ -430,6 +493,26 @@
 			productName = YansuWatch;
 			productReference = 920000000000000000000001 /* YansuWatch.app */;
 			productType = "com.apple.product-type.application";
+		};
+		970000000000000000000002 /* YansuWatchComplication */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 9A0000000000000000000002 /* Build configuration list for PBXNativeTarget "YansuWatchComplication" */;
+			buildPhases = (
+				990000000000000000000002 /* Sources */,
+				940000000000000000000002 /* Frameworks */,
+				960000000000000000000002 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				950000000000000000000003 /* YansuWatchComplication */,
+			);
+			name = YansuWatchComplication;
+			productName = YansuWatchComplication;
+			productReference = 920000000000000000000002 /* YansuWatchComplication.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -482,6 +565,7 @@
 				D70000000000000000000001 /* YansuNotificationService */,
 				E70000000000000000000001 /* YansuWidget */,
 				970000000000000000000001 /* YansuWatch */,
+				970000000000000000000002 /* YansuWatchComplication */,
 			);
 		};
 /* End PBXProject section */
@@ -509,6 +593,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		960000000000000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		960000000000000000000002 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -560,6 +651,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		990000000000000000000002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -582,6 +680,11 @@
 			isa = PBXTargetDependency;
 			target = E70000000000000000000001 /* YansuWidget */;
 			targetProxy = E31000000000000000000001 /* PBXContainerItemProxy */;
+		};
+		9B0000000000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 970000000000000000000002 /* YansuWatchComplication */;
+			targetProxy = 931000000000000000000001 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -656,6 +759,10 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0.5;
+				EXCLUDED_SOURCE_FILE_NAMES = "$(ISOFORM_WATCH_EXCLUDED_$(ISOFORM_EMBED_WATCH))";
+				ISOFORM_EMBED_WATCH = NO;
+				ISOFORM_WATCH_EXCLUDED_NO = YansuWatch.app;
+				ISOFORM_WATCH_EXCLUDED_YES = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.isoform.companion;
 				PRODUCT_MODULE_NAME = Yansu;
 				PRODUCT_NAME = Yansu;
@@ -685,6 +792,10 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0.5;
+				EXCLUDED_SOURCE_FILE_NAMES = "$(ISOFORM_WATCH_EXCLUDED_$(ISOFORM_EMBED_WATCH))";
+				ISOFORM_EMBED_WATCH = NO;
+				ISOFORM_WATCH_EXCLUDED_NO = YansuWatch.app;
+				ISOFORM_WATCH_EXCLUDED_YES = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.isoform.companion;
 				PRODUCT_MODULE_NAME = Yansu;
 				PRODUCT_NAME = Yansu;
@@ -958,6 +1069,60 @@
 			};
 			name = Release;
 		};
+		9C0000000000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = YansuWatchComplication/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.5;
+				PRODUCT_BUNDLE_IDENTIFIER = com.isoform.companion.watchkitapp.complication;
+				PRODUCT_BUNDLE_PACKAGE_TYPE = "XPC!";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Debug;
+		};
+		9C0000000000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = YansuWatchComplication/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.5;
+				PRODUCT_BUNDLE_IDENTIFIER = com.isoform.companion.watchkitapp.complication;
+				PRODUCT_BUNDLE_PACKAGE_TYPE = "XPC!";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1020,6 +1185,15 @@
 			buildConfigurations = (
 				9C0000000000000000000001 /* Debug */,
 				9C0000000000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		9A0000000000000000000002 /* Build configuration list for PBXNativeTarget "YansuWatchComplication" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9C0000000000000000000003 /* Debug */,
+				9C0000000000000000000004 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

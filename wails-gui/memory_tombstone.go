@@ -463,6 +463,8 @@ func persistMemoryTombstones(dir string, tombstones []memoryTombstone) error {
 		return err
 	}
 	defer memoryTombstoneGeneration.Add(1)
+	// A forget deletes saved page snapshots in the same step.
+	defer derivedDiskDropAll()
 	if err := os.Rename(file.Name(), filepath.Join(dir, memoryTombstonesFile)); err != nil {
 		return err
 	}

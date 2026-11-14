@@ -176,6 +176,7 @@ Local activity data is stored under `~/.yansu-agent/activity/` and `activity.db`
 - `activity_snapshots` stores `ax_text`, `browser_url`, `content_type`, `app`, `parsed_json`, and related metadata.
 - The background OCR worker reads saved snapshot JPEGs and performs low-priority OCR, so the new snapshot path reads images that have already gone through sensitive-window blurring and/or PII masking.
 - The activity triager summarizes events, structured parsed content, and OCR samples for downstream AI pipelines. Keyboard events can be rendered into "Typed in ..." timeline text, and speech transcripts can also enter the summary.
+- Page snapshots (the projections behind About you, How you do things, Who you know and the other derived views) are saved under `derived-snapshots/` (`0700` folder, `0600` files). A file is served only while its durable privacy stamp (saved privacy epoch, forget markers file, UI language) matches; a mismatched file is deleted unread. Withdrawals, forgets, Closed Eyes, permission and sensitive-app changes, and a language change delete the whole folder in the same step, and nothing is saved or served while Closed Eyes is on (`derived_views_disk.go`). `YANSU_DERIVED_SNAPSHOTS=memory` turns this off.
 
 ## Platform Differences
 

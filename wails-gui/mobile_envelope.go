@@ -49,6 +49,10 @@ type mobileEnvelope struct {
 	Seq  uint64 `json:"seq"`
 	Kind string `json:"kind"`
 	CT   string `json:"ct"`
+	// from is the relay connection that delivered a d2h envelope; nil is the
+	// pinned relay. It is never encoded. The ack goes back to that relay only
+	// (mobile_replay_window.go).
+	from *mobileRelayClient
 }
 
 type mobileSessionKeys struct {

@@ -1108,6 +1108,14 @@ func (s *topicsService) registryViews(ctx context.Context) (topicRegistryResult,
 			if err == nil && topicRegistryCacheMatches(c, revision, s.store.load(), s.now()) {
 				return c.result, nil
 			}
+			// While a rebuild holds the lock, the last-good result may still
+			// be read when no privacy action happened since it was built:
+			// same privacy epoch, policy and Closed Eyes, same topics state,
+			// and inside its validity window. Source churn alone (new
+			// activity) waits for the rebuild instead of failing the read.
+			if err == nil && topicRegistryCachePrivacyMatches(c, revision, s.store.load(), s.now()) {
+				return c.result, nil
+			}
 		}
 		if err := lockTodayChatPublication(ctx, s.registryMu.TryLock); err != nil {
 			return topicRegistryResult{}, s.registryReadFailure("revision", err, started, 0, 0)

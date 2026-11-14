@@ -80,6 +80,26 @@ final class DirectRouteTests: XCTestCase {
         await channel.prepareForPairingChange()
     }
 
+    /// The relay took the request but answered too late: the copy over the direct path carries the same sequence
+    /// number, so the computer runs it once (its replay check drops whichever copy arrives second) instead of
+    /// twice, as a sent chat message or an approval would be.
+    func testARequestResentOnTheOtherPathKeepsItsSequenceNumber() async throws {
+        let (vault, _) = try makeVault(mapped: true)
+        let relay = try vault.session()
+        try vault.storeDirectRoute(DirectRoute(ticket: ticket, bearer: RelayCrypto.base64URLEncode(RelayCrypto.randomBytes(32))),
+                                   deviceID: relay.deviceID)
+        let transport = BrokenRelayTransport(brokenOrigin: relay.credentials.origin, context: relay, brokenError: .timedOut)
+        let channel = HubChannel(vault: vault, relay: transport)
+        let status = try await channel.perform(.status)
+        XCTAssertEqual(status.status, 200)
+        let sends = await transport.sends
+        XCTAssertEqual(sends.map(\.origin), [relay.credentials.origin, directOrigin])
+        XCTAssertEqual(sends[0].seq, sends[1].seq, "Both copies are one request to the computer")
+        let next = try vault.nextSendSeq(deviceID: relay.deviceID)
+        XCTAssertGreaterThan(next, sends[1].seq, "Later requests still move forward")
+        await channel.prepareForPairingChange()
+    }
+
     func testTheAwayLineSaysWhenThePhoneLastConnected() {
         let line = TodayStore.ConnectionCause.firstLine(.cantConnect, reason: nil, sleptAt: nil, asOf: "Nov 5",
                                                          lastConnected: "Nov 6")
@@ -141,16 +161,20 @@ private actor BrokenRelayTransport: HubTransport {
     private let context: SessionContext
     private var pending: [RelayEnvelope] = []
     private var replySeq: UInt64 = 0
-    private(set) var sendOrigins: [URL] = []
+    private let brokenError: RelayClientError
+    private(set) var sends: [(origin: URL, seq: UInt64)] = []
+    var sendOrigins: [URL] { sends.map(\.origin) }
 
-    init(brokenOrigin: URL, context: SessionContext) {
+    /// `brokenError` is what the relay answers a send: offline (it never got it) or a timeout (it may have).
+    init(brokenOrigin: URL, context: SessionContext, brokenError: RelayClientError = .offline) {
         self.brokenOrigin = brokenOrigin
         self.context = context
+        self.brokenError = brokenError
     }
 
     func sendRequest(_ credentials: RelayCredentials, envelope: RelayEnvelope) async throws {
-        sendOrigins.append(credentials.origin)
-        if credentials.origin == brokenOrigin { throw RelayClientError.offline }
+        sends.append((credentials.origin, envelope.seq))
+        if credentials.origin == brokenOrigin { throw brokenError }
         let plaintext = try RelayCrypto.openEnvelope(try RelayCrypto.base64URLDecode(envelope.ct), key: context.keys.d2h,
                                                      hub: context.hubID, dev: context.deviceID, dir: "d2h",
                                                      seq: envelope.seq, kind: "req")

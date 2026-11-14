@@ -452,6 +452,37 @@ export function getMainChatReport(
  *  schedule from Upcoming (Go upcomingConfirmTool). */
 export const UPCOMING_CONFIRM_TOOL = 'upcoming_confirm';
 
+// A message the main chat drafted on request (chat_draft.go). It never
+// sends: the card offers Copy and, for mail, Open in mail app.
+export const CHAT_DRAFT_TOOL = 'main_chat_draft';
+
+export interface ChatDraftPayload {
+    to: string;
+    channel: 'mail' | 'message' | 'slack' | 'other';
+    subject: string;
+    text: string;
+}
+
+export function getChatDraft(item: Pick<StreamItem, 'kind' | 'toolName' | 'toolInput'>): ChatDraftPayload | null {
+    if (item.kind !== 'system' || item.toolName !== CHAT_DRAFT_TOOL) return null;
+    let raw: unknown = item.toolInput;
+    if (typeof raw === 'string') {
+        try { raw = JSON.parse(raw); } catch { return null; }
+    }
+    if (!raw || typeof raw !== 'object') return null;
+    const payload = raw as Partial<ChatDraftPayload>;
+    if (typeof payload.to !== 'string' || typeof payload.text !== 'string' || !payload.text.trim()) return null;
+    const channel = payload.channel === 'mail' || payload.channel === 'message' || payload.channel === 'slack' ? payload.channel : 'other';
+    return { to: payload.to, channel, subject: typeof payload.subject === 'string' ? payload.subject : '', text: payload.text };
+}
+
+/** A mailto: link that opens the draft in the person's mail app, unsent. */
+export function chatDraftMailto(draft: ChatDraftPayload): string {
+    const to = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.to.trim()) ? encodeURIComponent(draft.to.trim()) : '';
+    const params = [draft.subject ? `subject=${encodeURIComponent(draft.subject)}` : '', `body=${encodeURIComponent(draft.text)}`].filter(Boolean).join('&');
+    return `mailto:${to}?${params}`;
+}
+
 export type UpcomingConfirmStatus = 'pending' | 'removed' | 'kept' | 'expired' | 'gone';
 
 /** The confirm card's payload (mirrors Go upcomingConfirmPayload). */

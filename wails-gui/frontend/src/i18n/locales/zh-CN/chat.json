@@ -109,6 +109,7 @@
             "runnerUnavailable": "没能开始：你电脑上的 {{ai}} 现在用不了。",
             "network": "连不上 {{ai}}。请检查网络。",
             "server": "{{ai}} 现在有点问题。",
+            "noReply": "没有收到回答。",
             "assistantError": "{{ai}} 出错停止了。",
             "assistantErrorUnknown": "你的 AI 出错停止了。",
             "yourAI": "你的 AI",
@@ -645,6 +646,17 @@
             "send": "发送",
             "edit": "编辑",
             "close": "关闭"
+        },
+        "draft": {
+            "to": "给 {{to}} 的草稿",
+            "separator": " · ",
+            "notSent": "还没有发送。",
+            "subject": "主题：{{subject}}",
+            "copy": "复制",
+            "copied": "已复制",
+            "openInMail": "在邮件应用中打开",
+            "copyFailed": "没能复制。",
+            "mailFailed": "没能打开邮件应用。"
         }
     },
     "setup": {

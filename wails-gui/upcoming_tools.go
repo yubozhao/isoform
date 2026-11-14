@@ -1300,11 +1300,11 @@ func (a *App) mainChatExtraTools(tag string, origin promptOrigin) []tools.Tool {
 	}
 	switch origin {
 	case promptOriginPhone:
-		return a.goalTools(tag)
+		return append(a.goalTools(tag), a.chatWebSearchTools()...)
 	case promptOriginResume, promptOriginPanelAsk, promptOriginPhoneAsk:
 		return nil
 	default:
-		return append(a.upcomingTools(), a.goalTools(tag)...)
+		return append(append(a.upcomingTools(), a.goalTools(tag)...), a.chatWebSearchTools()...)
 	}
 }
 

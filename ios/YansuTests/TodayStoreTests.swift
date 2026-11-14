@@ -453,6 +453,71 @@ final class TodayStoreTests: XCTestCase {
         XCTAssertNil(store.snapshot?.briefRequest)
     }
 
+    private actor ThrottledFreshHub: TodayHubAPI {
+        let value: MobileTodaySnapshot
+        let error: Error
+        init(value: MobileTodaySnapshot, error: Error) { self.value = value; self.error = error }
+        func today() async throws -> MobileTodaySnapshot { value }
+        func pollTodayEvents() async throws -> [MobileTodayEvent] { [] }
+        func requestTodayBrief(key: String) async throws -> BriefRefreshResult { throw error }
+    }
+
+    /// A brief made at 9:02 and "Make my brief now" at 9:04: the Mac answers 429 (one a device every 10 minutes),
+    /// or the relay's queue is full. Nothing will be made, so the row must not wait a day under "Waits for your
+    /// computer" with no Undo while every new tap returns the same stuck entry.
+    @MainActor
+    func testAThrottledFreshRequestSaysItFailedAndCanBeAskedAgain() async throws {
+        for error: Error in [HubRequestError.rejected(status: 429, message: "too soon"),
+                             HubRequestError.rejected(status: 503, message: "not ready"),
+                             HubRequestError.queueFull(retryAfter: 60)] {
+            let directory = try makeTemporaryDirectory()
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let vault = PairingVault(directory: directory.appendingPathComponent("vault"), secrets: InMemorySecretStore())
+            let brief = BriefStore(pairing: PairingStore(vault: vault), vault: vault,
+                                   cache: BriefCache(directory: directory.appendingPathComponent("briefs")),
+                                   hub: HubChannel(vault: vault))
+            let journal = PendingWriteJournal(fileURL: directory.appendingPathComponent("journal.json"), hubID: { "mac" })
+            let store = TodayStore(hub: ThrottledFreshHub(value: snapshot(), error: error),
+                                   cache: TodayDiskCache(fileURL: directory.appendingPathComponent("today.json")),
+                                   brief: brief, journal: journal,
+                                   identity: { TodayPairingIdentity(hubID: "mac", deviceID: "phone") })
+            await store.refresh()
+            await store.requestFresh()
+            XCTAssertNil(store.pendingFresh, "\(error): nothing waits for the computer")
+            XCTAssertTrue(store.freshFailed, "\(error): the card offers Make it now")
+            let entries = await journal.entries()
+            XCTAssertTrue(entries.isEmpty, "\(error): a later tap sends a new request")
+        }
+    }
+
+    /// The Mac was asleep when the request went out, then woke and made the brief: its snapshot settles the row.
+    @MainActor
+    func testAnUnansweredFreshRequestSettlesWhenTheMacShowsTheBrief() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let vault = PairingVault(directory: directory.appendingPathComponent("vault"), secrets: InMemorySecretStore())
+        let brief = BriefStore(pairing: PairingStore(vault: vault), vault: vault,
+                               cache: BriefCache(directory: directory.appendingPathComponent("briefs")),
+                               hub: HubChannel(vault: vault))
+        let journal = PendingWriteJournal(fileURL: directory.appendingPathComponent("journal.json"), hubID: { "mac" })
+        let store = TodayStore(hub: ThrottledFreshHub(value: snapshot(), error: HubRequestError.noAnswer),
+                               cache: TodayDiskCache(fileURL: directory.appendingPathComponent("today.json")),
+                               brief: brief, journal: journal,
+                               identity: { TodayPairingIdentity(hubID: "mac", deviceID: "phone") })
+        await store.refresh()
+        await store.requestFresh()
+        XCTAssertNotNil(store.pendingFresh?.todayRefreshDispatchedAt, "no answer: the request may still run")
+        XCTAssertFalse(store.freshFailed)
+        var making = snapshot()
+        making.generatedAt = "2099-01-01T00:00:00Z"
+        making.briefRequest = TodayBriefRequest(state: "making", readyAt: "2099-01-01T00:05:00Z")
+        store.accept(making)
+        for _ in 0..<50 where store.pendingFresh != nil { try await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertNil(store.pendingFresh, "the Mac took the request")
+        let entries = await journal.entries()
+        XCTAssertTrue(entries.isEmpty)
+    }
+
     private actor SlowHub: TodayHubAPI {
         func today() async throws -> MobileTodaySnapshot { throw HubRequestError.noAnswer }
         func pollTodayEvents() async throws -> [MobileTodayEvent] { [] }

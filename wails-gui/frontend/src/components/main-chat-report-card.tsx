@@ -7,7 +7,7 @@ import { LogoIcon } from '@/assets/icons/LogoIcon';
 import { Button } from '@/components/ui/button';
 import { MainChatTopicTags } from '@/components/main-chat/main-chat-topic-tags';
 import { createScheduleTextLabels, cronToHumanReadable } from '@/components/automations/schedule-utils';
-import { ResolveUpcomingConfirm } from '@/lib/wails-shim-app';
+import { NativeClipboardSetText, OpenExternalURL, ResolveUpcomingConfirm } from '@/lib/wails-shim-app';
 import {
     getMainChatReport,
     getSideChatOrigin,
@@ -16,6 +16,8 @@ import {
     type MainChatReportPayload,
     type MainChatReportTarget,
     type UpcomingConfirmStatus,
+    chatDraftMailto,
+    getChatDraft,
 } from '@/lib/stream-helpers';
 import type { StreamItem, UpcomingApproval } from '@/types';
 import { mainChatTargetOpens, statusEntryPlace, TODAY_BRIEF_STATUS_TARGET } from '@/lib/main-chat-navigation';
@@ -436,6 +438,56 @@ export function UpcomingConfirmCard({ item, compact = false }: UpcomingConfirmCa
                         </Button>
                     </div>
                 ) : null}
+            </div>
+        </div>
+    );
+}
+
+interface ChatDraftCardProps {
+    item: StreamItem;
+    compact?: boolean;
+}
+
+/**
+ * A message the chat drafted because the person asked to send one. Nothing is
+ * sent from here: Copy puts it on the clipboard, and Open in mail app opens a
+ * filled-in message in their mail app, where only their Send sends it.
+ */
+export function ChatDraftCard({ item, compact = false }: ChatDraftCardProps) {
+    const { t } = useTranslation('chat');
+    const draft = getChatDraft(item);
+    const [copied, setCopied] = useState(false);
+    const [failed, setFailed] = useState<'copy' | 'mail' | null>(null);
+    if (!draft) return null;
+
+    const copy = () => {
+        setFailed(null);
+        NativeClipboardSetText(draft.subject ? `${draft.subject}\n\n${draft.text}` : draft.text)
+            .then(() => setCopied(true))
+            .catch(() => setFailed('copy'));
+    };
+    const openMail = () => {
+        setFailed(null);
+        OpenExternalURL(chatDraftMailto(draft)).catch(() => setFailed('mail'));
+    };
+
+    return (
+        <div data-chat-draft={draft.channel} className={cn('animate-rise-in', compact ? '' : 'max-w-[90%] mx-auto')}>
+            <div className="flex flex-col gap-2 px-3.5 py-3 rounded-lg border border-border bg-panel-warm text-[13px] leading-relaxed text-ink/85">
+                <div className="flex items-start gap-2.5">
+                    <LogoIcon size={14} className="mt-[3px] shrink-0 text-accent" />
+                    <p className="min-w-0 flex-1 break-words">
+                        <span className="font-medium text-ink">{t('mainChat.draft.to', { to: draft.to })}</span>
+                        <span className="text-muted">{t('mainChat.draft.separator')}{t('mainChat.draft.notSent')}</span>
+                    </p>
+                </div>
+                {draft.subject ? <p className="break-words text-muted">{t('mainChat.draft.subject', { subject: draft.subject })}</p> : null}
+                <p className="whitespace-pre-wrap break-words rounded-md bg-panel px-3 py-2 text-ink">{draft.text}</p>
+                {failed ? <p role="alert" className="text-subtle">{t(failed === 'copy' ? 'mainChat.draft.copyFailed' : 'mainChat.draft.mailFailed')}</p> : null}
+                <div className="flex flex-wrap items-center gap-1.5">
+                    <Button variant="secondary" size="sm" onClick={copy}>{t(copied ? 'mainChat.draft.copied' : 'mainChat.draft.copy')}</Button>
+                    {draft.channel === 'mail' ? <Button variant="secondary" size="sm" onClick={openMail}>{t('mainChat.draft.openInMail')}</Button> : null}
+                </div>
             </div>
         </div>
     );

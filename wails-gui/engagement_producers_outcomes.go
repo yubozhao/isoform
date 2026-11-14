@@ -29,6 +29,10 @@ func threadOutcomeMoment(row ActivityRow, outcome *ActivityThreadOutcome, now ti
 }
 
 func (a *App) produceThreadOutcome(ctx context.Context, row ActivityRow, outcome *ActivityThreadOutcome, now time.Time) {
+	if outcome != nil && outcome.Kind == "conversation" {
+		// A chat's ask reaches the brief only (messagingOutcomes), not a card.
+		return
+	}
 	m, ok := threadOutcomeMoment(row, outcome, now)
 	if !ok || !a.threadOutcomeSourceReadable(ctx, m.Params["_activity_outcome"]) {
 		return

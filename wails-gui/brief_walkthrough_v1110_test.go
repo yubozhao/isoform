@@ -191,6 +191,9 @@ func TestBriefV1110ExclusionRemakesAudioWithoutTheExcludedParts(t *testing.T) {
 		t.Fatal(err)
 	}
 	checkMemoryFolderNow(svc.app)
+	// The memory sync announces the change, as it does when a note is saved;
+	// a new stated exclusion is an explicit privacy action (seal v2).
+	svc.app.emitBrowserEvent("memory:updated")
 	stored, _ := svc.store.load(brief.BriefID)
 	delivered := svc.app.mobileBriefForDelivery(stored)
 	if len(delivered.Narrative) != 1 || delivered.Narrative[0].Text != "You shipped the plan." {

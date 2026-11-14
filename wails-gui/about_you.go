@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"sort"
@@ -8,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	briefcore "wails-gui/internal/brief"
 	"wails-gui/internal/pii"
 )
 
@@ -38,6 +40,9 @@ type AboutYouBelief struct {
 	Source          string `json:"source"`
 	SourceAssistant string `json:"sourceAssistant"`
 	SourceAt        int64  `json:"sourceAt"`
+	// AgentPractice marks a belief about how the person runs their coding
+	// agents (hubs, PRs, workers). Set only while the agent section is on.
+	AgentPractice bool `json:"agentPractice,omitempty"`
 }
 
 type AboutYouTotals struct {
@@ -57,6 +62,9 @@ type AboutYouView struct {
 	NewThisWeek []string         `json:"newThisWeek"`
 	Totals      AboutYouTotals   `json:"totals"`
 	Storage     AboutYouStorage  `json:"storage"`
+	// AgentSection groups agent-practice beliefs under one collapsed
+	// section and caps them among the top beliefs (flag, default off).
+	AgentSection bool `json:"agentSection,omitempty"`
 }
 
 // GetAboutYou projects the existing owner-visible memory list into belief metadata.
@@ -89,12 +97,14 @@ func (a *App) getAboutYouNow() (AboutYouView, error) {
 	nextDay := today.AddDate(0, 0, 1).UnixMilli()
 	var newBeliefs []AboutYouBelief
 	candidates := a.portraitService().candidateIDs()
+	out.AgentSection = a.aboutYouAgentSectionEnabled()
 	for _, entry := range entries {
 		belief, err := a.aboutYouBelief(dir, entry, now)
 		if err != nil {
 			return AboutYouView{}, err
 		}
 		belief.PortraitCandidate = candidates[belief.ID]
+		belief.AgentPractice = out.AgentSection && beliefNamesAgentPractice(belief.Title)
 		out.Beliefs = append(out.Beliefs, belief)
 		if belief.Status == "confirmed" {
 			out.Totals.Confirmed++
@@ -111,9 +121,7 @@ func (a *App) getAboutYouNow() (AboutYouView, error) {
 		}
 		return newBeliefs[i].FirstLearnedAt > newBeliefs[j].FirstLearnedAt
 	})
-	for _, belief := range newBeliefs[:min(5, len(newBeliefs))] {
-		out.NewThisWeek = append(out.NewThisWeek, belief.ID)
-	}
+	out.NewThisWeek = topNewBeliefIDs(newBeliefs, 5)
 	out.Totals.Beliefs, out.Storage.Files = len(entries), len(entries)
 	status := a.GetMemoryStatus()
 	out.Storage.Chunks, out.Storage.VectorReady = status.Chunks, status.VectorReady
@@ -202,4 +210,48 @@ func beliefStatusConfidence(belief AboutYouBelief, source string, now time.Time)
 	default:
 		return status, 1
 	}
+}
+
+// aboutYouAgentSectionEnabledKey turns on the agent-practice section. It is
+// off until Bo decides whether beliefs about how he runs his agents belong in
+// About you (2026-11-13).
+const aboutYouAgentSectionEnabledKey = "about_you_agent_section_enabled"
+
+// aboutYouAgentPracticeTopCap is how many agent-practice beliefs may sit
+// among the top beliefs (New this week) while the section is on.
+const aboutYouAgentPracticeTopCap = 1
+
+func (a *App) aboutYouAgentSectionEnabled() bool {
+	if a == nil || a.store == nil {
+		return false
+	}
+	value, err := a.store.GetUIState(context.Background(), aboutYouAgentSectionEnabledKey)
+	return err == nil && strings.EqualFold(strings.TrimSpace(value), "true")
+}
+
+// beliefNamesAgentPractice reports a belief that names agent work, by the
+// brief's agent words. "Agent of You" is a product, not agent work.
+func beliefNamesAgentPractice(title string) bool {
+	lower := strings.ReplaceAll(strings.ToLower(title), "agent of you", "")
+	return briefcore.AgentCue(lower)
+}
+
+// topNewBeliefIDs takes the newest beliefs in order, letting at most
+// aboutYouAgentPracticeTopCap agent-practice beliefs in.
+func topNewBeliefIDs(beliefs []AboutYouBelief, limit int) []string {
+	out := make([]string, 0, limit)
+	agents := 0
+	for _, belief := range beliefs {
+		if len(out) == limit {
+			break
+		}
+		if belief.AgentPractice {
+			if agents == aboutYouAgentPracticeTopCap {
+				continue
+			}
+			agents++
+		}
+		out = append(out, belief.ID)
+	}
+	return out
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -264,5 +265,69 @@ func TestMobileBriefAttendanceStoredUnknownAndLegacyPrivacy(t *testing.T) {
 	}
 	if got := app.mobileBriefForDelivery(legacy); len(got.MeetingAttendance) != 0 {
 		t.Fatal("legacy attendance without checked provenance was delivered")
+	}
+}
+
+// Seal v2: re-sealing is idempotent. Attendance the first seal kept stays when
+// retention removes its session later, with its receipt or (legacy data) with
+// none; an explicit delete of that session still withdraws it.
+func TestMobileBriefResealKeepsAttendanceAfterRetention(t *testing.T) {
+	for _, removal := range []string{"retention", "no-receipt", "explicit"} {
+		t.Run(removal, func(t *testing.T) {
+			app, in := newAttendancePrivacyFixture(t, "skipped")
+			collectMobileBriefAttendance(app, &in)
+			brief := buildMobileBriefV1(in)
+			brief.Narrative = []MobileBriefPara{{Text: "Review with Tim needs review", Refs: brief.MeetingAttendance[0].Refs}}
+			brief.NarrativeStatus = "ok"
+			t.Setenv("YANSU_MOBILE_STATE_DIR", t.TempDir())
+			svc := newMobileBriefService(app)
+			svc.location, svc.now = time.UTC, func() time.Time { return in.AsOf }
+			app.mobileBriefSvc = svc
+			if err := svc.store.save(brief, in.AsOf); err != nil {
+				t.Fatal(err)
+			}
+			stored, ok := svc.store.load(brief.BriefID)
+			if !ok {
+				t.Fatal("stored brief missing")
+			}
+			first, _, wrote := svc.seal(context.Background(), stored)
+			if !wrote || len(first.MeetingAttendance) != 1 || len(first.Narrative) != 1 {
+				t.Fatalf("first seal = attendance %d, narrative %d, wrote %v", len(first.MeetingAttendance), len(first.Narrative), wrote)
+			}
+			switch removal {
+			case "retention":
+				if err := app.activity.store.deleteSessionForRetention("fixture-session"); err != nil {
+					t.Fatal(err)
+				}
+			case "no-receipt":
+				if _, err := app.activity.store.db.Exec(`DELETE FROM activity_sessions WHERE id = 'fixture-session'`); err != nil {
+					t.Fatal(err)
+				}
+			case "explicit":
+				if err := app.activity.store.DeleteSession("fixture-session"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for i := 0; i < 2; i++ {
+				again, _, wrote := svc.seal(context.Background(), stored)
+				if !wrote {
+					t.Fatal("re-seal not saved")
+				}
+				read, err := svc.finishedRead(stored)
+				if err != nil {
+					t.Fatal(err)
+				}
+				switch removal {
+				case "retention", "no-receipt":
+					if len(again.MeetingAttendance) != 1 || len(read.MeetingAttendance) != 1 || len(read.Narrative) != 1 {
+						t.Fatalf("re-seal %d dropped what the first seal kept: attendance %d/%d, narrative %d", i, len(again.MeetingAttendance), len(read.MeetingAttendance), len(read.Narrative))
+					}
+				case "explicit":
+					if len(again.MeetingAttendance) != 0 || len(read.MeetingAttendance) != 0 {
+						t.Fatalf("an explicit delete did not withdraw the attendance: %d/%d", len(again.MeetingAttendance), len(read.MeetingAttendance))
+					}
+				}
+			}
+		})
 	}
 }

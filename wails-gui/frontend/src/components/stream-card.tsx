@@ -3,9 +3,9 @@ import { displayModelCopy } from "@/lib/model-display";
 import { memo, useState, useCallback, useMemo, useRef, useEffect, useContext } from 'react';
 import { ChatFailureLine } from '@/components/chat-failure-line';
 import { cn } from '@/lib/utils';
-import { MAIN_CHAT_OBSERVATION_PAUSE_TOOL, formatToolInput, getMainChatProactive, getMainChatStatus, getMainChatReport, getSetupRecord, getSideChatOrigin, getTextedReply, getUpcomingConfirm, isTodayContextItem } from '@/lib/stream-helpers';
+import { MAIN_CHAT_OBSERVATION_PAUSE_TOOL, formatToolInput, getMainChatProactive, getMainChatStatus, getMainChatReport, getSetupRecord, getSideChatOrigin, getTextedReply, getUpcomingConfirm, getChatDraft, isTodayContextItem } from '@/lib/stream-helpers';
 import type { MainChatReportTarget } from '@/lib/stream-helpers';
-import { MainChatReportCard, SideChatOriginCard, TextedReplyCard, UpcomingConfirmCard } from './main-chat-report-card';
+import { ChatDraftCard, MainChatReportCard, SideChatOriginCard, TextedReplyCard, UpcomingConfirmCard } from './main-chat-report-card';
 import { MainChatProactiveCard, MainChatStatusRow } from './main-chat-proactive-card';
 import { SetupRecordLine } from './main-chat-setup-card';
 import { TodayContextStatus } from './today-context-status';
@@ -913,8 +913,8 @@ export const StreamCard = memo(function StreamCard({
     // streams so users see a typed error card instead of the raw JSON.
     if (item.kind === 'error' || isJsonRpcError(item.content)) {
         const cause = chatErrorCauseOf(item);
-        // R75: only the chat's latest signed-out answer offers Send again.
-        const resend = cause.code === 'signed_out' && failedSend && failedSend.resendItemId === item.id ? failedSend.resendLast : undefined;
+        // R75: only the chat's latest signed-out or no-reply answer offers Send again.
+        const resend = (cause.code === 'signed_out' || cause.code === 'no_reply') && failedSend && failedSend.resendItemId === item.id ? failedSend.resendLast : undefined;
         return <ChatErrorCard error={parseChatError(item.content, cause.code)} assistant={cause.assistant} compact={compact} onRetry={resend} />;
     }
 
@@ -936,6 +936,9 @@ export const StreamCard = memo(function StreamCard({
     }
     if (getUpcomingConfirm(item)) {
         return <UpcomingConfirmCard item={item} compact={compact} />;
+    }
+    if (getChatDraft(item)) {
+        return <ChatDraftCard item={item} compact={compact} />;
     }
     if (getTextedReply(item)) {
         return <TextedReplyCard item={item} onUse={onUseTextedReply} compact={compact} />;

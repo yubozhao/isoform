@@ -1624,3 +1624,22 @@ func (s *Store) listSightings(ctx context.Context, principalID string) ([]Princi
 	}
 	return out, nil
 }
+
+// PrincipalIDs returns the id of every stored principal, merged ones
+// included. Saved page snapshots check it to find people deleted since.
+func (s *Store) PrincipalIDs(ctx context.Context) (map[string]bool, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id FROM principals`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out[id] = true
+	}
+	return out, rows.Err()
+}

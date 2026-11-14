@@ -165,13 +165,30 @@ final class HoldsStore: ObservableObject {
         return status
     }
 
-    /// Sends every queued hold again, or marks it expired once its time passed or it waited 24 hours.
+    /// The holds queued in the journal by an earlier launch: shown as queued (or expired) again, and sent the next
+    /// time the computer answers (`resendQueued`). Without this a hold queued before the app quit never went.
+    func restoreQueued() async {
+        guard pairingID() != nil else { return }
+        for write in await queuedWrites() {
+            guard let replay = write.calendarHold, states[replay.proposalID] == nil else { continue }
+            if expired(write, replay) {
+                await journal.remove(keys: [write.key])
+                states[replay.proposalID] = Self.status(replay, state: Self.expiredState)
+            } else {
+                states[replay.proposalID] = Self.status(replay, state: Self.queuedState)
+            }
+        }
+    }
+
+    /// Sends every queued hold again, or marks it expired once its time passed or it waited 24 hours. Nothing
+    /// queued, nothing done: it runs each time the computer answers.
     func resendQueued() async {
         guard pairingID() != nil else { return }
-        for write in await journal.entries() where write.operation == .calendarHold && write.choice == "hold" {
+        let queued = await queuedWrites()
+        guard !queued.isEmpty else { return }
+        for write in queued {
             guard let replay = write.calendarHold else { continue }
-            let start = RelayTime.parse(replay.start) ?? .distantPast
-            if start <= now() || now().timeIntervalSince(write.createdAt) >= Self.queueLifetime {
+            if expired(write, replay) {
                 await journal.remove(keys: [write.key])
                 states[replay.proposalID] = Self.status(replay, state: Self.expiredState)
                 continue
@@ -183,9 +200,25 @@ final class HoldsStore: ObservableObject {
                                             calendarId: replay.calendarID,
                                             slots: [PhoneHoldSlot(start: replay.start, end: replay.end)]),
                 calendars: [], token: replay.token)
-            _ = await place(offer, slot: PhoneHoldSlot(start: replay.start, end: replay.end), calendarID: replay.calendarID)
+            let placed = await place(offer, slot: PhoneHoldSlot(start: replay.start, end: replay.end), calendarID: replay.calendarID)
+            // The computer refused it (the offer changed, access was taken away): its key is gone, so it is no
+            // longer queued. Left queued, the row would wait forever and the resend loop would refresh Tasks
+            // every five seconds.
+            if placed == nil, states[replay.proposalID]?.state == Self.queuedState,
+               !(await journal.entries()).contains(where: { $0.key == write.key }) {
+                states[replay.proposalID] = nil
+            }
         }
         await onChange?()
+    }
+
+    private func queuedWrites() async -> [PendingWrite] {
+        await journal.entries().filter { $0.operation == .calendarHold && $0.choice == "hold" && $0.calendarHold != nil }
+    }
+
+    private func expired(_ write: PendingWrite, _ replay: PendingWrite.CalendarHoldReplay) -> Bool {
+        let start = RelayTime.parse(replay.start) ?? .distantPast
+        return start <= now() || now().timeIntervalSince(write.createdAt) >= Self.queueLifetime
     }
 
     func undo(id: String) async -> Bool {

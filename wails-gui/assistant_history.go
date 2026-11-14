@@ -603,7 +603,8 @@ func (a *App) forgetAssistantHistoryRecords() error {
 			errs = append(errs, fmt.Errorf("forget memory %s: %w", id, err))
 		}
 	}
-	knowledge, err := a.GetKnowledgeEntries()
+	// Hidden agent-learned know-how is still on disk, so it is forgotten too.
+	knowledge, err := knowledgeEntriesIncludingHidden()
 	if err != nil {
 		errs = append(errs, fmt.Errorf("list know-how: %w", err))
 	}

@@ -672,13 +672,17 @@ actor HubChannel {
                                                                   body: route.body))
         // A pairing with two paths (its relay and the computer's direct path) tries the other one once when the
         // first cannot reach the computer. The computer answers on both, so a reply waits on either.
+        // The other path carries the same sequence number: a first copy the relay took after all (a timeout after
+        // it queued the request) is then the replay the computer drops, not a second run of the same request.
         var switched = false
+        var sentSeq: UInt64?
         do {
-            try await send(plaintext, context: context, generation: generation)
+            try await send(plaintext, context: context, generation: generation, sentSeq: &sentSeq)
         } catch let error where SessionContext.isPathFailure(error) && vault.switchRoute(after: context) {
             switched = true
+            let firstSeq = sentSeq
             context = try makeContext()
-            try await send(plaintext, context: context, generation: generation)
+            try await send(plaintext, context: context, generation: generation, reuseSeq: firstSeq, sentSeq: &sentSeq)
         }
 
         let deadline = Date().addingTimeInterval(timeout)
@@ -725,12 +729,22 @@ actor HubChannel {
         guard vault.current()?.deviceID == context.deviceID else { throw HubRequestError.notPaired }
     }
 
-    private func send(_ plaintext: Data, context: SessionContext, generation: UUID) async throws {
+    /// Sends one request envelope. `reuseSeq` is the sequence number a copy on the other path already used: the
+    /// first attempt carries it again, so the computer runs the request once whichever copy arrives first.
+    /// `sentSeq` is the last sequence number put on the wire, even when the send then failed.
+    private func send(_ plaintext: Data, context: SessionContext, generation: UUID, reuseSeq: UInt64? = nil,
+                      sentSeq: inout UInt64?) async throws {
         var attempt = 0
         while true {
             try checkSession(context, generation: generation)
             attempt += 1
-            let seq = try vault.nextSendSeq(deviceID: context.deviceID)
+            let seq: UInt64
+            if attempt == 1, let reuseSeq {
+                seq = reuseSeq
+            } else {
+                seq = try vault.nextSendSeq(deviceID: context.deviceID)
+            }
+            sentSeq = seq
             let ct = try RelayCrypto.sealEnvelope(plaintext, key: context.keys.d2h, hub: context.hubID,
                                                   dev: context.deviceID, dir: "d2h", seq: seq, kind: "req")
             let envelope = RelayEnvelope(v: RelayCrypto.protocolVersion, hub: context.hubID, dev: context.deviceID,

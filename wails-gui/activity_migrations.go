@@ -382,6 +382,7 @@ var allActivityMigrations = []activityMigration{
 	{Name: "task_episode_read_revision", Fn: migrateTaskEpisodeReadRevision},
 	{Name: "noticed_plain_invoice_followup", Fn: migrateNoticedPlainInvoiceFollowup},
 	{Name: "activity_agent_runs", Fn: migrateActivityAgentRuns},
+	{Name: "activity_agent_runs_follow_runs", Fn: migrateActivityAgentRunsFollowRuns},
 }
 
 // ──────────────────────────────────────────────

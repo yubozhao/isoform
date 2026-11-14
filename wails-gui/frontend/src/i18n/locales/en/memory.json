@@ -439,8 +439,10 @@
             "tools": "Tools and apps",
             "routines": "Routines",
             "interests": "Interests",
-            "other": "Other"
+            "other": "Other",
+            "agents": "How you work with your agents"
         },
+        "agentsNote": "How you run your coding agents. Kept apart from what Isoform learns about you.",
         "communication": {
             "note": "Learned only from messages you sent. Drafts follow these.",
             "sentMessages_one": "{{count}} message you sent",

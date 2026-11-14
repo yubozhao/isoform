@@ -18,7 +18,7 @@ interface ChatErrorCardProps {
 }
 
 type Tone = 'copper' | 'gray';
-type Link = 'set_up' | 'sign_in' | 'see_usage' | 'try_again';
+type Link = 'set_up' | 'sign_in' | 'see_usage' | 'try_again' | 'send_again';
 
 export interface ChatCauseLine {
     line: string;
@@ -74,6 +74,9 @@ export function chatCauseLine(error: ChatError, assistant: string | undefined, t
             return { line: t('errors.cause.usageLimit', { ai: leadAI }), tone: 'copper', link: 'see_usage', details: false };
         case 'runner_unavailable':
             return { line: t('errors.cause.runnerUnavailable', { ai }), tone: 'copper', link: 'set_up', details: false };
+        case 'no_reply':
+            // The hub stored this row: the turn ended with no answer, or the app quit mid-turn.
+            return { line: t('errors.cause.noReply'), tone: 'gray', link: 'send_again', details: false };
         case 'network':
             return { line: t('errors.cause.network', { ai }), tone: 'gray', link: 'try_again', details: false };
         case 'server':
@@ -102,6 +105,7 @@ function linkLabel(link: Link, t: TFunction<'chat'>): string {
         case 'sign_in': return t('errors.actions.signIn');
         case 'see_usage': return t('errors.actions.seeUsage');
         case 'try_again': return t('errors.actions.tryAgain');
+        case 'send_again': return t('errors.actions.sendAgain');
     }
 }
 
@@ -112,9 +116,9 @@ export const ChatErrorCard = memo(function ChatErrorCard({ error, assistant, onR
     const { t } = useTranslation('chat');
     const [detailOpen, setDetailOpen] = useState(false);
     const cause = chatCauseLine(error, assistant, t);
-    const link = cause.link === 'try_again' && !onRetry ? undefined : cause.link;
+    const link = (cause.link === 'try_again' || cause.link === 'send_again') && !onRetry ? undefined : cause.link;
     const showDetails = cause.details && Boolean(error.detail);
-    const onLink = link === 'try_again' ? onRetry : link === 'sign_in' ? () => openAssistantSignIn(assistant) : openYourAI;
+    const onLink = link === 'try_again' || link === 'send_again' ? onRetry : link === 'sign_in' ? () => openAssistantSignIn(assistant) : openYourAI;
 
     return (
         <div className="animate-rise-in max-w-md" data-chat-cause={error.kind}>

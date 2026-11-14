@@ -483,6 +483,44 @@ func (s *mobileRecordingStore) retryFailedAndPrune() {
 	}
 }
 
+// forgetAudioOfSession deletes the audio of the recording whose transcript is
+// the activity session sessionID ("rec-<recordingId>"). A transcript the user
+// deletes, or that the activity retention removes, takes its audio with it:
+// the audio is the rawer copy of the same words and must never outlive them.
+// The index row stays, so a repeat of a part is still answered from it and the
+// recording is never imported again.
+func (s *mobileRecordingStore) forgetAudioOfSession(sessionID string) {
+	id, ok := strings.CutPrefix(sessionID, "rec-")
+	if !ok || !mobileValidUUID(id) {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.loadLocked(); err != nil {
+		return
+	}
+	rec := s.recordings[id]
+	if rec == nil || rec.AudioRemoved {
+		return
+	}
+	if err := os.RemoveAll(filepath.Join(s.dir, rec.ID)); err != nil {
+		log.Printf("[recordings] audio of %s not removed: %v", rec.ID, err)
+		return
+	}
+	rec.AudioRemoved = true
+	if err := s.saveLocked(); err != nil {
+		log.Printf("[recordings] index save failed: %v", err)
+	}
+}
+
+// onPrivacyWithdrawal follows the withdrawal and retention of transcript
+// sessions (privacy_withdrawal.go).
+func (s *mobileRecordingStore) onPrivacyWithdrawal(withdrawal privacyWithdrawal) {
+	if withdrawal.Scope.Kind == privacyWithdrawalSession {
+		s.forgetAudioOfSession(withdrawal.Scope.ID)
+	}
+}
+
 // partPaths are a recording's files in order.
 func (s *mobileRecordingStore) partPaths(rec mobileRecording) []string {
 	paths := make([]string, 0, len(rec.Received))
@@ -661,6 +699,8 @@ func (bridge *mobileBridge) recordingStoreLocked() *mobileRecordingStore {
 	if store == nil {
 		store = newMobileRecordingStore(bridge.stateDir)
 		mobileRecordingStores[bridge.stateDir] = store
+		// The store lives for the process, as does this subscription.
+		subscribePrivacyWithdrawals(store.onPrivacyWithdrawal)
 	}
 	return store
 }

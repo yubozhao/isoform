@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -785,5 +787,44 @@ func TestKnowHowMatchPublicationStaysBoundToOrigin(t *testing.T) {
 	got, err := app.publishKnowHowMatch(context.Background(), match, runs, map[string]KnowledgeEntry{entry.ID: entry}, originID)
 	if err != nil || got != nil {
 		t.Fatalf("withdrawn origin published: %+v err=%v", got, err)
+	}
+}
+
+type knowHowFailingRunner struct {
+	memoryTranslationFakeRunner
+	calls atomic.Int64
+}
+
+func (r *knowHowFailingRunner) ExecuteTask(ctx context.Context, input *agent.TaskInput, callback agent.StreamCallback) (string, error) {
+	r.calls.Add(1)
+	return "", errors.New("gateway is not answering")
+}
+
+// The backfill failed on every launch on Bo's computer, and the app restarts
+// many times a day: three classifier calls per launch, forever. Over a
+// simulated day with a launch every hour and a failing model, it now calls the
+// model once, and again only the next day.
+func TestKnowHowBackfillCallsTheModelOnceADayWhileItFails(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	app := newTranslationTestApp(t, &memoryTranslationFakeRunner{})
+	runner := &knowHowFailingRunner{}
+	app.runner = runner
+	writeKnowHowFixture(t, "old", buildOKFKnowledgeMarkdown("old", "Fact", "", time.Now(), "conversation", nil, nil, nil))
+	start := time.Now()
+	clock := start
+	previous := knowHowBackfillNow
+	knowHowBackfillNow = func() time.Time { return clock }
+	t.Cleanup(func() { knowHowBackfillNow = previous })
+	for hour := 0; hour < 24; hour++ {
+		clock = start.Add(time.Duration(hour) * time.Hour)
+		app.runKnowHowKindBackfill(context.Background())
+	}
+	if n := runner.calls.Load(); n != 1 {
+		t.Fatalf("a failing backfill called the model %d times in a day of hourly launches; want 1", n)
+	}
+	clock = start.Add(cadenceKnowHowBackfill)
+	app.runKnowHowKindBackfill(context.Background())
+	if n := runner.calls.Load(); n != 2 {
+		t.Fatalf("the next day's launch did not try again (%d calls)", n)
 	}
 }

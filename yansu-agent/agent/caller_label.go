@@ -3,6 +3,7 @@ package agent
 import (
 	"runtime"
 	"strings"
+	"sync"
 )
 
 // callerLabelFrames is how many frames outside this package a model-call
@@ -22,7 +23,7 @@ func CallerLabel(input *TaskInput) string {
 	var names []string
 	for len(names) < callerLabelFrames {
 		frame, more := frames.Next()
-		if name := callerLabelFunc(frame.Function); name != "" {
+		if name := callerLabelFunc(frame.Function); name != "" && !isCallerLabelHelper(name) {
 			names = append(names, name)
 		}
 		if !more {
@@ -59,4 +60,26 @@ func callerLabelFunc(full string) string {
 		name = name[:i]
 	}
 	return name
+}
+
+var (
+	callerLabelHelpersMu sync.RWMutex
+	callerLabelHelpers   = map[string]bool{}
+)
+
+// RegisterCallerLabelHelpers names shared model-call helpers (as CallerLabel
+// shortens them, e.g. "(*App).runEphemeralClaudeModel") that a label skips,
+// so the frames it names are the code that asked, not the helpers between.
+func RegisterCallerLabelHelpers(names ...string) {
+	callerLabelHelpersMu.Lock()
+	defer callerLabelHelpersMu.Unlock()
+	for _, name := range names {
+		callerLabelHelpers[name] = true
+	}
+}
+
+func isCallerLabelHelper(name string) bool {
+	callerLabelHelpersMu.RLock()
+	defer callerLabelHelpersMu.RUnlock()
+	return callerLabelHelpers[name]
 }

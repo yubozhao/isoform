@@ -30,7 +30,10 @@ import (
 //     the day's noticed items.
 //
 // A snapshot past its cadence is still returned at once and rebuilt in the
-// background (snappy first). Nothing is written to disk, and nothing is
+// background (snappy first). Snapshots are also saved to disk under a durable
+// privacy stamp, so the first visit after a launch paints from the last one
+// (derived_views_disk.go; every privacy action deletes them, and the
+// YANSU_DERIVED_SNAPSHOTS=memory switch turns this off). Nothing is saved or
 // served from a snapshot while Closed Eyes is on: those reads go to the live
 // projection, as before.
 type derivedViewName string
@@ -229,6 +232,9 @@ func (d *derivedViews) touch(views ...derivedViewName) {
 			counter.Add(1)
 		}
 	}
+	// The saved copies go in the same step: until the rebuild saves, the
+	// next launch must not paint what the person just changed.
+	derivedDiskDropViews(views...)
 	d.wake()
 }
 
@@ -269,6 +275,11 @@ func (d *derivedViews) cell(view derivedViewName, key string, build func() (any,
 		}
 		return stamp
 	}
+	// A launch starts from the saved snapshot. It counts as out of date, so
+	// the first read serves it and a rebuild follows behind the read.
+	if raw, at, ok := d.app.derivedDiskLoad(view, key); ok {
+		c.has, c.raw, c.privacyOf, c.freshOf, c.at = true, raw, c.privacy(), "disk", at
+	}
 	byKey[key] = c
 	d.order[view] = append(d.order[view], key)
 	if over := len(d.order[view]) - derivedKeysPerView; over > 0 {
@@ -298,6 +309,7 @@ func (d *derivedViews) ensure(c *derivedCell, maxAge time.Duration, servable boo
 	}
 	previous, had := c.raw, c.has
 	c.mu.Unlock()
+	disk := d.app.derivedDiskToken()
 	started := time.Now()
 	value, err := c.build()
 	d.builds[c.view].Add(1)
@@ -311,9 +323,13 @@ func (d *derivedViews) ensure(c *derivedCell, maxAge time.Duration, servable boo
 	c.mu.Lock()
 	// The stamp is the one taken before the build: a privacy change during the
 	// build leaves this snapshot unserved, and the next read builds again.
-	c.has, c.raw, c.privacyOf, c.freshOf, c.at = true, raw, privacy, fresh, time.Now()
+	builtAt := time.Now()
+	c.has, c.raw, c.privacyOf, c.freshOf, c.at = true, raw, privacy, fresh, builtAt
 	c.mu.Unlock()
 	log.Printf("%s built view=%s ms=%d", derivedViewRefreshedLogLabel, c.view, time.Since(started).Milliseconds())
+	if privacy == d.app.derivedPrivacyStamp() {
+		d.app.derivedDiskSave(c.view, c.key, raw, builtAt, disk)
+	}
 	return raw, had && !bytes.Equal(previous, raw), nil
 }
 
@@ -355,6 +371,15 @@ func (d *derivedViews) publish(c *derivedCell) {
 func derivedRead[T any](a *App, view derivedViewName, key string, build func() (T, error), extra func() string) (T, error) {
 	d := a.derivedViews()
 	if !d.active() {
+		// Before the scheduler runs, the saved snapshot still paints the
+		// first visit after a launch; the scheduler's prefetch rebuilds it.
+		if raw, _, ok := a.derivedDiskLoad(view, key); ok {
+			var out T
+			if json.Unmarshal(raw, &out) == nil {
+				d.wake()
+				return out, nil
+			}
+		}
 		return build()
 	}
 	c := d.cell(view, key, func() (any, error) { return build() }, extra)
@@ -497,7 +522,11 @@ func (d *derivedViews) admit(ctx context.Context) bool {
 	a.pageWarm.mu.Lock()
 	painted := a.pageWarm.painted
 	a.pageWarm.mu.Unlock()
-	if !painted {
+	// The scheduler starts after models_ready (startupServices). With the
+	// switch on it does not also wait for the first paint: a window that
+	// launches hidden may not paint for minutes, and every first visit
+	// before then built its page live.
+	if !painted && !derivedDiskEnabled() {
 		return false
 	}
 	admission, cancel := context.WithTimeout(ctx, time.Second)
@@ -541,12 +570,14 @@ func (d *derivedViews) tick(ctx context.Context, kicked bool) {
 	}
 	if !d.app.pageSnapshotAllowed() {
 		d.drop(func(*derivedCell) bool { return true })
+		derivedDiskDropAll()
 		return
 	}
 	privacy := d.app.derivedPrivacyStamp()
 	if privacy != d.privacySeen {
 		d.privacySeen = privacy
 		d.drop(func(c *derivedCell) bool { return true })
+		derivedDiskDropAll()
 		d.app.markMainChatWaitingDirty("privacy:derived")
 		d.prefetch(ctx)
 		return
@@ -610,6 +641,7 @@ func (d *derivedViews) drop(match func(*derivedCell) bool) {
 // noteDerivedPrivacyChanged is called after every privacy action: the
 // scheduler drops and rebuilds the snapshots now. Reads are fenced anyway.
 func noteDerivedPrivacyChanged() {
+	derivedDiskDropAll()
 	if live := derivedViewsLive.Load(); live != nil {
 		live.wake()
 	}

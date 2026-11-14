@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -457,12 +458,11 @@ func TestProactiveCardCopyIsServedAtOnceAndConfirmedLater(t *testing.T) {
 	}
 }
 
-// When the background check cannot confirm a card, the copy is deleted and the
-// page is told to reload; the next read recomputes the live page, so the copy's
-// card is never served again.
-func TestProactiveCardCopyIsDroppedWhenItsCheckFails(t *testing.T) {
+// A background check that only runs out of time keeps the copy and asks for no
+// reload: a timeout withdraws nothing.
+func TestProactiveCardCopyStaysWhenItsCheckTimesOut(t *testing.T) {
 	a, session := streamPageTestApp(t)
-	appendStreamPageCard(t, a, session, "card-unconfirmed")
+	appendStreamPageCard(t, a, session, "card-late")
 	latestPage(t, a, session)
 	waitStreamPageVerified(t, a)
 	waitStreamPageCardChecks(t, a)
@@ -475,18 +475,65 @@ func TestProactiveCardCopyIsDroppedWhenItsCheckFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitStreamPageCardChecks(t, a)
-	if _, reason := readRawStreamPageSnapshot(key); reason != "no-copy" {
-		t.Fatalf("the copy with an unconfirmed card stayed on disk (%q)", reason)
+	if _, reason := readRawStreamPageSnapshot(key); reason != "" {
+		t.Fatalf("a timed-out card check dropped the copy (%q)", reason)
 	}
-	if reloads.Load() == 0 {
-		t.Fatal("the page was not told to reload after its card check failed")
+	if reloads.Load() != 0 {
+		t.Fatal("a timed-out card check asked the page to reload")
 	}
 	computes := a.streamPages.computes.Load()
 	if _, err := a.LoadStreamItemsPage(session, -1, 50); err != nil {
 		t.Fatal(err)
 	}
-	if n := a.streamPages.computes.Load(); n != computes+1 {
-		t.Fatalf("the read after a failed card check did not recompute (%d computes)", n-computes)
+	if n := a.streamPages.computes.Load(); n != computes {
+		t.Fatalf("the read after a timed-out check recomputed (%d computes)", n-computes)
+	}
+}
+
+// When the live gates do not reproduce a copy's card, the copy is deleted and
+// the page is told to reload; the next read recomputes the live page, so the
+// copy's card is never served again.
+func TestProactiveCardCopyIsDroppedWhenACardChanged(t *testing.T) {
+	a, session := streamPageTestApp(t)
+	appendStreamPageCard(t, a, session, "card-unconfirmed")
+	latestPage(t, a, session)
+	waitStreamPageVerified(t, a)
+	waitStreamPageCardChecks(t, a)
+	key := streamPageKey{session: session, limit: 50}
+	snap, reason := readRawStreamPageSnapshot(key)
+	if reason != "" {
+		t.Fatalf("no copy: %s", reason)
+	}
+	for i := range snap.Page.Items {
+		if snap.Page.Items[i].ID == "card-unconfirmed" {
+			snap.Page.Items[i].ToolInput = strings.Replace(snap.Page.Items[i].ToolInput, "{", `{"planted":"words",`, 1)
+		}
+	}
+	if err := writeStreamPageSnapshot(key, snap); err != nil {
+		t.Fatal(err)
+	}
+	reloads := captureStreamPageReloads(t)
+	if _, err := a.LoadStreamItemsPage(session, -1, 50); err != nil {
+		t.Fatal(err)
+	}
+	waitStreamPageCardChecks(t, a)
+	if _, reason := readRawStreamPageSnapshot(key); reason != "no-copy" {
+		t.Fatalf("the copy with a changed card stayed on disk (%q)", reason)
+	}
+	if reloads.Load() == 0 {
+		t.Fatal("the page was not told to reload after a card changed")
+	}
+	computes := a.streamPages.computes.Load()
+	page, err := a.LoadStreamItemsPage(session, -1, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	planted := false
+	for _, item := range page.Items {
+		planted = planted || strings.Contains(item.ToolInput, "planted")
+	}
+	if n := a.streamPages.computes.Load(); n != computes+1 || planted {
+		t.Fatalf("the read after a changed card did not recompute the live page (%d computes)", n-computes)
 	}
 }
 
@@ -582,4 +629,57 @@ func TestLatestStreamPagePaintsFastWithABackgroundWriter(t *testing.T) {
 	waitStreamPageCardChecks(t, a)
 	// Let the detached recomputes finish before the store closes.
 	time.Sleep(2 * time.Second)
+}
+
+// Deleting a chat withdraws it: its saved first page leaves the disk at once,
+// though that chat is never read again. Before, a copy was dropped only when
+// its own page was next read, so a deleted chat's words stayed on disk.
+func TestDeletingAChatRemovesItsSavedFirstPage(t *testing.T) {
+	a, session := streamPageTestApp(t)
+	adoptTestBriefPrivacyEpoch(a)
+	if page := latestPage(t, a, session); !pageHas(page, "one") {
+		t.Fatal("the fixture page lacks its item")
+	}
+	path, err := streamPageFile(streamPageKey{session: session, limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("no saved copy to delete: %v", err)
+	}
+	if err := a.DeleteSessionData(session); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("the deleted chat's saved first page is still on disk: %v", err)
+	}
+}
+
+// A copy left under an older epoch (the app stopped before its chat was read
+// again) is removed when the saved epoch is loaded at launch; a copy made under
+// the current epoch is kept.
+func TestALaunchRemovesSavedPagesFromAnOlderEpoch(t *testing.T) {
+	a, session := streamPageTestApp(t)
+	adoptTestBriefPrivacyEpoch(a)
+	latestPage(t, a, session)
+	key := streamPageKey{session: session, limit: 50}
+	path, err := streamPageFile(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale := filepath.Join(filepath.Dir(path), "stale.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stale, []byte(`{"format":2,"readStamp":"read|999999|false|0"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dropStaleStreamPageCopies()
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Fatal("a copy from another epoch stayed on disk")
+	}
+	if kept, err := os.ReadFile(path); err != nil || string(kept) != string(raw) {
+		t.Fatalf("the current copy was removed: %v", err)
+	}
 }

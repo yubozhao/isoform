@@ -33,10 +33,11 @@ watch (records AAC, mono) -> phone (WatchConnectivity file transfer)
 | --- | --- | --- |
 | One-tap record and stop on the watch | yes | |
 | Recording continues with the screen off (background audio session) | yes | |
-| Start from a complication | no | a WidgetKit complication target that opens `isoformwatch://record` (the app already handles the link) |
+| Start from a complication | yes: `YansuWatchComplication` (circular, corner, inline, rectangular) opens the app recording | show the live recording state on the face (needs an App Group) |
 | Start from the Action button (Apple Watch Ultra) | yes: the "Start recording" shortcut, assigned in Settings > Action Button > Shortcut | |
 | Long recordings | yes: cut into 15-minute files, each sent on its own | all-day mode with battery guard |
 | Recent recordings list with state | yes | |
+| Recordings listed on the phone | yes: Settings > Watch > Recordings, shown once a recording has arrived | the designed place; play back, delete |
 | Upload state per recording (On watch, Sent to phone, On your computer, Transcribed) | yes | |
 | Sync to the phone, then to the computer | yes | watch on cellular without the phone |
 | Transcription | yes, on the computer | on-watch or on-phone preview |
@@ -71,6 +72,8 @@ watch (records AAC, mono) -> phone (WatchConnectivity file transfer)
   compiled into both apps and tested with the phone's unit tests.
 - `ios/Yansu/WatchLink.swift`, `ios/Yansu/WatchRecordingForwarder.swift`: the phone's receiver
   and forwarder.
+- `ios/YansuWatchComplication/`: the watch face complication (WidgetKit), embedded in the watch app.
+- `ios/Yansu/WatchRecordingsView.swift`: the phone's plain list of watch recordings.
 - `scripts/build-watch.sh`: builds the watch app for the watchOS Simulator.
 - `mobile-protocol/PROTOCOL.md` section 24: the contract.
 
@@ -80,10 +83,12 @@ Nothing here blocks simulator builds or tests. Each item needs his Apple account
 
 1. App ID `com.isoform.companion.watchkitapp` in the developer account, and a provisioning
    profile (or automatic signing with his team) for the watch target. Until it exists the watch
-   target is built on its own (`./scripts/build-watch.sh`, scheme `YansuWatch`) and is not
-   embedded in the iPhone app, so today's iPhone builds and TestFlight uploads are unchanged.
-   Embedding is one "Embed Watch Content" build phase on the Yansu target plus a target
-   dependency; it is the first step after the App ID exists.
+   app stays out of the iPhone app: the Yansu target has an "Embed Watch Content" phase, but
+   its one file is excluded unless `ISOFORM_EMBED_WATCH=YES` (default `NO`), and the Yansu
+   scheme does not build the watch target, so today's iPhone builds and TestFlight uploads are
+   unchanged. To ship the watch app once the App ID exists, build the `YansuWithWatch` scheme
+   with `ISOFORM_EMBED_WATCH=YES` (it builds the watch app first, then embeds it at
+   `Yansu.app/Watch/YansuWatch.app`), and make that the default in `scripts/distribute-ios.sh`.
 2. The watch app in App Store Connect: it ships inside the iPhone app's record, but the record
    needs watch screenshots and the microphone purpose text reviewed.
 3. A real watch to prove screen-off recording, the Action button and battery use. The
@@ -94,3 +99,8 @@ Nothing here blocks simulator builds or tests. Each item needs his Apple account
    re-pair. A separate `recording:write` scope would be stricter but forces re-pairing.
 7. Design: the watch screens were built from the design-system tokens without a design
    board; they need a pass by Isoform design.
+8. App ID `com.isoform.companion.watchkitapp.complication` for the complication, with the
+   watch app's (item 1).
+9. Versions: the two watch targets carry their own `MARKETING_VERSION` (1.0.5 today). Once the
+   watch app is embedded it must match the iPhone app's version, so the version bump has to
+   touch all three.

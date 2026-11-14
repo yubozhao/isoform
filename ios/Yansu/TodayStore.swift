@@ -437,6 +437,7 @@ final class TodayStore: ObservableObject {
         // The library fetches the bodies this snapshot names; a later snapshot does not cancel them.
         brief.reconcileToday(value)
         cache.save(value, for: identity)
+        settleFresh(with: value)
         onSnapshot?(value, previous)
         prefetchTask?.cancel()
         let currentGeneration = generation
@@ -536,11 +537,35 @@ final class TodayStore: ObservableObject {
                 brief.notice = String(localized: "Isoform could not save this change. Try again.")
                 return
             }
-            if JournaledWriter.disposition(for: error) != .keep {
+            if Self.freshRefused(error) || JournaledWriter.disposition(for: error) != .keep {
                 _ = try? await journal.transitionToday(key: pendingFresh.key, event: .answer)
                 await loadPendingFresh()
                 freshFailed = true
             }
+        }
+    }
+
+    /// Answers that mean no brief will be made for this request: the Mac said no (its once-per-10-minutes limit, an
+    /// error), or the relay would not queue it. Kept as sent, the row would wait a day with nothing to tap.
+    static func freshRefused(_ error: Error) -> Bool {
+        switch error as? HubRequestError {
+        case .rejected?, .queueFull?:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// A request already sent that the Mac never answered (it was asleep, or the answer was lost) is settled by
+    /// the Mac's next snapshot: one that shows the brief being made, or a brief made after the request went out.
+    private func settleFresh(with value: MobileTodaySnapshot) {
+        guard let journal, !sendingFresh, let pending = pendingFresh, let sent = pending.todayRefreshDispatchedAt,
+              pending.todayDeviceID == identity()?.deviceID else { return }
+        let madeSince = value.latestBrief?.madeDate.map { $0 >= sent } ?? false
+        guard value.briefRequest != nil || madeSince else { return }
+        Task { [weak self] in
+            _ = try? await journal.transitionToday(key: pending.key, event: .answer)
+            await self?.loadPendingFresh()
         }
     }
 

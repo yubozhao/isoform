@@ -10,8 +10,9 @@ package main
 // phone asks for direct-path credentials over the pinned relay (POST
 // /remote-access): it gets the iroh ticket and a bearer that only the local
 // relay knows. The hub then mirrors every frame a phone needs (responses,
-// events, briefs, acks, revokes, goodbyes) to the local relay, so the phone can
-// use either path and fall back between them.
+// events, briefs, revokes, goodbyes) to the local relay, so the phone can use
+// either path and fall back between them. Acks are not mirrored: a request is
+// acknowledged on the relay that delivered it (ackInbound).
 //
 // Pairing still happens on the pinned relay. Pushes are queued only there, so
 // a phone never gets the same notification twice.
@@ -103,17 +104,32 @@ func (bridge *mobileBridge) directGrant(deviceID string) (mobileDirectGrant, boo
 	return grant, ok
 }
 
-// dropDirectGrant forgets a removed phone's direct-path bearer. The revoke the
-// caller sends is mirrored to the local relay whether or not a grant existed.
+// dropDirectGrant forgets a removed phone's direct-path bearer and revokes
+// the phone at the local relay itself, because not every removal sends a
+// revoke to the pinned relay: a phone that unpaired there
+// (device_unpaired) or that the pinned relay no longer lists is removed
+// without one, and a revoke queued while the pinned relay is offline is
+// mirrored only when it is flushed. Without this the phone's direct-path
+// bearer would stay valid until the direct link next registers. A revoke of a
+// device the local relay does not know is a no-op there. It may run with
+// bridge.mu held, so it takes only directMu and the direct client's own lock.
 func (bridge *mobileBridge) dropDirectGrant(deviceID string) {
 	bridge.directMu.Lock()
-	defer bridge.directMu.Unlock()
-	if _, ok := bridge.directGrants[deviceID]; !ok {
+	if _, ok := bridge.directGrants[deviceID]; ok {
+		delete(bridge.directGrants, deviceID)
+		if err := bridge.persistDirectGrantsLocked(); err != nil {
+			log.Printf("[mobile-direct] could not save the direct-path grants: %v", err)
+		}
+	}
+	bridge.directMu.Unlock()
+	direct := bridge.direct.Load()
+	if direct == nil {
+		// The next registration of the direct link revokes listed phones
+		// that hold no grant.
 		return
 	}
-	delete(bridge.directGrants, deviceID)
-	if err := bridge.persistDirectGrantsLocked(); err != nil {
-		log.Printf("[mobile-direct] could not save the direct-path grants: %v", err)
+	if err := direct.send(map[string]any{"t": "revoke", "deviceId": deviceID}); err != nil && !errors.Is(err, errMobileRelayOffline) {
+		log.Printf("[mobile-direct] could not revoke a removed phone on the direct path: %v", err)
 	}
 }
 
@@ -266,13 +282,6 @@ func (bridge *mobileBridge) directCopy(raw []byte) (map[string]json.RawMessage, 
 		out := keep("t", "env", "asOf", "deliverAt")
 		out["notify"] = json.RawMessage("false")
 		return out, true
-	case "ack":
-		var dev string
-		_ = json.Unmarshal(fields["dev"], &dev)
-		if !granted(dev) {
-			return nil, false
-		}
-		return fields, true
 	case "revoke", "goodbye":
 		return fields, true
 	default:
@@ -431,7 +440,8 @@ func (h *mobileDirectHandler) relayRegistered(client *mobileRelayClient, presenc
 func (h *mobileDirectHandler) relayFrame(kind string, raw []byte) {
 	switch kind {
 	case "in":
-		h.bridge.handleInboundFrame(raw)
+		// The request is acknowledged on this connection only.
+		h.bridge.handleInboundFrameFrom(raw, h.bridge.direct.Load())
 	case "device_unpaired":
 		// The phone removed itself through the direct path. Remove it here and
 		// at the pinned relay too.

@@ -88,7 +88,19 @@ func serveBytes(t *testing.T, data []byte) *httptest.Server {
 	return srv
 }
 
+// assumeQwen3DiskRoom: these tests install a few-kilobyte fake archive, so the
+// test machine's real free space (checked against the 2.8 GB production model)
+// must not decide them. The low-disk branch is
+// TestEnsureQwen3ASRAssetsSkipsWhenDiskIsShort's.
+func assumeQwen3DiskRoom(t *testing.T) {
+	t.Helper()
+	old := freeDiskSpace
+	freeDiskSpace = func(string) (uint64, error) { return 1 << 40, nil }
+	t.Cleanup(func() { freeDiskSpace = old })
+}
+
 func TestEnsureQwen3ASRAssetsInstallsAVerifiedModel(t *testing.T) {
+	assumeQwen3DiskRoom(t)
 	archive := qwen3Archive(t)
 	srv := serveBytes(t, archive)
 	paths := qwen3ASRPathsUnder(filepath.Join(t.TempDir(), "qwen3-asr"))
@@ -107,6 +119,7 @@ func TestEnsureQwen3ASRAssetsInstallsAVerifiedModel(t *testing.T) {
 }
 
 func TestEnsureQwen3ASRAssetsRejectsAWrongChecksum(t *testing.T) {
+	assumeQwen3DiskRoom(t)
 	archive := qwen3Archive(t)
 	srv := serveBytes(t, archive)
 	paths := qwen3ASRPathsUnder(filepath.Join(t.TempDir(), "qwen3-asr"))
@@ -123,6 +136,7 @@ func TestEnsureQwen3ASRAssetsRejectsAWrongChecksum(t *testing.T) {
 }
 
 func TestEnsureQwen3ASRAssetsFailedExtractionInstallsNothing(t *testing.T) {
+	assumeQwen3DiskRoom(t)
 	// Verified bytes that are not a bzip2 archive: the extraction fails, as
 	// a full disk would make it.
 	broken := []byte("this is not a bzip2 archive, but its checksum matches")

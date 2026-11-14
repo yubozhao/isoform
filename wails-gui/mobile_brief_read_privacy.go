@@ -431,9 +431,15 @@ func (a *App) mobileBriefDeliveryOnce(ctx context.Context, brief MobileBriefV1) 
 	// These identities stay local. A checked empty dependency list supports
 	// an unknown attendance observation; nil is an unchecked legacy record.
 	readableAttendance := map[string]bool{}
+	kept, _ := ctx.Value(mobileBriefKeptAttendanceKey{}).(map[string]bool)
 	for _, row := range brief.MeetingAttendance {
 		allowed := !closed && mailErr == nil && row.sourceSessionIDs != nil && !mobileBriefValueEchoesMail(row, subjects)
 		for _, sessionID := range row.sourceSessionIDs {
+			if allowed && kept[row.EventID] && reader.sessionRemovedByRetention(sessionID) {
+				// Seal v2: the copy kept this row and retention removed its
+				// session since; that is not a privacy action, so it stays.
+				continue
+			}
 			allowed = allowed && dependencyAllowed(context.Background(), sessionID, nil)
 		}
 		if previous, exists := readableAttendance[row.EventID]; exists {

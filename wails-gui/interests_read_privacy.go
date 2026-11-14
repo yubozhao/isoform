@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
 	"sync"
@@ -278,6 +279,10 @@ func (a *App) memoryEntryForInterestRead(id string) (MemoryEntry, error) {
 // interestsFollowingReadFilter checks each activity identity, reusing verified
 // source facts and reading only referenced cache misses. Other evidence kinds
 // keep their complete checks in the background pass and wait for its snapshot.
+// followingSlowCheckLog is the per-interest check time above which the check
+// logs its breakdown.
+const followingSlowCheckLog = 500 * time.Millisecond
+
 func (a *App) interestsFollowingReadFilter(ctx context.Context) func(interests.Interest) bool {
 	policy, err := a.activityReadPrivacyPolicyContext(ctx)
 	return func(interest interests.Interest) bool {
@@ -285,6 +290,17 @@ func (a *App) interestsFollowingReadFilter(ctx context.Context) func(interests.I
 			len(interest.Evidence) == 0 {
 			return false
 		}
+		// Which read stalls when one interest's check is slow: counts and
+		// durations only.
+		var activityTime, semanticTime time.Duration
+		activityRefs, semanticRefs := 0, 0
+		started := time.Now()
+		defer func() {
+			if total := time.Since(started); total >= followingSlowCheckLog {
+				log.Printf("[topics] following_check_slow total_ms=%d refs=%d activity_refs=%d activity_ms=%d semantic_refs=%d semantic_ms=%d",
+					total.Milliseconds(), len(interest.Evidence), activityRefs, activityTime.Milliseconds(), semanticRefs, semanticTime.Milliseconds())
+			}
+		}()
 		for _, ref := range interest.Evidence {
 			if ctx.Err() != nil || ref.Source != interests.SourceActivity {
 				return false
@@ -295,12 +311,20 @@ func (a *App) interestsFollowingReadFilter(ctx context.Context) func(interests.I
 			}
 			switch kind {
 			case "activity":
+				activityRefs++
+				at := time.Now()
 				row, err := a.activity.store.GetActivityByIDContext(ctx, id)
-				if err != nil || row == nil || !a.interestFollowingActivity(ctx, *row, policy) {
+				ok := err == nil && row != nil && a.interestFollowingActivity(ctx, *row, policy)
+				activityTime += time.Since(at)
+				if !ok {
 					return false
 				}
 			case "semantic":
-				if !a.interestFollowingSemantic(ctx, id, policy) {
+				semanticRefs++
+				at := time.Now()
+				ok := a.interestFollowingSemantic(ctx, id, policy)
+				semanticTime += time.Since(at)
+				if !ok {
 					return false
 				}
 			default:

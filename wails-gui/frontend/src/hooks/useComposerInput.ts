@@ -673,14 +673,9 @@ export function useComposerInput({
         const items = activeSession?.items ?? [];
         const latest = items[items.length - 1];
         if (!latest || latest.kind !== 'error') return null;
-        return chatErrorCauseOf(latest).code === 'signed_out' ? latest.id : null;
+        const code = chatErrorCauseOf(latest).code;
+        return code === 'signed_out' || code === 'no_reply' ? latest.id : null;
     }, [activeSession]);
-    const resendLastSend = useCallback(() => {
-        const last = lastSendRef.current;
-        if (!last || !activeSession || activeSession.localId !== last.tag || activeSession.streaming) return;
-        if (!resendItemId) return;
-        void last.retry();
-    }, [activeSession, resendItemId]);
     const retryFailedSend = useCallback((itemId: string) => {
         const failed = failedSendsRef.current.get(itemId);
         if (!failed || failed.inFlight) return;
@@ -1063,6 +1058,25 @@ export function useComposerInput({
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeProject, activeWorkspace, activeSession, updateProject, model, t]);
+
+    const resendLastSend = useCallback(() => {
+        if (!activeSession || activeSession.streaming || !resendItemId) return;
+        const last = lastSendRef.current;
+        if (last && activeSession.localId === last.tag) {
+            void last.retry();
+            return;
+        }
+        // A no-reply row the hub stored (the window was closed, or the app quit
+        // mid-turn) has no send in memory: send the message it answers again,
+        // reusing its row. Its words are what the chat shows; attachments are not kept.
+        const items = activeSession.items;
+        const latest = items[items.length - 1];
+        if (!latest || chatErrorCauseOf(latest).code !== 'no_reply') return;
+        const asked = [...items].reverse().find((item) => item.kind === 'user');
+        const text = asked?.content?.trim();
+        if (!asked || !text) return;
+        void executeSend(text, [], [], undefined, undefined, undefined, { item: asked, traceID: newTraceID() });
+    }, [activeSession, resendItemId, executeSend]);
 
     /** Public: enqueue or send immediately. */
     const sendPromptAction = useCallback(async () => {

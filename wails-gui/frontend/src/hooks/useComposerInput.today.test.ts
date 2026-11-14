@@ -1247,3 +1247,18 @@ describe('Send again after a signed-out answer (R75)', () => {
         expect(calls.plain).toHaveBeenCalledTimes(2);
     });
 });
+
+// A no-reply row the hub stored (window closed, or the app quit mid-turn) has
+// no send in memory: Send again sends the message it answers, on that row.
+describe('Send again after no answer came back', () => {
+    it('resends the stored message on its own row when nothing was sent in this window', async () => {
+        const { hook, main } = mount();
+        const asked = { id: 'user-1', kind: 'user', content: 'What is on today?' };
+        hook.rerender({ session: { ...main, items: [asked, { id: 'err-1', kind: 'error', content: 'No answer came back.', toolInput: { code: 'no_reply' } }] } as never });
+        expect(hook.result.current.resendItemId).toBe('err-1');
+        act(() => hook.result.current.resendLastSend());
+        await waitFor(() => expect(calls.plain).toHaveBeenCalledTimes(1));
+        expect(calls.plain.mock.calls[0][0]).toBe('What is on today?');
+        expect(calls.persist.mock.calls.every((call) => call[1].id === 'user-1')).toBe(true);
+    });
+});

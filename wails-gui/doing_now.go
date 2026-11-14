@@ -286,6 +286,7 @@ func (a *App) noteUILanguageChanged() {
 		return
 	}
 	derivedLanguageGeneration.Add(1)
+	derivedDiskDropAll()
 	a.derivedViews().wake()
 	t := &a.doingNow
 	t.mu.Lock()

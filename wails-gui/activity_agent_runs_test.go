@@ -176,3 +176,34 @@ func TestCodexThreadIndexPlacesArchivedRecords(t *testing.T) {
 		t.Fatal("a record no thread covers was placed")
 	}
 }
+
+// An agent mark is metadata about a run (when, how long). When the run is
+// deleted (retention, a fold, a privacy purge), the mark goes with it, so the
+// day no longer counts agent work whose activity is gone.
+func TestAgentRunMarkLeavesWithItsRun(t *testing.T) {
+	app := newThreadTestApp(t)
+	store := app.activity.store
+	day, dayMs := threadTestDay(t)
+	agent := seedThreadMoment(t, app, threadFixtureMoment{id: "hourly", title: "Hourly PR check in the hub", app: "Claude", bundle: "com.anthropic.claudefordesktop", start: at(day, 10, 0), end: at(day, 10, 20)})
+	run, err := store.GetTimelineRunByID("run-" + agent.ID)
+	if err != nil || run == nil {
+		t.Fatalf("agent run: %v", err)
+	}
+	if err := store.MarkTimelineRunAgent(*run); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if got, _ := store.agentRunDay(ctx, dayMs); got.Runs != 1 {
+		t.Fatalf("agent line before delete = %+v", got)
+	}
+	if _, err := store.db.Exec(`DELETE FROM activity_timeline_groups WHERE id = ?`, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := store.agentRunDay(ctx, dayMs); got.Runs != 0 || got.ActiveMs != 0 {
+		t.Fatalf("agent line outlived its run = %+v", got)
+	}
+	var left int
+	if err := store.db.QueryRow(`SELECT COUNT(*) FROM activity_agent_runs WHERE run_id = ?`, run.ID).Scan(&left); err != nil || left != 0 {
+		t.Fatalf("agent mark rows left = %d, %v", left, err)
+	}
+}

@@ -1428,8 +1428,10 @@ func (s *mobileBriefService) backfillTodayAudio(ctx context.Context) {
 	if brief.LocalDate != s.now().In(loc).Format("2006-01-02") {
 		return
 	}
-	// The sealed read amends the copy first when a withdrawal happened since
-	// it was sealed, so a withdrawn part is never spoken again.
+	// A stated exclusion changed since it was last read counts as a
+	// withdrawal (noteMobileBriefExclusions); the sealed read then amends the
+	// copy first, so a withdrawn part is never spoken again.
+	s.app.mobileBriefExclusions()
 	shown, _, err := s.finishedReadWithholding(brief)
 	if err != nil || shown.NarrativeStatus != "ok" || len(shown.Narrative) == 0 {
 		return
@@ -2105,8 +2107,9 @@ func (s *mobileBriefService) SetSchedule(schedule MobileBriefSchedule) (MobileBr
 		EnabledAt: previous.EnabledAt,
 		Adaptive:  previous.Adaptive,
 		// Settings the schedule screen does not show keep their saved values.
-		ShadowCompose: previous.ShadowCompose,
-		NewBrief:      previous.NewBrief,
+		ShadowCompose:     previous.ShadowCompose,
+		NewBrief:          previous.NewBrief,
+		MessagingOutcomes: previous.MessagingOutcomes,
 	}
 	if schedule.AdaptiveTiming != nil {
 		settings.Adaptive = *schedule.AdaptiveTiming
