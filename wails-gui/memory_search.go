@@ -184,12 +184,18 @@ func (s *MemoryStore) search(
 	tokens := ftsTokens(keywords)
 	shortSingleToken := isShortSingleToken(tokens)
 
+	// Embedding and the vector scan may not spend the keyword search's share
+	// of a bounded caller budget: a busy embedder used to take all of it, and
+	// the keyword search then failed at once, returning nothing at all.
+	vectorCtx, cancelVector := memoryVectorContext(ctx, options.strictErrors)
+	defer cancelVector()
+
 	// Embed the query once even when protected candidates require wider pages.
 	var queryVec []float64
 	if embedder != nil && !shortSingleToken {
 		var err error
 		queryVec, err = func() ([]float64, error) {
-			eCtx, cancel := context.WithTimeout(ctx, embeddingQueryTimeout)
+			eCtx, cancel := context.WithTimeout(vectorCtx, embeddingQueryTimeout)
 			defer cancel()
 			return embedder.EmbedQuery(eCtx, query)
 		}()
@@ -210,7 +216,7 @@ func (s *MemoryStore) search(
 		var vectorResults, keywordResults []MemorySearchResult
 		if len(queryVec) > 0 {
 			var err error
-			vectorResults, err = s.searchVector(ctx, db, queryVec, candidateLimit)
+			vectorResults, err = s.searchVector(vectorCtx, db, queryVec, candidateLimit)
 			if err != nil {
 				log.Printf("[memory] vector search failed: %v", err)
 				if options.strictErrors {
@@ -334,6 +340,21 @@ func (s *MemoryStore) search(
 		)
 		return results, nil
 	}
+}
+
+// memorySearchKeywordReserve is the part of a bounded search budget kept for
+// the keyword search, which takes milliseconds.
+const memorySearchKeywordReserve = time.Second
+
+// memoryVectorContext bounds the embedding and vector phase of a best-effort
+// search so it ends memorySearchKeywordReserve before the caller's deadline.
+// Strict (complete-context) searches need every phase and keep the full budget.
+func memoryVectorContext(ctx context.Context, strict bool) (context.Context, context.CancelFunc) {
+	deadline, ok := ctx.Deadline()
+	if strict || !ok || time.Until(deadline) <= 2*memorySearchKeywordReserve {
+		return context.WithCancel(ctx)
+	}
+	return context.WithDeadline(ctx, deadline.Add(-memorySearchKeywordReserve))
 }
 
 func finalizeMemorySearchResults(
