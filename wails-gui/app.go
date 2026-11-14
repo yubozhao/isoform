@@ -1190,10 +1190,12 @@ func (a *App) startupServices(ctx context.Context) {
 	a.memoryGenerator = mc
 	go mc.Run(a.ctx)
 	a.ensureActivityTriagerStarted()
-	a.deferLaunchTask("know_how_backfill", func() { a.runKnowHowKindBackfill(a.ctx) })
+	// The backfill makes model calls and sleeps a minute between retries; on
+	// the serial launch queue it held the credential probe ~3 minutes.
+	a.deferBackgroundLaunchTask("know_how_backfill", func() { a.runKnowHowKindBackfill(a.ctx) })
 	// One-time: hide memories and know-how learned only from agent activity.
 	// It reads session files, so it runs off the launch path.
-	a.deferLaunchTask("agent_activity_cleanup", func() { go a.runAgentActivityCleanup(a.ctx) })
+	a.deferBackgroundLaunchTask("agent_activity_cleanup", func() { a.runAgentActivityCleanup(a.ctx) })
 
 	// Memory Dream consolidator: a nightly cycle that archives exact
 	// duplicates, expired temporaries, and near-duplicate clusters of

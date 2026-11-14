@@ -162,6 +162,8 @@ func (bridge *mobileBridge) handleAuthorized(w http.ResponseWriter, r *http.Requ
 		bridge.serveBriefRefresh(w, r, device)
 	case "GET /devices":
 		bridge.serveDevices(w)
+	case "POST /remote-access":
+		bridge.serveRemoteAccess(w, device)
 	case "GET /chats":
 		if !mobileRequireScope(w, device, mobileScopeChatRead) {
 			return

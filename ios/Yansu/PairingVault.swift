@@ -1,6 +1,12 @@
 import Darwin
 import Foundation
 
+// The computer's direct path for a relay pairing: its iroh ticket and a bearer only its own relay knows.
+struct DirectRoute: Codable, Equatable, Sendable {
+    let ticket: String
+    let bearer: String
+}
+
 // Sequence state for one paired hub (PROTOCOL.md section 4). `lastAcceptedBrief` and
 // `lastAcceptedMessage` are the per-stream receive cursors; `sendSeq` is the device's own
 // strictly increasing counter, shared by both directions of nonces.
@@ -79,6 +85,9 @@ final class PairingVault: @unchecked Sendable {
     private var record: PairedDevice?
     private var loaded = false
     private var cachedSession: SessionContext?
+    /// Whether a relay pairing with a direct route should use it first. It starts on the relay at launch and
+    /// moves only after a failed request.
+    private var preferDirect = false
     private var recordLoadError: PairingVaultError?
 
     init(directory: URL, secrets: SecretStore,
@@ -199,15 +208,84 @@ final class PairingVault: @unchecked Sendable {
                 cachedSession = baseContext
             }
             guard let ticket = try secrets.read(PairingSecretAccount.irohTicket(hubID: record.hubID)) else {
-                return baseContext
+                // A relay pairing that also holds a direct route uses whichever path worked last. While the
+                // direct tunnel is still opening, the relay serves the request.
+                guard preferDirect, let direct = try readDirectRouteLocked(record) else { return baseContext }
+                guard let origin = remoteOrigin(direct.ticket) else {
+                    startRemote(direct.ticket)
+                    return baseContext
+                }
+                return SessionContext(credentials: RelayCredentials(origin: origin, bearer: direct.bearer),
+                                      hubID: baseContext.hubID, deviceID: baseContext.deviceID, keys: baseContext.keys,
+                                      route: .direct)
             }
             guard let origin = remoteOrigin(ticket) else {
                 startRemote(ticket)
                 throw RelayClientError.offline
             }
             return SessionContext(credentials: RelayCredentials(origin: origin, bearer: baseContext.credentials.bearer),
-                                  hubID: baseContext.hubID, deviceID: baseContext.deviceID, keys: baseContext.keys)
+                                  hubID: baseContext.hubID, deviceID: baseContext.deviceID, keys: baseContext.keys,
+                                  route: .direct)
         }
+    }
+
+    // MARK: Direct route beside the relay (PROTOCOL.md section 21.4)
+
+    /// Called after a request over `context` failed on the way to the computer. When this pairing has a second
+    /// path, later sessions use it and the call returns true, so the caller may try once more.
+    func switchRoute(after context: SessionContext) -> Bool {
+        let (switched, ticket): (Bool, String?) = locked {
+            guard let record, record.deviceID == context.deviceID,
+                  (try? secrets.read(PairingSecretAccount.irohTicket(hubID: record.hubID))) == nil,
+                  let direct = try? readDirectRouteLocked(record) else { return (false, nil) }
+            switch context.route {
+            case .relay:
+                preferDirect = true
+                return (true, direct.ticket)
+            case .direct:
+                preferDirect = false
+                return (true, nil)
+            }
+        }
+        if let ticket { startRemote(ticket) }
+        return switched
+    }
+
+    /// True when this relay pairing also holds the computer's direct path.
+    var hasDirectRoute: Bool {
+        locked {
+            loadIfNeeded()
+            guard let record else { return false }
+            return (try? readDirectRouteLocked(record)) != nil
+        }
+    }
+
+    /// Saves the direct path the computer offered over the relay. A pairing that is already ticket-only
+    /// (remote access mode) never needs one.
+    func storeDirectRoute(_ route: DirectRoute, deviceID: String) throws {
+        try locked {
+            try requireReadableRecord()
+            guard let record, record.deviceID == deviceID else { throw HubRequestError.notPaired }
+            let data = try Self.encoder.encode(route)
+            try secrets.save(String(decoding: data, as: UTF8.self),
+                             account: PairingSecretAccount.directRoute(secretID: record.secretID))
+        }
+        startRemote(route.ticket)
+    }
+
+    /// The ticket the forwarder should keep open: the pairing's own, or its direct route's.
+    func forwarderTicket() -> String? {
+        if let ticket = try? irohTicket() { return ticket }
+        return locked {
+            loadIfNeeded()
+            guard let record else { return nil }
+            return (try? readDirectRouteLocked(record))?.ticket
+        }
+    }
+
+    private func readDirectRouteLocked(_ record: PairedDevice) throws -> DirectRoute? {
+        guard let text = try secrets.read(PairingSecretAccount.directRoute(secretID: record.secretID)) else { return nil }
+        return try? Self.decoder.decode(DirectRoute.self, from: Data(text.utf8))
     }
 
     func irohTicket() throws -> String? {
@@ -532,8 +610,11 @@ final class PairingVault: @unchecked Sendable {
                  PairingSecretAccount.deviceBearer(secretID: $0.secretID)])
         } ?? []
         let retainedTicket = record.map { PairingSecretAccount.irohTicket(hubID: $0.hubID) }
+        let retainedRoute = record.map { PairingSecretAccount.directRoute(secretID: $0.secretID) }
         for account in accounts {
-            if !retained.contains(account) &&
+            if PairingSecretAccount.isDirectRoute(account) {
+                if account != retainedRoute { try? secrets.delete(account) }
+            } else if !retained.contains(account) &&
                 (PairingSecretAccount.isDevicePrivateKey(account) || PairingSecretAccount.isDeviceBearer(account)) {
                 try? secrets.delete(account)
             } else if PairingSecretAccount.isIrohTicket(account), account != retainedTicket {

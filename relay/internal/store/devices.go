@@ -163,3 +163,46 @@ func deviceInHub(ctx context.Context, q querier, hubID, deviceID string) error {
 	}
 	return nil
 }
+
+// GrantDevice records a device the hub already paired elsewhere, so the same
+// phone can use this relay too (PROTOCOL.md section 6, grant). A device of the
+// same hub is updated in place: its bearer, scopes and expiry are replaced. A
+// device ID of another hub, or a bearer digest held by another device, is a
+// conflict.
+func (s *Store) GrantDevice(ctx context.Context, hubID string, d Device, now time.Time) error {
+	scopes, err := scopesJSON(d.Scopes)
+	if err != nil {
+		return err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var owner string
+	switch err = tx.QueryRowContext(ctx, "SELECT hub_id FROM devices WHERE id=?", d.ID).Scan(&owner); {
+	case errors.Is(err, sql.ErrNoRows):
+		owner = ""
+	case err != nil:
+		return err
+	}
+	if owner != "" && owner != hubID {
+		return ErrConflict
+	}
+	var others int
+	if err = tx.QueryRowContext(ctx, "SELECT count(*) FROM devices WHERE bearer_hash=? AND id<>?", d.BearerHash, d.ID).Scan(&others); err != nil {
+		return err
+	}
+	if others != 0 {
+		return ErrConflict
+	}
+	if owner == "" {
+		_, err = tx.ExecContext(ctx, "INSERT INTO devices(id,hub_id,bearer_hash,scopes,created_at,expires_at,last_seen_at) VALUES(?,?,?,?,?,?,0)", d.ID, hubID, d.BearerHash, scopes, millis(now), millis(d.ExpiresAt))
+	} else {
+		_, err = tx.ExecContext(ctx, "UPDATE devices SET bearer_hash=?, scopes=?, expires_at=? WHERE id=? AND hub_id=?", d.BearerHash, scopes, millis(d.ExpiresAt), d.ID, hubID)
+	}
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
+}

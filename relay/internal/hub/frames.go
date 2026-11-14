@@ -89,6 +89,16 @@ type briefFrame struct {
 // comes due within a day of its frame.
 const maxBriefDelay = 24 * time.Hour
 
+// grantFrame registers a phone the hub paired through another relay, so the
+// phone can reach the hub here as well.
+type grantFrame struct {
+	T          string   `json:"t"`
+	DeviceID   string   `json:"deviceId"`
+	BearerHash string   `json:"bearerHash"`
+	Scopes     []string `json:"scopes"`
+	ExpiresAt  string   `json:"expiresAt"`
+}
+
 type revokeFrame struct {
 	T        string `json:"t"`
 	DeviceID string `json:"deviceId"`
@@ -217,6 +227,8 @@ func (s *session) apply(t string, data []byte) string {
 		return s.brief(data)
 	case "revoke":
 		return s.revoke(data)
+	case "grant":
+		return s.grant(data)
 	case "ack":
 		return s.ack(data)
 	case "sms_ack":
@@ -230,7 +242,7 @@ func (s *session) apply(t string, data []byte) string {
 
 func refOf(t string) string {
 	switch t {
-	case "register", "heartbeat", "goodbye", "pairing_open", "pairing_close", "pairing_approve", "pairing_decline", "out", "brief", "revoke", "ack", "sms_ack":
+	case "register", "heartbeat", "goodbye", "pairing_open", "pairing_close", "pairing_approve", "pairing_decline", "out", "brief", "revoke", "grant", "ack", "sms_ack":
 		return t
 	default:
 		return "unknown"
@@ -447,6 +459,34 @@ func (s *session) brief(data []byte) string {
 		}
 		return "brief could not be stored"
 	}
+	return ""
+}
+
+func (s *session) grant(data []byte) string {
+	var f grantFrame
+	if !decodeFrame(data, &f) || !wire.ValidUUID(f.DeviceID) || !wire.ValidDigest(f.BearerHash) || !wire.ValidScopes(f.Scopes) {
+		return "invalid grant frame"
+	}
+	expires, err := wire.ParseTime(f.ExpiresAt)
+	if err != nil {
+		return "invalid grant frame"
+	}
+	now := s.m.Now()
+	if !expires.After(now) || expires.After(now.Add(maxDeviceLife)) {
+		return "grant expiry is outside the allowed window"
+	}
+	ctx, cancel := storeContext()
+	defer cancel()
+	device := store.Device{ID: f.DeviceID, BearerHash: f.BearerHash, Scopes: f.Scopes, ExpiresAt: expires}
+	switch err = s.m.Store.GrantDevice(ctx, s.hubID, device, now); {
+	case err == nil:
+	case errors.Is(err, store.ErrConflict):
+		return "device cannot be granted"
+	default:
+		return "device could not be granted"
+	}
+	// A bearer replaced here ends any wait the old one held.
+	s.m.Notify.Notify(notify.DeviceKey(f.DeviceID))
 	return ""
 }
 

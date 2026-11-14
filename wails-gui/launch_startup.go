@@ -143,6 +143,14 @@ func (a *App) deferLaunchTask(name string, run func()) <-chan struct{} {
 	return done
 }
 
+// deferBackgroundLaunchTask waits its turn on the launch queue (after the
+// first screen), then starts run in its own goroutine so long work such as
+// model calls never holds the tasks queued behind it. run must stop on the
+// app context.
+func (a *App) deferBackgroundLaunchTask(name string, run func()) <-chan struct{} {
+	return a.deferLaunchTask(name, func() { go run() })
+}
+
 // cancelPending fences new work without waiting for a native initializer.
 // Shutdown can flush foreground data before joining the returned channel.
 func (l *launchStartup) cancelPending() <-chan struct{} {

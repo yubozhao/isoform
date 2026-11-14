@@ -552,8 +552,15 @@ func (a *App) refreshStreamPages() {
 		// A copy saved here is unverified until its full check runs. The read
 		// path schedules that check; a refresh must too, or every read that
 		// follows recomputes.
-		if _, saved, _ := a.computeLatestStreamPage(key, a.streamPageStamp(context.Background())); saved {
+		prev, prevReason := readRawStreamPageSnapshot(key)
+		page, saved, _ := a.computeLatestStreamPage(key, a.streamPageStamp(context.Background()))
+		if saved {
 			a.scheduleStreamVerify(key)
+			// A page that changed with no stream event (a brief's lead arriving
+			// once its copy is amended, a card's source withdrawn) is read again.
+			if prevReason == "" && !streamPagesSame(prev.Page, page) {
+				a.emitStreamPageReload(key.session, "stream-page-refresh")
+			}
 		}
 	}
 	st.mu.Lock()

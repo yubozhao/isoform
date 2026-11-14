@@ -7,6 +7,14 @@ import (
 	"time"
 )
 
+// AppKit acknowledges setup 200 to 300 ms after launch on a busy main thread
+// (the app log showed attempt 1 "failing" at 200 ms on most launches, then
+// completing 20 to 100 ms later). 500 ms leaves room for that; a genuinely
+// stuck main thread still retries.
+const menuBarInitAckTimeout = 500 * time.Millisecond
+
+var menuBarInitBackoffs = []time.Duration{100 * time.Millisecond, 200 * time.Millisecond}
+
 type menuBarInitResult struct {
 	attempt int
 	err     error

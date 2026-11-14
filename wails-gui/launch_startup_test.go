@@ -363,3 +363,31 @@ func TestLaunchStoredBriefKeepsShowingWhenPolicyStoreIsClosed(t *testing.T) {
 		t.Fatalf("a closed policy store hid the sealed brief: ok=%v id=%s", ok, got.BriefID)
 	}
 }
+
+// Long launch work (the know-how backfill makes model calls and sleeps a
+// minute between retries) must not hold the tasks queued behind it: it held
+// the credential probe about three minutes on every launch.
+func TestBackgroundLaunchTaskDoesNotHoldTheQueue(t *testing.T) {
+	l := newLaunchStartup()
+	app := &App{launch: l}
+	l.startWorker(t.Context())
+	defer l.stop()
+	release := make(chan struct{})
+	started := make(chan struct{})
+	defer close(release)
+	app.deferBackgroundLaunchTask("fixture_long", func() {
+		close(started)
+		<-release
+	})
+	next := app.deferLaunchTask("fixture_next", func() {})
+	select {
+	case <-next:
+	case <-time.After(2 * time.Second):
+		t.Fatal("a background launch task held the queue")
+	}
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("background launch task never started")
+	}
+}

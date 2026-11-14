@@ -621,7 +621,7 @@ func initMenuBar(app *App) {
 				}
 			}
 			C.menubarInit(C.int(attempt), pointers[0], C.int(len(icons[0])), pointers[1], C.int(len(icons[1])), pointers[2], C.int(len(icons[2])))
-		}, results, 200*time.Millisecond, []time.Duration{100 * time.Millisecond, 200 * time.Millisecond})
+		}, results, menuBarInitAckTimeout, menuBarInitBackoffs)
 		if err != nil && ctx.Err() == nil {
 			log.Printf("[menubar] %v", err)
 		}

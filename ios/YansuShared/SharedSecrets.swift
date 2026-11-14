@@ -28,6 +28,14 @@ enum PairingSecretAccount {
         account == deviceBearer || account.hasPrefix("\(deviceBearer).")
     }
 
+    static func directRoute(secretID: String?) -> String {
+        "direct-route.\(secretID ?? "legacy")"
+    }
+
+    static func isDirectRoute(_ account: String) -> Bool {
+        account.hasPrefix("direct-route.")
+    }
+
     static func isIrohTicket(_ account: String) -> Bool {
         account.hasPrefix("iroh-ticket.")
     }

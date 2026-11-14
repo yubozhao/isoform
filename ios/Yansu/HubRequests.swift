@@ -317,11 +317,36 @@ struct BriefRefreshResult: Decodable, Equatable, Sendable {
     var readyAt: String? = nil
 }
 
+/// The reply to POST /remote-access: the computer's iroh ticket and a bearer for its own relay.
+struct RemoteAccessGrant: Decodable, Equatable, Sendable {
+    let ticket: String
+    let bearer: String
+    let expiresAt: String?
+}
+
+/// Which way a session reaches the computer: through the pairing's relay, or over the computer's direct path.
+enum SessionRoute: Sendable, Equatable {
+    case relay, direct
+}
+
 struct SessionContext: Sendable {
     let credentials: RelayCredentials
     let hubID: String
     let deviceID: String
     let keys: RelayCrypto.SessionKeys
+    var route: SessionRoute = .relay
+
+    /// A failure on the way to the computer, where the other path may still work. A refusal the relay
+    /// answered on purpose (a conflict, a full queue, a bad request) is not one.
+    static func isPathFailure(_ error: Error) -> Bool {
+        guard let error = error as? RelayClientError else { return false }
+        switch error {
+        case .offline, .timedOut, .invalidResponse, .unauthorized, .unavailable, .server:
+            return true
+        default:
+            return false
+        }
+    }
 }
 
 enum HubRequestError: LocalizedError, Equatable {
@@ -626,7 +651,7 @@ actor HubChannel {
                 $0.isASCII && (CharacterSet.alphanumerics.contains($0) || $0 == "-" || $0 == "_")
             }) else { throw HubRequestError.invalidIdentifier }
         }
-        let context = try makeContext()
+        var context = try makeContext()
         let generation = pairingGeneration
         let requestID = UUID().uuidString.lowercased()
         waiting.insert(requestID)
@@ -638,7 +663,16 @@ actor HubChannel {
         let plaintext = try JSONEncoder().encode(RequestPlaintext(id: requestID, method: route.method,
                                                                   path: route.path, query: route.query,
                                                                   body: route.body))
-        try await send(plaintext, context: context, generation: generation)
+        // A pairing with two paths (its relay and the computer's direct path) tries the other one once when the
+        // first cannot reach the computer. The computer answers on both, so a reply waits on either.
+        var switched = false
+        do {
+            try await send(plaintext, context: context, generation: generation)
+        } catch let error where SessionContext.isPathFailure(error) && vault.switchRoute(after: context) {
+            switched = true
+            context = try makeContext()
+            try await send(plaintext, context: context, generation: generation)
+        }
 
         let deadline = Date().addingTimeInterval(timeout)
         while true {
@@ -649,7 +683,12 @@ actor HubChannel {
             }
             if let error = unsaved.removeValue(forKey: requestID) { throw error }
             guard Date() < deadline else { throw HubRequestError.noAnswer }
-            try await pollShared(context, generation: generation)
+            do {
+                try await pollShared(context, generation: generation)
+            } catch let error where !switched && SessionContext.isPathFailure(error) && vault.switchRoute(after: context) {
+                switched = true
+                context = try makeContext()
+            }
         }
     }
 
@@ -884,6 +923,11 @@ actor HubChannel {
 extension HubChannel {
     /// Sends one POST over the envelope path and decodes its payload. Every write the phone makes goes through
     /// here, under the idempotency key its body carries.
+    /// Asks the computer for its direct path (POST /remote-access). A computer without one answers 503.
+    func remoteAccess() async throws -> RemoteAccessGrant {
+        try await post("/remote-access", [String: String](), as: RemoteAccessGrant.self)
+    }
+
     func post<Body: Encodable, Payload: Decodable>(_ path: String, _ body: Body,
                                                    as type: Payload.Type) async throws -> Payload {
         let encoder = JSONEncoder()
