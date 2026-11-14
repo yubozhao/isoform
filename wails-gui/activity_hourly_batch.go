@@ -261,8 +261,7 @@ func activitySessionIsAgent(session ActivitySessionRow, events []activitymon.Act
 			continue
 		}
 		seen = true
-		if !activityAgentApp(evt.AppBundleID, evt.AppName) &&
-			!(isTerminalAppFallback(evt.AppBundleID, evt.AppName, "") && activityAgentWindowTitle(evt.WindowTitle)) {
+		if !activityEventIsAgent(evt) {
 			return false
 		}
 	}

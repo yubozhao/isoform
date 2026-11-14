@@ -381,6 +381,7 @@ var allActivityMigrations = []activityMigration{
 	{Name: "calendar_hold_recovery", Fn: migrateCalendarHoldRecovery},
 	{Name: "task_episode_read_revision", Fn: migrateTaskEpisodeReadRevision},
 	{Name: "noticed_plain_invoice_followup", Fn: migrateNoticedPlainInvoiceFollowup},
+	{Name: "activity_agent_runs", Fn: migrateActivityAgentRuns},
 }
 
 // ──────────────────────────────────────────────

@@ -535,6 +535,12 @@ export function ActivityDayView({
         () => (stitchedHead ? stitchedSubline(t, visibleStitched, query || !dailyData?.totalActiveMs ? undefined : dailyData.totalActiveMs, i18n.resolvedLanguage ?? i18n.language) : null),
         [t, i18n, stitchedHead, visibleStitched, query, dailyData?.totalActiveMs],
     );
+    const agentRuns = threadState.data?.agents?.runs ?? 0;
+    const agentActiveMs = threadState.data?.agents?.activeMs ?? 0;
+    const agentsLine =
+        agentRuns > 0 && agentActiveMs > 0
+            ? t('stitched.agentsLine', { count: agentRuns, duration: formatDurationMs(agentActiveMs) })
+            : null;
     const workedOnCount = view === 'stitched' ? stitchedRowModel.threads.length : workItems.length;
     useEffect(() => {
         onCountsChange?.({ workedOn: workedOnCount, learned: learnedEntries.length });
@@ -692,6 +698,11 @@ export function ActivityDayView({
                         <h3 className={cn(sectionLabelClass, 'mb-0')}>{t('day.workedOn')}</h3>
                         {headline && <p className="display px-1 text-ink">{headline}</p>}
                         {subline && <p className="px-1 text-[14px] text-muted">{subline}</p>}
+                        {mode === 'stitched' && agentsLine && (
+                            <p className="px-1 text-[14px] text-muted" data-testid="activity-agents-line">
+                                {agentsLine}
+                            </p>
+                        )}
                         {isToday && <ActivityCaptureLine />}
                     </div>
                     {withSwitch && (

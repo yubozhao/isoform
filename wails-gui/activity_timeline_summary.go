@@ -194,6 +194,18 @@ func (a *App) prepareTimelineRunSummary(run ActivityTimelineRunRow) (*timelineSu
 		}
 		return nil, nil
 	}
+	// Agent work gets no summary, so it never becomes one of the person's
+	// moments; the day counts it on its labelled agent line instead.
+	if timelineEventsAreAgent(events) {
+		if err := store.MarkTimelineRunAgent(run); err != nil {
+			log.Printf("[activity] mark agent timeline run %s: %v", run.ID, err)
+			a.markTimelineRunSummaryError(run, err)
+		}
+		return nil, nil
+	}
+	if err := store.ClearTimelineRunAgent(run.ID); err != nil {
+		log.Printf("[activity] clear agent timeline run %s: %v", run.ID, err)
+	}
 	group := timelineRunToGroup(run, events)
 	snapshots := a.timelineGroupSummarySnapshots(group)
 	screenContent := a.timelineGroupScreenContent(snapshots)

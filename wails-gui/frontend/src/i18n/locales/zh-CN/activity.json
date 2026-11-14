@@ -224,6 +224,8 @@
         "linking": "正在连接各段工作…",
         "linkingNote": "Isoform 串联工作时，短暂片刻会归在一起。按记录列表已完整显示。",
         "subline": "从 {{start}} 到 {{end}} · 活跃 {{active}}",
+        "agentsLine_one": "你的智能体工作了 {{duration}}，共 {{count}} 段。这不算作你的工作。",
+        "agentsLine_other": "你的智能体工作了 {{duration}}，共 {{count}} 段。这不算作你的工作。",
         "laneDetailMeta": "{{detail}} · 活跃 {{active}}",
         "gapTip": "离开 {{duration}} · {{span}} · {{label}}",
         "gapTipPlain": "离开 {{duration}} · {{span}}",

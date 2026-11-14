@@ -128,6 +128,10 @@ func (a *App) buildActivitiesInRange(startMs, endMs int64) ([]ActivityView, erro
 	if err != nil {
 		return nil, err
 	}
+	// Moments made only of agent runs are shown on the day's agent line.
+	if agentRuns, err := store.agentRunIDsBetween(context.Background(), startMs, endMs); err == nil {
+		rows = withoutAgentMoments(rows, agentRuns)
+	}
 	ids := make([]string, len(rows))
 	for i, r := range rows {
 		ids[i] = r.ID

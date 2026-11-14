@@ -32,15 +32,21 @@ const (
 	learnedAgentOriginLine  = learnedAgentOriginKey + ": " + learnedAgentOriginValue
 
 	// agentActivityCleanupKey is the UI state key that records the cleanup.
-	agentActivityCleanupKey = "agent_activity_cleanup_v1"
-	// agentActivityMatchSlack is how far a record's session time may sit from
-	// a line in the session file it came from. The time is the file's
-	// modification time when it was read, which is the time of a line in it.
-	agentActivityMatchSlack = 5 * time.Second
+	agentActivityCleanupKey = "agent_activity_cleanup_v2"
+	// agentActivityMatchSlackDefault is how far a record's session time may
+	// sit from a line in the session file it came from. The time is the
+	// file's modification time when it was read, usually within seconds of a
+	// line; a file touched later without a new line drifts by up to a few
+	// minutes (on Bo's data 5 s placed 87% of Claude records, 2 min 92%). The
+	// nearest line always wins, so a wider window only adds records.
+	agentActivityMatchSlackDefault = 2 * time.Minute
 	// agentActivityExcerptTurns is how many trailing turns the history reader
 	// put in its excerpt (assistantHistoryExcerpt keeps 12 per session).
 	agentActivityExcerptTurns = 12
 )
+
+// agentActivityMatchSlack is a variable so a test can widen it.
+var agentActivityMatchSlack = agentActivityMatchSlackDefault
 
 // learnedFromAgents reports a memory or know-how file marked as learned only
 // from agent activity. It reads the frontmatter lines only, so every list
@@ -91,13 +97,18 @@ func (a *App) runAgentActivityCleanup(ctx context.Context) {
 	if done, err := a.store.GetUIState(ctx, agentActivityCleanupKey); err != nil || done == "done" {
 		return
 	}
+	runs, err := a.backfillAgentTimelineRuns(ctx)
+	if err != nil {
+		log.Printf("[agent-activity] run backfill not finished: %v", err)
+		return
+	}
 	result, err := a.cleanupAgentLearnedRecords(ctx)
 	if err != nil {
 		log.Printf("[agent-activity] cleanup not finished: %v", err)
 		return
 	}
-	log.Printf("[agent-activity] cleanup hid memories=%d know_how=%d checked=%d unresolved=%d",
-		result.Memories, result.KnowHow, result.Checked, result.Unresolved)
+	log.Printf("[agent-activity] cleanup hid memories=%d know_how=%d checked=%d unresolved=%d agent_runs=%d",
+		result.Memories, result.KnowHow, result.Checked, result.Unresolved, runs)
 	if err := a.store.SetUIState(ctx, agentActivityCleanupKey, "done"); err != nil {
 		log.Printf("[agent-activity] cleanup marker not saved: %v", err)
 	}
@@ -157,6 +168,19 @@ func (a *App) cleanupAgentLearnedRecords(ctx context.Context) (agentCleanupResul
 		resolved := resolveHistoryRecordsAgent(ctx, roots, history)
 		if ctx.Err() != nil {
 			return result, ctx.Err()
+		}
+		// Codex archives finished threads' files; its thread index still
+		// places them by folder and time.
+		var unplaced []*agentCleanupRecord
+		for _, r := range history {
+			if _, ok := resolved[r]; !ok && r.assistant == "codex" {
+				unplaced = append(unplaced, r)
+			}
+		}
+		if len(unplaced) > 0 {
+			for r, agent := range resolveCodexRecordsByThreads(readCodexThreadSpans(roots), unplaced) {
+				resolved[r] = agent
+			}
 		}
 		for _, r := range history {
 			agent, ok := resolved[r]
