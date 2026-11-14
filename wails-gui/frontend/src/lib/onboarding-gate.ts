@@ -12,3 +12,25 @@ export function onboardingFinished(
 ): boolean {
     return state.completed || state.neverShowAgain;
 }
+
+/**
+ * loadOnboardingStateRaw reads the saved onboarding state, retrying a failed
+ * read a few times while the "preparing" screen shows. It rejects only when
+ * every attempt failed. A failed read must never count as "no saved state":
+ * that showed onboarding again to people who had finished it.
+ */
+export async function loadOnboardingStateRaw(
+    load: () => Promise<string>,
+    { attempts = 6, delayMs = 500 }: { attempts?: number; delayMs?: number } = {},
+): Promise<string> {
+    let lastError: unknown;
+    for (let attempt = 0; attempt < attempts; attempt++) {
+        if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
+        try {
+            return await load();
+        } catch (err) {
+            lastError = err;
+        }
+    }
+    throw lastError;
+}

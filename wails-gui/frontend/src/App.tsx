@@ -177,7 +177,7 @@ import type {
 } from "@/types";
 import { OnboardingScreen } from "@/components/onboarding-screen";
 import { AppToaster } from "@/components/app-toaster";
-import { onboardingFinished } from "@/lib/onboarding-gate";
+import { loadOnboardingStateRaw, onboardingFinished } from "@/lib/onboarding-gate";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useHandoffNotification } from "@/hooks/useHandoffNotification";
 import { useFirstDay } from "@/hooks/useFirstDay";
@@ -1983,18 +1983,21 @@ export default function App() {
     useEffect(() => {
         let mounted = true;
         setOnboardingLoading(true);
-        LoadUIState(ONBOARDING_STORAGE_KEY)
+        loadOnboardingStateRaw(() => LoadUIState(ONBOARDING_STORAGE_KEY))
             .then((raw) => {
                 if (!mounted) return;
                 const nextState = parseOnboardingState(raw);
                 onboardingStateRef.current = nextState;
                 setOnboardingState(nextState);
             })
-            .catch(() => {
+            .catch((err: unknown) => {
                 if (!mounted) return;
-                const emptyState = sanitizeOnboardingStateValue(null);
-                onboardingStateRef.current = emptyState;
-                setOnboardingState(emptyState);
+                // The saved state could not be read. Do not treat that as a new
+                // person: skip onboarding for this session only and save
+                // nothing, so the next launch reads the real state again.
+                const message = err instanceof Error ? err.message : String(err);
+                LogWarning(`[onboarding] state read failed, skipping this session: ${message}`);
+                setSkipOnboardingSession(true);
             })
             .finally(() => {
                 if (mounted) setOnboardingLoading(false);
