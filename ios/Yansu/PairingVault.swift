@@ -251,6 +251,27 @@ final class PairingVault: @unchecked Sendable {
         return switched
     }
 
+    /// The other path's session for a one-off read, such as an attachment, without changing which path comes
+    /// first. Nil when the pairing has one path or the direct tunnel is still opening.
+    func otherSession(than context: SessionContext) -> SessionContext? {
+        locked {
+            guard let record, record.deviceID == context.deviceID, let relay = cachedSession,
+                  (try? secrets.read(PairingSecretAccount.irohTicket(hubID: record.hubID))) == nil,
+                  let direct = try? readDirectRouteLocked(record) else { return nil }
+            switch context.route {
+            case .direct:
+                return relay
+            case .relay:
+                guard let origin = remoteOrigin(direct.ticket) else {
+                    startRemote(direct.ticket)
+                    return nil
+                }
+                return SessionContext(credentials: RelayCredentials(origin: origin, bearer: direct.bearer),
+                                      hubID: relay.hubID, deviceID: relay.deviceID, keys: relay.keys, route: .direct)
+            }
+        }
+    }
+
     /// True when this relay pairing also holds the computer's direct path.
     var hasDirectRoute: Bool {
         locked {
