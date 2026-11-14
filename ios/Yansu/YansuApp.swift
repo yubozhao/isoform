@@ -16,6 +16,10 @@ struct YansuApp: App {
         let environment = AppEnvironment.shared
         _environment = StateObject(wrappedValue: environment)
         environment.launch()
+        // Recordings from the watch travel through this phone to the computer.
+        if let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+            WatchLink.shared.start(directory: support, vault: environment.vault, hub: environment.hub)
+        }
     }
 
     var body: some Scene {
