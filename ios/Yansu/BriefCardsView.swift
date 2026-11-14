@@ -43,6 +43,10 @@ struct BriefCardsView: View {
         let attention = showsAttention ? brief.attentionItems : []
         VStack(alignment: .leading, spacing: 20) {
             if let week = brief.yourWeek {
+                // The written brief always shows; on a week day Your week follows it.
+                if showsParagraphs {
+                    paragraphs
+                }
                 YourWeekCardView(brief: brief, week: week, topics: topics, canTalk: canTalk,
                                  onPut: put, onPrepareInTopic: onPrepareInTopic, onFindTime: { showingFindTime = true },
                                  onAskTopic: askWeekTopic, embedded: weekEmbedded, belowTitle: weekBelowTitle,
