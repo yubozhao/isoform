@@ -454,3 +454,34 @@ func TestMobileRemotePairingRequiresTicket(t *testing.T) {
 		t.Fatalf("openPairing error = %v", err)
 	}
 }
+
+// A desktop launched with a pinned relay starts the direct path beside it
+// without anyone touching Settings (the launch path in startConfiguredMobileBridge).
+func TestStartConfiguredMobileBridgeStartsTheDirectPathBesideAPinnedRelay(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("YANSU_MOBILE_STATE_DIR", dir)
+	t.Setenv("ISOFORM_MOBILE_REMOTE_ACCESS", "1")
+	t.Setenv("ISOFORM_RELAY_URL", "")
+	t.Setenv("YANSU_RELAY_URL", "")
+	pinned := newMobileTestRelay(t, "", "")
+	direct := newMobileTestRelay(t, "", "")
+	if err := saveMobileRelayConfig(dir, mobileRelayConfig{Enabled: true, URL: pinned.url()}); err != nil {
+		t.Fatal(err)
+	}
+	supervisor := &mobileTestRemoteAccess{
+		snapshot: remoteaccess.Snapshot{State: remoteaccess.StateReady, RelayURL: direct.url(), Ticket: "endpointabcdefghijklmnopqrstuvwxyz"},
+	}
+	app := &App{remoteAccessFactory: func() mobileRemoteAccessSupervisor { return supervisor }}
+	bridge, err := startConfiguredMobileBridge(app)
+	if err != nil || bridge == nil {
+		t.Fatalf("start: %v %v", bridge, err)
+	}
+	t.Cleanup(bridge.Stop)
+	mobileTestWaitFor(t, "the direct path at launch", func() bool {
+		link := bridge.direct.Load()
+		return link != nil && link.origin == direct.url()
+	})
+	if supervisor.starts.Load() != 1 {
+		t.Fatalf("supervisor starts = %d, want 1", supervisor.starts.Load())
+	}
+}
