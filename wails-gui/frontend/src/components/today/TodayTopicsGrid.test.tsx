@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "@/i18n";
 import { reconcileTodayTopics } from "@/hooks/useTodayTopics";
@@ -38,6 +38,16 @@ describe("TodayTopicsGrid (RC 1)", () => {
         expect(screen.getAllByTestId("today-topic-card")).toHaveLength(2);
         fireEvent.click(screen.getByRole("button", { name: "Try again" }));
         expect(actions.onRetry).toHaveBeenCalledOnce();
+    });
+
+    it("lets one or two topics fill the row instead of leaving empty columns", () => {
+        renderGrid({ topics: [work] });
+        expect(screen.getByTestId("today-topic-card").parentElement).toHaveAttribute("data-count", "1");
+        expect(screen.getByTestId("today-topic-card")).toHaveClass("today-topic-card-alone");
+        cleanup();
+        renderGrid();
+        expect(screen.getAllByTestId("today-topic-card")[0].parentElement).toHaveAttribute("data-count", "2");
+        expect(screen.getAllByTestId("today-topic-card")[0]).not.toHaveClass("today-topic-card-alone");
     });
 
     it("shows a new find on its topic card", () => {

@@ -49,7 +49,7 @@ const YOUR_WEEK_KIND = "weekly_recap";
 const TIME_SHADES = ["bg-ink", "bg-ink/55", "bg-ink/30"] as const;
 const OTHER_SHADE = "bg-border-strong";
 
-const HEADING = "text-[11px] font-semibold uppercase tracking-wider text-muted/70";
+const HEADING = "text-[11px] font-semibold uppercase tracking-wider text-muted";
 const CHIP = "h-auto min-h-7 min-w-0 max-w-full flex-[0_1_auto] whitespace-normal [overflow-wrap:anywhere] py-1.5 text-left leading-snug border-chip-border bg-chip-bg px-[11px] text-[12.5px] font-normal text-ink hover:border-border-focus hover:bg-chip-bg";
 const ROW = "flex w-full min-w-0 items-baseline gap-2 rounded-lg px-2 py-1.5 text-left text-[13.5px] text-ink transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus";
 
@@ -280,7 +280,7 @@ export function YourWeekCard({ week, cards, timeZone, handlers, onCard, onAskCar
         <div ref={seenRef} className="flex flex-col gap-5" data-testid="brief-your-week">
             {actionError && <p role="alert" className="text-[12px] text-error">{t(`todayBrief.yourWeek.${actionError}`)}</p>}
             <div className="flex items-start justify-between gap-3">
-                <h2 className="text-[17px] font-semibold leading-snug text-ink">{t("todayBrief.yourWeek.title", { range })}</h2>
+                <h2 className="text-[18px] font-semibold leading-snug text-ink">{t("todayBrief.yourWeek.title", { range })}</h2>
                 {!hideTurnOff && <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                         <button

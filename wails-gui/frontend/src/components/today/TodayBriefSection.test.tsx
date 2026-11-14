@@ -332,6 +332,8 @@ describe("TodayBriefSection with a brief", () => {
         const note = screen.getByTestId("brief-sensitive-excluded");
         expect(screen.queryByTestId("today-quiet-footer")).not.toBeInTheDocument();
         expect(note.parentElement?.lastElementChild).toBe(note);
+        // A quiet footnote: a hairline above it, caption type in muted ink.
+        expect(note).toHaveClass("border-t", "border-border-divider", "text-[12px]", "text-muted");
     });
 
     it("omits the privacy note when no activity was excluded", () => {
@@ -1238,6 +1240,17 @@ describe("the brief's card (RC 1)", () => {
             expect(screen.getByTestId("brief-narrative")).toBeInTheDocument();
             expect(screen.queryByText("Your week with Isoform")).not.toBeInTheDocument();
             expect(screen.queryByRole("button", { name: "Draft the memo" })).not.toBeInTheDocument();
+        });
+
+        it("leaves off a closing question it cannot answer, and sets the week off with a divider", () => {
+            const doc = week();
+            const question = doc.narrative!.at(-1)!.text;
+            expect(question).toMatch(/[?？]$/);
+            renderSection({ view: view({ brief: doc }), observationPaused: false });
+            const narrative = screen.getByTestId("brief-narrative");
+            expect(narrative).not.toHaveTextContent(question);
+            expect(screen.queryByTestId("brief-closing-question")).not.toBeInTheDocument();
+            expect(screen.getByTestId("your-week-section")).toHaveClass("border-t", "border-border-divider");
         });
 
         it("keeps the correction receipt after the brief's weekly row is withdrawn by refresh", async () => {

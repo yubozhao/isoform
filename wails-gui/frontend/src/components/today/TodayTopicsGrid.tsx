@@ -91,9 +91,11 @@ function topicCardLine(topic: TodayTopic, now: Date, language: string, tr: Trans
     return null;
 }
 
-const TodayTopicCard = memo(function TodayTopicCard({ topic, selected, onPick, day }: {
+const TodayTopicCard = memo(function TodayTopicCard({ topic, selected, onPick, day, alone = false }: {
     topic: TodayTopic;
     selected: boolean;
+    /** The only card: it spans the row, with its line beside the name. */
+    alone?: boolean;
     onPick: (topic: TodayTopic) => void;
     day: number;
 }) {
@@ -107,6 +109,7 @@ const TodayTopicCard = memo(function TodayTopicCard({ topic, selected, onPick, d
             onClick={() => measureToday("T50", "open", "opened", () => onPick(topic))}
             data-testid="today-topic-card"
             className={cn(
+                alone && "today-topic-card-alone",
                 "flex min-w-0 max-w-full flex-col items-start gap-2 whitespace-normal [overflow-wrap:anywhere] rounded-xl border p-3.5 text-left text-ink transition-colors hover:border-border-focus focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-2/40",
                 selected ? "border-accent bg-surface-active" : "border-border bg-background",
             )}
@@ -225,9 +228,10 @@ export function TodayTopicsGrid({
         );
     } else {
         body = (
-            <div className="today-topics-grid grid gap-2.5">
+            // One or two topics fill the row instead of leaving empty columns.
+            <div className="today-topics-grid grid gap-2.5" data-count={Math.min(topics.length, 3)}>
                 {topics.map((topic) => (
-                    <TodayTopicCard key={topic.id} topic={topic} selected={topic.id === selectedId} onPick={pick} day={day} />
+                    <TodayTopicCard key={topic.id} topic={topic} selected={topic.id === selectedId} onPick={pick} day={day} alone={topics.length === 1} />
                 ))}
             </div>
         );
