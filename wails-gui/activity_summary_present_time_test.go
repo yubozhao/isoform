@@ -157,7 +157,7 @@ func TestActivityWeekPresentTimeHonorsCapturedSources(t *testing.T) {
 		t.Fatal(err)
 	}
 	seedPresentSession(t, app, "later", at(day, 9, 15), at(day, 9, 20))
-	daily, err := app.getDailySummary(date, &sources)
+	daily, err := app.getDailySummary(date, &sources, true)
 	if err != nil {
 		t.Fatal(err)
 	}

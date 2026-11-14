@@ -397,14 +397,26 @@ func (s *ActivityStore) HasActivityData(date string) bool {
 // ──────────────────────────────────────────────
 
 // GetDailySummary computes all statistics for a given date and returns cached AI summary if available.
+// GetDailySummary is the Activity page's read. It leaves out the model-only
+// context (TopOCRKeywords, TopWindowTitles): no screen shows them, and
+// scanning every OCR frame and window event of the day made the first
+// Activity paint take 4 to 7 s. dailySummaryWithModelContext includes them.
 func (a *App) GetDailySummary(dateStr string) (perfValue *DailySummaryData, perfErr error) {
 	defer logPageBinding("GetDailySummary", time.Now(), &perfValue)
-	data, err := a.getDailySummary(dateStr, nil)
+	data, err := a.getDailySummary(dateStr, nil, false)
 	a.secondPersonDaily(data)
 	return data, err
 }
 
-func (a *App) getDailySummary(dateStr string, sources *activitySummarySourceSet) (*DailySummaryData, error) {
+// dailySummaryWithModelContext is GetDailySummary plus the top OCR keywords
+// and window titles, for callers that hand the day to a model or an API.
+func (a *App) dailySummaryWithModelContext(dateStr string) (*DailySummaryData, error) {
+	data, err := a.getDailySummary(dateStr, nil, true)
+	a.secondPersonDaily(data)
+	return data, err
+}
+
+func (a *App) getDailySummary(dateStr string, sources *activitySummarySourceSet, withModelContext bool) (*DailySummaryData, error) {
 	am := a.activity
 	if am == nil || am.store == nil {
 		return nil, fmt.Errorf("activity monitor not initialized")
@@ -524,11 +536,13 @@ func (a *App) getDailySummary(dateStr string, sources *activitySummarySourceSet)
 	).Scan(&ocrCount)
 	data.OCRPageCount = ocrCount
 
-	// 5. Top OCR keywords
-	data.TopOCRKeywords = a.extractTopOCRKeywords(store, startMs, endMs, data.modelSourceIDs)
+	if withModelContext {
+		// 5. Top OCR keywords
+		data.TopOCRKeywords = a.extractTopOCRKeywords(store, startMs, endMs, data.modelSourceIDs)
 
-	// 5b. Top window titles (for AI prompt context)
-	data.TopWindowTitles = a.extractTopWindowTitles(store, startMs, endMs, data.modelSourceIDs)
+		// 5b. Top window titles (for AI prompt context)
+		data.TopWindowTitles = a.extractTopWindowTitles(store, startMs, endMs, data.modelSourceIDs)
+	}
 
 	// 6. 7-day averages
 	avgStart := t.AddDate(0, 0, -7).UnixMilli()
@@ -1516,7 +1530,7 @@ func (a *App) runGenerateDailySummary(dateStr string) error {
 	language := a.currentUILanguage()
 
 	// Get structured data
-	data, err := a.getDailySummary(dateStr, &sources)
+	data, err := a.getDailySummary(dateStr, &sources, true)
 	if err != nil {
 		return err
 	}

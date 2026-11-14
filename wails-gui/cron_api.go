@@ -661,7 +661,7 @@ func (s *cronAPIServer) handleActivitySummary(w http.ResponseWriter, r *http.Req
 		dateStr = time.Now().Format("2006-01-02")
 	}
 
-	data, err := s.app.GetDailySummary(dateStr)
+	data, err := s.app.dailySummaryWithModelContext(dateStr)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

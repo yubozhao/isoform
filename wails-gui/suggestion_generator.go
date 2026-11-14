@@ -581,7 +581,7 @@ func (c *SuggestionGenerator) collectDailySummaryInputs(inputs *suggestionPrompt
 	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
 
 	log.Printf("[suggestions][collect] layer3: calling GetDailySummary(%s)", today)
-	daily, err := c.app.GetDailySummary(today)
+	daily, err := c.app.dailySummaryWithModelContext(today)
 	if err != nil {
 		log.Printf("[suggestions][collect] GetDailySummary(%s) failed: %s", today, activityPrivateLogField("error", err.Error()))
 	} else if daily == nil {
