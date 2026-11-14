@@ -7,22 +7,22 @@ import { pageQueryCache } from "@/lib/query-cache";
 import { briefSlotKey } from "@/lib/brief-time";
 import type { TodayBriefView } from "@/lib/wails-shim-app";
 
-const hasFocus = () => typeof document === "undefined" || typeof document.hasFocus !== "function" || document.hasFocus();
-
-/** Whether the window is in front: shown, unlocked and focused (rule 16). */
+/**
+ * Whether the window is in front (rule 16, "nothing plays while the window is
+ * hidden or behind"): shown and the Mac unlocked. WebKit reports the page
+ * hidden when the window is minimized, hidden, on another Space or covered,
+ * so "behind" is visibility, not focus. Keyboard focus is not asked for: a
+ * WKWebView reports document.hasFocus() false whenever another app is
+ * active, so the mark stayed still while Isoform sat on screen beside the app
+ * Bo was using, and through every task it ran then (Bo, Nov 13).
+ */
 export function useWindowInFront(): boolean {
-    const [inFront, setInFront] = useState(() => appActive() && hasFocus());
+    const [inFront, setInFront] = useState(appActive);
     useEffect(() => {
-        const update = () => setInFront(appActive() && hasFocus());
+        const update = () => setInFront(appActive());
         const off = onAppActivity(update);
-        window.addEventListener("focus", update);
-        window.addEventListener("blur", update);
         update();
-        return () => {
-            off();
-            window.removeEventListener("focus", update);
-            window.removeEventListener("blur", update);
-        };
+        return off;
     }, []);
     return inFront;
 }

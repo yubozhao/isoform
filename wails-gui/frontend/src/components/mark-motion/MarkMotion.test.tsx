@@ -95,4 +95,27 @@ describe("MarkMotion", () => {
         expect(svg.getAttribute("aria-label")).toBe("Working on: Pricing page copy");
         mocks.doingNow = { kind: "watching" };
     });
+
+    // Bo, Nov 13: "I don't see the little icon animation." A WKWebView reports
+    // document.hasFocus() false whenever another app is active, though the
+    // window is on screen; the mark asked for focus and so never moved.
+    it("moves while the window is on screen though another app has focus, and stops when it is hidden (rule 16)", async () => {
+        const focus = vi.spyOn(document, "hasFocus").mockReturnValue(false);
+        const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+        try {
+            mocks.doingNow = { kind: "working", title: "Pricing page copy" };
+            render(<MarkMotion size={19} />);
+            await flush();
+            expect(window.__isoformMark?.playing).toBe("working.enter");
+            visibility.mockReturnValue("hidden");
+            await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+            expect(window.__isoformMark?.playing).toBeNull();
+            expect(window.__isoformMark?.timerPending).toBeNull();
+        } finally {
+            focus.mockRestore();
+            visibility.mockRestore();
+            document.dispatchEvent(new Event("visibilitychange"));
+            mocks.doingNow = { kind: "watching" };
+        }
+    });
 });
