@@ -17,6 +17,7 @@ package main
 // a phone never gets the same notification twice.
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -459,4 +460,47 @@ func (h *mobileDirectHandler) relayFrame(kind string, raw []byte) {
 
 func (h *mobileDirectHandler) relayStateChanged() {
 	h.bridge.notify()
+}
+
+// mobileMirroredUploader puts an attachment on the pinned relay and on the
+// direct path together, so a phone that reads from either finds it. The upload
+// succeeds when either relay took it.
+type mobileMirroredUploader struct {
+	primary mobileAttachmentUploader
+	direct  mobileAttachmentUploader
+}
+
+func (u mobileMirroredUploader) uploadAttachment(ctx context.Context, attachmentID string, sealed []byte) error {
+	directDone := make(chan error, 1)
+	go func() { directDone <- u.direct.uploadAttachment(ctx, attachmentID, sealed) }()
+	primaryErr := u.primary.uploadAttachment(ctx, attachmentID, sealed)
+	directErr := <-directDone
+	switch {
+	case primaryErr != nil && directErr != nil:
+		return primaryErr
+	case primaryErr != nil:
+		log.Printf("[mobile-direct] an attachment reached only the direct path: %v", primaryErr)
+	case directErr != nil:
+		log.Printf("[mobile-direct] an attachment did not reach the direct path: %v", directErr)
+	}
+	return nil
+}
+
+// attachmentUploader returns where an attachment goes: the pinned relay, and
+// the direct path too while it is connected and some phone holds a grant.
+func (bridge *mobileBridge) attachmentUploader(primary *mobileRelayClient) mobileAttachmentUploader {
+	direct := bridge.direct.Load()
+	if direct == nil {
+		return primary
+	}
+	if state, _ := direct.snapshot(); state != mobileRelayConnected {
+		return primary
+	}
+	bridge.directMu.Lock()
+	granted := len(bridge.directGrants) > 0
+	bridge.directMu.Unlock()
+	if !granted {
+		return primary
+	}
+	return mobileMirroredUploader{primary: primary, direct: direct}
 }

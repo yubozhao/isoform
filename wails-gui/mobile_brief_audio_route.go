@@ -224,7 +224,7 @@ func (bridge *mobileBridge) uploadBriefAudioSnapshot(ctx context.Context, data [
 	if client == nil || identity == nil {
 		return nil, errMobileAttachmentOffline
 	}
-	return sealAndUploadAttachmentBytes(ctx, client, identity.HubID, data)
+	return sealAndUploadAttachmentBytes(ctx, bridge.attachmentUploader(client), identity.HubID, data)
 }
 
 // queueMobileBriefAudio starts at most one background preparation. The serial
