@@ -335,3 +335,48 @@ func TestOldTranscribedAudioIsRemovedAndFailedOnesRetried(t *testing.T) {
 		t.Fatalf("the row must outlive its audio: %+v", views)
 	}
 }
+
+// A transcript the user deletes, or that retention removes, takes the
+// recording's audio with it; the row stays so a resent part is not imported
+// again.
+func TestDeletedTranscriptTakesItsAudio(t *testing.T) {
+	bridge := &mobileBridge{stateDir: t.TempDir()}
+	bridge.mu.Lock()
+	store := bridge.recordingStoreLocked()
+	bridge.mu.Unlock()
+	uploads := &mapUploads{bodies: map[string][]byte{}}
+	withdrawn, retained, kept := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	requests := map[string]MobileRecordingRequest{}
+	for _, id := range []string{withdrawn, retained, kept} {
+		req := sealedRecordingPart(t, uploads, "dev-a", id, 0, true, []byte("audio"), time.Now())
+		requests[id] = req
+		if _, _, err := receiveMobileRecordingPart(context.Background(), store, uploads, recordingTestHub, "dev-a", req); err != nil {
+			t.Fatal(err)
+		}
+		store.setState(id, mobileRecordingTranscribed, "rec-"+id, 3, "")
+	}
+
+	publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalSession, ID: "rec-" + withdrawn})
+	publishRetentionRemoval(privacyWithdrawalScope{Kind: privacyWithdrawalSession, ID: "rec-" + retained})
+
+	for _, id := range []string{withdrawn, retained} {
+		if _, err := os.Stat(filepath.Join(store.dir, id)); !os.IsNotExist(err) {
+			t.Fatalf("audio of a removed transcript is still on disk: %s %v", id, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(store.dir, kept, "part-00.m4a")); err != nil {
+		t.Fatalf("audio of a kept transcript must stay: %v", err)
+	}
+	// The phone resends the part (a lost answer): it is answered from the
+	// index, not fetched and stored again.
+	resent := sealedRecordingPart(t, uploads, "dev-a", withdrawn, 0, true, []byte("audio"), time.Now())
+	if _, _, err := receiveMobileRecordingPart(context.Background(), store, uploads, recordingTestHub, "dev-a", resent); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(store.dir, withdrawn)); !os.IsNotExist(err) {
+		t.Fatalf("a resent part brought withdrawn audio back: %v", err)
+	}
+	if pending := store.pending(); len(pending) != 0 {
+		t.Fatalf("a removed transcript must not be transcribed again: %+v", pending)
+	}
+}

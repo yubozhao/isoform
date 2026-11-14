@@ -18,6 +18,7 @@ export type ChatErrorKind =
     | 'signed_out'        // proven: HTTP 401/403 or the CLI's own sign-in check (AgentEvent.code)
     | 'runner_unavailable' // proven: a list item's runner isn't available (AgentEvent.code)
     | 'assistant_error'   // proven: the AI answered with an error (AgentEvent.code)
+    | 'no_reply'          // proven: the turn ended with no answer; the hub stored the row (desktop_turn_keeper.go)
     | 'server'            // 5xx / upstream temporarily unavailable
     | 'network'           // connection refused / dns / timeout
     | 'request_too_large' // request body over the upstream byte limit (e.g. too many/too large screenshots)
@@ -81,7 +82,7 @@ const PERIOD_PATTERNS: Array<{ re: RegExp; period: QuotaPeriod }> = [
 
 // Codes the backend sets from proof (AgentEvent.code, chat_cause.go). A code
 // always wins over the words in the raw text.
-const PROVEN_CODES: ReadonlySet<string> = new Set(['no_assistant', 'signed_out', 'runner_unavailable', 'assistant_error', 'server']);
+const PROVEN_CODES: ReadonlySet<string> = new Set(['no_assistant', 'signed_out', 'runner_unavailable', 'assistant_error', 'server', 'no_reply']);
 
 export function parseChatError(raw: string | undefined | null, code?: string): ChatError {
     const text = (raw ?? '').toString();

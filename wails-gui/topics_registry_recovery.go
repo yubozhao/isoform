@@ -119,6 +119,19 @@ func (s *topicsService) loadRegistryCache() *topicRegistryCache {
 	defer s.registryCacheMu.RUnlock()
 	return s.registryCache
 }
+
+// topicRegistryCachePrivacyMatches is topicRegistryCacheMatches without the
+// source revisions: only the privacy part (activity and app-wide privacy
+// epochs, forget markers, policy, Closed Eyes), the
+// interests the person kept or removed, and the topics state must be unchanged. Used only while a rebuild holds the lock.
+func topicRegistryCachePrivacyMatches(c *topicRegistryCache, revision topicRegistryRevision, state topicsStateFile, now time.Time) bool {
+	return c != nil && !revision.closedEyes && !now.Before(c.at) && now.Before(c.until) &&
+		c.revision.privacy == revision.privacy && c.revision.policy == revision.policy &&
+		c.revision.briefPrivacy == revision.briefPrivacy && c.revision.forgets == revision.forgets &&
+		c.revision.closedEyes == revision.closedEyes && reflect.DeepEqual(c.revision.interests, revision.interests) &&
+		reflect.DeepEqual(c.state, state)
+}
+
 func topicRegistryCacheMatches(c *topicRegistryCache, revision topicRegistryRevision, state topicsStateFile, now time.Time) bool {
 	return c != nil && !now.Before(c.at) && now.Before(c.until) && sameTopicRegistrySources(c.revision, revision) && reflect.DeepEqual(c.state, state)
 }

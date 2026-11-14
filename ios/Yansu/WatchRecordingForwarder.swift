@@ -11,7 +11,7 @@ import Foundation
 
 /// The body of POST /recordings.
 struct RecordingPartRequest: Encodable, Equatable, Sendable {
-    struct Upload: Encodable, Equatable, Sendable {
+    struct Upload: Codable, Equatable, Sendable {
         let id: String
         let key: String
         let nonce: String
@@ -96,6 +96,17 @@ final class WatchRecordingInbox: @unchecked Sendable {
         var info: WatchRecordingPartInfo
         /// How many times the computer refused this part as invalid.
         var refusals: Int
+        /// The sealed copy already on the relay, reused until the computer takes it or the relay
+        /// no longer has it. Without it every retry (observing paused, the computer asleep, a lost
+        /// answer) would put another copy on the relay, each kept 48 hours against the device quota.
+        var held: HeldUpload? = nil
+    }
+
+    /// A part's upload on the relay and the pairing it was sealed for.
+    struct HeldUpload: Codable, Equatable, Sendable {
+        var upload: RecordingPartRequest.Upload
+        var hubID: String
+        var deviceID: String
     }
 
     static let maxRefusals = 5
@@ -159,7 +170,19 @@ final class WatchRecordingInbox: @unchecked Sendable {
         lock.withLock {
             var next = pending
             next.refusals += 1
+            // A refused part is sealed again next time.
+            next.held = nil
             try? write(next)
+        }
+    }
+
+    /// Remembers the upload a part now has on the relay.
+    func hold(_ held: HeldUpload?, for info: WatchRecordingPartInfo) {
+        lock.withLock {
+            guard let data = try? Data(contentsOf: metaURL(info)),
+                  var pending = try? JSONDecoder().decode(Pending.self, from: data) else { return }
+            pending.held = held
+            try? write(pending)
         }
     }
 }
@@ -191,7 +214,17 @@ actor WatchRecordingForwarder {
     private struct Stored: Codable {
         var order: [String]
         var states: [String: WatchRecordingRemoteState]
+        var details: [String: Detail]?
     }
+
+    /// What the phone knows about a recording beyond its state: when it began and the parts seen.
+    private struct Detail: Codable {
+        var startedAt: Date
+        var parts: [Int: Double]
+    }
+
+    private var details: [String: Detail] = [:]
+    private(set) var lastOutcome: Outcome = .drained
 
     init(inbox: WatchRecordingInbox, hub: RecordingHubAPI, relay: RecordingUploadTransport = RelayClient.shared,
          session: @escaping @Sendable () throws -> SessionContext) {
@@ -203,6 +236,7 @@ actor WatchRecordingForwarder {
         if let data = try? Data(contentsOf: statesURL), let stored = try? JSONDecoder().decode(Stored.self, from: data) {
             states = stored.states
             order = stored.order
+            details = stored.details ?? [:]
         } else {
             states = [:]
             order = []
@@ -217,7 +251,21 @@ actor WatchRecordingForwarder {
 
     /// A part arrived from the watch.
     func received(_ info: WatchRecordingPartInfo) {
+        var detail = details[info.recordingID] ?? Detail(startedAt: info.startedAt, parts: [:])
+        detail.startedAt = min(detail.startedAt, info.startedAt)
+        detail.parts[info.part] = info.durationSeconds
+        details[info.recordingID] = detail
+        if states[info.recordingID] == .onPhone { save() }
         set(info.recordingID, .onPhone)
+    }
+
+    /// Recent recordings for the phone's list, newest first.
+    func recordings() -> [PhoneRecording] {
+        order.compactMap { id -> PhoneRecording? in
+            guard let state = states[id], let detail = details[id] else { return nil }
+            return PhoneRecording(id: id, startedAt: detail.startedAt,
+                                  durationSeconds: detail.parts.values.reduce(0, +), state: state)
+        }.sorted { $0.startedAt > $1.startedAt }
     }
 
     /// Sends what is waiting. A call while one runs asks for one more pass and returns.
@@ -234,6 +282,7 @@ actor WatchRecordingForwarder {
             again = false
             outcome = await pass()
         }
+        lastOutcome = outcome
         return outcome
     }
 
@@ -268,14 +317,28 @@ actor WatchRecordingForwarder {
         let context = try session()
         let info = item.info
         let plaintext = try Data(contentsOf: inbox.audioURL(info), options: .mappedIfSafe)
-        let (sealed, upload) = try RecordingSeal.seal(plaintext, hubID: context.hubID, deviceID: context.deviceID)
-        try await relay.putUpload(context.credentials, id: upload.id, sealed: sealed)
+        let upload: RecordingPartRequest.Upload
+        if let held = item.held, held.hubID == context.hubID, held.deviceID == context.deviceID {
+            upload = held.upload
+        } else {
+            let (sealed, fresh) = try RecordingSeal.seal(plaintext, hubID: context.hubID, deviceID: context.deviceID)
+            try await relay.putUpload(context.credentials, id: fresh.id, sealed: sealed)
+            inbox.hold(.init(upload: fresh, hubID: context.hubID, deviceID: context.deviceID), for: info)
+            upload = fresh
+        }
         let request = RecordingPartRequest(
             idempotencyKey: "rec-\(info.recordingID)-\(info.part)", recordingId: info.recordingID, part: info.part,
             last: info.last, upload: upload, sha256: RelayCrypto.sha256Hex(plaintext), bytes: plaintext.count,
             mime: WatchRecordingWire.mime, startedAt: RecordingTime.format(info.startedAt),
             durationSeconds: info.durationSeconds, source: "watch", device: info.model.map { .init(model: $0) })
-        let view = try await hub.postRecording(request)
+        let view: RecordingView
+        do {
+            view = try await hub.postRecording(request)
+        } catch HubRequestError.rejected(let status, _) where status == 404 {
+            // upload_missing: the relay no longer has the copy; the next pass uploads a new one.
+            inbox.hold(nil, for: info)
+            throw HubRequestError.rejected(status: status, message: "upload_missing")
+        }
         inbox.remove(info)
         // Parts still waiting here keep the recording "on phone" until the last one is across.
         let more = inbox.pending().contains { $0.info.recordingID == info.recordingID }
@@ -296,12 +359,28 @@ actor WatchRecordingForwarder {
         states[id] = state
         order.removeAll { $0 == id }
         order.append(id)
-        while order.count > Self.keptStates { states.removeValue(forKey: order.removeFirst()) }
-        if let data = try? JSONEncoder().encode(Stored(order: order, states: states)) {
-            try? data.write(to: statesURL, options: .atomic)
+        while order.count > Self.keptStates {
+            let dropped = order.removeFirst()
+            states.removeValue(forKey: dropped)
+            details.removeValue(forKey: dropped)
         }
+        save()
         onStates?(states)
     }
+
+    private func save() {
+        if let data = try? JSONEncoder().encode(Stored(order: order, states: states, details: details)) {
+            try? data.write(to: statesURL, options: .atomic)
+        }
+    }
+}
+
+/// One row of the phone's list of watch recordings.
+struct PhoneRecording: Equatable, Identifiable, Sendable {
+    let id: String
+    let startedAt: Date
+    let durationSeconds: Double
+    let state: WatchRecordingRemoteState
 }
 
 enum RecordingTime {

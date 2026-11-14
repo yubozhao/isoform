@@ -319,13 +319,27 @@ func (s *interestsService) following(ctx context.Context, revision topicRegistry
 	s.followingMu.Lock()
 	verified := s.followingVerified
 	s.followingMu.Unlock()
+	timing := followingTiming{started: time.Now(), interests: len(list)}
+	defer timing.log()
 	readable := func(interests.Interest) bool { return true }
 	if verified != nil && sameTopicRegistrySources(verified.revision, revision) {
+		timing.cached = true
 		readable = func(it interests.Interest) bool { return verified.readable[it.ID] }
 	} else if s.readFilter != nil {
 		readable = nil
 		if s.followingFilter != nil {
+			filterAt := time.Now()
 			readable = s.followingFilter(ctx)
+			timing.filter = time.Since(filterAt)
+		}
+	}
+	if readable != nil {
+		check := readable
+		readable = func(it interests.Interest) bool {
+			at := time.Now()
+			ok := check(it)
+			timing.checked(time.Since(at))
+			return ok
 		}
 	}
 	if err := ctx.Err(); err != nil {
@@ -352,8 +366,44 @@ func (s *interestsService) following(ctx context.Context, revision topicRegistry
 	s.namesMu.Lock()
 	names := append([]string(nil), s.names...)
 	s.namesMu.Unlock()
+	recheckAt := time.Now()
 	out = interests.Recheck(out, interests.Rules{Names: names, OwnNames: interestsOwnNames, Removed: user.Removed}, user.Pinned)
+	timing.recheck = time.Since(recheckAt)
 	return out, ctx.Err()
+}
+
+// followingSlowLog is the total above which the following step logs where
+// its time went (one run took 149 s under launch load, against p50 59 ms).
+const followingSlowLog = time.Second
+
+// followingTiming logs counts and durations only, never interest names or
+// evidence keys.
+type followingTiming struct {
+	started         time.Time
+	interests       int
+	cached          bool
+	filter, recheck time.Duration
+	checks          int
+	checkTotal      time.Duration
+	slowestCheck    time.Duration
+}
+
+func (t *followingTiming) checked(d time.Duration) {
+	t.checks++
+	t.checkTotal += d
+	if d > t.slowestCheck {
+		t.slowestCheck = d
+	}
+}
+
+func (t *followingTiming) log() {
+	total := time.Since(t.started)
+	if total < followingSlowLog {
+		return
+	}
+	log.Printf("[topics] following_slow total_ms=%d interests=%d cached=%t policy_ms=%d checks=%d check_ms=%d slowest_check_ms=%d recheck_ms=%d",
+		total.Milliseconds(), t.interests, t.cached, t.filter.Milliseconds(), t.checks, t.checkTotal.Milliseconds(),
+		t.slowestCheck.Milliseconds(), t.recheck.Milliseconds())
 }
 
 // rememberFollowing publishes evidence decisions only when the complete source

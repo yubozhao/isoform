@@ -90,6 +90,11 @@ func (p *mcpReadPrivacy) loadMemoryEntries() ([]MemoryEntry, error) {
 			continue
 		}
 		body := string(data)
+		if learnedFromAgents(body) {
+			// Learned only from agent activity: hidden on every page, so
+			// never served to an external assistant either.
+			continue
+		}
 		fm := parseMemoryFrontmatter(body)
 		entries = append(entries, MemoryEntry{ID: strings.TrimSuffix(file.name, ".md"), Title: extractTitle(body), Content: body, Dimension: extractMemoryDimension(body), ModTime: info.ModTime().UnixMilli(), UpdatedAt: fm.UpdatedAt, Source: fm.Source, Apps: fm.Apps, ActivitySessionIDs: fm.ActivitySessionIDs})
 	}

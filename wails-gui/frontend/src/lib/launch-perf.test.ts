@@ -22,6 +22,34 @@ describe('launch paint milestones', () => {
         vi.unstubAllGlobals();
     });
 
+    it('reports a paint milestone without animation frames, as in a hidden window', async () => {
+        vi.useFakeTimers();
+        vi.stubGlobal('requestAnimationFrame', () => 0);
+        vi.stubGlobal('cancelAnimationFrame', () => {});
+        const { markLaunchPaint, PAINT_FALLBACK_MS } = await import('./launch-perf');
+        markLaunchPaint('first_paint');
+        expect(report.mock.calls.flat()).not.toContain('first_paint');
+        vi.advanceTimersByTime(PAINT_FALLBACK_MS);
+        expect(report.mock.calls.filter(([name]) => name === 'first_paint')).toHaveLength(1);
+        vi.unstubAllGlobals();
+        vi.useRealTimers();
+    });
+
+    it('reports a painted milestone once, not again when the fallback fires', async () => {
+        vi.useFakeTimers();
+        const frames: FrameRequestCallback[] = [];
+        vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => frames.push(callback));
+        vi.stubGlobal('cancelAnimationFrame', () => {});
+        const { afterPaint, PAINT_FALLBACK_MS } = await import('./launch-perf');
+        const done = vi.fn();
+        afterPaint(done);
+        while (frames.length) frames.shift()!(0);
+        vi.advanceTimersByTime(PAINT_FALLBACK_MS);
+        expect(done).toHaveBeenCalledTimes(1);
+        vi.unstubAllGlobals();
+        vi.useRealTimers();
+    });
+
     it('diagnostic bridge errors never reject a successful page read', async () => {
         report.mockRejectedValueOnce(new Error('bridge unavailable'));
         const { markLaunchStage } = await import('./launch-perf');

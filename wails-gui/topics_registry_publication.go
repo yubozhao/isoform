@@ -21,9 +21,13 @@ type topicRegistryRevision struct {
 	interests       interestsStateFile
 	policy          [sha256.Size]byte
 	privacy         uint64
-	closedEyes      bool
-	mainStore       *storage.Store
-	activityStore   *ActivityStore
+	// briefPrivacy and forgets are the app-wide privacy epoch (withdrawals,
+	// corrections, sensitive apps) and the forget markers generation.
+	briefPrivacy  uint64
+	forgets       uint64
+	closedEyes    bool
+	mainStore     *storage.Store
+	activityStore *ActivityStore
 }
 
 // All-or-release acquisition never holds Closed Eyes while waiting for a
@@ -80,7 +84,8 @@ func (s *topicsService) lockRegistrySnapshot(ctx context.Context, publishing boo
 // For a published result only its known file paths need stat checks; new capture
 // paths cannot withdraw its sources. Avoid rescanning the entire sessions table.
 func (s *topicsService) registryRevisionWithSessionFiles(ctx context.Context, known *topicSessionFileRevision) (topicRegistryRevision, error) {
-	stamp := topicRegistryRevision{mainStore: s.app.store, closedEyes: s.app.IsClosedEyesModeEnabled()}
+	stamp := topicRegistryRevision{mainStore: s.app.store, closedEyes: s.app.IsClosedEyesModeEnabled(),
+		briefPrivacy: mobileBriefPrivacyEpoch.Load(), forgets: memoryTombstoneGeneration.Load()}
 	var err error
 	raw, err := json.Marshal([]any{stamp.closedEyes, pii.GetUserSensitiveApps(), GetUserVoiceInputApps()})
 	if err != nil {

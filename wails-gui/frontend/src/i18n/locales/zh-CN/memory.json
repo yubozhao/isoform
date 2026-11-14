@@ -439,8 +439,10 @@
             "tools": "工具和应用",
             "routines": "日常习惯",
             "interests": "兴趣",
-            "other": "其他"
+            "other": "其他",
+            "agents": "你如何与智能体协作"
         },
+        "agentsNote": "你如何使用编程智能体。与 Isoform 了解到的关于你的内容分开显示。",
         "communication": {
             "note": "只从你发送的消息中学习。草稿会遵循这些认识。",
             "sentMessages_one": "{{count}} 条你发送的消息",

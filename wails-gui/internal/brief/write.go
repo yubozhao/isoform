@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -34,7 +35,7 @@ var groupOrder = []string{GroupDone, GroupAttended, GroupAgents, GroupAhead, Gro
 
 // groupLimits bound each group so one busy source cannot crowd the prompt.
 var groupLimits = map[string]int{
-	GroupDone: 30, GroupAttended: 8, GroupAgents: 20, GroupAhead: 10, GroupCommitment: 10,
+	GroupDone: 40, GroupAttended: 8, GroupAgents: 20, GroupAhead: 10, GroupCommitment: 10,
 	GroupWaiting: 8, GroupFollowUp: 8, GroupOpenLoop: 12, GroupContext: 10,
 }
 
@@ -68,6 +69,12 @@ type Material struct {
 	Larger string
 	// Now is the local day and time the brief is made, in words.
 	Now string
+	// Today is local midnight of the day the brief is read, in the reader's
+	// zone. When set, the prompt names the reader's days and the repair checks
+	// the written day words against it (dates.go).
+	Today time.Time
+	// Lang is the brief's language ("en" or "zh"); the day checks are English.
+	Lang string
 	// Name is the user's first name, or empty.
 	Name  string
 	Items []MaterialItem
@@ -176,6 +183,10 @@ func WritePrompt(m Material, lang string) string {
 	if m.Now != "" {
 		b.WriteString("It is now " + m.Now + ".\n")
 	}
+	if days := m.dayPrompt(); days != "" {
+		b.WriteString(days)
+		b.WriteString("Name a day only as an item's when word gives it. A next step happens today or later: never give it a past date (say today, tomorrow, or a day ahead); a past date may only be a reason, as in \"since November 5\".\n")
+	}
 	if m.Name != "" {
 		b.WriteString("The user's name is " + m.Name + ".\n")
 	}
@@ -216,6 +227,13 @@ func RepairDraft(raw string, m Material) (Draft, []string, error) {
 	}
 	clean := func(p Paragraph, done bool) (Paragraph, bool) {
 		text := strings.TrimSpace(p.Text)
+		var cited []MaterialItem
+		for _, r := range p.Refs {
+			if item, ok := byID[strings.TrimSpace(r)]; ok {
+				cited = append(cited, item)
+			}
+		}
+		text = m.checkDays(text, done, cited, &codes)
 		if listMarkerPattern.MatchString(text) {
 			text = listMarkerPattern.ReplaceAllString(text, "")
 			codes = append(codes, CodeListMarker)

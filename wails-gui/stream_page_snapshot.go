@@ -5,9 +5,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -165,6 +168,43 @@ func readStreamPageSnapshot(key streamPageKey, stamp string) (streamPageSnapshot
 		return streamPageSnapshot{}, "unverified"
 	}
 	return snap, ""
+}
+
+// dropStaleStreamPageCopies deletes every saved first page not made under the
+// current privacy epoch. A copy is otherwise dropped only when its own page is
+// read again, so the copy of a chat that is never opened again (a deleted chat,
+// a side chat after a withdrawal) kept the withdrawn rows on disk for good.
+// briefPrivacyChanged calls this once the new epoch is saved, and a launch calls
+// it once the saved epoch is loaded.
+func dropStaleStreamPageCopies() {
+	root, err := flavorDataDir()
+	if err != nil {
+		return
+	}
+	dir := filepath.Join(root, streamPageDirName)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	current := fmt.Sprintf("read|%d|", mobileBriefPrivacyEpoch.Load())
+	for _, entry := range entries {
+		path := filepath.Join(dir, entry.Name())
+		if strings.HasSuffix(entry.Name(), ".tmp") {
+			// A half-written copy from a stopped save.
+			_ = os.Remove(path)
+			continue
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		var snap struct {
+			ReadStamp string `json:"readStamp"`
+		}
+		if json.Unmarshal(raw, &snap) != nil || !strings.HasPrefix(snap.ReadStamp, current) {
+			_ = os.Remove(path)
+		}
+	}
 }
 
 // readRawStreamPageSnapshot reads the saved page without judging it.
@@ -341,7 +381,15 @@ func logStreamPage(served, reason string, stampMs, versionMs, computeMs int64, c
 // durable one (savedCopyStamp), so a copy survives a restart and any privacy
 // change, withdrawal included, drops it before the next read.
 func (a *App) streamPageStamp(ctx context.Context) string {
-	return a.savedCopyStamp(ctx)
+	// The saved page carries proactive cards, so it also follows the durable
+	// counter that every write to their sources bumps (people, mail, calendar,
+	// reminders and the permission switches): turning a source off in Isoform
+	// must never let its card paint from the copy before the check runs.
+	sources, err := a.store.VoiceSourceVersion(ctx)
+	if err != nil {
+		return ""
+	}
+	return a.savedCopyStamp(ctx) + "|src" + strconv.FormatInt(sources, 36)
 }
 
 // streamPageDueFor is when the next background refresh may run for a copy
@@ -387,7 +435,7 @@ func (a *App) computeLatestStreamPage(key streamPageKey, stamp string) (StreamIt
 	}
 	cardsRaw := rawProactiveCards(page.Items)
 	enrichStart := time.Now()
-	streamCtx := context.WithValue(ctx, streamProjectionTimingKey{}, true)
+	streamCtx := context.WithValue(withMainChatReadMemo(ctx), streamProjectionTimingKey{}, true)
 	incomplete := false
 	streamCtx = context.WithValue(streamCtx, streamProjectionIncompleteKey{}, &incomplete)
 	a.projectStreamItemsContext(streamCtx, page.Items)
@@ -520,7 +568,7 @@ func (a *App) verifyStreamPageCopy(key streamPageKey) {
 		return
 	}
 	if snap.Deep == "" {
-		if snap.ReadStamp == a.savedCopyStamp(ctx) {
+		if snap.ReadStamp == a.streamPageStamp(ctx) {
 			snap.Deep = deep
 			_ = writeStreamPageSnapshot(key, snap)
 		}

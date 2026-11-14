@@ -1203,6 +1203,25 @@ final class PairingStoreTests: XCTestCase {
         XCTAssertEqual(attempts[1], attempts[2])
     }
 
+    /// A tunnel or proxy in front of the relay answers 502 or 504, or a page that is not the relay's answer, once
+    /// during the claim and once during the wait for approval: pairing goes on instead of failing and revoking the
+    /// new device.
+    func testAGatewayErrorDuringPairingIsRetriedLikeATimeout() async throws {
+        let fixture = try makeFixture()
+        fixture.transport.queueClaimFailures([RelayClientError.server(status: 502, message: ""), RelayClientError.invalidResponse])
+        fixture.transport.script([
+            { _ in throw RelayClientError.server(status: 504, message: "") },
+            { claim in try fixture.hub.approval(for: claim) },
+        ])
+        let task = try XCTUnwrap(fixture.store.begin(invitation: fixture.hub.invitationText(exp: exp)))
+        await task.value
+        XCTAssertEqual(fixture.store.phase, .paired)
+        let attempts = fixture.transport.claimAttempts
+        XCTAssertEqual(attempts.count, 3)
+        XCTAssertEqual(attempts[0], attempts[1], "the identical claim each time")
+        XCTAssertEqual(attempts[1], attempts[2])
+    }
+
     func testPollConflictWhileStillOpenIsRetriedBeforeItBecomesARace() async throws {
         let fixture = try makeFixture()
         fixture.transport.script([

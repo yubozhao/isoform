@@ -246,6 +246,8 @@ func (a *App) clearPageSnapshots() {
 	if bridge := a.mobileBridgeForUse(); bridge != nil {
 		bridge.invalidateToday()
 	}
+	// Saved page snapshots go in the same step (derived_views_disk.go).
+	derivedDiskDropAll()
 	c := &a.pagePermissions
 	c.mu.Lock()
 	defer c.mu.Unlock()

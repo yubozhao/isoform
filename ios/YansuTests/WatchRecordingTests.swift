@@ -315,6 +315,84 @@ final class WatchRecordingForwarderTests: XCTestCase {
         XCTAssertEqual(states[id], .transcribed, "the computer's list moves an arrived recording on")
     }
 
+    func testThePhoneListShowsEachRecordingOnceWithItsWholeLengthAndState() async throws {
+        let hub = StubRecordingHub()
+        await hub.set(available: false)
+        let uploads = StubUploads()
+        let (inbox, forwarder) = make(hub, uploads)
+        let long = WatchRecordingWire.newRecordingID()
+        _ = try await deliver(inbox, forwarder, id: long, part: 0, last: false, audio: "one")
+        _ = try await deliver(inbox, forwarder, id: long, part: 1, last: true, audio: "two")
+        _ = try await deliver(inbox, forwarder, id: long, part: 1, last: true, audio: "two")   // delivered twice
+        var list = await forwarder.recordings()
+        XCTAssertEqual(list.count, 1)
+        XCTAssertEqual(list.first?.durationSeconds, 1800)
+        XCTAssertEqual(list.first?.startedAt, Date(timeIntervalSince1970: 1_800_000_000))
+        XCTAssertEqual(list.first?.state, .onPhone)
+
+        var outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .unsupported)
+        XCTAssertNotNil(WatchRecordingsCopy.waiting(outcome, anyOnPhone: true))
+        XCTAssertNil(WatchRecordingsCopy.waiting(outcome, anyOnPhone: false))
+
+        await hub.set(available: true)
+        outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .drained)
+        list = await forwarder.recordings()
+        XCTAssertEqual(list.first?.state, .onComputer)
+
+        // The list survives a relaunch of the phone app.
+        let context = context()
+        let reopened = WatchRecordingForwarder(inbox: inbox, hub: hub, relay: uploads, session: { context })
+        let again = await reopened.recordings()
+        XCTAssertEqual(again, list)
+        XCTAssertEqual(WatchRecordingsCopy.length(1800), "30:00")
+        XCTAssertEqual(WatchRecordingsCopy.length(3725), "1:02:05")
+    }
+
+    func testRetriesReuseTheCopyOnTheRelay() async throws {
+        let hub = StubRecordingHub()
+        let uploads = StubUploads()
+        let (inbox, forwarder) = make(hub, uploads)
+        let id = WatchRecordingWire.newRecordingID()
+        _ = try await deliver(inbox, forwarder, id: id, part: 0, last: true, audio: "audio")
+
+        // Observing is paused on the computer for a while: every pass asks again, but the relay
+        // keeps one sealed copy, not one per pass (each would wait 48 hours on the device quota).
+        await hub.set(postError: HubRequestError.conflict(message: "observing is paused on this computer"))
+        for _ in 0..<4 { _ = await forwarder.drain() }
+        XCTAssertEqual(uploads.count, 1)
+
+        await hub.set(postError: nil)
+        let outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .drained)
+        XCTAssertEqual(uploads.count, 1)
+        let posted = await hub.posted
+        let sent = try XCTUnwrap(posted.first)
+        XCTAssertNotNil(uploads.body(sent.upload.id), "the request names the copy that is on the relay")
+        XCTAssertTrue(inbox.pending().isEmpty)
+    }
+
+    func testAnUploadTheRelayLostIsSealedAndSentAgain() async throws {
+        let hub = StubRecordingHub()
+        let uploads = StubUploads()
+        let (inbox, forwarder) = make(hub, uploads)
+        let id = WatchRecordingWire.newRecordingID()
+        _ = try await deliver(inbox, forwarder, id: id, part: 0, last: true, audio: "audio")
+        await hub.set(postError: HubRequestError.rejected(status: 404, message: "upload_missing"))
+        var outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .waiting)
+        XCTAssertEqual(uploads.count, 1)
+        await hub.set(postError: nil)
+        outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .drained)
+        XCTAssertEqual(uploads.count, 2, "a lost copy is replaced by a fresh one")
+        let posted = await hub.posted
+        let sent = try XCTUnwrap(posted.first)
+        XCTAssertNotNil(uploads.body(sent.upload.id))
+        XCTAssertTrue(inbox.pending().isEmpty)
+    }
+
     func testAPartTheComputerCallsInvalidStopsBeingRetriedButKeepsItsAudio() async throws {
         let hub = StubRecordingHub()
         let uploads = StubUploads()

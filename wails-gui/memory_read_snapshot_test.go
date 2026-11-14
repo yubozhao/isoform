@@ -380,3 +380,61 @@ func TestMemoryReadsParseOnlyChangedNotesWithABackgroundWriter(t *testing.T) {
 		}
 	}
 }
+
+// Notes hidden as learned only from agent activity stay in the parse cache as
+// hidden: after a memory write, the next read rescans the folder's file times
+// but opens none of the hidden notes again.
+func TestHiddenNotesAreNotReadAgainOnARescan(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	parsedNotes.reset()
+	t.Cleanup(parsedNotes.reset)
+	dir := writeFictionalMemoryFolder(t, fictionalMemoryNotes)
+	old := time.Now().Add(-time.Hour)
+	const hidden = 500
+	for i := 0; i < hidden; i++ {
+		path := filepath.Join(dir, fmt.Sprintf("harbor-note-%04d.md", i))
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		marked, ok := markLearnedFromAgents(string(data))
+		if !ok {
+			t.Fatal("fixture note could not be marked")
+		}
+		if err := os.WriteFile(path, []byte(marked), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(path, old, old); err != nil {
+			t.Fatal(err)
+		}
+	}
+	app := &App{}
+	first, err := app.GetMemoryEntries()
+	if err != nil || len(first) != fictionalMemoryNotes-hidden {
+		t.Fatalf("first read: %d notes, %v", len(first), err)
+	}
+	files := countMemoryFiles(t)
+	app.invalidateMemoryExternalReads()
+	start := time.Now()
+	got, err := app.GetMemoryEntries()
+	took := time.Since(start)
+	opens, _ := files.take()
+	t.Logf("rescan after a write with %d hidden notes: %d opens in %s", hidden, opens, took)
+	if err != nil || len(got) != fictionalMemoryNotes-hidden {
+		t.Fatalf("rescan: %d notes, %v", len(got), err)
+	}
+	// Folder listings only (fingerprint, notes, .history and its folders).
+	if opens > 2+1+1+fictionalMemoryHistory {
+		t.Fatalf("a rescan opened %d files; the hidden notes were read again", opens)
+	}
+	// A hidden note that is unhidden (rewritten) is read again and listed.
+	path := filepath.Join(dir, "harbor-note-0000.md")
+	if err := os.WriteFile(path, []byte("# Harbor note 0\n\nRowan Vale is back.\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	app.invalidateMemoryExternalReads()
+	got, _ = app.GetMemoryEntries()
+	if memoryEntryByID(got, "harbor-note-0000") == nil {
+		t.Fatal("a rewritten hidden note was not read again")
+	}
+}

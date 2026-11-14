@@ -179,6 +179,9 @@ type mobileBriefCandidate struct {
 	WebSource           *MobileBriefWebSource
 	// FollowUp marks a commitment the user added from a moment in Activity.
 	FollowUp bool
+	// writerDetail is what the screen summary says changed, for the new
+	// writer only: it never reaches a section item, a card or the wire.
+	writerDetail string
 }
 
 // briefDayRef is midnight of the day the brief is about, in loc: the slot's
@@ -573,6 +576,7 @@ func prepareMobileBriefCandidates(
 		candidate.Status = mobileBriefText(candidate.Status, mobileBriefKindLimit)
 		candidate.Kind = mobileBriefText(candidate.Kind, mobileBriefKindLimit)
 		candidate.NextStep = mobileBriefText(mobileBriefSafeLines(candidate.NextStep), mobileBriefTextLimit)
+		candidate.writerDetail = mobileBriefText(mobileBriefSafeLines(candidate.writerDetail), mobileBriefTextLimit)
 		candidate.MomentID = mobileBriefText(candidate.MomentID, mobileBriefSourceIDLimit)
 		candidate.ChatSessionID = mobileBriefText(candidate.ChatSessionID, mobileBriefSourceIDLimit)
 		candidate.ChatMessageID = mobileBriefText(candidate.ChatMessageID, mobileBriefSourceIDLimit)

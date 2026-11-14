@@ -598,6 +598,7 @@ func readMemoryEntries(dir string) ([]MemoryEntry, error) {
 	history := memoryHistoryIDs(dir)
 
 	var result []MemoryEntry
+	seen := make(map[string]bool, len(entries))
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") || isOKFReservedMarkdownFile(e.Name()) {
 			continue
@@ -612,9 +613,12 @@ func readMemoryEntries(dir string) ([]MemoryEntry, error) {
 		}
 		path := filepath.Join(dir, e.Name())
 		id := strings.TrimSuffix(e.Name(), ".md")
-		if entry, ok := parsedNotes.lookup(path, info); ok {
-			entry.HasHistory = history[id]
-			result = append(result, entry)
+		seen[path] = true
+		if entry, hidden, ok := parsedNotes.lookup(path, info); ok {
+			if !hidden {
+				entry.HasHistory = history[id]
+				result = append(result, entry)
+			}
 			continue
 		}
 		data, err := memoryFiles.ReadFile(path)
@@ -629,6 +633,7 @@ func readMemoryEntries(dir string) ([]MemoryEntry, error) {
 		content := string(data)
 		if learnedFromAgents(content) {
 			// Learned only from agent activity: hidden, kept on disk.
+			parsedNotes.storeHidden(path, info, int64(len(data)))
 			continue
 		}
 		doc := parseMemoryEntryDocument(content)
@@ -656,7 +661,7 @@ func readMemoryEntries(dir string) ([]MemoryEntry, error) {
 		entry.HasHistory = history[id]
 		result = append(result, entry)
 	}
-	parsedNotes.prune(dir, result)
+	parsedNotes.prune(dir, seen)
 
 	// Sort by best-known update time: prefer frontmatter `Updated` (stable
 	// across reindex / touch), fall back to filesystem modTime when absent.

@@ -6,6 +6,7 @@ import {
 } from "@/lib/wails-shim-app";
 import { EventsEmit, Quit } from "../../wailsjs/runtime/runtime";
 import { Button } from "@/components/ui/button";
+import { afterPaint } from "@/lib/launch-perf";
 
 // Do not mount App's hooks until storage has opened successfully. In
 // particular, a newer schema must never look like an empty first-run account.
@@ -35,14 +36,9 @@ export function StorageStartupGate({ children }: { children: ReactNode }) {
 
     useEffect(() => {
         if (status?.code !== "") return;
-        let second = 0;
-        const first = requestAnimationFrame(() => {
-            second = requestAnimationFrame(() => EventsEmit("pages:first-paint"));
-        });
-        return () => {
-            cancelAnimationFrame(first);
-            cancelAnimationFrame(second);
-        };
+        // afterPaint also fires for a window that launched hidden, which gets
+        // no animation frames: page snapshots and first reads wait for this.
+        return afterPaint(() => EventsEmit("pages:first-paint"));
     }, [status?.code]);
 
     if (status?.code === "") return <>{children}</>;

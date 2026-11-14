@@ -22,6 +22,7 @@ struct SettingsView: View {
     @State private var unpairFailed = false
     @State private var removePairingFailed = false
     @State private var noticeDetailsMissing = false
+    @ObservedObject private var watchRecordings = WatchRecordingsModel.shared
     @State private var unpairing = false
     @State private var faceIDFailure = false
     @State private var status: HubStatus?
@@ -49,6 +50,25 @@ struct SettingsView: View {
                     }.buttonStyle(.plain).accessibilityIdentifier("settings.yourAgent.open")
                 }
                 settingsGroup("Your computer", identifier: "settings.group.mac") { pairingSection }
+                // Shown only once a recording has arrived from the watch.
+                if !watchRecordings.recordings.isEmpty {
+                    settingsGroup("Watch", identifier: "settings.group.watch") {
+                        NavigationLink {
+                            WatchRecordingsView(model: watchRecordings)
+                        } label: {
+                            YansuCard {
+                                HStack(spacing: 8) {
+                                    Text("Recordings").font(.body).foregroundStyle(YansuTheme.ink)
+                                    Spacer(minLength: 4)
+                                    Text("\(watchRecordings.recordings.count)").font(.body)
+                                        .foregroundStyle(YansuTheme.secondary)
+                                    Image(systemName: "chevron.right").font(.footnote.weight(.semibold))
+                                        .foregroundStyle(YansuTheme.tertiary)
+                                }
+                            }
+                        }.buttonStyle(.plain).accessibilityIdentifier("settings.watchRecordings.open")
+                    }
+                }
                 if let notice = brief.notice {
                     NoticeBanner(message: notice, dismiss: brief.dismissNotice)
                         .accessibilityIdentifier("settings.briefNotice")

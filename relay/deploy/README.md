@@ -276,3 +276,38 @@ Both are far below the first paid tier of a managed WebSocket service, and
 the relay's own limits (`relay/README.md`) keep a single machine enough for
 thousands of hubs: a hub socket is one idle connection with a ping every
 30s, and a phone's long-poll is one connection for up to 25s.
+
+## The relay on this computer (launchd)
+
+The development relay runs on the developer's computer behind a zrok public share
+(a reserved zrok public share name). `macos/isoform-relay-host.sh` keeps both alive across
+restarts with two launchd agents in the user's session:
+
+| Agent | Runs | Log |
+| --- | --- | --- |
+| `ai.isoform.relay` | the relay, built once into `~/isoform-relay-state/bin`, on `127.0.0.1:8791` | `~/isoform-relay-state/relay.out` |
+| `ai.isoform.relay-share` | `zrok share public --headless -n public:isoform-relay`, after the relay answers `/v1/health` | `~/isoform-relay-state/zrok.out` |
+
+Both restart when they exit. Before sharing, the share agent checks who holds the name. A share
+from this computer's zrok environment that no running zrok process serves is stale: it is left
+over from a process that died with the computer. The agent deletes it, then shares. A share from
+another environment, or one a running process still serves, is left alone, and the agent retries
+in five minutes.
+
+```bash
+relay/deploy/macos/isoform-relay-host.sh install --dry-run   # print the agents and what install would do
+relay/deploy/macos/isoform-relay-host.sh install             # build the relay, write and load the agents
+relay/deploy/macos/isoform-relay-host.sh status              # agent state, local and public health
+relay/deploy/macos/isoform-relay-host.sh release-stale-share --dry-run   # which share a release would delete
+relay/deploy/macos/isoform-relay-host.sh uninstall           # unload and remove the agents; state is kept
+```
+
+Install refuses while a relay or zrok share started by hand is running, and names their PIDs: stop
+those first. It never stops a process it did not start. Re-run `install` to pick up a newer relay.
+The agents start when the user logs in, which a FileVault disk needs after a restart anyway.
+Extra relay settings go in `~/isoform-relay-state/relay.env`, so the plists hold no secret; the zrok
+account token stays in `~/.zrok2`.
+
+`macos/test-isoform-relay-host.sh` checks the script with the real relay binary, a temporary HOME,
+and recorders in place of `zrok` and `launchctl`, so it never touches the account or the installed
+agents.

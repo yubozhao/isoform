@@ -260,6 +260,9 @@ type App struct {
 	// to mirror agent stream events into spotlightStreamHub. Future
 	// hooks (audit, server-side persistence) can plug in without
 	// touching streaming.go.
+	// desktopTurns keeps the hub's copy of desktop chat turns.
+	desktopTurns desktopTurnKeeper
+
 	agentEventListenersMu sync.RWMutex
 	agentEventListeners   []func(AgentEvent)
 	// agentEventItems names the rows of turns in flight (agent_event_items.go).
@@ -292,6 +295,8 @@ type App struct {
 	yourAgentRefreshing  bool
 	remoteAccessFactory  func() mobileRemoteAccessSupervisor
 	mobileBriefSvc       mobileBriefSource // daily brief producer for paired phones; set from mobileBriefServiceFactory
+	// briefExclusionsPrint is the last stated-exclusion set read (noteMobileBriefExclusions).
+	briefExclusionsPrint atomic.Pointer[string]
 	topicsOnce           sync.Once         // makes topics on first use (topics_service.go)
 	topics               *topicsService    // what the user has been looking at, and the daily finds on it
 	interestModelOnce    sync.Once         // makes the interest model on first use (interests_service.go)
@@ -669,6 +674,7 @@ func (a *App) startupServices(ctx context.Context) {
 	a.startMainChatWaitingLifecycle(ctx)
 
 	a.deferLaunchTask("storage_repair", func() { repairStartupStorage(a.store) })
+	a.deferLaunchTask("unanswered_turns", func() { a.markUnansweredTurns(ctx) })
 	a.deferLaunchTask("ocr_prewarm", ocr.PrewarmHelper)
 	a.deferLaunchTask("assistant_history", a.scheduleAssistantHistory)
 	a.startActivityMaintenance()
@@ -3328,6 +3334,17 @@ func (a *App) probeAndGreet() {
 //     60s timeout, never producing JSON.
 //   - NoSystem: the prompt is self-contained; the generic "coding assistant"
 //     wrapper steers small models toward tool use.
+// The model-call helpers below are shared; a [routing] caller= label skips
+// them so it names the code that asked for the call.
+func init() {
+	agent.RegisterCallerLabelHelpers(
+		"(*App).runEphemeralClaudeModel", "(*App).runEphemeralClaudeModelContext",
+		"(*App).runLearningClaudeModel", "(*App).runEphemeralClaudeModelRouted",
+		"(*App).runEphemeralClaudeModelObserved", "(*App).runEphemeralHaiku",
+		"(*App).mobileBriefModelCall",
+	)
+}
+
 func (a *App) runEphemeralClaudeModel(prompt, model string, timeout ...time.Duration) (string, error) {
 	return a.runEphemeralClaudeModelContext(context.Background(), prompt, model, timeout...)
 }

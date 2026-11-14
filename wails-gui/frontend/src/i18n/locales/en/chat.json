@@ -109,6 +109,7 @@
             "runnerUnavailable": "Couldn't start it: {{ai}} isn't available on your computer.",
             "network": "Couldn't reach {{ai}}. Check your connection.",
             "server": "{{ai}} is having trouble right now.",
+            "noReply": "No answer came back.",
             "assistantError": "{{ai}} stopped with an error.",
             "assistantErrorUnknown": "Your AI stopped with an error.",
             "yourAI": "your AI",
@@ -645,6 +646,17 @@
             "send": "Send",
             "edit": "Edit",
             "close": "Close"
+        },
+        "draft": {
+            "to": "Draft to {{to}}",
+            "separator": " · ",
+            "notSent": "Nothing was sent.",
+            "subject": "Subject: {{subject}}",
+            "copy": "Copy",
+            "copied": "Copied",
+            "openInMail": "Open in mail app",
+            "copyFailed": "Couldn't copy it.",
+            "mailFailed": "Couldn't open your mail app."
         }
     },
     "setup": {

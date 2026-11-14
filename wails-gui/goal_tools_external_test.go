@@ -82,7 +82,7 @@ func TestGoalCreateThroughExternalRunner(t *testing.T) {
 			input := &agent.TaskInput{
 				Prompt:    "Create the goal we agreed on: Run a half marathon by June.",
 				SessionID: main.LocalID, WorkDir: home,
-				AllowedTools: []string{goalToolCreate}, ExtraTools: bridge.app.mainChatExtraTools(main.LocalID, promptOriginPhone),
+				AllowedTools: []string{goalToolCreate}, ExtraTools: bridge.app.mainChatExtraTools(main.LocalID, promptOriginPhone)[:1],
 				AutoApproveTools: unattended,
 			}
 			if len(input.ExtraTools) != 1 || input.ExtraTools[0].Name() != goalToolCreate {

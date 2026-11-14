@@ -630,3 +630,83 @@ sleep 10`)
 		t.Fatal("cancelled CLI did not stop")
 	}
 }
+
+func TestControlledAnswerTextExtendsPreActionWindow(t *testing.T) {
+	t.Run("progress keeps a streaming answer alive past the first window", func(t *testing.T) {
+		attempt := newControlledAttemptDeadline(context.Background(), 150*time.Millisecond)
+		defer attempt.stop()
+		for end := time.Now().Add(450 * time.Millisecond); time.Now().Before(end); {
+			attempt.noteProgress()
+			time.Sleep(30 * time.Millisecond)
+		}
+		if err := attempt.ctx.Err(); err != nil {
+			t.Fatalf("streaming answer cut at the first window: %v", context.Cause(attempt.ctx))
+		}
+		// Silence after the text still ends the attempt one window later.
+		select {
+		case <-attempt.ctx.Done():
+		case <-time.After(time.Second):
+			t.Fatal("a silent assistant was never stopped")
+		}
+		if !errors.Is(context.Cause(attempt.ctx), context.DeadlineExceeded) {
+			t.Fatalf("silence ended with %v, want the pre-action deadline", context.Cause(attempt.ctx))
+		}
+	})
+	t.Run("never passes the native fallback reserve", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute+externalFallbackTeardownAllowance+200*time.Millisecond)
+		defer cancel()
+		attempt := newControlledAttemptDeadline(WithNativeFallbackBudget(ctx, 30*time.Minute), 2*time.Minute)
+		defer attempt.stop()
+		end := attempt.windowEnd
+		attempt.noteProgress()
+		if attempt.preActionDeadline.After(end) {
+			t.Fatalf("progress moved the window to %v, past the reserve at %v", attempt.preActionDeadline, end)
+		}
+	})
+	t.Run("an admitted action owns the run deadline", func(t *testing.T) {
+		attempt := newControlledAttemptDeadline(context.Background(), time.Minute)
+		defer attempt.stop()
+		if err := attempt.admitAction(func() error { return nil }); err != nil {
+			t.Fatal(err)
+		}
+		before := attempt.preActionDeadline
+		attempt.noteProgress()
+		if !attempt.preActionDeadline.Equal(before) {
+			t.Fatal("progress moved the window after an action was admitted")
+		}
+	})
+}
+
+func TestControlledLongTextAnswerFinishes(t *testing.T) {
+	externalFixtureState(t)
+	initJSON, _ := json.Marshal(func() map[string]any { init := validControlledInit(); init["tools"] = []string{}; return init }())
+	delta := func(text string) string {
+		line, _ := json.Marshal(map[string]any{"type": "stream_event", "event": map[string]any{"type": "content_block_delta", "delta": map[string]any{"type": "text_delta", "text": text}}})
+		return "echo '" + string(line) + "'; sleep 0.1"
+	}
+	script := "echo '" + string(initJSON) + "'\n"
+	for i := 0; i < 8; i++ {
+		script += delta("part ") + "\n"
+	}
+	script += `echo '{"type":"result","result":"completed","is_error":false}'`
+	binary := writeFakeCLI(t, "claude", script)
+	native := NewNativeAgentRunner(NativeRunnerConfig{DisableEnvFallback: true})
+	runner := NewExternalAgentRunner(ExternalAgentConfig{Command: binary, ToolShimCommand: "/bundled/yansu", ToolServerFactory: native.NewToolServer, AttemptTimeout: 300 * time.Millisecond})
+	runner.profileCheckedAt = time.Now()
+	if err := runner.Init(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	var text strings.Builder
+	_, err := runner.ExecuteTask(context.Background(), &TaskInput{WorkDir: realTempDir(t), Prompt: "write a long answer", NoTools: true}, func(event *StreamEvent) error {
+		if event.Type == "assistant" {
+			text.WriteString(event.Content)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("an answer streaming for longer than one window was cut off: %v", err)
+	}
+	if got := strings.Count(text.String(), "part "); got != 8 {
+		t.Fatalf("answer kept %d of 8 parts", got)
+	}
+}

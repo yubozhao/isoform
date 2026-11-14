@@ -870,6 +870,31 @@ describe('About you overview', () => {
         expect(await screen.findByText(summary)).toBeInTheDocument();
     });
 
+    it('puts agent-practice beliefs in one collapsed section when the agent section is on', async () => {
+        mocks.getAbout.mockResolvedValue({ ...aboutFor([entry, second]), agentSection: true, beliefs: [
+            { ...aboutFor([entry]).beliefs[0], area: 'work' },
+            { ...aboutFor([second]).beliefs[0], area: 'work', agentPractice: true },
+        ] });
+        render(<MemoryPage devToolsUnlocked />);
+        const agents = await screen.findByRole('button', { name: /^How you work with your agents\s*1$/ });
+        expect(screen.getByRole('button', { name: /^Work\s*1$/ })).toBeInTheDocument();
+        // Collapsed by default: the belief is not listed until it is opened.
+        expect(screen.queryByRole('button', { name: /Planning.*You plan the week/ })).not.toBeInTheDocument();
+        fireEvent.click(agents);
+        expect(await screen.findByRole('button', { name: /Planning.*You plan the week/ })).toBeInTheDocument();
+        expect(screen.getByText('How you run your coding agents. Kept apart from what Isoform learns about you.')).toBeInTheDocument();
+    });
+
+    it('keeps agent-practice beliefs in their area while the agent section is off', async () => {
+        mocks.getAbout.mockResolvedValue({ ...aboutFor([entry, second]), beliefs: [
+            { ...aboutFor([entry]).beliefs[0], area: 'work' },
+            { ...aboutFor([second]).beliefs[0], area: 'work', agentPractice: true },
+        ] });
+        render(<MemoryPage devToolsUnlocked />);
+        expect(await screen.findByRole('button', { name: /^Work\s*2$/ })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /How you work with your agents/ })).not.toBeInTheDocument();
+    });
+
     it('groups beliefs by fixed area with a kind label, confidence bar and status', async () => {
         mocks.getAbout.mockResolvedValue({ ...aboutFor([entry, second]), beliefs: [
             { ...aboutFor([entry]).beliefs[0], area: 'work', status: 'confirmed', confidence: 4 },

@@ -173,6 +173,14 @@ Envelope (JSON; this is what the relay stores and forwards):
   stream is `brief` for kind `brief` and `message` for kinds `req`, `res` and `event`. The two
   streams share one sender counter (so nonces stay unique) but are checked separately, because
   a stored brief may be fetched after a later response was already accepted.
+- The hub checks `d2h` requests against a replay window instead of `lastAccepted` alone,
+  because one phone reaches it over two paths (21.4): a request the relay held can arrive after
+  a newer one from the direct path. Per device it keeps the highest accepted `seq` and a
+  4096-bit map of the numbers below it, in `replay-windows.json` (mode 0600, written before
+  `devices.json`). A number inside the window that was not seen is accepted once; a number seen
+  before, or 4096 or more below the highest, is a replay. `lastAcceptedSeq` in `devices.json`
+  stays the highest accepted number. A device without a window starts with every number up to
+  `lastAcceptedSeq` counted as seen, which rejects exactly what the plain check rejected.
 - Nonce: 12 bytes = four zero bytes followed by big-endian uint64 `seq`.
 - AAD (ASCII): `"yansu-env-v1|" + v + "|" + hub + "|" + dev + "|" + dir + "|" + seq + "|" + kind`
   where `v` and `seq` are decimal. Any change to the header fails authentication, so the relay
@@ -3212,8 +3220,10 @@ bundled. It keeps a second hub connection to that sidecar, so one hub is reachab
   the sidecar knows. The hub keeps the bearer's digest in `direct-grants.json` (mode 0600) and sends
   the sidecar a `grant` frame (section 6). Each call replaces the device's previous direct bearer. A
   desktop without a direct path answers 503.
-- The hub copies to the sidecar every `out`, `brief` and `ack` frame of a device that holds a grant,
-  and every `revoke` and `goodbye`. Push fields are dropped (`notify:false`, no notice fields), so a
+- The hub copies to the sidecar every `out` and `brief` frame of a device that holds a grant,
+  and every `revoke` and `goodbye`. An `ack` goes only to the relay that delivered the request:
+  it deletes every queued request up to its number, so on the other relay it could delete a held
+  request with a lower number (section 4). Push fields are dropped (`notify:false`, no notice fields), so a
   push is queued only at the pinned relay. Pairing frames and text messages stay on the pinned relay.
 - Attachments (17) are uploaded to both relays at once while the sidecar link is connected and some
   device holds a grant; the upload succeeds when either relay takes it. The phone reads an attachment

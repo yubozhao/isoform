@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -383,7 +386,7 @@ func (a *App) LoadStreamItemsPage(sessionLocalID string, cursor, limit int) (per
 		return page, err
 	}
 	enrichStart := time.Now()
-	streamCtx := context.WithValue(context.Background(), streamProjectionTimingKey{}, true)
+	streamCtx := context.WithValue(withMainChatReadMemo(context.Background()), streamProjectionTimingKey{}, true)
 	a.projectStreamItemsContext(streamCtx, page.Items)
 	release, err := a.projectMainChatView(streamCtx, sessionLocalID, page.Items, time.Now())
 	enrichDuration := time.Since(enrichStart)
@@ -405,6 +408,32 @@ func (a *App) projectStreamItems(items []StreamItemData) {
 type waitingProjectionTimingKey struct{}
 type streamProjectionTimingKey struct{}
 type streamProjectionIncompleteKey struct{}
+
+// streamProjectionLabelKey names a timed pass in its log line (default: the
+// LoadStreamItemsPage binding).
+type streamProjectionLabelKey struct{}
+
+// topVoiceKinds is "kind:ms,kind:ms" for the n slowest card kinds; code
+// identifiers and timings only.
+func topVoiceKinds(byKind map[string]time.Duration, n int) string {
+	type entry struct {
+		kind string
+		d    time.Duration
+	}
+	entries := make([]entry, 0, len(byKind))
+	for kind, d := range byKind {
+		entries = append(entries, entry{kind, d})
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].d > entries[j].d })
+	parts := make([]string, 0, n)
+	for i := 0; i < len(entries) && i < n; i++ {
+		parts = append(parts, fmt.Sprintf("%s:%d", entries[i].kind, entries[i].d.Milliseconds()))
+	}
+	if len(parts) == 0 {
+		return "none"
+	}
+	return strings.Join(parts, ",")
+}
 
 func (a *App) projectStreamItemsContext(ctx context.Context, items []StreamItemData) {
 	timed, _ := ctx.Value(waitingProjectionTimingKey{}).(bool)
@@ -436,11 +465,26 @@ func (a *App) projectStreamItemsContext(ctx context.Context, items []StreamItemD
 	briefDisplay := a.mainChatBriefDisplayProjector()
 	captureDisplay := a.mainChatCaptureProjector(ctx)
 	briefMissed := a.mainChatBriefMissedProjector(ctx)
+	// voiceByKind splits the voice step by card kind, so a slow pass names the
+	// kind whose gate is slow. Only timed passes parse the kind.
+	var voiceByKind map[string]time.Duration
+	if timed {
+		voiceByKind = map[string]time.Duration{}
+	}
 	for i := range items {
 		item := &items[i]
+		voiceStart := time.Now()
 		measure(2, func() {
 			item.Content, item.ToolInput = a.projectProactiveVoiceDelivery(ctx, item.ToolName, item.Content, item.ToolInput)
 		})
+		if voiceByKind != nil && (item.ToolName == mainChatProactiveTool || item.ToolName == mainChatStatusTool) {
+			var head struct {
+				Kind string `json:"kind"`
+			}
+			_ = json.Unmarshal([]byte(item.ToolInput), &head)
+			kind := item.ToolName + ":" + head.Kind
+			voiceByKind[kind] += time.Since(voiceStart)
+		}
 		measure(3, func() { item.ToolInput = localizedMainChatToolInput(item.ToolName, item.ToolInput) })
 		measure(4, func() { item.ToolInput = a.projectMainChatEngagementPrefs(item.ToolName, item.ToolInput) })
 		measure(5, func() {
@@ -460,7 +504,11 @@ func (a *App) projectStreamItemsContext(ctx context.Context, items []StreamItemD
 		log.Printf("[main-chat] waiting visible projection timing answers=%s legacy=%s voice=%s locale=%s prefs=%s privacy=%s brief=%s capture=%s missed=%s pause=%s", timings[0], timings[1], timings[2], timings[3], timings[4], timings[5], timings[6], timings[7], timings[8], timings[9])
 	}
 	if streamTimed {
-		log.Printf("[perf] binding=LoadStreamItemsPage stage=enrich_detail answers_ms=%d legacy_ms=%d language_ms=%d voice_ms=%d brief_ms=%d capture_ms=%d missed_ms=%d pause_ms=%d", timings[0].Milliseconds(), timings[1].Milliseconds(), languageDuration.Milliseconds(), timings[2].Milliseconds(), timings[6].Milliseconds(), timings[7].Milliseconds(), timings[8].Milliseconds(), timings[9].Milliseconds())
+		label, _ := ctx.Value(streamProjectionLabelKey{}).(string)
+		if label == "" {
+			label = "binding=LoadStreamItemsPage"
+		}
+		log.Printf("[perf] %s stage=enrich_detail answers_ms=%d legacy_ms=%d language_ms=%d voice_ms=%d brief_ms=%d capture_ms=%d missed_ms=%d pause_ms=%d voice_top=%s", label, timings[0].Milliseconds(), timings[1].Milliseconds(), languageDuration.Milliseconds(), timings[2].Milliseconds(), timings[6].Milliseconds(), timings[7].Milliseconds(), timings[8].Milliseconds(), timings[9].Milliseconds(), topVoiceKinds(voiceByKind, 3))
 	}
 }
 

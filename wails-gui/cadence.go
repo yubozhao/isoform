@@ -45,6 +45,9 @@ const (
 	cadenceSlackMemory          = cadenceHourly
 	cadenceReminders            = cadenceHourly
 	cadenceContacts             = cadenceDaily
+	// cadenceKnowHowBackfill is how often the one-time know-how kind backfill
+	// tries again after a failure, across launches.
+	cadenceKnowHowBackfill      = cadenceDaily
 	cadencePhoneToday           = cadenceHourly
 	cadenceBriefPrerunPerSlot   = 20 * time.Hour
 	cadenceBriefPrerunMinBudget = 5 * time.Minute

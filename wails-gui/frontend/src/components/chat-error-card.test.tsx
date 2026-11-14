@@ -70,6 +70,19 @@ describe("ChatErrorCard", () => {
         expect(screen.queryByRole("button", { name: "Send again" })).toBeNull();
     });
 
+    it("says plainly when no answer came back, with Send again", () => {
+        const onRetry = vi.fn();
+        const { unmount } = render(<ChatErrorCard error={parseChatError("No answer came back.", "no_reply")} onRetry={onRetry} />);
+        expect(screen.getByRole("status")).toHaveTextContent("No answer came back. · Send again");
+        fireEvent.click(screen.getByRole("button", { name: "Send again" }));
+        expect(onRetry).toHaveBeenCalledTimes(1);
+        unmount();
+
+        render(<ChatErrorCard error={parseChatError("No answer came back.", "no_reply")} />);
+        expect(screen.getByRole("status")).toHaveTextContent("No answer came back.");
+        expect(screen.queryByRole("button", { name: "Send again" })).toBeNull();
+    });
+
     it("never claims sign-in from words when no code proves it", () => {
         render(<ChatErrorCard error={parseChatError("401 unauthorized: run claude login, reconnecting")} />);
         expect(screen.queryByText(/Sign in/)).not.toBeInTheDocument();

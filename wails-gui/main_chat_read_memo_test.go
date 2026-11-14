@@ -353,3 +353,36 @@ func TestMainChatReadLoadsSourcesOncePerRead(t *testing.T) {
 		})
 	}
 }
+
+// One projection pass reads the voice gate's list sources once, however many
+// cards it checks; a narrower mail window is served from the wider read.
+func TestProactiveVoiceSourcesAreReadOncePerPass(t *testing.T) {
+	a, _, _ := registryChatTestApp(t)
+	loads := map[string]int{}
+	previous := mainChatReadMemoLoad
+	mainChatReadMemoLoad = func(kind string) { loads[kind]++ }
+	t.Cleanup(func() { mainChatReadMemoLoad = previous })
+	now := time.Now().UnixMilli()
+	if _, err := a.store.UpsertMailMessages(t.Context(), []storage.MailMessageRow{{ID: "old", Mailbox: "INBOX", Subject: "a", At: now - 10_000}, {ID: "new", Mailbox: "INBOX", Subject: "b", At: now}}, now); err != nil {
+		t.Skipf("mail fixture: %v", err)
+	}
+	ctx := withMainChatReadMemo(t.Context())
+	for i := 0; i < 48; i++ {
+		if _, err := a.proactiveVoicePrincipals(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := a.proactiveVoiceOpenReminders(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := a.proactiveVoiceMailMessages(ctx, now-20_000); err != nil {
+			t.Fatal(err)
+		}
+	}
+	narrow, err := a.proactiveVoiceMailMessages(ctx, now-5_000)
+	if err != nil || len(narrow) != 1 || narrow[0].ID != "new" {
+		t.Fatalf("narrow mail window = %+v %v", narrow, err)
+	}
+	if loads["principals"] != 1 || loads["reminders"] != 1 || loads["mailMessages"] != 1 {
+		t.Fatalf("48 cards read the sources %v times; want once each", loads)
+	}
+}

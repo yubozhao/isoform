@@ -33,6 +33,9 @@ const (
 
 var ticketPattern = regexp.MustCompile(`\bendpoint[a-z2-7]{20,}\b`)
 
+// redactedTicket stands in for an endpoint ticket in every log line.
+const redactedTicket = "endpoint[REDACTED]"
+
 type State string
 
 type Snapshot struct {
@@ -339,6 +342,9 @@ func (s *Supervisor) startChild(name string, cmd *exec.Cmd) (<-chan struct{}, *o
 		return nil, nil, err
 	}
 	cmd.Stdout = logWriter
+	if name == "dumbpipe" {
+		cmd.Stdout = ticketRedactingWriter{writer: logWriter}
+	}
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		_ = logFile.Close()
@@ -370,12 +376,30 @@ func (s *Supervisor) startChild(name string, cmd *exec.Cmd) (<-chan struct{}, *o
 					s.signalLocked()
 					s.mu.Unlock()
 				}
+				// The ticket reaches this computer's relay from anywhere. It goes
+				// to the phone in the sealed pairing and /remote-access replies,
+				// never into a log.
+				line = ticketPattern.ReplaceAllString(line, redactedTicket)
 			}
 			_, _ = io.WriteString(logWriter, line+"\n")
 			s.logLine(name, line)
 		}
 	}()
 	return done, logFile, nil
+}
+
+// ticketRedactingWriter keeps an endpoint ticket that dumbpipe prints on
+// stdout out of its log file. A write that splits a ticket is not redacted;
+// dumbpipe prints the ticket as one line.
+type ticketRedactingWriter struct {
+	writer io.Writer
+}
+
+func (w ticketRedactingWriter) Write(p []byte) (int, error) {
+	if _, err := w.writer.Write(ticketPattern.ReplaceAll(p, []byte(redactedTicket))); err != nil {
+		return 0, err
+	}
+	return len(p), nil
 }
 
 type cappedWriter struct {

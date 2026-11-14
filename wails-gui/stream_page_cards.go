@@ -18,10 +18,13 @@ import (
 // The check runs after the copy is served (confirmStreamPageCardsLater): on a
 // real stream of 48 cards the live gates took 1 to 16 s, so a check before the
 // first paint never finished in time and the copy was never served. All the card
-// checks share one deadline. When they do not all finish in time, or any card
-// cannot be confirmed, the copy is dropped and the page is told to reload, so
-// it shows the live page, never the copy's cards again. This is the same rule
-// as the full privacy check of a copy (verifyStreamPageCopy).
+// checks share one deadline. When a card cannot be confirmed (the gates change
+// it, or its stored row is missing), the copy is dropped and the page is told
+// to reload, so it shows the live page, never the copy's cards again. This is
+// the same rule as the full privacy check of a copy (verifyStreamPageCopy). A
+// check that only ran out of time keeps the copy and the next refresh checks
+// again: a timeout withdraws nothing, and every withdrawal made in Isoform
+// drops the copy through the privacy stamp before any read.
 const streamPageCardBudget = 30 * time.Second
 
 // streamPageCardCount counts the proactive cards at the top level of a page.
@@ -78,6 +81,11 @@ func (a *App) confirmProactiveCards(key streamPageKey, saved streamPageSnapshot,
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), budget)
 	defer cancel()
+	// One read of each source for the whole check, and per-step timings in its
+	// own log line (stage=enrich_detail, label card_check).
+	ctx = withMainChatReadMemo(ctx)
+	ctx = context.WithValue(ctx, streamProjectionTimingKey{}, true)
+	ctx = context.WithValue(ctx, streamProjectionLabelKey{}, "card_check")
 	done := make(chan struct{})
 	// On a timeout this goroutine finishes alone: it works on its own clones and
 	// releases its publication fence when it ends.
@@ -147,7 +155,10 @@ func (a *App) confirmStreamPageCardsLater(key streamPageKey, saved streamPageSna
 		}()
 		_, ms, why := a.confirmProactiveCards(key, saved, time.Now(), budget)
 		log.Printf("[stream-page] card_check reason=%s cards=%d card_check_ms=%d", streamPageReasonOrHeld(why), streamPageCardCount(saved.Page), ms)
-		if why == "" {
+		if why == "" || why == "card-check-timeout" {
+			// A check that ran out of time withdrew nothing: the copy stays, and
+			// the next refresh checks again. An in-app withdrawal drops the copy
+			// on its own (the privacy stamp), before any check.
 			return
 		}
 		// Drop the copy only when it is still the one that was served; a newer

@@ -124,6 +124,9 @@ func briefPrivacyChanged(keys ...briefWithdrawn) {
 	mobileBriefReadEpoch.Add(1)
 	// Page snapshots built before this change are dropped and rebuilt.
 	defer noteDerivedPrivacyChanged()
+	// Saved first chat pages made before this change leave the disk once the new
+	// epoch is saved, not only when their chat is read again.
+	defer dropStaleStreamPageCopies()
 	mobileBriefPrivacyEpochMu.Lock()
 	defer mobileBriefPrivacyEpochMu.Unlock()
 	value := mobileBriefPrivacyEpoch.Add(1)
@@ -594,6 +597,9 @@ func (s *mobileBriefService) sealResult(ctx context.Context, source MobileBriefV
 	print := s.app.briefPrivacyPrint()
 	day := s.readDay()
 	projectionContext := s.app.mobileBriefSummaryProjection(ctx, source, previous.Fingerprints)
+	if kept := mobileBriefSealKeptAttendance(previous, found, print); kept != nil {
+		projectionContext = context.WithValue(projectionContext, mobileBriefKeptAttendanceKey{}, kept)
+	}
 	projected, withheld := s.app.mobileBriefForProjectionWithholding(projectionContext, source, true)
 	brief := s.app.mobileBriefWithCards(projected)
 	brief.Audio = s.finishedReadAudio(ctx, source, brief)
@@ -616,6 +622,31 @@ func (s *mobileBriefService) sealResult(ctx context.Context, source MobileBriefV
 		return brief, withheld, false, false
 	}
 	return brief, withheld, true, false
+}
+
+// mobileBriefKeptAttendanceKey carries, into a re-seal's gates, the meetings
+// whose attendance the previous copy kept.
+type mobileBriefKeptAttendanceKey struct{}
+
+// mobileBriefSealKeptAttendance names the meetings whose attendance the saved
+// copy shows, when it was sealed under the current privacy print: no explicit
+// privacy action has happened since, so a re-seal must not drop that
+// attendance because retention removed its session (seal v2: only an explicit
+// privacy action withdraws). Any print change returns nil, and the gates
+// decide as for a first seal.
+func mobileBriefSealKeptAttendance(previous mobileBriefFinishedRead, found bool, print string) map[string]bool {
+	if !found || previous.Schema != mobileBriefSealedSchema || previous.Print != print {
+		return nil
+	}
+	var sealed MobileBriefV1
+	if unmarshalStoredMobileBrief(previous.Brief, &sealed) != nil || len(sealed.MeetingAttendance) == 0 {
+		return nil
+	}
+	kept := map[string]bool{}
+	for _, row := range sealed.MeetingAttendance {
+		kept[row.EventID] = true
+	}
+	return kept
 }
 
 // finishedReadWithholding is source as the readers show it. A read compares the

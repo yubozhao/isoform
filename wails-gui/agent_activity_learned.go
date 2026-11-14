@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	briefcore "wails-gui/internal/brief"
 )
 
 // Learned items that came only from agent activity.
@@ -30,9 +32,14 @@ const (
 	learnedAgentOriginKey   = "activity_origin"
 	learnedAgentOriginValue = "agent"
 	learnedAgentOriginLine  = learnedAgentOriginKey + ": " + learnedAgentOriginValue
+	// learnedAgentReasonKey says why a file was marked: its session was an
+	// agent's (agent-session), or its words name agent work (agent-words).
+	learnedAgentReasonKey     = "activity_origin_reason"
+	learnedAgentReasonSession = "agent-session"
+	learnedAgentReasonWords   = "agent-words"
 
 	// agentActivityCleanupKey is the UI state key that records the cleanup.
-	agentActivityCleanupKey = "agent_activity_cleanup_v2"
+	agentActivityCleanupKey = "agent_activity_cleanup_v3"
 	// agentActivityMatchSlackDefault is how far a record's session time may
 	// sit from a line in the session file it came from. The time is the
 	// file's modification time when it was read, usually within seconds of a
@@ -74,6 +81,12 @@ func learnedFromAgents(content string) bool {
 // version history stay as they were. ok is false for a file without
 // frontmatter or one already marked.
 func markLearnedFromAgents(content string) (string, bool) {
+	return markLearnedFromAgentsBecause(content, learnedAgentReasonSession)
+}
+
+// markLearnedFromAgentsBecause marks the file and records why, so one
+// reason's marks can be lifted again without touching the others.
+func markLearnedFromAgentsBecause(content, reason string) (string, bool) {
 	if learnedFromAgents(content) {
 		return content, false
 	}
@@ -86,7 +99,35 @@ func markLearnedFromAgents(content string) (string, bool) {
 	if !found || strings.TrimSpace(first) != "---" || !strings.Contains(rest, "\n---") && !strings.HasPrefix(rest, "---") {
 		return content, false
 	}
-	return bom + first + "\n" + learnedAgentOriginLine + "\n" + rest, true
+	return bom + first + "\n" + learnedAgentOriginLine + "\n" + learnedAgentReasonKey + ": " + reason + "\n" + rest, true
+}
+
+// historyTextNamesAgentWork reports a history-learned item whose words name
+// agent work (hubs, side sessions, PRs, merges, worktrees, Codex), using the
+// brief's agent words (internal/brief AgentCue). The brief's build words
+// ("fix", "code") are left out: building software is the person's own
+// know-how. "Agent of You" is the name of a product, not agent work.
+func historyTextNamesAgentWork(text string) bool {
+	return historyWordsNameAgentWork(text)
+}
+
+// historyKnowHowIsAgentWork applies the words rule where the agent did the
+// work: a fix, gotcha, how-to or reference about agent tooling. A decision
+// is what the person chose to build, so it stays the person's, and so do
+// beliefs (About you): "requires an explicit go before a backup hub takes
+// over" is a decision of theirs, not agent work. Agent-driven decisions and
+// beliefs are still hidden by their session's origin.
+func historyKnowHowIsAgentWork(kind, text string) bool {
+	if normalizeKnowHowKind(kind) == "decision" {
+		return false
+	}
+	return historyWordsNameAgentWork(text)
+}
+
+func historyWordsNameAgentWork(text string) bool {
+	lower := strings.ToLower(text)
+	lower = strings.ReplaceAll(lower, "agent of you", "")
+	return briefcore.AgentCue(lower)
 }
 
 // runAgentActivityCleanup runs the one-time cleanup once per data folder.
@@ -107,16 +148,18 @@ func (a *App) runAgentActivityCleanup(ctx context.Context) {
 		log.Printf("[agent-activity] cleanup not finished: %v", err)
 		return
 	}
-	log.Printf("[agent-activity] cleanup hid memories=%d know_how=%d checked=%d unresolved=%d agent_runs=%d",
-		result.Memories, result.KnowHow, result.Checked, result.Unresolved, runs)
+	log.Printf("[agent-activity] cleanup hid memories=%d know_how=%d by_words=%d checked=%d unresolved=%d agent_runs=%d",
+		result.Memories, result.KnowHow, result.ByWords, result.Checked, result.Unresolved, runs)
 	if err := a.store.SetUIState(ctx, agentActivityCleanupKey, "done"); err != nil {
 		log.Printf("[agent-activity] cleanup marker not saved: %v", err)
 	}
 }
 
 type agentCleanupResult struct {
-	Memories   int
-	KnowHow    int
+	Memories int
+	KnowHow  int
+	// ByWords counts the records hidden for their words, not their session.
+	ByWords    int
 	Checked    int
 	Unresolved int
 }
@@ -131,6 +174,9 @@ type agentCleanupRecord struct {
 	assistant  string   // history
 	project    string   // history
 	sessionsAt []time.Time
+	text       string // title and description, for the agent-words rule
+	knowKind   string // know-how kind (decision, fix, ...)
+	reason     string
 }
 
 // cleanupAgentLearnedRecords marks every memory and know-how file whose
@@ -184,6 +230,14 @@ func (a *App) cleanupAgentLearnedRecords(ctx context.Context) (agentCleanupResul
 		}
 		for _, r := range history {
 			agent, ok := resolved[r]
+			if !agent && r.kind == "knowledge" && historyKnowHowIsAgentWork(r.knowKind, r.text) {
+				// Learned in an agent host about agent work: the brief's
+				// rule calls that agent-driven whatever the session was.
+				r.reason = learnedAgentReasonWords
+				hide[r] = true
+				result.ByWords++
+				continue
+			}
 			if !ok {
 				result.Unresolved++
 				continue
@@ -229,7 +283,11 @@ func (a *App) hideLearnedRecord(r *agentCleanupRecord) bool {
 	if isUserEditedMemory(content) {
 		return false
 	}
-	marked, ok := markLearnedFromAgents(content)
+	reason := r.reason
+	if reason == "" {
+		reason = learnedAgentReasonSession
+	}
+	marked, ok := markLearnedFromAgentsBecause(content, reason)
 	if !ok {
 		return false
 	}
@@ -308,6 +366,8 @@ func agentCleanupRecordFor(kind, name, path, content string) (agentCleanupRecord
 		if !ok {
 			return r, false
 		}
+		r.text = okfString(doc.Frontmatter, "title") + " " + okfString(doc.Frontmatter, "description")
+		r.knowKind, _ = knowHowEntryKind(content)
 		r.assistant = okfString(doc.Frontmatter, "history_assistant")
 		r.project = okfString(doc.Frontmatter, "history_project")
 		if r.project == "" {

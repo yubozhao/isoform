@@ -48,6 +48,25 @@ func migrateActivityAgentRuns(tx *sql.Tx) error {
 	return nil
 }
 
+// migrateActivityAgentRunsFollowRuns ties an agent mark to its run: when a
+// run is deleted (retention, a fold, a privacy purge) its mark goes with it,
+// so no day keeps counting agent work whose activity is gone.
+func migrateActivityAgentRunsFollowRuns(tx *sql.Tx) error {
+	for _, stmt := range []string{
+		`DELETE FROM activity_agent_runs WHERE run_id NOT IN (SELECT id FROM activity_timeline_groups)`,
+		`CREATE TRIGGER IF NOT EXISTS activity_agent_runs_follow_run
+			AFTER DELETE ON activity_timeline_groups
+			BEGIN
+				DELETE FROM activity_agent_runs WHERE run_id = OLD.id;
+			END`,
+	} {
+		if _, err := tx.Exec(stmt); err != nil {
+			return fmt.Errorf("activity_agent_runs_follow_runs: %w", err)
+		}
+	}
+	return nil
+}
+
 // timelineEventsAreAgent reports a run whose every app event is a coding
 // agent at work. Speech is the person talking, so any speech keeps the run
 // the person's.

@@ -47,6 +47,9 @@ func mainChatRowClass(row storage.StreamItemRow, now time.Time) MainChatRowClass
 			return MainChatRowOther
 		case mainChatStatusTool:
 			return MainChatRowRoutine
+		case chatDraftCardTool:
+			// A draft the person asked for is part of the conversation.
+			return MainChatRowConversation
 		case mainChatReportTool:
 			var report mainChatReport
 			if json.Unmarshal([]byte(row.ToolInput), &report) == nil && mainChatReportIsRoutine(report) {

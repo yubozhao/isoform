@@ -58,7 +58,7 @@ func (a *App) loadProactiveVoiceSource(ctx context.Context, m engagement.Moment,
 		return source, "privacy_excluded"
 	}
 	ctx, dependencies := proactiveVoiceDependencyContext(ctx)
-	people, err := a.store.ListPrincipals(ctx)
+	people, err := a.proactiveVoicePrincipals(ctx)
 	if err != nil {
 		return source, "source_unavailable"
 	}
@@ -179,7 +179,7 @@ func (a *App) loadProactiveVoiceMail(ctx context.Context, m engagement.Moment, n
 	if !a.proactiveVoicePermission(ctx, mailPermissionKey) || !proactiveVoiceAppAllowed("com.apple.mail", "Mail") {
 		return "privacy_excluded"
 	}
-	rows, err := a.store.ListMailMessages(ctx, now.Add(-mailWindowDays*24*time.Hour).UnixMilli())
+	rows, err := a.proactiveVoiceMailMessages(ctx, now.Add(-mailWindowDays*24*time.Hour).UnixMilli())
 	if err != nil {
 		return "source_unavailable"
 	}
@@ -319,7 +319,7 @@ func (a *App) proactiveVoicePurposeSourceAllowed(ctx context.Context, evidence P
 		if !a.proactiveVoicePermission(ctx, remindersPermissionKey) || !proactiveVoiceAppAllowed("com.apple.reminders", "Reminders") {
 			return false
 		}
-		rows, err := a.store.ListReminders(ctx, false)
+		rows, err := a.proactiveVoiceOpenReminders(ctx)
 		if err != nil {
 			return false
 		}

@@ -178,3 +178,45 @@ func TestCronNativeResearchPersonalizationFollowsTaskContext(t *testing.T) {
 		})
 	}
 }
+
+// A screen summary without a thread outcome still tells the new writer what
+// changed (its latest-change line), never the section item: the Moved detail
+// stays the duration. Typing narration stays out of the writer too.
+func TestRecapLatestChangeReachesOnlyTheWriter(t *testing.T) {
+	rig := newHandoffTestRig(t)
+	now := time.Now()
+	morning := time.Date(now.Year(), now.Month(), now.Day(), 7, 0, 0, 0, time.Local)
+	yesterday := morning.AddDate(0, 0, -1)
+	for _, row := range []ActivityRow{
+		{ID: "c1", Title: "Wired the brief to the real calendar", LatestChange: "Moved the calendar read behind the snapshot", ActiveMsByApp: `{"Code": 5400000}`,
+			StartMs: yesterday.Add(3 * time.Hour).UnixMilli(), EndMs: yesterday.Add(4*time.Hour + 30*time.Minute).UnixMilli()},
+		{ID: "c2", Title: "Reviewed the relay pull request", LatestChange: "You typed a reply to the reviewer", ActiveMsByApp: `{"Safari": 1800000}`,
+			StartMs: yesterday.Add(6 * time.Hour).UnixMilli(), EndMs: yesterday.Add(6*time.Hour + 30*time.Minute).UnixMilli()},
+	} {
+		row.Status = "done"
+		row.CreatedAt, row.UpdatedAt = row.StartMs, row.EndMs
+		row = addMobileBriefRecapProvenance(t, rig, row)
+		if err := rig.activity.InsertActivity(row); err != nil {
+			t.Fatal(err)
+		}
+	}
+	in := mobileBriefInput{Slot: mobileBriefSlotMorning, WindowStart: yesterday, AsOf: morning, Location: time.Local, Timezone: "Local", ClockLayout: "3:04 PM"}
+	collectMobileBriefRecap(rig.app, &in)
+	brief := buildMobileBriefV1(in)
+	for _, item := range brief.Sections.Moved {
+		if strings.Contains(item.Detail, "snapshot") || strings.Contains(item.Detail, "typed") {
+			t.Fatalf("the latest change reached a section item: %+v", item)
+		}
+	}
+	m, _ := newBriefMaterial(in, brief, briefPartDone, "")
+	found := map[string]string{}
+	for _, item := range m.Items {
+		found[item.Title] = item.Detail
+	}
+	if detail := found["Wired the brief to the real calendar"]; !strings.Contains(detail, "Moved the calendar read behind the snapshot") || !strings.Contains(detail, "90 min") {
+		t.Fatalf("writer detail = %q, want the latest change and the duration", detail)
+	}
+	if detail, ok := found["Reviewed the relay pull request"]; !ok || strings.Contains(detail, "typed") {
+		t.Fatalf("typing narration reached the writer: %q (found %v)", detail, ok)
+	}
+}

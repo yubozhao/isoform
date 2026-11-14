@@ -622,7 +622,7 @@ func (a *App) executePromptOwned(prompt string, userPrompt string, workDir strin
 		a.finishChatPreparation(tag, cancel)
 		return err
 	}
-	input.ExtraTools = a.mainChatExtraTools(tag, origin)
+	input.ExtraTools = append(a.mainChatExtraTools(tag, origin), a.mainChatDraftTools(tag, origin)...)
 	input.BeforeDispatch = func(dispatchCtx context.Context) error {
 		if err := dispatchCtx.Err(); err != nil {
 			return err
@@ -768,6 +768,7 @@ func (a *App) executePromptOwned(prompt string, userPrompt string, workDir strin
 	input.Redactor = buildCERedactor()
 
 	go func() {
+		a.beginDesktopTurn(tag, origin)
 		panelPendingUserID := admissionUserID
 		var trackedRunID string
 		var chipAnswer *finishedSegment
@@ -776,8 +777,10 @@ func (a *App) executePromptOwned(prompt string, userPrompt string, workDir strin
 		var runErr error
 		scheduledPanelAnswer := false
 		var handoffTranscript strings.Builder
+		turnLog := newChatTurnLog(work != nil, origin, time.Now())
 
 		defer func() {
+			log.Print(turnLog.line(ctx.Err(), sawErrorEvent, runErr, tag, time.Now()))
 			if isPanelAskOrigin(origin) && panelPendingUserID != "" && !scheduledPanelAnswer {
 				a.cancelPanelAskAnswer(panelPendingUserID)
 			}
@@ -785,6 +788,7 @@ func (a *App) executePromptOwned(prompt string, userPrompt string, workDir strin
 			// ended or ran out of time leaves ctx uncancelled or past its
 			// deadline. Read before cancel() below.
 			stopped := errors.Is(ctx.Err(), context.Canceled)
+			a.finishDesktopTurn(tag, stopped)
 			// Settling a Handoff may call the verifier model, so it runs beside
 			// the cleanup below rather than delaying it.
 			if work != nil {
@@ -953,6 +957,7 @@ func (a *App) executePromptOwned(prompt string, userPrompt string, workDir strin
 				return ctx.Err()
 			default:
 			}
+			turnLog.note(event)
 			if err := checkListHandoffRoute(listBackend, event); err != nil {
 				return err
 			}
@@ -1648,8 +1653,10 @@ func (a *App) composePromptFor(prompt string, personal bool, opts ...string) str
 		{"yansu", func() string { return a.injectYansuContext("", tag, platform, languageName) }},
 		// After the yansu context, whose cron instructions it narrows for
 		// the main chat.
+		{"draft-tool", func() string { return a.injectChatDraftToolContext(tag, origin) }},
 		{"upcoming-tools", func() string { return a.injectUpcomingToolsContext(tag, origin) }},
 		{"goal-tools", func() string { return a.injectGoalToolsContext(tag) }},
+		{"web-search-tool", func() string { return a.injectWebSearchToolContext(tag, origin) }},
 	}
 
 	if !personal {

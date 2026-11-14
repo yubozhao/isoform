@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,29 +25,29 @@ type knowHowBackfillInput struct {
 	Points      []string `json:"points"`
 }
 
-// One worker per App; failures retry at most three times per launch. A privacy
-// pause does not consume an attempt. Shutdown cancels both waits and the runner.
+// knowHowBackfillNow is the backfill's clock; tests move it.
+var knowHowBackfillNow = time.Now
+
+// One worker per App. The one-time backfill tries at most once a day across
+// launches (cadenceKnowHowBackfill), not three times per launch: on Bo's
+// computer it failed on every launch and the app restarts many times a day, so
+// it spent three model calls per restart and never finished. A privacy pause
+// costs no attempt beyond the day's claim. Shutdown cancels the runner.
 func (a *App) runKnowHowKindBackfill(ctx context.Context) {
 	if ctx == nil || !a.knowHow.backfillMu.TryLock() {
 		return
 	}
 	defer a.knowHow.backfillMu.Unlock()
-	attempts := 0
-	for attempts < 3 {
-		done, err := a.backfillKnowHowKinds(ctx, a.classifyKnowHowKinds)
-		if done || ctx.Err() != nil {
+	if a.store != nil {
+		if done, err := a.store.GetUIState(ctx, knowHowBackfillKey); err == nil && done == "done" {
 			return
 		}
-		if err != nil {
-			attempts++
-		}
-		timer := time.NewTimer(time.Minute)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return
-		case <-timer.C:
-		}
+	}
+	if !a.claimDerivedRun("know_how_backfill", cadenceKnowHowBackfill, knowHowBackfillNow()) {
+		return
+	}
+	if done, err := a.backfillKnowHowKinds(ctx, a.classifyKnowHowKinds); !done && err != nil && ctx.Err() == nil {
+		log.Printf("[know-how] kind backfill did not finish; next try in %s: %v", cadenceKnowHowBackfill, err)
 	}
 }
 

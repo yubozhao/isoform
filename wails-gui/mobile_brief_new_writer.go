@@ -54,7 +54,8 @@ func newBriefMaterial(in mobileBriefInput, brief MobileBriefV1, larger, name str
 		dayRef = in.briefDayRef(loc)
 		nowWords = "the morning of " + dayRef.In(loc).Format("Monday, January 2") + " (the brief is read then)"
 	}
-	m := briefcore.Material{Slot: in.Slot, Larger: larger, Name: name, Now: nowWords}
+	// Today is the reader's day: the slot's day for a brief made ahead.
+	m := briefcore.Material{Slot: in.Slot, Larger: larger, Name: name, Now: nowWords, Today: in.briefDayRef(loc)}
 	sources := map[string]newBriefSource{}
 	existing := map[string]string{}
 	for _, ref := range brief.Evidence {
@@ -136,6 +137,9 @@ func newBriefMaterial(in mobileBriefInput, brief MobileBriefV1, larger, name str
 			when = "due " + dayWord(c.DueAt)
 		}
 		detail := c.Detail
+		if c.writerDetail != "" {
+			detail = mobileBriefJoinParts(c.writerDetail, detail)
+		}
 		if c.NextStep != "" {
 			detail = mobileBriefJoinParts(detail, "next step: "+c.NextStep)
 		}
@@ -557,6 +561,7 @@ func (s *mobileBriefService) composeNewBrief(ctx context.Context, input mobileBr
 	for _, c := range input.Conversations {
 		conversations[c.SourceID] = true
 	}
+	material.Lang = lang
 	original := brief
 	var codes []string
 	for attempt := 0; attempt < 2; attempt++ {
@@ -656,6 +661,20 @@ func (s *mobileBriefService) newBriefEnabled() bool {
 		return defaultMobileBriefSettings().NewBrief
 	}
 	return s.config.load().NewBrief
+}
+
+// messagingOutcomesEnabled reports the messagingOutcomes setting: the brief
+// service's schedule when it runs, else the saved file, else the default.
+func (a *App) messagingOutcomesEnabled() bool {
+	if a != nil {
+		if service, ok := a.mobileBriefSource().(*mobileBriefService); ok && service != nil && service.config != nil {
+			return service.config.load().MessagingOutcomes
+		}
+	}
+	if dir, err := mobileBriefStateDir(); err == nil {
+		return newMobileBriefConfigStore(dir).load().MessagingOutcomes
+	}
+	return defaultMobileBriefSettings().MessagingOutcomes
 }
 
 // logBriefReady is the pre-flight line for a stored brief: which writer made

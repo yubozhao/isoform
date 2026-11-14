@@ -238,7 +238,28 @@ func (a *App) GetKnowledgeEntries() (perfValue []KnowledgeEntry, perfErr error) 
 }
 
 func readKnowledgeEntries(dir string, entries []os.DirEntry) ([]KnowledgeEntry, error) {
+	return readKnowledgeEntriesFiltered(dir, entries, false)
+}
 
+// knowledgeEntriesIncludingHidden lists every know-how file, including those
+// hidden as learned only from agent activity. Forget and privacy cascades use
+// it: a hidden file is kept on disk, so it must still be found to be deleted.
+func knowledgeEntriesIncludingHidden() ([]KnowledgeEntry, error) {
+	dir, err := knowledgeDir()
+	if err != nil {
+		return nil, err
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return readKnowledgeEntriesFiltered(dir, entries, true)
+}
+
+func readKnowledgeEntriesFiltered(dir string, entries []os.DirEntry, includeHidden bool) ([]KnowledgeEntry, error) {
 	var result []KnowledgeEntry
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") || isOKFReservedMarkdownFile(e.Name()) {
@@ -254,7 +275,7 @@ func readKnowledgeEntries(dir string, entries []os.DirEntry) ([]KnowledgeEntry, 
 			}
 			return nil, err
 		}
-		if learnedFromAgents(string(data)) {
+		if !includeHidden && learnedFromAgents(string(data)) {
 			// Learned only from agent activity: hidden, kept on disk.
 			continue
 		}

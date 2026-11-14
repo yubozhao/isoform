@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 	"unicode"
@@ -354,6 +355,20 @@ func mobileBriefParagraphProvesToday(brief MobileBriefV1, para MobileBriefPara, 
 	return false
 }
 
+// noteMobileBriefExclusions records the stated-exclusion set just read and
+// reports whether it differs from the set read before. The first set read is
+// the baseline. A change is an explicit privacy action (seal v2): saying what
+// to keep out of the briefs amends the sealed briefs and makes their audio
+// again without it. It is noticed where the set is read anyway, so memory
+// events add no folder reads.
+func (a *App) noteMobileBriefExclusions(exclusions []string) bool {
+	sorted := append([]string(nil), exclusions...)
+	sort.Strings(sorted)
+	print := strings.Join(sorted, "\x00")
+	previous := a.briefExclusionsPrint.Swap(&print)
+	return previous != nil && *previous != print
+}
+
 // mobileBriefExclusions is what the person said to keep out of their briefs,
 // read from their notes. The scan is cached until memory changes, and every
 // memory write drops the cache, so a change takes effect at once.
@@ -369,5 +384,10 @@ func (a *App) mobileBriefExclusions() []string {
 	if err != nil {
 		return nil
 	}
-	return snapshot.statedExclusions(snapshot.allowed(allowRead))
+	exclusions := snapshot.statedExclusions(snapshot.allowed(allowRead))
+	if a.noteMobileBriefExclusions(exclusions) {
+		briefPrivacyChanged()
+		briefPrivacyAmendSoon()
+	}
+	return exclusions
 }

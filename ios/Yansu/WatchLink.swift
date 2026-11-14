@@ -21,6 +21,9 @@ final class WatchLink: NSObject, WCSessionDelegate, @unchecked Sendable {
         self.forwarder = forwarder
         Task { [weak self] in
             await forwarder.onStatesChanged { states in self?.push(states) }
+            let recordings = await forwarder.recordings()
+            let outcome = await forwarder.lastOutcome
+            await WatchRecordingsModel.shared.show(recordings, outcome: outcome)
         }
         WCSession.default.delegate = self
         WCSession.default.activate()
@@ -37,7 +40,8 @@ final class WatchLink: NSObject, WCSessionDelegate, @unchecked Sendable {
             // Ask for time to finish when the app is in the background (a part just arrived).
             let application = UIApplication.shared
             let task = application.beginBackgroundTask(withName: "watch-recordings")
-            await forwarder.drain()
+            let outcome = await forwarder.drain()
+            WatchRecordingsModel.shared.show(await forwarder.recordings(), outcome: outcome)
             if task != .invalid { application.endBackgroundTask(task) }
         }
     }
@@ -73,6 +77,7 @@ final class WatchLink: NSObject, WCSessionDelegate, @unchecked Sendable {
         }
         Task {
             await forwarder.received(info)
+            await WatchRecordingsModel.shared.show(await forwarder.recordings(), outcome: nil)
             self.drain()
         }
     }

@@ -272,8 +272,12 @@ func TestAgentActivityCleanupHidesOnlyAgentLearnedHistory(t *testing.T) {
 	if err := os.MkdirAll(memDir, 0700); err != nil {
 		t.Fatal(err)
 	}
-	writeKnow := func(id, title string, at time.Time) string {
-		content := buildOKFKnowledgeMarkdown(id, title, title, at, assistantHistorySource, []string{"app"}, nil, []string{title}, "decision")
+	writeKnow := func(id, title string, at time.Time, kind ...string) string {
+		k := "decision"
+		if len(kind) > 0 {
+			k = kind[0]
+		}
+		content := buildOKFKnowledgeMarkdown(id, title, title, at, assistantHistorySource, []string{"app"}, nil, []string{title}, k)
 		doc, _ := parseOKFDocument(content)
 		doc.Frontmatter["history_session_at"] = okfTimestamp(at)
 		doc.Frontmatter["history_assistant"] = "claude"
@@ -300,14 +304,19 @@ func TestAgentActivityCleanupHidesOnlyAgentLearnedHistory(t *testing.T) {
 	agentMem := writeMem("memory-history-agent", "You merge PRs every hour", assistantHistorySource, t2)
 	goneMem := writeMem("memory-history-gone", "From a deleted session", assistantHistorySource, base.Add(-10*24*time.Hour))
 	editedMem := writeMem("memory-history-edited", "Edited by the person", "user_edit", t2)
+	// Learned from the person's own exchange. A fix about agent tooling is
+	// agent work; the person's decision and belief about it stay theirs.
+	wordsKnow := writeKnow("knowledge-history-words", "Wails bindings missing in fresh worktrees", t1, "fix")
+	decisionKnow := writeKnow("knowledge-history-decision", "Merge the brief rebuild only after a week of shadow PRs", t1, "decision")
+	beliefMem := writeMem("memory-history-belief", "Requires an explicit go before a backup hub takes over", assistantHistorySource, t1)
 
 	app := &App{}
 	result, err := app.cleanupAgentLearnedRecords(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.KnowHow != 1 || result.Memories != 1 {
-		t.Fatalf("result = %+v, want one know-how and one memory hidden", result)
+	if result.KnowHow != 2 || result.Memories != 1 || result.ByWords != 1 {
+		t.Fatalf("result = %+v, want two know-how (one for its words) and one memory hidden", result)
 	}
 	read := func(path string) string {
 		data, err := os.ReadFile(path)
@@ -319,7 +328,13 @@ func TestAgentActivityCleanupHidesOnlyAgentLearnedHistory(t *testing.T) {
 	if !learnedFromAgents(read(agentKnow)) || !learnedFromAgents(read(agentMem)) {
 		t.Fatal("agent-learned records were not hidden")
 	}
-	for _, path := range []string{mineKnow, goneMem, editedMem} {
+	if words := read(wordsKnow); !learnedFromAgents(words) || !strings.Contains(words, learnedAgentReasonKey+": "+learnedAgentReasonWords) {
+		t.Fatal("a record about agent work was not hidden with its reason")
+	}
+	if !strings.Contains(read(agentMem), learnedAgentReasonKey+": "+learnedAgentReasonSession) {
+		t.Fatal("a session-matched record lacks its reason")
+	}
+	for _, path := range []string{mineKnow, goneMem, editedMem, decisionKnow, beliefMem} {
 		if learnedFromAgents(read(path)) {
 			t.Fatalf("%s was hidden", filepath.Base(path))
 		}
@@ -336,5 +351,35 @@ func TestAgentActivityCleanupRunsOnce(t *testing.T) {
 	done, err := app.store.GetUIState(ctx, agentActivityCleanupKey)
 	if err != nil || done != "done" {
 		t.Fatalf("cleanup marker = %q, %v", done, err)
+	}
+}
+
+func TestHistoryTextNamesAgentWork(t *testing.T) {
+	for _, tc := range []struct {
+		text  string
+		agent bool
+	}{
+		{"Shadow compose for the brief rebuild in the hub", true},
+		{"You send some work to a Codex worker on a Mac mini", true},
+		{"Merges PRs after the hourly check", true},
+		{"Where the Agent of You reservations are stored", false},
+		{"Prefers short release notes", false},
+		{"Runs the tests before every push", false},
+	} {
+		if got := historyTextNamesAgentWork(tc.text); got != tc.agent {
+			t.Errorf("%q: %t, want %t", tc.text, got, tc.agent)
+		}
+	}
+}
+
+func TestHistoryKnowHowIsAgentWorkKeepsDecisions(t *testing.T) {
+	if !historyKnowHowIsAgentWork("fix", "Codex no-change fallback") {
+		t.Error("a fix about Codex tooling is agent work")
+	}
+	if historyKnowHowIsAgentWork("decision", "Ship the hub brief rebuild behind a rollback switch") {
+		t.Error("the person's decision was treated as agent work")
+	}
+	if historyKnowHowIsAgentWork("how_to", "Pin the release notes to the top") {
+		t.Error("a how-to without agent words was treated as agent work")
 	}
 }

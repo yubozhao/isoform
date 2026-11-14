@@ -373,6 +373,11 @@ type controlledAttemptDeadline struct {
 	timer             *time.Timer
 	acting            bool
 	preActionDeadline time.Time
+	// limit is one pre-action window; windowEnd is the latest the window may
+	// reach (the caller's deadline less the native fallback reserve), zero
+	// when the caller set no deadline.
+	limit     time.Duration
+	windowEnd time.Time
 }
 
 func newControlledAttemptDeadline(parent context.Context, limit time.Duration) *controlledAttemptDeadline {
@@ -381,16 +386,19 @@ func newControlledAttemptDeadline(parent context.Context, limit time.Duration) *
 	if limit <= 0 {
 		limit = DefaultExternalAttemptTimeout
 	}
+	now := time.Now()
 	if deadline, ok := parent.Deadline(); ok {
-		window := time.Until(deadline)
+		window := deadline.Sub(now)
 		if reserve := NativeFallbackBudget(parent); reserve > 0 {
 			window -= reserve + externalFallbackTeardownAllowance
 		}
 		if window < limit {
 			limit = window
 		}
+		d.windowEnd = now.Add(window)
 	}
-	d.preActionDeadline = time.Now().Add(limit)
+	d.limit = limit
+	d.preActionDeadline = now.Add(limit)
 	if limit <= 0 {
 		cancel(fmt.Errorf("insufficient time before native fallback budget: %w", context.DeadlineExceeded))
 		return d
@@ -398,11 +406,34 @@ func newControlledAttemptDeadline(parent context.Context, limit time.Duration) *
 	d.timer = time.AfterFunc(limit, func() {
 		d.mu.Lock()
 		defer d.mu.Unlock()
-		if !d.acting {
+		// noteProgress may have moved the deadline while this call waited.
+		if !d.acting && !time.Now().Before(d.preActionDeadline) {
 			d.cancel(fmt.Errorf("assistant used its pre-action time allowance: %w", context.DeadlineExceeded))
 		}
 	})
 	return d
+}
+
+// noteProgress moves the pre-action deadline one window past now while the
+// assistant streams its answer. Text arriving shows a live CLI, so a long
+// written answer is not cut off when the first window ends; a CLI that goes
+// silent still ends one window after its last text. The window never passes
+// the native fallback reserve.
+func (d *controlledAttemptDeadline) noteProgress() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.acting || d.timer == nil || d.limit <= 0 || d.ctx.Err() != nil {
+		return
+	}
+	next := time.Now().Add(d.limit)
+	if !d.windowEnd.IsZero() && next.After(d.windowEnd) {
+		next = d.windowEnd
+	}
+	if !next.After(d.preActionDeadline) {
+		return
+	}
+	d.preActionDeadline = next
+	d.timer.Reset(time.Until(next))
 }
 
 func (d *controlledAttemptDeadline) admitAction(start func() error) error {
@@ -512,6 +543,9 @@ func (r *ExternalAgentRunner) executeControlled(ctx context.Context, input *Task
 		ev.SessionID = input.SessionID
 		if ev.Type == "assistant" {
 			output.WriteString(ev.Content)
+		}
+		if (ev.Type == "assistant" || ev.Type == "thinking") && ev.Content != "" {
+			attempt.noteProgress()
 		}
 		if callback == nil {
 			return nil

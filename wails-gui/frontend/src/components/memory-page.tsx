@@ -76,6 +76,13 @@ interface MemoryPageProps {
 }
 
 const COLLAPSED_GROUPS_STORAGE_KEY = 'memory:collapsedGroups';
+// The agent-practice group starts collapsed; opening it is remembered as
+// this key in the same stored set.
+const AGENTS_GROUP = 'agents';
+const AGENTS_OPEN_KEY = 'agents:open';
+type BeliefGroup = MemoryArea | typeof AGENTS_GROUP;
+// Agent-practice beliefs allowed among the first-day "check first" beliefs.
+const AGENT_PRACTICE_TOP_CAP = 1;
 /** The Goals group's key in the collapsed set, beside the belief areas. */
 const GOALS_GROUP = 'goals';
 
@@ -378,18 +385,24 @@ export function MemoryPage({
     }, [ideaGroupOf]);
     // Each shown idea: its newest copy that passes the filters, and how many copies it stands for.
     type IdeaRow = { head: main.MemoryEntry; copies: number };
-    const groupedEntries = useMemo<Map<MemoryArea, IdeaRow[]>>(() => {
+    // With the agent section on, beliefs about how the person runs their
+    // coding agents leave their areas for one collapsed group at the end.
+    const agentSection = about?.agentSection === true;
+    const groupedEntries = useMemo<Map<BeliefGroup, IdeaRow[]>>(() => {
         const shown = new Set(filteredEntries.map((entry) => entry.id));
-        const rows = ideaGroups.flatMap((group): Array<{ area: MemoryArea; row: IdeaRow }> => {
+        const rows = ideaGroups.flatMap((group): Array<{ area: BeliefGroup; row: IdeaRow }> => {
             const head = ideaHead(group, (entry) => shown.has(entry.id));
             if (!head) return [];
-            return [{ area: memoryArea(beliefsById.get(head.id)?.area ?? head.area), row: { head, copies: group.copies.length } }];
+            const belief = beliefsById.get(head.id);
+            const area: BeliefGroup = agentSection && belief?.agentPractice ? AGENTS_GROUP : memoryArea(belief?.area ?? head.area);
+            return [{ area, row: { head, copies: group.copies.length } }];
         });
-        return new Map(MEMORY_AREAS.map((area): [MemoryArea, IdeaRow[]] => [
+        const groups: BeliefGroup[] = [...MEMORY_AREAS, AGENTS_GROUP];
+        return new Map(groups.map((area): [BeliefGroup, IdeaRow[]] => [
             area,
             rows.filter((item) => item.area === area).map((item) => item.row),
         ]).filter(([, list]) => list.length > 0));
-    }, [beliefsById, filteredEntries, ideaGroups]);
+    }, [agentSection, beliefsById, filteredEntries, ideaGroups]);
     // Ideas, not copies: the counts the page shows.
     const ideaCount = ideaGroups.length;
     const confirmedIdeaCount = useMemo(
@@ -481,14 +494,15 @@ export function MemoryPage({
             : [],
         [about, firstDay.firstDays, firstDay.history],
     );
-    const checkFirstIds = useMemo(
-        () => historyBeliefs
+    const checkFirstIds = useMemo(() => {
+        let agents = 0;
+        return historyBeliefs
             .filter((belief) => belief.status !== 'confirmed')
             .sort((a, b) => b.confidence - a.confidence || b.sessionCount - a.sessionCount || b.updatedAt - a.updatedAt)
+            .filter((belief) => !belief.agentPractice || agents++ < AGENT_PRACTICE_TOP_CAP)
             .slice(0, 3)
-            .map((belief) => belief.id),
-        [historyBeliefs],
-    );
+            .map((belief) => belief.id);
+    }, [historyBeliefs]);
     const checkFirstSnapshots = useRef(new Map<string, ReviewItem>());
     const checkFirstItems = useMemo(() => {
         const items: ReviewItem[] = [];
@@ -810,10 +824,11 @@ export function MemoryPage({
                     // as many columns as the width allows.
                     <div data-testid="belief-groups" className="flex flex-col gap-7">
                         {Array.from(groupedEntries.entries()).map(([group, rows]) => {
-                            const collapsed = !keyword.trim() && collapsedGroups.has(group);
+                            const agentsGroup = group === AGENTS_GROUP;
+                            const collapsed = !keyword.trim() && (agentsGroup ? !collapsedGroups.has(AGENTS_OPEN_KEY) : collapsedGroups.has(group));
                             const label = t(`aboutYou.areas.${group}`);
                             return (
-                                <Collapsible key={group} asChild open={!collapsed} onOpenChange={() => toggleGroup(group)}>
+                                <Collapsible key={group} asChild open={!collapsed} onOpenChange={() => toggleGroup(agentsGroup ? AGENTS_OPEN_KEY : group)}>
                                 <section className="flex min-w-0 flex-col gap-1.5">
                                     <h2 className="m-0">
                                         <CollapsibleTrigger className="inline-flex items-baseline gap-2 rounded-md pb-1 text-left text-base font-semibold text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus">
@@ -826,6 +841,9 @@ export function MemoryPage({
                                     </h2>
                                     {group === 'communication' && (
                                         <p className="m-0 pb-1 text-[12.5px] text-muted">{t('aboutYou.communication.note')}</p>
+                                    )}
+                                    {agentsGroup && (
+                                        <p className="m-0 pb-1 text-[12.5px] text-muted">{t('aboutYou.agentsNote')}</p>
                                     )}
                                     <CollapsibleContent data-testid="belief-group-rows" className="grid gap-x-6 gap-y-1.5 [grid-template-columns:repeat(auto-fill,minmax(min(100%,340px),1fr))]">
                                     {rows.map(({ head: entry, copies }) => (

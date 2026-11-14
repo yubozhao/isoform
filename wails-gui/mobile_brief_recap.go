@@ -22,7 +22,7 @@ const (
 	mobileBriefNewsSource  = "news"
 	// Keep more candidates for a full workday; the wire section and shared
 	// evidence budgets still bound how many are displayed.
-	mobileBriefRecapLimit = 30
+	mobileBriefRecapLimit = 40
 	mobileBriefNewsLimit  = 3
 	// mobileBriefConversationLimit bounds the messaging summaries the new
 	// writer sees.
@@ -147,9 +147,15 @@ func collectMobileBriefRecap(a *App, in *mobileBriefInput) {
 			if len(in.Conversations) < mobileBriefConversationLimit {
 				conversation := mobileBriefCandidate{SourceKind: mobileBriefRecapSource, SourceID: row.ID, Title: row.Title,
 					Status: "done", Kind: "conversation", At: mobileBriefMillis(row.StartMs), Apps: apps}
-				if outcome := a.readableThreadOutcome(context.Background(), row); outcome != nil && outcome.NextStep != "" {
-					conversation.NextStep = outcome.NextStep
-					conversation.Status = "needs_reply"
+				if outcome := a.readableThreadOutcome(context.Background(), row); outcome != nil {
+					// The outcome is paraphrase (an ask or commitment from a chat,
+					// messagingOutcomes, or the work around it), never chat text:
+					// the writer may say who asked for what and by when.
+					conversation.writerDetail = outcome.Summary
+					if outcome.NextStep != "" {
+						conversation.NextStep = outcome.NextStep
+						conversation.Status = "needs_reply"
+					}
 				}
 				in.Conversations = append(in.Conversations, conversation)
 			}
@@ -163,6 +169,19 @@ func collectMobileBriefRecap(a *App, in *mobileBriefInput) {
 	sort.SliceStable(kept, func(i, j int) bool { return kept[i].dwell > kept[j].dwell })
 	if len(kept) > mobileBriefRecapLimit {
 		kept = kept[:mobileBriefRecapLimit]
+	}
+	// What each summary says changed goes to the new writer, so a summary
+	// without a thread outcome still says what happened, not only its title.
+	// It passes the same checks as an outcome's words: no typing narration,
+	// redacted, and no echo of a private mail subject (an unreadable mail
+	// index keeps it out).
+	subjects, subjectsErr := mobileBriefMailSubjects(a)
+	latest := func(row ActivityRow) string {
+		text := strings.TrimSpace(row.LatestChange)
+		if text == "" || subjectsErr != nil || threadOutcomeTypingNarration.MatchString(text) || mobileBriefValueEchoesMail(text, subjects) {
+			return ""
+		}
+		return threadOutcomeText(text, 200)
 	}
 	for _, r := range kept {
 		if outcome := a.readableThreadOutcome(context.Background(), r.row); outcome != nil {
@@ -190,6 +209,8 @@ func collectMobileBriefRecap(a *App, in *mobileBriefInput) {
 			Kind:       "recap",
 			At:         mobileBriefMillis(r.row.StartMs),
 			Apps:       r.apps,
+
+			writerDetail: latest(r.row),
 		})
 	}
 }

@@ -276,6 +276,9 @@ func buildAssistantHistoryUpdate(reply assistantHistoryReply, included []assista
 		if !validKnowHowKind(kind) {
 			kind = "reference"
 		}
+		if historyKnowHowIsAgentWork(kind, title+" "+takeaway) {
+			continue
+		}
 		if item.FromClaudeMd {
 			if instructionsName == "" {
 				continue

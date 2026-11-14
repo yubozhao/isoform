@@ -304,7 +304,11 @@ final class PairingStore: ObservableObject {
                 throw Stop(phase: .expired)
             } catch RelayClientError.rateLimited(let retryAfter) {
                 throw Stop(phase: .failed(Copy.rateLimited(retryAfter: retryAfter)))
-            } catch RelayClientError.offline, RelayClientError.timedOut, RelayClientError.unavailable {
+            } catch RelayClientError.offline, RelayClientError.timedOut, RelayClientError.unavailable,
+                    RelayClientError.server, RelayClientError.invalidResponse {
+                // A 502 or 504 from a proxy or tunnel in front of the relay, or a page that is not the relay's
+                // answer, is a failure on the way like a timeout: the identical claim is safe to send again
+                // (PROTOCOL.md section 5), where giving up revoked the new device and asked for a new code.
                 try checkAttempt(current)
                 guard attempts < Self.claimAttempts else { throw Stop(phase: .failed(Copy.offline)) }
                 try await Task.sleep(nanoseconds: Self.retryDelayNanoseconds)
@@ -360,7 +364,8 @@ final class PairingStore: ObservableObject {
                 throw Stop(phase: .failed(Copy.codeNotValid))
             } catch RelayClientError.unauthorized {
                 throw Stop(phase: .failed(Copy.pollRejected))
-            } catch RelayClientError.offline, RelayClientError.timedOut, RelayClientError.unavailable {
+            } catch RelayClientError.offline, RelayClientError.timedOut, RelayClientError.unavailable,
+                    RelayClientError.server, RelayClientError.invalidResponse {
                 // A lost response may mean the one-time approval was delivered. Retry briefly, then say so.
                 transientFailures += 1
                 guard current != attempt || transientFailures < Self.maxTransientPollFailures else {

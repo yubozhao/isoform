@@ -257,11 +257,13 @@ final class AppEnvironment: ObservableObject {
             if let id = heardTasks.detail?.id { _ = await heardTasks.loadDetail(id: id) }
         }
         let heardWeekDeclines = self.weekDeclines
+        let heardHolds = self.holds
         let heardToday = self.today
         let directRoutes = DirectRouteKeeper(vault: vault, fetch: { try await hub.remoteAccess() })
         Task {
             await heardTasks.loadPendingDraftSends()
             await heardTasks.retryDraftSends()
+            await heardHolds.restoreQueued()
             await hub.onHeardFromComputer {
                 Task { @MainActor in
                     heardToday.noteHeardFromComputer()
@@ -269,6 +271,7 @@ final class AppEnvironment: ObservableObject {
                     heardChat.heardFromComputer()
                     await heardTasks.retryDraftSends(computerResponded: true)
                     await heardWeekDeclines.retryPending()
+                    await heardHolds.resendQueued()
                     WatchLink.shared.drain()
                 }
             }

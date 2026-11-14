@@ -42,6 +42,9 @@ func loadSavedCopyEpoch() {
 		return
 	}
 	adoptMobileBriefPrivacyEpoch(filepath.Join(dir, mobileBriefDirName))
+	// Copies made under an older epoch (a withdrawal saved while their chat was
+	// closed) never hold again; they leave the disk now.
+	dropStaleStreamPageCopies()
 }
 
 // savedCopyDeepStamp is the full check. It runs in the background only.

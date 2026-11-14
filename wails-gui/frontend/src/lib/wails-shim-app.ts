@@ -5999,6 +5999,9 @@ export interface AboutYouBelief {
     source?: string;
     sourceAssistant?: string;
     sourceAt?: number;
+    /** A belief about how the person runs their coding agents; set only while
+     *  AboutYouView.agentSection is on. */
+    agentPractice?: boolean;
 }
 export interface CommunicationDraftExample {
     id: string;
@@ -6018,6 +6021,8 @@ export interface AboutYouView {
     newThisWeek: string[];
     totals: { beliefs: number; confirmed: number };
     storage: { files: number; bytes: number; chunks: number; vectorReady: boolean };
+    /** Groups agent-practice beliefs under one collapsed section (flag, default off). */
+    agentSection?: boolean;
 }
 export interface ReadableEvidence {
     at: number;
