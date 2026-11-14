@@ -125,6 +125,7 @@ func TestBashLauncherDynamicNamesAndResolvedPATHAreDenied(t *testing.T) {
 }
 
 func TestBashLauncherContainerSocketRequiresApproval(t *testing.T) {
+	shortGuardFixtureRootForSocket(t)
 	home, project := hardBlockHome(t)
 	t.Setenv("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
 	for _, key := range []string{"DOCKER_HOST", "CONTAINER_HOST", "CONTAINERD_ADDRESS", "BUILDKIT_HOST", "PODMAN_HOST"} {
@@ -190,4 +191,40 @@ func TestBashLauncherContainerSocketRequiresApproval(t *testing.T) {
 	if calls.Load() != 2 {
 		t.Fatalf("unexpected daemon requests: got %d, want control plus approved call", calls.Load())
 	}
+}
+
+// macOS caps a unix socket path at 104 bytes (sun_path), and the fixture home
+// defaults to a directory under the package, so a deep checkout (a worktree, a
+// trial folder) puts $HOME/.docker/run/docker.sock past the limit. Only then,
+// root the fixture in the user's cache folder instead: still outside /tmp, as
+// guardTestHomeDir requires, and short enough for the socket.
+func shortGuardFixtureRootForSocket(t *testing.T) {
+	t.Helper()
+	const sunPathMax = 104
+	// iso-guard-<random>/.docker/run/docker.sock below the root.
+	const below = len("/iso-guard-0123456789/.docker/run/docker.sock")
+	root := os.Getenv("ISOFORM_TEST_FIXTURE_ROOT")
+	if root == "" {
+		var err error
+		if root, err = os.Getwd(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		root = resolved
+	}
+	if len(root)+below < sunPathMax {
+		return
+	}
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved, err := filepath.EvalSymlinks(cache); err == nil {
+		cache = resolved
+	}
+	if len(cache)+below >= sunPathMax {
+		t.Fatalf("no fixture root short enough for a unix socket: %s", cache)
+	}
+	t.Setenv("ISOFORM_TEST_FIXTURE_ROOT", cache)
 }
