@@ -254,6 +254,10 @@ func readKnowledgeEntries(dir string, entries []os.DirEntry) ([]KnowledgeEntry, 
 			}
 			return nil, err
 		}
+		if learnedFromAgents(string(data)) {
+			// Learned only from agent activity: hidden, kept on disk.
+			continue
+		}
 		parsed := parseKnowledgeFile(e.Name(), string(data))
 		parsed.HasHistory = knowledgeEntryHasHistory(dir, parsed.ID)
 		result = append(result, parsed)

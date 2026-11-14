@@ -98,7 +98,7 @@ func knowledgeProvenanceKnown(content string) bool {
 func knowledgeProvenanceHash(doc okfDocument) string {
 	frontmatter := make(map[string]any, len(doc.Frontmatter))
 	for key, value := range doc.Frontmatter {
-		if key != "provenance_hash" && key != "kind" {
+		if key != "provenance_hash" && key != "kind" && key != learnedAgentOriginKey {
 			frontmatter[key] = value
 		}
 	}

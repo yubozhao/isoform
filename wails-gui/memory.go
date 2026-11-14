@@ -627,6 +627,10 @@ func readMemoryEntries(dir string) ([]MemoryEntry, error) {
 		}
 
 		content := string(data)
+		if learnedFromAgents(content) {
+			// Learned only from agent activity: hidden, kept on disk.
+			continue
+		}
 		doc := parseMemoryEntryDocument(content)
 		title := doc.title()
 		if title == "" {
