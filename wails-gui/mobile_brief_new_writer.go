@@ -81,6 +81,18 @@ func newBriefMaterial(in mobileBriefInput, brief MobileBriefV1, larger, name str
 		}
 		return at.In(loc).Format("January 2")
 	}
+	// Preparing candidates for the brief drops the apps they were seen in (an
+	// app name is not shown). The agent check needs them, so it reads them from
+	// the candidates as gathered.
+	appsOf := map[string][]string{}
+	for _, list := range [][]mobileBriefCandidate{in.Moved, in.Deliverables, in.Conversations, in.Noticed, in.WaitingOnYou, in.Commitments, in.WorkingToward} {
+		for _, c := range list {
+			if len(c.Apps) > 0 {
+				key := mobileBriefSourceKey(c.SourceKind, c.SourceID)
+				appsOf[key] = append(appsOf[key], c.Apps...)
+			}
+		}
+	}
 	add := func(group string, c mobileBriefCandidate, agent bool) {
 		if c.EvidenceUnavailable || c.ChatMessageID != "" || strings.TrimSpace(c.SourceID) == "" {
 			return
@@ -107,7 +119,11 @@ func newBriefMaterial(in mobileBriefInput, brief MobileBriefV1, larger, name str
 				return
 			}
 		}
-		agent = agent || briefcore.AgentDriven(c.Apps, c.Title+" "+c.Detail+" "+c.NextStep)
+		apps := c.Apps
+		if len(apps) == 0 {
+			apps = appsOf[mobileBriefSourceKey(c.SourceKind, c.SourceID)]
+		}
+		agent = agent || briefcore.AgentDriven(apps, c.Title+" "+c.Detail+" "+c.NextStep)
 		if agent && (group == briefcore.GroupDone || group == briefcore.GroupAttended) {
 			group = briefcore.GroupAgents
 		}

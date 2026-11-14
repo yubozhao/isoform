@@ -40,15 +40,43 @@ func AgentCue(text string) bool {
 	return false
 }
 
-// AgentDriven classifies one record by the apps it was seen in and its words.
-func AgentDriven(apps []string, text string) bool {
-	if !AgentCue(text) {
-		return false
-	}
-	for _, app := range apps {
-		if strings.TrimSpace(app) != "" && !AgentHost(app) {
-			return false
+// agentBuildCues are words that say software was made or changed. Seen only in
+// agent hosts, that work was the agent's, directed by the user: the user asks
+// Claude Code for a change and reviews the result, which observation sees as
+// the user building it ("Build Scrollback app ..." seen only in Claude). They
+// are matched like agentCues, with a space before each, so "ship" does not
+// match "sponsorship". Planning, asking and designing in an agent host stay
+// the user's: those words are not here.
+var agentBuildCues = []string{
+	" build", " built", " implement", " refactor", " debug", " fix", " ship",
+	" code", " coding", " prototype", " scaffold", " deploy", " migrate",
+	" commit", " write tests", " wrote tests",
+}
+
+// AgentBuildCue reports whether text says software was made or changed.
+func AgentBuildCue(text string) bool {
+	lower := " " + strings.ToLower(strings.Join(strings.Fields(text), " ")) + " "
+	for _, cue := range agentBuildCues {
+		if strings.Contains(lower, cue) {
+			return true
 		}
 	}
-	return true
+	return false
+}
+
+// AgentDriven classifies one record by the apps it was seen in and its words:
+// words that name agent work, in agent hosts only or with no apps known; or
+// words that say software was built, seen in agent hosts only.
+func AgentDriven(apps []string, text string) bool {
+	known := false
+	for _, app := range apps {
+		if strings.TrimSpace(app) == "" {
+			continue
+		}
+		if !AgentHost(app) {
+			return false
+		}
+		known = true
+	}
+	return AgentCue(text) || known && AgentBuildCue(text)
 }
