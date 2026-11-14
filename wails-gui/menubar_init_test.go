@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -85,5 +88,33 @@ func TestMenuBarInitAcceptsSlowFirstAcknowledgement(t *testing.T) {
 	}
 	if !reflect.DeepEqual(attempts, []int{1}) {
 		t.Fatalf("attempts = %v, want [1]", attempts)
+	}
+}
+
+// An acknowledgement that lands just after the timeout, during the backoff,
+// is a success: the log must not say the attempt failed (every launch on
+// 11/13 logged "attempt 1 failed" and then "initialized (late attempt 1)").
+func TestMenuBarInitLateAcknowledgementLogsNoFailure(t *testing.T) {
+	var buf bytes.Buffer
+	previous := log.Writer()
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(previous) })
+
+	results := make(chan menuBarInitResult, 3)
+	err := runMenuBarInit(context.Background(), func(attempt int) {
+		go func() {
+			time.Sleep(30 * time.Millisecond)
+			results <- menuBarInitResult{attempt: attempt}
+		}()
+	}, results, 10*time.Millisecond, []time.Duration{200 * time.Millisecond, 200 * time.Millisecond})
+	if err != nil {
+		t.Fatalf("runMenuBarInit: %v", err)
+	}
+	out := buf.String()
+	if strings.Contains(out, "failed") || strings.Contains(out, "retrying") {
+		t.Fatalf("a late acknowledgement logged a failure:\n%s", out)
+	}
+	if !strings.Contains(out, "initialized (late attempt 1)") {
+		t.Fatalf("late success not logged:\n%s", out)
 	}
 }
