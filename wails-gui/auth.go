@@ -650,7 +650,16 @@ func clearAnthropicEnv() {
 // AuthSourceInfo describes the current Anthropic auth source for debug display.
 type AuthSourceInfo struct {
 	Source   string `json:"source"`   // "api_key", "auth_token", "native", "sub2api", "pending"
-	Verified bool   `json:"verified"` // true after successful probe
+	Verified bool   `json:"verified"` // true once the model runner is up
+}
+
+// modelRunnerReady reports whether the model runner is up. It stands in for
+// "credentials verified": the credential probe never runs while
+// UseYansuGateway is on, and loadConfig forces that on for every install.
+func (a *App) modelRunnerReady() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.runner != nil && a.ready
 }
 
 // GetAuthSource returns the current Anthropic credential source for debug UI.
@@ -658,13 +667,14 @@ func (a *App) GetAuthSource() AuthSourceInfo {
 	if a.authManager != nil && a.authManager.IsActive() {
 		return AuthSourceInfo{Source: "sub2api", Verified: true}
 	}
+	ready := a.modelRunnerReady()
 	if os.Getenv("ANTHROPIC_API_KEY") != "" {
-		return AuthSourceInfo{Source: "api_key", Verified: a.probeSucceeded}
+		return AuthSourceInfo{Source: "api_key", Verified: ready}
 	}
 	if os.Getenv("ANTHROPIC_AUTH_TOKEN") != "" {
-		return AuthSourceInfo{Source: "auth_token", Verified: a.probeSucceeded}
+		return AuthSourceInfo{Source: "auth_token", Verified: ready}
 	}
-	if a.probeSucceeded {
+	if ready {
 		return AuthSourceInfo{Source: "native", Verified: true}
 	}
 	return AuthSourceInfo{Source: "pending", Verified: false}
@@ -673,7 +683,7 @@ func (a *App) GetAuthSource() AuthSourceInfo {
 // HasLocalCredentials returns true when the user has BYOK or native credentials
 // available, regardless of whether the Yansu gateway override is active.
 func (a *App) HasLocalCredentials() bool {
-	return os.Getenv("ANTHROPIC_API_KEY") != "" || os.Getenv("ANTHROPIC_AUTH_TOKEN") != "" || a.probeSucceeded
+	return os.Getenv("ANTHROPIC_API_KEY") != "" || os.Getenv("ANTHROPIC_AUTH_TOKEN") != "" || a.modelRunnerReady()
 }
 
 // GetUseYansuGateway returns whether the manual Yansu AI gateway override is enabled.

@@ -189,10 +189,9 @@ func (a *App) warmupActivityContext() {
 		return
 	}
 	go func() {
-		// Do NOT gate on a.probeSucceeded — that flag is only set by the
-		// local-credential probe path. When the user is on Yansu gateway
-		// (the common case), probeAndGreet returns early and leaves the
-		// flag false forever, even though Haiku calls work fine.
+		// Do NOT gate on the credential probe: probeAndGreet returns early
+		// on the Yansu gateway path, which loadConfig forces for every
+		// install, even though Haiku calls work fine.
 		//
 		// Instead: wait a short grace period for the agent to spin up,
 		// then just try to generate. If the call fails (runner still

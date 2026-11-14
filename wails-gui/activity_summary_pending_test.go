@@ -415,7 +415,7 @@ func TestCheckPendingSummariesDoesNotWaitForProbe(t *testing.T) {
 }
 
 // The pass runs once the model runner is up, whether or not the credential
-// probe set probeSucceeded: the probe never sets it while UseYansuGateway is
+// probe ran: the probe never verifies anything while UseYansuGateway is
 // on, which loadConfig forces for every install (the pass was skipped on
 // every launch, before and after it moved behind the probe).
 func TestPendingSummariesRunWithReadyRunnerWithoutProbeFlag(t *testing.T) {
@@ -428,9 +428,6 @@ func TestPendingSummariesRunWithReadyRunnerWithoutProbeFlag(t *testing.T) {
 	}
 	app.runner = &purposeExtractionFakeRunner{}
 	app.ready = true
-	if app.probeSucceeded {
-		t.Fatal("fixture must leave probeSucceeded unset")
-	}
 	if !app.pendingSummariesCanRun() {
 		t.Fatal("a ready runner without the probe flag skipped pending summaries")
 	}
@@ -458,15 +455,15 @@ func TestDeferAgentProbeQueuesPendingSummariesAfterProbe(t *testing.T) {
 		func() error { record("start"); return nil },
 		func() {
 			app.mu.Lock()
-			app.probeSucceeded = true
+			app.greeted = true
 			app.mu.Unlock()
 			record("probe")
 		},
 		func() {
 			app.mu.Lock()
-			verified := app.probeSucceeded
+			probed := app.greeted
 			app.mu.Unlock()
-			record(fmt.Sprintf("summaries verified=%t", verified))
+			record(fmt.Sprintf("summaries verified=%t", probed))
 			close(summariesDone)
 		},
 	)
