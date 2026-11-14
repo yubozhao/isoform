@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log"
+	goruntime "runtime"
 	"sync"
 
 	"wails-gui/models"
@@ -420,4 +421,18 @@ func (a *App) SetAutoSpeakNotificationsEnabled(enabled bool) error {
 	}
 	a.applyAutoSpeakPrewarm()
 	return nil
+}
+
+// ttsNumThreads is how many CPU threads one voice engine uses. Kokoro costs
+// about 1.1 CPU-seconds per spoken second on two threads and about 1.5 on four
+// (measured 2026-11-13, Apple silicon), so four threads read a brief about a
+// third faster on an idle computer; eight only spend more CPU. Small machines
+// keep two.
+var ttsNumThreads = ttsThreadsFor(goruntime.NumCPU())
+
+func ttsThreadsFor(cpus int) int {
+	if cpus >= 8 {
+		return 4
+	}
+	return 2
 }
