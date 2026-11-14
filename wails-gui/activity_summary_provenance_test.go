@@ -304,7 +304,7 @@ func TestDailyModelInputsUseCapturedSourceCohort(t *testing.T) {
 		t.Fatal(err)
 	}
 	seedActivitySummaryI18nSession(t, store, "arrived-later", date, 10, []string{"Uncaptured App"})
-	data, err := app.getDailySummary(date, &sources)
+	data, err := app.getDailySummary(date, &sources, true)
 	if err != nil {
 		t.Fatal(err)
 	}

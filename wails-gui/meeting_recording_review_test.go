@@ -156,7 +156,7 @@ func TestWholeCallReadersRecheckEveryRotation(t *testing.T) {
 				if !stringSliceContains(ids, "opening-rotation") || !strings.Contains(sources.MeetingContext, "Opening rotation sentence.") {
 					t.Fatalf("whole call not captured with provenance: %+v", sources)
 				}
-				data, err := app.getDailySummary("2026-04-20", &sources)
+				data, err := app.getDailySummary("2026-04-20", &sources, true)
 				if err != nil {
 					t.Fatal(err)
 				}
