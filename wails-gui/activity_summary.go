@@ -1236,16 +1236,16 @@ func parseMomentsResponse(raw string, sessionCount int) ([]momentRange, error) {
 		}
 	}
 	start := strings.Index(s, "{")
-	end := strings.LastIndex(s, "}")
-	if start < 0 || end <= start {
+	if start < 0 {
 		return nil, fmt.Errorf("no JSON object in response")
 	}
-	s = s[start : end+1]
 
+	// Decode only the first JSON value: a reply can add a note or a second
+	// fenced block after it, and the old first-to-last-brace cut then failed.
 	var envelope struct {
 		Moments []momentRange `json:"moments"`
 	}
-	if err := json.Unmarshal([]byte(s), &envelope); err != nil {
+	if err := json.NewDecoder(strings.NewReader(s[start:])).Decode(&envelope); err != nil {
 		return nil, fmt.Errorf("unmarshal: %w", err)
 	}
 	out := make([]momentRange, 0, len(envelope.Moments))
@@ -1852,27 +1852,14 @@ const (
 
 // checkPendingSummaries scans the last pendingSummaryDaysBack days for daily
 // summaries that are missing, partial, or have stale Moments, and regenerates
-// each one with retries. Called from startup() in a goroutine. Waits for the
-// credential probe to succeed (probeAndGreet sets a.probeSucceeded = true) so
-// we know the agent runner is authenticated before making any Haiku calls.
+// each one with retries. Runs as a launch task queued right after the
+// credential probe (deferAgentProbe), so it only checks the probe result
+// (probeAndGreet sets a.probeSucceeded = true) instead of waiting for it:
+// launch tasks run one at a time, so waiting here would hold the queue.
 func (a *App) checkPendingSummaries() {
 	am := a.activity
 	if am == nil || am.store == nil {
 		return
-	}
-
-	// Wait for credential probe to complete. probeAndGreet sets probeSucceeded
-	// after verifying the agent runner can reach Anthropic. A quit stops the
-	// wait: shutdown waits for this launch task (it held a quit, and the
-	// restart to update, for the whole 5 s watchdog).
-	for range 600 {
-		a.mu.Lock()
-		ready := a.probeSucceeded
-		a.mu.Unlock()
-		if ready || a.launch.isStopped() {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
 	}
 	if a.launch.isStopped() {
 		return
@@ -1881,7 +1868,7 @@ func (a *App) checkPendingSummaries() {
 	ready := a.probeSucceeded
 	a.mu.Unlock()
 	if !ready {
-		log.Printf("[activity-summary] auth probe not completed after 60s, skipping pending summaries")
+		log.Printf("[activity-summary] credentials not verified, skipping pending summaries")
 		return
 	}
 

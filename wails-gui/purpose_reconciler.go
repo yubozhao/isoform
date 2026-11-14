@@ -33,6 +33,15 @@ func purposeExtractionSourcesEqual(
 	return leftErr == nil && rightErr == nil && leftJSON == rightJSON
 }
 
+// purposeFrozenSourceDriftError reports that a run's evidence changed or was
+// removed after the model read it. The run can never reconcile again: its
+// frozen input no longer matches what the user has.
+type purposeFrozenSourceDriftError struct{ ref string }
+
+func (err purposeFrozenSourceDriftError) Error() string {
+	return fmt.Sprintf("Purpose frozen source %q drifted or is unavailable", err.ref)
+}
+
 func (runtime *PurposeExtractionRuntime) validateFrozenSources(
 	detail PurposeExtractionRunDetail,
 ) error {
@@ -51,7 +60,7 @@ func (runtime *PurposeExtractionRuntime) validateFrozenSources(
 	for _, frozen := range detail.Input.Sources {
 		candidate, ok := currentByRef[frozen.Ref]
 		if !ok || !purposeExtractionSourcesEqual(frozen, candidate) {
-			return fmt.Errorf("Purpose frozen source %q drifted or is unavailable", frozen.Ref)
+			return purposeFrozenSourceDriftError{ref: frozen.Ref}
 		}
 	}
 	return nil
@@ -725,6 +734,50 @@ func insertPurposeReceipt(
 		return PurposeReconciliationReceiptRecord{}, false, err
 	}
 	return item, true, nil
+}
+
+// SettleDrifted closes a run whose frozen sources drifted: every hypothesis
+// without a receipt gets a rejected receipt and no Purpose event, so the run
+// stays fail-closed and stops being pending. Reconcile has already recovered
+// receipts for events committed before a crash, so nothing applied is lost.
+func (runtime *PurposeExtractionRuntime) SettleDrifted(
+	runID string,
+	cause error,
+) (PurposeExtractionRunDetail, error) {
+	memoryMutationMu.RLock()
+	defer memoryMutationMu.RUnlock()
+	if runtime == nil || runtime.activity == nil || runtime.activity.db == nil {
+		return PurposeExtractionRunDetail{}, errors.New("Purpose extraction runtime is unavailable")
+	}
+	var drift purposeFrozenSourceDriftError
+	if !errors.As(cause, &drift) {
+		return PurposeExtractionRunDetail{}, errors.New("only drifted Purpose runs can be settled")
+	}
+	detail, err := loadPurposeExtractionRun(runtime.activity.db, strings.TrimSpace(runID))
+	if err != nil {
+		return PurposeExtractionRunDetail{}, err
+	}
+	if detail.Run.Status != PurposeExtractionStatusSucceeded {
+		return detail, errors.New("only successful Purpose extraction runs can be settled")
+	}
+	sources := purposeSourcesByRef(detail.Input)
+	settled := make(map[string]struct{}, len(detail.Receipts))
+	for _, receipt := range detail.Receipts {
+		settled[receipt.HypothesisID] = struct{}{}
+	}
+	for _, hypothesis := range detail.Hypotheses {
+		if _, exists := settled[hypothesis.ID]; exists {
+			continue
+		}
+		receipt, err := purposeReceiptForRejection(detail.Run, hypothesis, sources, "", drift)
+		if err != nil {
+			return detail, err
+		}
+		if _, _, err := insertPurposeReceipt(runtime.activity.db, receipt); err != nil {
+			return detail, err
+		}
+	}
+	return loadPurposeExtractionRun(runtime.activity.db, detail.Run.ID)
 }
 
 func purposeReceiptForRejection(

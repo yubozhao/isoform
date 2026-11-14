@@ -536,6 +536,13 @@ func (service *PurposeUnderstandingService) recoverPending(
 			return nil, purposeUnderstandingChanges{}, err
 		}
 		after, err := runtime.Reconcile(id)
+		var drift purposeFrozenSourceDriftError
+		if errors.As(err, &drift) {
+			// Its evidence changed after the model read it. Settle it as
+			// rejected so one stale run cannot fail every later cycle.
+			log.Printf("[purpose-understanding] settled run %s: %v", id, err)
+			after, err = runtime.SettleDrifted(id, err)
+		}
 		if err != nil {
 			return nil, purposeUnderstandingChanges{}, err
 		}

@@ -623,3 +623,81 @@ func TestAlreadyReadyAgentStartsInitializedPurposeUnderstanding(t *testing.T) {
 		t.Fatalf("idempotent StartAgent retriggered Purpose understanding: %v", pending)
 	}
 }
+
+// A run whose evidence changed after the model read it can never reconcile.
+// It must be settled as rejected (no Purpose state) instead of failing every
+// later cycle: one stale run once stopped Purpose understanding for days.
+func TestPurposeUnderstandingSettlesDriftedRunInsteadOfFailingEveryCycle(
+	t *testing.T,
+) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	activity := newTestStore(t)
+	now := time.Now().Add(-30 * time.Second)
+	at := now.Add(-time.Minute)
+	path := purposeWriteMemory(
+		t, home, "purpose-understanding-drift", at, memorySource("manual"),
+		"I will prepare the launch decision with a verified result.",
+	)
+	request := PurposeExtractionRequest{
+		IdempotencyKey: "purpose-understanding-drifted",
+		CutoffAt:       now.UnixMilli(),
+	}
+	input, manifest, err := gatherPurposeExtractionInput(activity, request)
+	if err != nil || len(input.Sources) != 1 {
+		t.Fatalf("gather input: input=%+v err=%v", input, err)
+	}
+	runner := &purposeExtractionFakeRunner{responses: []string{
+		purposeExtractionOutputJSON(t, purposeExtractionHypothesis(
+			"drifted-purpose", "drifted purpose", PurposeKindResponsibility,
+			PurposeOperationSupport, "Prepare the launch decision",
+			"The launch decision is ready.", input.Sources[0].Ref,
+		)),
+	}}
+	execution, err := runPurposeExtractionModel(context.Background(), runner, "gpt-5.6-sol", input, manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, hypotheses, err := purposeExtractionRecords(request, "gpt-5.6-sol", execution, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := persistPurposeExtractionRun(activity.db, run, hypotheses); err != nil {
+		t.Fatal(err)
+	}
+	writeTaskContextSourceTestFile(
+		t, path,
+		buildOKFMemoryMarkdown(
+			"purpose-understanding-drift", "Purpose source purpose-understanding-drift", at,
+			memorySource("manual"), "topic_highlight",
+			[]string{"I will prepare a different launch artifact."},
+		),
+		at,
+	)
+
+	service, _ := purposeUnderstandingTestService(t, activity)
+	service.emit = (&purposeUnderstandingTestEvents{}).emit
+	service.now = func() time.Time { return now.Add(time.Second) }
+	service.runner = func() (agent.AgentRunner, string, error) {
+		return nil, "", errors.New("runner intentionally unavailable")
+	}
+	for cycle := 1; cycle <= 2; cycle++ {
+		service.runAndReport(context.Background(), []string{PurposeUnderstandingTriggerStartup})
+		last := service.Snapshot().Last
+		if last == nil || last.State == PurposeUnderstandingStateFailed {
+			t.Fatalf("cycle %d failed on a drifted run: %+v", cycle, last)
+		}
+	}
+	pending, err := purposeUnderstandingPendingRunIDs(activity.db)
+	if err != nil || len(pending) != 0 {
+		t.Fatalf("drifted run still pending: ids=%v err=%v", pending, err)
+	}
+	settled, err := purposeNewRuntime(t, activity, nil).GetRun(run.ID)
+	if err != nil || len(settled.Receipts) != 1 ||
+		settled.Receipts[0].Disposition != PurposeDispositionRejected {
+		t.Fatalf("drifted run receipts = %+v err=%v, want one rejected", settled.Receipts, err)
+	}
+	if purposeCountRows(t, activity, "purpose_open_loops_v1") != 0 {
+		t.Fatal("a drifted run produced Purpose state")
+	}
+}

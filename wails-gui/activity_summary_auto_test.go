@@ -683,3 +683,85 @@ func TestAutoSummaryNightly_StopsAfterThreeFailedAttemptsButPageOpenStillTries(t
 		t.Fatalf("page open did not try after the cap: %v", calls)
 	}
 }
+
+// Opening Activity in the first seconds after launch reaches the generator
+// before the model runner is up. That attempt must wait for the runner and
+// retry once it is ready, not fail into the 30-minute backoff (which left
+// today's summary unwritten for hours after a launch).
+func TestAutoSummary_WaitsForRunnerInsteadOfBackingOff(t *testing.T) {
+	now := time.Date(2026, 10, 20, 12, 0, 0, 0, time.Local)
+	today := now.Format("2006-01-02")
+	app, _, _ := newAutoSummaryTestApp(t, now)
+	app.autoSummaryRunnerWait = 10 * time.Millisecond
+	seedActivitySummaryI18nSession(t, app.activity.store, "auto-runner-1", today, 10, []string{"Code"})
+
+	var mu sync.Mutex
+	calls := 0
+	app.autoSummaryGenDaily = func(string) error {
+		mu.Lock()
+		defer mu.Unlock()
+		calls++
+		app.mu.Lock()
+		ready := app.runner != nil
+		app.mu.Unlock()
+		if !ready {
+			return fmt.Errorf("generate: %w", errRunnerNotInitialized)
+		}
+		return nil
+	}
+
+	data, err := app.EnsureDailySummary(today)
+	if err != nil {
+		t.Fatalf("EnsureDailySummary: %v", err)
+	}
+	if data.AutoStatus != autoStatusRefreshing {
+		t.Fatalf("AutoStatus = %q, want %q", data.AutoStatus, autoStatusRefreshing)
+	}
+	time.Sleep(50 * time.Millisecond)
+	mu.Lock()
+	early := calls
+	mu.Unlock()
+	if early != 1 {
+		t.Fatalf("generator calls before the runner is up = %d, want 1 (no retry storm)", early)
+	}
+	app.mu.Lock()
+	app.runner = &purposeExtractionFakeRunner{}
+	app.mu.Unlock()
+	waitFor(t, 2*time.Second, "generation to finish once the runner is up", func() bool { return autoSummaryIdle(app) })
+	mu.Lock()
+	got := calls
+	mu.Unlock()
+	if got != 2 {
+		t.Fatalf("generator calls = %d, want 2 (first before the runner, one retry after)", got)
+	}
+	app.autoSummaryMu.Lock()
+	_, blocked := app.autoSummaryRetryAfter["daily|"+today]
+	app.autoSummaryMu.Unlock()
+	if blocked {
+		t.Fatal("a runner that was not up yet set the failure backoff")
+	}
+}
+
+// A runner that never comes up within the wait leaves no backoff: the next
+// visit may try again at once.
+func TestAutoSummary_RunnerNeverReadyLeavesNoBackoff(t *testing.T) {
+	now := time.Date(2026, 10, 20, 12, 0, 0, 0, time.Local)
+	today := now.Format("2006-01-02")
+	app, _, _ := newAutoSummaryTestApp(t, now)
+	app.autoSummaryRunnerWait = time.Millisecond
+	seedActivitySummaryI18nSession(t, app.activity.store, "auto-runner-2", today, 10, []string{"Code"})
+	app.autoSummaryGenDaily = func(string) error { return errRunnerNotInitialized }
+
+	if _, err := app.EnsureDailySummary(today); err != nil {
+		t.Fatalf("EnsureDailySummary: %v", err)
+	}
+	waitFor(t, 2*time.Second, "generation to give up", func() bool { return autoSummaryIdle(app) })
+	data, err := app.EnsureDailySummary(today)
+	if err != nil {
+		t.Fatalf("EnsureDailySummary: %v", err)
+	}
+	if data.AutoStatus != autoStatusRefreshing {
+		t.Fatalf("second visit AutoStatus = %q, want %q (no backoff)", data.AutoStatus, autoStatusRefreshing)
+	}
+	waitFor(t, 2*time.Second, "second generation to give up", func() bool { return autoSummaryIdle(app) })
+}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -37,6 +38,12 @@ const (
 	// autoSummaryFailureBackoff is how long a (type, date) is left alone
 	// after a background generation failure.
 	autoSummaryFailureBackoff = 30 * time.Minute
+	// autoSummaryRunnerWait and autoSummaryRunnerWaitTries bound how long a
+	// generation started before the model runner is up waits for it. A page
+	// opened in the first seconds after launch would otherwise fail at once
+	// and leave the summary alone for the whole failure backoff.
+	autoSummaryRunnerWait      = 5 * time.Second
+	autoSummaryRunnerWaitTries = 24
 	// autoSummaryNightlyInterval is how often the after-midnight pass checks
 	// for unfinished yesterday / last-week summaries.
 	autoSummaryNightlyInterval = 15 * time.Minute
@@ -222,7 +229,9 @@ func (a *App) runAutoSummaryGeneration(date, backoffKey, flightKey string, gen f
 		}
 		a.autoSummaryMu.Lock()
 		delete(a.autoSummaryInFlight, flightKey)
-		if err != nil {
+		// A runner that never came up spent no model call: leave the next
+		// visit free to try instead of blocking it for the backoff.
+		if err != nil && !errors.Is(err, errRunnerNotInitialized) {
 			a.autoSummaryRetryAfter[backoffKey] = a.autoSummaryClock().Add(autoSummaryFailureBackoff)
 		}
 		a.autoSummaryMu.Unlock()
@@ -233,6 +242,23 @@ func (a *App) runAutoSummaryGeneration(date, backoffKey, flightKey string, gen f
 		a.emitAutoSummaryReady(date)
 	}()
 	err = gen(date)
+	wait := a.autoSummaryRunnerWait
+	if wait <= 0 {
+		wait = autoSummaryRunnerWait
+	}
+	// Retry once the runner is up, not on every tick: each failed attempt
+	// tells listening screens the summary failed, and they reload.
+	for try := 0; try < autoSummaryRunnerWaitTries && errors.Is(err, errRunnerNotInitialized); try++ {
+		if !a.sleepCtx(wait) {
+			return
+		}
+		a.mu.Lock()
+		ready := a.runner != nil
+		a.mu.Unlock()
+		if ready {
+			err = gen(date)
+		}
+	}
 }
 
 // emitAutoSummaryReady emits the same event the manual Generate methods emit
