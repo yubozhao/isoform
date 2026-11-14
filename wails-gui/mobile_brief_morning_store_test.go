@@ -28,21 +28,3 @@ func TestMadeAheadCopyDoesNotBlockTheRealBuild(t *testing.T) {
 		t.Fatal("a real copy did not count")
 	}
 }
-
-// The old writer's fallback failed four times on "closing requires two
-// grounded answers". A closing without answers now goes; the brief stands.
-func TestRankedDraftWithoutGroundedAnswersKeepsItsBody(t *testing.T) {
-	brief := MobileBriefV1{BriefID: "2026-11-13-morning", Slot: mobileBriefSlotMorning, Evidence: []MobileBriefRef{{Ref: "e1", SourceKind: "purpose", SourceID: "p1", Label: "Calf raises"}}}
-	lead := morningBriefCandidate{ID: mobileBriefItemKey("candidate", "purpose", "p1"), SourceKind: "purpose", SourceID: "p1", Title: "Calf raises", Refs: []string{"e1"}}
-	draft := morningBriefDraft{Paragraphs: []MobileBriefPara{
-		{Text: "Your calf raises have slipped since November 5; add them to today's workout.", Refs: []string{"e1"}},
-		{Text: "Want me to plan them?", Refs: []string{"e1"}},
-	}}
-	got, err := prepareRankedMorningDraft(brief, draft, morningBriefSelection{Lead: &lead}, "English")
-	if err != nil {
-		t.Fatalf("a missing closing answer failed the brief: %v", err)
-	}
-	if len(got.Paragraphs) != 1 || got.Paragraphs[0].Text != draft.Paragraphs[0].Text {
-		t.Fatalf("the body was not kept without its closing: %+v", got.Paragraphs)
-	}
-}

@@ -22,37 +22,6 @@ type morningBriefBoundInput struct {
 	Candidate    morningBriefCandidate          `json:"candidate"`
 }
 
-// morningBriefBindRankedInputs admits only sources with an exact source reader.
-// Prior-brief facts and other unbound evidence are withheld until they can be
-// proven independently. Related Purpose next steps carry their own sources.
-func (a *App) morningBriefBindRankedInputs(ctx context.Context, cutoff time.Time, candidates []morningBriefCandidate) []morningBriefBoundInput {
-	if a == nil || a.IsClosedEyesModeEnabled() || ctx.Err() != nil || cutoff.IsZero() {
-		return nil
-	}
-	subjects, err := mobileBriefMailSubjects(a)
-	if err != nil {
-		return nil
-	}
-	var sources todayChatSources
-	for _, c := range candidates {
-		if c.SourceKind == "purpose" || morningBriefObservedSourceKind(c.SourceKind) || len(c.Dependencies) > 0 {
-			sources = a.collectTodayChatSources(ctx, time.Now())
-			break
-		}
-	}
-	var result []morningBriefBoundInput
-	for _, c := range candidates {
-		if len(c.PriorBriefs) != 0 || c.ChangeKnown || c.Changed || c.Change != "" || c.Unbound || c.SourceDigest == "" || c.NextStep != "" && (c.SourceKind != "purpose" || len(c.Dependencies) == 0) {
-			continue
-		}
-		item := morningBriefBoundInput{Kind: c.SourceKind, ID: c.SourceID, Digest: c.SourceDigest, OriginDigest: c.SourceOrigin, Dependencies: append([]morningBriefSourceDependency(nil), c.Dependencies...), Candidate: c}
-		if a.morningBriefRankedInputsReadableFrom(ctx, cutoff, []morningBriefBoundInput{item}, subjects, sources) {
-			result = append(result, item)
-		}
-	}
-	return result
-}
-
 // Recheck the original source and mail holdback, including for uncited inputs.
 // A changed source withdraws all prose that was influenced by the batch.
 func (a *App) morningBriefRankedInputsReadable(ctx context.Context, cutoff time.Time, inputs []morningBriefBoundInput) bool {
@@ -154,31 +123,6 @@ func morningBriefCandidateSafe(candidate morningBriefCandidate) bool {
 	return true
 }
 
-// morningBriefBindRankedLedger adds only changes derived from rechecked local
-// ledger facts to an already admitted batch. The old wording remains local.
-func (a *App) morningBriefBindRankedLedger(ctx context.Context, brief MobileBriefV1, admitted []morningBriefBoundInput, facts []morningBriefLedgerFact, store *mobileBriefStore) ([]morningBriefBoundInput, []morningBriefLedgerProof, bool) {
-	cutoff := mobileBriefAsOfTime(brief)
-	if !a.morningBriefRankedInputsReadable(ctx, cutoff, admitted) {
-		return nil, nil, false
-	}
-	candidates := make([]morningBriefCandidate, len(admitted))
-	for i, input := range admitted {
-		candidates[i] = input.Candidate
-		candidates[i].SourceKind, candidates[i].SourceID = input.Kind, input.ID
-		candidates[i].SourceDigest, candidates[i].SourceOrigin = input.Digest, input.OriginDigest
-		candidates[i].Dependencies = append([]morningBriefSourceDependency(nil), input.Dependencies...)
-	}
-	rows, proofs := morningBriefApplyLedger(candidates, facts, cutoff, mobileBriefNarrativeLocation(brief))
-	out := append([]morningBriefBoundInput(nil), admitted...)
-	for i := range out {
-		out[i].Candidate = rows[i]
-	}
-	if !a.morningBriefRankedInputsReadableWithLedger(ctx, brief, out, store, proofs) {
-		return nil, nil, false
-	}
-	return out, proofs, true
-}
-
 func (a *App) morningBriefRankedInputsReadableWithLedger(ctx context.Context, brief MobileBriefV1, inputs []morningBriefBoundInput, store *mobileBriefStore, proofs []morningBriefLedgerProof) bool {
 	cutoff := mobileBriefAsOfTime(brief)
 	if a == nil || a.IsClosedEyesModeEnabled() && !pausedBriefReadAllowed(ctx) || ctx.Err() != nil || cutoff.IsZero() || !a.morningBriefRankedLedgerMatches(ctx, brief, inputs, store, proofs) {
@@ -196,16 +140,6 @@ func (a *App) morningBriefRankedInputsReadableWithLedger(ctx context.Context, br
 		}
 	}
 	return a.morningBriefRankedInputsReadableFromWithLedger(ctx, cutoff, inputs, subjects, sources, len(proofs) > 0)
-}
-
-// morningBriefRankedSourceKind lists the sources
-// morningBriefRankedInputsReadableFromWithLedger can read again.
-func morningBriefRankedSourceKind(kind string) bool {
-	switch kind {
-	case "purpose", mobileBriefCalendarSource, mobileBriefWaitingReplySource, "history", mobileBriefRecapSource, mobileBriefFileSource, "memory", "knowledge", "principal":
-		return true
-	}
-	return false
 }
 
 func morningBriefObservedSourceKind(kind string) bool {

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"strings"
 	"testing"
 	"time"
@@ -133,81 +132,6 @@ func TestMobileBriefSummarySealTracksContentAndReplacement(t *testing.T) {
 			}
 			if !wantShown && withheld.Reason == mobileBriefWithheldSource {
 				t.Fatalf("a hidden source was withheld as an edit: %+v", withheld)
-			}
-		})
-	}
-}
-
-func TestMobileBriefRankedSummaryResealChecksContent(t *testing.T) {
-	for _, scenario := range []string{"regenerated", "metadata", "edited"} {
-		t.Run(scenario, func(t *testing.T) {
-			isolateActivityPrivacyTest(t)
-			rig := newHandoffTestRig(t)
-			now := time.Now().Truncate(time.Second)
-			row := ActivityRow{ID: "ranked-summary", Title: "Reviewed the launch plan", Description: "Compared options", Status: activityStatusSettled, ActiveMsByApp: `{"Code":1800000}`, StartMs: now.Add(-time.Hour).UnixMilli(), EndMs: now.Add(-30 * time.Minute).UnixMilli(), CreatedAt: now.Add(-time.Hour).UnixMilli(), UpdatedAt: now.Add(-30 * time.Minute).UnixMilli()}
-			row = addMobileBriefRecapProvenance(t, rig, row)
-			if err := rig.activity.InsertActivity(row); err != nil {
-				t.Fatal(err)
-			}
-			brief := buildMobileBriefV1(mobileBriefInput{AsOf: now, WindowStart: now.Add(-2 * time.Hour), Slot: mobileBriefSlotMorning, Location: time.UTC,
-				Moved: []mobileBriefCandidate{{SourceKind: mobileBriefRecapSource, SourceID: row.ID, Title: row.Title, Kind: "recap", Status: "done", At: time.UnixMilli(row.StartMs)}}})
-			ref := brief.Evidence[0]
-			sources := rig.app.collectTodayChatSources(t.Context(), now)
-			digest, ok := rig.app.mobileBriefModelSourceDigest(t.Context(), ref, brief, sources)
-			if !ok {
-				t.Fatal("summary could not be bound")
-			}
-			candidate := morningBriefCandidate{ID: mobileBriefItemKey("candidate", ref.SourceKind, ref.SourceID), SourceKind: ref.SourceKind, SourceID: ref.SourceID, SourceDigest: digest, Title: row.Title, Confidence: 1}
-			bound := rig.app.morningBriefBindRankedInputs(t.Context(), now, []morningBriefCandidate{candidate})
-			if len(bound) != 1 {
-				t.Fatal("summary was not admitted")
-			}
-			brief.rankedEdition, brief.NarrativeStatus = true, "ok"
-			brief.Narrative = []MobileBriefPara{{Text: "Reviewed the launch plan.", Refs: []string{ref.Ref}}}
-			revision, err := rig.app.readMobileBriefGatherRevision(t.Context())
-			if err != nil {
-				t.Fatal(err)
-			}
-			binding := rig.app.captureRankedBriefModelSources(t.Context(), brief, revision, bound)
-			revision.close()
-			if binding == nil {
-				t.Fatal("ranked binding was not captured")
-			}
-			rig.app.finishMobileBriefModelBinding(context.Background(), &brief, binding)
-			t.Setenv("YANSU_MOBILE_STATE_DIR", t.TempDir())
-			svc := newMobileBriefService(rig.app)
-			t.Cleanup(svc.Stop)
-			svc.location, svc.now = time.UTC, func() time.Time { return now }
-			rig.app.mobileBriefSvc = svc
-			if err := svc.store.save(brief, now); err != nil {
-				t.Fatal(err)
-			}
-			if got, withheld, wrote := svc.seal(t.Context(), brief); !wrote || withheld.Reason != "" || len(got.Narrative) != 1 {
-				t.Fatalf("initial seal: wrote=%v reason=%q narrative=%d", wrote, withheld.Reason, len(got.Narrative))
-			}
-			switch scenario {
-			case "regenerated":
-				if err := rig.activity.DeleteActivity(row.ID); err != nil {
-					t.Fatal(err)
-				}
-				row.ID = "ranked-replacement"
-				if err := rig.activity.InsertActivity(row); err != nil {
-					t.Fatal(err)
-				}
-			case "metadata", "edited":
-				row.UpdatedAt = now.Add(time.Minute).UnixMilli()
-				if scenario == "edited" {
-					row.Description = "Changed options"
-				}
-				if err := rig.activity.UpdateActivity(row); err != nil {
-					t.Fatal(err)
-				}
-			}
-			// No privacy change: an edited or regenerated summary is not a withdrawal,
-			// so the sealed copy is read as it was sealed.
-			got, withheld, err := svc.finishedReadWithholding(brief)
-			if err != nil || len(got.Narrative) != 1 {
-				t.Fatalf("%s: narrative=%d reason=%q kind=%q err=%v", scenario, len(got.Narrative), withheld.Reason, withheld.SourceKind, err)
 			}
 		})
 	}
