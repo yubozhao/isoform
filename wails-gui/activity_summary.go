@@ -1894,15 +1894,11 @@ func (a *App) checkPendingSummaries() {
 	}
 }
 
-// pendingSummariesCanRun reports whether the model runner is up. It does not
-// use probeSucceeded: probeAndGreet returns before setting it whenever
-// UseYansuGateway is on, and loadConfig forces that on for every install, so
-// gating on it skipped the pass on every launch. A failed model call is
-// already retried and logged by generateDailySummaryWithRetry.
+// pendingSummariesCanRun reports whether the model runner is up
+// (modelRunnerReady). A failed model call is already retried and logged by
+// generateDailySummaryWithRetry.
 func (a *App) pendingSummariesCanRun() bool {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.runner != nil && a.ready
+	return a.modelRunnerReady()
 }
 
 // generateDailySummaryWithRetry calls GenerateDailySummary up to

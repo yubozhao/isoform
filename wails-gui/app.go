@@ -272,7 +272,7 @@ type App struct {
 	magpieQuotaOnce    sync.Once
 	magpieFallbackOnce sync.Once
 
-	probeSucceeded         bool              // true after credential probe succeeds
+	greeted                bool              // the credential probe already sent its greeting
 	cachedDisplayName      string            // cached from GetUserProfile on first call
 	localClaudeEnvSnapshot map[string]string // local Claude-compatible env vars to restore after gateway override
 	todayDayShapeUpdates   todayDayShapeUpdateState
@@ -3300,8 +3300,8 @@ func (a *App) probeAndGreet() {
 	}
 
 	a.mu.Lock()
-	alreadyGreeted := a.probeSucceeded
-	a.probeSucceeded = true
+	alreadyGreeted := a.greeted
+	a.greeted = true
 	a.mu.Unlock()
 
 	log.Printf("[probe] local credentials verified")
