@@ -448,11 +448,6 @@ func (a *App) emitBrowserEvent(eventName string, data ...interface{}) {
 		a.noteTodayDayShapeUpdate()
 	case "memory:updated", "sensitive-apps:updated", closedEyesModeChangedEvent, "background-listening:changed":
 		a.clearPageSnapshots()
-		if eventName == "memory:updated" {
-			if service, ok := a.mobileBriefSource().(*mobileBriefService); ok && service != nil {
-				service.remakeAudioSoon()
-			}
-		}
 	case magpieModelsUpdatedEvent:
 		invalidateYourWeekLive()
 	}

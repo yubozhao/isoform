@@ -113,6 +113,14 @@ var mobileBriefWithdrawals briefWithdrawalLog
 // keyed. The epoch and the log are saved first, so a change is not lost if the
 // app stops before the copies are amended.
 func briefPrivacyChanged(keys ...briefWithdrawn) {
+	// Registered first, so it runs after the epoch is saved and unlocked: the
+	// recording follows the amended words (it is made again only when the
+	// sealed words it speaks changed).
+	defer func() {
+		if live := mobileBriefLive.Load(); live != nil {
+			live.remakeAudioSoon()
+		}
+	}()
 	mobileBriefReadEpoch.Add(1)
 	// Page snapshots built before this change are dropped and rebuilt.
 	defer noteDerivedPrivacyChanged()

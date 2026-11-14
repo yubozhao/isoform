@@ -1454,8 +1454,12 @@ func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, s
 }
 
 // backfillTodayAudio gives today's stored brief one fresh recording when none
-// is bound to its readable text. Existing audio files are never adopted without
-// synthesis: addAudio binds only the new reading and rechecks its sources.
+// is bound to the words its sealed copy says. Under seal v2 those words change
+// only when a brief is built or an explicit privacy action withdraws part of it
+// (briefPrivacyChanged), so this reads the sealed copy, never live sources:
+// memory, calendar or activity changes do not make the voice read it again.
+// Existing audio files are never adopted without synthesis: addAudio binds
+// only the new reading and rechecks its sources.
 func (s *mobileBriefService) backfillTodayAudio(ctx context.Context) {
 	if s.app == nil || s.speaker.synthesize == nil || s.speaker.voiceReady == nil || s.app.IsClosedEyesModeEnabled() {
 		return
@@ -1471,31 +1475,35 @@ func (s *mobileBriefService) backfillTodayAudio(ctx context.Context) {
 	if brief.LocalDate != s.now().In(loc).Format("2006-01-02") {
 		return
 	}
-	// Refresh the sealed view after an exclusion before deciding what to read.
-	if _, _, ok := s.seal(ctx, brief); !ok {
-		return
-	}
-	delivered := s.app.mobileBriefForDelivery(brief)
-	if delivered.NarrativeStatus != "ok" || len(delivered.Narrative) == 0 {
+	// The sealed read amends the copy first when a withdrawal happened since
+	// it was sealed, so a withdrawn part is never spoken again.
+	shown, _, err := s.finishedReadWithholding(brief)
+	if err != nil || shown.NarrativeStatus != "ok" || len(shown.Narrative) == 0 {
 		return
 	}
 	lang := s.speaker.voiceLang()
-	if audio := brief.Audio; audio != nil && audio.Status == mobileBriefAudioStatusOK && audio.Bytes > 0 && audio.binding == mobileBriefAudioBinding(delivered, lang) {
+	if !mobileBriefAudioNeedsRemake(brief.Audio, shown, lang) {
 		return
 	}
 	asOf := mobileBriefAsOfTime(brief)
 	if asOf.IsZero() {
 		asOf = s.now()
 	}
-	// Read the brief as it reads now: once a memory change removes parts of
-	// it, the recording is made again without them (today-review v1.1.10 B).
-	delivered.Audio = brief.Audio
-	s.addAudioWithLatestGuard(ctx, delivered, asOf, true)
+	shown.Audio = brief.Audio
+	s.addAudioWithLatestGuard(ctx, shown, asOf, true)
 }
 
-// remakeAudioSoon makes today's recording again after a change that can
-// remove parts of the brief (a stated exclusion). Until it is ready the brief
-// has no player; one remake waits while another runs.
+// mobileBriefAudioNeedsRemake reports whether a stored recording no longer
+// speaks the sealed words: there is none, it is unfinished, or its binding
+// (the hash of the words it reads) differs from the sealed copy's.
+func mobileBriefAudioNeedsRemake(audio *MobileBriefAudio, sealed MobileBriefV1, lang string) bool {
+	return audio == nil || audio.Status != mobileBriefAudioStatusOK || audio.Bytes == 0 || audio.binding != mobileBriefAudioBinding(sealed, lang)
+}
+
+// remakeAudioSoon makes today's recording again after an explicit privacy
+// withdrawal (briefPrivacyChanged) or a wake; it does nothing when the
+// recording already speaks the sealed words. Until it is ready the brief
+// says its recording is being made; one remake waits while another runs.
 func (s *mobileBriefService) remakeAudioSoon() {
 	s.mu.Lock()
 	if s.stopped || s.runCtx == nil || s.audioRemakeQueued {

@@ -37,7 +37,7 @@ func newSherpaTTS(paths ttsPaths) (speechSynthesizer, error) {
 	cfg.Model.Vits.NoiseScale = 0.667
 	cfg.Model.Vits.NoiseScaleW = 0.8
 	cfg.Model.Vits.LengthScale = 1.0
-	cfg.Model.NumThreads = 2
+	cfg.Model.NumThreads = ttsNumThreads
 	// Rule FSTs handle inverse text normalization (dates/numbers/phone). Only
 	// pass the ones that actually extracted, comma-joined.
 	var fsts []string
@@ -72,7 +72,7 @@ func newKokoroTTS(paths kokoroPaths) (speechSynthesizer, error) {
 	cfg.Model.Kokoro.Tokens = paths.tokens
 	cfg.Model.Kokoro.DataDir = paths.dataDir
 	cfg.Model.Kokoro.LengthScale = 1.0
-	cfg.Model.NumThreads = 2
+	cfg.Model.NumThreads = ttsNumThreads
 	cfg.MaxNumSentences = 2
 
 	engine := sherpa.NewOfflineTts(cfg)
