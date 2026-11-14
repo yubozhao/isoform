@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -101,6 +102,32 @@ func TestMobileDirectPathBesidePinnedRelay(t *testing.T) {
 	if code != http.StatusOK || !strings.Contains(body, `"hubName"`) {
 		t.Fatalf("status over the direct path: %d %s", code, body)
 	}
+	// An attachment (the spoken brief) is readable on the direct path too.
+	bridge.mu.Lock()
+	primary := bridge.client
+	bridge.mu.Unlock()
+	attachment, err := sealAndUploadAttachmentBytes(context.Background(), bridge.attachmentUploader(primary),
+		invitation.Hub, []byte("spoken brief bytes"))
+	if err != nil {
+		t.Fatalf("upload: %v", err)
+	}
+	for _, relayURL := range []string{direct, pinned} {
+		bearer := reply.Data.Bearer
+		if relayURL == pinned {
+			bearer = pinnedBearer
+		}
+		request, _ := http.NewRequest(http.MethodGet, relayURL+"/v1/attachments/"+attachment.ID, nil)
+		request.Header.Set("Authorization", "Bearer "+bearer)
+		response, err := http.DefaultClient.Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("attachment on %s: %d", relayURL, response.StatusCode)
+		}
+	}
+
 	// And back to the pinned relay, which still answers.
 	phone.relay, phone.bearer = pinned, pinnedBearer
 	if code, body = phone.request(t, "GET", "/status", ""); code != http.StatusOK {

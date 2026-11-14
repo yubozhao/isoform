@@ -147,7 +147,7 @@ func uploadMobileBriefAudio(ctx context.Context, a *App, _ string, path string) 
 	if client == nil || identity == nil || readers == 0 {
 		return nil, errMobileAttachmentOffline
 	}
-	return sealAndUploadAttachment(ctx, client, identity.HubID, path)
+	return sealAndUploadAttachment(ctx, bridge.attachmentUploader(client), identity.HubID, path)
 }
 
 // uploadAttachment puts the sealed bytes on the relay with the hub credential

@@ -398,12 +398,11 @@ func (a *App) refreshMobileBriefTodayLiveSoon() {
 	if svc == nil || !svc.beginWork() {
 		return
 	}
-	// The work slot is taken here, before the goroutine starts, so a caller that
-	// waits for the service sees the refresh it asked for.
-	go func() {
-		defer svc.wg.Done()
-		svc.refreshTodayLiveSoon()
-	}()
+	defer svc.wg.Done()
+	// The request does not block: it takes the refresh's own work slots and starts
+	// the pass in a goroutine, so a caller that waits for the service (wg or
+	// todayRefreshWG) sees the refresh it asked for.
+	svc.refreshTodayLiveSoon()
 }
 
 func (a *App) emitBrowserEvent(eventName string, data ...interface{}) {
@@ -422,7 +421,11 @@ func (a *App) emitBrowserEvent(eventName string, data ...interface{}) {
 		if eventName == "mail:synced" {
 			// A mail sync refreshes Today's live sections only; it never stores or
 			// seals an existing sealed brief (TestFiftyMailSyncsLeaveSealedBriefShown).
-			go a.refreshMobileBriefTodayLiveSoon()
+			// Called directly: the refresh takes the service's work slots before it
+			// starts its pass, so a caller that waits for the service sees it. Behind
+			// a go statement the slots were taken late and a wait could return first
+			// (the flaky TestMobileBriefStoredPurposeReadFilterAndPhoneJSON).
+			a.refreshMobileBriefTodayLiveSoon()
 		} else {
 			go a.refreshMobileBriefTodaySoon()
 		}

@@ -3215,6 +3215,10 @@ bundled. It keeps a second hub connection to that sidecar, so one hub is reachab
 - The hub copies to the sidecar every `out`, `brief` and `ack` frame of a device that holds a grant,
   and every `revoke` and `goodbye`. Push fields are dropped (`notify:false`, no notice fields), so a
   push is queued only at the pinned relay. Pairing frames and text messages stay on the pinned relay.
+- Attachments (17) are uploaded to both relays at once while the sidecar link is connected and some
+  device holds a grant; the upload succeeds when either relay takes it. The phone reads an attachment
+  from its current path and, when that path cannot reach it or answers 404, from the other path once,
+  without changing which path comes first.
 - On each sidecar registration the hub re-sends every live grant and revokes listed devices it has
   no grant for. Removing a device removes its grant.
 - Requests from either relay join the same per-device queue, so sequence numbers, replay rules and
