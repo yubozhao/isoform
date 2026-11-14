@@ -137,10 +137,12 @@ func (bridge *mobileBridge) startDirectLink() {
 		// there is no direct path to offer; nothing is retried.
 		if _, err := LocateBundledRelay(); err != nil {
 			bridge.mu.Unlock()
+			log.Printf("[mobile-direct] the direct path is not offered: relay %v", err)
 			return
 		}
 		if _, err := LocateBundledDumbpipe(); err != nil {
 			bridge.mu.Unlock()
+			log.Printf("[mobile-direct] the direct path is not offered: dumbpipe %v", err)
 			return
 		}
 	}

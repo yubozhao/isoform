@@ -196,6 +196,10 @@ func startConfiguredMobileBridge(app *App) (*mobileBridge, error) {
 			bridge.mu.Unlock()
 			if err != nil {
 				log.Printf("[mobile-bridge] iPhone connection not started: %v", err)
+			} else {
+				// A pinned relay gets the direct path beside it at launch too
+				// (PROTOCOL.md section 21.4), not only after Settings enables it.
+				bridge.startDirectLink()
 			}
 		}
 	}
