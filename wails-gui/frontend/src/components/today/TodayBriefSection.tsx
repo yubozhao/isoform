@@ -5,7 +5,7 @@ import { isCommitmentItemKey, isFindTimeLabel } from "./commitment-key";
 import { findTimeRangeFor } from "@/lib/find-time-range";
 import { useCallback, useEffect, useId, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { ArrowUpRight, Check, ChevronRight, Loader2, MessageCircle, Video } from "lucide-react";
+import { ArrowUpRight, Check, ChevronRight, Loader2, Lock, MessageCircle, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DigestMarkdown } from "@/components/digest-markdown";
 import { cn } from "@/lib/utils";
@@ -987,7 +987,10 @@ function MakeNow({ make, building, nextAllowedAt, onMakeNow, now, tr }: {
 function SensitiveExcluded({ count, tr }: { count: number; tr: Translate }) {
     if (count <= 0) return null;
     return (
-        <p className="text-[12px] text-muted" data-testid="brief-sensitive-excluded">
+        // A footnote, not a line of the brief: set off by a hairline at the
+        // card's foot, in caption type, like the card's other notes.
+        <p className="mt-1 flex items-center gap-1.5 border-t border-border-divider pt-3 text-[12px] leading-[1.45] text-muted" data-testid="brief-sensitive-excluded">
+            <Lock aria-hidden className="size-3 shrink-0" />
             {tr("todayBrief.sensitiveExcluded", { count })}
         </p>
     );
@@ -1472,7 +1475,10 @@ function briefParts({
     // last paragraph when that asks something. It closes the card, with the
     // answers under it.
     // The written brief always shows; on a week day the week section follows it.
-    const paragraphs = rawClosing ? narrative.slice(0, -1) : narrative;
+    // A week day has no closing answers (Your week asks its own question), so
+    // a closing question there would be one nobody can answer: it is left off.
+    const weekClosing = week && lastParagraph && /[?？]/.test(lastParagraph.text);
+    const paragraphs = rawClosing || weekClosing ? narrative.slice(0, -1) : narrative;
     const learnedRefs = new Set((brief.sections.learned ?? []).filter((item) => item.kind !== "find").flatMap((item) => item.refs ?? []));
     const paragraphCards = cards.filter((card) =>
         (card.kind === "question" && card.mode === "send" || card.kind === "item" && card.paragraph !== undefined) &&
@@ -1627,7 +1633,9 @@ function briefParts({
                     key={brief.weekQuestion?.weekStart ?? weekAnswer?.weekStart} briefID={brief.briefId}
                     recommendation={brief.weekQuestion?.recommendation} initialAnswer={weekAnswer?.answer} />}
                 {week && (
-                    <div data-testid="your-week-section">
+                    // The week is its own part of the card: a divider and a
+                    // little more room set it off from the written brief.
+                    <div className={cn(paragraphs.length > 0 && "mt-1.5 border-t border-border-divider pt-5")} data-testid="your-week-section">
                         <YourWeekCard
                             week={week}
                             active={active}

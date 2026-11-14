@@ -1945,6 +1945,12 @@ code,
 .today-topics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 @container today-page (min-width: 700px) {
     .today-topics-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .today-topics-grid[data-count="2"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+/* A lone topic spans the row; on a wide page its line sits beside the name. */
+.today-topics-grid[data-count="1"] { grid-template-columns: minmax(0, 1fr); }
+@container today-page (min-width: 520px) {
+    .today-topic-card-alone { flex-direction: row; align-items: baseline; justify-content: space-between; column-gap: 16px; }
 }
 
 /* The phone-sized reading column keeps the same calendar drawing, with less chrome. */
