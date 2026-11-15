@@ -31,10 +31,13 @@ func TestAgentProbeCacheInstantReadAndBackgroundRefresh(t *testing.T) {
 		}
 		return SetupAgent{ID: id, Installed: true, SignedIn: true, Version: "new"}
 	}, func(p AgentProbe) { events <- p }, nil)
-	start := time.Now()
-	done := c.refresh(true)
-	cached := c.snapshot()
-	if time.Since(start) > 100*time.Millisecond || cached.Agents[0].Version != "old" {
+	var done <-chan struct{}
+	var cached AgentProbe
+	finishesWhileHeld(t, "a cache read during a probe", func() {
+		done = c.refresh(true)
+		cached = c.snapshot()
+	})
+	if cached.Agents[0].Version != "old" {
 		t.Fatal("cache read waited for probe")
 	}
 	close(release)

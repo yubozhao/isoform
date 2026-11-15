@@ -130,17 +130,14 @@ func TestTodayLatestBriefReadsTheStoredBriefWithoutWaiting(t *testing.T) {
 	// while a live refresh holds todayMu for its whole source read.
 	briefPrivacyChanged()
 	svc.todayMu.Lock()
-	started := time.Now()
-	view, err := app.GetLatestBrief()
-	elapsed := time.Since(started)
+	var view TodayBriefView
+	var err error
+	finishesWhileHeld(t, "GetLatestBrief during a live refresh", func() { view, err = app.GetLatestBrief() })
 	mainChatReadMemoLoad = previous
 	svc.todayMu.Unlock()
 	svc.todayRefreshWG.Wait()
 	if err != nil || view.Brief == nil || view.Brief.BriefID != brief.BriefID {
 		t.Fatalf("view = %+v, %v", view.Brief, err)
-	}
-	if elapsed >= 100*time.Millisecond {
-		t.Fatalf("GetLatestBrief took %s", elapsed)
 	}
 	if loads != 1 {
 		t.Fatalf("the work records were listed %d times for one read", loads)

@@ -781,11 +781,16 @@ func TestStreamPageWorkerStopsWhenTheDataFolderMoves(t *testing.T) {
 	// Work queued after the move is not this app's and starts no worker.
 	a.queueStreamWork(time.Now(), true, nil)
 	time.Sleep(300 * time.Millisecond)
-	entries, err := os.ReadDir(next)
+	// Only the worker's own folder is checked: HOME is process-wide, so a
+	// goroutine an earlier test left running may create the data folder itself.
+	root, err := flavorDataDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 0 {
-		t.Fatalf("the old worker wrote into the new home: %v", entries)
+	if !strings.HasPrefix(root, next) {
+		t.Fatalf("data folder %s is not under the new home %s", root, next)
+	}
+	if entries, err := os.ReadDir(filepath.Join(root, streamPageDirName)); !os.IsNotExist(err) {
+		t.Fatalf("the old worker wrote saved pages into the new home: %v (err %v)", entries, err)
 	}
 }

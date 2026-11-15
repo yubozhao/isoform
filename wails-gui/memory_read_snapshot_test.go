@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -26,9 +28,29 @@ const (
 type countingMemoryFiles struct {
 	opens atomic.Int64
 	stats atomic.Int64
+	// goroutine, when set, limits the count to reads from that goroutine.
+	goroutine string
+}
+
+// counts reports whether a read from the calling goroutine is counted.
+func (c *countingMemoryFiles) counts() bool {
+	return c.goroutine == "" || currentGoroutine() == c.goroutine
+}
+
+// currentGoroutine is the "goroutine N" header of the calling goroutine's stack.
+func currentGoroutine() string {
+	buf := make([]byte, 64)
+	buf = buf[:runtime.Stack(buf, false)]
+	if i := bytes.IndexByte(buf, '['); i > 0 {
+		buf = buf[:i]
+	}
+	return string(bytes.TrimSpace(buf))
 }
 
 func (c *countingMemoryFiles) ReadDir(name string) ([]os.DirEntry, error) {
+	if !c.counts() {
+		return os.ReadDir(name)
+	}
 	c.opens.Add(1)
 	entries, err := os.ReadDir(name)
 	for i, entry := range entries {
@@ -38,7 +60,9 @@ func (c *countingMemoryFiles) ReadDir(name string) ([]os.DirEntry, error) {
 }
 
 func (c *countingMemoryFiles) ReadFile(name string) ([]byte, error) {
-	c.opens.Add(1)
+	if c.counts() {
+		c.opens.Add(1)
+	}
 	return os.ReadFile(name)
 }
 
@@ -62,6 +86,17 @@ func countMemoryFiles(t testing.TB) *countingMemoryFiles {
 	previous := memoryFiles
 	memoryFiles = counter
 	t.Cleanup(func() { memoryFiles = previous })
+	return counter
+}
+
+// countMemoryFilesOfThisGoroutine counts only the reads the calling goroutine
+// makes. The memory read path reads in its caller's goroutine, and HOME is
+// process-wide: a goroutine an earlier test left running may read the same
+// folder at the same time and must not count against this test.
+func countMemoryFilesOfThisGoroutine(t testing.TB) *countingMemoryFiles {
+	t.Helper()
+	counter := countMemoryFiles(t)
+	counter.goroutine = currentGoroutine()
 	return counter
 }
 
@@ -420,7 +455,7 @@ func TestHiddenNotesAreNotReadAgainOnARescan(t *testing.T) {
 	if err != nil || len(first) != fictionalMemoryNotes-hidden {
 		t.Fatalf("first read: %d notes, %v", len(first), err)
 	}
-	files := countMemoryFiles(t)
+	files := countMemoryFilesOfThisGoroutine(t)
 	app.invalidateMemoryExternalReads()
 	start := time.Now()
 	got, err := app.GetMemoryEntries()

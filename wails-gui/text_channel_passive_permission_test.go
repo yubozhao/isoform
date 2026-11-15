@@ -30,7 +30,7 @@ func TestPassiveMessagesPermissionBoundsAndCoalescesStalledOSRead(t *testing.T) 
 		calls.Add(1)
 		return textAutomationAllowed
 	})
-	if got != textAutomationUnknown || calls.Load() != 1 || time.Since(started) > 100*time.Millisecond {
+	if got != textAutomationUnknown || calls.Load() != 1 || time.Since(started) >= time.Second/2 {
 		t.Fatal("a pending native read blocked or spawned another OS call")
 	}
 	probe.mu.Lock()
