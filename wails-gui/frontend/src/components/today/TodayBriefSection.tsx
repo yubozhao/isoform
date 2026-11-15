@@ -57,6 +57,8 @@ import { useBriefHoldOffer } from "./useBriefHoldOffer";
 import { useDirectHold } from "./useDirectHold";
 import { MorningWeekQuestion } from "./MorningWeekQuestion";
 import { TodayNoticedAction } from "./TodayNoticedAction";
+import { useFeatureSwitches } from "@/hooks/useFeatureSwitches";
+import type { FeatureSwitches } from "@/lib/wails-shim-app";
 
 export { briefSlotKey } from "@/lib/brief-time";
 
@@ -567,6 +569,7 @@ export function TodayBriefSection({
     topics?: ReactNode;
 }) {
     const { t, i18n } = useTranslation("today");
+    const features = useFeatureSwitches();
     const beliefReview = useTodayWeekBelief(active);
     const tr: Translate = (key, options) => t(key as never, options as never) as unknown as string;
     // Only a brief with content is observed; its card holds the ref.
@@ -754,6 +757,7 @@ export function TodayBriefSection({
             now,
             cardsShown: observationPaused !== null,
             paused: observationPaused === true,
+            features,
             cardRef: seenRef,
             active,
             goalCheckIn,
@@ -1207,6 +1211,7 @@ function briefParts({
     now,
     cardsShown,
     paused,
+    features,
     cardRef,
     onCardGone,
     active = true,
@@ -1257,6 +1262,8 @@ function briefParts({
     cardsShown: boolean;
     /** Observation is paused: the card says why its buttons are gone. */
     paused: boolean;
+    /** Features turned off in the rework hide their actions. */
+    features: FeatureSwitches;
     cardRef: React.RefObject<HTMLElement>;
     /** A card left the brief since Today read it. */
     onCardGone: (retry: () => void) => void;
@@ -1408,7 +1415,9 @@ function briefParts({
         // Only answers bound by the computer belong under a closing question;
         // older ordinary actions must never stand in for a missing answer.
         (!rawClosing || card.mode === "send" && !!card.answerTo?.trim()) &&
-        (card.mode === "open_activity" ? !paused && card.target && handlers.onOpenActivitySuggestion : card.mode === "send" && card.message.trim()));
+        // "Make it a routine" and "Add follow-up" schedule an automation;
+        // they are not offered while automations are off.
+        (card.mode === "open_activity" ? features.automations && !paused && card.target && handlers.onOpenActivitySuggestion : card.mode === "send" && card.message.trim()));
     // One answer per offer (at most two), then "Not now" (today-review v1.1.8 #3).
     const actionCards = actionCandidates.slice(0, rawClosing && CLOSING_DECLINE.test(actionCandidates[2]?.label?.trim() ?? "") ? 3 : 2);
     const closing = rawClosing && actionCards.length > 0 ? rawClosing : null;

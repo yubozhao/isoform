@@ -1009,6 +1009,19 @@ describe('noticed Activity navigation cards', () => {
         expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
     });
 
+    it.each([
+        ["follow_up", "Add follow-up"],
+        ["routine", "Make a routine"],
+    ] as const)("does not offer %s while automations are off", (action, label) => {
+        (globalThis as Record<string, unknown>).__isoformFeatureSwitchesForTest = { automations: false, playbooks: true, proactiveVoice: true, calendarHolds: true };
+        {
+            const target = { date: "2026-10-14", suggestionId: "suggestion-1", action };
+            const doc = brief({ cards: [{ id: "activity", kind: "action", mode: "open_activity", label, message: "", refs: ["e1"], target }] });
+            render(<TodayBriefSection view={view({ brief: doc })} loading={false} make="idle" nextAllowedAt="" onMakeNow={vi.fn()} handlers={{ ...handlers(), onOpenActivitySuggestion: vi.fn() }} now={NOW} observationPaused={false} />);
+            expect(screen.queryByRole("button", { name: label })).not.toBeInTheDocument();
+        }
+    });
+
     it('hides navigation when observation is paused or the target is absent', () => {
         const card: MobileBriefCard = { id: 'offer-1', kind: 'action', mode: 'open_activity', label: 'Add follow-up', message: '', refs: ['e1'] };
         const { unmount } = render(<TodayBriefSection view={view({ brief: brief({ cards: [card] }) })} loading={false} make="idle" nextAllowedAt="" onMakeNow={vi.fn()} handlers={handlers()} observationPaused={false} />);

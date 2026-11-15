@@ -6183,6 +6183,16 @@ export const FindStreamItemCursor = appBinding<[sessionLocalID: string, itemID: 
 export const ListMainChatAnswerChips = appBinding<[string[]], Record<string, string[]>>("ListMainChatAnswerChips");
 
 export const GetClockFormat = appBinding<[], string>("GetClockFormat");
+
+/** Features turned off in the rework (feature_switches.go); off unless
+ *  YANSU_FEATURES turns one back on. */
+export interface FeatureSwitches {
+    automations: boolean;
+    playbooks: boolean;
+    proactiveVoice: boolean;
+    calendarHolds: boolean;
+}
+export const GetFeatureSwitches = appBinding<[], FeatureSwitches>("GetFeatureSwitches");
 export const GetMainChatOverview = appBinding<[], import("../../wailsjs/go/models").main.MainChatOverview>("GetMainChatOverview");
 export const GetMainChatWaiting = appBinding<[], import("../../wailsjs/go/models").main.MainChatWaitingState>("GetMainChatWaiting");
 export const ListMainChatWaitingItems = appBinding<[string, number], import("../../wailsjs/go/models").main.MainChatWaitingPage>("ListMainChatWaitingItems");

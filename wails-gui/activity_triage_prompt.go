@@ -78,11 +78,12 @@ func (a *App) loadTriageFeatureFlags(ctx context.Context) triageFeatureFlags {
 		}
 		return v != "false"
 	}
+	// A feature that is off asks the model for nothing (feature_switches.go).
 	return triageFeatureFlags{
 		Memory:     read(triageEnableMemoryKey),
 		Knowledge:  read(triageEnableKnowledgeKey),
 		Shadow:     read(triageEnableShadowKey),
-		Automation: read(triageEnableAutomationKey),
+		Automation: featureOn(featureAutomations) && read(triageEnableAutomationKey),
 		Handoff:    read(triageEnableHandoffKey),
 		SOP:        read(triageEnableSOPKey),
 	}

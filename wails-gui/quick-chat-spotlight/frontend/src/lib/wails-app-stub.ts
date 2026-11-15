@@ -308,6 +308,7 @@ export const GetExtractorRecordCountsByDateRange = makeNoop("GetExtractorRecordC
 export const GetExtractorRecordDetail = makeNoop("GetExtractorRecordDetail");
 export const GetExtractorRecordsByDate = makeNoop("GetExtractorRecordsByDate");
 export const GetExtractorRunLog = makeNoop("GetExtractorRunLog");
+export const GetFeatureSwitches = makeNoop("GetFeatureSwitches");
 export const GetFeishuChats = makeNoop("GetFeishuChats");
 export const GetFeishuDynamicScanHistory = makeNoop("GetFeishuDynamicScanHistory");
 export const GetFeishuReceiverStatus = makeNoop("GetFeishuReceiverStatus");

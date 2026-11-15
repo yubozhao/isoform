@@ -379,6 +379,12 @@ func (s *CronScheduler) AddJob(ctx context.Context, input CronJobInput) (CronJob
 	if input.SurfaceKind == todayNewsSurfaceKind && input.Name == todayNewsJobName {
 		return CronJobState{}, fmt.Errorf("daily news has been retired")
 	}
+	if !cronSurfaceOn(input.SurfaceKind) {
+		if input.SurfaceKind == playbookSurfaceKind {
+			return CronJobState{}, errFeatureOff(featurePlaybooks)
+		}
+		return CronJobState{}, errFeatureOff(featureAutomations)
+	}
 	if err := validateTargetProjectDir(input.TargetConfig); err != nil {
 		return CronJobState{}, err
 	}
@@ -1459,9 +1465,35 @@ func (s *CronScheduler) loadJobs(ctx context.Context) error {
 
 	for i := range rows {
 		r := rows[i]
+		// A job whose feature is off stays saved but is never loaded: no
+		// timer, no catch-up run, not listed, not runnable.
+		if !cronSurfaceOn(r.SurfaceKind) {
+			continue
+		}
 		s.jobs[r.ID] = &r
 	}
 	return nil
+}
+
+// cronCoreSurfaceKinds are the scheduler's internal one-shot jobs that chat
+// and Tasks rely on: open answer checks, handoffs and topic finds. They run
+// whatever the feature switches say.
+var cronCoreSurfaceKinds = map[string]bool{openAnswerSurfaceKind: true, "handoff": true, todayNewsSurfaceKind: true}
+
+// cronSurfaceOn says whether jobs of a surface kind may load, be added or run:
+// core jobs always, playbook schedules with the playbooks switch, and every
+// other job (user automations, Today's suggested schedules, scheduled
+// initiatives) with the automations switch.
+func cronSurfaceOn(surfaceKind string) bool {
+	if cronCoreSurfaceKinds[surfaceKind] {
+		return true
+	}
+	switch surfaceKind {
+	case playbookSurfaceKind:
+		return featureOn(featurePlaybooks)
+	default:
+		return featureOn(featureAutomations)
+	}
 }
 
 func retiredTodayNewsJob(job *storage.CronJobRow) bool {
@@ -2024,6 +2056,15 @@ func formatDuration(d time.Duration) string {
 // short, descriptive name for an automation based on its description/prompt.
 // Falls back to truncation if the runner is unavailable or the call fails.
 func (a *App) GenerateAutomationName(description string) string {
+	// The binding is an automations entry; the scheduler names its own core
+	// jobs through generateAutomationName.
+	if !featureOn(featureAutomations) {
+		return ""
+	}
+	return a.generateAutomationName(description)
+}
+
+func (a *App) generateAutomationName(description string) string {
 	description = strings.TrimSpace(description)
 	if description == "" {
 		return "Untitled Automation"
