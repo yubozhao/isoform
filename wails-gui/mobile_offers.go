@@ -770,6 +770,9 @@ func (a *App) mobileOffersWithHolds(ctx context.Context, holds bool) (mobileOffe
 	if err != nil || before != after || sourceRevision != a.activity.store.readPrivacyRevision.Load() {
 		return mobileOfferList{Offers: []mobileOffer{}}, errMobileStoreUnavailable
 	}
+	for _, offer := range result.Offers {
+		noteProposalMade(judgmentOffer, offer.ID)
+	}
 	return result, nil
 }
 

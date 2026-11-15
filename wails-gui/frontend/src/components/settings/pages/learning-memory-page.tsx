@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { AIMemoryImportDialog } from "@/components/ai-memory-import-dialog";
 import { SelfUpdatesSettings } from "@/components/self-updates-settings";
 import { MemoryContextDebugSettings } from "@/components/memory-context-debug-settings";
+import { DailyTopicsPreview } from "@/components/daily-topics-preview";
 import { SettingsCard, SettingsRow } from "@/components/settings/settings-primitives";
 import { SettingsAdvanced } from "@/components/settings/settings-advanced";
 import { formatBytes } from "@/components/settings/settings-format";
@@ -578,6 +579,16 @@ function ChatContextPreviewCard() {
     );
 }
 
+// The daily topics preview, while design draws the real screen.
+function DailyTopicsPreviewCard() {
+    const { t } = useTranslation("settings");
+    return (
+        <SettingsCard title={t("debug.dailyTopics.title")} description={t("debug.dailyTopics.description")}>
+            <DailyTopicsPreview />
+        </SettingsCard>
+    );
+}
+
 // ── Learning and memory page ──
 
 export type LearningMemoryPageProps = KnowledgeLinks;
@@ -611,6 +622,7 @@ export function LearningMemoryPage({ onOpenMemory, onOpenPeople, onOpenProfile }
             >
                 <LearnByComparisonSettings />
                 {devTools && <ChatContextPreviewCard />}
+                {devTools && <DailyTopicsPreviewCard />}
                 {devTools && <SearchIndexSettings />}
             </SettingsAdvanced>
         </>

@@ -238,6 +238,9 @@ func (a *App) buildDailyTopics(ctx context.Context) error {
 	for _, t := range built.Topics {
 		if t.Proposal != nil {
 			proposed++
+			if t.Proposal.State == topicday.StateProposed {
+				noteProposalMade(judgmentTopic, t.Proposal.ID)
+			}
 		}
 	}
 	log.Printf("[topics-daily] built topics=%d proposals=%d ms=%d", len(built.Topics), proposed, time.Since(started).Milliseconds())

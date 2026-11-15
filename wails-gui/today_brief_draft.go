@@ -204,6 +204,14 @@ func (a *App) GetTodayBriefDraft(ref TodayChatContextRef) (*TodayBriefDraft, err
 // a record proves now. The person may edit the subject and text; the address
 // is never taken from the caller. Send is the only permission to send.
 func (a *App) SendTodayBriefDraft(ref TodayChatContextRef, answerID, subject, text string) error {
+	err := a.sendTodayBriefDraft(ref, answerID, subject, text)
+	if err == nil {
+		noteBriefActed()
+	}
+	return err
+}
+
+func (a *App) sendTodayBriefDraft(ref TodayChatContextRef, answerID, subject, text string) error {
 	if a == nil || a.store == nil {
 		return errTodayChatItemUnavailable
 	}

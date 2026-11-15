@@ -156,6 +156,9 @@ func (a *App) decideTaskSuggestionWithHolds(ctx context.Context, id, decision, r
 		default:
 			return fmt.Errorf("unsupported idea kind %q", offer.Kind)
 		}
+		if err == nil {
+			noteProposalAnswered(judgmentOffer, id, false)
+		}
 		return err
 	}
 	return errTaskSuggestionNotFound

@@ -6365,3 +6365,39 @@ export const DiscardWorkProfileDraft = appBinding<[string], import('./work-profi
 export const PreviewWorkProfileUpload = appBinding<[string], import('./work-profile').WorkProfileUpload>('PreviewWorkProfileUpload');
 export const ApproveWorkProfile = appBinding<[string, import('./work-profile').WorkProfileUpload], import('./work-profile').WorkProfileApprovalResult>('ApproveWorkProfile');
 export const BuildWorkProfileDraft = appBinding<[], import('./work-profile').WorkProfileView>('BuildWorkProfileDraft');
+
+// Daily topics with proposed work (topics_daily.go), behind its switch.
+export interface DailyTopicProposal {
+    id: string;
+    title: string;
+    why?: string;
+    state: "proposed" | "running" | "done" | "failed" | "declined" | "not_mine";
+    taskId?: string;
+    result?: string;
+}
+
+export interface DailyTopic {
+    id: string;
+    kind: "project" | "subject";
+    name: string;
+    why?: string;
+    lastSeenAt?: string;
+    latest?: string;
+    next?: string;
+    proposal?: DailyTopicProposal;
+}
+
+export interface DailyTopicsView {
+    enabled: boolean;
+    day?: string;
+    builtAt?: number;
+    topics: DailyTopic[];
+}
+
+export const GetDailyTopics = appBinding<[], DailyTopicsView>("GetDailyTopics");
+export const SetDailyTopicsEnabled = appBinding<[boolean], DailyTopicsView>("SetDailyTopicsEnabled");
+export const RefreshDailyTopics = appBinding<[], DailyTopicsView>("RefreshDailyTopics");
+export const AnswerDailyTopicProposal = appBinding<
+    [string, string, "yes" | "no" | "not_mine"],
+    DailyTopic
+>("AnswerDailyTopicProposal");

@@ -30,6 +30,14 @@ func (a *App) PostMorningBriefWeekAnswerFromChip(briefID, previous, answer strin
 }
 
 func (a *App) postMorningBriefWeekAnswer(briefID, previous, answer string, fromChip bool) error {
+	err := a.postMorningBriefWeekAnswerOnce(briefID, previous, answer, fromChip)
+	if err == nil {
+		noteBriefActed()
+	}
+	return err
+}
+
+func (a *App) postMorningBriefWeekAnswerOnce(briefID, previous, answer string, fromChip bool) error {
 	answer = strings.TrimSpace(answer)
 	if answer == "" || utf8.RuneCountInString(answer) > 160 || strings.ContainsAny(answer, "\r\n") || !mobileBriefCopySafe(answer) || redactThreadOutcomeText(answer) != answer {
 		return errors.New("invalid week intent")
