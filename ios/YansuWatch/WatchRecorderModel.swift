@@ -28,6 +28,7 @@ final class WatchRecorderModel: NSObject, ObservableObject {
     private var recordingID: String?
     private var partStartedAt: Date?
     private var interrupted = false
+    private let heartRate = WatchHeartRateSampler()
 
     override init() {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -121,6 +122,8 @@ final class WatchRecorderModel: NSObject, ObservableObject {
         guard recorder.record(forDuration: WatchRecordingWire.partSeconds) else { throw CocoaError(.fileWriteUnknown) }
         self.recorder = recorder
         partStartedAt = date
+        // Only when the wearer turned it on, and only while a part is being recorded.
+        if WatchContextSettings.heartRate { heartRate.begin(at: date) }
     }
 
     /// The running part reached its length: keep it and start the next one.
@@ -156,6 +159,7 @@ final class WatchRecorderModel: NSObject, ObservableObject {
             return
         }
         let seconds = length ?? recorder.currentTime
+        let context = WatchRecordingContext(heartRate: heartRate.end(), location: nil)
         recorder.delegate = nil
         recorder.stop()
         self.recorder = nil
@@ -167,7 +171,7 @@ final class WatchRecorderModel: NSObject, ObservableObject {
             return
         }
         library.addPart(recordingID: recordingID, startedAt: partStartedAt, durationSeconds: seconds, last: last,
-                        model: WKInterfaceDevice.current().model)
+                        model: WKInterfaceDevice.current().model, context: context)
         link.sendUnsent()
     }
 

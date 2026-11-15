@@ -22,6 +22,7 @@ struct WatchRootView: View {
                         }
                         .padding(.top, 4)
                     }
+                    WatchContextSection()
                 }
                 .padding(.horizontal, 4)
             }

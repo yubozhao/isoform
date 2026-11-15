@@ -33,6 +33,10 @@
 	</array>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>NSHealthShareUsageDescription</key>
+	<string>Isoform reads your heart rate while you record, so your brief can tell how intense the moment was. It never writes to Health.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>Isoform does not write to Health. It only reads your heart rate while you record.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Isoform records when you tap record, and sends the recording to your computer.</string>
 	<key>UIBackgroundModes</key>

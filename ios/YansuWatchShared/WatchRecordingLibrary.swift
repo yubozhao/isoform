@@ -13,6 +13,8 @@ struct WatchRecordingPart: Codable, Equatable, Sendable {
     var last: Bool
     /// The phone confirmed it holds this part; the file is gone from the watch.
     var sent: Bool
+    /// Heart rate and coarse location during the part. Removed from the watch with the audio.
+    var context: WatchRecordingContext? = nil
 }
 
 struct WatchRecordingEntry: Codable, Equatable, Identifiable, Sendable {
@@ -86,7 +88,7 @@ final class WatchRecordingLibrary: @unchecked Sendable {
     /// what to tell the phone. Nil when the recording is unknown or the part number is out of range.
     @discardableResult
     func addPart(recordingID: String, startedAt: Date, durationSeconds: Double, last: Bool,
-                 model: String? = nil) -> WatchRecordingPartInfo? {
+                 model: String? = nil, context: WatchRecordingContext? = nil) -> WatchRecordingPartInfo? {
         lock.withLock {
             guard let index = entries.firstIndex(where: { $0.id == recordingID }), !entries[index].finished,
                   durationSeconds > 0 else { return nil }
@@ -96,11 +98,11 @@ final class WatchRecordingLibrary: @unchecked Sendable {
             let closes = last || part == WatchRecordingWire.maxParts - 1
             entries[index].parts.append(WatchRecordingPart(
                 part: part, fileName: Self.fileName(recordingID: recordingID, part: part), startedAt: startedAt,
-                durationSeconds: durationSeconds, last: closes, sent: false))
+                durationSeconds: durationSeconds, last: closes, sent: false, context: context))
             if closes { entries[index].finished = true }
             saveLocked()
             return WatchRecordingPartInfo(recordingID: recordingID, part: part, last: closes, startedAt: startedAt,
-                                          durationSeconds: durationSeconds, model: model)
+                                          durationSeconds: durationSeconds, model: model, context: context)
         }
     }
 
@@ -137,6 +139,7 @@ final class WatchRecordingLibrary: @unchecked Sendable {
             guard let index = entries.firstIndex(where: { $0.id == recordingID }),
                   let partIndex = entries[index].parts.firstIndex(where: { $0.part == part }) else { return }
             entries[index].parts[partIndex].sent = true
+            entries[index].parts[partIndex].context = nil
             try? fileManager.removeItem(at: directory.appendingPathComponent(entries[index].parts[partIndex].fileName))
             saveLocked()
         }
@@ -148,7 +151,8 @@ final class WatchRecordingLibrary: @unchecked Sendable {
             entries.sorted { $0.startedAt < $1.startedAt }.flatMap { entry in
                 entry.parts.filter { !$0.sent }.map { part in
                     (WatchRecordingPartInfo(recordingID: entry.id, part: part.part, last: part.last,
-                                            startedAt: part.startedAt, durationSeconds: part.durationSeconds),
+                                            startedAt: part.startedAt, durationSeconds: part.durationSeconds,
+                                            context: part.context),
                      directory.appendingPathComponent(part.fileName))
                 }
             }

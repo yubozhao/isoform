@@ -310,6 +310,8 @@ struct HubStatus: Decodable, Equatable, Sendable {
     var recordings: Bool? = nil
     /// The computer takes the owner's voice from the phone (PROTOCOL.md 25). Older computers omit it.
     var ownerVoice: Bool? = nil
+    /// The computer takes the heart rate and location of a recording part (PROTOCOL.md 24.4).
+    var recordingContext: Bool? = nil
     var briefSchedule: [ScheduledPhoneBrief]? = nil
 }
 
