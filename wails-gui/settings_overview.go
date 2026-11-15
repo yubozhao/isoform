@@ -289,12 +289,12 @@ func (a *App) readOverviewSources() overviewSources {
 func (a *App) settingsOverviewSees(ignoredAppsCount int) SettingsOverviewSees {
 	pause := a.observationPauseSnapshot()
 	sees := SettingsOverviewSees{
-		Watching:               !pause.enabled,
+		Watching:               !pause.Enabled,
 		IgnoredAppsCount:       ignoredAppsCount,
 		PasswordManagersHidden: true,
 	}
-	if !pause.resumeAt.IsZero() {
-		formatted := pause.resumeAt.UTC().Format(time.RFC3339Nano)
+	if !pause.ResumeAt.IsZero() {
+		formatted := pause.ResumeAt.UTC().Format(time.RFC3339Nano)
 		sees.PausedUntil = &formatted
 	}
 	return sees

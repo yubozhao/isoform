@@ -8,6 +8,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"wails-gui/internal/privacy"
 )
 
 // closedEyesModeChangedEvent tells the frontend that observation was paused
@@ -26,34 +28,12 @@ const (
 	observationDeadlineCheckInterval = time.Second
 )
 
-// observationPauseSnapshot publishes the flag and deadline as one immutable value.
-type observationPauseSnapshot struct {
-	enabled  bool
-	resumeAt time.Time
-}
-
-type observationPauseAtomic struct {
-	state atomic.Pointer[observationPauseSnapshot]
-}
-
-func (s *observationPauseAtomic) snapshot() observationPauseSnapshot {
-	if state := s.state.Load(); state != nil {
-		return *state
-	}
-	return observationPauseSnapshot{}
-}
-
-func (s *observationPauseAtomic) Load() bool { return s.snapshot().enabled }
-
-// Store retains the boolean control's manual-pause semantics.
-func (s *observationPauseAtomic) Store(enabled bool) { s.publish(enabled, time.Time{}) }
-
-func (s *observationPauseAtomic) publish(enabled bool, deadline time.Time) {
-	if !enabled {
-		deadline = time.Time{}
-	}
-	s.state.Store(&observationPauseSnapshot{enabled: enabled, resumeAt: deadline})
-}
+// The Closed Eyes flag and deadline live in internal/privacy; these names keep
+// the root package's callers unchanged.
+type (
+	observationPauseSnapshot = privacy.PauseSnapshot
+	observationPauseAtomic   = privacy.PauseState
+)
 
 type closedEyesModeState struct {
 	enabled         observationPauseAtomic
@@ -78,18 +58,18 @@ func (a *App) IsClosedEyesModeEnabled() bool {
 	if a == nil {
 		return false
 	}
-	return a.observationPauseSnapshot().enabled
+	return a.observationPauseSnapshot().Enabled
 }
 
 // Unknown persisted policy is a read hold, separate from a manual pause.
 // Keep status and delivery reads atomic even while restoration owns mu.
 func (a *App) observationPauseSnapshot() observationPauseSnapshot {
 	if a.closedEyes.policyPending.Load() {
-		return observationPauseSnapshot{enabled: true}
+		return observationPauseSnapshot{Enabled: true}
 	}
-	state := a.closedEyes.enabled.snapshot()
+	state := a.closedEyes.enabled.Snapshot()
 	if a.closedEyes.policyPending.Load() {
-		return observationPauseSnapshot{enabled: true}
+		return observationPauseSnapshot{Enabled: true}
 	}
 	return state
 }
@@ -194,7 +174,7 @@ func (a *App) setObservationPause(enabled bool, deadline time.Time, expectedGene
 		withdrawnAt = a.observationWallNowLocked()
 	}
 	if a.closedEyes.enabled.Load() == enabled {
-		a.closedEyes.enabled.publish(enabled, deadline)
+		a.closedEyes.enabled.Publish(enabled, deadline)
 		return enabled, persistenceErr
 	}
 	changed = true
@@ -215,7 +195,7 @@ func (a *App) setObservationPause(enabled bool, deadline time.Time, expectedGene
 			a.closedEyes.resumeActivity = true
 			a.closedEyes.resumeListening = true
 		}
-		a.closedEyes.enabled.publish(true, deadline)
+		a.closedEyes.enabled.Publish(true, deadline)
 		if a.closedEyes.resumeListening {
 			a.stopBackgroundListeningForClosedEyes()
 		}
@@ -237,7 +217,7 @@ func (a *App) setObservationPause(enabled bool, deadline time.Time, expectedGene
 	// takes a copy made in the pause's last second for a new one; the
 	// deferred call covers a copy made while resuming.
 	a.clipboardPauseChanged()
-	a.closedEyes.enabled.publish(false, time.Time{})
+	a.closedEyes.enabled.Publish(false, time.Time{})
 	hideClosedEyesOverlay()
 	updateMenuBarClosedEyesMode(false)
 
@@ -328,7 +308,7 @@ func (a *App) observationResumeAt() (time.Time, bool) {
 		return time.Time{}, false
 	}
 	state := a.observationPauseSnapshot()
-	return state.resumeAt, !state.resumeAt.IsZero()
+	return state.ResumeAt, !state.ResumeAt.IsZero()
 }
 
 // restoreObservationPolicy validates the durable pause before storage is
@@ -384,7 +364,7 @@ func (a *App) restoreObservationPolicy() {
 		a.recordObservationPause(true, time.Now())
 	}
 	a.closedEyes.resumeAt = deadline
-	a.closedEyes.enabled.publish(paused, deadline)
+	a.closedEyes.enabled.Publish(paused, deadline)
 }
 
 // startObservationResumeTimer runs after native menu setup and before service

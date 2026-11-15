@@ -32,6 +32,6 @@ func (a *App) briefPrivacyPrint() string {
 		sum.Write([]byte(line))
 		sum.Write([]byte{0})
 	}
-	return strconv.FormatUint(mobileBriefPrivacyEpoch.Load(), 36) + "|" + strconv.FormatBool(state.enabled) +
-		"|" + fmt.Sprintf("%t", !state.resumeAt.IsZero()) + "|" + hex.EncodeToString(sum.Sum(nil))
+	return strconv.FormatUint(mobileBriefPrivacyEpoch.Load(), 36) + "|" + strconv.FormatBool(state.Enabled) +
+		"|" + fmt.Sprintf("%t", !state.ResumeAt.IsZero()) + "|" + hex.EncodeToString(sum.Sum(nil))
 }
