@@ -133,7 +133,7 @@ func TestTaskLinkOffOrClosedEyesRefusesAndWithdraws(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a.closedEyes.enabled.publish(true, time.Time{})
+	a.closedEyes.enabled.Publish(true, time.Time{})
 	if _, err := a.createTaskLink(tasklink.Link{ID: "task-2", AgentID: "claude", Text: taskLinkTestText}); err != errTaskLinksClosedEyes {
 		t.Fatalf("create under Closed Eyes = %v", err)
 	}
@@ -141,7 +141,7 @@ func TestTaskLinkOffOrClosedEyesRefusesAndWithdraws(t *testing.T) {
 		t.Fatalf("GET under Closed Eyes = %d, want 410", rec.Code)
 	}
 	// The refused read spent the link: it stays gone after Closed Eyes ends.
-	a.closedEyes.enabled.publish(false, time.Time{})
+	a.closedEyes.enabled.Publish(false, time.Time{})
 	if rec := taskLinkGet(t, a, taskLinkToken(t, link)); rec.Code != http.StatusGone {
 		t.Fatalf("GET after Closed Eyes = %d, want 410", rec.Code)
 	}

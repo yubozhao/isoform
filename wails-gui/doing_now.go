@@ -164,10 +164,10 @@ func (a *App) GetDoingNow() (perfValue DoingNow) {
 	status := a.observationAudioStatus(in.paused)
 	// Recheck after native probes; a pause suppresses the additive app data.
 	pause := a.observationPauseSnapshot()
-	if pause.enabled {
+	if pause.Enabled {
 		view = DoingNow{Kind: doingNowPaused}
-		if !pause.resumeAt.IsZero() {
-			view.PausedUntil = pause.resumeAt.UnixMilli()
+		if !pause.ResumeAt.IsZero() {
+			view.PausedUntil = pause.ResumeAt.UnixMilli()
 		}
 	}
 	return observationDoingNow(view, front, status, in.inMeeting)
