@@ -1770,3 +1770,61 @@ func TestABrowserCallKeepsShortMicGaps(t *testing.T) {
 		})
 	}
 }
+
+// Speech the transcriber finishes after a call ended still says it was
+// captured in the call. Inside the saved call's span it stays activity and
+// never becomes a second, overlapping meeting session; in-call speech after
+// that span is still inferred as a meeting.
+func TestLateSpeechOfAnEndedCallIsNotASecondMeeting(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	store := newLifecycleStore(t)
+	writer, err := newMeetingAudioWriter(store.AudioDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now().Add(-10 * time.Minute)
+	writer.SetMeeting("Zoom", "us.zoom.xos", "meeting-late")
+	writer.WriteCapturedChunk(timedChunk(backgroundListeningSourceMicrophone, start, constSamples(meetingAudioSampleRate, 10)))
+	app := &App{activity: &activityMonitorState{
+		buf:                activitybuf.NewRingBuffer(64, 2*time.Hour),
+		store:              store,
+		inMeeting:          true,
+		meetingAppName:     "Zoom",
+		meetingBundleID:    "us.zoom.xos",
+		meetingID:          "meeting-late",
+		meetingStartMs:     start.UnixMilli(),
+		meetingAudioWriter: writer,
+		capture:            failingScreenCapture{},
+	}}
+	speech := func(at time.Time, text string) activitymon.ActivityEvent {
+		return activitymon.ActivityEvent{Timestamp: at.UnixMilli(), Kind: activitymon.EventSpeech, AppName: "Zoom",
+			AppBundleID: "us.zoom.xos", WindowTitle: "Zoom Meeting", SpeechText: text, SpeechSource: "microphone", SpeechInCall: true}
+	}
+	app.activity.buf.Push(speech(start.Add(time.Minute), "the call starts"))
+	app.activity.buf.Push(speech(start.Add(8*time.Minute), "the call ends soon"))
+	app.extractSession("meeting_ended")
+	if got := meetingSessions(t, store); len(got) != 1 {
+		t.Fatalf("the call is one meeting session: %+v", got)
+	}
+
+	// The transcriber returns a chunk from the middle of the call.
+	app.activity.buf.Push(speech(start.Add(4*time.Minute), "a sentence transcribed late"))
+	app.extractSession("idle_transition")
+	if got := meetingSessions(t, store); len(got) != 1 {
+		t.Fatalf("late speech of the ended call became a second meeting session: %+v", got)
+	}
+	all, err := store.GetSessionsByAge()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("the late speech is kept as activity: %d sessions", len(all))
+	}
+
+	// In-call speech after the saved call's span is still a meeting.
+	app.activity.buf.Push(speech(time.Now().Add(time.Minute), "a new call"))
+	app.extractSession("idle_transition")
+	if got := meetingSessions(t, store); len(got) != 2 {
+		t.Fatalf("in-call speech after the span is still inferred as a meeting: %d meeting sessions", len(got))
+	}
+}
