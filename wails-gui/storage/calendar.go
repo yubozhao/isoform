@@ -293,6 +293,27 @@ func (s *Store) SetCalendarEventSession(ctx context.Context, eventID, sessionID 
 	return err
 }
 
+const ownCalendarEmailsSQL = `SELECT lower(email) FROM calendar_event_attendees WHERE is_me != 0 AND email != ''`
+
+// CalendarOwnEmails returns, lower-cased, every address a calendar has
+// reported as the current user.
+func (s *Store) CalendarOwnEmails(ctx context.Context) (map[string]bool, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT `+strings.TrimPrefix(ownCalendarEmailsSQL, "SELECT "))
+	if err != nil {
+		return nil, fmt.Errorf("own calendar emails: %w", err)
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var email string
+		if err := rows.Scan(&email); err != nil {
+			return nil, err
+		}
+		out[email] = true
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) attachCalendarAttendees(ctx context.Context, events []CalendarEventRow) ([]CalendarEventRow, error) {
 	if len(events) == 0 {
 		return events, nil
@@ -305,10 +326,14 @@ func (s *Store) attachCalendarAttendees(ctx context.Context, events []CalendarEv
 		ids = append(ids, ev.ID)
 		placeholders = append(placeholders, "?")
 	}
+	// An address the calendar reported as the current user on any event is
+	// the person on every event: rows stored before the sync marked a second
+	// account's address read it as a guest.
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT event_id, email, name, role, status, is_me, principal_id
-		FROM calendar_event_attendees WHERE event_id IN (`+strings.Join(placeholders, ",")+`)
-		ORDER BY is_me DESC, email ASC, name ASC
+		SELECT event_id, email, name, role, status, me, CASE WHEN me = 1 THEN '' ELSE principal_id END
+		FROM (SELECT a.*, CASE WHEN a.is_me != 0 OR (a.email != '' AND lower(a.email) IN (`+ownCalendarEmailsSQL+`)) THEN 1 ELSE 0 END AS me
+		      FROM calendar_event_attendees a WHERE a.event_id IN (`+strings.Join(placeholders, ",")+`))
+		ORDER BY me DESC, email ASC, name ASC
 	`, ids...)
 	if err != nil {
 		return nil, fmt.Errorf("list attendees: %w", err)

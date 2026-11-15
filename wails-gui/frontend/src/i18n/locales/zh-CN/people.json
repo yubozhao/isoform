@@ -230,6 +230,7 @@
         "title_other": "{{count}} 个资料看起来是同一个人：{{name}}",
         "reasonHandle": "同一个 {{app}} 账号，显示名不同：{{names}}。",
         "reasonEmail": "同一个邮箱地址，名字不同：{{names}}。",
+        "reasonName": "同一个 {{app}} 名字，空格或大小写写法不同：{{names}}。",
         "namesMore": "{{names}} 等另外 {{count}} 个",
         "mergeIntoOne": "合并为一个",
         "reviewEach": "逐个查看",

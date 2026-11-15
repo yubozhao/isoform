@@ -55,7 +55,14 @@ Stripped artifacts include:
 - Message body bleed (sentence fragments ending in punctuation)
 
 The function is **conservative**: if stripping would empty the string, the original
-input is returned unchanged.
+input is returned unchanged. It also folds whitespace runs (no-break, ideographic
+and zero-width characters included), so "Mei  Chen" and "Mei Chen" are one person.
+
+A stripped `BOT`/`APP` badge means the sender is software: `SenderIsAutomated`
+reports it on the raw string and the sender labeler then calls
+`ResolveExistingSender`, which never creates a person. `IsSystemSender`
+(`system_senders.go`) lists platform and integration accounts (Slackbot,
+文件传输助手, GitHub) that are never auto-bucketed and that Clean up removes.
 
 ### chat_apps.go
 

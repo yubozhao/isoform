@@ -1315,6 +1315,15 @@ describe("Writes re-read the directory", () => {
         expect(await screen.findByRole("region", { name: /look like one person/ })).toBeInTheDocument();
     }, MENU_TEST_TIMEOUT);
 
+    it("a same-name suggestion says the names differ only in spacing or capitals", async () => {
+        const w = world();
+        mocks.overview.mockResolvedValue({ ...w.overview, duplicates: [{ id: "dup-3", memberIds: ["mei1", "mei2"], suggestedTargetId: "mei1", reason: "same_name", app: "wechat" }] });
+        render(<PeoplePage />);
+        const region = await screen.findByRole("region", { name: /look like one person/ });
+        expect(region).toHaveTextContent(/name, written with different spacing or capitals/);
+        expect(region).not.toHaveTextContent(/account under different display names/);
+    }, MENU_TEST_TIMEOUT);
+
     it("a banner merge lands the person in the list with the wash", async () => {
         const w = world();
         mocks.overview.mockResolvedValue({ ...w.overview, duplicates: [{ id: "dup-2", memberIds: ["sam", "mei2"], suggestedTargetId: "sam", reason: "same_email", app: "email" }] });

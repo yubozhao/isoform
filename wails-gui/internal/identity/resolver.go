@@ -80,15 +80,27 @@ func NewResolver(store Storage, autoBucket bool) *Resolver {
 //  1. (app, handleID) lookup against app_handles.handle_id
 //  2. (app, displayName) lookup against app_handles.display_handle
 //  3. displayName lookup against principals.display_name and aliases
-//  4. If autoBucket: ensure an anonymous-bucket Contact for (app, handleID|displayName)
+//  4. If autoBucket: ensure an anonymous-bucket Contact for (app, handleID|displayName),
+//     unless the name is a platform or integration account (IsSystemSender)
 //
 // Returns an unknown SubjectRef when no signal at all can be derived.
 // The returned error is non-nil only for storage failures — a clean "no
 // match" is conveyed by Kind=SubjectUnknown with Method=MethodUnknown.
 func (r *Resolver) ResolveSender(ctx context.Context, app, handleID, displayName string) (SubjectRef, error) {
+	return r.resolve(ctx, app, handleID, displayName, r.autoBucket)
+}
+
+// ResolveExistingSender is ResolveSender without creating anything: a
+// sender the person already named still resolves, an unknown one stays
+// unknown. Callers use it for senders marked as apps or bots.
+func (r *Resolver) ResolveExistingSender(ctx context.Context, app, handleID, displayName string) (SubjectRef, error) {
+	return r.resolve(ctx, app, handleID, displayName, false)
+}
+
+func (r *Resolver) resolve(ctx context.Context, app, handleID, displayName string, autoBucket bool) (SubjectRef, error) {
 	app = strings.TrimSpace(strings.ToLower(app))
 	handleID = strings.TrimSpace(handleID)
-	displayName = strings.TrimSpace(displayName)
+	displayName = CollapseNameSpace(displayName)
 
 	if app != "" && handleID != "" {
 		if p, err := r.store.ResolveByAppHandle(ctx, app, handleID); err != nil {
@@ -114,7 +126,7 @@ func (r *Resolver) ResolveSender(ctx context.Context, app, handleID, displayName
 		}
 	}
 
-	if r.autoBucket && app != "" && (handleID != "" || displayName != "") && IsChatApp(app) {
+	if autoBucket && app != "" && (handleID != "" || displayName != "") && IsChatApp(app) && !IsSystemSender(displayName) {
 		// Guard against message body / system-notice text that bled into
 		// the sender field becoming a permanent anonymous principal. A
 		// stable handleID is trustworthy on its own; a display-name-only

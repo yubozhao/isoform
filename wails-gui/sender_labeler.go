@@ -114,7 +114,13 @@ func (l *senderLabeler) Label(ctx context.Context, app, rawSender, preview, sess
 		entry.kind = identity.SubjectUnknown
 		entry.label = fmt.Sprintf("[Unknown: %s]", normalizedSender)
 		if l.resolver != nil {
-			ref, err := l.resolver.ResolveSender(ctx, app, "", normalizedSender)
+			resolve := l.resolver.ResolveSender
+			if identity.SenderIsAutomated(rawSender) {
+				// An app or bot is attributed only when the person already
+				// named it; it never becomes a new person.
+				resolve = l.resolver.ResolveExistingSender
+			}
+			ref, err := resolve(ctx, app, "", normalizedSender)
 			if err == nil {
 				entry.kind = ref.Kind
 				entry.label = formatSenderLabel(ref, normalizedSender)

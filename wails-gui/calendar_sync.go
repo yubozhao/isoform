@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -302,12 +303,27 @@ func (s *calendarSyncService) Sync(ctx context.Context, reason string) (calendar
 	var rows []storage.CalendarEventRow
 	seen := map[string]bool{}
 	resolver := identity.NewResolver(s.store, false)
+	own, err := s.store.CalendarOwnEmails(ctx)
+	if err != nil {
+		log.Printf("[calendar] own addresses: %v", err)
+		own = map[string]bool{}
+	}
+	events := make([]calendar.Event, 0, len(rawEvents))
 	for _, raw := range rawEvents {
 		ev, ok := calendar.NormalizeEventKit(raw)
 		if !ok || seen[ev.ID] {
 			continue
 		}
 		seen[ev.ID] = true
+		events = append(events, ev)
+		for _, att := range ev.Attendees {
+			if att.IsMe && att.Email != "" {
+				own[strings.ToLower(strings.TrimSpace(att.Email))] = true
+			}
+		}
+	}
+	for _, ev := range events {
+		markOwnCalendarAddresses(&ev, own)
 		_, existed, err := s.store.GetCalendarEvent(ctx, ev.ID)
 		if err != nil {
 			log.Printf("[calendar] look up %s: %v", ev.ID, err)
@@ -369,6 +385,19 @@ func (s *calendarSyncService) status() (time.Time, string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.lastSync, s.lastErr
+}
+
+// markOwnCalendarAddresses marks as the person every attendee whose address
+// the calendar reported as the current user on some event. Each account
+// flags only itself, so with two calendar accounts the second address sat on
+// shared meetings as a guest: the brief and meeting prep named the person
+// among their own attendees.
+func markOwnCalendarAddresses(ev *calendar.Event, own map[string]bool) {
+	for i, att := range ev.Attendees {
+		if !att.IsMe && att.Email != "" && own[strings.ToLower(strings.TrimSpace(att.Email))] {
+			ev.Attendees[i].IsMe = true
+		}
+	}
 }
 
 // resolveAttendees links each attendee address to the person it already

@@ -81,7 +81,9 @@ function MergeBanner({
     const sources = group.memberIds.filter((id) => id !== group.suggestedTargetId);
     const names = group.memberIds.map((id) => `“${personName(people.get(id), unnamed)}”`);
     const quoted = names.length > 3 ? tr('merge.namesMore', { names: listWords(i18n.language, names.slice(0, 3)), count: names.length - 3 }) : listWords(i18n.language, names);
-    const reason = group.reason === 'same_email' ? tr('merge.reasonEmail', { names: quoted }) : tr('merge.reasonHandle', { app: appLabel(tr, group.app), names: quoted });
+    const reason = group.reason === 'same_email'
+        ? tr('merge.reasonEmail', { names: quoted })
+        : tr(group.reason === 'same_name' ? 'merge.reasonName' : 'merge.reasonHandle', { app: appLabel(tr, group.app), names: quoted });
 
     const merge = async () => {
         setState('running');
