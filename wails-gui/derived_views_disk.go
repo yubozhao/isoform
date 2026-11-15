@@ -95,6 +95,11 @@ func (a *App) derivedDiskStamp() (string, bool) {
 	if a == nil || !derivedDiskEnabled() || !a.pageSnapshotAllowed() {
 		return "", false
 	}
+	// The saved epoch is loaded here when no brief store has loaded it yet.
+	// Today's first reads arrive about a second after launch and the brief
+	// service opens its store at services_start (about 4 s): waiting for it
+	// made every first read a live build (8 to 13 s each, 2026-11-15).
+	savedCopyEpochLoad.Do(loadSavedCopyEpoch)
 	mobileBriefPrivacyEpochMu.Lock()
 	loaded := mobileBriefPrivacyEpochSavedDir != ""
 	epoch := mobileBriefPrivacyEpoch.Load()
