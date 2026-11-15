@@ -1844,6 +1844,10 @@
             "automation_mail": {
                 "label": "邮件",
                 "usedFor": "留意谁在等你回复"
+            },
+            "messages_history": {
+                "label": "完全磁盘访问权限",
+                "usedFor": "读取你最近的“信息”对话，留意别人请你做的事和你答应过的事"
             }
         }
     },

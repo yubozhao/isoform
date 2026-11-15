@@ -37,6 +37,7 @@ func (a *App) AddSensitiveApp(bundlePrefix, category string) error {
 	// was kept from Mail at once when the app is Mail.
 	defer a.filesProtectionChanged()
 	defer a.mailProtectionChanged()
+	defer a.imessageProtectionChanged()
 	return errors.Join(a.scrubSensitiveTopics(), a.persistUserSensitiveApps())
 }
 

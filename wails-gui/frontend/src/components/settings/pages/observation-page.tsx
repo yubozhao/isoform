@@ -86,10 +86,11 @@ const REMINDERS_PERMISSION_KEY = "reminders";
 const CLIPBOARD_PERMISSION_KEY = "clipboard";
 const FILES_PERMISSION_KEY = "files";
 const MAIL_PERMISSION_KEY = "automation_mail";
+const MESSAGES_PERMISSION_KEY = "messages_history";
 
 // Switchable items that are not part of "Watch my screen": the microphone,
 // which is the listening switch, and the clipboard, recent files, calendars,
-// reminders and mail, which have their own cards below.
+// reminders, mail and Messages, which have their own cards below.
 const NOT_SCREEN_PERMISSION_KEYS = new Set([
     "microphone",
     CLIPBOARD_PERMISSION_KEY,
@@ -97,6 +98,7 @@ const NOT_SCREEN_PERMISSION_KEYS = new Set([
     CALENDARS_PERMISSION_KEY,
     REMINDERS_PERMISSION_KEY,
     MAIL_PERMISSION_KEY,
+    MESSAGES_PERMISSION_KEY,
 ]);
 
 // Permission items that make up "Watch my screen": every switchable item

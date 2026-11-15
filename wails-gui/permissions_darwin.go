@@ -312,6 +312,14 @@ var calendarSettingsURLs = []string{
 	"/System/Library/PreferencePanes/Security.prefPane",
 }
 
+var fullDiskAccessSettingsURLs = []string{
+	// Privacy & Security > Full Disk Access, with the same fallbacks.
+	"x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles",
+	"x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_AllFiles",
+	"x-apple.systempreferences:com.apple.preference.security",
+	"/System/Library/PreferencePanes/Security.prefPane",
+}
+
 var remindersSettingsURLs = []string{
 	// Privacy & Security > Reminders. The sub-page link is used where macOS
 	// honours it; the generic links fall back to Privacy & Security.
@@ -361,6 +369,7 @@ func getPlatformPermissions() PlatformPermissions {
 		"calendars":           func() bool { return calendarAccessGranted() },
 		"reminders":           func() bool { return remindersAccessGranted() },
 		"mail":                func() bool { return mailAutomationGranted() },
+		"messages_history":    func() bool { return messagesHistoryAccess() },
 	})
 	items := []PermissionItem{
 		{
@@ -499,6 +508,21 @@ func getPlatformPermissions() PlatformPermissions {
 		Enabled:     true,
 	})
 
+	// Full Disk Access lets Isoform read the Messages database. macOS has no
+	// prompt for it: Grant opens System Settings, and only when tapped.
+	// Toggleable like Mail: the switch pauses reading and keeps what was kept.
+	items = append(items, PermissionItem{
+		Key:         messagesPermissionKey,
+		Label:       "Messages history",
+		Description: "Optional for knowing who asked you for something and what you promised. Isoform reads your recent Messages conversations with people you know and keeps only a sentence in its own words about each ask or promise, never the messages themselves. Needs Full Disk Access.",
+		Granted:     granted["messages_history"],
+		Required:    false,
+		Actionable:  true,
+		ActionLabel: "Grant",
+		Toggleable:  true,
+		Enabled:     true,
+	})
+
 	// No macOS permission sits behind recent files either: Spotlight's
 	// metadata needs none, and a folder macOS has not opened to Isoform is
 	// skipped rather than asked for. The switch starts off
@@ -551,6 +575,9 @@ func requestPermission(key string) bool {
 			log.Printf("[permissions] reminders access request failed: %v", err)
 		}
 		return granted
+	case messagesPermissionKey:
+		// macOS has no prompt for Full Disk Access; report what it allows.
+		return messagesHistoryAccess()
 	case mailPermissionKey:
 		// macOS asks only about a running Mail, and Isoform never opens it.
 		if !mailRunning() {
@@ -596,6 +623,8 @@ func openPermissionSettingsFromRect(key string, srcX, srcY, srcW, srcH float64) 
 		return openSystemPreferences(remindersSettingsURLs)
 	case mailPermissionKey:
 		return openAutomationSettings()
+	case messagesPermissionKey:
+		return openSystemPreferences(fullDiskAccessSettingsURLs)
 	default:
 		return fmt.Errorf("unknown permission key: %s", key)
 	}

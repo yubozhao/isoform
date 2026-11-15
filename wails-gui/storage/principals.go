@@ -143,6 +143,10 @@ func (s *Store) DeletePrincipal(ctx context.Context, id string) error {
 	if _, err = tx.ExecContext(ctx, family+`DELETE FROM principal_merges WHERE target_id IN (SELECT id FROM family) OR EXISTS(SELECT 1 FROM json_each(merged_ids_json) WHERE value IN (SELECT id FROM family))`, id); err != nil {
 		return err
 	}
+	// What was read from their Messages conversations goes with them.
+	if _, err = tx.ExecContext(ctx, family+`DELETE FROM message_asks WHERE principal_id IN (SELECT id FROM family)`, id); err != nil {
+		return err
+	}
 	res, err := tx.ExecContext(ctx, family+`DELETE FROM principals WHERE id IN (SELECT id FROM family)`, id)
 	if err != nil {
 		return err

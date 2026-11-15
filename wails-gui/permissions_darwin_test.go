@@ -30,7 +30,7 @@ func TestGetPlatformPermissions_HasRequiredItems(t *testing.T) {
 			if !item.Required {
 				t.Fatalf("item %q should be required", item.Key)
 			}
-		case "microphone", "notifications", "automation_messages", "automation_mail", "contacts", "calendars", "reminders":
+		case "microphone", "notifications", "automation_messages", "automation_mail", "contacts", "calendars", "reminders", "messages_history":
 			if item.Required {
 				t.Fatalf("item %q should be optional", item.Key)
 			}

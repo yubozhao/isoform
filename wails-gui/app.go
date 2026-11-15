@@ -327,6 +327,9 @@ type App struct {
 	// mailSync reads the headers of recent mail from Mail.app into
 	// mail_messages while Mail runs (mail_sync.go).
 	mailSync *mailSyncService
+	// imessage reads asks and commitments from Messages into message_asks
+	// (imessage_capture.go).
+	imessage *imessageService
 	// proactiveSendTransport is replaceable by local fakes in send lifecycle tests.
 	proactiveSendTransport proactiveSendTransport
 	// contextSignals tracks lock, sleep, idle, power and device use (context_signals.go).
@@ -1364,6 +1367,7 @@ func (a *App) startupServices(ctx context.Context) {
 	a.startPlaybookRoutines(ctx)
 	a.startFilesActivityReader(ctx)
 	a.startMailSync(ctx)
+	a.startIMessageCapture(ctx)
 	a.startContextSignals(ctx)
 	// The menu bar's "doing now" line follows the state started above.
 	a.startDoingNow(ctx)
@@ -1531,6 +1535,7 @@ func (a *App) shutdown(ctx context.Context) {
 	a.stopBrowserHistoryReader()
 	a.stopFilesActivityReader()
 	a.stopMailSync()
+	a.stopIMessageCapture()
 	a.stopEngagement()
 	// Stop the magpie gateway child (SIGTERM, then kill after a grace period).
 	if a.magpie != nil {

@@ -1844,6 +1844,10 @@
             "automation_mail": {
                 "label": "Mail",
                 "usedFor": "noticing who is waiting on your reply"
+            },
+            "messages_history": {
+                "label": "Full Disk Access",
+                "usedFor": "reading your recent Messages conversations to notice what people asked of you and what you promised"
             }
         }
     },
