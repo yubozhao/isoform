@@ -369,6 +369,10 @@ type App struct {
 	derived *derivedViews
 
 	memoryCanonicalizer func(prompt, model string) (string, error) // optional canonicalization adapter; nil uses the existing model runner
+
+	// Work on it: prepared tasks, the agent ranking and the counts.
+	workOnItOnce sync.Once
+	workOnItS    *workOnItState
 }
 
 type AgentStatus struct {
