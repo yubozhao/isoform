@@ -1719,6 +1719,15 @@ func (s *mobileBriefService) finishedReadAudio(ctx context.Context, source, deli
 	if delivered.Audio != nil || s.app == nil || source.Audio == nil || source.Audio.binding == "" {
 		return delivered.Audio
 	}
+	// A recording bound to the words this copy seals plays with them. The
+	// recording is made from the sealed words (seal v2), which can differ
+	// from a fresh projection of the stored words; judging it by that
+	// projection left the 2026-11-14 morning brief with no player.
+	sealed := delivered
+	sealed.Audio = source.Audio
+	if audio := mobileBriefAudioForRead(sealed); audio != nil {
+		return audio
+	}
 	stored, withheld := s.app.mobileBriefDeliveryContext(ctx, source)
 	if withheld.Reason != "" {
 		return nil
@@ -1729,6 +1738,42 @@ func (s *mobileBriefService) finishedReadAudio(ctx context.Context, source, deli
 		return nil
 	}
 	return again.Audio
+}
+
+// mobileBriefAudioSpeaksSealedCopy reports whether a recording speaks the
+// brief's current sealed copy. It reads the saved copy only; it never seals.
+func (a *App) mobileBriefAudioSpeaksSealedCopy(source MobileBriefV1, audio *MobileBriefAudio) bool {
+	if a == nil || audio == nil || audio.binding == "" {
+		return false
+	}
+	s, ok := a.mobileBriefSource().(*mobileBriefService)
+	if !ok || s == nil {
+		return false
+	}
+	sealed, ok := s.savedSealedCopy(source)
+	if !ok {
+		return false
+	}
+	lang, _, _ := strings.Cut(audio.binding, ":")
+	return audio.binding == mobileBriefAudioBindingLike(sealed, lang, audio.binding)
+}
+
+// savedSealedCopy is the brief's saved sealed copy when it was sealed under the
+// current privacy state, for the same generation. It reads only; it never
+// seals, so it is safe under patchMu.
+func (s *mobileBriefService) savedSealedCopy(source MobileBriefV1) (MobileBriefV1, bool) {
+	if s == nil || s.app == nil {
+		return MobileBriefV1{}, false
+	}
+	saved, found, err := s.store.loadFinishedRead(source.BriefID)
+	if err != nil || !found || saved.Schema != mobileBriefSealedSchema || saved.Print != s.app.briefPrivacyPrint() {
+		return MobileBriefV1{}, false
+	}
+	var sealed MobileBriefV1
+	if unmarshalStoredMobileBrief(saved.Brief, &sealed) != nil || sealed.BriefID != source.BriefID || sealed.AsOf != source.AsOf {
+		return MobileBriefV1{}, false
+	}
+	return sealed, true
 }
 
 func mobileBriefParagraphsSay(left, right []MobileBriefPara) bool {
