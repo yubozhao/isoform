@@ -784,6 +784,10 @@ create or send a calendar event.
   and appears only after the Mac uploads a sealed copy to the relay (section 17). For ready
   audio without `attachment`, the file exists on the Mac only. A phone that does not know
   these fields continues to show the text.
+  `"status":"rendering"` means the recording is being made; `updating` (optional, boolean)
+  adds that the brief had a recording and is spoken again because the person removed a part.
+  Show "Updating the recording" in place of play. A phone that does not know the field shows
+  its usual state for an unknown status (no playback).
 - `generation` (optional) explains a scheduled brief generated after its slot: `mac_asleep`
   when the Mac was observed sleeping through its scheduled slot, or `late` when it came more
   than 30 minutes after its slot because Isoform was not running then or its first tries

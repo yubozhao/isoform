@@ -1319,7 +1319,7 @@ func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, s
 	replacedAhead := hadPrior && mobileBriefIsAhead(prior) && !mobileBriefIsAhead(brief)
 	// A remake of a held early brief sends the phone no second notice either: its push is already due at the slot.
 	remadeAhead := hadPrior && mobileBriefIsAhead(prior) && mobileBriefIsAhead(brief)
-	err = s.store.saveDocument(brief, asOf)
+	err = s.store.saveBuildDocument(brief, asOf)
 	if err == nil {
 		if builtErr := s.store.saveBuilt(brief); builtErr != nil {
 			log.Printf("[mobile-brief] the %s brief's build copy could not be kept", brief.Slot)
@@ -1448,6 +1448,21 @@ func (s *mobileBriefService) backfillTodayAudio(ctx context.Context) {
 	s.addAudioWithLatestGuard(ctx, shown, asOf, true)
 }
 
+// recordMobileBriefAudio makes brief's recording: cut from the build's own
+// recording when the person only removed paragraphs and the recording marks
+// where they start (spliceMobileBriefAudio, seconds), otherwise spoken again.
+func (s *mobileBriefService) recordMobileBriefAudio(ctx context.Context, brief MobileBriefV1, lang string) (mobileBriefAudioFile, bool, string) {
+	if s.speaker.ffmpeg != nil {
+		if built, ok := s.store.loadBuilt(brief.BriefID); ok && built.AsOf == brief.AsOf {
+			if cut, ok := spliceMobileBriefAudio(ctx, s.speaker.ffmpeg(), s.store.dir, lang, brief, built); ok {
+				log.Printf("[brief-audio] slot=%s cut the removed paragraphs from the build's recording", brief.Slot)
+				return cut, true, mobileBriefAudioStatusOK
+			}
+		}
+	}
+	return renderMobileBriefAudio(ctx, s.speaker, s.store.dir, brief)
+}
+
 // mobileBriefAudioNeedsRemake reports whether a stored recording no longer
 // speaks the sealed words: there is none, it is unfinished, or its binding
 // (the hash of the words it reads) differs from the sealed copy's.
@@ -1543,7 +1558,7 @@ func (s *mobileBriefService) addAudioWithLatestGuard(ctx context.Context, brief 
 	for attempt := 0; ; attempt++ {
 		var reason string
 		attempts++
-		audio, ok, reason = renderMobileBriefAudio(ctx, s.speaker, s.store.dir, brief)
+		audio, ok, reason = s.recordMobileBriefAudio(ctx, brief, lang)
 		if !ok {
 			if reason != "nothing to say" && reason != "no audio store" {
 				log.Printf("[mobile-brief] %s brief has no spoken version: %s", brief.Slot, reason)
@@ -1697,7 +1712,11 @@ func (s *mobileBriefService) markAudioRendering(briefID, input, lang string, asO
 	if stored.Audio != nil && stored.Audio.Status == mobileBriefAudioStatusOK && stored.Audio.binding == input {
 		return false
 	}
-	stored.Audio = &MobileBriefAudio{Status: mobileBriefAudioStatusRendering}
+	updating := stored.Audio != nil && stored.Audio.Status == mobileBriefAudioStatusOK
+	if built, ok := s.store.loadBuilt(briefID); ok && built.AsOf == stored.AsOf && built.Audio != nil && built.Audio.Status == mobileBriefAudioStatusOK {
+		updating = true
+	}
+	stored.Audio = &MobileBriefAudio{Status: mobileBriefAudioStatusRendering, Updating: updating}
 	if err := s.store.saveDocument(stored, asOf); err != nil {
 		log.Printf("[mobile-brief] the %s brief could not record that its audio is being made", stored.Slot)
 		return false
@@ -1837,8 +1856,10 @@ func (s *mobileBriefService) Audio(briefID string) (MobileBriefAudioData, bool) 
 		return MobileBriefAudioData{}, false
 	}
 	if s.app != nil {
+		// The read decides what plays (mobileBriefAudioForRead, or the build's
+		// recording for the build's words, mobileBriefBuiltRecordingFor).
 		shown, _, err := s.finishedReadWithholding(brief)
-		if err != nil || shown.Audio == nil || mobileBriefAudioForRead(shown) == nil || shown.Audio.binding != brief.Audio.binding || shown.Audio.SHA256 != brief.Audio.SHA256 {
+		if err != nil || shown.Audio == nil || shown.Audio.binding != brief.Audio.binding || shown.Audio.SHA256 != brief.Audio.SHA256 {
 			return MobileBriefAudioData{}, false
 		}
 	}

@@ -1152,6 +1152,12 @@ describe("the brief's card (RC 1)", () => {
         await i18n.changeLanguage('en');
     });
 
+    it("says the recording is updating, with no play button, after a part was removed", () => {
+        renderSection({ view: view({ brief: brief({ audio: { status: "rendering", mime: "", bytes: 0, durationSeconds: 0, updating: true } }) }) });
+        expect(screen.getByTestId("brief-audio-preparing")).toHaveTextContent("Morning brief · 7:00 AM · Updating the recording");
+        expect(screen.queryByTestId("brief-audio-toggle")).not.toBeInTheDocument();
+    });
+
     it("offers no player for audio that is not ready", () => {
         renderSection({ view: view({ brief: brief({ audio: { ...audio, status: "downloading" } }) }) });
         expect(screen.queryByTestId("brief-audio-toggle")).not.toBeInTheDocument();

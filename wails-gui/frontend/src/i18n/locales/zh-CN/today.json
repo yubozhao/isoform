@@ -224,6 +224,7 @@
         "lateReason": { "asleep": "电脑在睡眠", "closed": "Isoform 没有打开" },
         "noRecording": "{{brief}} · 无录音",
         "preparingAudio": "{{brief}} · 正在准备音频",
+        "updatingAudio": "{{brief}} · 正在更新录音",
         "askAboutParagraph": "问问这段",
         "askParagraphPlaceholder": "关于这段，想问什么都行",
         "askParagraphButton": "提问",

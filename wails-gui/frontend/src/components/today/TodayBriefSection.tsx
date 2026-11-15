@@ -1605,7 +1605,7 @@ function briefParts({
                     // never plays under this one.
                     <BriefAudioPlayer key={brief.briefId} briefId={brief.briefId} audio={audio} caption={asOf} />
                 ) : audioPreparing ? (
-                    <div role="status" className="text-[12px] text-muted" data-testid="brief-audio-preparing">{tr("todayBrief.preparingAudio", { brief: asOf })}</div>
+                    <div role="status" className="text-[12px] text-muted" data-testid="brief-audio-preparing">{tr(brief.audio?.updating ? "todayBrief.updatingAudio" : "todayBrief.preparingAudio", { brief: asOf })}</div>
                 ) : (
                     <div className="text-[12px] text-muted" data-testid="brief-no-recording">{asOf}</div>
                 )}

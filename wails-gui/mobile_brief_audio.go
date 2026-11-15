@@ -56,6 +56,9 @@ type MobileBriefAudio struct {
 	// Paragraphs says where each written paragraph starts in the recording,
 	// when the reading follows them (PROTOCOL.md section 8.1).
 	Paragraphs []MobileBriefAudioParagraph `json:"paragraphs,omitempty"`
+	// Updating marks a recording being made again for a brief that had one:
+	// the person removed a part, and Today says the recording is updating.
+	Updating bool `json:"updating,omitempty"`
 	// binding is the text the recording speaks (mobileBriefAudioBinding).
 	// It stays on this computer, beside the stored brief.
 	binding string

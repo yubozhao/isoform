@@ -37,8 +37,12 @@ func TestBuiltCopySurvivesAStrippedSave(t *testing.T) {
 	if len(restored.Narrative) != 1 || restored.NarrativeStatus != "ok" || restored.Audio == nil {
 		t.Fatalf("the build's words did not come back for the gates: %+v", restored.Narrative)
 	}
+	// The stored copy keeps the build's words too (mobileBriefKeepBuilt).
+	if len(loaded.Narrative) != 1 || loaded.NarrativeStatus != "ok" {
+		t.Fatalf("a stripped save stored the brief without its words: %+v", loaded.Narrative)
+	}
 	// A different build of the same slot never takes these words.
-	other := loaded
+	other := stripped
 	other.AsOf = formatMobileBriefTime(now.Add(time.Hour))
 	if got := store.withBuiltWords(other); len(got.Narrative) != 0 {
 		t.Fatal("words from another build were attached")

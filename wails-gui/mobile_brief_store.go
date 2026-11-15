@@ -140,6 +140,32 @@ func (s *mobileBriefStore) save(brief MobileBriefV1, now time.Time) error {
 }
 
 func (s *mobileBriefStore) saveDocument(brief MobileBriefV1, now time.Time) error {
+	return s.saveDocumentKeeping(s.keepBuilt(brief), now)
+}
+
+// saveBuildDocument saves a brief a build just wrote. It is the only save that
+// may store fewer words than an earlier build of the same brief: the build
+// copy it replaces is saved right after (saveBuilt).
+func (s *mobileBriefStore) saveBuildDocument(brief MobileBriefV1, now time.Time) error {
+	return s.saveDocumentKeeping(brief, now)
+}
+
+// keepBuilt applies mobileBriefKeepBuilt to a copy about to be stored: a
+// refresh, gate or projection never stores a built brief with fewer words or
+// less audio than its build (Bo, 2026-11-15: the latest brief shows first).
+func (s *mobileBriefStore) keepBuilt(brief MobileBriefV1) MobileBriefV1 {
+	built, ok := s.loadBuilt(brief.BriefID)
+	if !ok {
+		return brief
+	}
+	kept, changed := mobileBriefKeepBuilt(brief, built, mobileBriefAllWithdrawnKeys())
+	if changed {
+		log.Printf("[mobile-brief] kept the %s brief's built words and recording on save: paragraphs=%d audio=%t", brief.Slot, len(kept.Narrative), kept.Audio != nil)
+	}
+	return kept
+}
+
+func (s *mobileBriefStore) saveDocumentKeeping(brief MobileBriefV1, now time.Time) error {
 	if s.dir == "" {
 		return errMobileBriefStateUnavailable
 	}

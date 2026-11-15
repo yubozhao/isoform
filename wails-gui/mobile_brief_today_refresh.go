@@ -786,6 +786,7 @@ func (s *mobileBriefStore) saveCurrentToday(brief MobileBriefV1) error {
 	if s.dir == "" {
 		return errMobileBriefStateUnavailable
 	}
+	brief = s.keepBuilt(brief)
 	data, err := marshalStoredMobileBrief(brief)
 	if err != nil {
 		return err
