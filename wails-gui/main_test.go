@@ -25,6 +25,7 @@ var testHelperChildEnvVars = []string{
 	"ISOFORM_SKILL_LOCK_TEST", // TestIsoformSkillSharedLockHelper
 	"UPDATE_TEST_CHILD",       // TestUpdateChildProcess
 	"YANSU_GOAL_TEST_FIXTURE", // TestGoalExternalCLIFixture and its tool shim
+	searchNoFoldersChildEnv,   // TestSearchMissingPageFoldersStayMissing
 }
 
 func TestMain(m *testing.M) {

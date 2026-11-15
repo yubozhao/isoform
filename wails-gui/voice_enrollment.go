@@ -576,7 +576,26 @@ func (a *App) verifySpeakerOnWAV(wav []byte) (*bool, []float32) {
 		log.Printf("[voice-verify] skip: bad WAV header (bytes=%d err=%v)", len(wav), err)
 		return nil, nil
 	}
-	samples := pcm16ToFloat32(body)
+	return a.verifySpeakerOnSamplesWith(st, pcm16ToFloat32(body))
+}
+
+// verifySpeakerOnSamples is verifySpeakerOnWAV for 16 kHz mono samples that
+// are already decoded (a stretch of a recording from the watch).
+func (a *App) verifySpeakerOnSamples(samples []float32) (*bool, []float32) {
+	a.mu.Lock()
+	st := a.voiceID
+	a.mu.Unlock()
+	if st == nil {
+		s, err := a.ensureVoiceEnrollment()
+		if err != nil {
+			return nil, nil
+		}
+		st = s
+	}
+	return a.verifySpeakerOnSamplesWith(st, samples)
+}
+
+func (a *App) verifySpeakerOnSamplesWith(st *voiceEnrollmentState, samples []float32) (*bool, []float32) {
 	if len(samples) < 16000 { // < 1 second; embedding will be junk
 		log.Printf("[voice-verify] skip: audio too short for reliable embedding (samples=%d, need ≥16000 = 1s)", len(samples))
 		return nil, nil

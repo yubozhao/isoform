@@ -5752,6 +5752,38 @@ export const GetMeetingNotesTranscript = appBinding<[string], string>('GetMeetin
 export const RevealMeetingRecording = appBinding<[string], void>('RevealMeetingRecording');
 export const DeleteMeetingNotes = appBinding<[string], void>('DeleteMeetingNotes');
 
+// Recordings from the watch on the Activity page (watch_recordings_desk.go).
+export interface WatchRecordingPart {
+    part: number;
+    startedAt: string;
+    durationSeconds: number;
+    hasAudio: boolean;
+    place: string;
+    heartRate: string;
+    heartRateAvg: number;
+    heartRateMax: number;
+}
+export interface WatchRecording {
+    id: string;
+    source: string;
+    state: string;
+    startedAt: string;
+    durationSeconds: number;
+    words: number;
+    ownerVoice: string;
+    sessionId: string;
+    hasAudio: boolean;
+    parts: WatchRecordingPart[];
+}
+export interface WatchRecordingLine {
+    at: number;
+    speaker: string;
+    text: string;
+}
+export const GetWatchRecordings = appBinding<[], WatchRecording[]>('GetWatchRecordings');
+export const GetWatchRecordingTranscript = appBinding<[string], WatchRecordingLine[]>('GetWatchRecordingTranscript');
+export const DeleteWatchRecording = appBinding<[string], void>('DeleteWatchRecording');
+
 export interface MeetingCallTurn {
     speakerId: string;
     name: string;

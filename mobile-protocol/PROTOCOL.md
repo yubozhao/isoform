@@ -3401,6 +3401,14 @@ One request per part, sent after its upload succeeded:
   `watch_recording`, at the recording's own wall-clock times, so memory and the brief read it
   through the same gates as speech heard on the computer. A recording received while observing
   is paused, or interrupted by a quit, is transcribed after resume or restart.
+- **Who spoke.** Each stretch of speech of at least one second gets a voice fingerprint on the
+  computer (the same local model as the computer's own voice check). A stretch that matches the
+  owner's enrolled voice is stored with `speechSpeakerVerified: true` and
+  `speechSpeakerLabel: "you"`; other voices are `speaker_1`, `speaker_2` and so on, numbered in
+  the order first heard across the whole recording, with `speechSpeakerVerified: false`. Without
+  an enrollment no stretch is verified and every voice is a numbered speaker. The verdict is the
+  one memory and tasks already read for speech heard on the computer, so words other people said
+  into the watch are not taken as the owner's. Fingerprints stay on the computer.
 - A recording whose last part never arrives (the watch lost power) is closed after 6 hours when
   its parts run from 0 without a gap. A failed transcription is tried again at the next launch.
   The computer deletes a recording's audio 14 days after it was transcribed; the transcript and
@@ -3416,7 +3424,111 @@ Answers `{"recordings":[view]}` for the requesting device's recordings, newest f
  "startedAt":"...","words":0,"receivedAt":"...","updatedAt":"..."}
 ```
 
+Once a recording is transcribed and something was said, the view also carries `ownerVoice`
+(additive): `labelled` when the owner has an enrolled voice and each stretch was checked against
+it, `not_enrolled` when voices were told apart but the owner has not added their voice (nobody is
+"you"), and `unavailable` when this computer has no voice model or nothing was long enough to
+tell. A phone that does not know the field ignores it; an unknown value is shown as nothing.
 `parts` is 0 until the last part arrived. `state` is `received` (some or all parts stored), `transcribing`, `transcribed` (`words` is the
 transcript's word count; 0 means nothing was said) or `failed`. The view carries no transcript
 text; the phone reads what was said through chat and the brief like everything else. Unknown
 states must be shown as "On your computer".
+
+### 24.5 A recording's transcript and its delete (2026-11-14)
+
+`GET /status` advertises `recordingDetail: true` when the computer serves these. A phone asks for
+neither on a computer that does not.
+
+**`GET /recordings/transcript?id=<uuid>`** (scopes `chat:write` and `brief:read`) answers what the
+recording heard, in order:
+
+```json
+{"id":"<recordingId>","state":"transcribed","truncated":false,
+ "lines":[{"at":"2026-11-13T09:00:02Z","speaker":"you","text":"Call Sam about the launch"}]}
+```
+
+- `speaker` is `you`, `speaker_1`, `speaker_2` and so on (24.2), or absent when voices were not
+  told apart. `lines` is empty until the recording is transcribed, when nothing was said, when
+  the transcript is marked private on the computer, and while observing is paused.
+- At most 300 lines and 48 KiB of text; a longer transcript is cut and `truncated` is true.
+- The text travels only inside the sealed answer. The phone shows it and does not keep it.
+- Errors: `400` invalid id; `403` without both scopes; `404` unknown, deleted, or another
+  device's recording; `503` when the store is not ready.
+
+**`POST /recordings/delete`** (scope `chat:write`) with `{"recordingId":"<uuid>"}` deletes the
+recording on the computer: its audio, its heart rate and place (24.4), and its transcript the way
+a deletion in Activity does, so memory and the brief withdraw what they read from it. It answers
+`200` with the recording view, `state: "deleted"`, and is safe to repeat. Errors: `400` invalid
+id; `403`; `404` unknown or another device's recording; `503`.
+
+- The computer keeps a row that says only that the recording was deleted, with its part times,
+  so a part that arrives late is answered and never fetched or stored again.
+- A recording deleted on the computer (Activity, From your watch) reaches the phone through the
+  list: `GET /recordings?deleted=1` includes deleted recordings with `state: "deleted"`. A phone
+  that reads it deletes its own copy and tells the watch to delete its copy. Without
+  `deleted=1` deleted recordings are left out, so an older phone never shows one as present.
+- The phone deletes a recording that never reached the computer on the phone and the watch
+  alone; no request is needed.
+
+## 25. The owner's voice from the phone (v1, 2026-11-14)
+
+The computer keeps the owner's voice as fingerprints (speaker embeddings) and uses them to tell
+the owner's words from other people's, on its own microphone and in watch recordings (24.2). The
+phone can add a sample and remove samples. `GET /status` advertises `ownerVoice: true` when the
+computer serves these routes.
+
+A sample is 3 to 30 seconds of the owner speaking, `audio/mp4` or `audio/wav`, at most 4 MiB. It
+travels as an upload: sealed and put on the relay exactly as in 24.1 (`PUT /v1/uploads/{id}`,
+same key, nonce and AAD rules), with the key sent in the sealed request below.
+
+| Method and path | Scope | Body | Result |
+| --- | --- | --- | --- |
+| `GET /voice` | `memory:correct` | | `{"modelReady":true,"samples":[{"id":12,"audioSeconds":8.1,"capturedAt":"...","fromPhone":true}]}`, the owner's samples newest first, including those enrolled on the computer |
+| `POST /voice/samples` | `memory:correct`, `chat:write` | `{"idempotencyKey","upload":{"id","key","nonce"},"sha256","bytes","mime","durationSeconds"}` | 201 with the new sample; receipted (15.2), so a repeat replays it and never enrolls twice |
+| `POST /voice/forget` | `memory:correct` | `{"idempotencyKey","id":12}`; `id` 0 or absent means every sample of the owner | 200 `{"removed":N,"samples":[...]}`; safe to repeat |
+
+- The computer fetches the upload, opens it, checks `bytes` and `sha256`, takes the fingerprint
+  with its local speaker model, and stores only the fingerprint. The audio exists on the
+  computer as a temporary file for the length of the request and is then removed. The relay copy
+  is deleted once the computer has read it, also when the sample was unusable. The phone deletes
+  its own file when the request is answered. No route returns a fingerprint or audio.
+- Errors for `POST /voice/samples`: `400` invalid fields, a sample under 3 seconds of audio, a
+  body that fails authentication or its checksum; `404` with `data: {"code":"upload_missing"}`;
+  `409` with `data: {"code":"voice_model_missing"}` while the computer has no speaker model
+  (`modelReady` is false; the phone says to open Isoform on the computer first); `503` when the
+  relay or the store is not ready.
+- `POST /voice/forget` removes only the owner's samples; an id that belongs to anyone else
+  removes nothing. "Forget voices" on the computer removes them too, and wins over a sample that
+  is being read at that moment.
+- Removing a sample does not relabel recordings already transcribed.
+### 24.4 Heart rate and location of a part (optional, 2026-11-14)
+
+`GET /status` advertises `recordingContext: true` when the computer takes this. A phone must not
+send `context` to a computer that does not: the request decoder refuses unknown fields.
+
+`POST /recordings` may carry, for the part it describes:
+
+```json
+"context": {
+  "heartRate": {"avg": 104, "min": 71, "max": 131, "samples": 40},
+  "location": {"latitude": 37.76, "longitude": -122.41, "accuracyMeters": 1200, "place": "Mission District"}
+}
+```
+
+- Both members are optional and independent. Each needs its own permission on the watch
+  (HealthKit heart rate, read only; location when in use). Declining either changes nothing else:
+  the recording is made and sent without it.
+- `heartRate` summarizes the samples taken while the part was recorded, in beats per minute.
+- `location` is coarse: the device rounds to two decimals (about 1 km) and the computer rounds
+  again before it stores, so a precise position is never kept. `place` is a name the device
+  resolved (a neighborhood or town), at most 80 characters; it is optional.
+- The context travels only inside this sealed request. The relay never sees it.
+- A context the computer cannot use (impossible values, a place that is not a name) is dropped
+  without refusing the part.
+- The computer stores the context with the part and deletes it whenever it deletes the part's
+  audio: when the transcript is deleted or retired, and at the 14-day audio removal.
+- Nothing is sampled while the watch is not recording. While observing is paused the computer
+  refuses the part (24.2), and the context with it.
+- Use on the computer: only as context for the brief. The speech events of a part carry a line
+  such as "at Mission District · heart rate raised (avg 104, peak 131)". Coordinates never
+  appear in text; a location without a `place` says nothing about where.

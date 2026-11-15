@@ -41,10 +41,45 @@ watch (records AAC, mono) -> phone (WatchConnectivity file transfer)
 | Upload state per recording (On watch, Sent to phone, On your computer, Transcribed) | yes | |
 | Sync to the phone, then to the computer | yes | watch on cellular without the phone |
 | Transcription | yes, on the computer | on-watch or on-phone preview |
+| Knowing the owner's voice | yes: each stretch is labelled "you" or "Speaker N" on the computer from the owner's enrolled voice; without an enrollment voices are numbered and the phone is told so | enroll from the phone; show the labels on the phone |
 | Highlights | through the brief and memory: what was said feeds them like any speech | a "From your watch" block in the brief; search on the phone |
 | Pause observing respected | yes: the computer refuses while paused, the phone holds and retries | |
 | Heart rate, stress, location | no | decide with design; location is not sent in v1 |
 | Playback on the watch | no | |
+
+## Knowing the owner's voice
+
+Bo, 2026-11-14: "same capability of recognizing the owner's voice; Auday has that."
+
+What the public sources say about Auday here: nothing usable. Its launch post and press
+coverage (read 2026-11-13 and 2026-11-14) describe transcription, search and highlights, not how
+it tells the owner from others or how a voice is enrolled. So this is built from what Isoform
+already has, not from Auday's design.
+
+Isoform's computer already keeps the owner's voice (Settings, enrolled samples, a local sherpa
+speaker model) and checks every microphone chunk against it. Watch recordings now use the same
+check per stretch of speech:
+
+- A stretch that matches is "you". Other voices are Speaker 1, 2 and so on, numbered in the
+  order first heard and kept across the parts of one recording.
+- The verdict is stored on each speech event, in the fields memory and tasks already read, so
+  what someone else said near the watch is not taken as something the owner said or promised.
+- Without an enrolled voice, voices are still told apart but nobody is "you", and the
+  recording's state says `not_enrolled` so the phone can say so and offer to add a voice.
+- Where this can be better than a watch-only recorder: the check runs on the computer with the
+  larger model and several enrolled samples (best match wins, so a different microphone or a
+  hoarse day still matches), and the fingerprints never leave the computer.
+
+Still to do: enrolling from the phone (a short sample, sealed to the computer, deletable
+everywhere), and showing the labels on the phone and watch once design has drawn them.
+## Adding the owner's voice from the phone
+
+PROTOCOL.md section 25. The phone records 3 to 30 seconds of the owner speaking, seals it like a
+recording part, and the computer turns it into a fingerprint with its local speaker model. Only
+the fingerprint is kept, on the computer. The audio is deleted from the relay when the computer
+has read it, from the computer when the request ends, and from the phone when it is answered.
+The phone can list the owner's samples (including ones made on the computer) and remove one or
+all. Computer side: `wails-gui/mobile_voice.go`.
 
 ## Privacy
 
@@ -77,6 +112,36 @@ watch (records AAC, mono) -> phone (WatchConnectivity file transfer)
 - `scripts/build-watch.sh`: builds the watch app for the watchOS Simulator.
 - `mobile-protocol/PROTOCOL.md` section 24: the contract.
 
+## Heart rate and location
+
+PROTOCOL.md section 24.4. While it records, the watch may note the wearer's heart rate (HealthKit,
+read only) and roughly where they are (location when in use, rounded to about 1 km), one summary
+per part. Each is its own permission, asked on its own with its reason; declining keeps recording
+working exactly as before. Nothing is sampled when the watch is not recording.
+
+The summary rides inside the sealed request that carries the part's key, so the relay never sees
+it. The computer stores it with the part, deletes it with the part's audio, and uses it for one
+thing: a line of context on the part's words for the brief ("at Mission District · heart rate
+raised"). Coordinates are never written into text. Computer side:
+`wails-gui/mobile_recording_context.go`.
+
+## Seeing, playing and deleting recordings (2026-11-14)
+
+- **On the computer:** Activity has a "From your watch" section once a recording has arrived. It
+  lists recordings by day; each one shows its parts with the place and heart rate line, plays
+  the audio while it is kept (14 days after transcription), shows what was said with who said
+  it, opens the Screen timeline at its time, and deletes it. Bindings: `GetWatchRecordings`,
+  `GetWatchRecordingTranscript`, `DeleteWatchRecording`; audio from the host bridge route
+  `/api/activity/recording?id=&part=` (media token, file name taken from the index).
+- **On the phone:** the transcript and the delete go through PROTOCOL.md 24.5.
+- **Delete is one delete.** Deleting on the computer removes the audio, the heart rate and
+  place, and the transcript with what was learned from it; the phone reads the deletion at its
+  next check and removes its copy and the watch's. Deleting on the phone asks the computer to
+  do the same. A row that says only "deleted" stays on the computer so a late part is never
+  imported again.
+- Not built: the computer does not name a recording yet (the handoff's "Roadmap call" title), and
+  the transcript does not show pause gaps.
+
 ## Needs Bo
 
 Nothing here blocks simulator builds or tests. Each item needs his Apple account or a decision.
@@ -94,12 +159,13 @@ Nothing here blocks simulator builds or tests. Each item needs his Apple account
 3. A real watch to prove screen-off recording, the Action button and battery use. The
    simulator proves build, UI and transfer logic only.
 4. Decision: all-day recording as a mode (battery, consent copy) or session recording only.
-5. Decision: whether to send heart rate or location beside audio (v1 sends neither).
+5. Decided 2026-11-14 (Bo): heart rate and coarse location travel with watch recordings, each
+   behind its own permission. See "Heart rate and location" above.
 6. Decision: recordings ride on the existing `chat:write` scope so paired phones need no
    re-pair. A separate `recording:write` scope would be stricter but forces re-pairing.
 7. Design: the watch screens were built from the design-system tokens without a design
    board; they need a pass by Isoform design.
-8. App ID `com.isoform.companion.watchkitapp.complication` for the complication, with the
+8. App ID `com.isoform.companion.watchkitapp.face` for the complication, with the
    watch app's (item 1).
 9. Versions: the two watch targets carry their own `MARKETING_VERSION` (1.0.5 today). Once the
    watch app is embedded it must match the iPhone app's version, so the version bump has to

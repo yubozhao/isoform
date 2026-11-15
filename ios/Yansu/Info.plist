@@ -52,7 +52,7 @@
 	<key>NSFaceIDUsageDescription</key>
 	<string>Isoform uses Face ID to confirm the decisions you make from this phone.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Isoform uses the microphone when you hold to talk.</string>
+	<string>Isoform uses the microphone when you hold to talk or record a sample of your voice.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Isoform turns what you say into text when you hold to talk.</string>
 	<key>NSAppTransportSecurity</key>

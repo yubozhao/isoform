@@ -1,2 +1,2 @@
-"NSMicrophoneUsageDescription" = "按住说话时，Isoform 会使用麦克风。";
+"NSMicrophoneUsageDescription" = "按住说话或录制你的声音样本时，Isoform 会使用麦克风。";
 "NSSpeechRecognitionUsageDescription" = "按住说话时，Isoform 会将你说的话转换成文字。";

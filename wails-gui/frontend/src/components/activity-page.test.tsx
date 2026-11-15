@@ -141,6 +141,31 @@ describe('ActivityPage section panel', () => {
         expect((document.querySelector('[data-activity-section="workedOn"]') as HTMLElement).getAttribute('aria-current')).toBe('page');
     });
 
+    it('shows From your watch only once a recording has arrived, and opens it in place of the day', async () => {
+        binding('GetWatchRecordings').mockResolvedValue([]);
+        const first = await act(async () => render(<Harness initialSection="yourDay" />));
+        expect(document.querySelector('[data-activity-section="watch"]')).toBeNull();
+        first.unmount();
+
+        binding('GetWatchRecordings').mockResolvedValue([{
+            id: 'r1', source: 'watch', state: 'transcribed', startedAt: new Date().toISOString(), durationSeconds: 75,
+            words: 3, ownerVoice: '', sessionId: 'rec-r1', hasAudio: false, parts: [],
+        }]);
+        await act(async () => {
+            render(<Harness initialSection="yourDay" />);
+        });
+        const door = await waitFor(() => {
+            const found = document.querySelector('[data-activity-section="watch"]');
+            expect(found).not.toBeNull();
+            return found as HTMLElement;
+        });
+        fireEvent.click(door);
+        await waitFor(() => expect(screen.getByText('1:15 · ' + enActivity.watch.state.transcribed)).toBeInTheDocument());
+        expect(door.getAttribute('aria-current')).toBe('page');
+        expect(screen.queryByRole('heading', { name: enActivity.day.yourDay })).toBeNull();
+        binding('GetWatchRecordings').mockResolvedValue([]);
+    });
+
     it('says in place when a frame screen text cannot be read, with Try again', async () => {
         binding('GetSnapshotOCRText').mockRejectedValueOnce(new Error('ocr down')).mockResolvedValueOnce('Quarterly plan');
         render(

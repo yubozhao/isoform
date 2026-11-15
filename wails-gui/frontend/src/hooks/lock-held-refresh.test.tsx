@@ -30,6 +30,14 @@ vi.mock('@/lib/wails-shim-app', () => new Proxy({}, {
         return vi.fn().mockResolvedValue(null);
     },
 }));
+// The lock rule lives in the hook and app-activity, so the hook's two reads go
+// straight to the fixture: the page cache's sharing of a read on mount made the
+// counts depend on timing under load.
+vi.mock('@/lib/page-queries', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('@/lib/page-queries')>()),
+    GetMobileBriefHealth: (...args: unknown[]) => fixture.getHealth(...args),
+    GetEngagementWeekSummary: (...args: unknown[]) => fixture.getWeek(...args),
+}));
 vi.mock('../../wailsjs/go/main/App', () => new Proxy({}, {
     has: () => true,
     get: (_t, name: string) => {
@@ -69,7 +77,7 @@ describe('held while the Mac is locked', () => {
         await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
         expect(fixture.getHealth).toHaveBeenCalledTimes(2);
         unmount();
-    });
+    }, 30_000);
 
     it('main chat setup makes no read while locked, and one on unlock', async () => {
         const { unmount } = renderHook(() => useMainChatSetup(true));
@@ -83,5 +91,5 @@ describe('held while the Mac is locked', () => {
         act(() => emit('system:state', 'unlocked'));
         await waitFor(() => expect(fixture.getSetup.mock.calls.length).toBeGreaterThan(before), { timeout: 10_000 });
         unmount();
-    });
+    }, 30_000);
 });

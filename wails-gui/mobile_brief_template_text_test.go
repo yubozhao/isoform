@@ -261,6 +261,13 @@ func TestTodayShowsTheTemplateForAStoredBriefWithoutText(t *testing.T) {
 	}
 	clock.Set(mobileBriefTestDay(11, 20))
 
+	// The first read starts a background live refresh, and this test's gather
+	// still returns every draft. Let it finish so it cannot re-store the brief
+	// while the test reads it, or after a draft is deleted.
+	if _, err := rig.app.GetLatestBrief(); err != nil {
+		t.Fatal(err)
+	}
+	svc.todayRefreshWG.Wait()
 	view, err := rig.app.GetLatestBrief()
 	if err != nil || view.Brief == nil {
 		t.Fatalf("view = %+v, %v", view, err)

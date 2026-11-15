@@ -614,5 +614,42 @@
     },
     "privacy": {
         "privateItem": "a private item"
+    },
+    "watch": {
+        "nav": "From your watch",
+        "title": "From your watch",
+        "subtitle": "Recordings from your watch, kept on this computer with your other recordings.",
+        "empty": "Recordings from your watch show here once your phone has sent them.",
+        "loadFailed": "The recordings could not be loaded.",
+        "untimed": "Recording",
+        "sourceWatch": "Watch",
+        "sourcePhone": "Phone",
+        "meta": "{{duration}} · {{state}}",
+        "state": {
+            "receiving": "Arriving from your phone",
+            "onComputer": "On your computer",
+            "transcribed": "Transcribed",
+            "nothingSaid": "Nothing was said",
+            "failed": "Couldn't be transcribed. Isoform tries again when it next starts."
+        },
+        "part": "Part {{index}} · {{time}} · {{duration}}",
+        "place": "at {{place}}",
+        "heartRate": {
+            "calm": "heart rate calm (avg {{avg}}, peak {{peak}})",
+            "raised": "heart rate raised (avg {{avg}}, peak {{peak}})",
+            "high": "heart rate high (avg {{avg}}, peak {{peak}})"
+        },
+        "audioLabel": "Recording, part {{index}}",
+        "audioGone": "The audio is no longer kept. The words stay.",
+        "audioUnavailable": "The audio could not be played.",
+        "heard": "What it heard",
+        "transcriptEmpty": "Nothing to show. The words are private, or observing is paused.",
+        "voiceNotEnrolled": "Add your voice in Settings so Isoform can tell which words are yours.",
+        "openTimeline": "Show in Screen timeline",
+        "delete": "Delete everywhere",
+        "deleteTitle": "Delete everywhere?",
+        "deleteBody": "The recording and what Isoform learned only from it go from your watch, your phone and your computer.",
+        "deleteConfirm": "Delete",
+        "deleteFailed": "Didn't delete. Try again."
     }
 }

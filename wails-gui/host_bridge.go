@@ -124,6 +124,7 @@ func (hb *hostBridge) routeTable() []hostBridgeRoute {
 		{"/api/activity/frame", hostAccessMedia, http.MethodGet, hb.app.handleActivityFrame},
 		{"/api/activity/snapshot", hostAccessMedia, http.MethodGet, hb.app.handleActivitySnapshot},
 		{"/api/activity/audio", hostAccessMedia, http.MethodGet, hb.app.handleActivityMeetingAudio},
+		{"/api/activity/recording", hostAccessMedia, http.MethodGet, hb.app.handleActivityRecordingAudio},
 	}
 	// Computer use endpoints for desktop interaction.
 	routes = append(routes, hb.computerUseRoutes()...)
