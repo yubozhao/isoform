@@ -11,7 +11,7 @@ const paints = read("first-paint.txt").split("\n").filter(Boolean).map((line) =>
 const refused = read("refused-methods.txt").split("\n").filter(Boolean);
 const errors = read("log-errors.txt").split("\n").filter(Boolean);
 const failed = pages.filter((p) => !p.ok);
-const expected = 12;
+const expected = 13;
 const ok = pages.length >= expected && failed.length === 0 && Number(logErrors) === 0 && refused.length === 0;
 const line = ok
     ? `PASS ${pages.length} pages on ${sha}, build ${buildSecs}s, start ${startupSecs}s`

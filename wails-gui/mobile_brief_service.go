@@ -1830,6 +1830,9 @@ func mobileBriefAudioForRead(brief MobileBriefV1) *MobileBriefAudio {
 // Audio returns the stored spoken brief or its download status for an id.
 func (s *mobileBriefService) Audio(briefID string) (MobileBriefAudioData, bool) {
 	brief, found := s.store.load(briefID)
+	if found {
+		brief.Audio = s.store.mobileBriefStoredAudio(brief)
+	}
 	if !found || brief.Audio == nil {
 		return MobileBriefAudioData{}, false
 	}

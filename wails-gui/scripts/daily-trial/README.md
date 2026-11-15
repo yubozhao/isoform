@@ -9,7 +9,8 @@ Two runs every morning, before the day starts (docs/rework-2026-11.md, step 4).
 | Check | What passes |
 |---|---|
 | today | Today shows within its paint budget |
-| brief-audio | the scheduled brief arrives on Today with its recording, and the play button switches to playing |
+| stripped-brief | a seeded brief that a later pass saved without its words and recording (the 2026-11-15 failure) still shows its built words on Today and plays |
+| brief-audio | the scheduled brief arrives on Today, replacing the seeded one, with its recording, and the play button switches to playing |
 | chat | a message is sent and an answer arrives |
 | tasks, activity, about-you, how-you-do-things, who-you-know, settings | the page shows within its budget |
 | watch-recordings | Activity > From your watch lists the seeded recording |

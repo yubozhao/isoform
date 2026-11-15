@@ -678,11 +678,19 @@ func mobileBriefSealKeptAttendance(previous mobileBriefFinishedRead, found bool,
 // with no copy yet is sealed once, as before.
 func (s *mobileBriefService) finishedReadWithholding(source MobileBriefV1) (result MobileBriefV1, resultWithheld mobileBriefWithholding, resultErr error) {
 	defer func() {
+		// The latest built brief always shows with its words and recording
+		// (mobile_brief_show_built.go): nothing after the build withholds it.
+		if shown, changed := s.mobileBriefShowBuilt(source, result); changed {
+			result, resultWithheld, resultErr = shown, mobileBriefWithholding{}, nil
+		}
 		status, reason := "shown", "none"
 		switch true {
 		case resultErr != nil:
 			status, reason = "withheld", "read_error"
-		case len(result.Narrative) == 0:
+		case len(result.Narrative) == 0 || result.NarrativeStatus != "ok" && result.NarrativeStatus != "quiet":
+			// Shown means the words the model wrote are shown. Isoform's own
+			// fallback lines are not (2026-11-15: two fallback lines were
+			// logged as shown while the written brief was gone).
 			status, reason = "withheld", resultWithheld.Reason
 			if reason == "" {
 				reason = "no_written_text"

@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -29,6 +30,10 @@ import (
 // anyone's data.
 
 const trialSeedDirEnv = "ISOFORM_TRIAL_SEED_DIR"
+
+// trialSeedBriefWords opens the seeded brief; the daily check looks for it on
+// Today (frontend/e2e/daily-real-app.spec.ts).
+const trialSeedBriefWords = "Daily test brief: the Halcyon review is the first thing today."
 
 func TestTrialSeed(t *testing.T) {
 	dir := strings.TrimSpace(os.Getenv(trialSeedDirEnv))
@@ -144,6 +149,47 @@ func TestTrialSeed(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// An earlier brief today, built with its words and recording, then saved
+	// again without them, as the live refresh did on 2026-11-15 (its words
+	// cited five calendar events). Today must still show its words and play
+	// it: once built, the latest brief always shows (mobile_brief_show_built.go).
+	briefs := newMobileBriefStore(mobileDir)
+	if err := os.MkdirAll(briefs.dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	builtAt := now.Add(-30 * time.Minute)
+	in := mobileBriefInput{AsOf: builtAt, WindowStart: builtAt.Add(-2 * time.Hour), Slot: mobileBriefSlotOnRequest, Location: time.Local}
+	for i := range 5 {
+		in.Meetings = append(in.Meetings, mobileBriefCandidate{SourceKind: mobileBriefCalendarSource, SourceID: "trial-event-" + strconv.Itoa(i), Title: "Halcyon review", At: builtAt.Add(-time.Duration(i+1) * time.Minute)})
+	}
+	written := buildMobileBriefV1(in)
+	var calendar []string
+	for _, ref := range written.Evidence {
+		if ref.SourceKind == mobileBriefCalendarSource {
+			calendar = append(calendar, ref.Ref)
+		}
+	}
+	written.Narrative = []MobileBriefPara{
+		{Text: trialSeedBriefWords, Refs: calendar},
+		{Text: "Maya is waiting on the launch memo before the check-in.", Refs: calendar[:1]},
+	}
+	written.NarrativeStatus = "ok"
+	briefWav := trialSeedTone(3)
+	briefSum := sha256.Sum256(briefWav)
+	written.Audio = &MobileBriefAudio{Status: mobileBriefAudioStatusOK, Mime: mobileBriefAudioMimeWAV, Bytes: len(briefWav), SHA256: hex.EncodeToString(briefSum[:]), DurationSeconds: 3}
+	written.Audio.binding = mobileBriefAudioBinding(written, "en")
+	if err := briefs.saveBuilt(written); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(briefs.dir, written.BriefID+mobileBriefAudioExtWAV), briefWav, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stripped := written
+	stripped.Narrative, stripped.NarrativeStatus, stripped.Audio = nil, "unavailable", nil
+	if err := briefs.save(stripped, builtAt); err != nil {
+		t.Fatal(err)
+	}
+
 	// The app reads the day back the way it will at launch.
 	if !mobileStateExists(mobileDir) {
 		t.Fatal("the phone state does not read as present")
@@ -154,7 +200,10 @@ func TestTrialSeed(t *testing.T) {
 	if raw, err := store.GetUIState(ctx, onboardingStateKey); err != nil || !onboardingStateDone(raw) {
 		t.Fatalf("setup does not read as done: %q %v", raw, err)
 	}
-	t.Logf("trial seed written to %s: main chat %s, watch recording %s", dir, main.LocalID, watchID)
+	if got, ok := briefs.loadBuilt(written.BriefID); !ok || len(got.Narrative) != 2 || got.Audio == nil {
+		t.Fatal("the seeded brief's build does not read back")
+	}
+	t.Logf("trial seed written to %s: main chat %s, watch recording %s, stripped brief %s", dir, main.LocalID, watchID, written.BriefID)
 }
 
 // trialSeedRefuse keeps the seed off any folder that holds someone's data.

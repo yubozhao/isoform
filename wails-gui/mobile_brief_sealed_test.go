@@ -46,8 +46,10 @@ func TestBriefReadLogsVisibleTemplateText(t *testing.T) {
 	if err != nil || len(read.Narrative) == 0 {
 		t.Fatalf("template text was not shown: error=%v", err)
 	}
+	// Isoform's own lines show, and the log says the written words do not
+	// (2026-11-15: fallback lines logged as shown hid a missing brief).
 	line := output.String()
-	if strings.Count(line, "[mobile-brief] read brief=") != 1 || !strings.Contains(line, "written=shown") || strings.Contains(line, read.Narrative[0].Text) {
+	if strings.Count(line, "[mobile-brief] read brief=") != 1 || !strings.Contains(line, "written=withheld reason=no_written_text") || strings.Contains(line, read.Narrative[0].Text) {
 		t.Fatalf("unexpected template read outcome log: %q", line)
 	}
 }

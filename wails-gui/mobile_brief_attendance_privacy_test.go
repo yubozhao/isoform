@@ -140,7 +140,10 @@ func TestMobileBriefAttendanceDeliveryRechecksStoredSessions(t *testing.T) {
 				// Seal v2: retention removing a source is not a privacy action. The
 				// phone reads the sealed copy, so it shows what the computer shows.
 				// Every explicit privacy action still withdraws.
-				if privacy == "expired" {
+				// Closed Eyes stops new capture; it does not hide a brief
+				// already built (Bo, 2026-11-15, mobile_brief_show_built.go),
+				// so the phone reads the same copy the computer does.
+				if privacy == "expired" || privacy == "closed-eyes" {
 					computer, ok := svc.GetMobileBrief(brief.BriefID)
 					if !ok || len(computer.MeetingAttendance) != len(delivered.MeetingAttendance) {
 						t.Fatalf("the phone and the computer read different attendance: %d, %d", len(delivered.MeetingAttendance), len(computer.MeetingAttendance))
