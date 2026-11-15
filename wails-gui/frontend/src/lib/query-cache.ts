@@ -153,7 +153,16 @@ export class QueryCache {
         return run;
     }
 
-    clear() { this.invalidate(); this.entries.clear(); }
+    // Empty the cache before telling readers: a reader that re-reads while it
+    // is told must land in the new cache, or its read is orphaned and the next
+    // caller asks the backend again (two reads per privacy sweep).
+    clear() {
+        const names = new Set([...this.entries.values()].map((entry) => entry.name));
+        for (const entry of this.entries.values()) { entry.generation++; entry.pending = undefined; }
+        this.epoch++;
+        this.entries.clear();
+        for (const name of names) this.notify(name);
+    }
     get size() { return this.entries.size; }
 
     read<T>(name: string, args: readonly unknown[], load: () => Promise<T>, ttl = 60_000): Promise<T> {
