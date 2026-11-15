@@ -884,6 +884,7 @@ func collectMobileBriefInput(
 	collectMobileBriefRecall(a, &in)
 	collectMobileBriefDeliverables(a, &in)
 	collectMobileBriefRecap(a, &in)
+	collectMobileBriefMessageAsks(ctx, a, &in)
 	collectMobileBriefOlderThreads(ctx, a, &in)
 	collectMobileBriefWaitingReplies(ctx, a, &in)
 	collectMobileBriefNews(a, &in)

@@ -29,7 +29,7 @@ func mobileBriefSourceAnchor(kind string) string {
 	switch kind {
 	case mobileBriefCalendarSource, "calendar_day", mobileBriefAttendanceSource:
 		return mobileBriefAnchorMeeting
-	case mobileBriefWaitingReplySource:
+	case mobileBriefWaitingReplySource, mobileBriefMessageAskSource:
 		return mobileBriefAnchorPerson
 	case "history", "handoff", "schedule", "schedule_run", "deliverable":
 		return mobileBriefAnchorOwnWork

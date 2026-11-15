@@ -550,6 +550,8 @@ func (a *App) mobileBriefDeliveryOnce(ctx context.Context, brief MobileBriefV1) 
 				allowed = a.mobileBriefHandoffSourceReadable(listed, ref.SourceID)
 			case mobileBriefWaitingReplySource:
 				_, allowed = a.mobileBriefWaitingReply(ctx, ref.SourceID, time.Now())
+			case mobileBriefMessageAskSource:
+				_, allowed = a.mobileBriefMessageAsk(ctx, ref.SourceID, time.Now())
 			case "deliverable":
 				allowed = deliverableAllowed(ref.SourceID)
 			case mobileBriefWebSource:
