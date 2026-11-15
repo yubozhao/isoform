@@ -1452,7 +1452,7 @@ func (s *mobileBriefService) backfillTodayAudio(ctx context.Context) {
 // speaks the sealed words: there is none, it is unfinished, or its binding
 // (the hash of the words it reads) differs from the sealed copy's.
 func mobileBriefAudioNeedsRemake(audio *MobileBriefAudio, sealed MobileBriefV1, lang string) bool {
-	return audio == nil || audio.Status != mobileBriefAudioStatusOK || audio.Bytes == 0 || audio.binding != mobileBriefAudioBinding(sealed, lang)
+	return audio == nil || audio.Status != mobileBriefAudioStatusOK || audio.Bytes == 0 || audio.binding != mobileBriefAudioBindingLike(sealed, lang, audio.binding)
 }
 
 // remakeAudioSoon makes today's recording again after an explicit privacy
@@ -1506,8 +1506,12 @@ func (s *mobileBriefService) addAudioWithLatestGuard(ctx context.Context, brief 
 		log.Printf("[brief-audio] slot=%s wait_ms=%d total_ms=%d attempts=%d", brief.Slot, started.Sub(asked).Milliseconds(), time.Since(asked).Milliseconds(), attempts)
 	}()
 	lang := s.speaker.voiceLang()
-	// Start with the latest stored and privacy-projected text, including any
-	// amendment made after this generation was sealed.
+	// Start with the latest stored brief as its sealed read shows it, including
+	// any amendment made after it was sealed. The voice reads the sealed words
+	// (seal v2): every privacy change amends that copy before it is read, and
+	// a live projection of the stored words can say them differently (a count,
+	// a clock), which kept the 2026-11-14 morning brief from being recorded
+	// again once its recording was lost.
 	initial, found := s.store.load(brief.BriefID)
 	if !found || initial.AsOf != brief.AsOf {
 		return
@@ -1515,7 +1519,7 @@ func (s *mobileBriefService) addAudioWithLatestGuard(ctx context.Context, brief 
 	brief = initial
 	if s.app != nil {
 		shown, _, err := s.finishedReadWithholding(initial)
-		if err != nil || mobileBriefAudioBinding(shown, lang) != mobileBriefAudioBinding(s.app.mobileBriefForDelivery(initial), lang) {
+		if err != nil {
 			return
 		}
 		brief = shown
@@ -1556,7 +1560,7 @@ func (s *mobileBriefService) addAudioWithLatestGuard(ctx context.Context, brief 
 		}
 		if s.app != nil {
 			shown, _, err := s.finishedReadWithholding(stored)
-			if err != nil || mobileBriefAudioBinding(shown, lang) != mobileBriefAudioBinding(s.app.mobileBriefForDelivery(stored), lang) {
+			if err != nil {
 				return
 			}
 			stored = shown
@@ -1596,7 +1600,7 @@ func (s *mobileBriefService) addAudioWithLatestGuard(ctx context.Context, brief 
 		preEpoch = s.app.briefPrivacyPrint()
 		if preFound {
 			shown, _, err := s.finishedReadWithholding(pre)
-			if err != nil || mobileBriefAudioBinding(shown, lang) != mobileBriefAudioBinding(s.app.mobileBriefForDelivery(pre), lang) {
+			if err != nil {
 				return
 			}
 			preCurrent = shown
@@ -1678,7 +1682,11 @@ func (s *mobileBriefService) markAudioRendering(briefID, input, lang string, asO
 	}
 	current := stored
 	if s.app != nil {
-		current = s.app.mobileBriefForDelivery(stored)
+		sealed, ok := s.savedSealedCopy(stored)
+		if !ok {
+			return false
+		}
+		current = sealed
 	}
 	if input != mobileBriefAudioBinding(current, lang) {
 		return false
@@ -1712,7 +1720,47 @@ func (s *mobileBriefService) clearAudioRendering(briefID string, asOf time.Time)
 	}
 }
 
+// mobileBriefAudioBinding is the binding a new recording gets (v3): a digest of
+// what the voice reads, and nothing it does not. v2 also bound the sources each
+// paragraph cites, so a live read that kept every word but carried a different
+// evidence set (a sensitive item left out at the seal, a purpose read again by
+// a Today refresh) no longer matched, and the recording was dropped although it
+// still said exactly the words shown (Nov 14: the phone had no player). A
+// withdrawal that matters changes the words, and so the binding.
 func mobileBriefAudioBinding(brief MobileBriefV1, lang string) string {
+	said := func(paragraphs []MobileBriefPara) []string {
+		out := make([]string, 0, len(paragraphs))
+		for _, paragraph := range paragraphs {
+			out = append(out, pii.DisplayModelText(paragraph.Text, lang))
+		}
+		return out
+	}
+	spoken := mobileBriefSpokenText(brief, lang)
+	var closing string
+	if len(brief.WeeklyRecap) > 0 && brief.YourWeek == nil {
+		closing = pii.DisplayModelText(mobileBriefDeliveredClosing(brief, lang).Text, lang)
+	}
+	base := struct {
+		ID, AsOf, Status  string
+		Narrative, Weekly []string
+		Spoken, Closing   string
+		Question          string
+	}{brief.BriefID, brief.AsOf, brief.NarrativeStatus, said(brief.Narrative), said(brief.WeeklyRecap), spoken, closing,
+		morningBriefWeekQuestionSpeech(brief.WeekQuestion, lang)}
+	return lang + ":v3:" + mobileBriefModelDigest(base)
+}
+
+// mobileBriefAudioBindingLike computes the binding with the rule a recording
+// was bound under, so a v2 recording made before v3 is checked as it was made.
+func mobileBriefAudioBindingLike(brief MobileBriefV1, lang, recorded string) string {
+	if strings.Contains(recorded, ":v2:") {
+		return mobileBriefAudioBindingV2(brief, lang)
+	}
+	return mobileBriefAudioBinding(brief, lang)
+}
+
+// mobileBriefAudioBindingV2 is the binding recordings made before 2026-11-14 carry.
+func mobileBriefAudioBindingV2(brief MobileBriefV1, lang string) string {
 	evidence := mobileBriefEvidenceByRef(brief)
 	said := func(paragraphs []MobileBriefPara) [][]string {
 		out := make([][]string, 0, len(paragraphs))
@@ -1773,7 +1821,7 @@ func mobileBriefAudioForRead(brief MobileBriefV1) *MobileBriefAudio {
 		return nil
 	}
 	lang, _, _ := strings.Cut(brief.Audio.binding, ":")
-	if brief.Audio.binding != mobileBriefAudioBinding(brief, lang) {
+	if brief.Audio.binding != mobileBriefAudioBindingLike(brief, lang, brief.Audio.binding) {
 		return nil
 	}
 	return brief.Audio

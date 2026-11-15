@@ -425,10 +425,17 @@ func mobileBriefTodayReadableSynthesis(app *App, base MobileBriefV1) (MobileBrie
 	// A recording bound to its text stays stored while the brief as read
 	// still says what it speaks, even when this read hides it for another
 	// reason (a live row leaving a template brief): the next read plays it
-	// again. One whose text changed or was withdrawn leaves.
+	// again. The recording is made from the sealed words (seal v2), so one
+	// that still speaks the current sealed copy stays too when this pass
+	// withholds nothing; judging it by this live projection alone erased the
+	// 2026-11-14 morning recording. One whose text changed or was withdrawn
+	// leaves.
 	if stored := base.Audio; stored != nil && stored.binding != "" {
 		readable.Audio = stored
 		base.Audio = mobileBriefAudioForRead(readable)
+		if base.Audio == nil && withheld.Reason == "" && app.mobileBriefAudioSpeaksSealedCopy(base, stored) {
+			base.Audio = stored
+		}
 	} else {
 		base.Audio = readable.Audio
 	}
