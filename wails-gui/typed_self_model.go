@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"sort"
 	"strings"
 	"time"
@@ -512,20 +511,6 @@ func (s *ActivityStore) ListSelfModelEntriesAt(
 		out = append(out, item)
 	}
 	return out, rows.Err()
-}
-
-func (a *App) addSelfModelEntry(item SelfModelEntry) {
-	if a == nil || a.activity == nil || a.activity.store == nil {
-		return
-	}
-	persisted, added, err := a.activity.store.AddSelfModelEntry(item)
-	if err != nil {
-		log.Printf("[self-model] promotion failed: %v", err)
-		return
-	}
-	if added {
-		a.emitBrowserEvent("self_model:updated", persisted)
-	}
 }
 
 func selfModelWords(value string) map[string]struct{} {

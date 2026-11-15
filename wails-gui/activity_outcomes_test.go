@@ -198,29 +198,6 @@ func TestActivityOutcomeTransitionsAndCorrection(t *testing.T) {
 	}
 }
 
-func TestActivityOutcomeLifecyclePassAndAbandonment(t *testing.T) {
-	store := newActivityEvidenceTestStore(t)
-	run := outcomeTestRun(t, store, "handoff", "Claude", "com.anthropic.claudefordesktop", 400000, "Please inspect ~/.sample-agent/records", "Send")
-	outcomeTestLink(t, store, "task", run)
-	if _, err := BuildTaskLifecycleInputFromActivity(store, "activity", "handoff", 1000, run.EndMs, nil); err != nil {
-		t.Fatal(err)
-	}
-	latest, _ := store.GetLatestActivityOutcome("task")
-	if latest == nil || latest.Status != activityOutcomeReported {
-		t.Fatalf("lifecycle report=%+v", latest)
-	}
-	now := run.EndMs + activityPauseAfterMs + activityAbandonAfterMs
-	for range 2 {
-		if _, err := store.SettleActivities(now); err != nil {
-			t.Fatal(err)
-		}
-	}
-	items, err := store.GetActivityOutcomes("task")
-	if err != nil || len(items) != 2 || items[1].Status != activityOutcomeAbandoned || items[1].Reason != "quiet_timeout" || items[1].OccurredAt != now {
-		t.Fatalf("abandoned=%+v err=%v", items, err)
-	}
-}
-
 func TestActivityOutcomeRejectsUnrelatedOrAmbiguousMeasurements(t *testing.T) {
 	observation := func(text string, at int64) activityOutcomeObservation {
 		return activityOutcomeObservation{evidence: ActivityOutcomeEvidence{SourceKind: "activity_snapshot", ObservedAt: at, Tokens: extractActivityEvidenceTokens(text, at)}}

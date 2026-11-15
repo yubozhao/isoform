@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"strings"
 
@@ -133,37 +132,6 @@ func taskLifecycleTextCommitCanTerminate(
 	default:
 		return false
 	}
-}
-
-func taskLifecycleResultDestinationSHA256(
-	value *TaskLifecycleResultDestination,
-) (string, error) {
-	destination, err := normalizeTaskLifecycleResultDestination(value)
-	if err != nil {
-		return "", err
-	}
-	if destination == nil {
-		return "", errors.New("task lifecycle result destination is required")
-	}
-	payload, err := json.Marshal(destination)
-	if err != nil {
-		return "", err
-	}
-	return sha256Hex(payload), nil
-}
-
-func taskLifecycleResultDestinationsEqual(
-	left, right *TaskLifecycleResultDestination,
-) bool {
-	if left == nil || right == nil {
-		return left == nil && right == nil
-	}
-	return left.Version == right.Version &&
-		left.AppBundleID == right.AppBundleID &&
-		left.AppName == right.AppName &&
-		left.WindowTitle == right.WindowTitle &&
-		left.SemanticRole == right.SemanticRole &&
-		left.CaptureMethod == right.CaptureMethod
 }
 
 func taskLifecycleResultDestinationRole(

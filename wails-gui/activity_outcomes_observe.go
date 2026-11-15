@@ -551,37 +551,3 @@ func (s *ActivityStore) observeActivityRunOutcomeWithEvidence(activityID string,
 	}
 	return tx.Commit()
 }
-
-func (s *ActivityStore) observeActivityOutcomesInWindow(startMs, endMs int64) error {
-	rows, err := s.db.Query(`SELECT l.activity_id, l.run_id FROM activity_run_links l JOIN activity_timeline_groups g ON g.id=l.run_id WHERE l.activity_id != '' AND g.end_ms > ? AND g.start_ms <= ?`, startMs, endMs)
-	if err != nil {
-		return err
-	}
-	type link struct{ activityID, runID string }
-	var links []link
-	for rows.Next() {
-		var item link
-		if err := rows.Scan(&item.activityID, &item.runID); err != nil {
-			rows.Close()
-			return err
-		}
-		links = append(links, item)
-	}
-	err = rows.Err()
-	rows.Close()
-	if err != nil {
-		return err
-	}
-	for _, item := range links {
-		run, err := s.GetTimelineRunByID(item.runID)
-		if err != nil {
-			return err
-		}
-		if run != nil {
-			if err := s.ObserveActivityRunOutcome(item.activityID, *run, endMs); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}

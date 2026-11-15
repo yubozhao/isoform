@@ -19,7 +19,7 @@ import (
 // what the rotator does over time, all at once and to the end:
 //   - removes screenshot and recording files no activity refers to;
 //   - drops tables of removed features still in the database, clears the
-//     retired Agency planning runs (activity_storage_agency.go) and asks for
+//     retired Agency planning runs (activity_storage_retired_runs.go) and asks for
 //     a VACUUM, which runs the next time the screen is locked;
 //   - removes images older than the screenshot time limit, then the oldest
 //     images and recordings while the total is over the storage limit (rows

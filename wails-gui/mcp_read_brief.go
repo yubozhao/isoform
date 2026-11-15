@@ -389,34 +389,6 @@ func (r *mcpBriefReader) learning(id string, depth int) (mcpReadItem, bool) {
 	return mcpReadItem{}, false
 }
 
-func (r *mcpBriefReader) eventTimeAllowed(at int64, depth int) bool {
-	p := r.p
-	rows, err := p.app.activity.store.db.QueryContext(p.ctx, `SELECT DISTINCT session_id FROM activity_events WHERE timestamp=? LIMIT 101`, at)
-	if err != nil {
-		return false
-	}
-	ids := []string{}
-	for rows.Next() {
-		var id string
-		if rows.Scan(&id) != nil {
-			rows.Close()
-			return false
-		}
-		ids = append(ids, id)
-	}
-	err = rows.Err()
-	rows.Close()
-	if err != nil || len(ids) == 0 || r.exceedsLimit(len(ids), 100) {
-		return false
-	}
-	for _, id := range ids {
-		if _, ok := r.reference("activity_session", id, depth+1); !ok {
-			return false
-		}
-	}
-	return true
-}
-
 func (r *mcpBriefReader) scheduleRun(id string) (mcpReadItem, bool) {
 	p := r.p
 	run, err := p.app.store.ReadMCPRun(p.ctx, id)
