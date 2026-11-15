@@ -1,4 +1,5 @@
 import { measureToday, recordTodayAction } from "@/lib/today-telemetry";
+import { WorkOnItButton } from "@/components/work-on-it/work-on-it";
 import { assistantLabel } from "@/lib/brief-assistant";
 import { useTodaySectionSeen } from "@/hooks/useTodaySectionSeen";
 import { isCommitmentItemKey, isFindTimeLabel } from "./commitment-key";
@@ -2089,6 +2090,13 @@ function BriefRow({
                             {tr("actions.askAbout")}
                         </button>
                     )}
+                    <WorkOnItButton input={{
+                        sourceKind: "brief_item",
+                        sourceId: item.key || item.id,
+                        title: item.title,
+                        detail: [item.attentionReason, item.detail].filter((part) => part?.trim()).join(" "),
+                        done: item.nextStep ?? "",
+                    }} />
                 </div>
             )}
             {goalId && onGoalHidden && <TodayGoalMenu goalId={goalId} title={item.title} onHidden={onGoalHidden} />}

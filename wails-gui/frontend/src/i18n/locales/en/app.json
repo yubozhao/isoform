@@ -1204,5 +1204,26 @@
         "deleteConfirm": "Delete “{{title}}”? Its thread goes too. Files it made stay on your computer.",
         "delete": "Delete",
         "inProject": "In {{project}}."
+    },
+    "workOnIt": {
+        "action": "Work on it",
+        "title": "Work on it",
+        "whatGoes": "This is exactly what goes to {{agent}}:",
+        "sendTo": "Send to {{agent}}",
+        "sendToOther": "Send to...",
+        "sending": "Sending...",
+        "result": {
+            "deep_link": "Opened in {{agent}}. Review it there and send.",
+            "open_copy": "Copied. Paste it in {{agent}} and send.",
+            "message": "Sent to {{agent}}."
+        },
+        "handleLabel": "{{agent}}'s phone number or Apple ID",
+        "handleSave": "Save number",
+        "failed": "Couldn't hand it over. Try again.",
+        "closedEyes": "Closed Eyes is on, so nothing is sent.",
+        "prepareFailed": "Couldn't prepare this task.",
+        "terms": {
+            "instinct": "Instinct's terms allow it to train on what it receives."
+        }
     }
 }

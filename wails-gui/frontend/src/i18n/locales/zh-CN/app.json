@@ -1204,5 +1204,26 @@
         "deleteConfirm": "删除“{{title}}”？它的对话也会一起删掉。它生成的文件会留在你的电脑上。",
         "delete": "删除",
         "inProject": "在 {{project}} 里。"
+    },
+    "workOnIt": {
+        "action": "交给智能体",
+        "title": "交给智能体",
+        "whatGoes": "将发送给 {{agent}} 的内容如下：",
+        "sendTo": "发送给 {{agent}}",
+        "sendToOther": "发送给...",
+        "sending": "正在发送...",
+        "result": {
+            "deep_link": "已在 {{agent}} 中打开。请在那里检查后发送。",
+            "open_copy": "已复制。请粘贴到 {{agent}} 并发送。",
+            "message": "已发送给 {{agent}}。"
+        },
+        "handleLabel": "{{agent}} 的手机号或 Apple ID",
+        "handleSave": "保存号码",
+        "failed": "没能交出去，请再试一次。",
+        "closedEyes": "闭眼模式已开启，不会发送任何内容。",
+        "prepareFailed": "无法准备这项任务。",
+        "terms": {
+            "instinct": "Instinct 的条款允许它用收到的内容训练模型。"
+        }
     }
 }
