@@ -65,7 +65,15 @@ func (r *composerBatchRunner) IsReady() bool                            { return
 // across the last hour.
 func saveComposerHour(t *testing.T, store *ActivityStore, n int) []ActivityTimelineRunRow {
 	t.Helper()
-	base := time.Now().Add(-time.Hour).UnixMilli()
+	// The composer places today's runs before older ones, so an hour that
+	// crosses midnight would not come back in order (the test failed from
+	// 00:00 to 01:00). Keep the hour on one day.
+	now := time.Now()
+	baseAt := now.Add(-time.Hour)
+	if midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()); baseAt.Before(midnight) {
+		baseAt = midnight.Add(-2 * time.Hour)
+	}
+	base := baseAt.UnixMilli()
 	var runs []ActivityTimelineRunRow
 	for i := 0; i < n; i++ {
 		start := base + int64(i)*2*60_000
