@@ -15,9 +15,9 @@ export function useGoalCheckIn(enabled: boolean): { checkIn: GoalCheckInView | n
             .then((next) => {
                 if (mine === version.current) setCheckIn(next ?? null);
             })
-            .catch(() => {
-                if (mine === version.current) setCheckIn(null);
-            });
+            // A failed read keeps the check-in shown; the next event or focus
+            // reads again (one failed read no longer removes the card).
+            .catch(() => {});
     }, []);
     usePageQueryRefresh(['GetGoalCheckIn'], refresh, enabled);
 

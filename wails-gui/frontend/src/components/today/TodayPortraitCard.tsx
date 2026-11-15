@@ -21,9 +21,8 @@ export function useTodayPortraitCard(enabled: boolean) {
             .then((next) => {
                 if (current) setCard(next ?? null);
             })
-            .catch(() => {
-                if (current) setCard(null);
-            });
+            // A failed read keeps the card shown until the next read.
+            .catch(() => {});
         return () => {
             current = false;
         };
