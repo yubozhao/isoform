@@ -151,7 +151,10 @@ export function useTodayTopics(enabled: boolean) {
             setRefreshFailure(!unavailable(error));
             setLastUpdatedAt(lastSuccessfulAt.current);
             const current = displayed.current.status;
-            const next = unavailable(error) ? "unavailable" : current === "ready" ? current : "failed";
+            // "Unavailable" means the registry does not exist yet: it never
+            // hides a grid that has shown topics (a read that fails with that
+            // text during launch kept Today empty).
+            const next = current === "ready" ? current : unavailable(error) ? "unavailable" : "failed";
             displayed.current = { ...displayed.current, status: next };
             if (next !== current) setStatus(next);
         }
@@ -210,7 +213,10 @@ export function useTodayTopics(enabled: boolean) {
             setRefreshFailure(!unavailable(error));
             setLastUpdatedAt(lastSuccessfulAt.current);
             const current = displayed.current.status;
-            const next = unavailable(error) ? "unavailable" : current === "ready" ? current : "failed";
+            // "Unavailable" means the registry does not exist yet: it never
+            // hides a grid that has shown topics (a read that fails with that
+            // text during launch kept Today empty).
+            const next = current === "ready" ? current : unavailable(error) ? "unavailable" : "failed";
             displayed.current = { ...displayed.current, status: next };
             if (next !== current) setStatus(next);
         }
