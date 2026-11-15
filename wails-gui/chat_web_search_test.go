@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -150,7 +151,33 @@ func TestWebSearchContextIsForTheMainChatOnly(t *testing.T) {
 			t.Fatalf("origin %q got the search context", origin)
 		}
 	}
-	if got := rig.app.injectWebSearchToolContext("some-other-chat", promptOriginMac); got != "" {
-		t.Fatal("another chat got the search context")
+	// Another chat typed on the Mac searches the same way (opencli is no
+	// longer the research path); a resumed or phone turn there does not.
+	if got := rig.app.injectWebSearchToolContext("some-other-chat", promptOriginMac); !strings.Contains(got, "SearchWeb") {
+		t.Fatal("another chat typed on the Mac lost the search context")
+	}
+	if got := rig.app.injectWebSearchToolContext("some-other-chat", promptOriginResume); got != "" {
+		t.Fatal("a resumed turn in another chat got the search context")
+	}
+}
+
+// TestChatPromptResearchUsesSearchWeb: the chat prompt searches with
+// SearchWeb first and opencli (the user's own signed-in assistant) second,
+// and never through Isoform's own cua driver.
+func TestChatPromptResearchUsesSearchWeb(t *testing.T) {
+	data, err := os.ReadFile("streaming.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	start := strings.Index(text, "WHEN THE USER NEEDS WEB SEARCH OR RESEARCH:")
+	end := strings.Index(text[start:], "RULES:\n")
+	section := text[start : start+end]
+	search, fallback := strings.Index(section, "SearchWeb"), strings.Index(section, "use opencli via the Bash tool instead")
+	if search < 0 || fallback < 0 || search > fallback {
+		t.Fatal("the chat research section does not put SearchWeb first and opencli second")
+	}
+	if strings.Contains(strings.ReplaceAll(section, "Never cua_driver", ""), "cua_driver") {
+		t.Fatal("the chat research section routes through cua_driver")
 	}
 }
