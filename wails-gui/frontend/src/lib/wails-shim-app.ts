@@ -6237,6 +6237,13 @@ export const PreviewWorkProfileUpload = appBinding<[string], import('./work-prof
 export const ApproveWorkProfile = appBinding<[string, import('./work-profile').WorkProfileUpload], import('./work-profile').WorkProfileApprovalResult>('ApproveWorkProfile');
 export const BuildWorkProfileDraft = appBinding<[], import('./work-profile').WorkProfileView>('BuildWorkProfileDraft');
 
+// The Isoform front on this computer (front_service.go, front_ct_watch.go).
+// Explicit exports per CLAUDE.md rule 14: front-settings.tsx imports them.
+export interface FrontUnexpectedCertificate { id: string; issuer: string; notBefore: string; foundAt: number }
+export interface FrontStatus { enabled: boolean; running: boolean; hostname: string; unexpectedCertificates?: FrontUnexpectedCertificate[] }
+export const GetFrontStatus = appBinding<[], FrontStatus>("GetFrontStatus");
+export const SetFrontEnabled = appBinding<[boolean], void>("SetFrontEnabled");
+
 // Daily topics with proposed work (topics_daily.go), behind its switch.
 export interface DailyTopicProposal {
     id: string;

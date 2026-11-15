@@ -3905,5 +3905,26 @@
         "hours_other": "{{count}}-hour limit",
         "days_one": "{{count}}-day limit",
         "days_other": "{{count}}-day limit"
+    },
+    "front": {
+        "title": "Agents reach this computer",
+        "description": "An address your own agents can use to reach Isoform here. Traffic stays encrypted until it arrives on this computer.",
+        "toggleFailed": "Couldn't change this. Try again.",
+        "switch": {
+            "title": "Give this computer an agent address",
+            "agreement": "Turning this on gets a certificate for the address from Let's Encrypt, which means you accept the Let's Encrypt Subscriber Agreement.",
+            "agreementLink": "Read the agreement"
+        },
+        "address": {
+            "title": "Address",
+            "notRunning": "Starting. The address appears when it's ready."
+        },
+        "alerts": {
+            "title_one": "A certificate you didn't request",
+            "title_other": "{{count}} certificates you didn't request",
+            "body": "Someone got a certificate for your agent address with a key this computer never held. Agents may not be reaching you safely. Turn the address off until it's explained.",
+            "item": "Issued by {{issuer}} {{date}}",
+            "unknownIssuer": "an unknown issuer"
+        }
     }
 }

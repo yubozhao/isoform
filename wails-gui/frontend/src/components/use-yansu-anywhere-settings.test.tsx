@@ -15,6 +15,8 @@ vi.mock("@/lib/wails-shim-app", () => ({
     ConnectMCPReadAssistant: vi.fn(),
     RevokeMCPReadAssistant: vi.fn(),
     OpenExternalURL: mocks.openURL,
+    GetFrontStatus: vi.fn().mockResolvedValue({ enabled: false, running: false, hostname: "" }),
+    SetFrontEnabled: vi.fn(),
 }));
 
 const connections = [
