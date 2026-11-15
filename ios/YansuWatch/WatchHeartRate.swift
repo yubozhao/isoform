@@ -68,6 +68,13 @@ final class WatchHeartRateSampler {
 enum WatchContextSettings {
     static let heartRateKey = "watch.context.heartRate"
 
+    static let locationKey = "watch.context.location"
+
+    static var location: Bool {
+        get { UserDefaults.standard.bool(forKey: locationKey) }
+        set { UserDefaults.standard.set(newValue, forKey: locationKey) }
+    }
+
     static var heartRate: Bool {
         get { UserDefaults.standard.bool(forKey: heartRateKey) }
         set { UserDefaults.standard.set(newValue, forKey: heartRateKey) }

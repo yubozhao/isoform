@@ -95,6 +95,9 @@ all. Computer side: `wails-gui/mobile_voice.go`.
   the protected-app rules, memory provenance, and brief delivery checks.
 - The watch shows a clear recording state, and the system shows its own microphone indicator.
   Recording other people can need their consent; the first-run sheet on the watch says so.
+- Location with a recording is off until the wearer turns it on, and is coarse (about 1 km). The
+  area name comes from Apple Maps: the watch sends Apple that rough position only, once per
+  area, and keeps the newest 30 names on the watch until Location is turned off.
 
 ## Pieces
 

@@ -35,6 +35,8 @@
 	<false/>
 	<key>NSHealthShareUsageDescription</key>
 	<string>Isoform reads your heart rate while you record, so your brief can tell how intense the moment was. It never writes to Health.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Isoform notes roughly where you are while you record, to about a kilometer, so your brief can say where a conversation happened. The area name comes from Apple Maps.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>Isoform does not write to Health. It only reads your heart rate while you record.</string>
 	<key>NSMicrophoneUsageDescription</key>

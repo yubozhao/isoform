@@ -29,6 +29,7 @@ final class WatchRecorderModel: NSObject, ObservableObject {
     private var partStartedAt: Date?
     private var interrupted = false
     private let heartRate = WatchHeartRateSampler()
+    private let location = WatchLocationSampler()
 
     override init() {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -124,6 +125,7 @@ final class WatchRecorderModel: NSObject, ObservableObject {
         partStartedAt = date
         // Only when the wearer turned it on, and only while a part is being recorded.
         if WatchContextSettings.heartRate { heartRate.begin(at: date) }
+        if WatchContextSettings.location { location.begin() } else { location.reset() }
     }
 
     /// The running part reached its length: keep it and start the next one.
@@ -143,6 +145,7 @@ final class WatchRecorderModel: NSObject, ObservableObject {
     }
 
     private func stopAfterLimit() {
+        location.reset()
         recordingID = nil
         phase = .idle
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
@@ -159,7 +162,9 @@ final class WatchRecorderModel: NSObject, ObservableObject {
             return
         }
         let seconds = length ?? recorder.currentTime
-        let context = WatchRecordingContext(heartRate: heartRate.end(), location: nil)
+        let context = WatchRecordingContext(heartRate: heartRate.end(),
+                                            location: WatchContextSettings.location ? location.end() : nil)
+        if last { location.reset() }
         recorder.delegate = nil
         recorder.stop()
         self.recorder = nil

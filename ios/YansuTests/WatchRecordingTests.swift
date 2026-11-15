@@ -71,6 +71,34 @@ final class WatchRecordingWireTests: XCTestCase {
         XCTAssertNil(info.context)
     }
 
+    func testAnAreaNamedBeforeIsNotLookedUpAgain() throws {
+        var names = WatchPlaceNames()
+        XCTAssertNil(names.name(latitude: 37.76, longitude: -122.41))
+        names.remember(" Mission District ", latitude: 37.76, longitude: -122.41)
+        names.remember("", latitude: 1, longitude: 1)
+        XCTAssertEqual(names.name(latitude: 37.76, longitude: -122.41), "Mission District")
+        // The key is the rounded position, so a nearby fix in the same cell finds the same name.
+        XCTAssertEqual(names.name(latitude: 37.7601, longitude: -122.4099), "Mission District")
+        XCTAssertNil(names.name(latitude: 37.77, longitude: -122.41))
+        XCTAssertEqual(names.count, 1)
+
+        // Only the newest few areas are kept.
+        for index in 0..<(WatchPlaceNames.kept + 5) {
+            names.remember("Area \(index)", latitude: Double(index), longitude: 10)
+        }
+        XCTAssertEqual(names.count, WatchPlaceNames.kept)
+        XCTAssertNil(names.name(latitude: 37.76, longitude: -122.41))
+
+        // Kept across launches, and forgotten when location is turned off.
+        let suite = "watch-places-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        names.save(to: defaults)
+        XCTAssertEqual(WatchPlaceNames.load(from: defaults), names)
+        WatchPlaceNames.forget(in: defaults)
+        XCTAssertEqual(WatchPlaceNames.load(from: defaults).count, 0)
+    }
+
     func testOlderComputerOmitsTheRecordingsCapability() throws {
         XCTAssertNil(try JSONDecoder().decode(HubStatus.self, from: Data("{}".utf8)).recordingContext)
         XCTAssertNil(try JSONDecoder().decode(HubStatus.self, from: Data("{}".utf8)).recordings)
