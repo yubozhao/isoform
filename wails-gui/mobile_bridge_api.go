@@ -769,19 +769,37 @@ func (bridge *mobileBridge) serveBriefList(w http.ResponseWriter, rawLimit strin
 // Derive leads only from the delivery-gated brief, never directly from the
 // stored document, so withdrawn narrative cannot leak through the index.
 func mobileBriefSummariesWithLeads(svc mobileBriefSource, limit int) []MobileBriefSummary {
-	rows := mobileBounded(svc.ListMobileBriefs(limit), limit)
-	for i := range rows {
-		if brief, ok := svc.GetMobileBrief(rows[i].BriefID); ok && brief.NarrativeStatus == "ok" {
-			rows[i].Lead = mobileBriefLead(brief.Narrative)
-			if rows[i].Lead == "" {
-				rows[i].Lead = mobileBriefLead(brief.WeeklyRecap)
-			}
-			if rows[i].Lead == "" && brief.YourWeek != nil {
-				rows[i].Lead = mobileBriefLead([]MobileBriefPara{{Text: brief.YourWeek.Headline}})
+	rows, _ := mobileBriefSummariesRead(svc, limit, nil)
+	return rows
+}
+
+// mobileBriefSummariesRead is mobileBriefSummariesWithLeads that reads only
+// the rows keep accepts (nil reads every row; the others are dropped) and
+// returns each read brief by id, so a caller never reads one twice. Every read
+// is a sealed read of a stored brief.
+func mobileBriefSummariesRead(svc mobileBriefSource, limit int, keep func(MobileBriefSummary) bool) ([]MobileBriefSummary, map[string]MobileBriefV1) {
+	listed := mobileBounded(svc.ListMobileBriefs(limit), limit)
+	rows := make([]MobileBriefSummary, 0, len(listed))
+	read := map[string]MobileBriefV1{}
+	for _, row := range listed {
+		if keep != nil && !keep(row) {
+			continue
+		}
+		if brief, ok := svc.GetMobileBrief(row.BriefID); ok {
+			read[row.BriefID] = brief
+			if brief.NarrativeStatus == "ok" {
+				row.Lead = mobileBriefLead(brief.Narrative)
+				if row.Lead == "" {
+					row.Lead = mobileBriefLead(brief.WeeklyRecap)
+				}
+				if row.Lead == "" && brief.YourWeek != nil {
+					row.Lead = mobileBriefLead([]MobileBriefPara{{Text: brief.YourWeek.Headline}})
+				}
 			}
 		}
+		rows = append(rows, row)
 	}
-	return rows
+	return rows, read
 }
 
 func mobileBriefLead(paragraphs []MobileBriefPara) string {
