@@ -178,4 +178,6 @@ func (r *mobileRecording) dropContext() {
 	for i := range r.Received {
 		r.Received[i].Context = nil
 	}
+	// The marks are the wearer's own notes on the same audio: they go with it.
+	r.dropMarks()
 }

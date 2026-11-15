@@ -133,6 +133,9 @@ type MobileRecordingRequest struct {
 	// Context is the wearer's heart rate and coarse location during this part
 	// (24.4). Optional; sent only to a computer that advertises it.
 	Context *MobileRecordingPartContext `json:"context,omitempty"`
+	// Marks are the moments the wearer marked during this part, in seconds
+	// from its start (24.9). Optional; sent only to a computer that advertises it.
+	Marks []float64 `json:"marks,omitempty"`
 }
 
 // MobileRecordingUpload names the sealed part on the relay and its key.
@@ -159,6 +162,9 @@ type mobileRecordingPart struct {
 	DurationSeconds float64 `json:"durationSeconds"`
 	// Context is removed together with the audio.
 	Context *MobileRecordingPartContext `json:"context,omitempty"`
+	// Marks are the moments the wearer marked, seconds from the part's start.
+	// Removed together with the audio.
+	Marks []float64 `json:"marks,omitempty"`
 }
 
 // mobileRecording is one recording in the index.
@@ -353,7 +359,8 @@ func (s *mobileRecordingStore) addPart(deviceID string, req MobileRecordingReque
 	}
 	rec.Received = append(rec.Received, mobileRecordingPart{Part: req.Part, UploadID: req.Upload.ID, File: name,
 		Bytes: int64(len(plaintext)), SHA256: req.SHA256, StartedAt: req.StartedAt, DurationSeconds: req.DurationSeconds,
-		Context: sanitizeMobileRecordingContext(req.Context)})
+		Context: sanitizeMobileRecordingContext(req.Context),
+		Marks:   sanitizeMobileRecordingMarks(req.Marks, req.DurationSeconds)})
 	sort.Slice(rec.Received, func(i, j int) bool { return rec.Received[i].Part < rec.Received[j].Part })
 	rec.UpdatedAt = now
 	if err := s.saveLocked(); err != nil {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChevronDown, ChevronUp, Film, Trash2 } from 'lucide-react';
+import { Bookmark, ChevronDown, ChevronUp, Film, Trash2 } from 'lucide-react';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { ActivityInlineNotice } from '@/components/activity-inline-notice';
 import { hostBridgeMediaURL } from '@/lib/host-bridge-media';
@@ -246,7 +246,15 @@ function RecordingCard({
                                                     {speakerName(line.speaker, t)}
                                                 </span>
                                             )}
-                                            <span className="min-w-0">{line.text}</span>
+                                            <span className="min-w-0">
+                                                {line.text}
+                                                {line.marked && (
+                                                    <span className="ml-2 inline-flex items-center gap-0.5 align-baseline text-[10.5px] text-muted">
+                                                        <Bookmark className="h-2.5 w-2.5" aria-hidden />
+                                                        {t('watch.marked')}
+                                                    </span>
+                                                )}
+                                            </span>
                                         </li>
                                     ))}
                                 </ul>

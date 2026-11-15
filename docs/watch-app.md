@@ -81,6 +81,15 @@ has read it, from the computer when the request ends, and from the phone when it
 The phone can list the owner's samples (including ones made on the computer) and remove one or
 all. Computer side: `wails-gui/mobile_voice.go`.
 
+## Marked moments (2026-11-15, watch v1.1.0 piece 7, computer)
+
+- A part may carry `marks`, the moments the wearer marked, in seconds from the part's start
+  (PROTOCOL.md 24.9, status flag `recordingMarks`). The computer stores them with the part and
+  removes them with the recording (`wails-gui/mobile_recording_marks.go`).
+- A transcript line is marked when a mark points at it; "From your watch" and the phone's
+  transcript show it.
+- Not yet: marking on the watch (the iOS half), and marked moments first in the brief.
+
 ## Privacy
 
 - Audio is recorded to the watch's own storage, moved to the phone, and deleted from the watch

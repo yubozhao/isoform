@@ -3502,6 +3502,26 @@ id; `403`; `404` unknown or another device's recording; `503`.
 - The phone deletes a recording that never reached the computer on the phone and the watch
   alone; no request is needed.
 
+### 24.9 Marked moments (optional, 2026-11-15)
+
+While the watch records, the wearer can mark a moment. `GET /status` advertises
+`recordingMarks: true` when the computer takes marks. A phone must not send `marks` to a computer
+that does not: the request decoder refuses unknown fields.
+
+`POST /recordings` then takes
+
+```json
+"marks": [12.0, 431.5]
+```
+
+the moments marked during this part, in seconds from the part's `startedAt`. A mark outside the
+part, or not a number, is dropped; at most 60 are kept; a bad mark never refuses the audio.
+
+- A mark is only a time. It is stored with the part and removed when the recording is deleted.
+- In a transcript (24.5) a line carries `marked: true` when a mark points at it: the line that
+  began at most 60 seconds before the mark, else the first line that begins within 30 seconds
+  after it. The computer's own page shows the same.
+
 ## 25. The owner's voice from the phone (v1, 2026-11-14)
 
 The computer keeps the owner's voice as fingerprints (speaker embeddings) and uses them to tell

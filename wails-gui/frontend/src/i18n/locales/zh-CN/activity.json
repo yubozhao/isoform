@@ -643,6 +643,7 @@
         "audioGone": "音频已不再保留，文字仍在。",
         "audioUnavailable": "无法播放音频。",
         "heard": "听到的内容",
+        "marked": "已标记",
         "transcriptEmpty": "没有可显示的内容。文字为私密内容，或观察已暂停。",
         "voiceNotEnrolled": "在设置中添加你的声音，Isoform 就能分辨哪些话是你说的。",
         "openTimeline": "在屏幕时间线中显示",

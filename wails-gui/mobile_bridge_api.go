@@ -42,8 +42,10 @@ type mobileStatusView struct {
 	RecordingContext bool `json:"recordingContext,omitempty"`
 	// RecordingDetail is true when this computer serves a recording's transcript and its delete (24.5).
 	RecordingDetail bool `json:"recordingDetail,omitempty"`
-	FirstRead       bool `json:"firstRead,omitempty"`
-	Holds           bool `json:"holds,omitempty"`
+	// RecordingMarks is true when POST /recordings takes the moments the wearer marked in a part (24.9).
+	RecordingMarks bool `json:"recordingMarks,omitempty"`
+	FirstRead      bool `json:"firstRead,omitempty"`
+	Holds          bool `json:"holds,omitempty"`
 	// Sees is true when this Mac serves What Isoform sees (20.7e).
 	Sees bool `json:"sees,omitempty"`
 	// TaskThreads is true when this Mac serves task threads (20.7b): thread
@@ -621,7 +623,7 @@ func mobileRequireScope(w http.ResponseWriter, device mobileDeviceRecord, scope 
 
 func (bridge *mobileBridge) serveStatus(w http.ResponseWriter) {
 	view := mobileStatusView{
-		HubName: mobileHubName(), AppVersion: Version, ProtocolVersion: 1, Topics: true, TopicsDaily: true, TaskThreads: true, BrainDump: true, Recordings: true, OwnerVoice: true, RecordingContext: true, RecordingDetail: true, Sees: true, FirstRead: true, TodayMeetingPrep: true, ChatMainSend: true, NotificationTest: true, BriefRelevanceFeedback: true, BriefAsk: true, BriefWeekDecline: true,
+		HubName: mobileHubName(), AppVersion: Version, ProtocolVersion: 1, Topics: true, TopicsDaily: true, TaskThreads: true, BrainDump: true, Recordings: true, OwnerVoice: true, RecordingContext: true, RecordingDetail: true, RecordingMarks: true, Sees: true, FirstRead: true, TodayMeetingPrep: true, ChatMainSend: true, NotificationTest: true, BriefRelevanceFeedback: true, BriefAsk: true, BriefWeekDecline: true,
 		KeepAwake: bridge.keepAwakeSetting(), InstantPush: mobileInstantPushConfigured(),
 		BriefSchedule: []mobileBriefSlotTime{},
 	}
