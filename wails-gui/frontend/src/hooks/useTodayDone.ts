@@ -16,7 +16,11 @@ export function refreshTodayDone() {
         if (current !== request) return;
         if (!page || !Array.isArray(page.items)) throw new Error("Invalid finished projection");
         publish({ items: page.items, loading: false, failed: false });
-    }).catch(() => { if (current === request) publish({ items: [], loading: false, failed: true }); });
+    }).catch(() => {
+        // A failed read keeps the finished work shown, marked failed so the
+        // section can offer to try again; it is emptied only by a withdrawal.
+        if (current === request) publish({ items: snapshot.items, loading: false, failed: true });
+    });
 }
 function subscribe(listener: () => void) {
     listeners.add(listener);

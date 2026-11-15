@@ -45,8 +45,10 @@ export function useTodayStatus(enabled: boolean): TodayStatusData {
             GetMobileBriefHealth().catch(() => null),
         ]).then(([nextWeek, nextBrief]) => {
             if (current !== version.current) return;
-            setWeek(nextWeek ?? null);
-            setBrief(nextBrief ?? null);
+            // A failed read keeps the last value: the status line no longer
+            // clears because one read failed.
+            if (nextWeek) setWeek(nextWeek);
+            if (nextBrief) setBrief(nextBrief);
             setLoading(false);
         });
     }, []);
