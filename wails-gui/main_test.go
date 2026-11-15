@@ -41,7 +41,9 @@ func TestMain(m *testing.M) {
 	}
 	cleanup := setupIsolatedTestHome()
 	installSharedTextPermissionFake()
+	stopLeakScan := startLeakScan()
 	code := m.Run()
+	stopLeakScan()
 	cleanup()
 	removeSharedFakeMagpie()
 	os.Exit(code)
