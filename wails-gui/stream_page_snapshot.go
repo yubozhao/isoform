@@ -242,11 +242,27 @@ func writeStreamPageSnapshot(key streamPageKey, snap streamPageSnapshot) error {
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
+	// Each write uses its own temporary file: two saves of the same page at
+	// once shared "<path>.tmp", so one could rename the other's half-written
+	// file into place and the next read found the copy unreadable.
+	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	if _, err := tmp.Write(raw); err != nil {
+		tmp.Close()
+		_ = os.Remove(tmp.Name())
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmp.Name())
+		return err
+	}
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		_ = os.Remove(tmp.Name())
+		return err
+	}
+	return nil
 }
 
 // loadLatestStreamPage is the latest-cursor read. It is coalesced per page: a
