@@ -135,6 +135,9 @@ func (s *MemoryStore) syncContext(ctx context.Context, reason string) (err error
 		if exists && idxFile.Hash == diskFile.Hash && !fullReindex {
 			continue // unchanged
 		}
+		if !exists && s.hiddenIndexUnchanged(key, diskFile.Hash) {
+			continue // hidden, unchanged, and still not in the index
+		}
 		fileStart := time.Now()
 		absPath := s.resolveAbsPath(diskFile.Path, diskFile.Source)
 		content, err := readMemorySyncFile(ctx, absPath)
@@ -143,6 +146,23 @@ func (s *MemoryStore) syncContext(ctx context.Context, reason string) (err error
 			continue
 		}
 		indexMayHaveChanged = true
+		hidden, err := s.memoryIndexHidden(diskFile, string(content))
+		if err == nil && hidden {
+			// A hidden file keeps no index row, so without the verdict cache
+			// every sync would see it as new, redo this check, rebuild FTS and
+			// emit memory:updated (a page-wide re-read) with nothing changed.
+			// Removing it changes the index only when it was indexed.
+			if err := removeForgottenMemoryIndex(db, diskFile.Path, []string{string(content)}); err != nil {
+				log.Printf("[memory] failed to remove hidden %s: %v", diskFile.Path, err)
+				continue
+			}
+			s.noteHiddenIndex(key, diskFile.Hash)
+			if exists {
+				addedOrChanged++
+			}
+			continue
+		}
+		s.forgetHiddenIndex(key)
 		if err := s.indexFile(db, diskFile, string(content), ctx); err != nil {
 			log.Printf("[memory] failed to index %s: %v", diskFile.Path, err)
 		}
@@ -309,23 +329,54 @@ func (s *MemoryStore) removeFile(db *sql.DB, path string, contexts ...context.Co
 	return tx.Commit()
 }
 
+// memoryIndexHidden reports whether file stays out of the index: learned only
+// from agent activity, a repeat of another belief (hidden on every page, so
+// memory search never finds it either), or forgotten.
+func (s *MemoryStore) memoryIndexHidden(file memoryFileRecord, content string) (bool, error) {
+	if (file.Source == MemorySourceMemory || file.Source == MemorySourceKnowledge) && learnedHidden(content) {
+		return true, nil
+	}
+	if file.Source != MemorySourceMemory {
+		return false, nil
+	}
+	return isMemoryForgotten(s.baseDir, strings.TrimSuffix(filepath.Base(file.Path), ".md"), content, time.Now())
+}
+
+// memoryHiddenRecheck bounds how long a hidden verdict is reused: forget
+// markers expire, and an expired one makes the file indexable again.
+const memoryHiddenRecheck = time.Hour
+
+type memoryHiddenVerdict struct {
+	hash       string
+	generation uint64
+	at         time.Time
+}
+
+// hiddenIndexUnchanged reports whether key was found hidden with this content
+// under the current forget markers, recently enough. Sync holds syncMu.
+func (s *MemoryStore) hiddenIndexUnchanged(key, hash string) bool {
+	verdict, ok := s.hiddenIndex[key]
+	return ok && verdict.hash == hash && verdict.generation == memoryTombstoneGeneration.Load() && time.Since(verdict.at) < memoryHiddenRecheck
+}
+
+func (s *MemoryStore) noteHiddenIndex(key, hash string) {
+	if s.hiddenIndex == nil {
+		s.hiddenIndex = map[string]memoryHiddenVerdict{}
+	}
+	s.hiddenIndex[key] = memoryHiddenVerdict{hash: hash, generation: memoryTombstoneGeneration.Load(), at: time.Now()}
+}
+
+func (s *MemoryStore) forgetHiddenIndex(key string) { delete(s.hiddenIndex, key) }
+
 // indexFile chunks content, optionally embeds, and stores in DB + FTS.
 func (s *MemoryStore) indexFile(db *sql.DB, file memoryFileRecord, content string, contexts ...context.Context) error {
 	ctx := memoryOperationContext(contexts)
-	if (file.Source == MemorySourceMemory || file.Source == MemorySourceKnowledge) && learnedHidden(content) {
-		// Learned only from agent activity, or a repeat of another belief:
-		// hidden on every page, so memory search (chat tools, scheduled
-		// prompts) never finds it either.
-		return removeForgottenMemoryIndex(db, file.Path, []string{content})
+	hidden, err := s.memoryIndexHidden(file, content)
+	if err != nil {
+		return err
 	}
-	if file.Source == MemorySourceMemory {
-		forgotten, err := isMemoryForgotten(s.baseDir, strings.TrimSuffix(filepath.Base(file.Path), ".md"), content, time.Now())
-		if err != nil {
-			return err
-		}
-		if forgotten {
-			return removeForgottenMemoryIndex(db, file.Path, []string{content})
-		}
+	if hidden {
+		return removeForgottenMemoryIndex(db, file.Path, []string{content})
 	}
 	if err := ctx.Err(); err != nil {
 		return err
