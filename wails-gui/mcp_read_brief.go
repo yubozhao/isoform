@@ -2,7 +2,6 @@ package main
 
 import (
 	"crypto/sha256"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -385,45 +384,9 @@ func (r *mcpBriefReader) learning(id string, depth int) (mcpReadItem, bool) {
 	if err == nil {
 		return mcpReadItem{Source: "learning", ID: mcpReadText(id), At: correctedAt, Title: mcpReadTextPtr(correction), Status: mcpReadTextPtr("user_corrected")}, true
 	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return mcpReadItem{}, false
-	}
-	var raw string
-	var at int64
-	err = s.db.QueryRowContext(p.ctx, `SELECT candidate_json,created_at FROM shadow_task_learning_revisions WHERE revision_id=? AND length(candidate_json)<=262144`, id).Scan(&raw, &at)
-	var candidate ShadowTaskLearningCandidate
-	if err != nil || json.Unmarshal([]byte(raw), &candidate) != nil || candidate.RevisionID != id || !learnedPatternCandidateUseful(candidate) || len(candidate.Evidence) == 0 || r.exceedsLimit(len(candidate.Evidence), 100) {
-		return mcpReadItem{}, false
-	}
-	for _, ev := range candidate.Evidence {
-		detail, err := s.GetTaskEpisodeDetail(ev.TaskEpisodeID)
-		if err != nil || ev.ContextHash != detail.Episode.FrozenContext.SHA256 || len(detail.Evidence) == 0 || r.exceedsLimit(len(detail.Evidence), 100) || len(detail.Episode.FrozenContext.Manifest) == 0 || r.exceedsLimit(len(detail.Episode.FrozenContext.Manifest), 100) || detail.Episode.FrozenContext.WorkProfileSnapshotID != "" {
-			return mcpReadItem{}, false
-		}
-		for _, source := range detail.Evidence {
-			// Onset activity_event IDs are indices, not database IDs. Resolve the
-			// recorded event time to its real capture session instead of guessing.
-			if source.SourceKind == "activity_event" {
-				if !r.eventTimeAllowed(source.ObservedAt, depth) {
-					return mcpReadItem{}, false
-				}
-			} else if _, ok := r.reference(source.SourceKind, source.SourceID, depth+1); !ok {
-				return mcpReadItem{}, false
-			}
-		}
-		for _, source := range detail.Episode.FrozenContext.Manifest {
-			if !source.Included {
-				continue
-			}
-			if source.PrivacyDecision != TaskContextPrivacyInclude && source.PrivacyDecision != TaskContextPrivacyRedact {
-				return mcpReadItem{}, false
-			}
-			if _, ok := r.reference(source.SourceKind, source.SourceID, depth+1); !ok {
-				return mcpReadItem{}, false
-			}
-		}
-	}
-	return mcpReadItem{Source: "learning", ID: mcpReadText(id), At: at, Title: mcpReadTextPtr(candidate.Statement), Status: mcpReadTextPtr("supported")}, true
+	// Learned patterns without a correction came from shadow learning, which
+	// is removed; only the user's own corrections still resolve.
+	return mcpReadItem{}, false
 }
 
 func (r *mcpBriefReader) eventTimeAllowed(at int64, depth int) bool {
