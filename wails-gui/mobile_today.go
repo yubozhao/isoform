@@ -538,15 +538,22 @@ func (bridge *mobileBridge) todayBriefs(svc mobileBriefSource, now time.Time, sc
 			}
 		}
 	}
-	for _, row := range mobileBriefSummariesWithLeads(svc, mobileBriefStoreListMax) {
+	// Only the last 14 days' written briefs are listed, so only they are read,
+	// once each: the read that names the lead is the brief the row shows.
+	recent := func(row MobileBriefSummary) bool {
 		made, err := time.Parse(time.RFC3339, row.AsOf)
-		if err != nil || made.Before(now.AddDate(0, 0, -14)) || row.Lead == "" || row.NarrativeStatus != "ok" {
+		return err == nil && !made.Before(now.AddDate(0, 0, -14)) && row.NarrativeStatus == "ok"
+	}
+	rows, read := mobileBriefSummariesRead(svc, mobileBriefStoreListMax, recent)
+	for _, row := range rows {
+		if row.Lead == "" {
 			continue
 		}
-		brief, ok := svc.GetMobileBrief(row.BriefID)
+		brief, ok := read[row.BriefID]
 		if !ok {
 			continue
 		}
+		made, _ := time.Parse(time.RFC3339, row.AsOf)
 		pkg, ok := bridge.briefPackageContext(pass, row.BriefID)
 		if !ok {
 			continue
