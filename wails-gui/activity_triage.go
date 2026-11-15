@@ -739,17 +739,6 @@ func (c *ActivityTriager) evaluate(ctx context.Context) error {
 	}
 	defer c.runMu.Unlock()
 
-	shadowEnabled := c.app.loadTriageFeatureFlags(ctx).Shadow
-	if shadowEnabled {
-		recovery := c.recoverTaskShadowContinuations(ctx, "triager_tick")
-		if len(recovery.Errors) > 0 {
-			log.Printf(
-				"[shadow-task-continuation] tick completed with errors: %s",
-				activityPrivateLogField("error", strings.Join(recovery.Errors, "; ")),
-			)
-		}
-	}
-
 	sessions, err := c.app.activity.store.GetPendingSessions()
 	if err != nil {
 		log.Printf("[triager] failed to get pending sessions: %s", activityPrivateLogField("error", err.Error()))
@@ -785,21 +774,7 @@ func (c *ActivityTriager) evaluate(ctx context.Context) error {
 			dismissRun.PrefilterReason = reason
 			dismissRun.TriageStatus = "dismissed"
 			dismissRun.TriageReason = reason
-			dismissRun.ShadowObserverAdmission = TaskShadowObserverAdmissionPrefiltered
 			c.recordPipelineRun(&dismissRun)
-			receipt := c.dispatchTaskShadowContinuationFlow(
-				ctx,
-				g,
-				c.activityEventsForGroup(g),
-				TaskShadowObserverAdmissionPrefiltered,
-				reason,
-				dismissRun.ID,
-			)
-			applyTaskShadowObserverDispatchReceipt(
-				&dismissRun,
-				TaskShadowObserverAdmissionPrefiltered,
-				receipt,
-			)
 			tickRun.FilteredCount++
 			logTriage("activity", g.primaryID(), "dismiss", reason)
 			for _, s := range g.Sessions {
@@ -840,21 +815,7 @@ func (c *ActivityTriager) evaluate(ctx context.Context) error {
 			cooldownRun.PrefilterPass = boolPtr(true)
 			cooldownRun.TriageStatus = "cooldown"
 			cooldownRun.TriageReason = reason
-			cooldownRun.ShadowObserverAdmission = TaskShadowObserverAdmissionCooldown
 			c.recordPipelineRun(&cooldownRun)
-			receipt := c.dispatchTaskShadowContinuationFlow(
-				ctx,
-				g,
-				c.activityEventsForGroup(g),
-				TaskShadowObserverAdmissionCooldown,
-				reason,
-				cooldownRun.ID,
-			)
-			applyTaskShadowObserverDispatchReceipt(
-				&cooldownRun,
-				TaskShadowObserverAdmissionCooldown,
-				receipt,
-			)
 			cooldownRun.CompletedAt = time.Now().UnixMilli()
 			c.recordPipelineRun(&cooldownRun)
 			log.Printf("[triager] skipping group %s: triage cooldown %s remaining", g.primaryID(), rem.Round(time.Second))
@@ -986,7 +947,6 @@ func (c *ActivityTriager) triageGroup(ctx context.Context, group sessionGroup) {
 	// (best-effort) on every return path via defer.
 	run := newGroupPipelineRun(group, time.Now())
 	run.PrefilterPass = boolPtr(true)
-	run.ShadowObserverAdmission = TaskShadowObserverAdmissionEligible
 
 	// Deferred cleanup: unconditionally sweep this group's sessions for any
 	// rows still in the transient "triaging" state and push them back to
@@ -1013,9 +973,7 @@ func (c *ActivityTriager) triageGroup(ctx context.Context, group sessionGroup) {
 		c.recordPipelineRun(&run)
 	}()
 
-	// Persist the exact production source identity before observer dispatch.
-	// The row remains pending if the process stops before the immutable root is
-	// recorded, which lets the read-only coverage gate diagnose the interruption.
+	// Save the run first so later steps update the same row.
 	c.recordPipelineRun(&run)
 
 	// Mark all sessions in the group as triaging
@@ -1025,21 +983,7 @@ func (c *ActivityTriager) triageGroup(ctx context.Context, group sessionGroup) {
 		}
 	}
 
-	// Shadow receives retained production activity before the legacy router.
-	// Its lifecycle and execution are independent of triage model success.
 	allEvents := c.activityEventsForGroup(group)
-	receipt := c.dispatchTaskShadowProductionFlow(
-		ctx,
-		group,
-		allEvents,
-		run.ID,
-	)
-	applyTaskShadowObserverDispatchReceipt(
-		&run,
-		TaskShadowObserverAdmissionEligible,
-		receipt,
-	)
-	c.recordPipelineRun(&run)
 
 	profile := ProfileGroup(group, allEvents)
 	log.Printf("[triager] subject profile for group %s: dominant=%s performed=%d received=%d observed=%d ambient=%d unknown=%d total=%d",

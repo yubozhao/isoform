@@ -87,9 +87,8 @@ type TaskContextSourceExclusion struct {
 }
 
 type TaskContextSourceResult struct {
-	Candidates       []TaskContextCandidate       `json:"candidates"`
-	Exclusions       []TaskContextSourceExclusion `json:"exclusions"`
-	verifiedLearning []VerifiedShadowLearningSource
+	Candidates []TaskContextCandidate       `json:"candidates"`
+	Exclusions []TaskContextSourceExclusion `json:"exclusions"`
 }
 
 type taskContextSourceCollector struct {
@@ -164,26 +163,6 @@ func GatherTaskContextSources(
 		}
 		if err := collector.gatherPriorOutcomes(request.Store.db); err != nil {
 			return TaskContextSourceResult{}, err
-		}
-		verified, err := VerifiedShadowLearningSourcesAt(
-			request.Store,
-			request.CutoffAt,
-			collector.query,
-		)
-		if err != nil {
-			return TaskContextSourceResult{}, err
-		}
-		for _, exclusion := range verified.Exclusions {
-			collector.addExclusion(exclusion)
-		}
-		for _, source := range verified.Sources {
-			collector.result.verifiedLearning = append(
-				collector.result.verifiedLearning,
-				source,
-			)
-			if source.ContextCandidate != nil {
-				collector.add(*source.ContextCandidate)
-			}
 		}
 	}
 	collector.gatherRecentActivity(request.RecentActivity)
