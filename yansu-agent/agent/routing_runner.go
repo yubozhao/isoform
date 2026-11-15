@@ -737,6 +737,13 @@ func (r *RoutingAgentRunner) ExecuteTask(ctx context.Context, input *TaskInput, 
 			}
 			switch copyEvent.Type {
 			case "error", "done", "close":
+				if copyEvent.Type == "done" && copyEvent.Usage != nil {
+					// The cost line names the caller, so cost tracking can join
+					// a turn to the code that asked for it.
+					u := copyEvent.Usage
+					log.Printf("[routing] cost backend=%s caller=%s cost=$%.4f input_tokens=%d output_tokens=%d cache_read=%d cache_create=%d",
+						backend, callerLabel, u.CostUSD, u.InputTokens, u.OutputTokens, u.CacheReadInputTokens, u.CacheCreationInputTokens)
+				}
 				terminal = append(terminal, &copyEvent)
 				return nil
 			case "action_started":
