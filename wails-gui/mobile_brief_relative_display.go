@@ -12,7 +12,7 @@ var briefRelativeDay = regexp.MustCompile(`(?i)\b(?:today|tomorrow|yesterday)\b|
 // A stored brief's relative days refer to the day it was made. Project them
 // onto the reader's day without changing the stored record.
 func mobileBriefRelativeDaysForRead(brief MobileBriefV1, now time.Time, language string) MobileBriefV1 {
-	return mobileBriefRelativeDaysAtRead(brief, now, mobileBriefAsOfTime(brief), mobileBriefNarrativeLocation(brief), language)
+	return mobileBriefRelativeDaysAtRead(brief, now, briefWordsDay(brief), mobileBriefNarrativeLocation(brief), language)
 }
 
 func mobileBriefRelativeDaysAtRead(brief MobileBriefV1, now, base time.Time, loc *time.Location, language string) MobileBriefV1 {
