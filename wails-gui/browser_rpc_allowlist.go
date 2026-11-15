@@ -95,8 +95,6 @@ var browserRPCAllowlist = map[string]bool{
 	"OpenPermissionSettings": true,
 	// RequestPermission is deliberately absent: a macOS permission prompt may
 	// only follow a tap in the app window, never a call from the local bridge.
-	"GetComputerUseAppAccessSnapshot": true,
-	// ProbeComputerUseAppAccess is absent: it starts the cua-driver daemon.
 
 	// Calendars (Settings > Observation). Read-only: the hub's next meetings.
 	"GetCalendarOverview":        true,
@@ -118,7 +116,6 @@ var browserRPCAllowlist = map[string]bool{
 	"GetEnvironment":              true,
 	"GetUseYansuGateway":          true,
 	"GetBrowserBridgeEnabled":     true,
-	"GetCuaCursorOverlayEnabled":  true,
 	"GetStartAtLogin":             true,
 	"ListSkillHubInstalledSkills": true,
 	"SearchClawHubSkills":         true,
@@ -313,15 +310,13 @@ var browserRPCAllowlist = map[string]bool{
 	"GetBunPath": true,
 
 	// Diagnostics (DevTools → Perf Analysis). Read-only.
-	"GetPerfSnapshot":                     true,
-	"GetBackgroundUnderstandingSnapshot":  true,
-	"GetBackgroundUnderstandingRunDetail": true,
-	"GetSelfDreamDebugSnapshot":           true,
-	"GetSelfDreamDebugRun":                true,
-	"ListSelfDreamUpdates":                true,
-	"GetPurposeDebugSnapshot":             true,
-	"GetPurposeDebugOpenLoop":             true,
-	"GetPurposeDebugExtractionRun":        true,
+	"GetPerfSnapshot":              true,
+	"GetSelfDreamDebugSnapshot":    true,
+	"GetSelfDreamDebugRun":         true,
+	"ListSelfDreamUpdates":         true,
+	"GetPurposeDebugSnapshot":      true,
+	"GetPurposeDebugOpenLoop":      true,
+	"GetPurposeDebugExtractionRun": true,
 	// The pages' reads added after the list was last brought up to date,
 	// found by the daily real-app test (scripts/daily-trial). Telemetry,
 	// voice input, the menu bar and the SMS status check stay native-only.

@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-func seedMemoryForgetLearningReview(t *testing.T) (*App, []legacyLearningCandidate, string, *backgroundUnderstandingStore, BackgroundUnderstandingRun) {
+func seedMemoryForgetLearningReview(t *testing.T) (*App, []legacyLearningCandidate, string) {
 	t.Helper()
 	app, _ := newForgetTestApp(t)
 	activity := newTestStore(t)
@@ -55,34 +55,26 @@ func seedMemoryForgetLearningReview(t *testing.T) (*App, []legacyLearningCandida
 		`{"semanticSignals":[{"sourceKind":"verified_shadow_learning","sourceId":"`+receiptID+`"}]}`); err != nil {
 		t.Fatal(err)
 	}
-	background, err := newBackgroundUnderstandingStore(activity.db)
-	if err != nil {
+	// Background understanding no longer runs, but receipts it wrote before
+	// it was removed stay in the ledger and must still be forgotten.
+	if _, err := activity.db.Exec(`INSERT INTO background_understanding_runs_v1
+		(id, idempotency_key, trigger_kind, trigger_reason, mission_kind, source, policy_version, source_scope_json, started_at, created_at)
+		VALUES ('forget-learning-background', 'forget-learning-background', 'manual', 'Retained learning', 'retained_activity', 'local_activity', 'test', '{}', 1000, 1000)`); err != nil {
 		t.Fatal(err)
 	}
-	mission, _, err := background.AddRun(BackgroundUnderstandingRun{
-		IdempotencyKey: "forget-learning-background", TriggerKind: BackgroundTriggerManual,
-		TriggerReason: "Retained learning", MissionKind: BackgroundMissionRetainedActivity,
-		Source: BackgroundSourceLocalActivity, SourceScopeJSON: `{}`, StartedAt: 1000,
-	}, map[string]any{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := background.AppendRunEvent(mission.ID, BackgroundRunRunning, map[string]any{}, 1100); err != nil {
-		t.Fatal(err)
-	}
-	for _, kind := range []string{BackgroundArtifactMemory, BackgroundArtifactKnowledge} {
-		if _, _, err := background.AddMaterialization(BackgroundUnderstandingMaterialization{
-			RunID: mission.ID, ArtifactKind: kind, ArtifactID: target, Action: BackgroundMaterializationCreated,
-			Summary: "Recorded " + kind, CreatedAt: 1200,
-		}); err != nil {
+	for _, kind := range []string{"memory", "knowledge"} {
+		if _, err := activity.db.Exec(`INSERT INTO background_understanding_materializations_v1
+			(id, run_id, artifact_kind, artifact_id, action, summary, created_at)
+			VALUES (?, 'forget-learning-background', ?, ?, 'created', ?, 1200)`,
+			"forget-learning-background:"+kind, kind, target, "Recorded "+kind); err != nil {
 			t.Fatal(err)
 		}
 	}
-	return app, candidates, runID, background, mission
+	return app, candidates, runID
 }
 
 func TestMemoryForgetReviewRemovesShadowAndBackgroundLearning(t *testing.T) {
-	app, candidates, runID, _, _ := seedMemoryForgetLearningReview(t)
+	app, candidates, runID := seedMemoryForgetLearningReview(t)
 	target := legacyLearningMemoryTargetID(candidates[0].ProjectionKey)
 	before := memoryForgetTriggerDefinitions(t, app.activity.store.db)
 	preview, err := app.GetMemoryForgetPreview(target)

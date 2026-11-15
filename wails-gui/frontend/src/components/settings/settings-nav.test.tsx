@@ -44,7 +44,7 @@ describe("SettingsNav", () => {
     it("groups pages under explained headings with Extensions collapsed", () => {
         renderNav();
 
-        for (const label of ["Overview", "General", "Notifications", "Assistant", "Observation", "Learning and memory", "Using your apps", "Privacy", "Phone", "About"]) {
+        for (const label of ["Overview", "General", "Notifications", "Assistant", "Observation", "Learning and memory", "Privacy", "Phone", "About"]) {
             expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
         }
         expect(screen.getByText("Personal AI")).toBeInTheDocument();

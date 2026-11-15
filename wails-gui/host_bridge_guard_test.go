@@ -24,11 +24,10 @@ const (
 )
 
 // newTestHostBridge returns a bridge with known tokens, a running Spotlight
-// helper (as far as the supervisor knows) and a cua-driver handle, so every
-// route is registered. Rejected requests never reach a handler.
+// helper (as far as the supervisor knows), so every route is registered. Rejected requests never reach a handler.
 func newTestHostBridge(t *testing.T) (*hostBridge, http.Handler) {
 	t.Helper()
-	app := &App{cuaDriver: &CuaDriverDaemon{}}
+	app := &App{}
 	app.spotlight = &spotlightSupervisor{
 		cmd:       &exec.Cmd{},
 		token:     testSpotlightToken,
@@ -125,7 +124,7 @@ func TestHostBridgeEveryRouteButHealthNeedsAToken(t *testing.T) {
 	}
 	for _, path := range []string{
 		"/api/computer-use/type", "/api/computer-use/hotkey", "/api/computer-use/paste",
-		"/api/open-path", "/api/open-url", "/api/clipboard/write", "/api/notify", "/api/cua/call",
+		"/api/open-path", "/api/open-url", "/api/clipboard/write", "/api/notify",
 	} {
 		if !seen[path] {
 			t.Errorf("%s is missing from the route table", path)

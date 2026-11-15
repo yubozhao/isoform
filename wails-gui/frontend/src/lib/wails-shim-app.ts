@@ -239,65 +239,6 @@ export interface AgencyPurposeDetail {
     relations: AgencyPurposeRelation[];
 }
 
-export interface BackgroundUnderstandingSource {
-    source: "local_activity" | "gmail";
-    label: string;
-    available: boolean;
-    connected: boolean;
-    allowed: boolean;
-    grantId?: string;
-    scopeLabel?: string;
-    sourceQuery?: string;
-    lookbackDays?: number;
-    maxItemsPerRun?: number;
-    lastRunAt?: string;
-    lastRunState?: string;
-    lastRunSummary?: string;
-    unavailableReason?: string;
-}
-
-export interface BackgroundUnderstandingRun {
-    id: string;
-    missionKind: "retained_activity" | "gmail";
-    source: "local_activity" | "gmail";
-    state:
-        | "selected"
-        | "running"
-        | "completed"
-        | "skipped"
-        | "failed"
-        | "cancelled";
-    triggerKind: "automatic" | "manual";
-    triggerReason: string;
-    startedAt: string;
-    updatedAt: string;
-    summary: string;
-    sourceItemCount: number;
-    materializationCount: number;
-}
-
-export interface BackgroundUnderstandingSnapshot {
-    enabled: boolean;
-    status:
-        | "unavailable"
-        | "paused"
-        | "waiting"
-        | "waiting_for_source"
-        | "ready"
-        | "working"
-        | "limit_reached";
-    statusReason: string;
-    currentRunId?: string;
-    schedulingPolicyVersion: string;
-    dailyRunLimit: number;
-    todayRunCount: number;
-    todayAttemptCount: number;
-    reservedRunCount: number;
-    reservedSource?: "gmail";
-    minIntervalMinutes: number;
-    sources: BackgroundUnderstandingSource[];
-    runs: BackgroundUnderstandingRun[];
-}
 
 function installBrowserProxy(): void {
     const w = globalThis as any;
@@ -3715,55 +3656,6 @@ export const ReviewSelfDreamOperation = appBinding<
     [ReviewSelfDreamOperationInput],
     unknown
 >("ReviewSelfDreamOperation");
-export const GetBackgroundUnderstandingSnapshot = appBinding<[], unknown>(
-    "GetBackgroundUnderstandingSnapshot",
-);
-export interface ComputerUseAppDefinition {
-    id: string;
-    label: string;
-    category: string;
-    entryUrl?: string;
-    nativeBundle?: string;
-}
-export interface ComputerUseAppAccessSnapshot {
-    policyVersion: string;
-    mode: "computer_use_only";
-    oauthFallback: false;
-    available: boolean;
-    accessibility: boolean;
-    screenRecording: boolean;
-    screenLocked: boolean;
-    status: string;
-    statusReason: string;
-    apps: ComputerUseAppDefinition[];
-}
-export interface ComputerUseBrowserProbe {
-    bundle: string;
-    name: string;
-    pid?: number;
-    active: boolean;
-    running: boolean;
-    useCount?: number;
-    windowTitles?: string[];
-}
-export interface ComputerUseAppAccessProbe {
-    snapshot: ComputerUseAppAccessSnapshot;
-    probedAt: number;
-    browsers: ComputerUseBrowserProbe[];
-    receiptHash: string;
-}
-export const GetComputerUseAppAccessSnapshot = appBinding<
-    [],
-    ComputerUseAppAccessSnapshot
->("GetComputerUseAppAccessSnapshot");
-export const ProbeComputerUseAppAccess = appBinding<
-    [],
-    ComputerUseAppAccessProbe
->("ProbeComputerUseAppAccess");
-export const GetBackgroundUnderstandingRunDetail = appBinding<
-    [string],
-    unknown
->("GetBackgroundUnderstandingRunDetail");
 export interface WorkPatternProfileCorrection {
     id: string;
     idempotencyKey: string;
@@ -4522,27 +4414,6 @@ export const SnoozePlaybookSuggestion = appBinding<[string], PlaybookView>("Snoo
 export const SetPlaybookSchedule = appBinding<[PlaybookScheduleInput], PlaybookView>("SetPlaybookSchedule");
 // The second argument is the pages shown next to the button; running approves them.
 export const RunPlaybookNow = appBinding<[string, string[]], PlaybookView>("RunPlaybookNow");
-
-// Reads a cua-driver window screenshot from disk and returns a
-// "data:<mediaType>;base64,..." string the chat can render inline. The
-// webview can't read host files itself, so this binding is the only
-// bridge (see cua_screenshot_read.go). Explicit export per CLAUDE.md
-// rule 14 — the static import in cua-screenshot.tsx resolves against the
-// shim, not the generated wailsjs file.
-export const ReadCuaScreenshotBase64 = appBinding<[string], string>(
-    "ReadCuaScreenshotBase64",
-);
-
-// Computer-use virtual-cursor overlay toggle. Explicit exports per
-// CLAUDE.md rule 14 — the static imports in settings-page.tsx resolve
-// against the shim, not the generated wailsjs file. See
-// cua_cursor_overlay_config.go for the Go side.
-export const GetCuaCursorOverlayEnabled = appBinding<[], boolean>(
-    "GetCuaCursorOverlayEnabled",
-);
-export const SetCuaCursorOverlayEnabled = appBinding<[boolean], void>(
-    "SetCuaCursorOverlayEnabled",
-);
 
 // AX-parser probe (DevTools). Mirrors activity_monitor.go AXProbeOptions /
 // AXProbeResult / AXParserDispatch and appparser.ParserCatalogEntry.

@@ -140,7 +140,6 @@ import {
     LogWarning,
 } from "../wailsjs/runtime/runtime";
 
-import { useComposerCapabilities } from "@/hooks/useComposerCapabilities";
 import { useSettings } from "@/hooks/useSettings";
 import { comboToDisplayString, useKeybindings } from "@/hooks/useKeybindings";
 import { useChatMessageJump } from "@/hooks/useChatMessageJump";
@@ -728,12 +727,6 @@ export default function App() {
             settings.setSettingsOpen,
         ],
     );
-
-    // Tool capabilities surfaced under the welcome-screen composer.
-    const {
-        capabilities: composerCapabilities,
-        refresh: refreshComposerCapabilities,
-    } = useComposerCapabilities();
 
     // ── Activity page ──
     // Activity is a main view (appMode === "activity"), not an overlay. The
@@ -3473,7 +3466,6 @@ export default function App() {
                     if (!open) {
                         settings.setSettingsOpen(false);
                         setSettingsInitialTopic(undefined);
-                        refreshComposerCapabilities();
                     }
                 }}
             >
@@ -3509,8 +3501,7 @@ export default function App() {
                             onClose={() => {
                                 settings.setSettingsOpen(false);
                                 setSettingsInitialTopic(undefined);
-                                refreshComposerCapabilities();
-                            }}
+                                    }}
                             onJumpToActivity={openActivityWithHighlightedFrames}
                             onReplayOnboarding={handleReplayOnboarding}
                             vimMode={settings.vimMode}
@@ -3522,21 +3513,18 @@ export default function App() {
                             onOpenMemory={() => {
                                 settings.setSettingsOpen(false);
                                 setSettingsInitialTopic(undefined);
-                                refreshComposerCapabilities();
-                                setMemoryOpen(true);
+                                        setMemoryOpen(true);
                             }}
                             onOpenPeople={() => {
                                 settings.setSettingsOpen(false);
                                 setSettingsInitialTopic(undefined);
-                                refreshComposerCapabilities();
-                                setPeopleInitialSelection(undefined);
+                                        setPeopleInitialSelection(undefined);
                                 setPeopleOpen(true);
                             }}
                             onOpenProfile={() => {
                                 settings.setSettingsOpen(false);
                                 setSettingsInitialTopic(undefined);
-                                refreshComposerCapabilities();
-                                setPeopleInitialSelection("self");
+                                        setPeopleInitialSelection("self");
                                 setPeopleOpen(true);
                             }}
                         />
@@ -4021,8 +4009,6 @@ export default function App() {
                                             }
                                         }}
                                         welcomeMode={isEmptySession}
-                                        capabilities={composerCapabilities}
-                                        onCapabilityConnect={openSettings}
                                         showSuggestions={
                                             isEmptySession &&
                                             hasActiveConversation

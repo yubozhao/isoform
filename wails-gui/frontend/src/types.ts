@@ -190,13 +190,6 @@ export interface StreamItem {
     sortOrder?: number;
     images?: ImageAttachment[];
     files?: FileAttachment[];
-    // On-disk path to a cua-driver window screenshot produced by this
-    // tool result (e.g. "/tmp/alma-cu-state-*.jpg"). Set for cua tool
-    // results; the chat lazily reads + renders it inline via the
-    // ReadCuaScreenshotBase64 binding. Not persisted — it only lives for
-    // the current session, which is when the "watch the agent" view
-    // matters; a reloaded session simply shows no thumbnail.
-    screenshotPath?: string;
     // Raw run output (markdown + agent <deliverables>/<delivery_target> tags)
     // of a scheduled automation, attached to the first user turn of a
     // "continue in chat" session so the bubble renders it as a collapsible

@@ -1023,54 +1023,6 @@ function parseAutomationContext(
     }
 }
 
-// extractCuaScreenshotPath pulls a window-screenshot path out of a
-// cua_driver tool result so the chat can render the capture inline. The
-// cua_driver agent tool (yansu-agent/agent/tools/cua_driver.go) returns
-// the BARE result object — not an {ok,result} envelope — so the path
-// lives at the top level. Three shapes carry one:
-//   - get_window_state → { ..., screenshot: { path, width, height } }
-//     (the daemon's native object shape)
-//   - the screenshot/shot tool → { path, width, height }
-//   - a flattened { ..., screenshot: "<path>" } string, in case an
-//     upstream reshape ever surfaces it that way
-// A defensive {result:{...}} unwrap covers any caller that does wrap.
-// Returns undefined for any non-cua / pathless result. The on-disk file
-// is read lazily at render time via the ReadCuaScreenshotBase64 binding.
-// Shared by live streaming (useAgentStreaming) AND history reload
-// (fromStreamItemData below): screenshotPath is derived, never persisted,
-// so both paths must run the same extraction or reopened sessions lose
-// their thumbnails.
-export function extractCuaScreenshotPath(content: string | undefined): string | undefined {
-    if (!content) return undefined;
-    const trimmed = content.trim();
-    if (!trimmed.startsWith('{')) return undefined;
-    let parsed: unknown;
-    try {
-        parsed = JSON.parse(trimmed);
-    } catch {
-        return undefined;
-    }
-    if (!parsed || typeof parsed !== 'object') return undefined;
-    let obj = parsed as Record<string, unknown>;
-    if (obj.result && typeof obj.result === 'object') {
-        obj = obj.result as Record<string, unknown>;
-    }
-    const isImagePath = (p: unknown): p is string =>
-        typeof p === 'string' && /\.(jpe?g|png)$/i.test(p);
-    // get_window_state: nested screenshot object { path, width, height }.
-    if (obj.screenshot && typeof obj.screenshot === 'object') {
-        const shot = obj.screenshot as Record<string, unknown>;
-        if (isImagePath(shot.path)) return shot.path;
-    }
-    // Flattened string form.
-    if (isImagePath(obj.screenshot)) return obj.screenshot;
-    // screenshot / shot tool: top-level { path, width, height }.
-    if (isImagePath(obj.path) && 'width' in obj && 'height' in obj) {
-        return obj.path;
-    }
-    return undefined;
-}
-
 export function fromStreamItemData(d: {
     id: string;
     kind: string;
@@ -1108,12 +1060,6 @@ export function fromStreamItemData(d: {
         sortOrder: d.sortOrder,
         images: parseStreamItemImages(d.images),
         files: parseStreamItemFiles(d.files),
-        // Derived, not persisted: recover CU screenshot thumbnails on
-        // history reload the same way live streaming does.
-        screenshotPath:
-            d.kind === 'result' || d.kind === 'tool_result'
-                ? extractCuaScreenshotPath(d.content)
-                : undefined,
         automationResultOutput: automationCtx.output,
         automationJobId: automationCtx.jobId,
         handoffContext: automationCtx.handoff,

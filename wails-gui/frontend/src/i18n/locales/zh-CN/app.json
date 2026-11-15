@@ -411,13 +411,6 @@
             "default": "问点什么…",
             "planFeedback": "输入对计划的反馈……"
         },
-        "capabilities": {
-            "canDoMore": "还能做更多",
-            "connected": "已连接",
-            "feishuTooltip": "飞书智能体能力",
-            "turnOn": "开启{{app}}",
-            "accessibility": "辅助功能"
-        },
         "slash": {
             "loadingCommands": "正在加载命令……",
             "noCommands": "暂无斜杠命令。",

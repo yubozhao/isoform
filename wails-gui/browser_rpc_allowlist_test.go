@@ -71,36 +71,8 @@ func TestRemovedAgencyMethodsAreNotAllowlisted(t *testing.T) {
 	}
 }
 
-// Dev Tools in the browser preview may read background understanding; its
-// settings, source grants and runs change only in the app window.
-func TestBackgroundUnderstandingReadsAreAllowlistedButNotItsControls(t *testing.T) {
+func TestComposioMethodsStayOffTheBrowserAllowlist(t *testing.T) {
 	for _, method := range []string{
-		"GetBackgroundUnderstandingSnapshot",
-		"GetBackgroundUnderstandingRunDetail",
-	} {
-		if !browserRPCAllowlist[method] {
-			t.Errorf("%s must be browser RPC allowlisted for Dev Tools", method)
-		}
-	}
-	for _, method := range []string{
-		"SetBackgroundUnderstandingSettings",
-		"GrantBackgroundUnderstandingSource",
-		"RevokeBackgroundUnderstandingSource",
-		"RunBackgroundUnderstandingNow",
-	} {
-		if browserRPCAllowlist[method] {
-			t.Errorf("%s changes state and must stay off the browser allowlist", method)
-		}
-	}
-}
-
-func TestComputerUseAppAccessMethodsAreAllowlistedWithoutComposioOAuth(t *testing.T) {
-	if !browserRPCAllowlist["GetComputerUseAppAccessSnapshot"] {
-		t.Error("GetComputerUseAppAccessSnapshot must be browser RPC allowlisted")
-	}
-	for _, method := range []string{
-		// Starts the cua-driver daemon.
-		"ProbeComputerUseAppAccess",
 		"GetComposioStatus",
 		"ConnectComposioApp",
 		"ActivateComposioApp",
@@ -215,7 +187,7 @@ func TestSettingsReadOnlyStateIsAllowlistedButNotItsSetters(t *testing.T) {
 // A macOS permission prompt may only follow a tap in the app window, so the
 // local browser bridge must never be able to start one.
 func TestPermissionPromptsStayOffTheBrowserBridge(t *testing.T) {
-	for _, method := range []string{"RequestPermission", "RequestCuaDriverPermissions"} {
+	for _, method := range []string{"RequestPermission"} {
 		if browserRPCAllowlist[method] {
 			t.Errorf("%s can show a macOS prompt and must stay off the browser allowlist", method)
 		}
@@ -392,8 +364,6 @@ var browserRPCReadOnly = []string{
 	"GetAutomaticMeetingRecordingEnabled",
 	"GetBackgroundAudioStatus",
 	"GetBackgroundListening",
-	"GetBackgroundUnderstandingRunDetail",
-	"GetBackgroundUnderstandingSnapshot",
 	"GetBrowserBridgeEnabled",
 	"GetBunPath",
 	"GetCalendarOverview",
@@ -402,9 +372,7 @@ var browserRPCReadOnly = []string{
 	"GetCaptureByHour",
 	"GetPrivateAppSuggestions",
 	"GetComposerSuggestions",
-	"GetComputerUseAppAccessSnapshot",
 	"GetCronRuns",
-	"GetCuaCursorOverlayEnabled",
 	"GetDailySummary",
 	"GetDiscordArchived",
 	"GetDiscordChannels",
@@ -605,9 +573,8 @@ func TestBrowserRPCKeepsStateChangersThatReachPastTheWindowOff(t *testing.T) {
 		// Run programs or reach the network without the preview needing
 		// them: CLI sign-in checks, gh with the user's GitHub sign-in, the
 		// update check (it also tells the app window an update is
-		// available), and the computer-use probe (it starts the cua-driver
-		// daemon).
-		"CheckLocalCLIStatus", "GetPRInfo", "CheckForUpdates", "ProbeComputerUseAppAccess",
+		// available).
+		"CheckLocalCLIStatus", "GetPRInfo", "CheckForUpdates",
 		// Playbooks: approving one schedules unattended runs in the signed-in
 		// browser; email mails a code to an address and sends results.
 		"AcceptPlaybookSuggestion", "DeclinePlaybookSuggestion", "SnoozePlaybookSuggestion", "SetPlaybookSchedule", "RunPlaybookNow",

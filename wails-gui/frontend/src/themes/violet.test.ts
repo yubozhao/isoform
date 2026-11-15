@@ -293,7 +293,6 @@ describe('Violet source and app parity', () => {
                 'components/composer.tsx',
                 'components/confirm-dialog.tsx',
                 'components/contacts/contact-editor.tsx',
-                'components/enable-computer-use-dialog.tsx',
                 'components/memory-dream-dialog.tsx',
                 'components/onboarding/components/AgentChoice.tsx',
                 'components/permission-question-card.tsx',
@@ -363,7 +362,8 @@ describe('Violet source and app parity', () => {
             visit(file);
         }
         // Setup now shares Button instead of duplicating native primary markup.
-        expect(native.length).toBeGreaterThanOrEqual(18);
+        // The computer-use setup dialog and its chips went with the bundled driver.
+        expect(native.length).toBeGreaterThanOrEqual(16);
         for (const path of ['components/onboarding/models-panel.tsx']) expect(shared).toContain(path);
         expect(native).toContain('components/confirm-dialog.tsx');
         expect(nonActions).toContain('components/sops/CreateSopDialog.tsx');

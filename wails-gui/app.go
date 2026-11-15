@@ -28,7 +28,6 @@ import (
 	terminalsvc "wails-gui/internal/terminal"
 	"wails-gui/storage"
 	"yansu-agent/agent"
-	agenttools "yansu-agent/agent/tools"
 	"yansu-agent/runtoken"
 
 	"github.com/google/uuid"
@@ -109,121 +108,118 @@ type App struct {
 	peopleTogetherProbe func() error
 	// peopleLineageProbe, when set, fires on each real principal lineage load
 	// so tests can count lineage walks per read generation.
-	peopleLineageProbe        func()
-	ctx                       context.Context
-	mu                        sync.Mutex
-	pluginMu                  sync.Mutex
-	runner                    agent.AgentRunner
-	assistantProbes           *assistantProbeCache
-	signOut                   signOutTracker
-	signOutTimers             map[string]*time.Timer
-	signOutTimersMu           sync.Mutex
-	agentChoices              agentChoiceCache
-	backgroundUsesChoice      atomic.Bool
-	httpPort                  int
-	ready                     bool
-	readyCh                   chan struct{} // closed when ready==true; recreated on reset
-	starting                  bool
-	streams                   map[string]context.CancelFunc // runID → cancel
-	topicHistoryTurns         map[string]*topicTurnBinding
-	tagCancels                map[string]context.CancelFunc // tag → cancel (registered at goroutine start)
-	runIDByTag                map[string]string             // tag → run id of the running turn (set on run_created)
-	spotlightSubmitReceipts   sync.Map
-	chatSendReceipts          sync.Map        // tag + trace ID -> admitted ordinary send
-	activeTags                map[string]bool // tag → true while a prompt is running
-	deletedChats              map[string]bool // tag → true once the chat is deleted; under mu, no turn ever starts there again
-	deletingChats             map[string]int  // tag → count of in-progress deletes; under mu, no turn starts while > 0
-	holdsMu                   sync.Mutex
-	holds                     *holdCoordinator
-	holdsCancel               context.CancelFunc
-	holdsDone                 chan struct{}
-	contactsSyncMu            sync.Mutex
-	contactsSync              *contactsSyncScheduler
-	contactsSyncStop          context.CancelFunc
-	contactsSyncDone          chan struct{}
-	store                     *storage.Store
-	openAnswerAskSelectionMu  sync.Mutex
-	openAnswerAskSelections   map[string]openAnswerAskSelection
-	storageStartup            *storageStartupState
-	termMgr                   *terminalsvc.Manager
-	sshMgr                    *sshconn.Manager
-	bridge                    *hostBridge                     // localhost-only bridge for host OS ops (CUA, spotlight)
-	cuaDriver                 *CuaDriverDaemon                // bundled cua-driver daemon (nil when not supported / not located)
-	activity                  *activityMonitorState           // live activity monitor + triager
-	closedEyes                closedEyesModeState             // privacy mode: stop activity and audio capture while overlay is visible
-	generateDailySummarySF    singleflight.Group              // dedups concurrent GenerateDailySummary calls per dateStr
-	autoSummaryMu             sync.Mutex                      // guards the auto-summary maps below
-	autoSummaryInFlight       map[string]bool                 // kind|date|language with a background summary generation running
-	autoSummaryRetryAfter     map[string]time.Time            // kind|date blocked from auto generation until after a failure
-	autoSummaryNightlyFor     string                          // local date the after-midnight summary pass last completed
-	autoSummaryNightlyTries   map[string]int                  // kind|date generations the after-midnight pass started
-	autoSummaryNow            func() time.Time                // test seam; nil → time.Now
-	autoSummaryGenDaily       func(dateStr string) error      // test seam; nil → GenerateDailySummary
-	autoSummaryGenWeekly      func(dateStr string) error      // test seam; nil → GenerateWeeklySummary
-	autoSummaryRunnerWait     time.Duration                   // test seam; 0 → autoSummaryRunnerWait
-	generateTodayNewsSF       singleflight.Group              // dedups concurrent GenerateTodayNews calls per date+language
-	purposeUnderstandingMu    sync.RWMutex                    // guards ambient Purpose-understanding lifecycle and event reads
-	purposeUnderstanding      *PurposeUnderstandingService    // source-backed current-Purpose scheduler
-	backgroundUnderstandingMu sync.RWMutex                    // guards the low-priority learning coordinator
-	backgroundUnderstanding   *BackgroundUnderstandingService // nil in the app: bounded background learning no longer starts since the Desk was removed
-	personResearchInFlight    sync.Map                        // principalID → struct{} while a People research run is active (dedup)
-	composioActivationSF      singleflight.Group              // dedups managed Composio MCP activation per app
-	composioActivationErrs    map[string]string               // app → last activation error string (cleared on success); guarded by mu
-	memoryStore               *MemoryStore                    // FTS5-indexed memory search (markdown files)
-	memoryExternalReads       memoryExternalReadCache         // redacted model-facing memory, kept until memory changes
-	interestsReads            interestsReadCache              // interest evidence read decisions, kept until privacy state changes
-	memoryGenerator           *MemoryGenerator                // generative memory pipeline (triage → generate → save)
-	memoryDream               *MemoryDreamService             // nightly memory consolidator: dedup, expire, similarity merge, Haiku-mediated synthesis
-	aboutYouPortrait          *AboutYouPortraitService        // source-bound weekly owner portrait
-	selfDream                 *SelfDreamService               // shadow-only canonical Self synthesis, evaluation, and gated revision compiler
-	suggestionGenerator       *SuggestionGenerator            // empty-state composer chips (activity → LLM → cache)
-	handoffStore              *handoff.Store                  // first-class file store for handoffs (~/.yansu-agent/handoff)
-	handoffActionMu           sync.Mutex                      // serializes handoff start and stop transactions
-	handoffRuns               map[string]*handoffRunState     // guarded by handoffActionMu
-	knowHow                   knowHowState
-	assistantHistory          assistantHistoryState
-	workPermissions           mainChatWorkPermissions
-	sopStore                  *sop.Store                      // first-class bundle store for SOPs (~/.yansu-agent/sops)
-	playbookPlans             *sop.PlanStore                  // per-playbook schedule, channels and approved sites (sops/.plans.json)
-	knowHowCandidates         *sop.Store                      // proposed know-how drafts (~/.yansu-agent/know-how-candidates), never listed under Playbooks
-	playbookRoutineMu         sync.Mutex                      // serializes routine detector passes (playbook_routine.go)
-	sopAuthorMu               sync.Mutex                      // serializes heavy SOP author runs (triage + manual never overlap)
-	sopAuthorStatusMu         sync.Mutex                      // guards SOP author monitor state
-	sopAuthorStatus           SOPAuthorStatus                 // devtools-visible SOP author progress
-	activityContextCache      *activityContextCache           // recent-activity summary injected into chat prompts (once per session)
-	slackDaemon               *daemonClient                   // Slack daemon WebSocket client (nil when not running)
-	slackLocal                *slackLocalReceiver             // Slack local Socket Mode receiver (standalone; nil when not running)
-	discordLocal              *discordLocalReceiver           // Discord local gateway receiver (standalone; nil when not running)
-	feishuDaemon              *daemonClient                   // Feishu daemon WebSocket client (nil when not running)
-	imLocal                   map[string]*feishuLocalReceiver // Local Feishu/Lark WebSocket receivers, keyed by brand ("feishu"/"lark")
-	feishuWatchdogCancel      context.CancelFunc              // cancels the receiver health watchdog goroutine
-	discordDaemon             *daemonClient                   // Discord daemon WebSocket client (nil when not running)
-	telegramDaemon            *daemonClient                   // Telegram daemon WebSocket client (nil when not running)
-	telegramLocal             *telegramLocalReceiver          // Telegram local bot receiver (standalone; nil when not running)
-	wechatMon                 *wechatMonitor                  // WeChat long-polling monitor (nil when not running)
-	wechatLastActivity        time.Time                       // last time user DM'd the WeChat bot (zero = never)
-	updater                   *updater                        // self-update lifecycle (see version.go)
-	bgShells                  *bgShellTracker                 // tracks background shells → session associations
-	sessionWorkDirMu          sync.Mutex                      // guards only the per-workspace lock registry
-	sessionWorkDirLocks       map[string]*sessionWorkDirLock  // normalized tag → active holders/waiters; guarded by sessionWorkDirMu
-	sessionWorkDirRemoveAll   func(string) error              // test seam; nil uses os.RemoveAll
-	sessionTempDirs           map[string]string               // tag → work dir for standalone sessions
-	sessionFallbackDirs       map[string]struct{}             // tags using temporary fallback dirs; guarded by mu
-	pendingTraceIDs           map[string]string               // session tag → originating chat trace_id, for post-run memory pipeline correlation; guarded by mu
-	whisper                   *whisperState                   // voice input / sherpa-onnx state (nil until first use)
-	tts                       *ttsState                       // text-to-speech / sherpa MeloTTS state (nil until first use)
-	meetingTranscriptActive   sync.Map                        // session IDs whose recording is being transcribed
-	backgroundAudioMu         sync.Mutex                      // serializes recorder start/stop across settings and privacy transitions
-	backgroundAudio           *backgroundAudioCapture         // background speech capture (nil until enabled)
-	meetingRecordingMu        sync.Mutex                      // serializes preference changes with automatic meeting lifecycle commits
-	meetingRecordingDisabled  atomic.Bool                     // cached inverse preference; zero value preserves default-on behaviour
-	meetingRecordingEpoch     atomic.Uint64                   // invalidates captured/queued meeting work across every preference change
-	audioScreenLocked         func() bool                     // injected protected-desktop detector, initialized at startup
-	voiceID                   *voiceEnrollmentState           // speaker embedding extractor + Self-embedding cache (nil until first use)
-	voiceMemoryMu             sync.Mutex
-	voiceMemoryGeneration     uint64            // guarded by voiceMemoryMu; fences explicit enrollment across Forget
-	authManager               *AuthManager      // centralized auth fallback (see auth_manager.go)
-	telemetry                 *PostHogTelemetry // PostHog-backed native.Telemetry; safe to use even when init failed (no-op fallback)
+	peopleLineageProbe       func()
+	ctx                      context.Context
+	mu                       sync.Mutex
+	pluginMu                 sync.Mutex
+	runner                   agent.AgentRunner
+	assistantProbes          *assistantProbeCache
+	signOut                  signOutTracker
+	signOutTimers            map[string]*time.Timer
+	signOutTimersMu          sync.Mutex
+	agentChoices             agentChoiceCache
+	backgroundUsesChoice     atomic.Bool
+	httpPort                 int
+	ready                    bool
+	readyCh                  chan struct{} // closed when ready==true; recreated on reset
+	starting                 bool
+	streams                  map[string]context.CancelFunc // runID → cancel
+	topicHistoryTurns        map[string]*topicTurnBinding
+	tagCancels               map[string]context.CancelFunc // tag → cancel (registered at goroutine start)
+	runIDByTag               map[string]string             // tag → run id of the running turn (set on run_created)
+	spotlightSubmitReceipts  sync.Map
+	chatSendReceipts         sync.Map        // tag + trace ID -> admitted ordinary send
+	activeTags               map[string]bool // tag → true while a prompt is running
+	deletedChats             map[string]bool // tag → true once the chat is deleted; under mu, no turn ever starts there again
+	deletingChats            map[string]int  // tag → count of in-progress deletes; under mu, no turn starts while > 0
+	holdsMu                  sync.Mutex
+	holds                    *holdCoordinator
+	holdsCancel              context.CancelFunc
+	holdsDone                chan struct{}
+	contactsSyncMu           sync.Mutex
+	contactsSync             *contactsSyncScheduler
+	contactsSyncStop         context.CancelFunc
+	contactsSyncDone         chan struct{}
+	store                    *storage.Store
+	openAnswerAskSelectionMu sync.Mutex
+	openAnswerAskSelections  map[string]openAnswerAskSelection
+	storageStartup           *storageStartupState
+	termMgr                  *terminalsvc.Manager
+	sshMgr                   *sshconn.Manager
+	bridge                   *hostBridge                  // localhost-only bridge for host OS ops (CUA, spotlight)
+	activity                 *activityMonitorState        // live activity monitor + triager
+	closedEyes               closedEyesModeState          // privacy mode: stop activity and audio capture while overlay is visible
+	generateDailySummarySF   singleflight.Group           // dedups concurrent GenerateDailySummary calls per dateStr
+	autoSummaryMu            sync.Mutex                   // guards the auto-summary maps below
+	autoSummaryInFlight      map[string]bool              // kind|date|language with a background summary generation running
+	autoSummaryRetryAfter    map[string]time.Time         // kind|date blocked from auto generation until after a failure
+	autoSummaryNightlyFor    string                       // local date the after-midnight summary pass last completed
+	autoSummaryNightlyTries  map[string]int               // kind|date generations the after-midnight pass started
+	autoSummaryNow           func() time.Time             // test seam; nil → time.Now
+	autoSummaryGenDaily      func(dateStr string) error   // test seam; nil → GenerateDailySummary
+	autoSummaryGenWeekly     func(dateStr string) error   // test seam; nil → GenerateWeeklySummary
+	autoSummaryRunnerWait    time.Duration                // test seam; 0 → autoSummaryRunnerWait
+	generateTodayNewsSF      singleflight.Group           // dedups concurrent GenerateTodayNews calls per date+language
+	purposeUnderstandingMu   sync.RWMutex                 // guards ambient Purpose-understanding lifecycle and event reads
+	purposeUnderstanding     *PurposeUnderstandingService // source-backed current-Purpose scheduler
+	personResearchInFlight   sync.Map                     // principalID → struct{} while a People research run is active (dedup)
+	composioActivationSF     singleflight.Group           // dedups managed Composio MCP activation per app
+	composioActivationErrs   map[string]string            // app → last activation error string (cleared on success); guarded by mu
+	memoryStore              *MemoryStore                 // FTS5-indexed memory search (markdown files)
+	memoryExternalReads      memoryExternalReadCache      // redacted model-facing memory, kept until memory changes
+	interestsReads           interestsReadCache           // interest evidence read decisions, kept until privacy state changes
+	memoryGenerator          *MemoryGenerator             // generative memory pipeline (triage → generate → save)
+	memoryDream              *MemoryDreamService          // nightly memory consolidator: dedup, expire, similarity merge, Haiku-mediated synthesis
+	aboutYouPortrait         *AboutYouPortraitService     // source-bound weekly owner portrait
+	selfDream                *SelfDreamService            // shadow-only canonical Self synthesis, evaluation, and gated revision compiler
+	suggestionGenerator      *SuggestionGenerator         // empty-state composer chips (activity → LLM → cache)
+	handoffStore             *handoff.Store               // first-class file store for handoffs (~/.yansu-agent/handoff)
+	handoffActionMu          sync.Mutex                   // serializes handoff start and stop transactions
+	handoffRuns              map[string]*handoffRunState  // guarded by handoffActionMu
+	knowHow                  knowHowState
+	assistantHistory         assistantHistoryState
+	workPermissions          mainChatWorkPermissions
+	sopStore                 *sop.Store                      // first-class bundle store for SOPs (~/.yansu-agent/sops)
+	playbookPlans            *sop.PlanStore                  // per-playbook schedule, channels and approved sites (sops/.plans.json)
+	knowHowCandidates        *sop.Store                      // proposed know-how drafts (~/.yansu-agent/know-how-candidates), never listed under Playbooks
+	playbookRoutineMu        sync.Mutex                      // serializes routine detector passes (playbook_routine.go)
+	sopAuthorMu              sync.Mutex                      // serializes heavy SOP author runs (triage + manual never overlap)
+	sopAuthorStatusMu        sync.Mutex                      // guards SOP author monitor state
+	sopAuthorStatus          SOPAuthorStatus                 // devtools-visible SOP author progress
+	activityContextCache     *activityContextCache           // recent-activity summary injected into chat prompts (once per session)
+	slackDaemon              *daemonClient                   // Slack daemon WebSocket client (nil when not running)
+	slackLocal               *slackLocalReceiver             // Slack local Socket Mode receiver (standalone; nil when not running)
+	discordLocal             *discordLocalReceiver           // Discord local gateway receiver (standalone; nil when not running)
+	feishuDaemon             *daemonClient                   // Feishu daemon WebSocket client (nil when not running)
+	imLocal                  map[string]*feishuLocalReceiver // Local Feishu/Lark WebSocket receivers, keyed by brand ("feishu"/"lark")
+	feishuWatchdogCancel     context.CancelFunc              // cancels the receiver health watchdog goroutine
+	discordDaemon            *daemonClient                   // Discord daemon WebSocket client (nil when not running)
+	telegramDaemon           *daemonClient                   // Telegram daemon WebSocket client (nil when not running)
+	telegramLocal            *telegramLocalReceiver          // Telegram local bot receiver (standalone; nil when not running)
+	wechatMon                *wechatMonitor                  // WeChat long-polling monitor (nil when not running)
+	wechatLastActivity       time.Time                       // last time user DM'd the WeChat bot (zero = never)
+	updater                  *updater                        // self-update lifecycle (see version.go)
+	bgShells                 *bgShellTracker                 // tracks background shells → session associations
+	sessionWorkDirMu         sync.Mutex                      // guards only the per-workspace lock registry
+	sessionWorkDirLocks      map[string]*sessionWorkDirLock  // normalized tag → active holders/waiters; guarded by sessionWorkDirMu
+	sessionWorkDirRemoveAll  func(string) error              // test seam; nil uses os.RemoveAll
+	sessionTempDirs          map[string]string               // tag → work dir for standalone sessions
+	sessionFallbackDirs      map[string]struct{}             // tags using temporary fallback dirs; guarded by mu
+	pendingTraceIDs          map[string]string               // session tag → originating chat trace_id, for post-run memory pipeline correlation; guarded by mu
+	whisper                  *whisperState                   // voice input / sherpa-onnx state (nil until first use)
+	tts                      *ttsState                       // text-to-speech / sherpa MeloTTS state (nil until first use)
+	meetingTranscriptActive  sync.Map                        // session IDs whose recording is being transcribed
+	backgroundAudioMu        sync.Mutex                      // serializes recorder start/stop across settings and privacy transitions
+	backgroundAudio          *backgroundAudioCapture         // background speech capture (nil until enabled)
+	meetingRecordingMu       sync.Mutex                      // serializes preference changes with automatic meeting lifecycle commits
+	meetingRecordingDisabled atomic.Bool                     // cached inverse preference; zero value preserves default-on behaviour
+	meetingRecordingEpoch    atomic.Uint64                   // invalidates captured/queued meeting work across every preference change
+	audioScreenLocked        func() bool                     // injected protected-desktop detector, initialized at startup
+	voiceID                  *voiceEnrollmentState           // speaker embedding extractor + Self-embedding cache (nil until first use)
+	voiceMemoryMu            sync.Mutex
+	voiceMemoryGeneration    uint64            // guarded by voiceMemoryMu; fences explicit enrollment across Forget
+	authManager              *AuthManager      // centralized auth fallback (see auth_manager.go)
+	telemetry                *PostHogTelemetry // PostHog-backed native.Telemetry; safe to use even when init failed (no-op fallback)
 
 	// captureSpans follows what was in front and who held the microphone at
 	// every moment of a chunk (capture_spans.go).
@@ -872,10 +868,6 @@ func (a *App) startupServices(ctx context.Context) {
 		}
 	})
 
-	// Seed the bundled cua-driver skill into the skill hub. No-ops on
-	// platforms that don't ship the binary; idempotent across launches.
-	a.deferLaunchTask("cua_skill", func() { ensureBundledCuaSkill() })
-
 	// Seed the bundled lark-cli skill (Feishu/Lark). No-ops without the bun
 	// runtime; idempotent across launches.
 	a.deferLaunchTask("lark_skill", func() { ensureBundledLarkSkill() })
@@ -883,30 +875,6 @@ func (a *App) startupServices(ctx context.Context) {
 	// Seed the bundled OpenCLI skills (opencli-usage + 4 specialized).
 	// Pure-markdown payload — no binary dependency, runs on every platform.
 	a.deferLaunchTask("opencli_skills", func() { ensureBundledOpenCLISkills() })
-
-	// Initialise the cua-driver daemon handle, then eager-start it in
-	// the background. Eager start is required because yansu-cli's
-	// cua_driver tool dials the canonical socket directly from a
-	// subprocess — it bypasses /api/cua/call's lazy-spawn path, so
-	// without an upfront EnsureRunning the first agent call gets
-	// ECONNREFUSED and the model rabbit-holes into shell fallbacks.
-	// The goroutine keeps app launch non-blocking; EnsureRunning has
-	// its own spawn backoff so failures don't fork-bomb us.
-	if daemon, err := NewCuaDriverDaemon(); err != nil {
-		log.Printf("[cua-driver] daemon disabled: %v", err)
-	} else {
-		a.cuaDriver = daemon
-		// An unattended run's snapshot asks for its pages' addresses so the
-		// page check can see them (yansu-agent tools/cua_page_gate.go).
-		agenttools.CuaSourceLocatorCapability = daemon.issueToolSourceLocatorCapability
-		a.deferLaunchTask("cua_start", func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			if err := daemon.EnsureRunning(ctx); err != nil {
-				log.Printf("[cua-driver] eager start failed (will retry on first call): %v", err)
-			}
-		})
-	}
 
 	// Install the pinned OpenCLI bundle locally, without package installation
 	// or background updates.
@@ -1556,13 +1524,6 @@ func (a *App) shutdown(ctx context.Context) {
 		a.spotlight.Stop()
 	}
 
-	// Stop the bundled cua-driver daemon. Graceful first, SIGTERM
-	// fallback if it doesn't respond — leaving a stray daemon would tie
-	// up the Unix socket and confuse the next launch.
-	if a.cuaDriver != nil {
-		a.cuaDriver.Stop(ctx)
-	}
-
 	// Stop Slack incremental scanner.
 	if a.slackScanner != nil {
 		a.slackScanner.Stop()
@@ -1582,16 +1543,6 @@ func (a *App) shutdown(ctx context.Context) {
 	// Agency dependencies. Stop cancels the active no-tools call and waits for
 	// deterministic reconciliation to settle.
 	a.stopPurposeUnderstanding()
-
-	// Stop background understanding (when one was set) before its
-	// Memory/model and MCP dependencies. Stop cancels the active mission and
-	// waits for its receipt lifecycle to settle.
-	a.backgroundUnderstandingMu.RLock()
-	backgroundUnderstanding := a.backgroundUnderstanding
-	a.backgroundUnderstandingMu.RUnlock()
-	if backgroundUnderstanding != nil {
-		backgroundUnderstanding.Stop()
-	}
 
 	// Stop generative memory pipeline.
 	if a.memoryGenerator != nil {

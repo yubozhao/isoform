@@ -133,8 +133,6 @@ func (hb *hostBridge) routeTable() []hostBridgeRoute {
 	// supervisor runs a helper there is no Spotlight token and every
 	// call is refused.
 	routes = append(routes, hb.spotlightRoutes()...)
-	// cua-driver passthrough (macOS-only when the bundle is shipped).
-	routes = append(routes, hb.cuaRoutes()...)
 	return routes
 }
 

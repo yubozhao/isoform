@@ -46,6 +46,10 @@ type composioByokState struct {
 
 var composioByokMu sync.Mutex
 
+// managedComposioAppAccessEnabled keeps Isoform-managed Composio app access
+// off; only a user's own Composio key can turn connectors on.
+const managedComposioAppAccessEnabled = false
+
 func composioByokPath() (string, error) {
 	dataRoot, err := flavorDataDir()
 	if err != nil {

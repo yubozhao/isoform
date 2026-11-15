@@ -828,11 +828,6 @@
             "subtitle": "选择 Isoform 会学习什么，查看它建议的修改，从其他 AI 工具导入记忆，并查看它了解的内容。",
             "keywords": "记忆, Isoform 会学习什么, 关于你, 人物, 通讯录, 你的资料, 个人上下文, 活动时间线, 可复用经验, 工作手册, 导入, Claude Code, Codex, Cursor, 等你确认的修改, 通过对比学习, 预测置信度, 聊天上下文预览, 搜索索引, 向量, Ollama, OpenAI"
         },
-        "app-access": {
-            "label": "使用你的应用",
-            "subtitle": "让 Isoform 在这台电脑上你已登录的应用里替你工作。",
-            "keywords": "电脑操作, 应用访问, 已登录的应用, 辅助功能, 屏幕录制, 操作光标, 光标, 指针, Google, Gmail, Google 日历, Google 云端硬盘, Google 文档, Slack, Notion, GitHub, Linear, Microsoft Teams"
-        },
         "security": {
             "label": "隐私",
             "subtitle": "选择 Isoform 忽略哪些应用、录制保留多久，以及分享哪些数据。",
@@ -2767,8 +2762,6 @@
             "observer": "任务识别",
             "workProfile": "工作模式",
             "selfDream": "关于你的建议",
-            "background": "后台学习",
-            "appAccess": "应用访问",
             "profiles": "预测准确度",
             "qualifications": "建议可靠度",
             "selfModel": "有依据的理解",
@@ -3078,74 +3071,6 @@
         },
         "advancedHint": "通过对比学习、聊天上下文预览、搜索索引",
         "advancedHintPlain": "通过对比学习"
-    },
-    "usingApps": {
-        "access": {
-            "title": "让 Isoform 使用你的应用",
-            "description": "Isoform 直接在你已登录的应用和网站里工作，不需要另外连接账号。它需要「辅助功能」和「屏幕录制」权限，才能看到并点击这些应用。"
-        },
-        "status": {
-            "checking": {
-                "title": "正在检查",
-                "description": "Isoform 正在检查它在这台电脑上的权限。"
-            },
-            "ready": {
-                "title": "已就绪",
-                "description": "Isoform 可以在你的应用和网站里工作。如果某个应用要求登录，像平时一样在那里登录即可。"
-            },
-            "read_only_ready": {
-                "title": "已就绪，但有限制",
-                "description": "Isoform 可以读取和使用大多数应用。开启「屏幕录制」后，它也能看到无法直接读取的应用。"
-            },
-            "permission_required": {
-                "title": "需要设置",
-                "description": "开启「辅助功能」后，Isoform 才能看到并使用你的应用。"
-            },
-            "locked": {
-                "title": "等待解锁",
-                "description": "解锁这台电脑后，Isoform 才能读取或使用应用。"
-            },
-            "unavailable": {
-                "title": "不可用",
-                "description": "Isoform 无法在这台电脑上使用应用。"
-            },
-            "unknown": {
-                "title": "需要处理",
-                "description": "Isoform 目前无法使用你的应用。请检查它的权限。"
-            }
-        },
-        "setUp": "设置",
-        "reviewPermissions": "检查权限",
-        "loadFailedToast": "无法检查应用访问权限。Isoform 无法读取它在这台电脑上的权限。",
-        "advancedHint": "Isoform 会用的应用",
-        "apps": {
-            "title": "Isoform 会用的应用",
-            "description": "Isoform 熟悉这些应用和网站的用法。打开一个即可登录，或确认你已登录。",
-            "refresh": "刷新",
-            "loading": "正在加载列表……",
-            "empty": "没有可显示的应用。",
-            "open": "打开 {{app}}",
-            "categories": {
-                "communication": "消息和邮件",
-                "planning": "计划",
-                "documents": "文档",
-                "development": "开发",
-                "other": "其他",
-                "messages": "消息",
-                "email": "邮件"
-            }
-        },
-        "setupDialog": {
-            "title": "让 Isoform 使用你的应用",
-            "description": "Isoform 需要这两项权限才能使用你电脑上的应用。只有在你让它做事时才会用到。",
-            "accessibility": "让 Isoform 能读取并点按其他应用里的按钮和文字。",
-            "screen_recording": "让 Isoform 截取屏幕，以便知道该点哪里。",
-            "openPeople": "前往「你认识的人」选择",
-            "allow": "允许",
-            "done": "完成",
-            "finishInSystemSettings": "请在系统设置中完成",
-            "openFailed": "无法打开{{label}}设置：{{error}}"
-        }
     },
     "general": {
         "startAtLogin": {

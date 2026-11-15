@@ -28,11 +28,6 @@ import type { TodayChatPreview } from "@/lib/today-chat-navigation";
 import { TodayContextPreview } from "./today-context-status";
 import { ComposerSuggestions } from "./composer-suggestions";
 import { QueuedMessageList } from "./composer-queue";
-import { ComposerCapabilities } from "./composer-capabilities";
-import type {
-    ComposerCapability,
-    CapabilityTopic,
-} from "@/hooks/useComposerCapabilities";
 import { useComposerSuggestions } from "@/hooks/useComposerSuggestions";
 import { FileAttachmentList } from "./file-attachment-preview";
 import { toast } from "sonner";
@@ -138,10 +133,6 @@ interface ComposerProps {
     welcomeMode?: boolean;
     /** When true, render activity-driven suggestion chips below the composer. */
     showSuggestions?: boolean;
-    /** Tool capabilities shown directly below the input box in welcome mode. */
-    capabilities?: ComposerCapability[];
-    /** Invoked when a capability chip is clicked — deep-links into its settings. */
-    onCapabilityConnect?: (topic: CapabilityTopic) => void;
     /** Invoked when a suggestion is clicked: the caller puts its words in
      *  the box (a click prepares; only Send sends). */
     onSelectSuggestion?: (prompt: string) => void;
@@ -238,8 +229,6 @@ export function Composer({
     onRequestSession,
     welcomeMode = false,
     showSuggestions = false,
-    capabilities,
-    onCapabilityConnect,
     onSelectSuggestion,
     note,
     onOpenHandoff,
@@ -1167,12 +1156,6 @@ export function Composer({
                 <p aria-live="polite" className="mt-1.5 px-1 text-[12px] text-muted" data-testid="composer-note">
                     {note}
                 </p>
-            )}
-            {welcomeMode && capabilities && capabilities.length > 0 && (
-                <ComposerCapabilities
-                    capabilities={capabilities}
-                    onConnect={(topic) => onCapabilityConnect?.(topic)}
-                />
             )}
             {suggestionsActive && (
                 <ComposerSuggestions

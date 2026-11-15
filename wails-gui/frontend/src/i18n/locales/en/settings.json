@@ -828,11 +828,6 @@
             "subtitle": "Choose what Isoform learns, review the changes it suggests, import memories from other AI tools and see what it knows.",
             "keywords": "memory, memories, what Isoform learns, about you, people, contacts, profile, personal context, timeline, know-how, playbooks, import, Claude Code, Codex, Cursor, changes waiting for you, changes to review, learn by comparison, prediction confidence, chat context preview, search index, embeddings, Ollama, OpenAI"
         },
-        "app-access": {
-            "label": "Using your apps",
-            "subtitle": "Let Isoform work in the apps you are already signed in to on this computer.",
-            "keywords": "computer use, app access, signed-in apps, accessibility, screen recording, action cursor, cursor, pointer, Google, Gmail, Google Calendar, Google Drive, Google Docs, Slack, Notion, GitHub, Linear, Microsoft Teams"
-        },
         "security": {
             "label": "Privacy",
             "subtitle": "Choose which apps Isoform ignores, how long it keeps recordings and what it shares.",
@@ -2767,8 +2762,6 @@
             "observer": "Task detection",
             "workProfile": "Work patterns",
             "selfDream": "Profile suggestions",
-            "background": "Background learning",
-            "appAccess": "App access",
             "profiles": "Prediction accuracy",
             "qualifications": "Suggestion readiness",
             "selfModel": "Supported insights",
@@ -3078,74 +3071,6 @@
         },
         "advancedHint": "Learn by comparison, chat context preview, search index",
         "advancedHintPlain": "Learn by comparison"
-    },
-    "usingApps": {
-        "access": {
-            "title": "Let Isoform use your apps",
-            "description": "Isoform works inside the apps and websites you are already signed in to, so there is nothing extra to connect. It needs the Accessibility and Screen Recording permissions to see and click in them."
-        },
-        "status": {
-            "checking": {
-                "title": "Checking",
-                "description": "Isoform is checking its permissions on this computer."
-            },
-            "ready": {
-                "title": "Ready",
-                "description": "Isoform can work in your apps and websites. If an app asks you to sign in, sign in there as you normally would."
-            },
-            "read_only_ready": {
-                "title": "Ready, with limits",
-                "description": "Isoform can read and use most apps. Turn on Screen Recording so it can also see apps it cannot read directly."
-            },
-            "permission_required": {
-                "title": "Needs setup",
-                "description": "Turn on Accessibility so Isoform can see and use your apps."
-            },
-            "locked": {
-                "title": "Waiting for you to unlock",
-                "description": "Unlock this computer so Isoform can read or use an app."
-            },
-            "unavailable": {
-                "title": "Not available",
-                "description": "Isoform cannot use apps on this computer."
-            },
-            "unknown": {
-                "title": "Needs attention",
-                "description": "Isoform cannot use your apps right now. Review its permissions to fix this."
-            }
-        },
-        "setUp": "Set up",
-        "reviewPermissions": "Review permissions",
-        "loadFailedToast": "Couldn't check app access. Isoform couldn't read its permissions on this computer.",
-        "advancedHint": "Apps Isoform knows how to use",
-        "apps": {
-            "title": "Apps Isoform knows how to use",
-            "description": "Isoform knows its way around these apps and websites. Open one to sign in, or to check that you are signed in.",
-            "refresh": "Refresh",
-            "loading": "Loading the list...",
-            "empty": "No apps to show.",
-            "open": "Open {{app}}",
-            "categories": {
-                "communication": "Messages and email",
-                "planning": "Planning",
-                "documents": "Documents",
-                "development": "Development",
-                "other": "Other",
-                "messages": "Messages",
-                "email": "Email"
-            }
-        },
-        "setupDialog": {
-            "title": "Let Isoform use your apps",
-            "description": "Isoform needs these two permissions to use the apps on your computer. It uses them only when you ask it to do something.",
-            "accessibility": "Lets Isoform read and press the buttons and text in other apps.",
-            "screen_recording": "Lets Isoform take screenshots so it knows where to click.",
-            "openPeople": "Choose in Who you know",
-            "allow": "Allow",
-            "done": "Done",
-            "finishInSystemSettings": "Finish in System Settings",
-            "openFailed": "Could not open the {{label}} settings: {{error}}"
-        }
     },
     "general": {
         "startAtLogin": {

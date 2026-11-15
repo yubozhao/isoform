@@ -44,10 +44,6 @@ fi
 BUN_BUNDLE="${WAILS_DIR}/bun-bundle"
 BUN_ENTRY="${BUN_BUNDLE}/bin/bun"
 
-CUA_BUNDLE="${WAILS_DIR}/cua-driver-bundle"
-CUA_APP="${CUA_BUNDLE}/CuaDriver.app"
-CUA_ENTRY="${CUA_APP}/Contents/MacOS/cua-driver"
-CUA_SRC="${WAILS_DIR}/cua-driver-src"
 SPOTLIGHT_DIR="${WAILS_DIR}/quick-chat-spotlight"
 
 # ── Parse arguments ──────────────────────────────────────────────────
@@ -55,7 +51,6 @@ SPOTLIGHT_DIR="${WAILS_DIR}/quick-chat-spotlight"
 SKIP_CLI=false
 SKIP_WHISPER=false # legacy no-op; whisper.cpp replaced by sherpa-onnx (in-process)
 SKIP_BUN=false
-SKIP_CUA=false
 SKIP_SPOTLIGHT=false
 KEEP_PERMISSIONS=false
 MODE="dev"
@@ -79,7 +74,7 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --skip-cua)
-            SKIP_CUA=true
+            # No-op: the bundled cua-driver was removed; kept so old invocations work.
             shift
             ;;
         --skip-spotlight)
@@ -98,7 +93,6 @@ Options:
   --skip-cli           Skip bundled yansu CLI check
   --skip-whisper       (deprecated, no-op) whisper.cpp replaced by sherpa-onnx
   --skip-bun           Skip bun runtime download
-  --skip-cua           Skip bundled cua-driver build (disables the cua_driver agent tool — live macOS app reads + computer-use)
   --skip-spotlight     Skip Quick Chat Spotlight helper build (Cmd+J / Alt+Space falls back to native panel)
   --keep-permissions   Keep the previous dev build's macOS privacy grants (by default they are cleared, since the new ad-hoc signature no longer matches them)
   --build              Build production .app instead of starting dev server
@@ -587,44 +581,6 @@ else
     info "Bun bundle not found. Downloading..."
     bash "${SCRIPT_DIR}/download-bun.sh"
     ok "Bun" "bundle downloaded to ${BUN_BUNDLE}"
-fi
-
-# ── 2c. CuaDriver bundle preparation ─────────────────────────────────
-#   The bundled cua-driver Swift daemon powers the `cua_driver` agent
-#   tool (read-live-app-state + computer-use). Without this bundle,
-#   NewCuaDriverDaemon() fails at app launch, the daemon never spawns,
-#   and the agent's cua_driver tool returns a "daemon not reachable"
-#   error — which earlier wording led the LLM to silently fall back to
-#   activity-cli (historical OCR snapshots) for present-moment queries
-#   that genuinely needed live AX reads. Build proactively to keep the
-#   tool usable in dev. Build needs Xcode + Swift toolchain; first build
-#   takes ~30s, subsequent runs are no-op when the bundle is up to date.
-
-if [[ "$SKIP_CUA" == true ]]; then
-    warn "CuaDriver" "Skipped (--skip-cua). cua_driver agent tool will be unavailable; live macOS app reads disabled."
-elif [[ -d "$CUA_APP" ]] && [[ -x "$CUA_ENTRY" ]]; then
-    # Mirror the CLI-bundle rebuild trigger: if any Swift source OR
-    # LLM-facing skill doc under cua-driver-src/ is newer than the
-    # bundled binary, the user has edited the daemon (e.g. tweaked AX
-    # walker depth in Daemon.swift) or the skill instructions (SKILL.md,
-    # WEB_APPS.md, …) and we need to rebuild — otherwise dev would
-    # silently keep running the stale .app. The *.md arm matters because
-    # build-cua-driver-bundle.sh `ditto`s cua-driver-src/Skills/ into the
-    # bundle, so a SKILL.md edit only reaches the LLM after a rebuild;
-    # without it, skill edits look applied but the daemon serves the old
-    # doc. Binary mtime is a valid baseline for both arms since every
-    # rebuild re-runs swiftc and refreshes it.
-    if [[ -d "$CUA_SRC" ]] && [[ -n "$(find "$CUA_SRC" \( -name '*.swift' -o -name '*.md' \) -newer "$CUA_ENTRY" -print -quit 2>/dev/null)" ]]; then
-        info "CuaDriver source (Swift or skill docs) changed since last build. Rebuilding..."
-        bash "${SCRIPT_DIR}/build-cua-driver-bundle.sh"
-        ok "CuaDriver" "bundle rebuilt at ${CUA_BUNDLE}"
-    else
-        ok "CuaDriver" "bundle exists at ${CUA_BUNDLE}"
-    fi
-else
-    info "CuaDriver bundle not found. Building (requires Xcode)..."
-    bash "${SCRIPT_DIR}/build-cua-driver-bundle.sh"
-    ok "CuaDriver" "bundle built at ${CUA_BUNDLE}"
 fi
 
 echo ""

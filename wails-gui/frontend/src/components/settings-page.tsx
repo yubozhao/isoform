@@ -92,7 +92,6 @@ import { NotificationsPage } from "@/components/settings/pages/notifications-pag
 import { AssistantPage } from "@/components/settings/pages/assistant-page";
 import { ObservationPage } from "@/components/settings/pages/observation-page";
 import { LearningMemoryPage } from "@/components/settings/pages/learning-memory-page";
-import { UsingAppsPage } from "@/components/settings/pages/using-apps-page";
 import { PrivacyPage } from "@/components/settings/pages/privacy-page";
 import { StoragePage } from "@/components/settings/pages/storage-page";
 import { IPhonePage } from "@/components/settings/pages/iphone-page";
@@ -315,8 +314,6 @@ export function SettingsPage({
                         onOpenProfile={onOpenProfile}
                     />
                 );
-            case "app-access":
-                return <UsingAppsPage />;
             case "security":
                 return <PrivacyPage onOpenPage={selectPage} onOpenPeople={onOpenPeople} />;
             case "storage":

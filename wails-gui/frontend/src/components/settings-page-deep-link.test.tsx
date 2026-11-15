@@ -43,7 +43,6 @@ vi.mock("@/components/settings/pages/iphone-page", () => ({
 }));
 vi.mock("@/components/settings/pages/notifications-page", () => ({ NotificationsPage: pages.marker("notifications") }));
 vi.mock("@/components/settings/pages/observation-page", () => ({ ObservationPage: pages.marker("observation") }));
-vi.mock("@/components/settings/pages/using-apps-page", () => ({ UsingAppsPage: pages.marker("using-apps") }));
 vi.mock("@/components/settings/pages/privacy-page", () => ({ PrivacyPage: pages.marker("privacy") }));
 vi.mock("@/components/settings/pages/skills-page", () => ({ SkillsPage: pages.marker("skills") }));
 vi.mock("@/components/settings/pages/tool-servers-page", () => ({ ToolServersPage: pages.marker("tool-servers") }));

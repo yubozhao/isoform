@@ -106,18 +106,16 @@ describe("settings registry", () => {
             appearance: "appearance",
             language: "general",
             account: "general",
-            "cursor-overlay": "app-access",
             support: "about",
             subscription: "ai-provider",
-            google: "app-access",
-            slackbot: "app-access",
-            notion: "app-access",
-            github: "app-access",
-            linear: "app-access",
-            "feishu-agent": "app-access",
         };
         for (const [id, page] of Object.entries(expected)) {
             expect(resolveSettingsTopic(id)).toEqual({ page });
+        }
+        // The Using apps page went with the bundled computer-use driver; its
+        // old links open Overview.
+        for (const id of ["app-access", "cursor-overlay", "google", "slackbot", "notion", "github", "linear", "feishu-agent"]) {
+            expect(resolveSettingsTopic(id)).toEqual({ page: "overview" });
         }
         // Keyboard shortcuts and Read aloud now sit under General > Advanced.
         expect(resolveSettingsTopic("keybindings")).toEqual({ page: "general", revealAdvanced: true });
@@ -204,7 +202,7 @@ describe("settings registry", () => {
     it("lays out the sidebar in the agreed order", () => {
         expect(SETTINGS_SECTIONS.map((section) => [section.id, pagesInSection(section.id).map((p) => p.id)])).toEqual([
             ["basics", ["overview", "general", "profile", "appearance", "notifications", "your-agent"]],
-            ["personal-ai", ["ai-provider", "activity", "memory", "app-access", "security", "storage"]],
+            ["personal-ai", ["ai-provider", "activity", "memory", "security", "storage"]],
             ["devices", ["iphone"]],
             ["extensions", ["plugins", "skills", "mcp", "chat-apps", "use-yansu-anywhere"]],
             ["help", ["about"]],

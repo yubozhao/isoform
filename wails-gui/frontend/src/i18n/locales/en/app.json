@@ -411,13 +411,6 @@
             "default": "Ask anything…",
             "planFeedback": "Type feedback on the plan..."
         },
-        "capabilities": {
-            "canDoMore": "Do more with",
-            "connected": "Connected",
-            "feishuTooltip": "Feishu agent capability",
-            "turnOn": "Turn on {{app}}",
-            "accessibility": "Accessibility"
-        },
         "slash": {
             "loadingCommands": "Loading commands...",
             "noCommands": "No slash commands available.",

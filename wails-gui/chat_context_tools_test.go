@@ -600,7 +600,7 @@ func TestToolServerContextHelpSurvivesPausedObservation(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			for _, topic := range []string{"memory", "activity", "computer", "isoform"} {
+			for _, topic := range []string{"memory", "activity", "isoform"} {
 				result := chatContextMCPCall(t, c, "IsoformHelp", map[string]any{"query": topic})
 				if strings.Contains(result, "isError: true") || !strings.Contains(result, "Isoform documentation:") {
 					t.Fatalf("static %s help was blocked: %s", topic, result)

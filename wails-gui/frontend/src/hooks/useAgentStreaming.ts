@@ -15,7 +15,7 @@ import type {
     Project,
     Session,
 } from "@/types";
-import { buildId, extractCuaScreenshotPath, toStreamItemData } from "@/lib/stream-helpers";
+import { buildId, toStreamItemData } from "@/lib/stream-helpers";
 import { emptyStatus, logPersistError } from "@/lib/stream-helpers";
 
 /** The assistant or thinking row a renderer is streaming. `seq` is the last
@@ -899,7 +899,6 @@ export function useAgentStreaming({
                         toolUseId: evt.tool_use_id,
                         runId,
                         sessionId: evt.session_id,
-                        screenshotPath: extractCuaScreenshotPath(evt.content),
                     };
                     itemToPersist = item;
                     tracker.lastItemKind = "result";

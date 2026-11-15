@@ -216,12 +216,6 @@ func (a *App) setObservationPause(enabled bool, deadline time.Time, expectedGene
 			a.closedEyes.resumeListening = true
 		}
 		a.closedEyes.enabled.publish(true, deadline)
-		a.backgroundUnderstandingMu.RLock()
-		backgroundUnderstanding := a.backgroundUnderstanding
-		a.backgroundUnderstandingMu.RUnlock()
-		if backgroundUnderstanding != nil {
-			backgroundUnderstanding.CancelCurrent()
-		}
 		if a.closedEyes.resumeListening {
 			a.stopBackgroundListeningForClosedEyes()
 		}
