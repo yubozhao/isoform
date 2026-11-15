@@ -1,80 +1,37 @@
 package main
 
-import "sync"
+import "wails-gui/internal/privacy"
 
-type privacyWithdrawalScopeKind string
-
-const (
-	privacyWithdrawalApp          privacyWithdrawalScopeKind = "app"
-	privacyWithdrawalWindow       privacyWithdrawalScopeKind = "window"
-	privacyWithdrawalSession      privacyWithdrawalScopeKind = "session"
-	privacyWithdrawalSource       privacyWithdrawalScopeKind = "source"
-	privacyWithdrawalTimeRange    privacyWithdrawalScopeKind = "time_range"
-	privacyWithdrawalAccount      privacyWithdrawalScopeKind = "account"
-	privacyWithdrawalPolicyChange privacyWithdrawalScopeKind = "policy changed"
+// The withdrawal types live in internal/privacy; these names keep the root
+// package's callers unchanged.
+type (
+	privacyWithdrawalScopeKind = privacy.ScopeKind
+	privacyWithdrawalScope     = privacy.Scope
+	privacyWithdrawal          = privacy.Withdrawal
+	privacyWithdrawalPublisher = privacy.Publisher
 )
 
-type privacyWithdrawalScope struct {
-	Kind       privacyWithdrawalScopeKind
-	SourceKind string
-	ID         string
-	StartMs    int64
-	EndMs      int64
-}
+const (
+	privacyWithdrawalApp          = privacy.App
+	privacyWithdrawalWindow       = privacy.Window
+	privacyWithdrawalSession      = privacy.Session
+	privacyWithdrawalSource       = privacy.Source
+	privacyWithdrawalTimeRange    = privacy.TimeRange
+	privacyWithdrawalAccount      = privacy.Account
+	privacyWithdrawalPolicyChange = privacy.PolicyChange
+)
 
-type privacyWithdrawal struct {
-	Scope privacyWithdrawalScope
-	// Retention is true when retention cleanup removed the source: readers
-	// drop raw copies, but it is not the person withdrawing anything.
-	Retention bool
-}
-
-type privacyWithdrawalPublisher struct {
-	mu          sync.RWMutex
-	nextID      uint64
-	subscribers map[uint64]func(privacyWithdrawal)
-}
-
-func newPrivacyWithdrawalPublisher() *privacyWithdrawalPublisher {
-	return &privacyWithdrawalPublisher{subscribers: map[uint64]func(privacyWithdrawal){}}
-}
-
-func (p *privacyWithdrawalPublisher) subscribe(subscriber func(privacyWithdrawal)) func() {
-	p.mu.Lock()
-	p.nextID++
-	id := p.nextID
-	p.subscribers[id] = subscriber
-	p.mu.Unlock()
-	return func() {
-		p.mu.Lock()
-		delete(p.subscribers, id)
-		p.mu.Unlock()
-	}
-}
-
-func (p *privacyWithdrawalPublisher) publish(withdrawal privacyWithdrawal) {
-	p.mu.RLock()
-	subscribers := make([]func(privacyWithdrawal), 0, len(p.subscribers))
-	for _, subscriber := range p.subscribers {
-		subscribers = append(subscribers, subscriber)
-	}
-	p.mu.RUnlock()
-	for _, subscriber := range subscribers {
-		subscriber(withdrawal)
-	}
-}
-
-var privacyWithdrawals = newPrivacyWithdrawalPublisher()
+var privacyWithdrawals = privacy.NewPublisher()
 
 func subscribePrivacyWithdrawals(subscriber func(privacyWithdrawal)) func() {
-	return privacyWithdrawals.subscribe(subscriber)
+	return privacyWithdrawals.Subscribe(subscriber)
 }
 
 // publishRetentionRemoval tells the readers of raw sources that retention
 // removed one, without moving the brief privacy print: retention cleanup never
 // withdraws or amends a sealed brief (docs/design/brief-seal-v2.md rule 2).
 func publishRetentionRemoval(scope privacyWithdrawalScope) {
-	privacyWithdrawals.publish(privacyWithdrawal{Scope: scope, Retention: true})
+	privacyWithdrawals.Publish(privacyWithdrawal{Scope: scope, Retention: true})
 }
 
 func publishPrivacyWithdrawal(scope privacyWithdrawalScope) {
@@ -87,5 +44,5 @@ func publishPrivacyWithdrawal(scope privacyWithdrawalScope) {
 	}
 	briefPrivacyChanged(keys...)
 	briefPrivacyAmendSoon()
-	privacyWithdrawals.publish(privacyWithdrawal{Scope: scope})
+	privacyWithdrawals.Publish(privacyWithdrawal{Scope: scope})
 }
