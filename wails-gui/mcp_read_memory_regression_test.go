@@ -202,8 +202,11 @@ func TestMCPReadLearningKeepsEpisodeSessionProvenance(t *testing.T) {
 	if _, _, err := a.activity.store.CreateTaskEpisode(input); err != nil {
 		t.Fatal(err)
 	}
-	candidate := ShadowTaskLearningCandidate{Statement: "pnpm learning", Evidence: []ShadowTaskLearningProvenance{{TaskEpisodeID: "episode"}}}
-	content := buildShadowLearningMemoryMarkdown(a.activity.store, "learning", candidate, time.Now())
+	// A memory the removed shadow learning wrote, with its read provenance.
+	content := withMemoryReadProvenance(
+		buildOKFMemoryMarkdown("learning", "pnpm learning", time.Now(), "shadow_task_evaluation", "agentic_memory", []string{"pnpm learning"}),
+		memoryReadProvenance{Version: 1, Kinds: []string{"learning"}, Sessions: []string{"episode-source"}},
+	)
 	writeMCPReadMarkdown(t, "learning", content)
 	if !strings.Contains(content, "read_provenance") {
 		t.Fatal("learning writer omitted provenance")
@@ -214,36 +217,6 @@ func TestMCPReadLearningKeepsEpisodeSessionProvenance(t *testing.T) {
 	_ = a.store.SetUIState(a.ctx, "sensitive_apps", `{"com.example.editor":"Editor"}`)
 	if got := callMCPReadTest(t, a, "memory_list", map[string]any{}); len(got.Items) != 0 {
 		t.Fatal("learning bypassed source privacy")
-	}
-}
-
-func TestMCPReadLegacyLearningVerificationPreservesExactHistory(t *testing.T) {
-	a := newMCPReadTestApp(t)
-	at := time.Now().UnixMilli()
-	candidate := ShadowTaskLearningCandidate{TargetKind: ShadowTaskLearningTargetMemory, ProjectionKey: "historical-pattern", RevisionID: "historical-revision", Statement: "Historical pattern"}
-	id := shadowTaskLearningTargetID(candidate)
-	current := buildShadowLearningMemoryMarkdown(a.activity.store, id, candidate, time.UnixMilli(at))
-	doc, ok := parseOKFDocument(current)
-	if !ok {
-		t.Fatal("missing generated envelope")
-	}
-	delete(doc.Frontmatter, "read_provenance")
-	legacy := renderOKFDocument(doc.Frontmatter, doc.Body)
-	path := writeMCPReadMarkdown(t, id, legacy)
-	record := verifiedShadowLearningRevisionRecord{Candidate: candidate, RunCreatedAt: at}
-	receipt := ShadowTaskLearningMaterialization{TargetID: id}
-	got, reason := verifiedShadowLearningTargetContent(a.activity.store, record, receipt)
-	if reason != "" || got != legacy {
-		t.Fatalf("historical exact content refused: %q", reason)
-	}
-	if result := callMCPReadTest(t, a, "memory_list", map[string]any{}); len(result.Items) != 0 || result.Withheld != 1 {
-		t.Fatal("legacy verification silently granted external read provenance")
-	}
-	if err := os.WriteFile(path, []byte(legacy+"\nChanged after verification.\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if _, reason := verifiedShadowLearningTargetContent(a.activity.store, record, receipt); reason != TaskContextSourceReasonLearningTargetMismatch {
-		t.Fatalf("tampered historical content accepted: %q", reason)
 	}
 }
 

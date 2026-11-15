@@ -5,7 +5,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -24,71 +23,6 @@ type memoryReadProvenance struct {
 	// Invalid explicit dependencies deny local reads as well as MCP sharing.
 	// Ordinary ambiguous source authority only sets Withheld.
 	ReadBlocked bool `json:"read_blocked,omitempty"`
-}
-
-func shadowMemoryReadProvenance(store *ActivityStore, candidate ShadowTaskLearningCandidate) memoryReadProvenance {
-	blocked := memoryReadProvenance{Version: 1, Withheld: true}
-	if store == nil || len(candidate.Evidence) == 0 {
-		return blocked
-	}
-	sessions := []string{}
-	resolve := func(kind, id string) bool {
-		switch kind {
-		case "activity_session", "session":
-			if id == "" {
-				return false
-			}
-			sessions = append(sessions, id)
-			return true
-		case taskContextSourceActivitySnapshotKind:
-			index := strings.LastIndex(id, ":")
-			if index < 1 {
-				return false
-			}
-			snapshotID, err := strconv.ParseInt(id[index+1:], 10, 64)
-			if err != nil {
-				return false
-			}
-			var sessionID string
-			if store.db.QueryRow(`SELECT session_id FROM activity_snapshots WHERE id=? AND session_id=?`, snapshotID, id[:index]).Scan(&sessionID) != nil {
-				return false
-			}
-			sessions = append(sessions, sessionID)
-			return true
-		default:
-			return false
-		}
-	}
-	seen := map[string]bool{}
-	for _, evidence := range candidate.Evidence {
-		if seen[evidence.TaskEpisodeID] {
-			continue
-		}
-		seen[evidence.TaskEpisodeID] = true
-		detail, err := store.GetTaskEpisodeDetail(evidence.TaskEpisodeID)
-		if err != nil || len(detail.Evidence) == 0 || len(detail.Episode.FrozenContext.Manifest) == 0 {
-			return blocked
-		}
-		for _, source := range detail.Evidence {
-			if !resolve(source.SourceKind, source.SourceID) {
-				return blocked
-			}
-		}
-		for _, source := range detail.Episode.FrozenContext.Manifest {
-			if source.Included && !resolve(source.SourceKind, source.SourceID) {
-				return blocked
-			}
-		}
-	}
-	if len(sessions) == 0 {
-		return blocked
-	}
-	return memoryReadProvenance{Version: 1, Kinds: []string{"learning"}, Sessions: compactStrings(sessions)}
-}
-
-func buildShadowLearningMemoryMarkdown(store *ActivityStore, id string, candidate ShadowTaskLearningCandidate, at time.Time) string {
-	content := buildOKFMemoryMarkdown(id, shadowTaskLearningTitle(candidate.Statement), at, "shadow_task_evaluation", "agentic_memory", shadowTaskLearningEvidencePoints(candidate))
-	return withMemoryReadProvenance(content, shadowMemoryReadProvenance(store, candidate))
 }
 
 func memoryReadSource(source memorySource) memoryReadProvenance {

@@ -38,31 +38,18 @@ func addSelfModelPrivacyEvaluation(t *testing.T, app *App, eventEvidence bool) s
 	if err != nil {
 		t.Fatal(err)
 	}
-	run, _, err := store.CreateShadowTaskRunFromEpisode(episode, "test-model", 130_000)
-	if err != nil {
-		t.Fatal(err)
-	}
-	observation, _, err := store.AddShadowRunObservation(ShadowRunObservation{
-		ShadowRunID: run.ID, SourceKind: "task_episode_evaluation", SourceID: "self-privacy-result",
-		ObservedAction: "Drafted a progress update", ObservedResult: "Saved the update",
-		ObservedAt: 140_000, CreatedAt: 140_001,
+	// The shadow run and its evaluation the removed shadow agent wrote.
+	insertLegacyRow(t, store, "shadow_runs", map[string]any{
+		"id": "self-privacy-run", "task_episode_id": episode.ID, "created_at": 130_000,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	matched := ShadowEvaluationDimension{Assessment: "matched", Score: shadowScore(1), Confidence: 0.9}
-	evaluation, _, err := store.AddShadowRunEvaluation(ShadowRunEvaluation{
-		ShadowRunID: run.ID, ObservationID: observation.ID, IdempotencyKey: "self-privacy-evaluation",
-		ComparisonVersion: shadowCorrelationPromptVersion, EvaluatorModel: "test-model",
-		Action: matched, Outcome: matched, Timing: matched,
-		Reasoning: ShadowEvaluationDimension{Assessment: "unknown", Confidence: 0.2},
-		Safety:    ShadowEvaluationDimension{Assessment: "safe", Score: shadowScore(1), Confidence: 0.9},
-		CreatedAt: 150_000,
+	insertLegacyRow(t, store, "shadow_run_observations", map[string]any{
+		"id": "self-privacy-observation", "shadow_run_id": "self-privacy-run", "created_at": 140_001,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return evaluation.ID
+	insertLegacyRow(t, store, "shadow_run_evaluations", map[string]any{
+		"id": "self-privacy-evaluation", "shadow_run_id": "self-privacy-run",
+		"observation_id": "self-privacy-observation", "created_at": 150_000,
+	})
+	return "self-privacy-evaluation"
 }
 
 func TestTypedSelfInjectionRechecksEvaluationSourcePrivacy(t *testing.T) {

@@ -181,7 +181,7 @@ var allActivityMigrations = []activityMigration{
 	{Name: "shadow_task_learning", Fn: migrateShadowTaskLearning},
 	{
 		Name: "task_shadow_capability_release",
-		Fn:   migrateTaskShadowCapabilityRelease,
+		Fn:   migrateRemovedShadowNoop,
 	},
 	{Name: "agency_initiatives_v2", Fn: migrateAgencyInitiativesV2},
 	{
@@ -325,15 +325,15 @@ var allActivityMigrations = []activityMigration{
 	},
 	{
 		Name: "task_shadow_observer_traces",
-		Fn:   migrateTaskShadowObserverTraces,
+		Fn:   migrateRemovedShadowNoop,
 	},
 	{
 		Name: "task_shadow_observer_coverage",
-		Fn:   migrateTaskShadowObserverCoverage,
+		Fn:   migrateRemovedShadowNoop,
 	},
 	{
 		Name: "task_shadow_observer_exact_input",
-		Fn:   migrateTaskShadowObserverExactInput,
+		Fn:   migrateRemovedShadowNoop,
 	},
 	{
 		Name: "task_context_manifest_stats",
@@ -342,6 +342,10 @@ var allActivityMigrations = []activityMigration{
 	{
 		Name: "drop_removed_agency_tables",
 		Fn:   migrateDropRemovedAgencyTables,
+	},
+	{
+		Name: "drop_removed_shadow_tables",
+		Fn:   migrateDropRemovedShadowTables,
 	},
 	{
 		Name: "activity_events_kind_time_index",
@@ -870,20 +874,8 @@ func (s *ActivityStore) bootstrapMigrationLog() error {
 			return a && b && c && d, nil
 		}},
 		{"task_shadow_capability_release", func() (bool, error) {
-			a, e1 := s.hasTable(
-				"task_shadow_capability_release_events_v1",
-			)
-			b, e2 := s.hasIndex("idx_task_shadow_release_capability_v1")
-			c, e3 := s.hasTrigger(
-				"task_shadow_release_events_v1_no_update",
-			)
-			d, e4 := s.hasTrigger(
-				"task_shadow_release_events_v1_no_delete",
-			)
-			if err := firstErr(e1, e2, e3, e4); err != nil {
-				return false, err
-			}
-			return a && b && c && d, nil
+			// Removed with the shadow agent; the migration is a no-op.
+			return true, nil
 		}},
 		{"work_pattern_profiles", func() (bool, error) {
 			a, e1 := s.hasTable("work_pattern_profile_snapshots_v1")
@@ -1647,70 +1639,16 @@ func (s *ActivityStore) bootstrapMigrationLog() error {
 			return strings.Contains(strings.ToLower(schema), "'provenance_failed'"), nil
 		}},
 		{"task_shadow_observer_traces", func() (bool, error) {
-			a, e1 := s.hasTable("task_shadow_observer_traces_v1")
-			b, e2 := s.hasTable("task_shadow_observer_trace_events_v1")
-			c, e3 := s.hasIndex("idx_task_shadow_observer_traces_v1_recent")
-			d, e4 := s.hasIndex("idx_task_shadow_observer_trace_events_v1_latest")
-			e, e5 := s.hasTrigger("task_shadow_observer_traces_v1_no_update")
-			f, e6 := s.hasTrigger("task_shadow_observer_traces_v1_no_delete")
-			g, e7 := s.hasTrigger("task_shadow_observer_trace_events_v1_no_update")
-			h, e8 := s.hasTrigger("task_shadow_observer_trace_events_v1_no_delete")
-			i, e9 := s.hasTrigger(
-				"task_shadow_observer_trace_events_v1_validate_insert",
-			)
-			if err := firstErr(e1, e2, e3, e4, e5, e6, e7, e8, e9); err != nil {
-				return false, err
-			}
-			return a && b && c && d && e && f && g && h && i, nil
+			// Removed with the shadow agent; the migration is a no-op.
+			return true, nil
 		}},
 		{"task_shadow_observer_coverage", func() (bool, error) {
-			a, e1 := s.hasColumn(
-				"activity_pipeline_runs",
-				"shadow_observer_expected",
-			)
-			b, e2 := s.hasColumn(
-				"activity_pipeline_runs",
-				"shadow_observer_admission",
-			)
-			c, e3 := s.hasColumn(
-				"activity_pipeline_runs",
-				"shadow_observer_dispatch_status",
-			)
-			d, e4 := s.hasColumn(
-				"activity_pipeline_runs",
-				"shadow_observer_dispatch_reason",
-			)
-			e, e5 := s.hasColumn(
-				"activity_pipeline_runs",
-				"shadow_observer_trace_id",
-			)
-			f, e6 := s.hasColumn(
-				"task_shadow_observer_traces_v1",
-				"source_pipeline_run_id",
-			)
-			g, e7 := s.hasIndex(
-				"idx_activity_pipeline_runs_shadow_observer_trace",
-			)
-			h, e8 := s.hasIndex(
-				"idx_task_shadow_observer_traces_v1_source_pipeline",
-			)
-			if err := firstErr(e1, e2, e3, e4, e5, e6, e7, e8); err != nil {
-				return false, err
-			}
-			return a && b && c && d && e && f && g && h, nil
+			// Removed with the shadow agent; the migration is a no-op.
+			return true, nil
 		}},
 		{"task_shadow_observer_exact_input", func() (bool, error) {
-			a, e1 := s.hasColumn(
-				"task_shadow_observer_traces_v1",
-				"input_identity_hash",
-			)
-			b, e2 := s.hasIndex(
-				"idx_task_shadow_observer_traces_v1_exact_input",
-			)
-			if err := firstErr(e1, e2); err != nil {
-				return false, err
-			}
-			return a && b, nil
+			// Removed with the shadow agent; the migration is a no-op.
+			return true, nil
 		}},
 		{"task_context_manifest_stats", func() (bool, error) {
 			a, e1 := s.hasTable("task_context_manifest_stats_v1")
@@ -1755,6 +1693,11 @@ func (s *ActivityStore) bootstrapMigrationLog() error {
 			// Absent tables cannot tell a finished drop from a database the
 			// Agency migrations have not reached yet. Always return false so
 			// the drop runs after them; it only uses DROP TABLE IF EXISTS.
+			return false, nil
+		}},
+		{"drop_removed_shadow_tables", func() (bool, error) {
+			// Same as drop_removed_agency_tables: always run; every step
+			// checks before it drops.
 			return false, nil
 		}},
 		{"activity_events_kind_time_index", func() (bool, error) {

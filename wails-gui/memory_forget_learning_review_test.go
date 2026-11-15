@@ -10,52 +10,49 @@ import (
 	"time"
 )
 
-func seedMemoryForgetLearningReview(t *testing.T) (*App, ShadowTaskLearningProjection, ShadowTaskLearningRun, *backgroundUnderstandingStore, BackgroundUnderstandingRun) {
+func seedMemoryForgetLearningReview(t *testing.T) (*App, []legacyLearningCandidate, string, *backgroundUnderstandingStore, BackgroundUnderstandingRun) {
 	t.Helper()
 	app, _ := newForgetTestApp(t)
 	activity := newTestStore(t)
 	app.activity = &activityMonitorState{store: activity}
-	projection := testShadowTaskLearningProjection()
-	projection.Candidates[0].Statement = "Private learning that must be erased."
-	for _, kind := range []string{ShadowTaskLearningTargetMemory, ShadowTaskLearningTargetKnowledge} {
-		sibling := projection.Candidates[0]
-		sibling.ProjectionKey = "independent:" + kind
-		sibling.RevisionID = "independent-revision:" + kind
-		sibling.TargetKind = kind
-		sibling.Statement = "Independent " + kind + " learning must remain visible."
-		projection.Candidates = append(projection.Candidates, sibling)
+	candidates := []legacyLearningCandidate{{
+		RevisionID: "revision:one", ProjectionKey: "projection:one",
+		TargetKind: correctedLearningTargetMemory, Statement: "Private learning that must be erased.",
+	}}
+	for _, kind := range []string{correctedLearningTargetMemory, correctedLearningTargetKnowledge} {
+		candidates = append(candidates, legacyLearningCandidate{
+			RevisionID: "independent-revision:" + kind, ProjectionKey: "independent:" + kind,
+			TargetKind: kind, Statement: "Independent " + kind + " learning must remain visible.",
+		})
 	}
-	run, _, err := PersistShadowTaskLearningProjection(activity, projection, 1000)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, sibling := range projection.Candidates[1:] {
-		artifactID, failure := app.applyQualifiedShadowTaskLearningCandidate(sibling, 1000)
-		if failure != "" {
-			t.Fatal(failure)
+	runID := "learning-run"
+	seedLegacyLearningRun(t, activity, runID, candidates, 1000)
+	for _, sibling := range candidates[1:] {
+		artifactID := legacyLearningMemoryTargetID(sibling.ProjectionKey)
+		dir, err := memoryDir()
+		if sibling.TargetKind == correctedLearningTargetKnowledge {
+			dir, err = knowledgeDir()
 		}
-		if _, _, err := activity.AddShadowTaskLearningMaterialization(ShadowTaskLearningMaterialization{
-			RevisionID: sibling.RevisionID, TargetKind: sibling.TargetKind,
-			TargetID: artifactID, Status: ShadowTaskLearningMaterializationMaterialized, CreatedAt: 1100,
-		}); err != nil {
+		if err != nil {
 			t.Fatal(err)
 		}
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, artifactID+".md"), []byte("# Learning\n\n"+sibling.Statement+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		seedLegacyLearningMaterialization(t, activity, sibling.RevisionID, sibling.TargetKind, artifactID, 1100)
 	}
-	target := shadowTaskLearningTargetID(projection.Candidates[0])
-	if _, err := app.SaveMemoryEntry(target, "# Private learning\n\n"+projection.Candidates[0].Statement); err != nil {
+	target := legacyLearningMemoryTargetID(candidates[0].ProjectionKey)
+	if _, err := app.SaveMemoryEntry(target, "# Private learning\n\n"+candidates[0].Statement); err != nil {
 		t.Fatal(err)
 	}
-	receipt, _, err := activity.AddShadowTaskLearningMaterialization(ShadowTaskLearningMaterialization{
-		RevisionID: projection.Candidates[0].RevisionID, TargetKind: ShadowTaskLearningTargetMemory,
-		TargetID: target, Status: ShadowTaskLearningMaterializationMaterialized, CreatedAt: 1100,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	receiptID := seedLegacyLearningMaterialization(t, activity, candidates[0].RevisionID, correctedLearningTargetMemory, target, 1100)
 	if _, err := activity.db.Exec(`INSERT INTO work_pattern_profile_snapshots_v1
 		(id, policy_version, source_window_start, source_cutoff_at, source_hash, status, sample_count, session_count, confidence, canonical_json, sha256, created_at)
 		VALUES ('forgotten-learning-profile', 'review-test', 1, 2, 'test', 'qualified', 1, 1, 1, ?, 'test', 3)`,
-		`{"semanticSignals":[{"sourceKind":"verified_shadow_learning","sourceId":"`+receipt.ID+`"}]}`); err != nil {
+		`{"semanticSignals":[{"sourceKind":"verified_shadow_learning","sourceId":"`+receiptID+`"}]}`); err != nil {
 		t.Fatal(err)
 	}
 	background, err := newBackgroundUnderstandingStore(activity.db)
@@ -81,12 +78,12 @@ func seedMemoryForgetLearningReview(t *testing.T) (*App, ShadowTaskLearningProje
 			t.Fatal(err)
 		}
 	}
-	return app, projection, run, background, mission
+	return app, candidates, runID, background, mission
 }
 
 func TestMemoryForgetReviewRemovesShadowAndBackgroundLearning(t *testing.T) {
-	app, projection, run, _, _ := seedMemoryForgetLearningReview(t)
-	target := shadowTaskLearningTargetID(projection.Candidates[0])
+	app, candidates, runID, _, _ := seedMemoryForgetLearningReview(t)
+	target := legacyLearningMemoryTargetID(candidates[0].ProjectionKey)
 	before := memoryForgetTriggerDefinitions(t, app.activity.store.db)
 	preview, err := app.GetMemoryForgetPreview(target)
 	if err != nil {
@@ -96,10 +93,10 @@ func TestMemoryForgetReviewRemovesShadowAndBackgroundLearning(t *testing.T) {
 	for _, item := range preview.Items {
 		seen[item.ID] = true
 	}
-	if !seen[run.ID] || !seen[projection.Candidates[0].RevisionID] {
+	if !seen[runID] || !seen[candidates[0].RevisionID] {
 		t.Errorf("preview omitted source learning records: %+v", preview.Items)
 	}
-	for _, sibling := range projection.Candidates[1:] {
+	for _, sibling := range candidates[1:] {
 		if !seen[sibling.RevisionID] {
 			t.Errorf("preview omitted affected shared-analysis revision %s", sibling.RevisionID)
 		}
@@ -137,89 +134,18 @@ func TestMemoryForgetReviewRemovesShadowAndBackgroundLearning(t *testing.T) {
 	if !reflect.DeepEqual(before, memoryForgetTriggerDefinitions(t, app.activity.store.db)) {
 		t.Fatal("forget changed immutable learning triggers")
 	}
-	for _, sibling := range projection.Candidates[1:] {
+	for _, sibling := range candidates[1:] {
 		dir, err := memoryDir()
-		if sibling.TargetKind == ShadowTaskLearningTargetKnowledge {
+		if sibling.TargetKind == correctedLearningTargetKnowledge {
 			dir, err = knowledgeDir()
 		}
 		if err != nil {
 			t.Fatal(err)
 		}
-		content, err := os.ReadFile(filepath.Join(dir, shadowTaskLearningTargetID(sibling)+".md"))
+		content, err := os.ReadFile(filepath.Join(dir, legacyLearningMemoryTargetID(sibling.ProjectionKey)+".md"))
 		if err != nil || !strings.Contains(string(content), sibling.Statement) {
 			t.Errorf("forget removed unlisted sibling %s artifact: err=%v", sibling.TargetKind, err)
 		}
-	}
-}
-
-func TestMemoryForgetReviewRejectsLateLearningReceipts(t *testing.T) {
-	app, projection, _, background, mission := seedMemoryForgetLearningReview(t)
-	target := shadowTaskLearningTargetID(projection.Candidates[0])
-	preview, err := app.GetMemoryForgetPreview(target)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := app.ForgetMemoryEntry(target, preview.ConfirmationToken); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := PersistShadowTaskLearningProjection(app.activity.store, projection, 1300); !errors.Is(err, errMemoryForgotten) {
-		t.Errorf("late shadow projection persistence error=%v", err)
-	}
-	if _, _, err := app.activity.store.AddShadowTaskLearningMaterialization(ShadowTaskLearningMaterialization{
-		RevisionID: projection.Candidates[0].RevisionID, TargetKind: ShadowTaskLearningTargetMemory,
-		TargetID: target, Status: ShadowTaskLearningMaterializationMaterialized, CreatedAt: 1400,
-	}); !errors.Is(err, errMemoryForgotten) {
-		t.Errorf("late shadow receipt persistence error=%v", err)
-	}
-	if _, _, err := background.AddMaterialization(BackgroundUnderstandingMaterialization{
-		RunID: mission.ID, ArtifactKind: BackgroundArtifactMemory, ArtifactID: target,
-		Action: BackgroundMaterializationUpdated, CreatedAt: 1500,
-	}); !errors.Is(err, errMemoryForgotten) {
-		t.Errorf("late background receipt persistence error=%v", err)
-	}
-}
-
-func TestMemoryForgetReviewAllowsNewUnrelatedLearning(t *testing.T) {
-	app, projection, _, background, mission := seedMemoryForgetLearningReview(t)
-	target := shadowTaskLearningTargetID(projection.Candidates[0])
-	preview, err := app.GetMemoryForgetPreview(target)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := app.ForgetMemoryEntry(target, preview.ConfirmationToken); err != nil {
-		t.Fatal(err)
-	}
-	projection = testShadowTaskLearningProjection()
-	projection.Candidates[0].ProjectionKey = "new-unrelated-projection"
-	projection.Candidates[0].RevisionID = "new-unrelated-revision"
-	projection.Candidates[0].Statement = "Uses a separate staging environment for deployment."
-	candidate := projection.Candidates[0]
-	target, failure := app.applyQualifiedShadowTaskLearningCandidate(candidate, 1600)
-	if failure != "" {
-		t.Fatal(failure)
-	}
-	if _, _, err := PersistShadowTaskLearningProjection(app.activity.store, projection, 1600); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := app.activity.store.AddShadowTaskLearningMaterialization(ShadowTaskLearningMaterialization{
-		RevisionID: candidate.RevisionID, TargetKind: ShadowTaskLearningTargetMemory,
-		TargetID: target, Status: ShadowTaskLearningMaterializationMaterialized, CreatedAt: 1700,
-	}); err != nil {
-		t.Errorf("new unrelated shadow receipt rejected: %v", err)
-	}
-	if _, _, err := background.AddMaterialization(BackgroundUnderstandingMaterialization{
-		RunID: mission.ID, ArtifactKind: BackgroundArtifactMemory, ArtifactID: target,
-		Action: BackgroundMaterializationCreated, CreatedAt: 1700,
-	}); err != nil {
-		t.Errorf("new unrelated background receipt rejected: %v", err)
-	}
-	if _, _, err := app.activity.store.AddSelfDreamRun(SelfDreamRunRecord{
-		IdempotencyKey: "new-unrelated-memory", TriggerKind: "manual", CreatedAt: 1700,
-		PolicyVersion: "test", AssemblerVersion: "test", SourceCutoffAt: 1600,
-		BaseSelfHash: "test", ContextHash: "test", InputHash: "test", PromptVersion: "test", PromptHash: "test",
-		Manifest: []TaskContextManifestEntry{{SourceKind: taskContextSourceMemoryKind, SourceID: target, Included: true}},
-	}); err != nil {
-		t.Errorf("new unrelated Self Dream source rejected: %v", err)
 	}
 }
 

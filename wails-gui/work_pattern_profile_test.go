@@ -443,78 +443,6 @@ func TestWorkPatternProfileTracksInactivityStabilityOutliersAndDecay(
 	}
 }
 
-func TestWorkPatternProfileExtractorExcludesGuidedFirstRunSessions(
-	t *testing.T,
-) {
-	store := newTestStore(t)
-	var cutoff int64
-	for index := 0; index < 3; index++ {
-		cutoff = saveWorkPatternSession(
-			t,
-			store,
-			"normal-"+string(rune('a'+index)),
-			"done",
-			10_000+int64(index)*200_000,
-			[]string{
-				"Editor",
-				"Terminal",
-				"Editor",
-				"Terminal",
-			},
-		)
-	}
-	guidedCutoff := saveWorkPatternSession(
-		t,
-		store,
-		"guided-profile-session",
-		"done",
-		cutoff+100_000,
-		[]string{
-			"TutorialOnly",
-			"TutorialHelper",
-			"TutorialOnly",
-			"TutorialHelper",
-		},
-	)
-	firstRun := seedFirstRunContamination(t, store)
-	excludeFirstRunSource(
-		t,
-		store,
-		firstRun,
-		"activity_session",
-		"guided-profile-session",
-	)
-	snapshot, _, err := store.EnsureWorkPatternProfileSnapshot(
-		guidedCutoff,
-		guidedCutoff+1,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(snapshot.CanonicalJSON, "TutorialOnly") ||
-		strings.Contains(snapshot.CanonicalJSON, "TutorialHelper") {
-		t.Fatalf("guided First Run entered profile: %s", snapshot.CanonicalJSON)
-	}
-	evidence, err := store.ListWorkPatternProfileEvidence(snapshot.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	foundExclusion := false
-	for _, item := range evidence {
-		if item.SourceID == "guided-profile-session" {
-			t.Fatal("guided session identifier entered profile evidence")
-		}
-		if item.SourceKind == "guided_first_run" &&
-			item.Reason == firstRunContaminationReason &&
-			!item.Included {
-			foundExclusion = true
-		}
-	}
-	if !foundExclusion {
-		t.Fatalf("guided exclusion is absent: %+v", evidence)
-	}
-}
-
 func TestWorkPatternProfileSupportsEvaluatedCapabilityScope(t *testing.T) {
 	reliability := 0.9
 	projections := workPatternCapabilityProjections(
@@ -522,7 +450,7 @@ func TestWorkPatternProfileSupportsEvaluatedCapabilityScope(t *testing.T) {
 			ProfileID:          "capability-profile-1",
 			CapabilityKey:      "review.pull.request",
 			Ready:              true,
-			Status:             ShadowTaskLearningDecisionQualified,
+			Status:             "qualified",
 			ActionReliability:  &reliability,
 			EvaluationCount:    5,
 			QualifiedCount:     4,

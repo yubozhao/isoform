@@ -314,19 +314,14 @@ var browserRPCAllowlist = map[string]bool{
 
 	// Diagnostics (DevTools → Perf Analysis). Read-only.
 	"GetPerfSnapshot":                     true,
-	"GetShadowAgentDebugSnapshot":         true,
 	"GetBackgroundUnderstandingSnapshot":  true,
 	"GetBackgroundUnderstandingRunDetail": true,
-	"GetWorkPatternProfileDebugSnapshot":  true,
-	"GetWorkPatternProfileDebugDetail":    true,
 	"GetSelfDreamDebugSnapshot":           true,
 	"GetSelfDreamDebugRun":                true,
 	"ListSelfDreamUpdates":                true,
 	"GetPurposeDebugSnapshot":             true,
 	"GetPurposeDebugOpenLoop":             true,
 	"GetPurposeDebugExtractionRun":        true,
-	"GetShadowAgentDebugRun":              true,
-
 	// The pages' reads added after the list was last brought up to date,
 	// found by the daily real-app test (scripts/daily-trial). Telemetry,
 	// voice input, the menu bar and the SMS status check stay native-only.

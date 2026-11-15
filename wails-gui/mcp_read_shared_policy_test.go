@@ -118,12 +118,8 @@ func TestMCPReadMemoryUsesSharedCorrectionSuppression(t *testing.T) {
 	seedMCPReadActivity(t, a, "safe", "Editor", "com.example.editor", "project", "", "done")
 	writeMCPReadMemory(t, "safe-memory", "safe", "project evidence")
 	writeMCPReadMemory(t, "corrected-memory", "safe", "project superseded inference")
-	if _, _, err := PersistShadowTaskLearningProjection(a.activity.store, testShadowTaskLearningProjection(), 1000); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := a.activity.store.AddShadowTaskLearningMaterialization(ShadowTaskLearningMaterialization{RevisionID: "revision:one", TargetKind: ShadowTaskLearningTargetMemory, TargetID: "corrected-memory", Status: "materialized", CreatedAt: 1100}); err != nil {
-		t.Fatal(err)
-	}
+	seedLegacyLearningRun(t, a.activity.store, "run:one", []legacyLearningCandidate{{RevisionID: "revision:one", ProjectionKey: "projection:one", TargetKind: correctedLearningTargetMemory, Statement: "superseded inference"}}, 1000)
+	seedLegacyLearningMaterialization(t, a.activity.store, "revision:one", correctedLearningTargetMemory, "corrected-memory", 1100)
 	addLearningCorrection(t, a.activity.store, AgencyLearningCorrectionRecord{IdempotencyKey: "mcp-shared-correction", CapabilityKey: "coding.review", LearningRevisionID: "revision:one", OriginalStatement: "superseded inference", Correction: "Do not use this inference", CreatedAt: 1200})
 	storeMCPBriefReferences(t, MobileBriefRef{SourceKind: "memory", SourceID: "safe-memory"}, MobileBriefRef{SourceKind: "memory", SourceID: "corrected-memory"})
 	for _, name := range []string{"memory_list", "memory_search", "brief_today"} {

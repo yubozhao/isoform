@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"golang.org/x/sync/singleflight"
 	"log"
 	"net/url"
 	"os"
@@ -16,6 +15,8 @@ import (
 	"sync/atomic"
 	"time"
 	"unicode/utf8"
+
+	"golang.org/x/sync/singleflight"
 
 	"wails-gui/internal/platform/activitymon"
 
@@ -291,11 +292,6 @@ func openActivityStore(baseDir string, refreshProfiles bool) (*ActivityStore, er
 	if err := s.migrate(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("migrate activity db: %w", err)
-	}
-	if refreshProfiles {
-		if _, err := s.RefreshShadowCapabilityProfiles(time.Now().UnixMilli()); err != nil {
-			log.Printf("[shadow-profile] startup refresh failed: %v", err)
-		}
 	}
 
 	// Keep capture's single writer; WAL readers never wait for that pool slot.

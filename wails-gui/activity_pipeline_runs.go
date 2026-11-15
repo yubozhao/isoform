@@ -201,11 +201,6 @@ type ActivityPipelineRunRow struct {
 
 	// Exact production Observer provenance. Legacy group rows have Expected
 	// false and are excluded from coverage rather than inferred as failures.
-	ShadowObserverExpected       bool   `json:"shadowObserverExpected"`
-	ShadowObserverAdmission      string `json:"shadowObserverAdmission,omitempty"`
-	ShadowObserverDispatchStatus string `json:"shadowObserverDispatchStatus,omitempty"`
-	ShadowObserverDispatchReason string `json:"shadowObserverDispatchReason,omitempty"`
-	ShadowObserverTraceID        string `json:"shadowObserverTraceId,omitempty"`
 
 	// Prefilter outcome (only set for groups that hit the heuristic stage).
 	PrefilterPass   *bool  `json:"prefilterPass,omitempty"`
@@ -326,11 +321,8 @@ func (s *ActivityStore) SaveActivityPipelineRun(run ActivityPipelineRunRow) (int
 			handoff_status, handoff_reason, handoff_proposal_id,
 			selected_frames,
 			triage_flags, triage_prompt_bytes, triage_prompt,
-			shadow_observer_expected, shadow_observer_admission,
-			shadow_observer_dispatch_status, shadow_observer_dispatch_reason,
-			shadow_observer_trace_id,
 			error
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		run.Kind, run.StartedAt, run.CompletedAt,
 		run.PendingCount, run.GroupCount, run.FilteredCount, run.CandidateCount,
 		run.GroupID, run.SessionIDs, run.AppNames, run.EventCount, run.DurationMs, run.Source,
@@ -345,11 +337,6 @@ func (s *ActivityStore) SaveActivityPipelineRun(run ActivityPipelineRunRow) (int
 		run.HandoffStatus, run.HandoffReason, run.HandoffProposalID,
 		selectedFramesJSON,
 		run.TriageFlags, run.TriagePromptBytes, run.TriagePrompt,
-		run.ShadowObserverExpected,
-		run.ShadowObserverAdmission,
-		run.ShadowObserverDispatchStatus,
-		run.ShadowObserverDispatchReason,
-		run.ShadowObserverTraceID,
 		run.Error,
 	)
 	if err != nil {
@@ -384,9 +371,6 @@ func (s *ActivityStore) UpdateActivityPipelineRunCompletion(
 	triageStatus, triageReason string,
 	automationStatus, automationReason, initiativeID, shadowRunID string,
 	handoffStatus, handoffReason, handoffProposalID string,
-	shadowObserverExpected bool,
-	shadowObserverAdmission, shadowObserverDispatchStatus,
-	shadowObserverDispatchReason, shadowObserverTraceID string,
 ) error {
 	if id <= 0 {
 		return fmt.Errorf("invalid pipeline run id: %d", id)
@@ -396,18 +380,12 @@ func (s *ActivityStore) UpdateActivityPipelineRunCompletion(
 		SET completed_at = ?, error = ?,
 		    triage_status = ?, triage_reason = ?,
 		    automation_status = ?, automation_reason = ?, initiative_id = ?, shadow_run_id = ?,
-		    handoff_status = ?, handoff_reason = ?, handoff_proposal_id = ?,
-		    shadow_observer_expected = ?, shadow_observer_admission = ?,
-		    shadow_observer_dispatch_status = ?, shadow_observer_dispatch_reason = ?,
-		    shadow_observer_trace_id = ?
+		    handoff_status = ?, handoff_reason = ?, handoff_proposal_id = ?
 		WHERE id = ?`,
 		completedAt, errStr,
 		triageStatus, triageReason,
 		automationStatus, automationReason, initiativeID, shadowRunID,
 		handoffStatus, handoffReason, handoffProposalID,
-		shadowObserverExpected, shadowObserverAdmission,
-		shadowObserverDispatchStatus, shadowObserverDispatchReason,
-		shadowObserverTraceID,
 		id,
 	)
 	if err != nil {
@@ -492,11 +470,6 @@ func (s *ActivityStore) GetActivityPipelineRunByID(id int64) (ActivityPipelineRu
 			COALESCE(handoff_proposal_id, ''),
 			COALESCE(selected_frames, ''),
 			COALESCE(triage_flags, ''), COALESCE(triage_prompt_bytes, 0), COALESCE(triage_prompt, ''),
-			COALESCE(shadow_observer_expected, 0),
-			COALESCE(shadow_observer_admission, ''),
-			COALESCE(shadow_observer_dispatch_status, ''),
-			COALESCE(shadow_observer_dispatch_reason, ''),
-			COALESCE(shadow_observer_trace_id, ''),
 			COALESCE(error, '')
 		FROM activity_pipeline_runs
 		WHERE id = ?`, id).Scan(
@@ -513,11 +486,6 @@ func (s *ActivityStore) GetActivityPipelineRunByID(id int64) (ActivityPipelineRu
 		&r.HandoffStatus, &r.HandoffReason, &r.HandoffProposalID,
 		&selectedFramesJSON,
 		&r.TriageFlags, &r.TriagePromptBytes, &r.TriagePrompt,
-		&r.ShadowObserverExpected,
-		&r.ShadowObserverAdmission,
-		&r.ShadowObserverDispatchStatus,
-		&r.ShadowObserverDispatchReason,
-		&r.ShadowObserverTraceID,
 		&r.Error,
 	)
 	if err != nil {
@@ -561,11 +529,6 @@ func (s *ActivityStore) ListActivityPipelineRuns(limit int) ([]ActivityPipelineR
 			COALESCE(handoff_proposal_id, ''),
 			COALESCE(selected_frames, ''),
 			COALESCE(triage_flags, ''), COALESCE(triage_prompt_bytes, 0), COALESCE(triage_prompt, ''),
-			COALESCE(shadow_observer_expected, 0),
-			COALESCE(shadow_observer_admission, ''),
-			COALESCE(shadow_observer_dispatch_status, ''),
-			COALESCE(shadow_observer_dispatch_reason, ''),
-			COALESCE(shadow_observer_trace_id, ''),
 			COALESCE(error, '')
 		FROM activity_pipeline_runs
 		ORDER BY started_at DESC, id DESC
@@ -595,11 +558,6 @@ func (s *ActivityStore) ListActivityPipelineRuns(limit int) ([]ActivityPipelineR
 			&r.HandoffStatus, &r.HandoffReason, &r.HandoffProposalID,
 			&selectedFramesJSON,
 			&r.TriageFlags, &r.TriagePromptBytes, &r.TriagePrompt,
-			&r.ShadowObserverExpected,
-			&r.ShadowObserverAdmission,
-			&r.ShadowObserverDispatchStatus,
-			&r.ShadowObserverDispatchReason,
-			&r.ShadowObserverTraceID,
 			&r.Error,
 		); err != nil {
 			return nil, fmt.Errorf("scan activity_pipeline_run: %w", err)

@@ -5,6 +5,11 @@ import (
 	"fmt"
 )
 
+// The learning ledger the shadow agent wrote. The agent is gone, but the
+// tables stay: forgetting a memory still deletes the learning derived from
+// it, and memory recall still hides the entries the user corrected
+// (learning_corrections.go).
+
 func migrateShadowTaskLearning(tx *sql.Tx) error {
 	_, err := tx.Exec(`
 		CREATE TABLE IF NOT EXISTS shadow_task_learning_runs (

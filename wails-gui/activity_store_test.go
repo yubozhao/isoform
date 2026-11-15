@@ -151,8 +151,8 @@ func TestBootstrapReconcile_FullyMigrated(t *testing.T) {
 	// they are pure data backfills/repairs (UPDATE-only, no schema change),
 	// so the bootstrap rule deliberately returns false and lets
 	// runPendingMigrations apply them idempotently on next launch.
-	// drop_removed_agency_tables leaves nothing to probe, so its rule returns
-	// false the same way. The identifier policy cleanup also has no schema
+	// drop_removed_agency_tables and drop_removed_shadow_tables leave nothing
+	// to probe, so their rules return false the same way. The identifier policy cleanup also has no schema
 	// marker: losing its log must not leave legacy prose tokens untouched.
 	// noticed_plain_invoice_followup rewrites saved wording and dismissal keys
 	// only, so it has no schema marker either; runPendingMigrations applies it.
@@ -160,6 +160,7 @@ func TestBootstrapReconcile_FullyMigrated(t *testing.T) {
 		"activity_summaries_moments_partial_reset",
 		"timeline_summary_image_failure_requeue",
 		"drop_removed_agency_tables",
+		"drop_removed_shadow_tables",
 		"activity_evidence_identifier_policy",
 		"activity_evidence_receipt_policy",
 		"noticed_plain_invoice_followup",

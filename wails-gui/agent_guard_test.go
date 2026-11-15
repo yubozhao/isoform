@@ -169,11 +169,25 @@ func approvedFilesystemInitiative(t *testing.T) (*App, *ActivityStore, Initiativ
 		Resource:   "/tmp/yansu-qualified/",
 		Reversible: true,
 	}
-	for i := 0; i < 7; i++ {
-		addQualificationEvidence(t, store, i, action)
+	// A proposal and the grantable manifest the removed shadow qualification
+	// left on file.
+	proposal := newInitiativeFixture("legacy-filesystem-proposal", "session-filesystem", InitiativeStatusProposed)
+	if err := store.SaveInitiative(proposal); err != nil {
+		t.Fatal(err)
 	}
-	_, qualification := rebuildAndQualify(t, store, 4_000_000)
-	_, proposal := saveLegacyQualifiedProposalForTest(t, store, qualification)
+	insertLegacyRow(t, store, "shadow_capability_qualifications", map[string]any{
+		"id": "legacy-qualification", "created_at": 3_900_000,
+	})
+	if _, _, err := store.SaveCapabilityManifest(CapabilityManifest{
+		ID: "legacy-filesystem-manifest", InitiativeID: proposal.ID, QualificationID: "legacy-qualification",
+		PolicyVersion: "legacy", PlanHash: "legacy-plan", RiskTier: "local_write", Grantable: true, GrantMode: "scoped_expiring",
+		BlockReasons: []string{}, CreatedAt: 3_900_000,
+		Effects: []CapabilityManifestEffect{{
+			Capability: action.Capability, Effect: action.Effect, Resource: action.Resource, Reversible: action.Reversible,
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
 	app := newAuthorityTestApp(t, store)
 	approved, err := app.ApproveInitiative(proposal.ID)
 	if err != nil {
@@ -244,30 +258,9 @@ func TestCronAPIRewriteIsRefusedWhenGrantsCannotBeRevoked(t *testing.T) {
 	}
 }
 
-// Shell evidence never becomes a grant, and a shell grant already on file is
-// never honoured: one would cover every command the shell can run.
+// A shell grant already on file is never honoured: one would cover every
+// command the shell can run.
 func TestShellCapabilityNeverBecomesAGrant(t *testing.T) {
-	store := newTestStore(t)
-	action := authority.Action{
-		Capability: "local.shell.execute",
-		ToolName:   "Bash",
-		Operation:  "execute",
-		Effect:     authority.EffectLocalWrite,
-		Reversible: true,
-	}
-	for i := 0; i < 7; i++ {
-		addQualificationEvidence(t, store, i, action)
-	}
-	_, qualification := rebuildAndQualify(t, store, 4_000_000)
-	_, proposal := saveLegacyQualifiedProposalForTest(t, store, qualification)
-	manifest, err := store.GetCapabilityManifest(proposal.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if manifest.Grantable || !strings.Contains(strings.Join(manifest.BlockReasons, ","), "shell_command_requires_per_run_approval") {
-		t.Fatalf("manifest = %+v, want a shell block reason", manifest)
-	}
-
 	_, fsStore, approved := approvedFilesystemInitiative(t)
 	if _, err := fsStore.db.Exec(`INSERT INTO authority_grants (
 			id, initiative_id, manifest_id, capability, resource_prefix, effect, expires_at, created_at)

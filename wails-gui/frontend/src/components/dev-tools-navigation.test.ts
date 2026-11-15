@@ -13,7 +13,6 @@ const expectedLabels = [
     "Audio capture",
     "App reading",
     "Learning decisions",
-    "Shadow learning",
     "Priorities",
     "Browser preview",
     "Notification checks",
@@ -32,7 +31,6 @@ const expectedChineseLabels = [
     "音频采集",
     "应用读取",
     "学习决策",
-    "影子学习",
     "优先事项",
     "浏览器预览",
     "通知检查",
@@ -54,10 +52,11 @@ describe("Developer tools content", () => {
             "testing",
             "health",
         ]);
-        expect(DEV_TOOLS_TOPIC_IDS).toHaveLength(9);
+        expect(DEV_TOOLS_TOPIC_IDS).toHaveLength(8);
         expect(new Set(DEV_TOOLS_TOPIC_IDS).size).toBe(DEV_TOOLS_TOPIC_IDS.length);
         expect(DEV_TOOLS_TOPIC_IDS as string[]).not.toContain("agency-runtime");
         expect(DEV_TOOLS_TOPIC_IDS as string[]).not.toContain("handoff-monitor");
+        expect(DEV_TOOLS_TOPIC_IDS as string[]).not.toContain("shadow-agent");
         expect(enSettings).not.toHaveProperty("handoffMonitor");
         expect(zhSettings).not.toHaveProperty("handoffMonitor");
         // Onboarding moved to Help and about and Learning and memory, and

@@ -76,12 +76,12 @@ func TestTriageProtectedHistoryStopsBeforeObserverAndModel(t *testing.T) {
 			if err := store.SaveSession(session, []activitymon.ActivityEvent{event}, nil); err != nil {
 				t.Fatal(err)
 			}
-			runner := &taskShadowLegacyFailureRunner{}
+			runner := &memoryTranslationFakeRunner{response: `{}`, ready: true}
 			triager := NewActivityTriager(&App{runner: runner, activity: &activityMonitorState{store: store}}, nil)
 			triager.triageGroup(context.Background(), sessionGroup{Sessions: []ActivitySessionRow{session}})
 			triager.wg.Wait()
-			if phases := runner.snapshot(); len(phases) != 0 {
-				t.Fatalf("protected history reached model phases: %v", phases)
+			if runner.calls != 0 {
+				t.Fatalf("protected history reached the model: calls=%d", runner.calls)
 			}
 			episodes, err := store.ListTaskEpisodes("", 10)
 			if err != nil || len(episodes) != 0 {
