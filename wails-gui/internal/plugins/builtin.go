@@ -62,7 +62,6 @@ func Builtins() []Builtin {
 		makeBuiltin("auto-speak-automation", "builtin", "", "SetAutoSpeakAutomationEnabled", false),
 		makeBuiltin("auto-speak-notifications", "builtin", "", "SetAutoSpeakNotificationsEnabled", false),
 		makeBuiltin("browser-bridge", "tool", "", "SetBrowserBridgeEnabled", false),
-		makeBuiltin("cursor-overlay", "builtin", "", "SetCuaCursorOverlayEnabled", true),
 		makeBuiltin("start-at-login", "builtin", "", "SetStartAtLogin", true),
 		makeBuiltin("text-channel", "builtin", "", "SetTextChannel", false),
 		makeBuiltin("mobile-connection", "builtin", "", "EnableMobileConnection/DisableMobileConnection", false),

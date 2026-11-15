@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import i18n from '@/i18n';
 import en from '@/i18n/locales/en/chat.json';
 import zh from '@/i18n/locales/zh-CN/chat.json';
-import enApp from '@/i18n/locales/en/app.json';
 
 const bindings = vi.hoisted(() => ({
     RequestPermission: vi.fn(),
@@ -20,12 +19,10 @@ import { ChatFailureLine } from './chat-failure-line';
 import { quietRetry } from '@/lib/chat-failure';
 import { PermissionQuestionCard } from './permission-question-card';
 import { ComposerSuggestions } from './composer-suggestions';
-import { ComposerCapabilities } from './composer-capabilities';
 import { MainChatAnswerChips } from './main-chat/main-chat-answer-chips';
 import { MainChatViewContext, type MainChatStreamView } from './main-chat/main-chat-view-context';
 import { MainChatPageColumn } from './main-chat/main-chat-stream-body';
 import { closeMainChatSidePanel, openMainChatReplyDraft, openMainChatTask } from '@/lib/main-chat-side-panel';
-import { GoogleIcon } from './icons/app-icons';
 
 beforeEach(async () => {
     await i18n.changeLanguage('en');
@@ -150,42 +147,6 @@ describe('Chat K4: a click finishes in Chat', () => {
         expect(screen.getByText('chat')).toBeInTheDocument();
     });
 
-    it('"Turn on …" asks macOS directly; an account sign-in opens Settings', async () => {
-        bindings.RequestPermission.mockResolvedValue(true);
-        const onConnect = vi.fn();
-        render(
-            <ComposerCapabilities
-                onConnect={onConnect}
-                capabilities={[
-                    { topic: 'google', label: 'Calendar', Icon: GoogleIcon, connected: false },
-                    { topic: 'feishu-agent', label: 'Feishu', Icon: GoogleIcon, connected: false },
-                ]}
-            />,
-        );
-        const turnOn = enApp.composer.capabilities.turnOn.replace('{{app}}', 'Calendar');
-        expect(turnOn).toBe('Turn on Calendar');
-        fireEvent.click(screen.getByRole('button', { name: turnOn }));
-        await waitFor(() => expect(bindings.RequestPermission).toHaveBeenCalledWith('accessibility'));
-        expect(onConnect).not.toHaveBeenCalled();
-        fireEvent.click(screen.getByRole('button', { name: 'Feishu' }));
-        expect(onConnect).toHaveBeenCalledWith('feishu-agent');
-    });
-
-    it('a chip on a locked Mac with permission granted does not ask macOS again', () => {
-        const onConnect = vi.fn();
-        render(<ComposerCapabilities onConnect={onConnect} capabilities={[{ topic: 'google', label: 'Google', Icon: GoogleIcon, connected: false, needsPermission: false }]} />);
-        fireEvent.click(screen.getByRole('button', { name: 'Google' }));
-        expect(bindings.RequestPermission).not.toHaveBeenCalled();
-        expect(onConnect).toHaveBeenCalledWith('google');
-    });
-
-    it('a failed "Turn on" says so in place', async () => {
-        bindings.RequestPermission.mockRejectedValue(new Error('no'));
-        render(<ComposerCapabilities onConnect={vi.fn()} capabilities={[{ topic: 'google', label: 'Calendar', Icon: GoogleIcon, connected: false }]} />);
-        fireEvent.click(screen.getByRole('button', { name: 'Turn on Calendar' }));
-        expect(await screen.findByText(en.failure.systemSettings)).toBeInTheDocument();
-        expect(toast.error).not.toHaveBeenCalled();
-    });
     it('restores choices when posting an answer fails', async () => {
         const view: MainChatStreamView = { today: '2026-10-31', hideRoutine: false, topicNames: new Map(), chips: { q: ['Yes, today', 'Not now'] }, onFillChip: async () => false, chipsSend: true };
         render(<MainChatViewContext.Provider value={view}><MainChatAnswerChips itemId="q" /></MainChatViewContext.Provider>);

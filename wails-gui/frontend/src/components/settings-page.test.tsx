@@ -50,9 +50,6 @@ vi.mock("@/components/settings/pages/learning-memory-page", () => ({
         </div>
     ),
 }));
-vi.mock("@/components/settings/pages/using-apps-page", () => ({
-    UsingAppsPage: () => <div data-testid="page">using-apps</div>,
-}));
 vi.mock("@/components/settings/pages/privacy-page", () => ({
     PrivacyPage: () => <div data-testid="page">privacy</div>,
 }));
@@ -164,8 +161,6 @@ describe("SettingsPage", () => {
         expect(screen.getByTestId("page")).toHaveTextContent("chat-apps:lark");
         expect(screen.getByRole("button", { name: /Extensions/ })).toHaveAttribute("aria-expanded", "true");
 
-        rerender(<SettingsPage {...props} initialTopic="cursor-overlay" />);
-        expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Using your apps");
     });
 
     it("returns to Overview after closing Appearance and reopening without a topic", () => {

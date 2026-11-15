@@ -94,8 +94,6 @@ func (a *App) builtinPluginEnabled(builtin plugins.Builtin, reader plugins.Reade
 		return a.GetAutoSpeakNotificationsEnabled(), nil
 	case "browser-bridge":
 		return a.GetBrowserBridgeEnabled(), nil
-	case "cursor-overlay":
-		return a.GetCuaCursorOverlayEnabled(), nil
 	case "start-at-login":
 		return a.GetStartAtLogin()
 	case "topic-finds":
@@ -256,8 +254,6 @@ func (a *App) applyBuiltinPlugin(builtin plugins.Builtin, enabled bool) error {
 		return a.SetAutoSpeakNotificationsEnabled(enabled)
 	case "browser-bridge":
 		return a.SetBrowserBridgeEnabled(enabled)
-	case "cursor-overlay":
-		return a.SetCuaCursorOverlayEnabled(enabled)
 	case "start-at-login":
 		return a.SetStartAtLogin(enabled)
 	case "topic-finds":

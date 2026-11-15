@@ -1227,7 +1227,6 @@ func (a *App) handleActivityEvent(evt activitymon.ActivityEvent) {
 	if a.IsClosedEyesModeEnabled() {
 		return
 	}
-	a.cancelBackgroundUnderstandingForPrimaryActivity()
 	am := a.activity
 	am.mu.Lock()
 	defer am.mu.Unlock()

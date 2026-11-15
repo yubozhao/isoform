@@ -17,7 +17,7 @@ A cross-platform desktop application for AI-assisted coding, activity monitoring
 │  auth · streaming · project · worktree · terminal   │
 │  memory · activity · cron · mcp-hub                 │
 │  permissions · voice · integrations · browser-bridge │
-│  auto-update · skill-hub · spotlight · cua-driver    │
+│  auto-update · skill-hub · spotlight                 │
 │  quick-chat · toast · i18n · subscription            │
 │  install-discovery · opencli · prediction            │
 └──────────┬──────────────────────────────┬───────────┘
@@ -63,24 +63,6 @@ Each project maps to a local directory. Workspaces within a project are backed b
 - `clone.go` — Repository cloning via Yansu git proxy
 - `checkpoint.go` — Per-file backup snapshots for atomic session rewind (enables "rewind" button in chat UI)
 - `git.go` — Git info queries (branch, status, URL parsing)
-
-### CUA Driver System (`cua_driver_*.go`, `bundled_cua_*.go`)
-
-Manages a bundled Computer Use Agent (CUA) driver daemon for desktop automation:
-
-- `cua_driver_daemon.go` — Long-lived CUA driver process in `serve` mode over a Unix domain socket. Keeps the element cache hot across calls so `element_index` workflows work end-to-end. Uses `--no-relaunch` to ensure the bundled binary stays in the Yansu process tree for correct TCC attribution.
-- `cua_driver_proxy.go` — JSON-RPC proxy that the frontend and host bridge call into; forwards requests to the daemon over the Unix socket with per-request timeouts.
-- `cua_driver_permissions.go` — macOS accessibility permission checking and guided setup for the CUA driver's rebranded bundle (`com.yansu.cuadriver`).
-- `cua_policy.go` — Policy engine that governs what CUA actions are allowed (rate limits, scope restrictions, sensitive-app blocking).
-- `bundled_cua_driver.go` — Manages the bundled CUA driver binary (auto-downloaded on first launch via `scripts/download-cua-driver.sh`).
-- `bundled_cua_skill.go` — Bundled CUA skill package for AI-driven computer use.
-
-The CUA driver source (Swift) lives in `cua-driver-src/` along with its entitlements, Info.plist, and bundled Skills manifests. It is built via `cua-driver-src/build-cua-driver.sh` and bundled into the app by the build scripts.
-
-### CUA Screenshot & Translator (`cua_translator.go`, `cua_screenshot_read.go`)
-
-- `cua_translator.go` — Protocol bridge between the legacy trycua/cua JSON-RPC wire format and the native alma-derived CUA driver NDJSON protocol. Caches per-PID accessibility tree snapshots for element-index translation.
-- `cua_screenshot_read.go` — Screenshot capture with optional OCR text extraction for CUA workflows. Reads accessibility trees and translates element references between wire formats.
 
 ### Activity Monitoring & Memory (`activity*.go`, `memory*.go`)
 
@@ -209,7 +191,7 @@ Isoform runs two servers on 127.0.0.1. Any web page the user visits can send req
 | Routes | Token | Held by |
 |---|---|---|
 | `/api/health` | none (answers `{"ok":true}` and nothing else) | the Spotlight helper's check that Isoform is still running |
-| `/api/computer-use/*`, `/api/cua/*`, `/api/open-url`, `/api/open-path`, `/api/clipboard/write`, `/api/notify` | `X-Yansu-Host-Bridge-Token`: random per launch, kept in memory, never written to disk or to child environments | nothing in the shipped app; local tools when Isoform was started with `YANSU_HOST_BRIDGE_TOKEN` (the e2e tests in `tools/test-computer-use` send it as `HOST_BRIDGE_TOKEN`) |
+| `/api/computer-use/*`, `/api/open-url`, `/api/open-path`, `/api/clipboard/write`, `/api/notify` | `X-Yansu-Host-Bridge-Token`: random per launch, kept in memory, never written to disk or to child environments | nothing in the shipped app; local tools when Isoform was started with `YANSU_HOST_BRIDGE_TOKEN` (the e2e tests in `tools/test-computer-use` send it as `HOST_BRIDGE_TOKEN`) |
 | `/api/spotlight/*` | `X-Yansu-Spotlight-Token`: the IPC token the supervisor generates for each helper (`--ipc-token`); refused while no helper runs | the Spotlight helper. Its webview is the only browser Origin allowed: `http://127.0.0.1:<asset port>` on macOS (the helper reports the port on stdout), `http://wails.localhost` on Windows, `wails://wails` on Linux |
 | `/api/activity/*` | the media token in the `token` query parameter (`<img>` and `<video>` cannot send headers), from `GetHostBridgeMediaToken` | the activity page's screenshots and recordings; the browser preview reads it through the browser bridge |
 
@@ -220,7 +202,6 @@ Isoform runs two servers on 127.0.0.1. Any web page the user visits can send req
 - `host_bridge.go` — localhost-only HTTP bridge for host OS operations (screenshot, clipboard, app focus, keystrokes, mouse clicks) and its route table
 - `host_bridge_guard.go` — the host bridge's Host, Origin, Content-Type and token checks, and the Spotlight webview's CORS preflights
 - `host_bridge_computer_use.go` — Computer-use API endpoints (mouse, keyboard, screenshot, drag-and-drop)
-- `host_bridge_cua.go` — CUA-specific bridge endpoints for the CUA driver proxy
 - `host_bridge_spotlight.go` — Spotlight HTTP bridge for SSE-based chat streaming
 - `browser_events.go` — WebSocket event channel definitions for browser clients
 - `eventBroadcaster` — Forwards Wails EventsEmit to browser WebSocket clients for dual-mode delivery
@@ -479,7 +460,6 @@ EventsEmit('frontend:window-state', { width, height, maximised });
 | **Checkpoints** | `checkpoint.go` | File backup/restore for session rewind |
 | **Terminal** | `terminal.go` | PTY shell creation, resize, lifecycle |
 | **Identity** | `auth.go`, `auth_manager.go` | Local self profile, base URLs, environment switch (no sign-in) |
-| **CUA Driver** | `cua_driver_*.go` | Computer Use Agent daemon lifecycle and proxy |
 | **Browser Bridge** | `browser_server.go`, `host_bridge*.go` | HTTP/WS server for browser-based clients |
 | **Spotlight** | `spotlight_app.go`, `spotlight_supervisor.go` | Spotlight-like search overlay with AI chat |
 | **Quick Chat** | `quick_chat_*.go` | Hotkey-activated floating chat panel |
@@ -567,7 +547,7 @@ The dev server starts the Vite dev server (with HMR) alongside the Go backend. W
 The build script:
 1. Installs frontend dependencies and runs Vite build
 2. Compiles the Go backend with Wails
-3. Bundles runtimes (bun, ffmpeg, git, yansu CLI, open CLI, cua-driver) and sherpa-onnx native libs (`Contents/Frameworks/libsherpa-onnx-*.dylib` + `libonnxruntime.dylib` on macOS, the equivalent DLLs next to `Yansu.exe` on Windows) into the app bundle
+3. Bundles runtimes (bun, ffmpeg, git, yansu CLI, open CLI) and sherpa-onnx native libs (`Contents/Frameworks/libsherpa-onnx-*.dylib` + `libonnxruntime.dylib` on macOS, the equivalent DLLs next to `Yansu.exe` on Windows) into the app bundle
 4. On macOS: creates `.app` bundle with optional code signing and DMG
 
 ### Isoform Dev Builds and macOS Privacy Grants
@@ -590,7 +570,7 @@ macOS keys an app's privacy grants (Screen Recording, Accessibility, Microphone,
 
 With the identity in place:
 
-- `build-wails.sh --flavor isoform` signs the nested helpers (CuaDriver.app, quick-chat-spotlight.app, the OCR and PII helpers, the bundled dylibs) and then Isoform.app with it, with the same entitlements as a release build and without hardened runtime, timestamp or notarization. The designated requirement is `identifier "com.wails.Isoform" and certificate leaf = H"<sha1>"` for every build, so the grants stay valid across rebuilds.
+- `build-wails.sh --flavor isoform` signs the nested helpers (quick-chat-spotlight.app, the OCR and PII helpers, the bundled dylibs) and then Isoform.app with it, with the same entitlements as a release build and without hardened runtime, timestamp or notarization. The designated requirement is `identifier "com.wails.Isoform" and certificate leaf = H"<sha1>"` for every build, so the grants stay valid across rebuilds.
 - An identity-signed build clears the grants only when they were made for a differently signed build: `reset-dev-permissions.sh --if-signature-changed` compares the build's requirement with the record of the identity-signed build whose grants were last cleared (`~/.isoform-agent/dev-signing/privacy-grants-requirement`; per user, like the grants, so builds from several worktrees share it), clears when they differ or there is no record, and updates the record. An ad-hoc build is cleared every time, as before, and drops the record; a path that leaves an ad-hoc bundle behind without clearing (an ad-hoc build or dev run with `--keep-permissions`, a hook that could not sign) drops it too (`reset-dev-permissions.sh --forget`), so the next identity-signed build clears once again rather than trusting a stale record. `--keep-permissions` skips every clear.
 - `start-wails-gui.sh` exports `YANSU_DEV_SIGNING=1`, and the `postBuildHooks` entry in `wails.json` runs `scripts/sign-dev-build.sh` after every Go rebuild in `wails dev`, after Wails's own ad-hoc signing, so the dev bundle keeps the same requirement across Go changes. The hook signs only a bundle whose `CFBundleIdentifier` is `com.wails.Isoform` and only when the variable is set; `build-wails.sh` unsets it before its own `wails build`, so a value leaked from the shell or `.env.local` cannot re-sign a Yansu build. Wails hides hook output unless it fails, so the hook also writes to `~/.isoform-agent/dev-signing/sign-dev-build.log` and to the terminal.
 - Without the identity both scripts fall back to ad-hoc signing, say so in the log, clear the grants, and point at `dev-signing-identity.sh create`.
@@ -605,7 +585,6 @@ Security note: the private key signs without a prompt by design, so any process 
 ./scripts/download-bun.sh           # Bun runtime (bundled JS execution)
 ./scripts/download-ffmpeg.sh        # FFmpeg (activity video transcoding)
 ./scripts/download-git.sh           # Portable Git for Windows
-./scripts/download-cua-driver.sh    # CUA driver (computer-use automation)
 
 # Speech-to-text models (SenseVoice + Silero VAD) are downloaded lazily on
 # first voice-input attempt by bundled_sherpa.go; override the URLs with
@@ -697,16 +676,9 @@ wails-gui/
 ├── daemon.go                   # WebSocket-based platform relay daemon (Slack, Discord, Teams, etc.)
 ├── auth.go                     # Local self profile, base URLs, environment switch (no sign-in)
 ├── auth_manager.go             # Centralized auth fallback chain manager
-├── cua_driver_daemon.go        # CUA driver daemon lifecycle (Unix socket, JSON-line protocol)
-├── cua_driver_proxy.go         # JSON-RPC proxy forwarding requests to the CUA daemon
-├── cua_driver_permissions.go   # CUA driver macOS accessibility permission setup
-├── cua_policy.go               # CUA action policy engine (rate limits, scope restrictions)
-├── cua_translator.go           # Legacy/native CUA protocol bridge with per-PID snap cache
-├── cua_screenshot_read.go      # Screenshot capture + OCR for CUA workflows
 ├── host_bridge.go              # Localhost HTTP bridge for host OS operations
 ├── host_bridge_guard.go        # Host bridge request checks and tokens
 ├── host_bridge_computer_use.go # Computer-use API (mouse, keyboard, screenshot)
-├── host_bridge_cua.go          # CUA bridge endpoints
 ├── host_bridge_spotlight.go    # Spotlight HTTP bridge for SSE chat streaming
 ├── browser_server.go           # Browser-mode HTTP/WS server (port 34116)
 ├── browser_events.go           # Browser event channel definitions
@@ -879,7 +851,7 @@ wails-gui/
 ├── bundled_ffmpeg.go           # Bundled FFmpeg management
 ├── bundled_git.go              # Bundled Git management
 ├── bundled_opencli.go          # Bundled Open CLI management
-├── bundled_*.go                # Bundled runtime management (sherpa, cua-driver, cua-skill, opencli-skill)
+├── bundled_*.go                # Bundled runtime management (sherpa, opencli-skill)
 ├── wails.json                  # Wails build configuration
 ├── ARCHITECTURE.md             # Deep architecture documentation
 ├── HOT_RELOAD_TROUBLESHOOTING.md # Dev server hot reload guide
@@ -948,12 +920,10 @@ wails-gui/
 ├── scripts/                    # Build and download scripts
 │   ├── start-wails-gui.sh      # Dev launcher with prerequisite checks
 │   ├── build-wails.sh          # Production build with bundle embedding
-│   ├── build-cua-driver-bundle.sh # Build and bundle the CUA driver
 │   ├── build-yansu-cli.sh      # Build the yansu CLI binary
 │   ├── download-bun.sh         # Download Bun runtime
 │   ├── download-ffmpeg.sh      # Download FFmpeg binary
 │   ├── download-git.sh         # Download portable Git
-│   ├── download-cua-driver.sh  # Download CUA driver binary
 │   ├── download-paddleocr.sh   # Download PaddleOCR models
 │   ├── profile-on-burst.sh     # CPU profiling helper during activity bursts
 │   ├── pii-helper.entitlements.plist # PII helper entitlements
@@ -978,10 +948,6 @@ wails-gui/
 │   ├── opencli-browser/        # Browser automation skill
 │   ├── opencli-usage/          # Usage analytics skill
 │   └── smart-search/           # Smart search skill
-├── cua-driver-src/             # CUA driver source, entitlements, bundled Skills
-│   ├── src/                    # Swift source for the CUA driver helper
-│   ├── Skills/                 # Bundled CUA skills (JSON manifests)
-│   └── build-cua-driver.sh     # CUA driver build script
 ├── release-worker/             # Cloudflare Worker for release distribution (auto-update)
 ├── quick-chat-spotlight/       # Spotlight-integrated quick chat assets
 ├── quick-chat-window-assets/   # Quick Chat floating panel HTML/CSS

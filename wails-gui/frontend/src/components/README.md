@@ -50,7 +50,6 @@ components/
 | `new-chat-welcome.tsx` | Welcome content (logo, heading, subheading) shown for empty new chat sessions |
 | `plan-review-card.tsx` | Plan approval/rejection interface with markdown display |
 | `compaction-banner.tsx` | Auto-compaction lifecycle banner showing compacting spinner or error state between message list and composer; renders nothing when idle |
-| `cua-screenshot.tsx` | Loads and renders a computer-use screenshot pulled through the Wails Go bridge |
 
 ### Input & Composition
 
@@ -95,14 +94,13 @@ components/
 |-----------|-------------|
 | `settings-page.tsx` | Settings dialog shell: sidebar (`settings/settings-nav.tsx`), page header with the page subtitle, deep-link resolution, and the Developer tools pages |
 | `settings/settings-registry.ts` | The Settings pages and sidebar sections (labels, one-line subtitles, icons, search keywords, legacy id aliases) and `resolveSettingsTopic()` |
-| `settings/pages/*.tsx` | One file per Settings page (General, Notifications, Assistant, Observation, Learning and memory, Using your apps, Privacy, iPhone, Skills, Tool servers, Chat apps, Other AI apps, Help and about) |
+| `settings/pages/*.tsx` | One file per Settings page (General, Notifications, Assistant, Observation, Learning and memory, Privacy, iPhone, Skills, Tool servers, Chat apps, Other AI apps, Help and about) |
 | `settings/settings-advanced.tsx` | Shared "Advanced" disclosure for Settings pages; remembers its open state per page, and opens again on every navigation that asks for it (sidebar or Search and commands keyword search, `openSettings(topic, { advanced: true })`, `settings:open` with `{ advanced }`) through the `SettingsAdvancedRevealContext` counter; also the anchor scrolling helpers |
 | `settings/pages/chat-apps/*` | Chat apps drill-ins: `bot-setups.tsx` (Slack, Discord, Telegram), `wechat-setup.tsx`, `feishu-setup.tsx`, `disconnect-button.tsx`, and `chat-app-status.ts` (the shared `{ configured, online }` status each setup reports) |
 | `keybindings-settings.tsx` | Live key recording, conflict detection, and reset to defaults |
 | `mcp-hub-settings.tsx` | MCP (Model Context Protocol) server hub: discover local servers, import/install from registry, enable/disable, restart, and manage per-server configuration |
 | `skill-hub-settings.tsx` | Skill hub management: install skills from GitHub/local/agent dir/ClawHub, search registries, enable/disable, and manage installed skills |
 | `use-yansu-anywhere-settings.tsx` | The Other AI apps card (copy the install prompt for other assistants), plus `UseYansuAnywhereDetails` for that page's Advanced section (what other assistants can recall, examples, the full install prompt) |
-| `enable-computer-use-dialog.tsx` | Permission setup dialog behind Settings > Using your apps > Set up (Accessibility and Screen Recording) |
 | `ai-memory-import-dialog.tsx` | Dialog for configuring and importing AI memory from external sources (used during onboarding and from settings) |
 
 ### Auth & Onboarding

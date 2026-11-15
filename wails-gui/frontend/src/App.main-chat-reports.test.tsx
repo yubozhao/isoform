@@ -122,7 +122,6 @@ vi.mock('@/hooks/useComposerDockSlide', () => ({ useComposerDockSlide: () => ({}
 vi.mock('@/hooks/useVoiceInput', () => ({ useVoiceInput: () => ({}) }));
 vi.mock('@/hooks/useTerminal', () => ({ useTerminal: () => ({ terminalTabs: [], allTerminalTabs: [] }) }));
 vi.mock('@/hooks/useStandaloneMode', () => ({ useStandaloneMode: () => false }));
-vi.mock('@/hooks/useComposerCapabilities', () => ({ useComposerCapabilities: () => ({ capabilities: [], refresh: fixture.noop }) }));
 vi.mock('@/hooks/useCronJobs', () => ({ useCronJobs: () => ({ jobs: [{ id: 'job-1', name: 'Weekly review' }] }) }));
 vi.mock('@/hooks/useUpcoming', () => ({ useUpcoming: () => ({ items: [], loading: false }) }));
 vi.mock('@/hooks/useMainChatSetup', () => ({ useMainChatSetup: () => ({ current: null }) }));

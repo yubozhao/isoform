@@ -2,7 +2,6 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ToolGroupItem } from './tool-group-item';
 import { TodoChecklist, parseTodoInput } from './todo-checklist';
-import { CuaScreenshot } from './cua-screenshot';
 import { AnimatedEllipsis } from './animated-ellipsis';
 import { getToolMeta } from '@/lib/tool-icons';
 import type { StreamItem } from '@/types';
@@ -78,19 +77,6 @@ export function ToolGroupRow({
         return [];
     }, [items]);
 
-    // Window captures produced by cua-driver steps in this group (e.g.
-    // get_window_state / screenshot). Rendered as a thumbnail strip under
-    // the chip row so the user can watch what the agent saw, Codex-style.
-    const screenshotPaths = useMemo(() => {
-        const paths: string[] = [];
-        for (const item of items) {
-            if (!item.toolUseId) continue;
-            const path = resultsByToolUseId?.get(item.toolUseId)?.screenshotPath;
-            if (path) paths.push(path);
-        }
-        return paths;
-    }, [items, resultsByToolUseId]);
-
     return (
         <div className="flex flex-col gap-2">
             <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
@@ -128,13 +114,6 @@ export function ToolGroupRow({
                 })}
             </div>
             {todos.length > 0 && <TodoChecklist todos={todos} />}
-            {screenshotPaths.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                    {screenshotPaths.map((path, idx) => (
-                        <CuaScreenshot key={`${path}-${idx}`} path={path} />
-                    ))}
-                </div>
-            )}
         </div>
     );
 }

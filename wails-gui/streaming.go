@@ -1641,7 +1641,6 @@ func (a *App) composePromptFor(prompt string, personal bool, opts ...string) str
 		{"memory-cli", func() string { return a.injectMemoryCLI("") }},
 		{"people", func() string { return a.injectPeopleContext(rawQuery) }},
 		{"activity-cli", func() string { return a.injectActivityCLI("") }},
-		{"cua-tool", func() string { return a.injectCuaDriverCLI("") }},
 		{"soul", func() string { return a.injectSoulContext("") }},
 		{"skills", func() string { return a.injectSkillContext("", skillDomain) }},
 		{"mcp", func() string { return a.injectMcpContext("") }},
@@ -1681,7 +1680,7 @@ func (a *App) composePromptFor(prompt string, personal bool, opts ...string) str
 	if externalChat {
 		for i := range producers {
 			switch producers[i].name {
-			case "memory", "people", "recent-activity", "memory-cli", "activity-cli", "cua-tool", "yansu":
+			case "memory", "people", "recent-activity", "memory-cli", "activity-cli", "yansu":
 				producers[i].fn = func() string { return "" }
 			}
 		}
@@ -2016,7 +2015,7 @@ There are two distinct activities. Pick the right tool for each.
     - Wikipedia summary: ` + "`https://en.wikipedia.org/api/rest_v1/page/summary/<term>`" + ` (or zh.wikipedia.org)
     - GitHub repo metadata: ` + "`https://api.github.com/repos/<owner>/<repo>`" + `
     - Any URL the user typed, any URL from prior tool output, any documented public REST endpoint you have high confidence about.
-  → SPA FALLBACK: if WebFetch returns a near-empty JS shell (a client-rendered page), read it with ` + "`opencli web read --url <url>`" + ` via Bash. Never cua_driver.
+  → SPA FALLBACK: if WebFetch returns a near-empty JS shell (a client-rendered page), read it with ` + "`opencli web read --url <url>`" + ` via Bash. Never a GUI browser.
 
 (B) **Searching / discovering** (you do NOT have the URL):
   → Use the **SearchWeb** tool when it is available. The built-in WebSearch tool is DISABLED in this build. The SearchWeb query leaves this computer: write it in general words about the public topic only, never with names, addresses, numbers or anything from the user's files, mail or screen.
@@ -2030,7 +2029,7 @@ URL-FABRICATION RULE (applies to both paths):
 ROUTING SUMMARY:
 - "天气 / weather / 汇率 / 时间 / wiki" → WebFetch directly.
 - "search X / 微博讨论 / 小红书测评 / 看看 reddit 上" → SearchWeb, else opencli.
-- known URL but WebFetch came back as a JS shell → ` + "`opencli web read --url <url>`" + `. Never cua_driver.
+- known URL but WebFetch came back as a JS shell → ` + "`opencli web read --url <url>`" + `. Never a GUI browser.
 - "open this URL: ..." → WebFetch directly.
 
 RULES:
@@ -2114,96 +2113,13 @@ func (a *App) injectActivityCLI(prompt string) string {
 	sb.WriteString("- (d) The user's CLICK AND KEYSTROKE record — \"What did I click before the bug appeared?\" / \"What did I type into that form?\" → activity-cli has the input stream; apps don't retain ephemeral inputs after re-render.\n")
 	sb.WriteString("- (e) Drafting follow-ups from actual spoken words — \"Draft a follow-up to the call\" / \"What were the action items?\" → pull the transcript via `activity show` and compose from the literal words spoken (combines (a) and (b)).\n")
 	sb.WriteString("- Any question where the user's subjective prior context would sharpen your answer — check before guessing.\n")
-	sb.WriteString("\nDO NOT use activity-cli when the answer is data an app itself maintains — use the `cua_driver` tool instead (see <cua-tool> below):\n")
-	sb.WriteString("- activity-cli is OCR-based: lossy on rendered text, only covers what was on screen at capture time, doesn't read app DOM directly. cua_driver reads the live AX tree / DOM and can launch the app in the background if it isn't currently running.\n")
-	sb.WriteString("- So: if the user is asking about chat history, document content, email content, source code, calendar events, web page content, file listings — anything the app itself maintains — cua_driver is the right tool, period. \"The app isn't open right now\" is NOT a reason to use activity-cli: cua_driver's launch_app starts the app in the background (focus-safe, activates=false) and then reads state.\n")
-	sb.WriteString("- This decision does NOT depend on verb tense or temporal deictics. Past-tense phrasing (\"what did I write\", \"who did I message last\") doesn't imply activity-cli — if the answer is data the app keeps, it's a cua_driver question regardless of phrasing.\n")
 	sb.WriteString("- activity-cli's PRIMARY domain is what apps DON'T keep: cross-app narrative, mic-routed meeting transcripts, OCR snapshots of removed/recalled content, the user's input stream — see WHEN TO USE above for the irreplaceable categories (a)-(d).\n")
-	sb.WriteString("- activity-cli is also a FALLBACK for an app-data question in one narrow case: cua_driver was already attempted AND its response shows ax_status=\"empty_after_wakeup\" with no usable visual_index. cua_driver internally already retries AX wake-up (which is how Electron/CEF apps like Slack, Discord, Notion, Feishu, DingTalk, WeChat desktop populate) and runs Vision OCR as a third layer — only when BOTH the AX tree and OCR pass come back empty does activity-cli become the fallback. Apps that actually hit this: games, video players, DRM windows, canvas/Metal/WebGL custom-renderer GUIs. Do NOT skip cua_driver on a guess; do NOT trigger this fallback on a partially-populated tree if visual_index still carries content.\n\n")
 	sb.WriteString("Only fall back to `activity list/show` when the summary is insufficient or you need a specific session.\n\n")
 	sb.WriteString("When presenting activity data to the user:\n")
 	sb.WriteString("- Stay conversational and warm, like a thoughtful colleague.\n")
 	sb.WriteString("- Name specific people, projects, companies, dollar amounts, dates.\n")
 	sb.WriteString("- For each item, include its STATE or NEXT STEP when inferable.\n")
 	sb.WriteString("</activity-cli>\n\n")
-	sb.WriteString(prompt)
-	return sb.String()
-}
-
-// injectCuaDriverCLI tells the LLM that the native `cua_driver` tool
-// reads the live state of any INSTALLED macOS app — not just running
-// apps, since launch_app can start a closed app in the background
-// (activates=false, focus-safe) before get_window_state reads state.
-// Counterbalances injectActivityCLI's eager guidance: the two tools
-// cover different KINDS of data, not different time periods.
-// cua_driver = any installed app's INTERNAL data (chat history,
-// documents, mail, player state, web pages, calendar, files).
-// activity-cli = the user's EXPERIENCE archive (cross-app narrative,
-// mic-routed meeting transcripts, OCR'd snapshots of content the
-// source has since deleted/recalled, the user's click/keystroke
-// stream).
-//
-// The guidance below is principle-based, not example-based: the model
-// is taught to decide via "can I open the app and look at this?"
-// rather than from a finite app-name list or from phrasing signals
-// (tense markers, temporal deictics) which don't track data ownership.
-// Otherwise the LLM picks up the wrong heuristic and silently routes
-// data-ownership questions through activity-cli.
-func (a *App) injectCuaDriverCLI(prompt string) string {
-	var sb strings.Builder
-	sb.WriteString("<cua-tool>\n")
-	sb.WriteString("DATA YOU HAVE — live read of ANY INSTALLED macOS app's internal data, running or not (via the `cua_driver` tool):\n")
-	sb.WriteString("- Full AX tree + screenshot of an app, WITHOUT pulling it to the foreground or stealing focus from whatever the user is doing.\n")
-	sb.WriteString("- The app does NOT have to be running. cua_driver can launch_app it in the background (activates=false, no focus theft, no Space switch) and then read state. So \"is the app currently open?\" is NOT a precondition.\n")
-	sb.WriteString("- Works for any macOS-visible surface: native AppKit apps, Electron / CEF apps, browser tabs, IDEs, terminals, menu-bar apps, anything macOS lists in NSWorkspace.\n")
-	sb.WriteString("- Reads on-screen content AND off-screen content still held in the app's DOM / model layer (e.g. messages above the visible viewport in chat apps).\n\n")
-	sb.WriteString("TOOL CALLS:\n")
-	sb.WriteString("  cua_driver({\"name\":\"list_apps\",\"args\":{}})                          # enumerate running apps + bundle ids\n")
-	sb.WriteString("  cua_driver({\"name\":\"get_window_state\",\"args\":{\"bundle\":\"<id>\"}}) # full AX tree dump + screenshot for that app\n")
-	sb.WriteString("    NOTE: the args key is \"bundle\" (NOT \"bundle_id\"). Use the \"bundle\" field returned by list_apps. Daemon will reject calls that use bundle_id and report 'No running app matched pid=0'.\n\n")
-	sb.WriteString("WHEN TO USE — pick cua_driver whenever the answer is data an app itself maintains:\n")
-	sb.WriteString("- cua_driver and activity-cli are NOT substitutes; they cover DIFFERENT KINDS OF DATA, not different time periods.\n")
-	sb.WriteString("  - cua_driver scope = any installed app's INTERNAL data. Examples: chat threads in a messenger (Slack/Discord/Feishu/WeChat group history), saved documents or code files in their editor, emails in the user's mailbox, content of browser tabs the user ALREADY has open, player current state, calendar events, files in Finder. The app does NOT have to be currently running — see LAUNCH IF NEEDED below.\n")
-	sb.WriteString("  - activity-cli scope = the user's EXPERIENCE archive, things no single app keeps. Examples: cross-app daily/weekly narrative; meeting transcripts with mic/system_audio split (what the USER said vs what counterparties said); OCR'd screen captures including content that has since been deleted/recalled/edited from the source; the user's click/keystroke record.\n")
-	sb.WriteString("- Decision rule (the only one that matters): \"Could I get this answer by opening the app and looking?\" If yes → cua_driver. If the answer specifically needs the user's subjective experience, a withdrawn/deleted message, or a story spanning multiple apps → activity-cli.\n")
-	sb.WriteString("- NOT FOR WEB SCRAPING: never use cua_driver to launch a browser and navigate it to an external URL just to read that page. Fetching a URL is WebFetch's job (or `opencli web read --url <url>` when the page is a JS-rendered SPA). Driving a GUI browser costs 5-10 tool calls per page load and can hit login popups. cua_driver on a browser is ONLY for reading tabs the user already has open.\n")
-	sb.WriteString("- The rule does NOT depend on verb tense or whether the app is running. Even if a messenger is closed, its chat history IS data that messenger maintains — so a question about \"who did I last message in <group>\" is a cua_driver question (launch_app the messenger in the background, then get_window_state). The right discriminator is data ownership, never phrasing.\n")
-	sb.WriteString("- Worked examples:\n")
-	sb.WriteString("    \"Who did I last chat with in #X on Slack?\"           → Slack maintains chat history → cua_driver (launch_app if not running, then read).\n")
-	sb.WriteString("    \"What does foo.go show in my IDE?\"                   → IDE maintains the buffer → cua_driver.\n")
-	sb.WriteString("    \"What's currently playing on NetEase Cloud Music?\"   → app maintains player state → cua_driver (L3 OCR will cover it if AX is empty).\n")
-	sb.WriteString("    \"What did I do yesterday across all my apps?\"        → cross-app narrative, no single app holds this → activity-cli (`activity summary`).\n")
-	sb.WriteString("    \"What did <person> say at the 2pm call?\"             → mic-routed meeting audio, no app keeps this → activity-cli (speech events).\n")
-	sb.WriteString("    \"What was the message that just got recalled in the group?\" → already removed from the source → activity-cli (OCR snapshot).\n\n")
-	sb.WriteString("LAUNCH IF NEEDED:\n")
-	sb.WriteString("- If the app isn't currently running, call cua_driver name=\"launch_app\" args={\"bundle\":\"<id>\"} FIRST. launch_app is focus-safe: activates=false by default; the app starts in the background, does not steal the frontmost window or switch Spaces.\n")
-	sb.WriteString("- Immediately after launch_app succeeds, call get_window_state to read state. This is the canonical read-on-demand pattern for an app that isn't open.\n")
-	sb.WriteString("- Caveats of launching fresh — these are activity-cli's territory, not cua_driver's:\n")
-	sb.WriteString("    * The app will sync on launch (pull new mail, refresh chat lists, load latest page). Content the user saw earlier but has since been deleted/recalled/edited at the source will NOT be in the freshly-launched state — for that, activity-cli's OCR snapshots are the only path.\n")
-	sb.WriteString("    * Drafts, clipboard contents, ephemeral notifications, transient overlays, dismissed banners, and prior tab snapshots are also outside what a fresh launch can recover.\n")
-	sb.WriteString("    * launch_app raises \"appNotFound\" if the bundle isn't installed — don't loop; either ask the user, or fall back to activity-cli if the question is answerable from past captures.\n\n")
-	sb.WriteString("FALLBACK to activity-cli — only when cua_driver's three internal layers all fail:\n")
-	sb.WriteString("- cua_driver has three layers, in this order, all inside the daemon (you don't manage them — they just happen on a single get_window_state call):\n")
-	sb.WriteString("    L1. Generic AX walker — depth 40, no per-app parsers, works on any bundle.\n")
-	sb.WriteString("    L2. AX wake-up retry — 150/250/400 ms back-off if L1 yields only a window shell. Handles Electron/CEF apps whose AX tree streams in lazily after AXEnhancedUserInterface flips. Slack, Discord, VS Code, Notion, Feishu, DingTalk, WeChat desktop all populate via L2. They are NOT activity-cli fallback cases.\n")
-	sb.WriteString("    L3. Vision OCR on the screenshot — runs automatically when L1+L2 still yield ≤1 element. Text regions come back in the same response as v* refs under the \"visual_index\" field.\n")
-	sb.WriteString("- Activity-cli is the right fallback ONLY when L1+L2+L3 all fail on the same get_window_state response: ax_status is \"empty_after_wakeup\" AND visual_index is empty or missing. Apps that actually hit this: games, video players, DRM-protected windows, and canvas/Metal/WebGL custom-renderer surfaces (e.g. NetEase Cloud Music is called out in the daemon source).\n")
-	sb.WriteString("- Order of operations: ALWAYS try cua_driver first. Inspect the response. If ax_status is \"populated\" or \"woke_up\", you have what you need — read from ui_elements/visual_index and answer. If ax_status is \"empty_after_wakeup\" AND visual_index is empty/missing, NOW activity-cli is justified.\n")
-	sb.WriteString("- Do NOT preemptively skip cua_driver because you guess the app might be unreadable. Do NOT run your own OCR — L3 already did it. Do NOT switch to activity-cli on a partially-populated AX tree if visual_index still carries content — OCR'd v* refs are the live answer.\n")
-	sb.WriteString("- A dial / daemon error is a DIFFERENT case — see the next block.\n\n")
-	sb.WriteString("WORKFLOW:\n")
-	sb.WriteString("1. If the bundle ID is unknown, call name=\"list_apps\" first to find it.\n")
-	sb.WriteString("2. Call name=\"get_window_state\" with that bundle ID.\n")
-	sb.WriteString("3. Read the returned AX tree dump — it contains the text, structure, and visible labels the app currently exposes. Answer from that dump directly.\n\n")
-	sb.WriteString("WHEN cua_driver RETURNS AN ERROR — do NOT panic-switch to activity-cli:\n")
-	sb.WriteString("- A \"daemon not reachable / didn't respond\" error is almost always transient: Isoform spawns the daemon at launch and respawns on crash, so a missed dial is usually a brief warm-up or restart window. Retry the same call once or twice with a short pause before doing anything else.\n")
-	sb.WriteString("- If retries still fail, SURFACE the error to the user (\"Isoform's cua-driver daemon isn't responding — please restart Isoform or check Accessibility permissions in System Settings\") rather than silently substituting activity-cli. activity-cli covers the user's experience archive, not the app's internal data, so substituting it for an app-data question returns the wrong kind of data.\n\n")
-	sb.WriteString("DO NOT confuse with activity-cli — they cover DIFFERENT KINDS OF DATA, not different time periods:\n")
-	sb.WriteString("- cua_driver   = live read of any installed app's INTERNAL data (the app does NOT have to be running — launch_app it in the background first). Source-of-truth for whatever the app itself maintains: chat history, documents, mail, player state, already-open browser tabs, files, calendar.\n")
-	sb.WriteString("- activity-cli = the user's EXPERIENCE archive. Things no single app keeps: cross-app activity narrative, meeting transcripts with mic/system_audio split, OCR'd screen captures including content that has been deleted/recalled/edited from the source, the user's click/keystroke record.\n")
-	sb.WriteString("- Decision: \"can I open the app and look at this?\" If yes → cua_driver (launch_app if needed). If the answer needs the user's subjective experience, a removed/recalled message, or a multi-app story → activity-cli. The choice is NOT about \"current vs past\" — cua_driver can launch a closed app and read its persisted history.\n")
-	sb.WriteString("- One narrow cross-over: cua_driver may legitimately fall back to activity-cli for an app-data question, but ONLY when get_window_state returns ax_status=\"empty_after_wakeup\" with no usable visual_index (see FALLBACK above) — never on the basis of question wording.\n")
-	sb.WriteString("</cua-tool>\n\n")
 	sb.WriteString(prompt)
 	return sb.String()
 }

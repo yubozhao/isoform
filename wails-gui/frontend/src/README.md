@@ -138,7 +138,6 @@ Key binding categories:
 - **Handoffs** — `ListHandoffs`, `GetHandoff`, `GetActiveHandoffChip`, `GetActiveHandoffChips`, `AcceptHandoff`, `AbortHandoff`, `DeleteHandoff`
 - **People / Identity** — `ListPrincipals`, `ListPrincipalsByKind`, `EnsureSelfProfile`, `CreateContact`, `UpdatePrincipal`, `DeletePrincipal`, `BindAppHandle`, `UnbindAppHandle`, `ListAppHandlesForPrincipal`, `PromoteAnonymousToContact`, `MergePrincipals`, `CleanupAnonymousPrincipals`, `ListPrincipalActivitySessions`, `ListSessionPrincipals`, `GetPrincipalStats`, `ListPrincipalsWithStats`
 - **Voice enrollment** — `GetVoiceEnrollmentStatus`, `ListVoiceSamples`, `EnrollVoiceSample`, `DeleteVoiceSample`, `TestVoiceMatch`, `ListSessionSpeakerClusters`, `GetVoiceInputApps`, `AddVoiceInputApp`, `RemoveVoiceInputApp`
-- **CUA / Computer use** — `ReadCuaScreenshotBase64`, `GetCuaCursorOverlayEnabled`, `SetCuaCursorOverlayEnabled`
 - **MCP** — `SetMcpServerTrusted`
 - **Telemetry** — `GetTelemetryTier`, `SetTelemetryTier`
 - **Notifications** — `TestDesktopNotification`, `FireDelayedDesktopNotification`
@@ -249,9 +248,7 @@ Stream items are grouped before rendering (`lib/stream-helpers.ts`):
 | `search-dialog.tsx` | Search and commands (Cmd+K and the sidebar's Search): finds the words across topics, chats, Activity, people, goals, know-how and About you (`SearchEverything`), plus chats, Upcoming, one-time work, projects, Library pages, Settings pages and actions |
 | `activity-summary.tsx` | The digest card (Chat about this day/week, Copy, Regenerate) shared by the Activity page's Day and Week views |
 | `ai-memory-import-dialog.tsx` | Dialog for importing AI memory from external sources |
-| `enable-computer-use-dialog.tsx` | Permission setup dialog behind Settings > Using your apps > Set up (Accessibility and Screen Recording) |
 | `compaction-banner.tsx` | Banner displayed between message list and composer surfacing auto-compaction state |
-| `cua-screenshot.tsx` | Renders CUA (computer-use agent) window screenshots inline in chat |
 | `contacts/contact-editor.tsx` / `contacts/principal-picker.tsx` | People/contact management UI |
 
 UI primitives in `components/ui/` wrap Radix UI components (`button`, `dialog`, `dropdown-menu`, `select`, `combobox`, `scroll-area`, `context-menu`, `popover`, `switch`, `textarea`, `calendar`, `checkbox`, `collapsible`, `sheet`, `card`, `avatar`, `command`) with consistent project styling.

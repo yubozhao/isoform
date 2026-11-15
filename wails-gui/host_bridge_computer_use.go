@@ -12,26 +12,12 @@ import (
 	"wails-gui/internal/platform/activitymon"
 )
 
-// /api/computer-use/* (this file) and /api/cua/* (host_bridge_cua.go)
-// are sibling surfaces with different consumers, not successive
-// generations of the same thing:
-//
-//   - /api/computer-use/* targets *bundled apps* — the bun apps Yansu
-//     generates on the user's behalf. They want a small synchronous HTTP
-//     surface (one click, one type, one scroll) without an agent loop or
-//     a per-pid state machine. Backed by activitymon, which goes through
-//     the same Accessibility APIs the activity recorder already uses, so
-//     no extra TCC grant is needed.
-//
-//   - /api/cua/* targets the *LLM agent loop* — code that needs the
-//     snapshot-act-snapshot discipline cua-driver enforces, with
-//     element_index addressing keyed on (pid, window_id) and the
-//     no-foreground contract that keeps the user's frontmost app
-//     untouched. Backed by the bundled cua-driver daemon on its own TCC
-//     identity (com.yansu.cuadriver).
-//
-// Pick the surface that matches the consumer. Don't bridge them — the
-// invariants are intentionally different.
+// /api/computer-use/* targets *bundled apps*: the bun apps Isoform
+// generates on the user's behalf. They want a small synchronous HTTP surface
+// (one click, one type, one scroll) without an agent loop. Backed by
+// activitymon, which goes through the same Accessibility APIs the activity
+// recorder already uses, so no extra TCC grant is needed. Agent-driven
+// computer use belongs to the agents themselves (Claude Code, Codex).
 
 // maxComputerUseBodySize limits request body size for computer-use endpoints (1MB).
 const maxComputerUseBodySize = 1 << 20
