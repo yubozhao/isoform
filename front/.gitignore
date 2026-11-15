@@ -1,1 +1,3 @@
 /target
+# Cargo binary targets live in src/bin; the root .gitignore drops bin/.
+!/src/bin/
