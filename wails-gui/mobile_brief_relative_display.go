@@ -32,8 +32,15 @@ func mobileBriefRelativeDaysAtRead(brief MobileBriefV1, now, base time.Time, loc
 				offset = -1
 			}
 			target := base.In(loc).AddDate(0, 0, offset)
+			// The cited item's own date words the day only when it is the day
+			// the word names, give or take the one day a brief made ahead
+			// shifts. A habit due on November 5 that the writer says slipped
+			// "yesterday" keeps yesterday: the word is not about its due date
+			// (brief of Nov 14, 2026, read "Do a set November 5").
 			if !itemDate.IsZero() {
-				target = itemDate
+				if days := mobileBriefCivilDays(itemDate, target, loc); days >= -1 && days <= 1 {
+					target = itemDate
+				}
 			}
 			result := mobileBriefDayWords(target, now, loc, mobileBriefVoiceLang(language))
 			if len(word) > 0 && word[0] >= 'A' && word[0] <= 'Z' {
