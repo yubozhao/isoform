@@ -20,6 +20,9 @@ protocol ChatHubAPI: Sendable {
     func sendBriefMessage(chatID: String, text: String, reference: ChatBriefReference,
                           idempotencyKey: String) async throws -> ChatMessageAccepted
     func savedBriefAsk(reference: ChatBriefReference) async throws -> SavedBriefAsk?
+    /// The cards of one brief that already have a saved answer, in one pass: the computer's support is asked once,
+    /// and the pass stops at the first "the brief changed" (409), since every later card names the same revision.
+    func answeredBriefCards(reference: ChatBriefReference, cards: [(id: String, message: String)]) async -> Set<String>
     /// The brief's conversation on the computer, asked by the brief's id when the phone has no reference of its own
     /// (POST /briefs/{id}/conversation). The computer makes the main chat if needed and makes no brief.
     func briefConversation(briefID: String) async throws -> BriefConversation
@@ -205,7 +208,46 @@ enum ChatHubError: LocalizedError, Equatable {
     }
 }
 
+/// One pass over a brief's cards for saved answers. A 409 means the computer's brief changed since the phone read
+/// it: every later card names the same revision, so the pass stops instead of asking again for each.
+enum BriefAnsweredCards {
+    static func collect(_ cards: [(id: String, message: String)],
+                        ask: (_ id: String, _ message: String) async throws -> Bool) async -> Set<String> {
+        var answered = Set<String>()
+        for card in cards {
+            do {
+                if try await ask(card.id, card.message) { answered.insert(card.id) }
+            } catch HubRequestError.conflict {
+                break
+            } catch {}
+        }
+        return answered
+    }
+}
+
+extension ChatHubAPI {
+    func answeredBriefCards(reference: ChatBriefReference, cards: [(id: String, message: String)]) async -> Set<String> {
+        await BriefAnsweredCards.collect(cards) { id, message in
+            var cardReference = reference
+            cardReference.cardId = id
+            cardReference.cardMessage = message
+            return try await savedBriefAsk(reference: cardReference) != nil
+        }
+    }
+}
+
 extension HubChannel: ChatHubAPI {
+    /// One /status for the whole pass, then one ask-answer per card (Nov 14: two requests per card, five cards at
+    /// a time, every one answered 409).
+    func answeredBriefCards(reference: ChatBriefReference, cards: [(id: String, message: String)]) async -> Set<String> {
+        guard !cards.isEmpty, (try? await status().briefAsk) == true else { return [] }
+        return await BriefAnsweredCards.collect(cards) { id, message in
+            let route = HubRoute.briefCardAskAnswer(id: reference.briefId, version: reference.briefVersion,
+                                                    cardID: id, message: message)
+            return try await perform(route).payload(SavedBriefAskPayload.self).answer != nil
+        }
+    }
+
     func supportsMainChatSend() async -> Bool {
         (try? await status().chatMainSend) == true
     }

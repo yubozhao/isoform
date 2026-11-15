@@ -416,13 +416,7 @@ struct BriefCardsView: View {
     private func refreshAnsweredCards() async {
         guard var reference = brief.chatReference else { return }
         reference.ask = true
-        var answered = Set<String>()
-        for card in brief.sendCards {
-            reference.cardId = card.id
-            reference.cardMessage = card.message
-            if await chat.savedBriefAsk(reference: reference) != nil { answered.insert(card.id) }
-        }
-        answeredCards = answered
+        answeredCards = await chat.answeredBriefCards(reference: reference, cards: brief.sendCards.map { ($0.id, $0.message) })
     }
 
     private func askWeekTopic(_ topicID: String, _ message: String) {
