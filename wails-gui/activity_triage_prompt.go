@@ -212,13 +212,6 @@ func applyTriageFeatureFlags(resp *activityTriageResponse, flags triageFeatureFl
 		resp.PredictedUserAction = ""
 		resp.InitiativeRationale = ""
 		resp.InitiativeConfidence = 0
-		resp.ShadowCapabilityKey = ""
-		resp.ShadowExpectedResult = ""
-		resp.ShadowExpectedTiming = ""
-		resp.ShadowReasoningHypotheses = nil
-		resp.ShadowGoalConfidence = 0
-		resp.ShadowResultConfidence = 0
-		resp.ShadowTimingConfidence = 0
 		resp.MatchedInitiativeID = ""
 		resp.ObservedUserAction = ""
 		resp.ObservedResult = ""

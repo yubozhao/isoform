@@ -612,11 +612,6 @@ func (a *App) startActivityMaintenance() <-chan struct{} {
 		return nil
 	}
 	store := a.activity.store
-	a.deferLaunchTask("shadow_profile_refresh", func() {
-		if _, err := store.RefreshShadowCapabilityProfiles(time.Now().UnixMilli()); err != nil {
-			log.Printf("[shadow-profile] startup refresh failed: %v", err)
-		}
-	})
 	// Queue delays must not make this run's in-flight writes look abandoned.
 	beforeMs := launchStartedAt.UnixMilli()
 	a.deferLaunchTask("snapshot_reconcile", func() { reconcileSnapshotFiles(store, beforeMs) })

@@ -223,7 +223,7 @@ func taskWorkflowCapabilityKey(
 	if taskWorkflowAnalyzeTextQualified(task, desiredResult) {
 		return TaskWorkflowAnalyzeText
 	}
-	return normalizeShadowCapabilityKey(task, fallbackSeed)
+	return normalizeCapabilityKey(task, fallbackSeed)
 }
 
 // taskWorkflowProductionShadowEligible defines the deliberately narrow

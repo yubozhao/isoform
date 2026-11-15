@@ -55,7 +55,6 @@ import { LongToastTestButton } from "@/components/notification-test-toast";
 import { isWailsEnvironment } from "@/lib/browser-bridge";
 import type { useKeybindings } from "@/hooks/useKeybindings";
 import { getFileManagerName } from "@/lib/platform";
-import { ShadowAgentDebugSettings } from "@/components/shadow-agent-debug-settings";
 import { PurposeMapDebugSettings } from "@/components/purpose-map-debug-settings";
 import { SettingsCard, SettingsRow } from "@/components/settings/settings-primitives";
 import { formatBytes } from "@/components/settings/settings-format";
@@ -345,8 +344,6 @@ export function SettingsPage({
                 return <TriageLogSettings />;
             case "activity-pipeline":
                 return <ActivityPipelineSettings onJumpToActivity={onJumpToActivity} />;
-            case "shadow-agent":
-                return <ShadowAgentDebugSettings />;
             case "purpose-map":
                 return <PurposeMapDebugSettings />;
             case "perf-analysis":

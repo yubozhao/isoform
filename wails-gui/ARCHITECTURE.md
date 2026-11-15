@@ -1,11 +1,5 @@
 # Wails GUI Architecture
 
-> The shadow-agent initiative, learning loop, memory boundaries, and contributor
-> invariants are specified in
-> [`SHADOW_AGENT_TECHNICAL_DESIGN.md`](./SHADOW_AGENT_TECHNICAL_DESIGN.md).
-> Implementation history and current handoff state are in
-> [`SHADOW_AGENT_WORKLOG.md`](./SHADOW_AGENT_WORKLOG.md).
-
 Yansu Desktop is a [Wails v2](https://wails.io/) application that wraps the `yansu-agent` as a native macOS desktop app. It provides a chat-style interface for interacting with AI coding agents (Claude, Codex) while managing projects, git worktrees, and knowledge synchronization.
 
 ## High-Level Overview

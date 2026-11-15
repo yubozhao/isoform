@@ -112,33 +112,3 @@ func TestTaskContextManifestStatsMigrationBackfillsImmutableReadModel(
 		t.Fatalf("manifest stats delete error=%v", err)
 	}
 }
-
-func TestTaskShadowDebugContextStatsRejectsMissingReadModel(t *testing.T) {
-	store := newTestStore(t)
-	input := taskEpisodeFixture(
-		"episode-manifest-stats-missing",
-		1_000,
-		1_100,
-		TaskEpisodeStatusCandidate,
-	)
-	episode, added, err := store.CreateTaskEpisode(input)
-	if err != nil || !added {
-		t.Fatalf("create task episode: added=%v err=%v", added, err)
-	}
-	if _, err := store.db.Exec(`
-		DROP TRIGGER task_context_manifest_stats_v1_no_delete
-	`); err != nil {
-		t.Fatalf("drop immutable trigger for missing-row fixture: %v", err)
-	}
-	if _, err := store.db.Exec(`
-		DELETE FROM task_context_manifest_stats_v1
-		WHERE task_episode_id = ?`, episode.ID); err != nil {
-		t.Fatalf("delete manifest stats fixture: %v", err)
-	}
-	if _, err := taskShadowDebugContextStats(
-		store,
-		[]string{episode.ID},
-	); err == nil || !strings.Contains(err.Error(), "has no context manifest stats") {
-		t.Fatalf("missing manifest stats error=%v", err)
-	}
-}

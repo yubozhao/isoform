@@ -187,11 +187,10 @@ func loadMemoryForgetDerivedRows(tx *sql.Tx) ([]memoryForgetDerivedRow, error) {
 					item.refs = append(item.refs, target.kind+":"+target.id)
 				}
 			}
-			if spec.table == "shadow_task_learning_revisions" && item.fields["target_kind"] == ShadowTaskLearningTargetMemory {
+			if spec.table == "shadow_task_learning_revisions" && item.fields["target_kind"] == correctedLearningTargetMemory {
 				// The target is deterministic, including a crash between saving
 				// the Markdown and recording its materialization receipt.
-				targetID := shadowTaskLearningTargetID(ShadowTaskLearningCandidate{ProjectionKey: item.fields["projection_key"]})
-				item.refs = append(item.refs, "memory:"+targetID)
+				item.refs = append(item.refs, "memory:"+legacyLearningMemoryTargetID(item.fields["projection_key"]))
 			}
 			item.id = item.fields["id"]
 			item.title = item.fields["title"]
@@ -441,4 +440,10 @@ func deleteMemoryForgetDerivatives(tx *sql.Tx, memoryID string, additionalIDs ..
 		}
 	}
 	return nil
+}
+
+// legacyLearningMemoryTargetID is the memory ID shadow learning wrote for a
+// projection key, so forgetting that memory still finds its learning rows.
+func legacyLearningMemoryTargetID(projectionKey string) string {
+	return "shadow-learning-" + sha256Hex([]byte(projectionKey))[:16]
 }

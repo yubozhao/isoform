@@ -528,33 +528,8 @@ func TestKnowHowScoreCalibration(t *testing.T) {
 	}
 }
 
-func TestKnowHowShadowAndRoutineGenerators(t *testing.T) {
+func TestKnowHowRoutineGenerator(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	app := &App{}
-	candidate := testShadowTaskLearningProjection().Candidates[0]
-	candidate.TargetKind = ShadowTaskLearningTargetKnowledge
-	id, reason := app.applyQualifiedShadowTaskLearningCandidate(candidate, 1000)
-	if reason != "" {
-		t.Fatal(reason)
-	}
-	entry, err := app.GetKnowledgeEntry(id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	doc, _ := parseOKFDocument(entry.Content)
-	if okfString(doc.Frontmatter, "kind") != "how_to" {
-		t.Fatal("shadow kind missing")
-	}
-	writeKnowHowFixture(t, id, strings.Replace(entry.Content, "kind: how_to", "kind: gotcha", 1))
-	if _, reason := app.applyQualifiedShadowTaskLearningCandidate(candidate, 1000); reason != "" {
-		t.Fatal(reason)
-	}
-	entry, _ = app.GetKnowledgeEntry(id)
-	doc, _ = parseOKFDocument(entry.Content)
-	dir, _ := knowledgeDir()
-	if okfString(doc.Frontmatter, "kind") != "gotcha" || knowledgeEntryHasHistory(dir, id) {
-		t.Fatal("shadow retry changed classification or made history")
-	}
 	for _, lang := range []string{"en", "zh-CN"} {
 		content := noticedRoutineKnowHow(NoticedRoutineDraft{Name: "Release", Steps: []string{"Run checks"}}, "2026-10-21", time.Now(), lang)
 		doc, _ := parseOKFDocument(content)

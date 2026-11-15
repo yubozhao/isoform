@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"yansu-agent/agent/authority"
+
+	"github.com/google/uuid"
 )
 
 const capabilityManifestPolicyVersion = "capability-manifest-v1"
@@ -54,102 +54,6 @@ type AuthorityGrantRecord struct {
 
 func deterministicAuthorityID(kind, key string) string {
 	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(kind+"\x00"+key)).String()
-}
-
-func compileCapabilityManifest(
-	qualification ShadowCapabilityQualification,
-	initiative Initiative,
-) (CapabilityManifest, error) {
-	if strings.TrimSpace(qualification.ID) == "" ||
-		strings.TrimSpace(qualification.CandidatePlanHash) == "" {
-		return CapabilityManifest{}, errors.New("qualified shadow evidence is incomplete")
-	}
-	if initiative.ID == "" || initiative.ExecutionPlan.Automation == nil {
-		return CapabilityManifest{}, errors.New("initiative automation plan is incomplete")
-	}
-	expectedFingerprint := qualifiedInitiativeFingerprint(
-		qualification.CapabilityKey,
-		qualification.CandidatePlanHash,
-	)
-	if initiative.Fingerprint != expectedFingerprint {
-		return CapabilityManifest{}, errors.New("initiative plan no longer matches qualified shadow evidence")
-	}
-
-	effects := make([]CapabilityManifestEffect, 0, len(qualification.Effects))
-	blockReasons := make([]string, 0)
-	seen := make(map[string]struct{})
-	for _, source := range qualification.Effects {
-		effect := CapabilityManifestEffect{
-			Capability: strings.TrimSpace(source.Capability),
-			Effect:     source.Effect,
-			Resource:   strings.TrimSpace(source.Resource),
-			Recipient:  strings.TrimSpace(source.Recipient),
-			Reversible: source.Reversible,
-		}
-		key := strings.Join([]string{
-			effect.Capability,
-			string(effect.Effect),
-			effect.Resource,
-			effect.Recipient,
-			fmt.Sprint(effect.Reversible),
-		}, "\x00")
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		if isShellCapability(effect.Capability) {
-			// A shell command is never granted from shadow evidence: a
-			// grant would cover every command the shell can run.
-			blockReasons = append(blockReasons, "shell_command_requires_per_run_approval")
-		}
-		switch effect.Effect {
-		case authority.EffectRead, authority.EffectLocalWrite:
-		case authority.EffectExternalWrite:
-			if effect.Resource == "" {
-				blockReasons = append(blockReasons, "external_write_missing_resource_scope")
-			}
-			if !effect.Reversible {
-				blockReasons = append(blockReasons, "irreversible_external_write_requires_per_run_approval")
-			}
-		case authority.EffectPrivileged:
-			blockReasons = append(blockReasons, "privileged_effect_requires_per_run_approval")
-		case authority.EffectUnknown:
-			blockReasons = append(blockReasons, "unknown_effect_cannot_receive_authority")
-		default:
-			blockReasons = append(blockReasons, "unrecognized_effect_cannot_receive_authority")
-		}
-		if effect.Capability == "" || effect.Capability == "tool.unknown" {
-			blockReasons = append(blockReasons, "unknown_capability_cannot_receive_authority")
-		}
-		effects = append(effects, effect)
-	}
-	if len(effects) == 0 {
-		blockReasons = append(blockReasons, "manifest_has_no_observed_runtime_effects")
-	}
-	sort.Slice(effects, func(i, j int) bool {
-		left := strings.Join([]string{effects[i].Capability, string(effects[i].Effect), effects[i].Resource}, "\x00")
-		right := strings.Join([]string{effects[j].Capability, string(effects[j].Effect), effects[j].Resource}, "\x00")
-		return left < right
-	})
-	blockReasons = uniqueSortedStrings(blockReasons)
-	grantable := len(blockReasons) == 0
-	grantMode := "scoped_expiring"
-	if !grantable {
-		grantMode = "per_run_approval"
-	}
-	return CapabilityManifest{
-		ID:              deterministicAuthorityID("manifest", qualification.ID+"\x00"+initiative.ID),
-		InitiativeID:    initiative.ID,
-		QualificationID: qualification.ID,
-		PolicyVersion:   capabilityManifestPolicyVersion,
-		PlanHash:        qualification.CandidatePlanHash,
-		RiskTier:        qualification.RiskTier,
-		Grantable:       grantable,
-		GrantMode:       grantMode,
-		BlockReasons:    blockReasons,
-		Effects:         effects,
-		CreatedAt:       qualification.CreatedAt,
-	}, nil
 }
 
 func scanCapabilityManifest(scanner interface{ Scan(dest ...any) error }) (CapabilityManifest, error) {
@@ -222,37 +126,6 @@ func (s *ActivityStore) GetCapabilityManifest(initiativeID string) (CapabilityMa
 		ORDER BY created_at DESC LIMIT 1`,
 		strings.TrimSpace(initiativeID),
 	))
-}
-
-func (s *ActivityStore) GetShadowQualificationByProposal(
-	initiativeID string,
-) (ShadowCapabilityQualification, error) {
-	return scanShadowCapabilityQualification(s.db.QueryRow(`
-		SELECT id, qualification_json, created_at
-		FROM shadow_capability_qualifications
-		WHERE proposal_initiative_id = ?
-		ORDER BY created_at DESC LIMIT 1`,
-		strings.TrimSpace(initiativeID),
-	))
-}
-
-func (s *ActivityStore) EnsureCapabilityManifest(
-	qualification ShadowCapabilityQualification,
-	initiative Initiative,
-) (CapabilityManifest, error) {
-	existing, err := s.GetCapabilityManifest(initiative.ID)
-	if err == nil {
-		return existing, nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return CapabilityManifest{}, err
-	}
-	manifest, err := compileCapabilityManifest(qualification, initiative)
-	if err != nil {
-		return CapabilityManifest{}, err
-	}
-	persisted, _, err := s.SaveCapabilityManifest(manifest)
-	return persisted, err
 }
 
 func grantLifetimeForRisk(riskTier string) time.Duration {

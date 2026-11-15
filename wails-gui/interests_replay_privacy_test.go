@@ -111,12 +111,8 @@ func TestInterestsReplayRechecksStoredMemorySources(t *testing.T) {
 					t.Fatal(err)
 				}
 			case "correction":
-				if _, _, err := PersistShadowTaskLearningProjection(app.activity.store, testShadowTaskLearningProjection(), 1000); err != nil {
-					t.Fatal(err)
-				}
-				if _, _, err := app.activity.store.AddShadowTaskLearningMaterialization(ShadowTaskLearningMaterialization{RevisionID: "revision:one", TargetKind: ShadowTaskLearningTargetMemory, TargetID: "private-interest", Status: "materialized", CreatedAt: 1100}); err != nil {
-					t.Fatal(err)
-				}
+				seedLegacyLearningRun(t, app.activity.store, "run:one", []legacyLearningCandidate{{RevisionID: "revision:one", ProjectionKey: "projection:one", TargetKind: correctedLearningTargetMemory, Statement: "superseded inference"}}, 1000)
+				seedLegacyLearningMaterialization(t, app.activity.store, "revision:one", correctedLearningTargetMemory, "private-interest", 1100)
 				addLearningCorrection(t, app.activity.store, AgencyLearningCorrectionRecord{IdempotencyKey: "interest-replay-correction", CapabilityKey: "coding.review", LearningRevisionID: "revision:one", OriginalStatement: "old inference", Correction: "Do not use", CreatedAt: 1200})
 			}
 			svc, prompt := interestReplayService(t, app, `{"interests":[{"name":"compact camera modules","kind":"research","confidence":0.9,"evidence":["A1"],"queries":["compact camera modules"]}]}`)

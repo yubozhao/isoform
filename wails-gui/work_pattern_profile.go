@@ -1046,7 +1046,7 @@ func workPatternCapabilityProjections(
 		decay := workPatternDecayWeight(signal.CreatedAt, cutoffAt)
 		status := WorkPatternProfileStatusInsufficient
 		if signal.Ready &&
-			signal.Status == ShadowTaskLearningDecisionQualified &&
+			signal.Status == "qualified" &&
 			signal.ActionReliability != nil {
 			status = WorkPatternProfileStatusQualified
 		}

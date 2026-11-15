@@ -53,16 +53,8 @@ func TestSearchMemoryAppliesReadTimePrivacy(t *testing.T) {
 	// Privacy changed after indexing; neither the stale index nor a chunk
 	// missing its header is authority to release the source now.
 	pii.SetUserSensitiveApps(map[string]string{"com.example.diary": "Diary"})
-	projection := testShadowTaskLearningProjection()
-	if _, _, err := PersistShadowTaskLearningProjection(app.activity.store, projection, 1000); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := app.activity.store.AddShadowTaskLearningMaterialization(ShadowTaskLearningMaterialization{
-		RevisionID: "revision:one", TargetKind: ShadowTaskLearningTargetMemory,
-		TargetID: "corrected", Status: "materialized", CreatedAt: 1100,
-	}); err != nil {
-		t.Fatal(err)
-	}
+	seedLegacyLearningRun(t, app.activity.store, "run:one", []legacyLearningCandidate{{RevisionID: "revision:one", ProjectionKey: "projection:one", TargetKind: correctedLearningTargetMemory, Statement: "superseded inference"}}, 1000)
+	seedLegacyLearningMaterialization(t, app.activity.store, "revision:one", correctedLearningTargetMemory, "corrected", 1100)
 	addLearningCorrection(t, app.activity.store, AgencyLearningCorrectionRecord{
 		IdempotencyKey: "memory-read-correction", CapabilityKey: "coding.review",
 		LearningRevisionID: "revision:one", OriginalStatement: "superseded observation",

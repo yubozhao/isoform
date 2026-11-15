@@ -63,16 +63,6 @@ type ActivityTriager struct {
 	mu     sync.Mutex
 	cancel context.CancelFunc
 	aiSem  chan struct{} // bounds concurrent AI goroutines
-	// shadowExecutionSem serializes mirrored candidate-plan runs so production
-	// activity cannot fan out into an unbounded set of agent executions.
-	shadowExecutionSem chan struct{}
-	// taskShadowSem serializes production onset/lifecycle observation passes.
-	// Task execution has its own semaphore because it may outlive detection.
-	taskShadowSem chan struct{}
-	// taskShadowObserverAdmissionMu makes exact-input lookup plus observer-root
-	// creation one admission decision. The app is single-instance; this closes
-	// the remaining in-process race before taskShadowSem serializes execution.
-	taskShadowObserverAdmissionMu sync.Mutex
 	// wg tracks every fire-and-forget goroutine dispatched by evaluate() so
 	// Stop() can wait for them to exit. Without this, Stop() returns while
 	// in-flight AI goroutines keep running past shutdown and log noise like
@@ -131,20 +121,8 @@ type activityTriageResponse struct {
 	PredictedUserAction  string  `json:"predictedUserAction,omitempty"`
 	InitiativeRationale  string  `json:"initiativeRationale,omitempty"`
 	InitiativeConfidence float64 `json:"initiativeConfidence,omitempty"`
-	// Shadow prediction fields preserve independently measurable dimensions.
-	// InitiativeRationale explains Yansu's evidence-based prediction; reasoning
-	// hypotheses below describe possible user reasoning and may be empty when
-	// behavior does not reveal why the user acted.
-	ShadowCapabilityKey       string                      `json:"shadowCapabilityKey,omitempty"`
-	ShadowExpectedResult      string                      `json:"shadowExpectedResult,omitempty"`
-	ShadowExpectedTiming      string                      `json:"shadowExpectedTiming,omitempty"`
-	ShadowReasoningHypotheses []ShadowReasoningHypothesis `json:"shadowReasoningHypotheses,omitempty"`
-	ShadowGoalConfidence      float64                     `json:"shadowGoalConfidence,omitempty"`
-	ShadowResultConfidence    float64                     `json:"shadowResultConfidence,omitempty"`
-	ShadowTimingConfidence    float64                     `json:"shadowTimingConfidence,omitempty"`
 	// Legacy outcome fields remain for stored-response compatibility. New
-	// prediction prompts never request them; the independent ShadowRun
-	// comparator owns all production outcome matching.
+	// prediction prompts never request them.
 	MatchedInitiativeID        string  `json:"matchedInitiativeId,omitempty"`
 	ObservedUserAction         string  `json:"observedUserAction,omitempty"`
 	ObservedResult             string  `json:"observedResult,omitempty"`
@@ -643,11 +621,9 @@ func logSpeechMemorySaved(group sessionGroup, sessionID, action, title, filePath
 // NewActivityTriager creates a new triager instance.
 func NewActivityTriager(app *App, mc *MemoryGenerator) *ActivityTriager {
 	return &ActivityTriager{
-		app:                app,
-		mc:                 mc,
-		aiSem:              make(chan struct{}, maxTriagerGoroutines),
-		shadowExecutionSem: make(chan struct{}, 1),
-		taskShadowSem:      make(chan struct{}, 1),
+		app:   app,
+		mc:    mc,
+		aiSem: make(chan struct{}, maxTriagerGoroutines),
 	}
 }
 
@@ -1266,11 +1242,6 @@ func (c *ActivityTriager) recordPipelineRun(run *ActivityPipelineRunRow) {
 			run.TriageStatus, run.TriageReason,
 			run.AutomationStatus, run.AutomationReason, run.InitiativeID, run.ShadowRunID,
 			run.HandoffStatus, run.HandoffReason, run.HandoffProposalID,
-			run.ShadowObserverExpected,
-			run.ShadowObserverAdmission,
-			run.ShadowObserverDispatchStatus,
-			run.ShadowObserverDispatchReason,
-			run.ShadowObserverTraceID,
 		); err != nil {
 			log.Printf("[triager] failed to update pipeline run %d: %s", run.ID, activityPrivateLogField("error", err.Error()))
 		}

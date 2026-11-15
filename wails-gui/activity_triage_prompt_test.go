@@ -324,24 +324,14 @@ func TestBuildDedupSection_OnlyIncludesEnabledFeatureBullets(t *testing.T) {
 
 func TestApplyTriageFeatureFlags_ForcesDisabledToFalse(t *testing.T) {
 	resp := &activityTriageResponse{
-		WorthMemory:          true,
-		WorthKnowledge:       true,
-		WorthInitiative:      true,
-		InitiativeTitle:      "next",
-		InitiativeGoal:       "goal",
-		PredictedUserAction:  "take action",
-		InitiativeRationale:  "evidence",
-		InitiativeConfidence: 0.8,
-		ShadowCapabilityKey:  "customer.follow_up",
-		ShadowExpectedResult: "draft exists",
-		ShadowExpectedTiming: "today",
-		ShadowReasoningHypotheses: []ShadowReasoningHypothesis{{
-			Statement:  "The user made an explicit commitment.",
-			Confidence: 0.9,
-		}},
-		ShadowGoalConfidence:       0.7,
-		ShadowResultConfidence:     0.6,
-		ShadowTimingConfidence:     0.5,
+		WorthMemory:                true,
+		WorthKnowledge:             true,
+		WorthInitiative:            true,
+		InitiativeTitle:            "next",
+		InitiativeGoal:             "goal",
+		PredictedUserAction:        "take action",
+		InitiativeRationale:        "evidence",
+		InitiativeConfidence:       0.8,
 		MatchedInitiativeID:        "initiative-1",
 		ObservedUserAction:         "took action",
 		ObservedResult:             "finished",
@@ -375,8 +365,6 @@ func TestApplyTriageFeatureFlags_ForcesDisabledToFalse(t *testing.T) {
 		t.Errorf("enabled flags must remain true: %+v", resp)
 	}
 	if resp.WorthInitiative || resp.InitiativeTitle != "" || resp.PredictedUserAction != "" ||
-		resp.ShadowCapabilityKey != "" || resp.ShadowExpectedResult != "" ||
-		len(resp.ShadowReasoningHypotheses) != 0 || resp.ShadowResultConfidence != 0 ||
 		resp.MatchedInitiativeID != "" || resp.ObservedUserAction != "" || resp.PredictionAssessment != "" {
 		t.Errorf("Initiative fields not cleared: %+v", resp)
 	}

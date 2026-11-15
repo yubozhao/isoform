@@ -489,16 +489,9 @@ func listWorkPatternCapabilitySignalsAt(
 	store *ActivityStore,
 	cutoffAt int64,
 ) ([]WorkPatternCapabilitySignal, error) {
-	verified, err := VerifiedShadowLearningSourcesAt(store, cutoffAt, "")
-	if err != nil {
-		return nil, err
-	}
+	// Capability signals came only from verified shadow learning, which is
+	// removed.
 	result := make([]WorkPatternCapabilitySignal, 0)
-	for _, source := range verified.Sources {
-		if source.CapabilitySignal != nil {
-			result = append(result, *source.CapabilitySignal)
-		}
-	}
 	return sortedWorkPatternCapabilitySignals(result), nil
 }
 

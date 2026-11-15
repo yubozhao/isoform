@@ -17,7 +17,7 @@ export const DEV_TOOLS_GROUPS = [
     },
     {
         id: "learning",
-        topics: ["triage", "shadow-agent", "purpose-map"],
+        topics: ["triage", "purpose-map"],
     },
     {
         id: "testing",

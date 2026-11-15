@@ -267,32 +267,14 @@ func normalizeTaskContextCandidate(
 	if input.Relevance > 1 {
 		input.Relevance = 1
 	}
-	if input.SourceKind == taskContextSourceVerifiedShadowLearningKind &&
-		input.Learning == nil {
+	// Verified shadow learning was the only source with learning provenance;
+	// the shadow agent is removed, so nothing may claim it.
+	if input.SourceKind == taskContextSourceVerifiedShadowLearningKind ||
+		input.Learning != nil {
 		return TaskContextCandidate{}, fmt.Errorf(
-			"task context evidence %q requires verified learning provenance",
+			"task context evidence %q claims removed shadow learning provenance",
 			input.Ref,
 		)
-	}
-	if input.Learning != nil {
-		learning, err := normalizeTaskContextLearningProvenance(*input.Learning)
-		if err != nil {
-			return TaskContextCandidate{}, fmt.Errorf(
-				"task context evidence %q learning provenance: %w",
-				input.Ref,
-				err,
-			)
-		}
-		if input.SourceKind != taskContextSourceVerifiedShadowLearningKind ||
-			input.SourceID != learning.MaterializationReceiptID ||
-			input.EvidenceClass != TaskContextEvidenceEvaluatedProjection ||
-			input.ObservedAt != learning.AvailableAt {
-			return TaskContextCandidate{}, fmt.Errorf(
-				"task context evidence %q does not match verified learning provenance",
-				input.Ref,
-			)
-		}
-		input.Learning = &learning
 	}
 	return input, nil
 }

@@ -9,7 +9,6 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-	"wails-gui/internal/pii"
 )
 
 func TestDreamSynthesisPreservesVersionRefsAndReadProvenance(t *testing.T) {
@@ -147,57 +146,6 @@ func TestObservedMemoryWritesComposeCallerContextAndReadProvenance(t *testing.T)
 	}
 }
 
-func TestShadowLearningMaterializationPreservesMergedReadProvenance(t *testing.T) {
-	app := newMCPReadTestApp(t)
-	at := seedMCPReadActivity(t, app, "materialized-source", "Editor", "com.example.editor", "ordinary", "", "")
-	input := taskEpisodeFixture("materialized-episode", at, at+1000, TaskEpisodeStatusCandidate)
-	input.FrozenContext.Manifest = []TaskContextManifestEntry{{SourceKind: "activity_session", SourceID: "materialized-source", Included: true}}
-	input.InitialEvidence[0].SourceID = "materialized-source"
-	if _, _, err := app.activity.store.CreateTaskEpisode(input); err != nil {
-		t.Fatal(err)
-	}
-	candidate := ShadowTaskLearningCandidate{TargetKind: ShadowTaskLearningTargetMemory, ProjectionKey: "merged-materialization", Statement: "shadowmergeprivacyneedle planning", Evidence: []ShadowTaskLearningProvenance{{TaskEpisodeID: input.ID}}}
-	id, errText := app.applyQualifiedShadowTaskLearningCandidate(candidate, at)
-	if errText != "" {
-		t.Fatal(errText)
-	}
-	entry, err := app.GetMemoryEntry(id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	baseline, ok := parseOKFDocument(shadowTaskLearningMemoryContent(candidate, at))
-	if !ok {
-		t.Fatal("feat content helper did not render OKF")
-	}
-	actual, ok := parseOKFDocument(entry.Content)
-	if !ok || actual.Body != baseline.Body {
-		t.Fatal("materialization changed the shared content helper's body")
-	}
-	for key, value := range baseline.Frontmatter {
-		if key == "read_provenance" {
-			// Materialization replaces the helper's unverified placeholder with
-			// resolved activity lineage, asserted below.
-			continue
-		}
-		if !reflect.DeepEqual(actual.Frontmatter[key], value) {
-			t.Errorf("materialization changed shared metadata %s", key)
-		}
-	}
-	provenance := memoryReadProvenanceFromContent(entry.Content)
-	if provenance.Withheld || !reflect.DeepEqual(provenance.Sessions, []string{"materialized-source"}) {
-		t.Fatalf("materialization omitted resolved activity lineage: %+v", provenance)
-	}
-	if got := callMCPReadTest(t, app, "memory_search", map[string]any{"query": "shadowmergeprivacyneedle"}); len(got.Items) != 1 {
-		t.Fatalf("readable materialization withheld: %+v", got)
-	}
-	if err := app.store.SetUIState(app.ctx, "sensitive_apps", `{"com.example.editor":"Editor"}`); err != nil {
-		t.Fatal(err)
-	}
-	if got := callMCPReadTest(t, app, "memory_search", map[string]any{"query": "shadowmergeprivacyneedle"}); len(got.Items) != 0 {
-		t.Fatalf("materialized source privacy was lost: %+v", got)
-	}
-}
-
 func TestMemoryUpdateFallbackLogsUsePrivateFields(t *testing.T) {
 	for _, flag := range []string{"", "1"} {
 		for _, failure := range []string{"invalid", "missing", "unreadable"} {
@@ -226,45 +174,5 @@ func TestMemoryUpdateFallbackLogsUsePrivateFields(t *testing.T) {
 				assertActivityLogContentVisibility(t, output.String(), flag == "1", secret)
 			})
 		}
-	}
-}
-
-// The preparation pass runs before the final write. It must see the same read
-// provenance as the write, or its optional semantic probe sends the statements
-// and evidence summaries of an app that is now sensitive to the model.
-func TestShadowLearningPreparationWithholdsSensitiveEvidenceFromTheProbe(t *testing.T) {
-	for _, sensitive := range []bool{false, true} {
-		name := "readable source reaches the probe"
-		if sensitive {
-			name = "sensitive source stays local"
-		}
-		t.Run(name, func(t *testing.T) {
-			app := newMCPReadTestApp(t)
-			at := seedMCPReadActivity(t, app, "prepared-source", "Editor", "com.example.editor", "ordinary", "", "")
-			input := taskEpisodeFixture("prepared-episode", at, at+1000, TaskEpisodeStatusCandidate)
-			input.FrozenContext.Manifest = []TaskContextManifestEntry{{SourceKind: "activity_session", SourceID: "prepared-source", Included: true}}
-			input.InitialEvidence[0].SourceID = "prepared-source"
-			if _, _, err := app.activity.store.CreateTaskEpisode(input); err != nil {
-				t.Fatal(err)
-			}
-			candidate := ShadowTaskLearningCandidate{TargetKind: ShadowTaskLearningTargetMemory, ProjectionKey: "prepared-memory", Statement: "shadowpreparationneedle planning", Evidence: []ShadowTaskLearningProvenance{{TaskEpisodeID: input.ID}}}
-			var calls atomic.Int32
-			app.memoryCanonicalizer = func(string, string) (string, error) {
-				calls.Add(1)
-				return `{"version":"isoform-memory-semantics-v1","status":"no_facts","facts":[]}`, nil
-			}
-			if sensitive {
-				previous := pii.GetUserSensitiveApps()
-				t.Cleanup(func() { pii.SetUserSensitiveApps(previous) })
-				pii.SetUserSensitiveApps(map[string]string{"com.example.editor": "Editor"})
-			}
-			_ = app.prepareShadowTaskLearningMemory(candidate, at)
-			if sensitive && calls.Load() != 0 {
-				t.Fatalf("a sensitive source reached the semantic probe %d times", calls.Load())
-			}
-			if !sensitive && calls.Load() != 1 {
-				t.Fatalf("the readable fixture never reached the probe (%d calls), so the test proves nothing", calls.Load())
-			}
-		})
 	}
 }

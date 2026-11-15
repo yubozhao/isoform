@@ -1057,9 +1057,6 @@ func (a *App) ApproveInitiative(initiativeID string) (Initiative, error) {
 	if err != nil {
 		return Initiative{}, err
 	}
-	if qualification, qualificationErr := a.activity.store.GetShadowQualificationByProposal(item.ID); qualificationErr == nil {
-		a.promoteSelfModelFromQualification(qualification, true)
-	}
 	a.emitBrowserEvent("initiative:updated", item)
 	if a.telemetry != nil {
 		a.telemetry.Capture("initiative.approved", map[string]any{
