@@ -1921,6 +1921,34 @@ under the send lock, so a retry arriving during admission checks the saved
 receipt after waiting and replays the first send's accepted result.
 A replay is an acknowledgement of accepted intent, not permission for new work.
 
+### 15.9 Daily topics with proposed work
+
+These additive routes keep protocol version 1. `GET /status` includes
+`"topicsDaily":true` (optional boolean, omitted when false) when the computer
+serves them; older computers omit it and answer 404. The computer ships first.
+
+Topics are the projects the person works on (`kind` `project`) and the subjects
+they follow (`kind` `subject`). The computer builds them once a day into a saved
+copy and applies the person's own choices (Closed Eyes, removed topics, "not
+mine", excluded apps) when it builds and again when it answers this route.
+`enabled` is false, with no topics, while the feature is off on the computer.
+At most 12 topics. Names are bounded to 160 UTF-8 bytes, `why`, `latest`,
+`next` and a proposal's `why` and `result` to 400, a proposal's `title` to 200.
+A proposal's task instructions never leave the computer.
+
+| Method and path | Scope | Request | Result (`data` inside the normal response) |
+| --- | --- | --- | --- |
+| `GET /topics-daily` | `brief:read` | no body | 200 `{"enabled":true,"day":"2026-11-14","builtAt":<unix ms>,"topics":[topic]}` |
+| `POST /topics-daily/answer` | `offers:decide` | `{"topicId","proposalId","verdict":"yes"\|"no"\|"not_mine","idempotencyKey"}` | 200 the answered `topic`; 400 bad verdict or key; 404 the topic or proposal is no longer shown; 409 already answered |
+
+`topic` is `{"id","kind","name","why"?,"lastSeenAt"?,"latest"?,"next"?,"proposal"?}`
+and `proposal` is `{"id","title","why"?,"state","taskId"?,"result"?}`. `state` is
+`proposed`, `running` (a yes started a task, `taskId` names it in `GET /tasks`),
+`done` (`result` holds the task's line), `failed`, `declined` or `not_mine`. Only
+a `proposed` proposal can be answered, and only today's: an answer names the
+proposal's `id`. Yes starts the work as a Task on the computer; no and "not
+mine" are kept as feedback, and a "not mine" topic leaves the next copy.
+
 ## 16. Notification controls
 
 The Mac decides what to reach out about (section 14 carries the notices). The phone can read and

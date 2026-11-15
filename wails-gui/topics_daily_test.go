@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -170,5 +172,42 @@ func TestDailyTopicAnswers(t *testing.T) {
 		if topic.ID == tide.ID {
 			t.Fatal("a not-mine topic came back in the next copy")
 		}
+	}
+}
+
+// The phone gets the saved copy through the person's choices again: a topic
+// removed after the build does not leave the computer, and no task
+// instructions go with any proposal.
+func TestDailyTopicsForThePhoneFilterAgainOnTheWayOut(t *testing.T) {
+	app, _, _ := dailyTopicsTestApp(t)
+	ctx := context.Background()
+	if err := app.store.SetUIState(ctx, topicsDailyEnabledKey, "true"); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.buildDailyTopics(ctx); err != nil {
+		t.Fatal(err)
+	}
+	store, _ := app.topicsDailyStore()
+	if err := store.AppendFeedback(topicday.Feedback{TopicID: "t1", TopicName: "Harbor launch", Verdict: topicday.VerdictNotMine, At: 1}); err != nil {
+		t.Fatal(err)
+	}
+	bridge := &mobileBridge{app: app, ctx: ctx}
+	w := httptest.NewRecorder()
+	bridge.serveTopicsDaily(w, httptest.NewRequest(http.MethodGet, "/topics-daily", nil))
+	body := w.Body.String()
+	if w.Code != http.StatusOK || !strings.Contains(body, "Tide tables") {
+		t.Fatalf("phone view = %d %s", w.Code, body)
+	}
+	if strings.Contains(body, "Harbor launch") {
+		t.Fatal("a topic the person removed after the build left the computer")
+	}
+	if strings.Contains(body, "Summarize the tide research") || strings.Contains(body, "prompt") {
+		t.Fatalf("task instructions left the computer: %s", body)
+	}
+	app.closedEyes.enabled.Store(true)
+	w = httptest.NewRecorder()
+	bridge.serveTopicsDaily(w, httptest.NewRequest(http.MethodGet, "/topics-daily", nil))
+	if strings.Contains(w.Body.String(), "Tide tables") {
+		t.Fatal("Closed Eyes let a topic leave the computer")
 	}
 }

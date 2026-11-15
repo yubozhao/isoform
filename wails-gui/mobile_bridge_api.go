@@ -30,8 +30,10 @@ var (
 )
 
 type mobileStatusView struct {
-	Topics    bool `json:"topics,omitempty"`
-	BrainDump bool `json:"brainDump,omitempty"`
+	Topics bool `json:"topics,omitempty"`
+	// TopicsDaily is true when this computer serves the daily topics (15.9).
+	TopicsDaily bool `json:"topicsDaily,omitempty"`
+	BrainDump   bool `json:"brainDump,omitempty"`
 	// Recordings is true when this computer takes watch and phone recordings (24).
 	Recordings bool `json:"recordings,omitempty"`
 	// OwnerVoice is true when this computer takes the owner's voice from the phone (25).
@@ -307,6 +309,16 @@ func (bridge *mobileBridge) handleAuthorized(w http.ResponseWriter, r *http.Requ
 			return
 		}
 		bridge.serveOfferList(w, r, device)
+	case "GET /topics-daily":
+		if !mobileRequireScope(w, device, mobileScopeBriefRead) {
+			return
+		}
+		bridge.serveTopicsDaily(w, r)
+	case "POST /topics-daily/answer":
+		if !mobileRequireScope(w, device, mobileScopeOffersDecide) {
+			return
+		}
+		bridge.serveTopicsDailyAnswer(w, r, device)
 	case "POST /goals":
 		if !mobileRequireScope(w, device, mobileScopeGoalsWrite) {
 			return
@@ -609,7 +621,7 @@ func mobileRequireScope(w http.ResponseWriter, device mobileDeviceRecord, scope 
 
 func (bridge *mobileBridge) serveStatus(w http.ResponseWriter) {
 	view := mobileStatusView{
-		HubName: mobileHubName(), AppVersion: Version, ProtocolVersion: 1, Topics: true, TaskThreads: true, BrainDump: true, Recordings: true, OwnerVoice: true, RecordingContext: true, RecordingDetail: true, Sees: true, FirstRead: true, TodayMeetingPrep: true, ChatMainSend: true, NotificationTest: true, BriefRelevanceFeedback: true, BriefAsk: true, BriefWeekDecline: true,
+		HubName: mobileHubName(), AppVersion: Version, ProtocolVersion: 1, Topics: true, TopicsDaily: true, TaskThreads: true, BrainDump: true, Recordings: true, OwnerVoice: true, RecordingContext: true, RecordingDetail: true, Sees: true, FirstRead: true, TodayMeetingPrep: true, ChatMainSend: true, NotificationTest: true, BriefRelevanceFeedback: true, BriefAsk: true, BriefWeekDecline: true,
 		KeepAwake: bridge.keepAwakeSetting(), InstantPush: mobileInstantPushConfigured(),
 		BriefSchedule: []mobileBriefSlotTime{},
 	}
