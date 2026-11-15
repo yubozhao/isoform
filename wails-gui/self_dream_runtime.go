@@ -205,108 +205,6 @@ func filterSelfDreamCandidates(
 	return allowed, excluded
 }
 
-func selfDreamWorkPatternSources(
-	store *ActivityStore,
-	cutoffAt int64,
-) ([]TaskContextCandidate, []TaskContextManifestEntry, error) {
-	snapshot, err := store.GetLatestWorkPatternProfileSnapshotAt(cutoffAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil, nil
-	}
-	if err != nil {
-		return nil, nil, err
-	}
-	corrections, err := store.ListWorkPatternProfileCorrections(cutoffAt)
-	if err != nil {
-		return nil, nil, err
-	}
-	corrected := make(map[string]WorkPatternProfileCorrection)
-	for _, correction := range corrections {
-		key := correction.ScopeKind + "\x00" + correction.ScopeKey
-		if current, ok := corrected[key]; !ok ||
-			correction.Revision > current.Revision {
-			corrected[key] = correction
-		}
-	}
-	candidates := make([]TaskContextCandidate, 0)
-	excluded := make([]TaskContextManifestEntry, 0)
-	for _, projection := range snapshot.Projections {
-		ref := strings.Join([]string{
-			"work-profile",
-			snapshot.ID,
-			projection.ScopeKind,
-			projection.ScopeKey,
-		}, ":")
-		candidate := TaskContextCandidate{
-			Ref:        ref,
-			Section:    TaskContextSectionWorkProfile,
-			SourceKind: "work_pattern_profile",
-			SourceID:   snapshot.ID,
-			ObservedAt: snapshot.SourceCutoffAt,
-			Content: strings.Join([]string{
-				"Scope: " + projection.ScopeKind + ":" + projection.ScopeKey,
-				"Observed pattern: " +
-					workPatternProjectionStatement(projection),
-				fmt.Sprintf(
-					"Evidence: %d intervals across %d sessions",
-					projection.SampleCount,
-					projection.SessionCount,
-				),
-			}, "\n"),
-			EvidenceClass:   TaskContextEvidenceProfileProjection,
-			PrivacyDecision: TaskContextPrivacyRedact,
-			Relevance:       0.85,
-		}
-		if snapshot.Status != WorkPatternProfileStatusQualified ||
-			projection.Status != WorkPatternProfileStatusQualified ||
-			projection.EvidenceKind != WorkPatternEvidenceObserved {
-			excluded = append(
-				excluded,
-				selfDreamExcludedManifest(
-					candidate,
-					"insufficient_or_non_observed_work_pattern",
-				),
-			)
-			continue
-		}
-		correctionKey := projection.ScopeKind + "\x00" + projection.ScopeKey
-		if _, ok := corrected[correctionKey]; ok {
-			excluded = append(
-				excluded,
-				selfDreamExcludedManifest(
-					candidate,
-					"explicitly_contradicted",
-				),
-			)
-			continue
-		}
-		candidates = append(candidates, candidate)
-	}
-	for _, correction := range corrections {
-		candidates = append(candidates, TaskContextCandidate{
-			Ref: strings.Join([]string{
-				"work-profile-correction",
-				correction.ID,
-			}, ":"),
-			Section:    TaskContextSectionSelf,
-			SourceKind: "work_pattern_profile_correction",
-			SourceID:   correction.ID,
-			ObservedAt: correction.CreatedAt,
-			Content: strings.Join([]string{
-				"Corrected scope: " +
-					correction.ScopeKind + ":" + correction.ScopeKey,
-				"Prior statement: " + correction.OriginalStatement,
-				"Explicit correction: " + correction.Correction,
-			}, "\n"),
-			EvidenceClass:   TaskContextEvidenceExplicitUser,
-			PrivacyDecision: TaskContextPrivacyRedact,
-			Relevance:       1,
-			Required:        true,
-		})
-	}
-	return candidates, excluded, nil
-}
-
 func selfDreamSectionBudgets() map[string]int {
 	return map[string]int{
 		TaskContextSectionWorkProfile: 24_000,
@@ -569,16 +467,7 @@ func (a *App) buildSelfDreamFrozenInput(
 	if err != nil {
 		return selfDreamFrozenInput{}, err
 	}
-	workCandidates, workExcluded, err := selfDreamWorkPatternSources(
-		store,
-		cutoffAt,
-	)
-	if err != nil {
-		return selfDreamFrozenInput{}, err
-	}
-	sources.Candidates = append(sources.Candidates, workCandidates...)
 	preExcluded := taskContextSourceExclusionManifest(sources.Exclusions)
-	preExcluded = append(preExcluded, workExcluded...)
 	allowed, filteredExcluded := filterSelfDreamCandidates(
 		sources.Candidates,
 		cutoffAt,

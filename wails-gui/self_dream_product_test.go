@@ -3,8 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"strings"
 	"testing"
 	"time"
 )
@@ -273,93 +271,6 @@ func selfDreamManifestRefOfKind(t *testing.T, rig selfDreamTestRig, sourceKind s
 	}
 	t.Fatalf("no included %s source in the frozen manifest", sourceKind)
 	return ""
-}
-
-func TestSelfDreamRepeatCitingANewWorkProfileSnapshotIsTheSameProposal(t *testing.T) {
-	rig := newSelfDreamTestRig(t)
-	now := time.Now().Add(-time.Minute).UnixMilli()
-	focus := addSelfDreamTestEntry(t, rig.store, "Prefer morning focus blocks for deep work.", now)
-	addSelfDreamTestEntry(t, rig.store, "Keep meeting notes short.", now+1)
-	apps := []string{"Safari", "ChatGPT", "Terminal", "Safari", "ChatGPT", "Terminal"}
-	cutoff := int64(0)
-	for session := 0; session < 3; session++ {
-		cutoff = saveWorkPatternSession(t, rig.store, fmt.Sprintf("profile-%d", session), "done",
-			10_000+int64(session)*200_000, apps)
-	}
-	first, _, err := rig.store.EnsureWorkPatternProfileSnapshot(cutoff, cutoff+1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	propose := func() string {
-		t.Helper()
-		ref := selfDreamManifestRefOfKind(t, rig, "work_pattern_profile")
-		rig.runner.response = selfDreamModelResponse(t, SelfDreamOperationDraft{
-			Operation:       SelfDreamOperationSupersede,
-			TargetEntryIDs:  []string{focus.ID},
-			SelfKind:        selfModelKindPreference,
-			Scope:           SelfDreamScope{Kind: "project", Key: "yansu"},
-			Statement:       "Prefer morning focus blocks for deep work and planning.",
-			ReasoningStatus: "unknown",
-			Confidence:      0.6,
-			EvidenceRefs:    []string{ref, selfDreamManifestRef(t, rig, focus.ID)},
-		})
-		return ref
-	}
-	firstRef := propose()
-	firstRun, err := rig.app.runSelfDreamShadow(context.Background(), "scheduled")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Six hours later the live profile has a new snapshot id.
-	cutoff = saveWorkPatternSession(t, rig.store, "profile-3", "done", 10_000+3*200_000, apps)
-	second, _, err := rig.store.EnsureWorkPatternProfileSnapshot(cutoff, cutoff+1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if second.ID == first.ID {
-		t.Fatal("expected a new work profile snapshot")
-	}
-	secondRef := propose()
-	if secondRef == firstRef || !strings.Contains(secondRef, second.ID) {
-		t.Fatalf("refs %q and %q should name different snapshots", firstRef, secondRef)
-	}
-	secondRun, err := rig.app.runSelfDreamShadow(context.Background(), "scheduled")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	reviewable := func(detail SelfDreamRunDetail) SelfDreamOperationRecord {
-		t.Helper()
-		for _, op := range detail.Operations {
-			if op.ValidationStatus == SelfDreamValidationReviewRequired {
-				return op
-			}
-		}
-		t.Fatalf("run %s has no reviewable operation: %+v", detail.Run.ID, detail.Operations)
-		return SelfDreamOperationRecord{}
-	}
-	older, newer := reviewable(firstRun), reviewable(secondRun)
-	if selfDreamProposalKey(older) != selfDreamProposalKey(newer) {
-		t.Fatal("the same proposal on a new profile snapshot must keep its key")
-	}
-	updates, err := rig.app.ListSelfDreamUpdates()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(updates) != 1 || updates[0].ID != older.ID {
-		t.Fatalf("updates = %+v, want only %s", updates, older.ID)
-	}
-	if _, err := rig.app.ReviewSelfDreamOperation(ReviewSelfDreamOperationInput{
-		OperationID:    newer.ID,
-		IdempotencyKey: "work-profile-keep",
-		Decision:       SelfDreamDecisionKeepSeparate,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if updates, err := rig.app.ListSelfDreamUpdates(); err != nil || len(updates) != 0 {
-		t.Fatalf("answered proposal is still listed: %+v err=%v", updates, err)
-	}
 }
 
 func TestSelfDreamAcceptWithoutCompilationLeavesTheProposalOpen(t *testing.T) {
