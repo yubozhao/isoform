@@ -46,6 +46,9 @@ type proactiveReadVerdict struct {
 	allowed bool
 	stamp   string
 	at      time.Time
+	// sessions are the activity sessions the gate read, replayed into a saved
+	// page's source record on a hit (stream_page_sources.go).
+	sessions []string
 }
 
 type proactiveReadVerdicts struct {
@@ -121,19 +124,35 @@ func (a *App) proactiveReadVerdictStamp(ctx context.Context, kind string) (strin
 }
 
 func (a *App) proactiveReadVerdict(ctx context.Context, key proactiveReadVerdictKey, live func() bool) bool {
+	return a.proactiveReadVerdictWith(ctx, key, nil, live)
+}
+
+// proactiveReadVerdictWith is proactiveReadVerdict for a gate that runs under
+// its own source recorder (gate, from withStreamPageSources): the sessions it
+// reads are passed on to ctx's recorder and kept with the verdict, so a cached
+// verdict names them to a saved page as the live gate does.
+func (a *App) proactiveReadVerdictWith(ctx context.Context, key proactiveReadVerdictKey, gate *streamPageSourceRecorder, live func() bool) bool {
+	runLive := func() (bool, []string) {
+		allowed := live()
+		sessions := gate.ids()
+		recordStreamPageSessions(ctx, sessions)
+		return allowed, sessions
+	}
 	stamp, ok := a.proactiveReadVerdictStamp(ctx, key.kind)
 	if !ok {
-		return live()
+		allowed, _ := runLive()
+		return allowed
 	}
 	cache := a.proactiveReadVerdictCache()
 	now := time.Now()
 	cache.mu.Lock()
 	if v, found := cache.verdicts[key]; found && v.stamp == stamp && now.Sub(v.at) < proactiveReadVerdictMaxAge {
 		cache.mu.Unlock()
+		recordStreamPageSessions(ctx, v.sessions)
 		return v.allowed
 	}
 	cache.mu.Unlock()
-	allowed := live()
+	allowed, sessions := runLive()
 	if ctx.Err() != nil {
 		return allowed
 	}
@@ -150,7 +169,7 @@ func (a *App) proactiveReadVerdict(ctx context.Context, key proactiveReadVerdict
 			delete(cache.verdicts, k)
 		}
 	}
-	cache.verdicts[key] = proactiveReadVerdict{allowed: allowed, stamp: stamp, at: now}
+	cache.verdicts[key] = proactiveReadVerdict{allowed: allowed, stamp: stamp, at: now, sessions: sessions}
 	cache.mu.Unlock()
 	return allowed
 }

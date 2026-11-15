@@ -1251,6 +1251,11 @@ describe('Send again after a signed-out answer (R75)', () => {
 // A no-reply row the hub stored (window closed, or the app quit mid-turn) has
 // no send in memory: Send again sends the message it answers, on that row.
 describe('Send again after no answer came back', () => {
+    beforeEach(async () => {
+        await i18n.changeLanguage('en');
+        vi.clearAllMocks();
+        calls.prepare.mockImplementation(async (_tag: string, text: string, _context?: unknown) => text);
+    });
     it('resends the stored message on its own row when nothing was sent in this window', async () => {
         const { hook, main } = mount();
         const asked = { id: 'user-1', kind: 'user', content: 'What is on today?' };

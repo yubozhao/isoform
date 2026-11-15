@@ -11,7 +11,8 @@ import (
 // voice_source_version is one counter that triggers bump on every write to the
 // tables a proactive card's read gate reloads: people and their app handles,
 // mail, calendar events, reminders, and the source permission switches
-// (ui_state keys "permission_enabled:..."). A cached read verdict is kept only
+// (ui_state keys "permission_enabled:..."), and edits or removals of the cards'
+// receipts. A cached read verdict is kept only
 // while the counter it was reached under is current, so any change to those
 // sources, from any writer (a sync, a permission switch, an origin rewritten),
 // is seen on the next read. The triggers run on every start, like the other
@@ -39,6 +40,12 @@ func (s *Store) ensureVoiceSourceVersion() error {
 			row = "OLD"
 		}
 		fmt.Fprintf(&sb, "CREATE TRIGGER IF NOT EXISTS ui_state_voice_source_%s AFTER %s ON ui_state WHEN %s.key LIKE 'permission_enabled:%%' BEGIN %s END;\n", strings.ToLower(op), op, row, bump)
+	}
+	// A card's receipt (its local provenance) edited or removed changes what
+	// its gate allows. A new receipt comes with a new card, which the stream
+	// version already names, so inserts are left out.
+	for _, op := range []string{"UPDATE", "DELETE"} {
+		fmt.Fprintf(&sb, "CREATE TRIGGER IF NOT EXISTS ui_state_voice_receipt_%s AFTER %s ON ui_state WHEN OLD.key LIKE 'proactive_voice_provenance:%%' OR OLD.key LIKE 'engagement_journey_provenance:%%' BEGIN %s END;\n", strings.ToLower(op), op, bump)
 	}
 	if _, err := s.db.Exec(sb.String()); err != nil {
 		return fmt.Errorf("voice source version: %w", err)
