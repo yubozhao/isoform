@@ -132,6 +132,45 @@ func TestDerivedSnapshotPrivacyActionsDeleteTheSavedFile(t *testing.T) {
 	}
 }
 
+// A memory index pass sends memory:updated many times a day (97 on Bo's
+// 2026-11-14). It is not a privacy action: the saved pages stay, so the next
+// launch paints from them. The privacy events on the same path still delete
+// them.
+func TestDerivedSnapshotSurvivesMemoryIndexPasses(t *testing.T) {
+	app, _ := derivedDiskTestApp(t)
+	var builds atomic.Int64
+	readDerivedTestValue(t, app, derivedAboutYou, func() (derivedTestValue, error) {
+		builds.Add(1)
+		return derivedTestValue{Items: []string{"saved"}}, nil
+	})
+	if len(derivedDiskFiles(t)) != 1 {
+		t.Fatal("snapshot was not saved")
+	}
+	for i := 0; i < 100; i++ {
+		app.emitBrowserEvent("memory:updated", map[string]string{"reason": "index"})
+	}
+	if len(derivedDiskFiles(t)) != 1 {
+		t.Fatal("memory index passes deleted the saved page")
+	}
+	restarted := restartedDerivedApp(t, app)
+	got := readDerivedTestValue(t, restarted, derivedAboutYou, func() (derivedTestValue, error) {
+		builds.Add(1)
+		return derivedTestValue{Items: []string{"live"}}, nil
+	})
+	if len(got.Items) != 1 || got.Items[0] != "saved" || builds.Load() != 1 {
+		t.Fatalf("after 100 index passes and a restart got %v with %d builds; want the saved page and no live build", got.Items, builds.Load())
+	}
+	for _, event := range []string{"sensitive-apps:updated", "background-listening:changed"} {
+		readDerivedTestValue(t, app, derivedAboutYou, func() (derivedTestValue, error) {
+			return derivedTestValue{Items: []string{"saved"}}, nil
+		})
+		app.emitBrowserEvent(event)
+		if files := derivedDiskFiles(t); len(files) != 0 {
+			t.Fatalf("%s left saved snapshots: %v", event, files)
+		}
+	}
+}
+
 // A saved copy whose stamp no longer matches is never served and is deleted,
 // even when the deletion hook was missed (a crash between the change and the
 // delete).

@@ -454,7 +454,9 @@ func (a *App) emitBrowserEvent(eventName string, data ...interface{}) {
 	switch eventName {
 	case "calendar:synced", "brief:stored":
 		a.noteTodayDayShapeUpdate()
-	case "memory:updated", "sensitive-apps:updated", closedEyesModeChangedEvent, "background-listening:changed":
+	case "memory:updated":
+		a.clearPermissionPageSnapshot()
+	case "sensitive-apps:updated", closedEyesModeChangedEvent, "background-listening:changed":
 		a.clearPageSnapshots()
 	case magpieModelsUpdatedEvent:
 		invalidateYourWeekLive()
