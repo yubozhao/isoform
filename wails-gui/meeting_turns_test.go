@@ -472,7 +472,9 @@ func TestCallTurnsNamesAndLearningObeyPrivacyGates(t *testing.T) {
 		{"protected", func(a *App, r ActivitySessionRow) {
 			_, _ = a.activity.store.db.Exec(`UPDATE activity_sessions SET triage_status='protected' WHERE id=?`, r.ID)
 		}},
-		{"excluded or sensitive app", func(_ *App, _ ActivitySessionRow) { pii.SetUserSensitiveApps(map[string]string{"us.halcyon.xos": "Halcyon Meet"}) }},
+		{"excluded or sensitive app", func(_ *App, _ ActivitySessionRow) {
+			pii.SetUserSensitiveApps(map[string]string{"us.halcyon.xos": "Halcyon Meet"})
+		}},
 		{"pause", func(a *App, r ActivitySessionRow) {
 			a.saveObservationPauses([]observationPause{{Start: r.StartTime + 1, End: r.StartTime + 2000}})
 		}},

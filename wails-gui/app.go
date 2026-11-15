@@ -3347,6 +3347,7 @@ func (a *App) probeAndGreet() {
 //     60s timeout, never producing JSON.
 //   - NoSystem: the prompt is self-contained; the generic "coding assistant"
 //     wrapper steers small models toward tool use.
+//
 // The model-call helpers below are shared; a [routing] caller= label skips
 // them so it names the code that asked for the call.
 func init() {

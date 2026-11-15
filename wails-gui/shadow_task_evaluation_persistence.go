@@ -100,7 +100,7 @@ func taskEpisodeEvidenceMaterializedResult(
 		len(result.EvidenceRefs) == 0 {
 		return nil, errors.New("task lifecycle materialized result is incomplete")
 	}
-	if hashShadowPayload([]byte(result.Content)) != result.SHA256 {
+	if sha256Hex([]byte(result.Content)) != result.SHA256 {
 		return nil, errors.New("task lifecycle materialized result digest does not match")
 	}
 	if result.Destination == nil && result.DestinationSHA256 == "" {
@@ -608,7 +608,7 @@ func PersistShadowTaskEvaluation(
 	if err != nil {
 		return ShadowRunEvaluation{}, false, err
 	}
-	observationSourceID := hashShadowPayload(inputPayload)
+	observationSourceID := sha256Hex(inputPayload)
 	observedAt := normalizedInput.Observed.CompletedAt
 	if observedAt == 0 {
 		observedAt = normalizedInput.Observed.StartedAt

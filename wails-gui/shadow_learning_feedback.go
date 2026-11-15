@@ -331,7 +331,7 @@ func (s *ActivityStore) learnedPatterns() ([]learnedPattern, error) {
 			continue
 		}
 		if pattern.ID == "" {
-			pattern.ID = "learning:" + hashShadowPayload([]byte(key))[:16]
+			pattern.ID = "learning:" + sha256Hex([]byte(key))[:16]
 		}
 		pattern.Statement = agencyBoundedText(pattern.Statement, 900)
 		patterns = append(patterns, pattern)

@@ -331,7 +331,7 @@ func seedTaskShadowDebugGraph(t *testing.T) taskShadowDebugTestGraph {
 			{
 				Path:      "debug.txt",
 				SizeBytes: int64(len(taskShadowDebugArtifactSecret)),
-				SHA256:    hashShadowPayload([]byte(taskShadowDebugArtifactSecret)),
+				SHA256:    sha256Hex([]byte(taskShadowDebugArtifactSecret)),
 				Content:   taskShadowDebugArtifactSecret,
 			},
 		},
@@ -501,7 +501,7 @@ func seedTaskShadowDebugGraph(t *testing.T) taskShadowDebugTestGraph {
 				LearningKind:    ShadowTaskLearningKindProcessPattern,
 				CapabilityKey:   run.CapabilityKey,
 				Statement:       "The user validates debugger linkage before UI work.",
-				EvidenceHash:    hashShadowPayload([]byte("debug-learning-evidence")),
+				EvidenceHash:    sha256Hex([]byte("debug-learning-evidence")),
 				AuthorityEffect: ShadowTaskLearningAuthorityNone,
 				Evidence: []ShadowTaskLearningProvenance{
 					{
@@ -735,7 +735,7 @@ func TestTaskShadowDebugCombinesRedactedResultDestinationReceipts(
 			Workflow:          TaskWorkflowComposeText,
 			Kind:              TaskLifecycleContentCommittedText,
 			Content:           content,
-			SHA256:            hashShadowPayload([]byte(content)),
+			SHA256:            sha256Hex([]byte(content)),
 			EvidenceRefs:      []string{"suffix:text"},
 			Destination:       destination,
 			DestinationSHA256: destinationSHA256,

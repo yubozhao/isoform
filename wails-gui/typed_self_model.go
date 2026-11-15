@@ -76,11 +76,12 @@ func normalizeSelfModelStatus(value string) (string, error) {
 
 func selfModelEntryKey(kind, scope, statement string) string {
 	normalized := strings.ToLower(strings.Join(strings.Fields(statement), " "))
-	return hashShadowPayload([]byte(strings.Join([]string{
+	return sha256Hex([]byte(strings.Join([]string{
 		kind,
 		strings.ToLower(strings.TrimSpace(scope)),
 		normalized,
 	}, "\x00")))
+
 }
 
 func selfModelEvidenceKey(item SelfModelEvidence) string {
@@ -169,7 +170,7 @@ func buildSelfModelSourceHash(item SelfModelEntry) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return hashShadowPayload(payload), nil
+	return sha256Hex(payload), nil
 }
 
 func validateSelfModelEntryIntegrity(item SelfModelEntry) error {

@@ -141,9 +141,10 @@ func saveLegacyQualifiedProposalForTest(
 	legacyQualification := qualification
 	legacyQualification.ID = "legacy-qualification-" +
 		qualification.QualificationKey[:24]
-	legacyQualification.QualificationKey = hashShadowPayload([]byte(
+	legacyQualification.QualificationKey = sha256Hex([]byte(
 		qualification.QualificationKey + "\x00legacy-compatibility",
 	))
+
 	legacyQualification.Status = "proposed"
 	legacyQualification.ProposalInitiativeID = "legacy-proposal-" +
 		qualification.QualificationKey[:24]

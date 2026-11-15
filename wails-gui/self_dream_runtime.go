@@ -376,7 +376,7 @@ func buildSelfDreamStableInputHash(
 	if err != nil {
 		return "", err
 	}
-	return hashShadowPayload(payload), nil
+	return sha256Hex(payload), nil
 }
 
 func buildSelfDreamPrompt(run SelfDreamRunRecord) string {
@@ -559,7 +559,7 @@ func (a *App) buildSelfDreamFrozenInput(
 	if err != nil {
 		return selfDreamFrozenInput{}, err
 	}
-	baseHash := hashShadowPayload(baseJSON)
+	baseHash := sha256Hex(baseJSON)
 	sources, err := GatherTaskContextSources(TaskContextSourceRequest{
 		Store:    store,
 		CutoffAt: cutoffAt,
@@ -584,9 +584,8 @@ func (a *App) buildSelfDreamFrozenInput(
 		cutoffAt,
 	)
 	preExcluded = append(preExcluded, filteredExcluded...)
-	runID := "self-dream-" + hashShadowPayload(
-		[]byte(fmt.Sprintf("%d:%s", cutoffAt, baseHash)),
-	)[:24]
+	runID := "self-dream-" + sha256Hex(
+		[]byte(fmt.Sprintf("%d:%s", cutoffAt, baseHash)))[:24]
 	contextValue, err := AssembleTaskContext(TaskContextAssemblyInput{
 		EpisodeID:     runID,
 		CutoffAt:      cutoffAt,
@@ -639,7 +638,7 @@ func (a *App) buildSelfDreamFrozenInput(
 		CreatedAt:        cutoffAt,
 	}
 	run.Prompt = buildSelfDreamPrompt(run)
-	run.PromptHash = hashShadowPayload([]byte(run.Prompt))
+	run.PromptHash = sha256Hex([]byte(run.Prompt))
 	return selfDreamFrozenInput{
 		Run:               run,
 		IncludedSources:   includedCount,
@@ -753,7 +752,7 @@ func (a *App) runSelfDreamShadow(
 			Model:         run.RequestedModel,
 			PromptHash:    run.PromptHash,
 			RawOutput:     rawOutput,
-			RawOutputHash: hashShadowPayload([]byte(rawOutput)),
+			RawOutputHash: sha256Hex([]byte(rawOutput)),
 			Error:         attemptError,
 			DurationMs:    time.Since(started).Milliseconds(),
 			CreatedAt:     time.Now().UnixMilli(),

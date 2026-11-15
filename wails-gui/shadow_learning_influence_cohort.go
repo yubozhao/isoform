@@ -161,15 +161,17 @@ func newShadowLearningInfluenceCohortSnapshot(
 }
 
 func shadowLearningInfluenceCohortID(revisionID string) string {
-	return "shadow-learning-influence-cohort:" + hashShadowPayload([]byte(
+	return "shadow-learning-influence-cohort:" + sha256Hex([]byte(
 		ShadowLearningInfluenceCohortPolicyVersion+"\x00"+revisionID,
 	))
+
 }
 
 func shadowLearningInfluenceChainID(revisionID, episodeID string) string {
-	return "shadow-learning-influence-chain:" + hashShadowPayload([]byte(
+	return "shadow-learning-influence-chain:" + sha256Hex([]byte(
 		revisionID+"\x00"+episodeID,
 	))
+
 }
 
 func shadowLearningInfluenceContainsReason(
@@ -470,7 +472,7 @@ func shadowLearningInfluenceCohortManifestSHA256(
 	if err != nil {
 		return "", err
 	}
-	return hashShadowPayload(payload), nil
+	return sha256Hex(payload), nil
 }
 
 func (s *ActivityStore) buildShadowLearningInfluenceCohortDetails(
@@ -664,7 +666,7 @@ func (s *ActivityStore) buildShadowLearningInfluenceCohortSnapshot(
 	if err != nil {
 		return result, err
 	}
-	result.ManifestSHA256 = hashShadowPayload(manifestJSON)
+	result.ManifestSHA256 = sha256Hex(manifestJSON)
 	result.ID = "shadow-learning-influence-cohort-snapshot:" +
 		result.ManifestSHA256
 	return result, nil

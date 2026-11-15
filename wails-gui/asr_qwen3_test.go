@@ -5,8 +5,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -72,11 +70,6 @@ func qwen3Archive(t *testing.T) []byte {
 		t.Fatal(err)
 	}
 	return data
-}
-
-func sha256Hex(data []byte) string {
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:])
 }
 
 func serveBytes(t *testing.T, data []byte) *httptest.Server {

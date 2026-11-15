@@ -178,10 +178,11 @@ func normalizeTaskShadowReleaseEvent(
 	if err != nil {
 		return TaskShadowCapabilityReleaseEvent{}, err
 	}
-	input.EventKey = "task-shadow-release:" + hashShadowPayload(eventKeyPayload)
-	input.ID = "task-shadow-release-event:" + hashShadowPayload([]byte(
+	input.EventKey = "task-shadow-release:" + sha256Hex(eventKeyPayload)
+	input.ID = "task-shadow-release-event:" + sha256Hex([]byte(
 		input.EventKey,
 	))
+
 	return input, nil
 }
 

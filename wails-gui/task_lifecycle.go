@@ -1092,7 +1092,7 @@ func materializeTaskLifecycleTextResult(
 		Workflow:          workflow,
 		Kind:              TaskLifecycleContentCommittedText,
 		Content:           body,
-		SHA256:            hashShadowPayload([]byte(body)),
+		SHA256:            sha256Hex([]byte(body)),
 		Truncated:         truncated,
 		EvidenceRefs:      refs,
 		Destination:       destination,
