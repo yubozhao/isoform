@@ -384,7 +384,10 @@ type mobileBriefFinishedRead struct {
 	Cites []string `json:"cites,omitempty"`
 	// SealedAt remains the original boundary when a copy is amended. Source
 	// fingerprints are local provenance for a later per-part amendment.
-	SealedAt     time.Time               `json:"sealed_at,omitempty"`
+	SealedAt time.Time `json:"sealed_at,omitempty"`
+	// MadeAhead marks a seal of a copy made ahead, which the slot's real build
+	// replaces under the same ID with a seal of its own.
+	MadeAhead    bool                    `json:"made_ahead,omitempty"`
 	Fingerprints map[string]string       `json:"fingerprints,omitempty"`
 	SourceRefs   []mobileBriefSealSource `json:"source_refs"`
 	// Withheld is the non-transient withholding the copy was sealed with (a
@@ -548,6 +551,16 @@ func mobileBriefSourceDigest(source MobileBriefV1) string {
 }
 
 // sealCites are the source keys a brief's words were checked against.
+// mobileBriefSealIsAheadCopy reports a seal made of a copy made ahead. Seals
+// from before the marker carry it in their saved copy, when run timing kept it.
+func mobileBriefSealIsAheadCopy(read mobileBriefFinishedRead) bool {
+	if read.MadeAhead {
+		return true
+	}
+	var sealed MobileBriefV1
+	return unmarshalStoredMobileBrief(read.Brief, &sealed) == nil && mobileBriefIsAhead(sealed)
+}
+
 func sealCites(source MobileBriefV1) []string {
 	inputs := mobileBriefModelInputs(source)
 	if inputs == nil {
@@ -587,6 +600,13 @@ func (s *mobileBriefService) sealResult(ctx context.Context, source MobileBriefV
 	if err != nil {
 		return MobileBriefV1{}, mobileBriefWithholding{Reason: mobileBriefWithheldNotReady}, false, false
 	}
+	// The slot's real build replaces a copy made ahead under the same ID. It is
+	// another brief, so it gets its own seal: the made-ahead seal's time, cited
+	// sources and fingerprints are not its own (Nov 14 morning: sealed at 22:35
+	// the night before, 20 of 31 cited sources outside the seal).
+	if found && mobileBriefSealIsAheadCopy(previous) && !mobileBriefIsAhead(source) {
+		previous, found = mobileBriefFinishedRead{}, false
+	}
 	sealedAt := time.Now()
 	cited := source
 	if found {
@@ -614,7 +634,7 @@ func (s *mobileBriefService) sealResult(ctx context.Context, source MobileBriefV
 	if !found {
 		fingerprints = s.app.mobileBriefSourceFingerprints(ctx, cited)
 	}
-	read := mobileBriefFinishedRead{Schema: mobileBriefSealedSchema, Rule: mobileBriefSealRule, Epoch: epoch, Print: print, Source: mobileBriefSourceDigest(source), Day: day, Cites: sealCites(source), SealedAt: sealedAt, Fingerprints: fingerprints, SourceRefs: mobileBriefSealSources(cited), WithheldReason: withheld.Reason, WithheldKind: withheld.SourceKind, Brief: raw}
+	read := mobileBriefFinishedRead{Schema: mobileBriefSealedSchema, Rule: mobileBriefSealRule, Epoch: epoch, Print: print, Source: mobileBriefSourceDigest(source), Day: day, Cites: sealCites(source), SealedAt: sealedAt, MadeAhead: mobileBriefIsAhead(source), Fingerprints: fingerprints, SourceRefs: mobileBriefSealSources(cited), WithheldReason: withheld.Reason, WithheldKind: withheld.SourceKind, Brief: raw}
 	if mobileBriefBeforeSealSave != nil {
 		mobileBriefBeforeSealSave(source.BriefID)
 	}
