@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -43,5 +44,29 @@ func TestBriefV110DoesNotUseActivityObservationAsItemDate(t *testing.T) {
 	got := mobileBriefRelativeDaysAtRead(brief, base.Add(time.Hour), base, time.UTC, "English")
 	if got.Narrative[0].Text != brief.Narrative[0].Text {
 		t.Fatalf("activity observation changed an unrelated date: %q", got.Narrative[0].Text)
+	}
+}
+
+// Brief of Nov 14, 2026: a next step cites one habit due November 5 and says
+// "yesterday". Read the same morning, the word stays: the item's date words a
+// day word only when it is that day, and nothing changed, so the recording
+// is kept (no second synthesis).
+func TestRelativeDaysKeepAWordThatIsNotTheItemsDate(t *testing.T) {
+	la := attentionTestZone(t)
+	ready := time.Date(2026, 11, 14, 6, 50, 0, 0, la)
+	due := time.Date(2026, 11, 5, 9, 0, 0, 0, la)
+	brief := MobileBriefV1{AsOf: ready.UTC().Format(time.RFC3339), Timezone: "America/Los_Angeles",
+		Narrative: []MobileBriefPara{{Text: "Do a set this morning; it slipped again yesterday.", Refs: []string{"habit"}}},
+		Evidence:  []MobileBriefRef{{Ref: "habit", SourceKind: "purpose"}},
+		Sections:  MobileBriefSections{Commitments: []MobileBriefItem{{DueAt: due.Format(time.RFC3339), Refs: []string{"habit"}}}},
+		Audio:     &MobileBriefAudio{Status: mobileBriefAudioStatusOK},
+	}
+	got := mobileBriefRelativeDaysAtRead(brief, ready.Add(3*time.Hour), ready, la, "English")
+	if got.Narrative[0].Text != brief.Narrative[0].Text || got.Audio == nil {
+		t.Fatalf("same-morning read = %q (audio kept %t)", got.Narrative[0].Text, got.Audio != nil)
+	}
+	next := mobileBriefRelativeDaysAtRead(brief, ready.Add(24*time.Hour), ready, la, "English")
+	if strings.Contains(next.Narrative[0].Text, "November 5") || !strings.Contains(next.Narrative[0].Text, "Friday") {
+		t.Fatalf("next-day read = %q, want yesterday worded as Friday", next.Narrative[0].Text)
 	}
 }
