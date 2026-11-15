@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"wails-gui/internal/pii"
+	"wails-gui/internal/privacy"
 )
 
 // Saved copies (the finds view and the first chat page) are served only under
@@ -29,7 +30,7 @@ import (
 // background check after launch.
 func (a *App) savedCopyStamp(ctx context.Context) string {
 	savedCopyEpochLoad.Do(loadSavedCopyEpoch)
-	return fmt.Sprintf("read|%d|%t|%d", mobileBriefPrivacyEpoch.Load(), a.IsClosedEyesModeEnabled(), pii.UserSensitiveAppsVersion())
+	return privacy.ReadStamp(mobileBriefPrivacyEpoch.Load(), a.IsClosedEyesModeEnabled(), pii.UserSensitiveAppsVersion())
 }
 
 // savedCopyEpochLoad loads the durable privacy epoch once, before the first
