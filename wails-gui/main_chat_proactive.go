@@ -397,6 +397,14 @@ func proactiveFallback(item mainChatProactive) string {
 }
 
 func (a *App) postProactiveItem(item mainChatProactive, key string) string {
+	id := a.postProactiveItemOnce(item, key)
+	if id != "" {
+		noteProposalMade(judgmentCard, item.MomentID)
+	}
+	return id
+}
+
+func (a *App) postProactiveItemOnce(item mainChatProactive, key string) string {
 	if a == nil || a.store == nil {
 		return ""
 	}
@@ -826,6 +834,25 @@ func (a *App) resolveMainChatProactiveActionText(momentID, actionID string, chan
 }
 
 func (a *App) resolveMainChatProactiveActionTextRevision(momentID, actionID string, channel engagement.Channel, mobileChatID string, mobileReceipt *storage.MobileReceipt, text, expectedRevision string) (string, error) {
+	state, err := a.resolveMainChatProactiveActionTextRevisionOnce(momentID, actionID, channel, mobileChatID, mobileReceipt, text, expectedRevision)
+	if err == nil {
+		noteProposalAnswered(judgmentCard, momentID, mainChatProactiveActionAccepts(actionID))
+	}
+	return state, err
+}
+
+// mainChatProactiveActionAccepts reports a card action that takes the card's
+// work (open, send, review, approve, a draft copied), not one that puts it away.
+func mainChatProactiveActionAccepts(actionID string) bool {
+	switch actionID {
+	case "dismiss", "not_now", "snooze", engagement.ActionMuteKind:
+		return false
+	default:
+		return true
+	}
+}
+
+func (a *App) resolveMainChatProactiveActionTextRevisionOnce(momentID, actionID string, channel engagement.Channel, mobileChatID string, mobileReceipt *storage.MobileReceipt, text, expectedRevision string) (string, error) {
 	if a == nil || a.store == nil {
 		return "", errors.New("chat is unavailable")
 	}

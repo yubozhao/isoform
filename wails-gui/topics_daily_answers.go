@@ -83,6 +83,7 @@ func (a *App) answerDailyTopicProposal(ctx context.Context, topicID, proposalID,
 		ProposalTitle: proposal.Title, Verdict: verdict, At: now}); err != nil {
 		return DailyTopicView{}, err
 	}
+	noteProposalAnswered(judgmentTopic, proposalID, verdict == topicday.VerdictYes)
 	a.emitBrowserEvent("topics-daily:updated", map[string]any{"topicId": topicID})
 	return dailyTopicView(saved), nil
 }

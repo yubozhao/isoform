@@ -64,6 +64,9 @@ func (bridge *mobileBridge) startHandoffWithOffers(id string, refs []mobileOffer
 			return err
 		}
 		bridge.app.confirmHandoffRestartReplies(id, seq)
+		for _, ref := range refs {
+			noteProposalAnswered(judgmentOffer, ref.ID, true)
+		}
 		return nil
 	})
 }

@@ -1345,6 +1345,8 @@ func (a *App) startupServices(ctx context.Context) {
 	a.startMainChatTopicBackfill(ctx)
 	// The daily topics copy with proposed work, behind its switch.
 	a.startDailyTopics(ctx)
+	// Close yesterday's judgments line for the morning report.
+	go closeJudgmentDaysAtLaunch()
 	// The interests behind the topics, refreshed a few times a day.
 	a.interestsSvc().start(ctx)
 	// The day ahead: calendars are read once access is granted (never asked

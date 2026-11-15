@@ -213,6 +213,7 @@ func (bridge *mobileBridge) serveBriefFeedback(w http.ResponseWriter, r *http.Re
 			SourceKind: target.SourceKind, Action: input.Action, Effect: effect, DeviceID: device.DeviceID,
 			At: time.Now().UTC().Format(time.RFC3339),
 		})
+		noteBriefActed()
 		mobileJSON(w, http.StatusOK, map[string]any{"recorded": true, "effect": effect}, "")
 	})
 }

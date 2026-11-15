@@ -1256,6 +1256,33 @@
                 "knowledge": "Knowledge",
                 "other": "Other"
             }
+        },
+        "dailyTopics": {
+            "title": "Daily topics (preview)",
+            "description": "Your projects and the subjects you follow, built once a day, each with the work Isoform proposes. Design is drawing the real screen.",
+            "switch": "Daily topics",
+            "refresh": "Build today's topics now",
+            "empty": "No topics yet. They are built once a day.",
+            "loadFailed": "Could not read the daily topics",
+            "saveFailed": "Could not change the switch",
+            "answerFailed": "Could not save your answer",
+            "kind": {
+                "project": "Project",
+                "subject": "Following"
+            },
+            "answer": {
+                "yes": "Do it",
+                "no": "No",
+                "not_mine": "Not mine"
+            },
+            "state": {
+                "proposed": "Proposed",
+                "running": "Working on it",
+                "done": "Done",
+                "failed": "Could not finish",
+                "declined": "You said no",
+                "not_mine": "Not yours"
+            }
         }
     },
     "axParser": {
