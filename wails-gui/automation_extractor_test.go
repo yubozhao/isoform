@@ -1,3 +1,7 @@
+//go:build offfeatures
+
+// Turned-off feature (docs/rework-2026-11.md): run with -tags offfeatures.
+
 package main
 
 import "testing"

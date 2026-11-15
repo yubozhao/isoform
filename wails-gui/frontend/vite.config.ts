@@ -60,6 +60,21 @@ function wailsBrowserShimPlugin(): Plugin {
     };
 }
 
+// Tests of turned-off features (test audit P2, docs/test-audit-2026-11.md).
+const offFeatureTests = [
+    'src/hooks/useGoalCheckIn.test.ts',
+    'src/lib/chat-deliverable-index.test.ts',
+    'src/lib/agent-deliverables.test.ts',
+    'src/components/automations/schedule-utils.test.ts',
+    'src/components/automations/RunBackendLabel.test.tsx',
+    'src/components/automations/CronJobDetail.test.tsx',
+    'src/components/automations/ScheduleAsk.test.tsx',
+    'src/components/sops/playbook-reader.test.tsx',
+    'src/components/sops/create-sop-dialog.test.tsx',
+    'src/components/sops/playbook-panels.test.tsx',
+    'src/components/playbooks/playbooks-section.test.tsx',
+];
+
 export default defineConfig({
     plugins: [react(), tailwindcss(), wailsBrowserShimPlugin()],
     build: {
@@ -96,6 +111,8 @@ export default defineConfig({
         // not vitest. Exclude them so vitest doesn't try to resolve
         // @playwright/test as a regular vitest suite.
         include: ['src/**/*.{test,spec}.{ts,tsx}'],
-        exclude: ['e2e/**', 'node_modules/**', 'dist/**'],
+        // Turned-off features (docs/rework-2026-11.md) run only with
+        // VITEST_OFFFEATURES=1; their privacy checks stay in the default run.
+        exclude: ['e2e/**', 'node_modules/**', 'dist/**', ...(process.env.VITEST_OFFFEATURES ? [] : offFeatureTests)],
     },
 });
