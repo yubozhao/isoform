@@ -121,6 +121,10 @@ func historyCount(entries []MemoryEntry) int {
 
 func TestRepeatedMemoryReadsTouchNoFilesWhileUnchanged(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
+	// The first read is counted, so no note may be parsed already (as in the
+	// other counting tests here).
+	parsedNotes.reset()
+	t.Cleanup(parsedNotes.reset)
 	dir := writeFictionalMemoryFolder(t, fictionalMemoryNotes)
 	advance := fakeMemoryReadClock(t)
 	files := countMemoryFiles(t)

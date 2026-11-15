@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -685,4 +686,45 @@ func TestALaunchRemovesSavedPagesFromAnOlderEpoch(t *testing.T) {
 	if kept, err := os.ReadFile(path); err != nil || string(kept) != string(raw) {
 		t.Fatalf("the current copy was removed: %v", err)
 	}
+}
+
+// Two saves of the same page at once never leave a half-written copy: each
+// save writes its own temporary file before the rename (queue run of #959).
+func TestConcurrentSavesOfOnePageLeaveAReadableCopy(t *testing.T) {
+	_, session := streamPageTestApp(t)
+	key := streamPageKey{session: session, limit: 50}
+	var writers sync.WaitGroup
+	stop := make(chan struct{})
+	for w := 0; w < 4; w++ {
+		writers.Add(1)
+		go func(w int) {
+			defer writers.Done()
+			for i := 0; ; i++ {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				items := make([]StreamItemData, 1+(i+w)%40)
+				for j := range items {
+					items[j] = StreamItemData{ID: fmt.Sprintf("item-%d-%d", w, j), Kind: "assistant", Content: strings.Repeat("words ", 200)}
+				}
+				snap := streamPageSnapshot{Format: streamPageSnapshotFormat, Version: int64(i), Page: StreamItemPageData{Items: items}}
+				if err := writeStreamPageSnapshot(key, snap); err != nil {
+					t.Error(err)
+					return
+				}
+			}
+		}(w)
+	}
+	deadline := time.Now().Add(300 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if _, reason := readRawStreamPageSnapshot(key); reason == "unreadable" {
+			close(stop)
+			writers.Wait()
+			t.Fatal("a read found a half-written copy while saves overlapped")
+		}
+	}
+	close(stop)
+	writers.Wait()
 }
