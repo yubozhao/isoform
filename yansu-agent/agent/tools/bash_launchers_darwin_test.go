@@ -16,6 +16,7 @@ import (
 )
 
 func TestBashLauncherThrowawayLaunchdJob(t *testing.T) {
+	skipUnlessLaunchdRunsSubmittedJobs(t)
 	_, project := hardBlockHome(t)
 	t.Setenv("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
 	label := fmt.Sprintf("dev.isoform.guard-test.%d.%d", os.Getpid(), time.Now().UnixNano())
@@ -51,4 +52,25 @@ func TestBashLauncherThrowawayLaunchdJob(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatalf("approved throwaway launchd job did not write marker: %s", result.Content)
+}
+
+// skipUnlessLaunchdRunsSubmittedJobs submits a plain control job, outside the
+// Bash tool, and skips when launchd never starts it. launchctl submit limits
+// the job to the Aqua session, so from an ssh login or a background agent
+// (such as the merge queue on the Mac mini) launchd never runs it, even where
+// launchctl managername reports Aqua.
+func skipUnlessLaunchdRunsSubmittedJobs(t *testing.T) {
+	t.Helper()
+	label := fmt.Sprintf("dev.isoform.guard-probe.%d.%d", os.Getpid(), time.Now().UnixNano())
+	marker := filepath.Join(t.TempDir(), "probe-marker")
+	defer func() { _ = exec.Command("/bin/launchctl", "remove", label).Run() }()
+	if err := exec.Command("/bin/launchctl", "submit", "-l", label, "--", "/bin/sh", "-c", "printf ran > "+strconv.Quote(marker)).Run(); err != nil {
+		t.Skipf("launchctl submit is unavailable here: %v", err)
+	}
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+		if _, err := os.Stat(marker); err == nil {
+			return
+		}
+	}
+	t.Skip("launchd does not run submitted jobs in this session (not an Aqua login)")
 }
