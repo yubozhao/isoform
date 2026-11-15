@@ -29,9 +29,12 @@ const (
 	assistantHistoryKnowHowCap  = 3
 	assistantHistoryExcerptSess = 3
 	assistantHistoryExcerptRune = 6000
-	assistantHistoryModelWait   = 90 * time.Second
-	assistantHistorySource      = "assistant-history"
-	assistantHistoryClaudeMd    = "claude-md"
+	// assistantHistoryKnownCap is how many stored beliefs of the project the
+	// prompt lists, newest first, so the model does not restate them.
+	assistantHistoryKnownCap  = 40
+	assistantHistoryModelWait = 90 * time.Second
+	assistantHistorySource    = "assistant-history"
+	assistantHistoryClaudeMd  = "claude-md"
 )
 
 // assistantHistoryModelCall is the one model entry point for pass 2. Tests
@@ -142,7 +145,7 @@ func assistantHistoryLabel(assistant string) string {
 
 // buildAssistantHistoryPrompt is the whole request. It names what must never
 // be in the answer, and it asks for JSON only.
-func buildAssistantHistoryPrompt(projectName, excerpt, instructionsName, instructions, languageName string) string {
+func buildAssistantHistoryPrompt(projectName, excerpt, instructionsName, instructions, languageName string, known []string) string {
 	var b strings.Builder
 	b.WriteString("You read a person's recent work sessions with their AI coding assistants for one project, ")
 	b.WriteString("and say what Isoform should remember about how they work. Use only what the sessions and the project instructions say.\n\n")
@@ -158,11 +161,19 @@ func buildAssistantHistoryPrompt(projectName, excerpt, instructionsName, instruc
 	b.WriteString("- Never make a belief from a prompt, a template or a tool's instructions in the sessions (for example a note telling the assistant what output to return). Describe only what the person did or chose.\n")
 	b.WriteString("- Never include secrets, keys, tokens, passwords, or account identifiers.\n")
 	b.WriteString("- Never include personal details about other people (names with private context, contact details, health, family, money). Describe the work, not the people.\n")
+	b.WriteString("- beliefs never repeat one listed under Already known, in the same or other words. Name a belief only for something none of them says.\n")
 	b.WriteString("- Leave a list empty rather than guess.\n\n")
 	b.WriteString("Reply with one JSON object only, in this shape:\n")
 	b.WriteString(`{"status":"","openProblem":"","openQuestion":"","openChip":"","openSession":0,"beliefs":[{"text":"","session":1,"sessions":[1]}],"knowHow":[{"title":"","takeaway":"","kind":"reference","fromClaudeMd":false,"session":1}]}`)
 	b.WriteString("\n\n")
 	b.WriteString("Project: " + projectName + "\n\n")
+	if len(known) > 0 {
+		b.WriteString("Already known about how they work on this project:\n")
+		for _, belief := range known {
+			b.WriteString("- " + belief + "\n")
+		}
+		b.WriteString("\n")
+	}
 	b.WriteString("Recent sessions, newest first:\n")
 	b.WriteString(excerpt)
 	b.WriteString("\n")
@@ -303,7 +314,7 @@ func (a *App) runAssistantHistoryProject(ctx context.Context, project HistoryPro
 		return assistantHistoryProjectUpdate{}, false, nil
 	}
 	name, instructions, instructionsAt := readAssistantHistoryInstructions(project.Path)
-	prompt := buildAssistantHistoryPrompt(project.Name, excerpt, name, instructions, languageName)
+	prompt := buildAssistantHistoryPrompt(project.Name, excerpt, name, instructions, languageName, a.assistantHistoryKnownBeliefs(project))
 	raw, err := assistantHistoryModelCall(ctx, a, prompt)
 	if err != nil {
 		return assistantHistoryProjectUpdate{}, true, err
@@ -315,6 +326,35 @@ func (a *App) runAssistantHistoryProject(ctx context.Context, project HistoryPro
 	return buildAssistantHistoryUpdate(reply, included, name, instructionsAt), true, nil
 }
 
+// assistantHistoryKnownBeliefs are the project's stored history beliefs the
+// prompt lists, newest first. Only beliefs this pass learned from the same
+// project are listed, each read through the same source check and the same
+// text check as a reply.
+func (a *App) assistantHistoryKnownBeliefs(project HistoryProject) []string {
+	entries, err := a.GetMemoryEntries()
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, entry := range entries {
+		if len(out) == assistantHistoryKnownCap {
+			break
+		}
+		if entry.Source != assistantHistorySource || isUserEditedMemory(entry.Content) {
+			continue
+		}
+		if assistantHistoryStoredBeliefOf(entry).project != project.Name || !a.memorySourceAllowsRead(entry.Content) {
+			continue
+		}
+		text := checkedAssistantHistoryText(beliefInSecondPerson(entry.Title), 240)
+		if text == "" || memoryTextIsPromptOrTemplate(text) {
+			continue
+		}
+		out = append(out, text)
+	}
+	return out
+}
+
 // assistantHistoryRecordID is a stable ID per project and text, so the same
 // belief or know-how item is written once.
 func assistantHistoryRecordID(prefix, projectID, text string) string {
@@ -323,18 +363,21 @@ func assistantHistoryRecordID(prefix, projectID, text string) string {
 }
 
 // storeAssistantHistoryBeliefs writes each belief as an Inferred memory with
-// the history source. Titles already in About you are skipped.
+// the history source. A belief that repeats one already in About you, in the
+// same or nearly the same words, makes no new file: when the stored one came
+// from the same project and assistant, this belief's sessions are added to it,
+// so a belief seen in more sessions ranks higher instead of showing twice.
 func (a *App) storeAssistantHistoryBeliefs(project HistoryProject, beliefs []assistantHistoryBelief, now time.Time) (int, error) {
 	if len(beliefs) == 0 {
 		return 0, nil
 	}
-	existing := map[string]bool{}
 	entries, err := a.GetMemoryEntries()
 	if err != nil {
 		return 0, err
 	}
+	stored := make([]assistantHistoryStoredBelief, 0, len(entries))
 	for _, entry := range entries {
-		existing[strings.ToLower(strings.TrimSpace(beliefInSecondPerson(entry.Title)))] = true
+		stored = append(stored, assistantHistoryStoredBeliefOf(entry))
 	}
 	written := 0
 	for _, belief := range beliefs {
@@ -342,8 +385,11 @@ func (a *App) storeAssistantHistoryBeliefs(project HistoryProject, beliefs []ass
 			continue
 		}
 		belief.Text = beliefInSecondPerson(belief.Text)
-		key := strings.ToLower(strings.TrimSpace(belief.Text))
-		if existing[key] {
+		stamps := assistantHistoryBeliefStamps(belief)
+		if match, ok := matchAssistantHistoryBelief(stored, belief.Text); ok {
+			if match.id != "" && match.project == project.Name && match.assistant == belief.Assistant {
+				a.strengthenAssistantHistoryBelief(match.id, stamps)
+			}
 			continue
 		}
 		id := assistantHistoryRecordID("memory-history-", project.ID, belief.Text)
@@ -358,11 +404,7 @@ func (a *App) storeAssistantHistoryBeliefs(project HistoryProject, beliefs []ass
 			"history_session_at": okfTimestamp(belief.At),
 			"history_project":    project.Name,
 		}
-		if len(belief.SessionsAt) > 1 {
-			stamps := make([]string, 0, len(belief.SessionsAt))
-			for _, at := range belief.SessionsAt {
-				stamps = append(stamps, okfTimestamp(at))
-			}
+		if len(stamps) > 1 {
 			fields["history_sessions_at"] = stamps
 		}
 		content := renderOKFDocument(fields, "## Memory Points\n\n- "+belief.Text)
@@ -373,10 +415,94 @@ func (a *App) storeAssistantHistoryBeliefs(project HistoryProject, beliefs []ass
 			log.Printf("[assistant-history] belief not saved: %v", err)
 			continue
 		}
-		existing[key] = true
+		stored = append(stored, assistantHistoryStoredBelief{id: id, title: belief.Text, project: project.Name, assistant: belief.Assistant, shape: newBeliefShape(belief.Text)})
 		written++
 	}
 	return written, nil
+}
+
+// assistantHistoryStoredBelief is a belief already in About you, as pass 2
+// compares it. project and assistant are set for a history belief only.
+type assistantHistoryStoredBelief struct {
+	id, title, project, assistant string
+	// edited is the person's own words: never strengthened.
+	edited bool
+	shape  beliefShape
+}
+
+func assistantHistoryStoredBeliefOf(entry MemoryEntry) assistantHistoryStoredBelief {
+	out := assistantHistoryStoredBelief{id: entry.ID, title: entry.Title, edited: isUserEditedMemory(entry.Content), shape: newBeliefShape(entry.Title)}
+	if entry.Source != assistantHistorySource || out.edited {
+		return out
+	}
+	if doc, ok := parseOKFDocument(legacyMemoryWithoutConfirmation(entry.Content)); ok {
+		out.project = okfString(doc.Frontmatter, "history_project")
+		out.assistant = okfString(doc.Frontmatter, "history_assistant")
+	}
+	return out
+}
+
+// matchAssistantHistoryBelief finds the stored belief a new one repeats:
+// the same words first, then nearly the same words that do not contradict it.
+func matchAssistantHistoryBelief(stored []assistantHistoryStoredBelief, text string) (assistantHistoryStoredBelief, bool) {
+	key := strings.ToLower(strings.TrimSpace(text))
+	for _, belief := range stored {
+		if strings.ToLower(strings.TrimSpace(beliefInSecondPerson(belief.title))) == key {
+			return belief, true
+		}
+	}
+	shape := newBeliefShape(text)
+	for _, belief := range stored {
+		if nearDuplicateBeliefShapes(shape, belief.shape) {
+			return belief, true
+		}
+	}
+	return assistantHistoryStoredBelief{}, false
+}
+
+// assistantHistoryBeliefStamps are the session times one belief names, the
+// first session included.
+func assistantHistoryBeliefStamps(belief assistantHistoryBelief) []string {
+	seen := map[int64]bool{}
+	var out []string
+	for _, at := range append([]time.Time{belief.At}, belief.SessionsAt...) {
+		if at.IsZero() || seen[at.UnixMilli()] {
+			continue
+		}
+		seen[at.UnixMilli()] = true
+		out = append(out, okfTimestamp(at))
+	}
+	return out
+}
+
+// strengthenAssistantHistoryBelief adds session times to a stored history
+// belief through the memory writer, so Forget, the person's edits and version
+// history apply as for any other write.
+func (a *App) strengthenAssistantHistoryBelief(id string, stamps []string) {
+	if len(stamps) == 0 {
+		return
+	}
+	dir, err := memoryDir()
+	if err != nil {
+		return
+	}
+	current, err := os.ReadFile(filepath.Join(dir, id+".md"))
+	if err != nil {
+		return
+	}
+	merged, ok := mergeHistorySessionStamps(string(current), stamps)
+	if !ok || learnedHidden(string(current)) || isUserEditedMemory(string(current)) {
+		return
+	}
+	if _, err := a.saveMemoryEntryWithRewrite(id, merged, false, func(latest string) string {
+		if learnedHidden(latest) || isUserEditedMemory(latest) {
+			return latest
+		}
+		next, _ := mergeHistorySessionStamps(latest, stamps)
+		return next
+	}); err != nil && !errors.Is(err, errMemoryForgotten) {
+		log.Printf("[assistant-history] belief not strengthened: %v", err)
+	}
 }
 
 // storeAssistantHistoryKnowHow writes each item as a knowledge entry with the
