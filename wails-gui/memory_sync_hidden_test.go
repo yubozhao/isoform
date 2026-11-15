@@ -76,3 +76,46 @@ func TestMemorySyncHiddenFilesAreNotReindexedEverySync(t *testing.T) {
 		t.Fatalf("indexed files = %q, want only agent-a.md", got)
 	}
 }
+
+// A knowledge file that becomes hidden leaves the index once. The forget
+// removal is scoped to memory notes, so a hidden knowledge file kept its old
+// row and counted as changed on every sync (89 files, 2026-11-15).
+func TestMemorySyncHiddenKnowledgeFileLeavesTheIndexOnce(t *testing.T) {
+	store, err := NewMemoryStore(t.TempDir(), MemoryStoreConfig{Provider: "none"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	if err := os.MkdirAll(store.knowledgeDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	updates := 0
+	store.SetOnUpdated(func() { updates++ })
+	path := filepath.Join(store.knowledgeDir, "knowledge-history-a.md")
+	write := func(content string) {
+		t.Helper()
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("# Release steps\n\n- Build, sign, notarize.\n")
+	if err := store.Sync("startup"); err != nil || updates != 1 {
+		t.Fatalf("indexing the knowledge file: updates=%d err=%v", updates, err)
+	}
+	write("---\n" + learnedAgentOriginLine + "\n---\n# Release steps\n\n- Build, sign, notarize.\n")
+	if err := store.Sync("interval"); err != nil || updates != 2 {
+		t.Fatalf("hiding the knowledge file: updates=%d err=%v", updates, err)
+	}
+	for range 3 {
+		if err := store.Sync("interval"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if updates != 2 {
+		t.Fatalf("a hidden knowledge file counted as changed on %d more syncs", updates-2)
+	}
+	var rows int
+	if err := store.db.QueryRow("SELECT COUNT(*) FROM memory_files WHERE path = ?", "knowledge-history-a.md").Scan(&rows); err != nil || rows != 0 {
+		t.Fatalf("hidden knowledge file still indexed: rows=%d err=%v", rows, err)
+	}
+}

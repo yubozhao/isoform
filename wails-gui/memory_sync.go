@@ -152,7 +152,7 @@ func (s *MemoryStore) syncContext(ctx context.Context, reason string) (err error
 			// every sync would see it as new, redo this check, rebuild FTS and
 			// emit memory:updated (a page-wide re-read) with nothing changed.
 			// Removing it changes the index only when it was indexed.
-			if err := removeForgottenMemoryIndex(db, diskFile.Path, []string{string(content)}); err != nil {
+			if err := removeHiddenMemoryIndex(db, diskFile, string(content)); err != nil {
 				log.Printf("[memory] failed to remove hidden %s: %v", diskFile.Path, err)
 				continue
 			}
@@ -342,6 +342,27 @@ func (s *MemoryStore) memoryIndexHidden(file memoryFileRecord, content string) (
 	return isMemoryForgotten(s.baseDir, strings.TrimSuffix(filepath.Base(file.Path), ".md"), content, time.Now())
 }
 
+// removeHiddenMemoryIndex takes a hidden file out of the index under its own
+// source. removeForgottenMemoryIndex scopes to memory notes, so a hidden
+// knowledge file kept its row: every sync saw its old hash, counted it as
+// changed and emitted memory:updated (89 files on 2026-11-15, every 5 minutes).
+func removeHiddenMemoryIndex(db *sql.DB, file memoryFileRecord, content string) error {
+	if file.Source == MemorySourceMemory {
+		return removeForgottenMemoryIndex(db, file.Path, []string{content})
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, table := range []string{"memory_chunks_fts", "memory_chunks", "memory_files"} {
+		if _, err := tx.Exec("DELETE FROM "+table+" WHERE path = ? AND source = ?", file.Path, string(file.Source)); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 // memoryHiddenRecheck bounds how long a hidden verdict is reused: forget
 // markers expire, and an expired one makes the file indexable again.
 const memoryHiddenRecheck = time.Hour
@@ -376,7 +397,7 @@ func (s *MemoryStore) indexFile(db *sql.DB, file memoryFileRecord, content strin
 		return err
 	}
 	if hidden {
-		return removeForgottenMemoryIndex(db, file.Path, []string{content})
+		return removeHiddenMemoryIndex(db, file, content)
 	}
 	if err := ctx.Err(); err != nil {
 		return err
