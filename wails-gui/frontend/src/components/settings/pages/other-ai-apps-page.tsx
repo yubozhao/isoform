@@ -4,6 +4,7 @@ import {
     UseYansuAnywhereSettings,
 } from "@/components/use-yansu-anywhere-settings";
 import { SettingsAdvanced } from "@/components/settings/settings-advanced";
+import { FrontSettings } from "@/components/settings/front-settings";
 
 /** Other AI apps (page id "use-yansu-anywhere"): let other assistants recall
  *  what Isoform learned about your work. The card with the two actions comes
@@ -14,6 +15,7 @@ export function OtherAIAppsPage() {
     return (
         <>
             <UseYansuAnywhereSettings />
+            <FrontSettings />
             <SettingsAdvanced pageId="use-yansu-anywhere" hint={t("useYansuAnywhere.advancedHint")}>
                 <UseYansuAnywhereDetails />
             </SettingsAdvanced>

@@ -3905,5 +3905,26 @@
         "hours_other": "{{count}} 小时额度",
         "days_one": "{{count}} 天额度",
         "days_other": "{{count}} 天额度"
+    },
+    "front": {
+        "title": "代理连接这台电脑",
+        "description": "一个地址，供你自己的代理连接这里的 Isoform。数据在到达这台电脑之前一直保持加密。",
+        "toggleFailed": "无法更改。请重试。",
+        "switch": {
+            "title": "为这台电脑设置代理地址",
+            "agreement": "开启后会从 Let's Encrypt 获取该地址的证书，这意味着你接受 Let's Encrypt 订阅者协议。",
+            "agreementLink": "阅读协议"
+        },
+        "address": {
+            "title": "地址",
+            "notRunning": "正在启动。准备好后会显示地址。"
+        },
+        "alerts": {
+            "title_one": "一张你未申请的证书",
+            "title_other": "{{count}} 张你未申请的证书",
+            "body": "有人为你的代理地址获取了证书，其密钥不在这台电脑上。代理可能无法安全地连接到你。在查明原因之前，请关闭该地址。",
+            "item": "签发者：{{issuer}} {{date}}",
+            "unknownIssuer": "未知签发者"
+        }
     }
 }
