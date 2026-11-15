@@ -309,7 +309,7 @@ func TestSnapshotWriteWait_NoWaitOnShutdownAndPreMeeting(t *testing.T) {
 	inFlight := newSnapshotWrite("a.jpg")
 	start := time.Now()
 	kept := awaitSnapshotWrites([]snapshotEntry{{relPath: "a.jpg", write: inFlight}}, 0)
-	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
+	if elapsed := time.Since(start); elapsed > pendingSnapshotWriteWait/10 {
 		t.Fatalf("zero budget waited %s", elapsed)
 	}
 	if len(kept) != 1 {
