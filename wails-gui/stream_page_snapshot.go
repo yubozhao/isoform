@@ -46,7 +46,8 @@ const (
 	streamPageLaunchDelay     = 30 * time.Second
 	streamPageEventDelay      = time.Second
 	streamPageDefaultLimit    = 50
-	streamPageSnapshotFormat  = 2
+	// Format 3 added Sessions; older copies are dropped unread.
+	streamPageSnapshotFormat = 3
 )
 
 // streamPageWakeEvents are the events that say a stream changed. They wake a
@@ -73,6 +74,10 @@ type streamPageSnapshot struct {
 	// Cards are the page's proactive cards as stored, before projection. A read
 	// projects them again through the live gates (stream_page_cards.go).
 	Cards []StreamItemData `json:"cards,omitempty"`
+	// Sessions are the activity sessions the cards' gates read and how each
+	// read then; a read serves the copy only while they still do
+	// (stream_page_sources.go).
+	Sessions map[string]streamPageSessionState `json:"sessions,omitempty"`
 }
 
 type streamPageReadResult struct {
@@ -294,6 +299,12 @@ func (a *App) loadLatestStreamPageNow(key streamPageKey) (StreamItemPageData, er
 	versionMs := time.Since(versionStart).Milliseconds()
 	log.Printf("[perf] binding=LoadStreamItemsPage stage=version ms=%d", versionMs)
 	saved, reason := readStreamPageSnapshot(key, stamp)
+	if reason == "" && !a.streamPageSourcesHold(saved.Sessions) {
+		// A session a card rests on changed outside the withdrawal path (protected,
+		// removed, its notes deleted on disk): the copy never paints again.
+		removeStreamPageCopy(key)
+		saved, reason = streamPageSnapshot{}, "sources-changed"
+	}
 	cards := 0
 	if reason == "" {
 		cards = streamPageCardCount(saved.Page)
@@ -438,6 +449,7 @@ func (a *App) computeLatestStreamPage(key streamPageKey, stamp string) (StreamIt
 	streamCtx := context.WithValue(withMainChatReadMemo(ctx), streamProjectionTimingKey{}, true)
 	incomplete := false
 	streamCtx = context.WithValue(streamCtx, streamProjectionIncompleteKey{}, &incomplete)
+	streamCtx, sources := withStreamPageSources(streamCtx)
 	a.projectStreamItemsContext(streamCtx, page.Items)
 	release, err := a.projectMainChatView(streamCtx, key.session, page.Items, time.Now())
 	enrichDuration := time.Since(enrichStart)
@@ -450,7 +462,12 @@ func (a *App) computeLatestStreamPage(key streamPageKey, stamp string) (StreamIt
 	if incomplete || verr != nil || stamp == "" || a.streamPageStamp(ctx) != stamp {
 		return page, false, nil
 	}
-	next := streamPageSnapshot{Format: streamPageSnapshotFormat, Version: version, ReadStamp: stamp, SavedAt: time.Now(), Page: page, Cards: cardsRaw}
+	sessions, err := a.streamPageSessionStates(ctx, sources.ids())
+	if err != nil {
+		// The copy could not name its cards' sources: it is not saved.
+		return page, false, nil
+	}
+	next := streamPageSnapshot{Format: streamPageSnapshotFormat, Version: version, ReadStamp: stamp, SavedAt: time.Now(), Page: page, Cards: cardsRaw, Sessions: sessions}
 	// The full check is of the app's privacy state, not of the page: a copy made
 	// under the same cheap stamp as a checked copy keeps that check, and the
 	// verify pass the caller schedules confirms it again (verifyStreamPageCopy

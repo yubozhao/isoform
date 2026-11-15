@@ -118,8 +118,9 @@ func (a *App) proactiveVoiceReceiptAllowsRead(ctx context.Context, id, kind, pre
 		return false
 	}
 	key := proactiveReadVerdictKey{id: id, kind: kind, presentation: presentationHash, status: status}
-	return a.proactiveReadVerdict(ctx, key, func() bool {
-		return a.proactiveVoiceReceiptAllowsReadLive(ctx, id, kind, presentationHash, status)
+	gateCtx, gate := withStreamPageSources(ctx)
+	return a.proactiveReadVerdictWith(ctx, key, gate, func() bool {
+		return a.proactiveVoiceReceiptAllowsReadLive(gateCtx, id, kind, presentationHash, status)
 	})
 }
 

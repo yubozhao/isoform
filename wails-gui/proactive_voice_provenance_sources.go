@@ -78,6 +78,7 @@ func (a *App) proactiveVoiceSessionsAllowedContext(ctx context.Context, ids, sto
 	if len(ids) == 0 {
 		return true
 	}
+	recordStreamPageSessions(ctx, ids)
 	if a == nil || a.activity == nil || a.activity.store == nil || ctx.Err() != nil {
 		return false
 	}

@@ -331,7 +331,9 @@ func TestMobileBriefChatUsesTodayContextAndPhoneAuthority(t *testing.T) {
 						t.Fatal("phone origin instructions missing")
 					}
 				}
-				if len(task.ExtraTools) != 1 || task.ExtraTools[0].Name() != goalToolCreate {
+				// GoalCreate and the read-only SearchWeb (#925), nothing that
+				// changes the computer.
+				if len(task.ExtraTools) != 2 || task.ExtraTools[0].Name() != goalToolCreate || task.ExtraTools[1].Name() != chatWebSearchToolName {
 					t.Fatal("brief context granted computer-only tools")
 				}
 			case <-time.After(5 * time.Second):

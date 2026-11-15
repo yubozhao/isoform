@@ -163,3 +163,66 @@ func TestMainChatBriefLeadReadsTheSealedCopyAndAmendsInTheBackground(t *testing.
 		t.Fatal("the amend did not run through the finished read")
 	}
 }
+
+// A brief whose finished read stays withheld (its store unavailable) must let
+// the page settle: projected again and again, as refreshes would, it is read
+// once in the background and asks for no refresh. On 2026-11-14 this looped,
+// two or three reads a second for hours.
+func TestMainChatBriefLeadSettlesWhenTheBriefStaysWithheld(t *testing.T) {
+	clock := &fakeMobileBriefClock{now: mobileBriefTestDay(18, 0)}
+	service, _ := newTestMobileBriefService(t, clock)
+	service.app.mobileBriefSvc = service
+	brief := MobileBriefV1{BriefID: "2026-10-03-evening", Slot: "evening", LocalDate: "2026-10-03", AsOf: "2026-10-03T18:00:00Z", Timezone: "UTC", NarrativeStatus: "ok",
+		Narrative: []MobileBriefPara{{Text: "Two replies are waiting on you."}}}
+	if err := service.store.save(brief, clock.Now()); err != nil {
+		t.Fatal(err)
+	}
+	// This fixture has no policy store, so the brief's finished read is
+	// withheld as store_unavailable and leaves no copy the card can show.
+	// Other tests' background reads share these maps and stamp them with the
+	// real clock; this brief's ID is used by no other test, and starts clean.
+	mainChatBriefAmendTried.Delete(brief.BriefID)
+	mainChatBriefAmends.Delete(brief.BriefID)
+	t.Cleanup(func() { mainChatBriefAmendTried.Delete(brief.BriefID) })
+	var reads atomic.Int64
+	previous := mainChatBriefAmendRead
+	mainChatBriefAmendRead = func(id string) {
+		if id == brief.BriefID {
+			reads.Add(1)
+		}
+	}
+	t.Cleanup(func() { mainChatBriefAmendRead = previous })
+	// Run each background read in place and on a fixed clock: no waits.
+	previousGo := mainChatBriefAmendGo
+	mainChatBriefAmendGo = func(run func()) { run() }
+	t.Cleanup(func() { mainChatBriefAmendGo = previousGo })
+	now := time.Date(2026, 10, 9, 18, 0, 0, 0, time.UTC)
+	previousNow := mainChatBriefAmendNow
+	mainChatBriefAmendNow = func() time.Time { return now }
+	t.Cleanup(func() { mainChatBriefAmendNow = previousNow })
+	input := `{"kind":"brief_ready","briefId":"2026-10-03-evening","evidence":[{"kind":"brief"}]}`
+	for i := 0; i < 20; i++ {
+		_ = service.app.mainChatBriefDisplayProjector()(mainChatProactiveTool, input)
+	}
+	if n := reads.Load(); n != 1 {
+		t.Fatalf("20 projections read the withheld brief %d times; want 1", n)
+	}
+	st := &service.app.streamPages
+	st.mu.Lock()
+	queued := st.dueRecompute
+	st.mu.Unlock()
+	if queued {
+		t.Fatal("a withheld brief queued a page refresh, which projects the page again")
+	}
+	// Just before the wait ends it is still not read; once it ends, read once.
+	now = now.Add(mainChatBriefAmendRetry - time.Second)
+	_ = service.app.mainChatBriefDisplayProjector()(mainChatProactiveTool, input)
+	if n := reads.Load(); n != 1 {
+		t.Fatalf("before the wait ended the brief was read %d times in all; want 1", n)
+	}
+	now = now.Add(time.Second)
+	_ = service.app.mainChatBriefDisplayProjector()(mainChatProactiveTool, input)
+	if n := reads.Load(); n != 2 {
+		t.Fatalf("after the wait the brief was read %d times in all; want 2", n)
+	}
+}

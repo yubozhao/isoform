@@ -85,6 +85,12 @@ export default defineConfig({
     test: {
         environment: 'jsdom',
         setupFiles: ['./src/test-setup.ts'],
+        // Background jobs (the merge queue's launchd runner) can report one CPU,
+        // which makes vitest's default worker range invalid. Pin it.
+        poolOptions: {
+            forks: { minForks: 1, maxForks: 4 },
+            threads: { minThreads: 1, maxThreads: 4 },
+        },
         globals: true,
         // Playwright e2e specs live under e2e/ and are run via playwright,
         // not vitest. Exclude them so vitest doesn't try to resolve

@@ -220,16 +220,49 @@ func (a *App) mainChatSealedBriefLead(service *mobileBriefService, reader *brief
 // mainChatBriefAmends are the briefs whose background finished read is running.
 var mainChatBriefAmends sync.Map
 
+// mainChatBriefAmendTried holds, per brief, when its last background read
+// left the sealed copy still unusable (withheld, store unavailable). A refresh
+// re-projects the page, which asks for the amend again; without this wait that
+// was a loop of two or three reads a second (2026-11-14, a brief withheld as
+// store_unavailable for hours).
+var mainChatBriefAmendTried sync.Map
+
+// mainChatBriefAmendRetry is how long a brief whose copy stayed unusable waits
+// before another background read.
+const mainChatBriefAmendRetry = 15 * time.Minute
+
+// mainChatBriefAmendNow is the amend's clock; tests move it.
+var mainChatBriefAmendNow = time.Now
+
+// mainChatBriefAmendRead, when set, sees each background read; tests count them.
+var mainChatBriefAmendRead func(briefID string)
+
+// mainChatBriefAmendGo starts the background read; tests run it in place so
+// they never wait on a clock.
+var mainChatBriefAmendGo = func(run func()) { go run() }
+
 // mainChatAmendBriefLater runs the finished read of one brief off the
 // projection path, once at a time per brief, so its copy is sealed or amended.
+// The page is refreshed only when the read left a copy the card can show; a
+// copy that stays unusable is not read again for mainChatBriefAmendRetry.
 func (a *App) mainChatAmendBriefLater(service *mobileBriefService, briefID string) {
+	if at, tried := mainChatBriefAmendTried.Load(briefID); tried && mainChatBriefAmendNow().Sub(at.(time.Time)) < mainChatBriefAmendRetry {
+		return
+	}
 	if _, running := mainChatBriefAmends.LoadOrStore(briefID, true); running {
 		return
 	}
-	go func() {
+	mainChatBriefAmendGo(func() {
 		defer mainChatBriefAmends.Delete(briefID)
-		if _, found, err := service.finishedBrief(briefID); err == nil && found {
-			a.scheduleStreamPageRefresh(time.Now())
+		if hook := mainChatBriefAmendRead; hook != nil {
+			hook(briefID)
 		}
-	}()
+		_, _, _ = service.finishedBrief(briefID)
+		if _, shown := a.mainChatSealedBriefReader(service).Get(briefID); shown {
+			mainChatBriefAmendTried.Delete(briefID)
+			a.scheduleStreamPageRefresh(time.Now())
+			return
+		}
+		mainChatBriefAmendTried.Store(briefID, mainChatBriefAmendNow())
+	})
 }

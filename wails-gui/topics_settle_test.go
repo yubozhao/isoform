@@ -154,7 +154,10 @@ func TestTodayColdSettlesWithoutReadDrivenBuilds(t *testing.T) {
 			if err := json.Unmarshal(raw, &event); err != nil {
 				t.Fatal(err)
 			}
-			if event.Event != "topics:updated" || svc.registryPending() {
+			// The build announces its snapshot once before its chat phase, while
+			// it still counts as refreshing, and again when it ends. Wait for the
+			// end: reading on the first event raced the build's last steps.
+			if event.Event != "topics:updated" || svc.registryPending() || svc.registryFullBuildRunning() {
 				continue
 			}
 			for i := 0; i < 25; i++ {

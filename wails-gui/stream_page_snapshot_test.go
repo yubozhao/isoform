@@ -635,9 +635,12 @@ func TestLatestStreamPagePaintsFastWithABackgroundWriter(t *testing.T) {
 // though that chat is never read again. Before, a copy was dropped only when
 // its own page was next read, so a deleted chat's words stayed on disk.
 func TestDeletingAChatRemovesItsSavedFirstPage(t *testing.T) {
-	a, session := streamPageTestApp(t)
+	a, _ := streamPageTestApp(t)
 	adoptTestBriefPrivacyEpoch(a)
-	if page := latestPage(t, a, session); !pageHas(page, "one") {
+	// The main chat can never be deleted, so the deleted chat is a side chat.
+	_, session := seedSideChat(t, a, false)
+	appendStreamPageItem(t, a, session, "side-one", "side words")
+	if page := latestPage(t, a, session); !pageHas(page, "side-one") {
 		t.Fatal("the fixture page lacks its item")
 	}
 	path, err := streamPageFile(streamPageKey{session: session, limit: 50})

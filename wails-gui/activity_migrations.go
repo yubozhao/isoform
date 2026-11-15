@@ -1843,6 +1843,16 @@ func (s *ActivityStore) bootstrapMigrationLog() error {
 			e4 := s.db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='trigger' AND name LIKE 'evidence_revision_%'`).Scan(&triggers)
 			return a && b && c && triggers == 9, firstErr(e1, e2, e3, e4)
 		}},
+		{"activity_agent_runs", func() (bool, error) {
+			a, e1 := s.hasTable("activity_agent_runs")
+			b, e2 := s.hasIndex("idx_activity_agent_runs_day")
+			return a && b, firstErr(e1, e2)
+		}},
+		// The orphan cleanup runs in the same transaction as the trigger, so
+		// the trigger proves both.
+		{"activity_agent_runs_follow_runs", func() (bool, error) {
+			return s.hasTrigger("activity_agent_runs_follow_run")
+		}},
 	}
 
 	// Step 1: collect applied migration names outside transaction.
