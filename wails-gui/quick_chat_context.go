@@ -318,53 +318,6 @@ func normalizeFocusedAppToken(s string) string {
 	return b.String()
 }
 
-// latestPendingSnapshot returns a copy of the most recent in-memory
-// snapshotEntry (the queue that flushes on session end), or nil if empty.
-// In-memory because captureSnapshotForEvent appends here synchronously and
-// flush-to-DB only happens at session boundaries.
-func (a *App) latestPendingSnapshot() *snapshotEntry {
-	if a.activity == nil {
-		return nil
-	}
-	a.activity.mu.Lock()
-	defer a.activity.mu.Unlock()
-	if len(a.activity.allSnapshots) == 0 {
-		return nil
-	}
-	entry := a.activity.allSnapshots[len(a.activity.allSnapshots)-1]
-	return &entry
-}
-
-func (a *App) latestPendingSnapshotTimestamp() int64 {
-	if entry := a.latestPendingSnapshot(); entry != nil {
-		return entry.timestamp
-	}
-	return 0
-}
-
-// pendingEntryToRow converts an in-memory snapshotEntry to the persisted
-// ActivitySnapshotRow shape so downstream code can treat fresh captures and
-// stored captures uniformly.
-func pendingEntryToRow(e *snapshotEntry) *ActivitySnapshotRow {
-	if e == nil {
-		return nil
-	}
-	return &ActivitySnapshotRow{
-		ID:          0, // not yet persisted
-		Timestamp:   e.timestamp,
-		FilePath:    e.relPath,
-		Width:       e.width,
-		Height:      e.height,
-		SizeBytes:   e.sizeBytes,
-		Trigger:     e.trigger,
-		AXText:      e.axText,
-		BrowserURL:  e.browserURL,
-		ContentType: e.contentType,
-		App:         e.app,
-		ParsedJSON:  e.parsedJSON,
-	}
-}
-
 // extractWindowTitle pulls a usable window title out of a snapshot. Prefers
 // ParsedContent.Title (parser-curated), then the parser's window-title
 // metadata, then the AX text's first non-empty line as a last resort.

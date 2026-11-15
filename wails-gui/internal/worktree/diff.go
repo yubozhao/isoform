@@ -219,19 +219,6 @@ func resolveDiffBase(worktreePath, baseBranch string) string {
 	return strings.TrimSpace(mb)
 }
 
-// GetDiff returns unified diff for all workspace changes.
-// For default workspaces (baseBranch == "HEAD"), shows working directory changes
-// against HEAD. For worktree workspaces, diffs the working directory against the
-// merge-base with the base branch, capturing both committed and uncommitted changes.
-func GetDiff(worktreePath, baseBranch string) (string, error) {
-	if _, err := os.Stat(worktreePath); err != nil {
-		return "", fmt.Errorf("worktree not found: %w", err)
-	}
-
-	base := resolveDiffBase(worktreePath, baseBranch)
-	return RunGit(worktreePath, "diff", base)
-}
-
 // GetFileDiff returns unified diff for a single file.
 // For default workspaces, diffs against HEAD. For worktree workspaces, diffs
 // against the merge-base with the base branch.

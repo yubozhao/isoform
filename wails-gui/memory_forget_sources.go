@@ -165,10 +165,6 @@ func loadMemoryForgetRecords(dir string) (map[string]*memoryForgetRecord, error)
 	return records, nil
 }
 
-func collectMemoryForgetRecords(dir, id string) ([]*memoryForgetRecord, error) {
-	return collectMemoryForgetRecordsScoped(dir, id, false)
-}
-
 // A user correction retains the same ID as the history memory it replaced.
 // Select only the history versions and references to them in that case.
 func collectMemoryForgetRecordsScoped(dir, id string, historyVersionsOnly bool) ([]*memoryForgetRecord, error) {

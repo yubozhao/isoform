@@ -152,12 +152,6 @@ func (a *App) validateTodayChatAdmissionFiles(ctx context.Context, ref TodayChat
 	return nil
 }
 
-// Admission needs the source markdown and small privacy controls, never audio,
-// screenshots, binaries or an unbounded traversal of the application folder.
-func todayChatAdmissionDirectory(ctx context.Context, digest hash.Hash, key, dir string) error {
-	return todayChatAdmissionDirectoryFiltered(ctx, digest, key, dir, nil)
-}
-
 // todayChatAdmissionDirectoryFiltered hashes the files keep accepts (all
 // when keep is nil).
 func todayChatAdmissionDirectoryFiltered(ctx context.Context, digest hash.Hash, key, dir string, keep func(string) bool) error {

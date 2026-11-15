@@ -45,10 +45,6 @@ type SubjectRef struct {
 	Confidence   float64
 }
 
-// IsSelf is a convenience for callers that only care about "is this the
-// user's own message?". Anonymous and unknown both report false.
-func (s SubjectRef) IsSelf() bool { return s.Kind == SubjectSelf }
-
 // Storage is the subset of storage.Store the resolver depends on. Defined as
 // an interface so resolver tests can inject a fake without spinning up
 // SQLite, and so the resolver stays decoupled from storage internals.

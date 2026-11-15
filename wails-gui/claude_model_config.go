@@ -147,20 +147,8 @@ func (a *App) chatTaskModel() string {
 	return claudeCodeModelConfig().ChatModel
 }
 
-func (a *App) codeTaskModel() string {
-	return claudeCodeModelConfig().CodeModel
-}
-
 func (a *App) lightTaskModel() string {
 	return claudeCodeModelConfig().LightModel
-}
-
-func (a *App) lightTaskAPIModel() string {
-	return claudeModelForAnthropicAPI(a.lightTaskModel())
-}
-
-func resolveLightTaskAPIModel() string {
-	return claudeModelForAnthropicAPI(claudeCodeModelConfig().LightModel)
 }
 
 // Magpie routing groups (see magpie_bootstrap.go). In managed mode every model

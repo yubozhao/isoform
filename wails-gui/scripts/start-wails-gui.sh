@@ -629,6 +629,12 @@ fi
 
 echo ""
 
+# ── 2d. isoform-front-link (the Isoform front, front/) ─────────────
+#   Built with the toolchain pinned in front/rust-toolchain.toml; cargo is
+#   incremental, so an unchanged tree costs a second. Without cargo the
+#   script warns and the app runs without the front.
+bash "${SCRIPT_DIR}/build-front-link.sh" || warn "Front link" "build failed; the Isoform front will be unavailable"
+
 # ── 3. Icon preparation ────────────────────────────────────────────
 #    Copy version-controlled icons from icons/ → build/ so Wails can find them.
 

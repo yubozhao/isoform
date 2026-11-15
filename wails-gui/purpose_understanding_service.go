@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"log"
 	"sort"
 	"strings"
@@ -788,15 +787,4 @@ func (a *App) stopPurposeUnderstanding() {
 	if service != nil {
 		service.Stop()
 	}
-}
-
-func purposeUnderstandingStatusSummary(
-	status PurposeUnderstandingCycleStatus,
-) string {
-	return fmt.Sprintf(
-		"%s: %d included sources, %d current Purpose roots",
-		status.State,
-		status.IncludedCount,
-		status.CurrentPurposeCount,
-	)
 }

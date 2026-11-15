@@ -21,25 +21,6 @@ type Tunnel struct {
 	closeOnce  sync.Once
 }
 
-// NewTunnel creates a tunnel that will forward to the given remote port.
-// Call Start() to begin accepting connections.
-func NewTunnel(client *ssh.Client, remotePort int) (*Tunnel, error) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return nil, fmt.Errorf("listen local: %w", err)
-	}
-
-	localPort := listener.Addr().(*net.TCPAddr).Port
-
-	return &Tunnel{
-		client:     client,
-		remoteAddr: fmt.Sprintf("127.0.0.1:%d", remotePort),
-		listener:   listener,
-		localPort:  localPort,
-		done:       make(chan struct{}),
-	}, nil
-}
-
 // LocalPort returns the local port the tunnel is listening on.
 func (t *Tunnel) LocalPort() int {
 	return t.localPort

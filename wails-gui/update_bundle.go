@@ -25,11 +25,6 @@ func updateTool(name string, args ...string) ([]byte, error) {
 	return out, nil
 }
 
-func verifyUpdateBundle(current, candidate, version string) error {
-	_, err := verifyUpdateBundleRequirement(current, candidate, version)
-	return err
-}
-
 // verifyUpdateBundleRequirement runs every check and returns the installed
 // app's designated requirement the candidate satisfied.
 func verifyUpdateBundleRequirement(current, candidate, version string) (string, error) {

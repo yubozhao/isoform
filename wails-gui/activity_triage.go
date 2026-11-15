@@ -232,26 +232,6 @@ func (g *sessionGroup) entryKey(session ActivitySessionRow) string {
 	return session.ID
 }
 
-// writeActivitySessionsBlock writes all sessions in a group as a nested
-// frontmatter list (flat format). Still used by the knowledge write path —
-// knowledge entries dedup by merging session ID sets, not by preserving
-// per-update trajectory, so they stay flat.
-//
-// Output format (indentation shows nesting; gofmt would flatten a
-// dash-bulleted example so we use plain indented text):
-//
-//	**Activity Session**:
-//	    <session-id> — <HH:mm>, <app1>, <app2>
-//	    <session-id> — <HH:mm>, <app1>
-//
-// Memory entries MUST use writeGroupedActivitySessionBlock instead — every
-// update is preserved under its own `**Update ...**` header so users can trace
-// which group triggered which change.
-func writeActivitySessionsBlock(b *strings.Builder, group sessionGroup) {
-	b.WriteString("- **Activity Session**:\n")
-	writeFlatSessionBullets(b, "  ", group.Sessions)
-}
-
 // writeFlatSessionBullets writes the session rows under an Activity Session
 // block (either flat or under a group header). `indent` controls the leading
 // whitespace so callers can embed the rows at different nesting depths.

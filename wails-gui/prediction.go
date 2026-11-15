@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"log"
 
+	"wails-gui/storage"
+
 	"github.com/google/uuid"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
-	"wails-gui/storage"
 )
 
 // This file contains the sidebar-group helpers shared by transcripts, handoffs,
@@ -111,11 +112,6 @@ func (a *App) ensureAutomationsGroup() {
 	a.ensureSidebarGroupByName(ctx, automationsGroupName)
 }
 
-// addSessionToAutomationsGroup adds a chat session to the Automations group.
-func (a *App) addSessionToAutomationsGroup(ctx context.Context, sessionLocalID string) {
-	a.addSessionToSidebarGroup(ctx, automationsGroupName, sessionLocalID)
-}
-
 // ensureTranscriptsGroup creates the "Transcripts" sidebar group if it does
 // not already exist. Called once during app startup.
 func (a *App) ensureTranscriptsGroup() {
@@ -123,71 +119,6 @@ func (a *App) ensureTranscriptsGroup() {
 		return
 	}
 	a.ensureSidebarGroupByName(context.Background(), transcriptsGroupName)
-}
-
-// addSessionToTranscriptsGroup adds a chat session to the Transcripts group.
-func (a *App) addSessionToTranscriptsGroup(ctx context.Context, sessionLocalID string) {
-	a.addSessionToSidebarGroup(ctx, transcriptsGroupName, sessionLocalID)
-}
-
-// activeProjectAndWorkspace returns the user's currently active project and
-// its default workspace. System-generated sessions (automations,
-// transcripts) are placed here and organized by sidebar groups.
-//
-// Fallback chain: active project -> first available project -> new default project.
-func (a *App) activeProjectAndWorkspace(ctx context.Context) (projectID, workspaceID string, err error) {
-	// 1. Try the persisted active project.
-	activeID, _ := a.LoadActiveProjectID()
-	if activeID != "" {
-		if wss, wErr := a.store.LoadWorkspaces(ctx, activeID); wErr == nil && len(wss) > 0 {
-			return activeID, wss[0].ID, nil
-		}
-	}
-
-	// 2. Fall back to the first available project with workspaces.
-	allProjects, _ := a.store.LoadProjects(ctx)
-	for _, p := range allProjects {
-		if wss, wErr := a.store.LoadWorkspaces(ctx, p.ID); wErr == nil && len(wss) > 0 {
-			return p.ID, wss[0].ID, nil
-		}
-	}
-
-	// 3. Nothing else worked — route through the standalone chat sentinel.
-	// First check whether path="" is already occupied (by the sentinel itself
-	// or by a stray UUID row left over from earlier builds that minted random
-	// ids here). Reusing that row keeps a single owner of the path="" slot
-	// and avoids the projects.path UNIQUE conflict that previously surfaced
-	// as a chat-side error chip.
-	if existing, lpErr := a.store.LoadProjectByPath(ctx, ""); lpErr == nil && existing.ID != "" {
-		projectID = existing.ID
-		if wss, wErr := a.store.LoadWorkspacesByProject(ctx, projectID); wErr == nil && len(wss) > 0 {
-			return projectID, wss[0].ID, nil
-		}
-		// Project row exists but its workspace is missing — add a default one
-		// so downstream session/FK inserts succeed.
-		workspaceID = uuid.New().String()
-		if err := a.store.SaveWorkspace(ctx, storage.WorkspaceRow{
-			ID:        workspaceID,
-			ProjectID: projectID,
-			Label:     "General Chat",
-			IsDefault: true,
-		}); err != nil {
-			return "", "", fmt.Errorf("create default workspace for project %s: %w", projectID, err)
-		}
-		return projectID, workspaceID, nil
-	}
-
-	// No row owns path="" yet — materialize the canonical sentinel.
-	projectID = standaloneChatProjectID
-	workspaceID = standaloneChatWorkspaceID
-	if err := a.store.EnsureProjectStructure(ctx,
-		storage.ProjectRow{ID: projectID, Name: "General Chat", Path: ""},
-		[]storage.WorkspaceRow{{ID: workspaceID, ProjectID: projectID, Label: "General Chat", IsDefault: true}},
-		nil,
-	); err != nil {
-		return "", "", fmt.Errorf("create default project: %w", err)
-	}
-	return projectID, workspaceID, nil
 }
 
 // standaloneChatProjectAndWorkspace always returns the standalone chat

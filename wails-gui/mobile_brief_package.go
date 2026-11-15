@@ -492,14 +492,6 @@ func (s *mobileBriefService) BriefPackageContext(ctx context.Context, briefID st
 	return pkg, true
 }
 
-// writePackage stores a new package for a source brief. Generation and the
-// audio step call it so a push carries the same bytes a read returns.
-func (s *mobileBriefService) writePackage(source MobileBriefV1) (mobileBriefPackage, error) {
-	s.packageMu.Lock()
-	defer s.packageMu.Unlock()
-	return s.writePackageLocked(source)
-}
-
 func (s *mobileBriefService) writePackageLocked(source MobileBriefV1) (mobileBriefPackage, error) {
 	// The gates are read before and after the build: a policy change while
 	// building would otherwise store old bytes under the new gate key, and

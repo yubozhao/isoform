@@ -54,6 +54,7 @@ Also seen with traction, not covered in depth: Perplexity Comet's Background Ass
 
 Two routes, chosen per agent, always started by the person's tap:
 
+- **Task link (first, Bo 2026-11-14: "make the task link that way. i think that's a good way to do things"):** for agents that browse (Claude, ChatGPT, Grok, Muse, Instinct), Isoform makes a one-time `/t/<token>` link to the prepared task and sends one line naming it, by the agent's best carrier (deep link, message, or open with the line on the clipboard). The agent reads the task there and posts its result back, which counts as taken and done. It is offered only while `task_links_enabled` is on and a public https origin reaches the computer (the dogfood bridge, then the front). Design: `docs/design/task-link-handoff.md`.
 - **Pull (preferred):** Isoform publishes the task as an MCP resource. The person's agent, connected once to Isoform's remote MCP endpoint, reads the task and its context through Isoform's own filters, and writes the result back with a tool. Isoform sees "taken" and "done" without asking.
 - **Push a prepared prompt (fallback):** Isoform writes a self-contained prompt from what it may share, shows it, and opens the agent with it (deep link, share sheet, message or email). Nothing comes back automatically; the person can mark it done, or the agent can write back if it is also connected over MCP.
 

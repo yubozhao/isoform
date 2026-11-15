@@ -56,14 +56,6 @@ type FeishuIncrementalScanner struct {
 	bg sync.WaitGroup
 }
 
-// NewFeishuIncrementalScanner creates a scanner bound to the given App.
-func NewFeishuIncrementalScanner(app *App) *FeishuIncrementalScanner {
-	return &FeishuIncrementalScanner{
-		app:       app,
-		triggerCh: make(chan struct{}, 1),
-	}
-}
-
 // Trigger requests an immediate poll cycle. Non-blocking; coalesces multiple triggers.
 func (s *FeishuIncrementalScanner) Trigger() {
 	if !furnaceScanEnabled {
@@ -945,35 +937,6 @@ func generateFeishuScanSummary(convCount, newMemoryCount int, automationNames []
 		msg += fmt.Sprintf("- %d automations discovered: %s", len(automationNames), strings.Join(automationNames, ", "))
 	}
 	return strings.TrimRight(msg, "\n")
-}
-
-// findFeishuLatestTS reads a JSONL file and returns the max create_time in Unix seconds.
-func findFeishuLatestTS(rawPath string) int64 {
-	data, err := os.ReadFile(rawPath)
-	if err != nil {
-		return 0
-	}
-
-	var maxTS int64
-	// Scan line by line.
-	start := 0
-	for i := 0; i <= len(data); i++ {
-		if i == len(data) || data[i] == '\n' {
-			line := data[start:i]
-			start = i + 1
-			if len(line) == 0 {
-				continue
-			}
-			var msg FeishuIMMessageRaw
-			if err := json.Unmarshal(line, &msg); err == nil {
-				ts := parseCreateTimeMs(msg.CreateTime)
-				if ts > maxTS {
-					maxTS = ts
-				}
-			}
-		}
-	}
-	return maxTS
 }
 
 // GetFeishuDynamicScanHistory returns the persisted dynamic scan history for the UI.

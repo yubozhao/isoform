@@ -43,7 +43,7 @@ This link works for one result and expires in 24 hours.
 - **Result:** stored on the task record and shown on the item's card ("Claude: done. <summary>").
 - **Measures:** counted as **done** (or blocked, or declined), feeding the sent, taken and done counts already in `GetWorkOnItCounts`.
 - **The text is data.** The summary is shown and stored, and it is never run as an instruction or fed into a model prompt without the same quoting every other outside text gets.
-- **Answers:** `204` on success, then the link is spent. A second POST answers `410`.
+- **Answers:** `200` with "Result received. This link is now closed." on success, then the link is spent. A second POST answers `410`. (It was `204`; an empty answer left a real agent unsure: `docs/design/task-link-dogfood.md`.)
 
 ## Prompt the agent receives
 

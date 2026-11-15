@@ -322,13 +322,6 @@ func deriveLocalAPIBaseURLFromWeb(webBaseURL string) string {
 	return normalizeBaseURL(alt.String())
 }
 
-func defaultAPIBaseURLForWeb(webBaseURL string) string {
-	if local := deriveLocalAPIBaseURLFromWeb(webBaseURL); local != "" {
-		return local
-	}
-	return webBaseURL
-}
-
 const defaultStagingWebBaseURL = "https://staging-dashboard.example.com"
 const defaultProductionWebBaseURL = "https://dashboard.yansu.ai"
 
@@ -371,37 +364,6 @@ func resolveAPIBaseURL(cfg yansuConfig) string {
 		return local
 	}
 	return webBaseURL
-}
-
-// saveBaseURLToConfig writes web/api base URLs into config.json, preserving other fields.
-func saveBaseURLToConfig(webBaseURL string) error {
-	normalized := normalizeBaseURL(webBaseURL)
-	apiBase := defaultAPIBaseURLForWeb(normalized)
-
-	configMu.Lock()
-	defer configMu.Unlock()
-
-	cfg := loadConfig()
-	cfg.WebBaseURL = normalized
-	cfg.APIBaseURL = apiBase
-	cfg.BaseURL = apiBase // keep legacy field aligned for older clients
-	cfg.BuildWebBaseURL = DefaultWebBaseURL
-	if cfg.SyncInterval == 0 {
-		cfg.SyncInterval = 5
-	}
-
-	dir, err := flavorDataDir()
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		return err
-	}
-	data, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(filepath.Join(dir, configFileName), data, 0600)
 }
 
 // saveConfig writes the full config back to config.json.
@@ -452,11 +414,6 @@ func (a *App) GetWebBaseURL() string {
 // loadAPIBaseURL returns the API URL used for HTTP calls and daemon WS.
 func loadAPIBaseURL() string {
 	return resolveAPIBaseURL(loadConfig())
-}
-
-// loadBaseURL is kept for backward compatibility and maps to API base URL.
-func loadBaseURL() string {
-	return loadAPIBaseURL()
 }
 
 // ── Identity methods (exposed to frontend via Wails) ──

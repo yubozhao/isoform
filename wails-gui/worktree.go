@@ -145,21 +145,12 @@ func sanitizeBranchName(label string) string {
 	return worktreecore.SanitizeBranchName(label)
 }
 
-// runGit executes a git command in the given directory and returns stdout.
-func runGit(dir string, args ...string) (string, error) {
-	return worktreecore.RunGit(dir, args...)
-}
-
 func gitCommandTimeout(args []string) time.Duration {
 	return worktreecore.GitCommandTimeout(args)
 }
 
 func gitCommandTimeoutFromEnv(fallback time.Duration) time.Duration {
 	return worktreecore.GitCommandTimeoutFromEnv(fallback)
-}
-
-func isPathWithinRoot(pathValue, root string) bool {
-	return worktreecore.IsPathWithinRoot(pathValue, root)
 }
 
 func managedWorktreeRoots() []string {

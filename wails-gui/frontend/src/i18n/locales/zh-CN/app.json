@@ -1215,7 +1215,11 @@
         "result": {
             "deep_link": "已在 {{agent}} 中打开。请在那里检查后发送。",
             "open_copy": "已复制。请粘贴到 {{agent}} 并发送。",
-            "message": "已发送给 {{agent}}。"
+            "message": "已发送给 {{agent}}。",
+            "paste": "Isoform 正在把它粘贴到 {{agent}}。请在那里检查后发送。你可以在任务中查看进度。",
+            "task_link_deep_link": "已在 {{agent}} 中打开这个任务的一次性链接。请在那里发送，结果会回到这里。",
+            "task_link_message": "已把这个任务的一次性链接发给 {{agent}}。结果会回到这里。",
+            "task_link_open_copy": "已复制这个任务的一次性链接。请粘贴到 {{agent}} 并发送，结果会回到这里。"
         },
         "handleLabel": "{{agent}} 的手机号或 Apple ID",
         "handleSave": "保存号码",

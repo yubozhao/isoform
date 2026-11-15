@@ -177,13 +177,6 @@ func (s *ActivityStore) cachedActivitySessionProvenanceContext(ctx context.Conte
 	return source, found, ctx.Err()
 }
 
-// Schema validation is reused until SQLite's schema version changes. A dropped
-// source table or revision trigger must invalidate a warm cache, not silently
-// keep authorizing a source whose provenance can no longer be checked.
-func (s *ActivityStore) validateActivityPrivacySourceSchema(q activityPrivacyQueryer, state activityPrivacySourceState) error {
-	return s.validateActivityPrivacySourceSchemaContext(context.Background(), q, state)
-}
-
 func (s *ActivityStore) validateActivityPrivacySourceSchemaContext(ctx context.Context, q activityPrivacyQueryer, state activityPrivacySourceState) error {
 	cache := &s.readPrivacySources
 	cache.mu.Lock()
@@ -213,18 +206,6 @@ func (s *ActivityStore) validateActivityPrivacySourceSchemaContext(ctx context.C
 	cache.schemaDB, cache.schema = s.db, state.schema
 	cache.mu.Unlock()
 	return nil
-}
-
-func (s *ActivityStore) validateActivityPrivacySourceSchemaVersionContext(ctx context.Context) error {
-	var schema int64
-	if err := s.reader().QueryRowContext(ctx, `SELECT schema_version FROM pragma_schema_version`).Scan(&schema); err != nil {
-		return err
-	}
-	return s.validateActivityPrivacySourceSchemaContext(ctx, s.reader(), activityPrivacySourceState{db: s.db, schema: schema})
-}
-
-func (s *ActivityStore) batchActivityPrivacyProvenanceInputs(ctx context.Context, ids []string) (map[string]activityPrivacyProvenanceInputs, error) {
-	return s.batchActivityPrivacyProvenanceInputsWithQueryer(ctx, s.reader(), ids)
 }
 
 func (s *ActivityStore) batchActivityPrivacyProvenanceInputsWithQueryer(ctx context.Context, q activityPrivacyQueryer, ids []string) (map[string]activityPrivacyProvenanceInputs, error) {

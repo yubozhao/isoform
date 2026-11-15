@@ -836,17 +836,6 @@ func (a *App) computeAppBreakdown(store *ActivityStore, startMs, endMs, totalAct
 // OCR keyword extraction
 // ──────────────────────────────────────────────
 
-// loadMoments returns only the cached agent-produced Moments payload. A
-// mechanical grouping is intentionally not shown in the daily digest UI
-// because it reads like an AI summary while being only app/session based.
-func (a *App) loadMoments(store *ActivityStore, dateStr string) []MomentData {
-	snapshot, found := store.cachedActivitySummarySnapshot(dateStr, "daily", a.currentUILanguage())
-	if !found || !a.activitySummarySnapshotAllowsRead(dateStr, "daily", snapshot) {
-		return nil
-	}
-	return decodeCachedActivityMoments(snapshot.Moments)
-}
-
 func decodeCachedActivityMoments(raw string) []MomentData {
 	var moments []MomentData
 	if raw != "" && json.Unmarshal([]byte(raw), &moments) == nil && len(moments) > 0 {
@@ -910,88 +899,6 @@ func (a *App) normalizeActivityMarkdownToCurrentUILanguage(kind, markdown string
 		return markdown
 	}
 	return translated
-}
-
-func (a *App) normalizeMomentRangesToCurrentUILanguage(ranges []momentRange) []momentRange {
-	if a == nil || len(ranges) == 0 {
-		return ranges
-	}
-	translated, err := a.translateMomentRangesToLanguage(ranges, a.currentUILanguageName())
-	if err != nil {
-		log.Printf("[activity-summary] failed to normalize moments to current UI language: %v", err)
-		return ranges
-	}
-	return translated
-}
-
-func (a *App) translateMomentRangesToLanguage(ranges []momentRange, languageName string) ([]momentRange, error) {
-	languageName = strings.TrimSpace(languageName)
-	if languageName == "" {
-		languageName = "English"
-	}
-	type momentText struct {
-		Index       int    `json:"index"`
-		Title       string `json:"title"`
-		Subtitle    string `json:"subtitle"`
-		Description string `json:"description"`
-	}
-	input := make([]momentText, 0, len(ranges))
-	for i, r := range ranges {
-		input = append(input, momentText{
-			Index:       i,
-			Title:       r.Title,
-			Subtitle:    r.Subtitle,
-			Description: r.Description,
-		})
-	}
-	inputJSON, err := json.Marshal(input)
-	if err != nil {
-		return nil, fmt.Errorf("marshal moment text fields: %w", err)
-	}
-	prompt := fmt.Sprintf(`Translate these activity Moment text fields into %s.
-
-Rules:
-- Return ONLY strict JSON: {"moments":[{"index":0,"title":"...","subtitle":"...","description":"..."}]}
-- Preserve every index exactly.
-- Translate only title, subtitle, and description.
-- Preserve app names, file paths, commands, channel names, URLs, code identifiers, and inline code exactly when translating them would change their meaning.
-- Preserve Markdown emphasis and inline code in description.
-- Do not add, remove, reorder, or merge moments.
-
-Moment text fields:
-%s`, languageName, string(inputJSON))
-
-	raw, err := a.runEphemeralClaudeModel(prompt, a.lightTaskModel(), 2*time.Minute)
-	if err != nil {
-		return nil, fmt.Errorf("translate moments to %s: %w", languageName, err)
-	}
-	raw = strings.TrimSpace(stripCodeFences(raw))
-	start := strings.Index(raw, "{")
-	end := strings.LastIndex(raw, "}")
-	if start < 0 || end <= start {
-		return nil, fmt.Errorf("translation returned no JSON object")
-	}
-	var envelope struct {
-		Moments []momentText `json:"moments"`
-	}
-	if err := json.Unmarshal([]byte(raw[start:end+1]), &envelope); err != nil {
-		return nil, fmt.Errorf("unmarshal translated moments: %w", err)
-	}
-	translated := append([]momentRange(nil), ranges...)
-	seen := make(map[int]bool, len(envelope.Moments))
-	for _, item := range envelope.Moments {
-		if item.Index < 0 || item.Index >= len(translated) || seen[item.Index] {
-			continue
-		}
-		seen[item.Index] = true
-		translated[item.Index].Title = strings.TrimSpace(item.Title)
-		translated[item.Index].Subtitle = strings.TrimSpace(item.Subtitle)
-		translated[item.Index].Description = strings.TrimSpace(item.Description)
-	}
-	if len(seen) != len(ranges) {
-		return nil, fmt.Errorf("translation returned %d/%d moments", len(seen), len(ranges))
-	}
-	return translated, nil
 }
 
 // momentRange is the agent's output per moment before we derive apps.

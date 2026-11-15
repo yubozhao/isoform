@@ -488,53 +488,6 @@ func selectSnapshotsForOCR(snapshots []ActivitySnapshotRow) []ActivitySnapshotRo
 	return append(selected, last)
 }
 
-// jaccardSimilarity computes the Jaccard similarity between two strings
-// by treating them as sets of words.
-func jaccardSimilarity(a, b string) float64 {
-	wordsA := wordSet(a)
-	wordsB := wordSet(b)
-
-	if len(wordsA) == 0 && len(wordsB) == 0 {
-		return 1.0
-	}
-
-	intersection := 0
-	for w := range wordsA {
-		if wordsB[w] {
-			intersection++
-		}
-	}
-
-	union := len(wordsA) + len(wordsB) - intersection
-	if union == 0 {
-		return 1.0
-	}
-
-	return float64(intersection) / float64(union)
-}
-
-// wordSet splits text into a set of lowercase words.
-func wordSet(s string) map[string]bool {
-	set := make(map[string]bool)
-	start := -1
-	for i, c := range s {
-		isLetter := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-			(c >= '0' && c <= '9') || c > 127
-		switch {
-		case isLetter && start == -1:
-			start = i
-		case !isLetter && start != -1:
-			word := s[start:i]
-			set[toLowerASCII(word)] = true
-			start = -1
-		}
-	}
-	if start != -1 {
-		set[toLowerASCII(s[start:])] = true
-	}
-	return set
-}
-
 // removeCJKSpaces removes spaces between consecutive CJK characters.
 // Windows.Media.Ocr treats each CJK character as a separate "word" and joins
 // them with spaces, producing "广 告 互 动" instead of "广告互动".
@@ -553,16 +506,6 @@ func removeCJKSpaces(s string) string {
 		out = append(out, runes[i])
 	}
 	return string(out)
-}
-
-func toLowerASCII(s string) string {
-	b := []byte(s)
-	for i, c := range b {
-		if c >= 'A' && c <= 'Z' {
-			b[i] = c + 32
-		}
-	}
-	return string(b)
 }
 
 // Bump the marker whenever the OCR pipeline behavior changes meaningfully

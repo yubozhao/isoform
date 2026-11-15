@@ -3973,10 +3973,6 @@ func timelineEventAppKey(evt activitymon.ActivityEvent) string {
 	return timelineAppKey(evt.AppBundleID, evt.AppName)
 }
 
-func timelineEventAppName(evt activitymon.ActivityEvent) string {
-	return timelineAppName(evt.AppBundleID, evt.AppName)
-}
-
 func appendUniqueString(values []string, value string) []string {
 	if value == "" {
 		return values
@@ -5404,18 +5400,4 @@ func pidForMeetingBundle(bundleID string) int {
 		}
 	}
 	return 0
-}
-
-// currentMeetingID returns the UUID of the in-progress meeting, or "" when
-// no meeting is active. Callers that create chat sessions for transcripts /
-// handoffs stamp this onto the session row so the sidebar Recent section
-// can group every session a single meeting produced under one parent.
-// Safe to call from any goroutine; takes the monitor mutex.
-func (a *App) currentMeetingID() string {
-	if a == nil || a.activity == nil {
-		return ""
-	}
-	a.activity.mu.Lock()
-	defer a.activity.mu.Unlock()
-	return a.activity.meetingID
 }

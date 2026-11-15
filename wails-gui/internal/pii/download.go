@@ -156,22 +156,6 @@ func sha256OrEmpty(hashHex string, isOverride bool) string {
 	return hashHex
 }
 
-func downloadFileFromAny(urls []string, dest, displayName, expectedSHA256 string, onProgress ProgressFn) error {
-	var lastErr error
-	for _, url := range urls {
-		if err := downloadFile(url, dest, displayName, expectedSHA256, onProgress); err != nil {
-			lastErr = fmt.Errorf("%s: %w", url, err)
-			log.Printf("[pii] download from %s failed: %v", url, err)
-			continue
-		}
-		return nil
-	}
-	if lastErr == nil {
-		return fmt.Errorf("no download URLs for %s", displayName)
-	}
-	return lastErr
-}
-
 func verifyExistingFile(path, displayName, expectedSHA256 string) error {
 	if expectedSHA256 == "" || !fileExists(path) {
 		return nil
@@ -314,79 +298,6 @@ func (pr *progressReader) Read(p []byte) (int, error) {
 
 func fileExists(path string) bool {
 	return onnxdl.FileExists(path)
-}
-
-// removeStaleTempFiles deletes leftover partial downloads (`.tmp` from the
-// pre-unique-name era, `.tmp.*` from CreateTemp losers / killed processes).
-// Each one is ~665 MB on Windows; skipping cleanup would leak that much per
-// crash. Best-effort.
-func removeStaleTempFiles(modelDir, modelFile string) {
-	matches, _ := filepath.Glob(filepath.Join(modelDir, modelFile+".tmp*"))
-	for _, p := range matches {
-		if err := os.Remove(p); err == nil {
-			log.Printf("[pii] removed stale temp %s", p)
-		}
-	}
-}
-
-// removeStaleModels deletes earlier model exports left over from previous
-// versions of the app. Best-effort: errors are logged but not fatal.
-func removeStaleModels(modelDir string) {
-	for _, name := range staleModelFiles() {
-		p := filepath.Join(modelDir, name)
-		if !fileExists(p) {
-			continue
-		}
-		if err := os.Remove(p); err != nil {
-			log.Printf("[pii] failed to remove stale model %s: %v", p, err)
-			continue
-		}
-		log.Printf("[pii] removed stale model %s", p)
-	}
-}
-
-// downloadONNXRuntime downloads and extracts the ONNX Runtime shared library.
-func downloadONNXRuntime(runtimeDir, destLib string, onProgress ProgressFn) error {
-	archiveURL, err := onnxdl.ArchiveURL()
-	if err != nil {
-		return err
-	}
-
-	log.Printf("[pii] downloading ONNX Runtime v%s ...", onnxdl.Version)
-
-	client := &http.Client{Timeout: downloadTimeout}
-	resp, err := client.Get(archiveURL)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, archiveURL)
-	}
-
-	displayName := fmt.Sprintf("ONNX Runtime v%s", onnxdl.Version)
-	reader := io.Reader(resp.Body)
-	if onProgress != nil {
-		reader = &progressReader{
-			reader:      resp.Body,
-			fileName:    displayName,
-			total:       resp.ContentLength,
-			startTime:   time.Now(),
-			onProgress:  onProgress,
-			reportIntvl: 200 * time.Millisecond,
-		}
-	}
-
-	if err := onnxdl.ExtractLib(reader, runtimeDir, destLib, "pii"); err != nil {
-		return err
-	}
-
-	if onProgress != nil && resp.ContentLength > 0 {
-		onProgress(displayName, resp.ContentLength, resp.ContentLength, 0)
-	}
-
-	return nil
 }
 
 func requireBundledRuntime(path string) error {

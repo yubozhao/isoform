@@ -138,7 +138,7 @@ function WorkOnItDialog({ input, onClose }: { input: WorkOnItInput; onClose: () 
                             )}
                         </>
                     )}
-                    {sent && agent && <p role="status" className="text-[13px] text-ink">{t(`workOnIt.result.${sent.method}` as never, { agent: agent.name })}</p>}
+                    {sent && agent && <p role="status" className="text-[13px] text-ink">{t(`workOnIt.result.${sent.method === 'task_link' ? `task_link_${sent.via ?? 'open_copy'}` : sent.method}` as never, { agent: agent.name })}</p>}
                     {error && <p role="alert" className="text-[13px] text-copper">{error}</p>}
                 </div>
                 {prepared && agent && !sent && (

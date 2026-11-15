@@ -72,6 +72,7 @@ wails-gui/frontend/package.json.md5
 # ---- Downloaded / built runtime bundles ----
 # Remote-access binaries are downloaded or cross-built locally, never committed.
 wails-gui/dumbpipe-bundle/
+wails-gui/front-link-bundle/
 wails-gui/relay-bundle/
 wails-gui/*-bundle/
 

@@ -56,6 +56,20 @@ describe('Work on it', () => {
         expect(await screen.findByText('Opened in Claude. Review it there and send.')).toBeInTheDocument();
     });
 
+    it('sends a task link first when the agent can take one, and says the result comes back', async () => {
+        mocks.enabled.mockResolvedValue(true);
+        mocks.prepare.mockResolvedValue({
+            taskId: 't1', text,
+            agents: [{ id: 'chatgpt', name: 'ChatGPT', methods: ['task_link', 'open_copy'], default: true }],
+        });
+        mocks.send.mockResolvedValue({ recordId: 'r1', method: 'task_link', copied: true, via: 'open_copy' });
+        render(<WorkOnItButton input={input} />);
+        fireEvent.click(await screen.findByRole('button', { name: 'Work on it' }));
+        fireEvent.click(await screen.findByRole('button', { name: 'Send to ChatGPT' }));
+        await waitFor(() => expect(mocks.send).toHaveBeenCalledWith('t1', 'chatgpt', 'task_link'));
+        expect(await screen.findByText('Copied a one-time link to this task. Paste it in ChatGPT and send, and its result comes back here.')).toBeInTheDocument();
+    });
+
     it('shows the terms note and asks for the number before a text agent can be used', async () => {
         mocks.enabled.mockResolvedValue(true);
         mocks.prepare.mockResolvedValue({

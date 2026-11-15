@@ -213,14 +213,6 @@ func (a *App) GetRecommendedQuestions(forceRefresh bool, lang string) ([]Recomme
 	return questions, nil
 }
 
-// generateRecommendedQuestions calls Haiku with a compact summary of the
-// user's recent activity and returns structured suggestions. Any error
-// falls back to the generic prompt set; we never surface errors to the UI.
-func (a *App) generateRecommendedQuestions(lang string) []RecommendedQuestion {
-	context := a.quickChatGeneralContext()
-	return a.generateRecommendedQuestionsFromContext(lang, context)
-}
-
 func (a *App) generateRecommendedQuestionsFromContext(lang, context string) []RecommendedQuestion {
 	if strings.TrimSpace(context) == "" {
 		return nil

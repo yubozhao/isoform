@@ -41,10 +41,10 @@ func TestDeepLinkEncodesTheTask(t *testing.T) {
 
 func TestMethodsBestFirst(t *testing.T) {
 	claude, _ := AgentByID("claude")
-	if got := strings.Join(claude.Methods(true, ""), ","); got != "deep_link,open_copy" {
+	if got := strings.Join(claude.Methods(true, ""), ","); got != "deep_link,paste,open_copy" {
 		t.Fatalf("claude installed = %s", got)
 	}
-	if got := strings.Join(claude.Methods(false, ""), ","); got != "open_copy" {
+	if got := strings.Join(claude.Methods(false, ""), ","); got != "paste,open_copy" {
 		t.Fatalf("claude on the web = %s", got)
 	}
 	codex, _ := AgentByID("codex")

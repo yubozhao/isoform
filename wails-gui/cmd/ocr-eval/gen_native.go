@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 
 	"wails-gui/internal/ocr/eval"
 )
@@ -249,31 +248,4 @@ func wrapHTML(body string, width, height int) string {
 body { width: %dpx; height: %dpx; overflow: hidden; -webkit-font-smoothing: antialiased; }
 </style>
 </head><body>%s</body></html>`, width, height, body)
-}
-
-func generateNativeDatasetFromFlag(outDir string) (*eval.Dataset, error) {
-	ds, err := generateNativeDataset(outDir)
-	if err != nil {
-		return nil, err
-	}
-
-	// Verify all images exist
-	for _, s := range ds.Samples {
-		if _, err := os.Stat(s.ImagePath); err != nil {
-			return nil, fmt.Errorf("image not found for %s: %s", s.ID, s.ImagePath)
-		}
-	}
-
-	return ds, nil
-}
-
-// cleanupHTMLArtifacts removes leftover .html and .swift files from the image dir.
-func cleanupHTMLArtifacts(dir string) {
-	entries, _ := os.ReadDir(dir)
-	for _, e := range entries {
-		name := e.Name()
-		if strings.HasSuffix(name, ".html") || strings.HasSuffix(name, ".swift") {
-			os.Remove(filepath.Join(dir, name))
-		}
-	}
 }

@@ -55,10 +55,3 @@ func ensureOPFModel(configDir string, onProgress ProgressFn) (*opfModelPaths, er
 
 	return paths, nil
 }
-
-func opfAssetURLs(file string) []string {
-	return []string{
-		fmt.Sprintf("%s/%s", opfMirrorBase, file),
-		hfRawURL(opfModelHFRepo, file),
-	}
-}

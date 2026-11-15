@@ -620,15 +620,6 @@ func (c *SuggestionGenerator) collectDailySummaryInputs(inputs *suggestionPrompt
 	}
 }
 
-// Cached day summaries do not retain per-sentence provenance. If any original
-// session is now protected, none of that day's derived text may enter a prompt.
-func (c *SuggestionGenerator) dayAllowsSuggestionContext(date string) bool {
-	if c.app == nil {
-		return false
-	}
-	return c.app.activityDayAllowsModelRead(date)
-}
-
 // collectRecentSessionsFallback hydrates RecentActivity + RecentAppNames from
 // the most recent N activity_sessions rows, ignoring date bounds. Activated
 // only when layers 1 and 3 produce nothing — typically first-run, a freshly

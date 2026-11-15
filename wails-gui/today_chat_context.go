@@ -722,10 +722,6 @@ func todayChatPurposeFieldEvents(purpose PurposeOpenLoopDetail, index int) ([]st
 	return ids, true
 }
 
-func (a *App) todayChatDerivedAllowed(apps, sessions []string, source string) bool {
-	return a.todayChatDerivedAllowedContext(context.Background(), apps, sessions, source)
-}
-
 func (a *App) todayChatDerivedAllowedContext(ctx context.Context, apps, sessions []string, source string) bool {
 	return a.todayChatDerivedAllowedWithGate(ctx, nil, apps, sessions, source)
 }
@@ -844,10 +840,6 @@ func todayChatMailOrTranscript(source string) bool {
 		}
 	}
 	return false
-}
-
-func (a *App) todayChatActivityAllowed(row ActivityRow, pauses []observationPause) bool {
-	return a.todayChatActivityAllowedContext(context.Background(), row, pauses)
 }
 
 func (a *App) todayChatActivityAllowedContext(ctx context.Context, row ActivityRow, pauses []observationPause) bool {

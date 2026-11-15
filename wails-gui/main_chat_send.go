@@ -17,10 +17,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/slack-go/slack"
 	"wails-gui/internal/engagement"
 	"wails-gui/storage"
+
+	"github.com/google/uuid"
+	"github.com/slack-go/slack"
 )
 
 const (
@@ -198,10 +199,6 @@ func (a *App) transportForMainChatSend() proactiveSendTransport {
 		return a.proactiveSendTransport
 	}
 	return systemProactiveSendTransport{app: a}
-}
-
-func (a *App) resolveMainChatSend(ctx context.Context, row *storage.StreamItemRow, root *mainChatProactive, card *mainChatProactive) (string, error) {
-	return a.resolveMainChatSendText(ctx, row, root, card, "")
 }
 
 // mainChatEditedDraftMax bounds the words a person may send in place of a draft.

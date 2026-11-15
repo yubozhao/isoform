@@ -77,18 +77,6 @@ func ensureSherpaAssets(ctx context.Context, paths sherpaPaths, progress sherpaD
 	return models.Require(configDirOrFallback(), "sensevoice", "speaker-pack")
 }
 
-// urlsForAsset returns the download URL list for a given asset and a flag
-// indicating whether the user provided an env override. If the env override
-// is set, it takes precedence (single URL, no mirror fallback so the user's
-// choice isn't silently bypassed). Otherwise the mirror list (R2 first,
-// upstream second) is returned in order.
-func urlsForAsset(envKey string, mirrors []string) ([]string, bool) {
-	if v := os.Getenv(envKey); v != "" {
-		return []string{v}, true
-	}
-	return mirrors, false
-}
-
 // sha256OrEmpty returns the canonical SHA-256 unless the user has overridden
 // the URL via env, in which case verification is skipped (the override is
 // presumed to point at intentionally different bytes — e.g., a private

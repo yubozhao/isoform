@@ -587,15 +587,6 @@ func topicAppMatcherMayMatch(m *topicAppMatcher, value string) bool {
 	return false
 }
 
-func isTopicASCIIWhitespace(value byte) bool {
-	switch value {
-	case ' ', '\t', '\n', '\r', '\v', '\f':
-		return true
-	default:
-		return false
-	}
-}
-
 func topicAppReferenceCount(snap *topicSnapshot) int {
 	count := 0
 	for _, entry := range snap.Topics {
@@ -674,14 +665,6 @@ func topicStringSet(values []string) map[string]bool {
 		out[value] = true
 	}
 	return out
-}
-
-func topicRefsExcluded(refs []topicSourceReference, apps, windows, sessions, accounts map[string]bool, ranges []topicTimeRange, voiceApps map[string]string) bool {
-	policyApps := make([]string, 0, len(apps))
-	for app := range apps {
-		policyApps = append(policyApps, app)
-	}
-	return topicRefsExcludedWithMatcher(refs, newTopicAppMatcher(policyApps, voiceApps, len(refs)), windows, sessions, accounts, ranges)
 }
 
 func topicRefsExcludedWithMatcher(refs []topicSourceReference, appMatcher *topicAppMatcher, windows, sessions, accounts map[string]bool, ranges []topicTimeRange) bool {
@@ -1087,29 +1070,4 @@ func abs(value int) int {
 		return -value
 	}
 	return value
-}
-
-// saveBuiltSnapshot stores a successful build into the snapshot store. It is
-// best-effort: the verified view is already published to topics.json, so a
-// snapshot write failure only costs the cold-start cache, never availability.
-func (s *topicsService) saveBuiltSnapshot(ctx context.Context, result topicRegistryResult, in topicRegistryData, revision topicRegistryRevision, refsByActivity map[string][]topicSourceReference) {
-	if s.snapshots == nil {
-		return
-	}
-	if len(result.views) == 0 {
-		candidate := buildTopicSnapshot(result, in.now, revision.policy, nil, nil)
-		if err := s.snapshots.Replace(candidate); err != nil {
-			log.Printf("[topics] snapshot clear failed: %v", err)
-		}
-		return
-	}
-	if refsByActivity == nil {
-		log.Printf("[topics] snapshot references unavailable; keeping the previous snapshot")
-		return
-	}
-	storedInterests := s.app.interestsSvc().store.load().Interests
-	candidate := buildTopicSnapshot(result, in.now, revision.policy, refsByActivity, storedInterests)
-	if err := s.snapshots.Replace(candidate); err != nil {
-		log.Printf("[topics] snapshot store write failed: %v", err)
-	}
 }

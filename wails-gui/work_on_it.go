@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"wails-gui/internal/pii"
+	"wails-gui/internal/tasklink"
 	"wails-gui/internal/workonit"
 
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -68,11 +69,42 @@ type workOnItState struct {
 	send    func(ctx context.Context, to, body string) error
 	present func(agent workonit.Agent) bool
 	now     func() time.Time
+	paste   *pasteDeps
+	// pasteDone is told when a paste run ends (tests wait on it).
+	pasteDone func(err error)
+	// taskLinkReady says whether a task link can reach an outside agent.
+	taskLinkReady func() bool
+}
+
+func (s *workOnItState) pasteDeps() pasteDeps {
+	if s.paste != nil {
+		return *s.paste
+	}
+	return defaultPasteDeps()
+}
+
+// agentMethods are the agent's handoffs on this computer: paste is offered
+// only when a computer-use agent for it is installed.
+func (s *workOnItState) agentMethods(agent workonit.Agent, handle string) []string {
+	installed := s.agentPresent(agent)
+	var out []string
+	if s.taskLinkReady != nil && s.taskLinkReady() && agent.TaskLinkCarrier(installed, handle) != "" {
+		out = append(out, workonit.MethodTaskLink)
+	}
+	for _, m := range agent.Methods(installed, handle) {
+		if m == workonit.MethodPaste {
+			if _, ok := planPasteIntoAgent(agent, installed, s.pasteDeps().lookPath, os.TempDir()); !ok {
+				continue
+			}
+		}
+		out = append(out, m)
+	}
+	return out
 }
 
 func (a *App) workOnIt() *workOnItState {
 	a.workOnItOnce.Do(func() {
-		a.workOnItS = &workOnItState{prepared: map[string]workonit.Task{}}
+		a.workOnItS = &workOnItState{prepared: map[string]workonit.Task{}, taskLinkReady: a.taskLinkHandoffReady}
 	})
 	return a.workOnItS
 }
@@ -116,6 +148,9 @@ type WorkOnItSent struct {
 	Method   string `json:"method"`
 	// Copied is true when the person still has to paste the task.
 	Copied bool `json:"copied"`
+	// Via is how a task link's one line went: deep_link, message or
+	// open_copy. Empty for other methods.
+	Via string `json:"via,omitempty"`
 }
 
 // WorkOnItCounts are the measures, for the morning report.
@@ -185,8 +220,12 @@ func (a *App) workOnItAgents() ([]WorkOnItAgentView, error) {
 	}
 	ranked := workonit.Rank(usage, installed, handles)
 	out := make([]WorkOnItAgentView, 0, len(ranked)+1)
-	for i, r := range ranked {
-		out = append(out, WorkOnItAgentView{ID: r.Agent.ID, Name: r.Agent.Name, Methods: r.Methods, Default: i == 0, TermsNote: r.Agent.TermsNote})
+	for _, r := range ranked {
+		methods := s.agentMethods(r.Agent, handles[r.Agent.ID])
+		if len(methods) == 0 {
+			continue
+		}
+		out = append(out, WorkOnItAgentView{ID: r.Agent.ID, Name: r.Agent.Name, Methods: methods, Default: len(out) == 0, TermsNote: r.Agent.TermsNote})
 	}
 	// A text agent with no number is still offered, to set one.
 	for _, agent := range workonit.Catalog() {
@@ -221,7 +260,7 @@ func (a *App) SendWorkOnIt(taskID, agentID, method string) (WorkOnItSent, error)
 	}
 	handle := a.workOnItHandle(agent.ID)
 	allowed := false
-	for _, m := range agent.Methods(s.agentPresent(agent), handle) {
+	for _, m := range s.agentMethods(agent, handle) {
 		if m == method {
 			allowed = true
 		}
@@ -230,7 +269,14 @@ func (a *App) SendWorkOnIt(taskID, agentID, method string) (WorkOnItSent, error)
 		return WorkOnItSent{}, errWorkOnItNoMethod
 	}
 	out := WorkOnItSent{Method: method}
+	recordID := workOnItID()
 	switch method {
+	case workonit.MethodTaskLink:
+		via, err := a.sendWorkOnItTaskLink(s, task, agent, handle, recordID)
+		if err != nil {
+			return WorkOnItSent{}, err
+		}
+		out.Via, out.Copied = via, via == workonit.MethodOpenCopy
 	case workonit.MethodDeepLink:
 		link, err := agent.DeepLinkURL(task.Text)
 		if err != nil {
@@ -239,6 +285,13 @@ func (a *App) SendWorkOnIt(taskID, agentID, method string) (WorkOnItSent, error)
 		if err := s.openTarget(a, link); err != nil {
 			return WorkOnItSent{}, err
 		}
+	case workonit.MethodPaste:
+		// The text goes on the clipboard; the agent only presses Command+V.
+		if err := s.copyText(a, task.Text); err != nil {
+			return WorkOnItSent{}, err
+		}
+		a.startPasteIntoAgent(agent)
+		out.Copied = true
 	case workonit.MethodOpenCopy:
 		if err := s.copyText(a, task.Text); err != nil {
 			return WorkOnItSent{}, err
@@ -258,7 +311,7 @@ func (a *App) SendWorkOnIt(taskID, agentID, method string) (WorkOnItSent, error)
 	default:
 		return WorkOnItSent{}, errWorkOnItNoMethod
 	}
-	record := workonit.Record{ID: workOnItID(), SourceKind: task.SourceKind, AgentID: agent.ID, Method: method, SentAt: s.clock().UnixMilli(), Status: workonit.StatusSent}
+	record := workonit.Record{ID: recordID, SourceKind: task.SourceKind, AgentID: agent.ID, Method: method, SentAt: s.clock().UnixMilli(), Status: workonit.StatusSent}
 	if err := a.workOnItAppend(record); err != nil {
 		log.Printf("[work-on-it] record not saved: %v", err)
 	}
@@ -627,4 +680,128 @@ func workOnItWords(lang string) workonit.Words {
 		return workonit.Words{DoneLabel: "完成的样子：", Closing: "做完后，请告诉我你做了什么。"}
 	}
 	return workonit.Words{DoneLabel: "Done looks like:", Closing: "When you're done, tell me what you did."}
+}
+
+// startPasteIntoAgent runs the paste in the background, shown in Tasks.
+// When it fails, the agent is opened as with open-and-copy: the task is
+// already on the clipboard for the person to paste.
+func (a *App) startPasteIntoAgent(agent workonit.Agent) {
+	s := a.workOnIt()
+	deps := s.pasteDeps()
+	installed := s.agentPresent(agent)
+	go func() {
+		dir, err := os.MkdirTemp("", "isoform-paste-")
+		if err == nil {
+			defer os.RemoveAll(dir)
+		} else {
+			dir = os.TempDir()
+		}
+		run, ok := planPasteIntoAgent(agent, installed, deps.lookPath, dir)
+		var runErr error
+		if !ok {
+			runErr = errors.New("no computer-use agent")
+		} else {
+			entry, shown := a.pasteIntoAgentTask(agent)
+			ctx := a.ctx
+			if ctx == nil {
+				ctx = context.Background()
+			}
+			runErr = a.runPasteIntoAgent(ctx, deps, run)
+			if shown {
+				a.finishPasteIntoAgentTask(entry, runErr)
+			}
+		}
+		if runErr != nil {
+			log.Printf("[work-on-it] paste into %s did not finish (%v); opening it to paste by hand", agent.ID, runErr)
+			if err := s.openTarget(a, workOnItOpenTarget(agent, installed)); err != nil {
+				log.Printf("[work-on-it] fallback open failed: %v", err)
+			}
+		}
+		if s.pasteDone != nil {
+			s.pasteDone(runErr)
+		}
+	}()
+}
+
+// sendWorkOnItTaskLink makes the task's link and sends the agent the one
+// line that names it, by the agent's best carrier. The task text stays
+// behind the link. If the line can't be delivered the link is withdrawn.
+func (a *App) sendWorkOnItTaskLink(s *workOnItState, task workonit.Task, agent workonit.Agent, handle, recordID string) (string, error) {
+	carrier := agent.TaskLinkCarrier(s.agentPresent(agent), handle)
+	if carrier == "" {
+		return "", errWorkOnItNoMethod
+	}
+	link, err := a.createTaskLink(tasklink.Link{ID: recordID, AgentID: agent.ID, SourceKind: task.SourceKind, SourceID: task.SourceID, Text: task.Text})
+	if err != nil {
+		return "", err
+	}
+	prompt := tasklink.Prompt(link)
+	withdraw := func() { a.withdrawTaskLinks(func(l tasklink.Link) bool { return l.ID == recordID }) }
+	switch carrier {
+	case workonit.MethodDeepLink:
+		target, err := agent.DeepLinkURL(prompt)
+		if err == nil {
+			err = s.openTarget(a, target)
+		}
+		if err != nil {
+			withdraw()
+			return "", err
+		}
+		return carrier, nil
+	case workonit.MethodMessage:
+		ctx := a.ctx
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		if err := s.sendText(ctx, handle, prompt); err != nil {
+			withdraw()
+			return "", err
+		}
+		return carrier, nil
+	default:
+		if err := s.copyText(a, prompt); err != nil {
+			withdraw()
+			return "", err
+		}
+		if err := s.openTarget(a, workOnItOpenTarget(agent, s.agentPresent(agent))); err != nil {
+			withdraw()
+			return "", err
+		}
+		return carrier, nil
+	}
+}
+
+// workOnItTaskLinkTaken marks the record taken on the agent's first read.
+func (a *App) workOnItTaskLinkTaken(link tasklink.Link) {
+	now := a.workOnIt().clock().UnixMilli()
+	err := a.workOnItUpdate(link.ID, func(r *workonit.Record) {
+		if r.Status == workonit.StatusSent {
+			r.Status = workonit.StatusTaken
+		}
+		if r.TakenAt == 0 {
+			r.TakenAt = now
+		}
+	})
+	if err != nil && !errors.Is(err, errWorkOnItNoRecord) {
+		log.Printf("[work-on-it] taken not saved: %v", err)
+	}
+}
+
+// workOnItTaskLinkResulted records the agent's answer: done, or not done
+// for blocked and declined (the detail stays with the link's result).
+func (a *App) workOnItTaskLinkResulted(link tasklink.Link, result tasklink.Result) {
+	now := a.workOnIt().clock().UnixMilli()
+	err := a.workOnItUpdate(link.ID, func(r *workonit.Record) {
+		if r.TakenAt == 0 {
+			r.TakenAt = now
+		}
+		if result.Status == tasklink.StatusDone {
+			r.Status, r.DoneAt = workonit.StatusDone, now
+		} else {
+			r.Status = workonit.StatusNotDone
+		}
+	})
+	if err != nil && !errors.Is(err, errWorkOnItNoRecord) {
+		log.Printf("[work-on-it] result not saved: %v", err)
+	}
 }

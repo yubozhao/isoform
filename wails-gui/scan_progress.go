@@ -53,20 +53,6 @@ func transitionStage(stages []StageStats, name string) []StageStats {
 	return stages
 }
 
-// startStageParallel marks the named stage as "running" without finishing
-// other running stages. Use this when multiple stages run concurrently.
-func startStageParallel(stages []StageStats, name string) []StageStats {
-	now := time.Now()
-	for i := range stages {
-		if stages[i].Name == name {
-			stages[i].Status = "running"
-			stages[i].StartedAt = &now
-			break
-		}
-	}
-	return stages
-}
-
 // finishStage marks a single named stage as "done".
 func finishStage(stages []StageStats, name string) []StageStats {
 	now := time.Now()
