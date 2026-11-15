@@ -130,16 +130,14 @@ func newGroupPipelineRun(group sessionGroup, startedAt time.Time) ActivityPipeli
 	source := "activity"
 
 	return ActivityPipelineRunRow{
-		Kind:                         "group",
-		StartedAt:                    startedAt.UnixMilli(),
-		GroupID:                      group.primaryID(),
-		SessionIDs:                   string(sessionIDsJSON),
-		AppNames:                     string(appNamesJSON),
-		EventCount:                   group.totalEventCount(),
-		DurationMs:                   group.endTime() - group.startTime(),
-		Source:                       source,
-		ShadowObserverExpected:       true,
-		ShadowObserverDispatchStatus: TaskShadowObserverDispatchPending,
+		Kind:       "group",
+		StartedAt:  startedAt.UnixMilli(),
+		GroupID:    group.primaryID(),
+		SessionIDs: string(sessionIDsJSON),
+		AppNames:   string(appNamesJSON),
+		EventCount: group.totalEventCount(),
+		DurationMs: group.endTime() - group.startTime(),
+		Source:     source,
 	}
 }
 
