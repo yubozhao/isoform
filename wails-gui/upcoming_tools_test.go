@@ -477,8 +477,8 @@ func TestUpcomingToolsAreForTheMacOnly(t *testing.T) {
 	if got := rig.app.mainChatExtraTools(main.LocalID, promptOriginPhone); len(got) != 2 || got[0].Name() != goalToolCreate || got[1].Name() != chatWebSearchToolName {
 		t.Fatalf("a message from the phone got tools other than GoalCreate and SearchWeb: %v", got)
 	}
-	if got := rig.app.mainChatExtraTools("some-other-chat", promptOriginMac); got != nil {
-		t.Fatalf("another chat got tools: %v", got)
+	if got := rig.app.mainChatExtraTools("some-other-chat", promptOriginMac); len(got) != 1 || got[0].Name() != chatWebSearchToolName {
+		t.Fatalf("another chat typed on the Mac got %v, want SearchWeb only", got)
 	}
 
 	// The phone's turn is told to change nothing and to point at the Mac.

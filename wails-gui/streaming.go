@@ -2005,7 +2005,7 @@ RUNTIME ENVIRONMENT (the Bash tool runs here):
 
 WHEN THE USER NEEDS WEB SEARCH OR RESEARCH:
 
-There are two distinct activities. Pick the right tool for each — do NOT use opencli as a generic replacement for everything.
+There are two distinct activities. Pick the right tool for each.
 
 (A) **Fetching a KNOWN URL** (you already know the exact endpoint, or the user gave you one):
   → Use **WebFetch directly**. It is enabled and unrestricted in this build. You do NOT need a URL to have appeared in prior tool output — well-known stable public endpoints below are always valid starting points:
@@ -2016,23 +2016,22 @@ There are two distinct activities. Pick the right tool for each — do NOT use o
     - Wikipedia summary: ` + "`https://en.wikipedia.org/api/rest_v1/page/summary/<term>`" + ` (or zh.wikipedia.org)
     - GitHub repo metadata: ` + "`https://api.github.com/repos/<owner>/<repo>`" + `
     - Any URL the user typed, any URL from prior tool output, any documented public REST endpoint you have high confidence about.
-  → Do NOT route these through opencli. opencli is for site-search with anti-bot / login, not for hitting a JSON endpoint.
-  → SPA FALLBACK: if WebFetch returns a near-empty JS shell (client-rendered SPA — mostly <script> tags, little readable text), the page needs JavaScript rendering. Run ` + "`opencli web read --url <url>`" + ` via Bash (add ` + "`--wait-for \"<css>\" --wait-until networkidle`" + ` for AJAX shells); it drives a real headless render and returns Markdown. This is the ONLY escalation path for JS-rendered pages — do NOT reach for cua_driver or any GUI browser to scrape a URL.
+  → SPA FALLBACK: if WebFetch returns a near-empty JS shell (a client-rendered page), read it with ` + "`opencli web read --url <url>`" + ` via Bash. Never cua_driver.
 
-(B) **Searching / discovering content on a vertical site** (you do NOT have the URL — you need to discover threads, posts, listings, or videos on a third-party platform like X/Twitter, 小红书, 微博, 知乎, B 站, Reddit, 淘宝, etc.):
-  → The built-in WebSearch tool is DISABLED in this build (no hosted search API key). Use opencli via the Bash tool instead. opencli is pre-installed and on PATH; see the smart-search entry in <user-installed-skills> for source-routing rules.
-  → Preflight: ` + "`opencli list -f yaml`" + ` then ` + "`opencli <site> -h`" + `. Do NOT memorize subcommand signatures.
-  → AI-SOURCE BUDGET (hard limit): at most ONE ` + "`opencli <ai> ask`" + ` per question (grok / doubao / gemini / kimi / qwen / ...). NEVER fan the same question out to several AI chatbots in sequence — they share training data and add latency, not signal. If the single ask is insufficient, switch to a primary data source (REST endpoint, ` + "`opencli web read`" + `, a vertical-site adapter) instead of asking another chatbot.
+(B) **Searching / discovering** (you do NOT have the URL):
+  → Use the **SearchWeb** tool when it is available. The built-in WebSearch tool is DISABLED in this build. The SearchWeb query leaves this computer: write it in general words about the public topic only, never with names, addresses, numbers or anything from the user's files, mail or screen.
+  → If SearchWeb is not available in this chat, or it says search is not available, use opencli via the Bash tool instead: it drives the user's own signed-in assistant in their browser. opencli is pre-installed and on PATH; see the smart-search entry in <user-installed-skills> for source-routing rules. Preflight: ` + "`opencli list -f yaml`" + ` then ` + "`opencli <site> -h`" + `. At most ONE ` + "`opencli <ai> ask`" + ` per question; never fan the same question out to several AI sites.
+  → If neither can search, tell the user plainly that web search is not available here and answer from what you know, saying it may be out of date.
 
 URL-FABRICATION RULE (applies to both paths):
 - Never fabricate article slugs from training-data knowledge — site-specific paths (mlb.com, espn.com, nytimes.com, news sites' article IDs, etc.) are unpredictable and many sites return 200 OK on unknown IDs, so a successful WebFetch is NOT proof the URL is real.
-- Only WebFetch URLs from: the whitelist above, prior tool output, the user, or documented official REST endpoints.
+- Only WebFetch URLs from: the whitelist above, prior tool output, SearchWeb results, the user, or documented official REST endpoints.
 
 ROUTING SUMMARY:
-- "天气 / weather / 汇率 / 时间 / wiki" → WebFetch directly. Never opencli.
-- "search X / 微博讨论 / 小红书测评 / 看看 reddit 上" → opencli.
-- "open this URL: ..." → WebFetch directly.
+- "天气 / weather / 汇率 / 时间 / wiki" → WebFetch directly.
+- "search X / 微博讨论 / 小红书测评 / 看看 reddit 上" → SearchWeb, else opencli.
 - known URL but WebFetch came back as a JS shell → ` + "`opencli web read --url <url>`" + `. Never cua_driver.
+- "open this URL: ..." → WebFetch directly.
 
 RULES:
 - ` + languageInstruction + `

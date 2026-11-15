@@ -205,11 +205,14 @@ func (a *App) webSearchPrivateNames(ctx context.Context) []string {
 	return names
 }
 
-// injectWebSearchToolContext tells the main chat's model to look things up
+// injectWebSearchToolContext tells a chat's model to look things up
 // with SearchWeb, which overrides the general prompt's opencli instruction
 // for this chat, and how to keep the query free of personal details.
 func (a *App) injectWebSearchToolContext(tag string, origin promptOrigin) string {
-	if !a.isMainChatSession(context.Background(), tag) || origin != promptOriginMac && origin != promptOriginPhone {
+	main := a.isMainChatSession(context.Background(), tag)
+	// The tool is there for main-chat turns typed on the Mac or the phone,
+	// and for other chats typed on the Mac (mainChatExtraTools).
+	if !(main && (origin == promptOriginMac || origin == promptOriginPhone)) && !(!main && origin == promptOriginMac) {
 		return ""
 	}
 	return `<web-search-tool>

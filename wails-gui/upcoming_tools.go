@@ -1296,6 +1296,11 @@ func (a *App) postUpcomingReport(target upcomingTarget, status, schedule, text s
 // script resuming the chat) or for any other chat, schedule or handoff run.
 func (a *App) mainChatExtraTools(tag string, origin promptOrigin) []tools.Tool {
 	if !a.isMainChatSession(context.Background(), tag) {
+		// Any other chat the person types in searches the web the same way;
+		// opencli is no longer the research path.
+		if origin == promptOriginMac {
+			return a.chatWebSearchTools()
+		}
 		return nil
 	}
 	switch origin {
