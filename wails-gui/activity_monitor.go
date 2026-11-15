@@ -320,15 +320,22 @@ type activityMonitorState struct {
 	// just lost the meeting window title for a stretch). lastMeetingEndMs
 	// is the secondary fallback when the PID can't be resolved at decision
 	// time. See onMeetingStarted's resume logic.
-	lastMeetingID      string
-	lastMeetingApp     string
-	lastMeetingPID     int
-	lastMeetingPaused  bool // known lock/observation boundary, not an ordinary call end
-	lastMeetingEndMs   int64
-	meetingWatcherCh   chan struct{}       // closed to stop the watcher goroutine
-	lastMeetingEventMs int64               // Unix ms of most recent event matching IsMeetingEvent; 0 = none
-	lastMeetingAudioMs int64               // Unix ms of recent meeting audio captured before ASR returns; 0 = none
-	meetingAudioWriter *meetingAudioWriter // streams raw PCM to disk during meetings; nil when not recording
+	lastMeetingID     string
+	lastMeetingApp    string
+	lastMeetingPID    int
+	lastMeetingPaused bool // known lock/observation boundary, not an ordinary call end
+	lastMeetingEndMs  int64
+	// endedMeetingSpanStartMs and endedMeetingSpanEndMs are the time span of
+	// the last call's saved meeting session. Speech the transcriber finishes
+	// after the call's end still says it was captured in the call; when it all
+	// falls inside this span it belongs to that saved call (whose transcript
+	// comes from its full recording) and never becomes a second meeting session.
+	endedMeetingSpanStartMs int64
+	endedMeetingSpanEndMs   int64
+	meetingWatcherCh        chan struct{}       // closed to stop the watcher goroutine
+	lastMeetingEventMs      int64               // Unix ms of most recent event matching IsMeetingEvent; 0 = none
+	lastMeetingAudioMs      int64               // Unix ms of recent meeting audio captured before ASR returns; 0 = none
+	meetingAudioWriter      *meetingAudioWriter // streams raw PCM to disk during meetings; nil when not recording
 	// meetingBrowserMicReleased: the browser of a browser call let go of
 	// the microphone, so the call is over (callChunkOnMicrophoneLocked).
 	meetingBrowserMicReleased bool
@@ -2971,6 +2978,23 @@ func (a *App) checkVisualChange() {
 }
 
 // extractSession takes events from the ring buffer and persists a session with snapshots.
+// lateSpeechOfEndedCall reports whether every event lies inside the span of
+// the last saved call: speech transcribed after that call ended.
+func (am *activityMonitorState) lateSpeechOfEndedCall(events []activitymon.ActivityEvent) bool {
+	am.mu.Lock()
+	start, end := am.endedMeetingSpanStartMs, am.endedMeetingSpanEndMs
+	am.mu.Unlock()
+	if len(events) == 0 || end <= 0 {
+		return false
+	}
+	for _, evt := range events {
+		if evt.Timestamp < start || evt.Timestamp > end {
+			return false
+		}
+	}
+	return true
+}
+
 func (a *App) extractSession(triggerKind string) {
 	am := a.activity
 	if am == nil {
@@ -3029,6 +3053,17 @@ func (a *App) extractSession(triggerKind string) {
 		return
 	}
 	events := am.buf.Drain()
+	if am.inMeeting && (isTerminalMeeting || triggerKind == meetingSliceTrigger) {
+		// Recorded with the drain, under the same lock: an extraction of the
+		// call's late speech drains after this and always sees the span.
+		start := am.meetingStartMs
+		for _, evt := range events {
+			if start == 0 || evt.Timestamp < start {
+				start = evt.Timestamp
+			}
+		}
+		am.endedMeetingSpanStartMs, am.endedMeetingSpanEndMs = start, time.Now().UnixMilli()
+	}
 	if len(events) == 0 {
 		var candidateAudioWriter *meetingAudioWriter
 		if !isPeriodicFlush && am.meetingCandidateActive {
@@ -3368,6 +3403,10 @@ func (a *App) extractSession(triggerKind string) {
 	if meetingRecordingAllowed {
 		meetingApp, isMeeting = detectMeetingInEvents(meetingEvents)
 		candidateMeetingApp, isCandidateMeeting = detectMeetingCandidateInEvents(meetingEvents)
+		if isMeeting && !wasCurrentMeeting && am.lateSpeechOfEndedCall(meetingEvents) {
+			log.Printf("[activity] %d late speech events from the ended call kept as activity, not a second meeting", len(meetingEvents))
+			meetingApp, isMeeting = "", false
+		}
 		if wasCurrentMeeting && wasMeetingApp != "" {
 			session.IsMeeting = true
 			session.MeetingApp = wasMeetingApp
@@ -3400,7 +3439,6 @@ func (a *App) extractSession(triggerKind string) {
 			}
 		}
 	}
-
 	// Complete the pending journal with final snapshot privacy before audio
 	// finalization or the row commit can fail. It contains no captured content.
 	if isMeetingSlice || isTerminalMeeting || wasCandidateActive {
