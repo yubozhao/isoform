@@ -18,10 +18,18 @@ final class WatchPhoneLink: NSObject, WCSessionDelegate, @unchecked Sendable {
         WCSession.default.activate()
     }
 
+    /// Tells the phone what is still on the watch, so its list can say "On your watch".
+    func pushSummaries() {
+        let session = WCSession.default
+        guard session.activationState == .activated else { return }
+        try? session.updateApplicationContext(WatchRecordingWire.summaryContext(library.summaries()))
+    }
+
     /// Queues every part still on the watch that is not already on its way.
     func sendUnsent() {
         let session = WCSession.default
         guard session.activationState == .activated else { return }
+        defer { pushSummaries() }
         let queued = Set(session.outstandingFileTransfers.compactMap { transfer -> String? in
             WatchRecordingPartInfo(metadata: transfer.file.metadata).map { "\($0.recordingID)-\($0.part)" }
         })
@@ -48,11 +56,19 @@ final class WatchPhoneLink: NSObject, WCSessionDelegate, @unchecked Sendable {
             // Not delivered: the part stays on the watch and is queued again.
             sendUnsent()
         }
+        pushSummaries()
         onChange?()
+    }
+
+    /// The person tapped Sync now on the phone.
+    func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
+        guard message[WatchRecordingWire.syncMessageKey] != nil else { return }
+        sendUnsent()
     }
 
     func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
         library.apply(states: WatchRecordingWire.states(fromContext: applicationContext))
+        pushSummaries()
         onChange?()
     }
 }

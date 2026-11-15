@@ -39,12 +39,14 @@ enum HubRoute: Equatable, Sendable {
     case write(path: String, body: String)
     /// The state of this phone's recordings on the computer (PROTOCOL.md 24.3).
     case recordings(ids: [String])
+    /// What one recording heard, once the computer transcribed it (PROTOCOL.md 24.5).
+    case recordingTranscript(id: String)
     /// The owner's enrolled voice samples on the computer (PROTOCOL.md 25.1).
     case voice
 
     var method: String {
         switch self {
-        case .yourAgent, .recordings, .voice: return "GET"
+        case .yourAgent, .recordings, .recordingTranscript, .voice: return "GET"
         case .refreshBrief, .write, .briefReceived: return "POST"
         case .status, .today, .todayMeetingPrep, .findTime, .findTimeLegacy, .holdProposal, .holdStatus, .todayPart, .latestBrief, .briefList, .brief, .briefPackage, .briefPart, .briefAudio, .briefAskAnswer, .briefCardAskAnswer, .briefWeekDecline, .briefWeekAskAnswer, .chats, .chat, .notifications, .keepAwake, .tasks, .task, .goals, .goal, .offers, .offersWithHolds,
              .topics, .topic, .privacy: return "GET"
@@ -55,6 +57,7 @@ enum HubRoute: Equatable, Sendable {
         switch self {
         case .yourAgent: return "/your-agent"
         case .recordings: return "/recordings"
+        case .recordingTranscript: return "/recordings/transcript"
         case .voice: return "/voice"
         case .status: return "/status"
         case .today, .todayPart: return "/today"
@@ -93,7 +96,9 @@ enum HubRoute: Equatable, Sendable {
     var query: String {
         switch self {
         case .yourAgent, .voice: return ""
-        case .recordings(let ids): return ids.isEmpty ? "" : "ids=" + ids.joined(separator: ",")
+        // deleted=1 asks for recordings deleted on the computer too (24.5); an older computer ignores it.
+        case .recordings(let ids): return ids.isEmpty ? "deleted=1" : "deleted=1&ids=" + ids.joined(separator: ",")
+        case .recordingTranscript(let id): return "id=" + id
         case .todayPart(let version, let part): return "version=\(version)&part=\(part)"
         case .todayMeetingPrep(let id):
             var components = URLComponents()
@@ -157,7 +162,7 @@ enum HubRoute: Equatable, Sendable {
 
     var body: String {
         switch self {
-        case .yourAgent, .recordings, .voice: return ""
+        case .yourAgent, .recordings, .recordingTranscript, .voice: return ""
         case .refreshBrief: return "{}"
         case .write(_, let body): return body
         case .briefReceived(_, let version): return "{\"version\":\"\(version)\"}"
@@ -170,6 +175,7 @@ enum HubRoute: Equatable, Sendable {
         switch self {
         case .yourAgent: return "your-agent"
         case .recordings: return "recordings.list"
+        case .recordingTranscript: return "recordings.transcript"
         case .voice: return "voice.list"
         case .status: return "status"
         case .today, .todayPart: return "today"
@@ -312,6 +318,8 @@ struct HubStatus: Decodable, Equatable, Sendable {
     var ownerVoice: Bool? = nil
     /// The computer takes the heart rate and location of a recording part (PROTOCOL.md 24.4).
     var recordingContext: Bool? = nil
+    /// The computer serves a recording's transcript and its delete (PROTOCOL.md 24.5). Older computers omit it.
+    var recordingDetail: Bool? = nil
     var briefSchedule: [ScheduledPhoneBrief]? = nil
 }
 

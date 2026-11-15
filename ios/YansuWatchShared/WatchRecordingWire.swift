@@ -83,6 +83,8 @@ enum WatchRecordingRemoteState: String, Codable, Sendable, Comparable {
     case onComputer
     case transcribed
     case failed
+    /// Deleted by the person on any device (PROTOCOL.md 24.5): every device removes its copy.
+    case deleted
 
     private var rank: Int {
         switch self {
@@ -90,6 +92,7 @@ enum WatchRecordingRemoteState: String, Codable, Sendable, Comparable {
         case .onComputer: return 1
         case .transcribed: return 2
         case .failed: return 3
+        case .deleted: return 4
         }
     }
 
@@ -100,6 +103,7 @@ enum WatchRecordingRemoteState: String, Codable, Sendable, Comparable {
         switch computerState {
         case "transcribed": self = .transcribed
         case "failed": self = .failed
+        case "deleted": self = .deleted
         default: self = .onComputer
         }
     }
@@ -119,5 +123,44 @@ extension WatchRecordingWire {
             if let state = WatchRecordingRemoteState(rawValue: value) { out[id] = state }
         }
         return out
+    }
+}
+
+/// A recording that still has audio on the watch, as the watch tells the phone, so the phone can
+/// show "On your watch" for something it has not received yet.
+struct WatchRecordingSummary: Equatable, Identifiable, Sendable {
+    let id: String
+    let startedAt: Date
+    let durationSeconds: Double
+    /// Parts whose audio is still on the watch.
+    let unsentParts: Int
+    /// False while the recording is still running.
+    let finished: Bool
+}
+
+extension WatchRecordingWire {
+    static let summariesKey = "watchRecordings"
+    static let maxSummaries = 30
+    /// A message the phone sends when the person taps Sync now: queue everything again.
+    static let syncMessageKey = "syncRecordings"
+
+    /// The application context the watch sends: what it still holds, newest first.
+    static func summaryContext(_ summaries: [WatchRecordingSummary]) -> [String: Any] {
+        [contextVersionKey: version, summariesKey: summaries.prefix(maxSummaries).map { item -> [String: Any] in
+            ["id": item.id, "startedAt": item.startedAt.timeIntervalSince1970, "durationSeconds": item.durationSeconds,
+             "unsent": item.unsentParts, "finished": item.finished]
+        }]
+    }
+
+    static func summaries(fromContext context: [String: Any]) -> [WatchRecordingSummary] {
+        guard context[contextVersionKey] as? Int == version, let raw = context[summariesKey] as? [[String: Any]] else { return [] }
+        return raw.prefix(maxSummaries).compactMap { item in
+            guard let id = item["id"] as? String, isRecordingID(id),
+                  let started = item["startedAt"] as? Double, started > 0,
+                  let duration = item["durationSeconds"] as? Double, duration >= 0,
+                  let unsent = item["unsent"] as? Int, unsent >= 0, let finished = item["finished"] as? Bool else { return nil }
+            return WatchRecordingSummary(id: id, startedAt: Date(timeIntervalSince1970: started), durationSeconds: duration,
+                                         unsentParts: unsent, finished: finished)
+        }
     }
 }

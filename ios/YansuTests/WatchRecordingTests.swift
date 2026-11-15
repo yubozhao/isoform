@@ -129,8 +129,57 @@ final class WatchRecordingWireTests: XCTestCase {
         let route = HubRoute.recordings(ids: ["a", "b"])
         XCTAssertEqual(route.method, "GET")
         XCTAssertEqual(route.path, "/recordings")
-        XCTAssertEqual(route.query, "ids=a,b")
-        XCTAssertEqual(HubRoute.recordings(ids: []).query, "")
+        // deleted=1 asks for recordings deleted on the computer as well (PROTOCOL.md 24.5).
+        XCTAssertEqual(route.query, "deleted=1&ids=a,b")
+        XCTAssertEqual(HubRoute.recordings(ids: []).query, "deleted=1")
+        let transcript = HubRoute.recordingTranscript(id: "a")
+        XCTAssertEqual(transcript.method, "GET")
+        XCTAssertEqual(transcript.path, "/recordings/transcript")
+        XCTAssertEqual(transcript.query, "id=a")
+        XCTAssertNil(try? JSONDecoder().decode(HubStatus.self, from: Data("{}".utf8)).recordingDetail)
+    }
+
+    func testTheWatchTellsThePhoneWhatItStillHolds() {
+        let id = WatchRecordingWire.newRecordingID()
+        let held = [WatchRecordingSummary(id: id, startedAt: Date(timeIntervalSince1970: 1_800_000_000),
+                                          durationSeconds: 1810.5, unsentParts: 2, finished: true)]
+        var context = WatchRecordingWire.summaryContext(held)
+        XCTAssertEqual(WatchRecordingWire.summaries(fromContext: context), held)
+        // The two directions share a version key and never read each other's payload.
+        XCTAssertTrue(WatchRecordingWire.states(fromContext: context).isEmpty)
+        context[WatchRecordingWire.summariesKey] = [["id": "not-a-uuid", "startedAt": 1.0, "durationSeconds": 1.0, "unsent": 1, "finished": true]]
+        XCTAssertTrue(WatchRecordingWire.summaries(fromContext: context).isEmpty)
+        XCTAssertEqual(WatchRecordingRemoteState(computerState: "deleted"), .deleted)
+        XCTAssertEqual(WatchRecordingWire.states(fromContext: WatchRecordingWire.context([id: .deleted])), [id: .deleted])
+    }
+
+    func testThePhoneListJoinsWhatItHoldsWithWhatTheWatchStillHolds() {
+        let onWatch = WatchRecordingWire.newRecordingID(), running = WatchRecordingWire.newRecordingID()
+        let waiting = WatchRecordingWire.newRecordingID(), refused = WatchRecordingWire.newRecordingID()
+        let unread = WatchRecordingWire.newRecordingID(), done = WatchRecordingWire.newRecordingID()
+        let at = Date(timeIntervalSince1970: 1_800_000_000)
+        let rows = WatchRecordingRow.rows(phone: [
+            PhoneRecording(id: waiting, startedAt: at.addingTimeInterval(10), durationSeconds: 900, state: .onPhone,
+                           partsOnPhone: 1, bytesOnPhone: 2048, sending: true),
+            PhoneRecording(id: refused, startedAt: at.addingTimeInterval(20), durationSeconds: 60, state: .failed, partsOnPhone: 1),
+            PhoneRecording(id: unread, startedAt: at.addingTimeInterval(30), durationSeconds: 60, state: .failed),
+            PhoneRecording(id: done, startedAt: at.addingTimeInterval(40), durationSeconds: 60, state: .transcribed),
+        ], watch: [
+            WatchRecordingSummary(id: onWatch, startedAt: at.addingTimeInterval(50), durationSeconds: 300, unsentParts: 1, finished: true),
+            WatchRecordingSummary(id: running, startedAt: at.addingTimeInterval(60), durationSeconds: 0, unsentParts: 0, finished: false),
+            WatchRecordingSummary(id: waiting, startedAt: at.addingTimeInterval(10), durationSeconds: 1800, unsentParts: 1, finished: true),
+        ])
+        XCTAssertEqual(rows.map(\.id), [running, onWatch, done, unread, refused, waiting])
+        XCTAssertEqual(rows.map(\.stage), [.recording, .onWatch, .transcribed, .failedOnComputer, .failedToSend, .sending])
+        // A recording partly across shows its whole length and the part still on the watch.
+        XCTAssertEqual(rows.last?.durationSeconds, 1800)
+        XCTAssertEqual(rows.last?.partsOnWatch, 1)
+        XCTAssertEqual(rows.last?.bytesOnPhone, 2048)
+        XCTAssertNotNil(WatchRecordingsCopy.todayLine(rows))
+        XCTAssertNil(WatchRecordingsCopy.todayLine(rows.filter { !$0.stage.waiting }))
+        XCTAssertEqual(WatchRecordingsCopy.speaker("you"), "You")
+        XCTAssertEqual(WatchRecordingsCopy.speaker("speaker_2"), "Speaker 2")
+        XCTAssertNil(WatchRecordingsCopy.speaker(nil))
     }
 }
 
@@ -207,6 +256,32 @@ final class WatchRecordingLibraryTests: XCTestCase {
         XCTAssertFalse(index.contains("heartRate"), "the heart rate is gone from the watch once the phone holds the part")
     }
 
+    func testADeleteFromThePhoneRemovesTheRecordingAndItsAudioFromTheWatch() throws {
+        let library = WatchRecordingLibrary(directory: directory)
+        let gone = WatchRecordingWire.newRecordingID(), kept = WatchRecordingWire.newRecordingID()
+        let running = WatchRecordingWire.newRecordingID()
+        for id in [gone, kept] {
+            library.begin(id: id, at: Date(timeIntervalSince1970: 1_800_000_000))
+            try writeAudio(library, id, 0)
+            library.addPart(recordingID: id, startedAt: Date(timeIntervalSince1970: 1_800_000_000), durationSeconds: 60, last: true)
+        }
+        library.begin(id: running, at: Date(timeIntervalSince1970: 1_800_000_100))
+        XCTAssertEqual(library.summaries().map(\.id), [running, gone, kept].sorted { a, b in
+            library.all().firstIndex { $0.id == a }! < library.all().firstIndex { $0.id == b }!
+        })
+        XCTAssertEqual(library.summaries().first { $0.id == gone }?.unsentParts, 1)
+
+        library.apply(states: [gone: .deleted, running: .deleted])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: library.fileURL(recordingID: gone, part: 0).path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: library.fileURL(recordingID: kept, part: 0).path))
+        // A recording still running is not removed under the recorder.
+        XCTAssertEqual(Set(library.all().map(\.id)), [kept, running])
+        XCTAssertNil(library.all().first { $0.id == running }?.remote)
+        // Once the phone holds a part the watch no longer lists the recording as held.
+        library.markSent(recordingID: kept, part: 0)
+        XCTAssertEqual(library.summaries().map(\.id), [running])
+    }
+
     func testARecordingCutShortByAKillIsClosedAndKept() throws {
         let library = WatchRecordingLibrary(directory: directory)
         let withAudio = WatchRecordingWire.newRecordingID()
@@ -280,6 +355,21 @@ private actor StubRecordingHub: RecordingHubAPI {
         return RecordingView(id: request.recordingId, state: answerState)
     }
     func recordingStates(ids: [String]) async throws -> [RecordingView] { listed.filter { ids.contains($0.id) } }
+
+    var detail = true
+    var deleted: [String] = []
+    var deleteError: Error?
+    func set(detail: Bool) { self.detail = detail }
+    func set(deleteError: Error?) { self.deleteError = deleteError }
+    func recordingDetailAvailable() async throws -> Bool { detail }
+    func recordingTranscript(id: String) async throws -> RecordingTranscript {
+        RecordingTranscript(id: id, lines: [.init(at: "2026-11-13T09:00:02Z", speaker: "you", text: "Call Sam")])
+    }
+    func deleteRecording(id: String) async throws -> RecordingView {
+        if let deleteError { throw deleteError }
+        deleted.append(id)
+        return RecordingView(id: id, state: "deleted")
+    }
 }
 
 private final class StubUploads: RecordingUploadTransport, @unchecked Sendable {
@@ -502,6 +592,105 @@ final class WatchRecordingForwarderTests: XCTestCase {
         XCTAssertEqual(again, list)
         XCTAssertEqual(WatchRecordingsCopy.length(1800), "30:00")
         XCTAssertEqual(WatchRecordingsCopy.length(3725), "1:02:05")
+    }
+
+    func testDeletingARecordingThatNeverLeftThePhoneAsksTheComputerNothing() async throws {
+        let hub = StubRecordingHub()
+        await hub.set(available: false)
+        let (inbox, forwarder) = make(hub, StubUploads())
+        let id = WatchRecordingWire.newRecordingID()
+        let info = try await deliver(inbox, forwarder, id: id, part: 0, last: true, audio: "one")
+        let listed = await forwarder.recordings()
+        XCTAssertEqual(listed.first?.partsOnPhone, 1)
+        XCTAssertEqual(listed.first?.bytesOnPhone, 3)
+        let urls = await forwarder.audioOnPhone(id)
+        XCTAssertEqual(urls, [inbox.audioURL(info)])
+
+        await forwarder.delete(id)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: inbox.audioURL(info).path))
+        let after = await forwarder.recordings()
+        XCTAssertTrue(after.isEmpty)
+        // The watch reads the state and removes its copy.
+        let states = await forwarder.currentStates()
+        XCTAssertEqual(states[id], .deleted)
+        let asked = await hub.deleted
+        XCTAssertTrue(asked.isEmpty)
+        // A part that was still on its way from the watch is not kept.
+        _ = try await deliver(inbox, forwarder, id: id, part: 1, last: true, audio: "late")
+        XCTAssertTrue(inbox.pending().isEmpty)
+    }
+
+    func testDeletingARecordingTheComputerHasReachesTheComputerEvenLater() async throws {
+        let hub = StubRecordingHub()
+        let (inbox, forwarder) = make(hub, StubUploads())
+        let id = WatchRecordingWire.newRecordingID()
+        _ = try await deliver(inbox, forwarder, id: id, part: 0, last: true, audio: "one")
+        _ = await forwarder.drain()
+
+        // The computer cannot be reached: the delete is done here and owed there.
+        await hub.set(deleteError: URLError(.notConnectedToInternet))
+        await forwarder.delete(id)
+        var owed = await forwarder.deletesWaiting()
+        XCTAssertEqual(owed, 1)
+        let listed = await forwarder.recordings()
+        XCTAssertTrue(listed.isEmpty)
+
+        // It survives a relaunch and goes out with the next pass.
+        await hub.set(deleteError: nil)
+        let context = context()
+        let reopened = WatchRecordingForwarder(inbox: inbox, hub: hub, relay: StubUploads(), session: { context })
+        _ = await reopened.drain()
+        owed = await reopened.deletesWaiting()
+        XCTAssertEqual(owed, 0)
+        let asked = await hub.deleted
+        XCTAssertEqual(asked, [id])
+    }
+
+    func testARecordingDeletedOnTheComputerIsDeletedHereAndOnTheWatch() async throws {
+        let hub = StubRecordingHub()
+        await hub.set(answerState: "transcribed")
+        let (inbox, forwarder) = make(hub, StubUploads())
+        let id = WatchRecordingWire.newRecordingID()
+        _ = try await deliver(inbox, forwarder, id: id, part: 0, last: true, audio: "one")
+        _ = await forwarder.drain()
+        var states = await forwarder.currentStates()
+        XCTAssertEqual(states[id], .transcribed)
+        let transcript = try await forwarder.transcript(id)
+        XCTAssertEqual(transcript?.lines.first?.text, "Call Sam")
+
+        await hub.set(listed: [RecordingView(id: id, state: "deleted")])
+        await forwarder.refreshStates()
+        states = await forwarder.currentStates()
+        XCTAssertEqual(states[id], .deleted)
+        let listed = await forwarder.recordings()
+        XCTAssertTrue(listed.isEmpty)
+        let asked = await hub.deleted
+        XCTAssertTrue(asked.isEmpty)
+
+        // An older computer serves no transcript: the page says so instead of failing.
+        await hub.set(detail: false)
+        let none = try await forwarder.transcript(id)
+        XCTAssertNil(none)
+    }
+
+    func testTryAgainSendsARefusedRecordingOnceTheComputerTakesIt() async throws {
+        let hub = StubRecordingHub()
+        await hub.set(postError: HubRequestError.rejected(status: 400, message: "bad"))
+        let (inbox, forwarder) = make(hub, StubUploads())
+        let id = WatchRecordingWire.newRecordingID()
+        _ = try await deliver(inbox, forwarder, id: id, part: 0, last: true, audio: "one")
+        for _ in 0..<WatchRecordingInbox.maxRefusals { _ = await forwarder.drain() }
+        var listed = await forwarder.recordings()
+        XCTAssertEqual(listed.first?.state, .failed)
+        XCTAssertEqual(listed.first?.partsOnPhone, 1)
+
+        await hub.set(postError: nil)
+        let outcome = await forwarder.retry(id)
+        XCTAssertEqual(outcome, .drained)
+        listed = await forwarder.recordings()
+        XCTAssertEqual(listed.first?.state, .onComputer)
+        XCTAssertEqual(listed.first?.partsOnPhone, 0)
+        XCTAssertTrue(inbox.pending().isEmpty)
     }
 
     func testRetriesReuseTheCopyOnTheRelay() async throws {

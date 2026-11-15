@@ -46,7 +46,8 @@ enum WatchRecordingDisplay: Equatable, Sendable {
 }
 
 final class WatchRecordingLibrary: @unchecked Sendable {
-    static let keptEntries = 30
+    /// A week of hours: recordings are kept by the clock hour, so a day is many rows.
+    static let keptEntries = 7 * 24
 
     let directory: URL
     private let lock = NSLock()
@@ -159,12 +160,43 @@ final class WatchRecordingLibrary: @unchecked Sendable {
         }
     }
 
-    /// States from the phone. A state never moves backwards.
+    /// What the watch still holds, for the phone's list: recordings with audio here, newest first.
+    func summaries() -> [WatchRecordingSummary] {
+        lock.withLock {
+            entries.sorted { $0.startedAt > $1.startedAt }.compactMap { entry in
+                let unsent = entry.parts.filter { !$0.sent }.count
+                guard unsent > 0 || !entry.finished else { return nil }
+                return WatchRecordingSummary(id: entry.id, startedAt: entry.startedAt, durationSeconds: entry.durationSeconds,
+                                             unsentParts: unsent, finished: entry.finished)
+            }
+        }
+    }
+
+    /// Removes a recording and every file of it from the watch. A recording still running is
+    /// left alone: it is stopped first.
+    @discardableResult
+    func delete(recordingID: String) -> Bool {
+        lock.withLock { deleteLocked(recordingID) }
+    }
+
+    private func deleteLocked(_ recordingID: String) -> Bool {
+        guard let index = entries.firstIndex(where: { $0.id == recordingID }), entries[index].finished else { return false }
+        for part in entries[index].parts {
+            try? fileManager.removeItem(at: directory.appendingPathComponent(part.fileName))
+        }
+        entries.remove(at: index)
+        saveLocked()
+        return true
+    }
+
+    /// States from the phone. A state never moves backwards. A recording deleted on another
+    /// device is removed here with its audio.
     func apply(states: [String: WatchRecordingRemoteState]) {
         lock.withLock {
+            for (id, state) in states where state == .deleted { _ = deleteLocked(id) }
             var changed = false
             for index in entries.indices {
-                guard let state = states[entries[index].id] else { continue }
+                guard let state = states[entries[index].id], state != .deleted else { continue }
                 if let current = entries[index].remote, current >= state { continue }
                 entries[index].remote = state
                 changed = true

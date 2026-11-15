@@ -240,6 +240,10 @@ struct FeedView: View {
 
     var body: some View {
         content(now: Date())
+        // Shown only while a watch recording has not reached the computer.
+        .safeAreaInset(edge: .top, spacing: 0) {
+            WatchRecordingsTodayLine(model: WatchRecordingsModel.shared)
+        }
         .overlay(alignment: .top) {
             if let notice = router.linkNotice {
                 NoticeBanner(message: notice, dismiss: { router.linkNotice = nil })

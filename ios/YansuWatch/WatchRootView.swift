@@ -42,14 +42,16 @@ struct WatchRootView: View {
                 .font(.footnote)
                 .foregroundStyle(WatchTheme.secondary)
                 .multilineTextAlignment(.center)
-        case .recording(let since):
-            Text(timerInterval: since...Date.distantFuture, countsDown: false)
-                .font(.title3.monospacedDigit())
+        case .recording:
+            // No running clock: recordings are kept by the hour, so there is no length to watch.
+            Text("Recording", comment: "Shown on the watch while it records; there is no timer")
+                .font(.title3.weight(.medium))
                 .foregroundStyle(WatchTheme.text)
-                .accessibilityLabel(Text("Recording time", comment: "Accessibility label for the elapsed recording time"))
-            Text("Hold to stop", comment: "Hint under the stop button on the watch while it records")
+            Text("Kept by the hour. Hold to stop.",
+                 comment: "Hint under the stop button on the watch while it records: each clock hour is its own recording")
                 .font(.footnote)
                 .foregroundStyle(WatchTheme.secondary)
+                .multilineTextAlignment(.center)
         case .denied:
             Text("Allow the microphone for Isoform in Settings on this watch.",
                  comment: "Shown on the watch when microphone permission is off")
@@ -127,11 +129,13 @@ private struct RecordingRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack {
-                Text(entry.startedAt, format: .dateTime.weekday(.abbreviated).hour().minute())
+                // The hour it belongs to ("Sat 10 AM"), then how much of it was recorded.
+                Text(entry.startedAt, format: .dateTime.weekday(.abbreviated).hour())
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(WatchTheme.text)
                 Spacer()
-                Text(Self.length(entry.durationSeconds))
+                Text("\(WatchHourClock.minutes(entry.durationSeconds)) min",
+                     comment: "Length of one hour's recording on the watch, in whole minutes")
                     .font(.footnote.monospacedDigit())
                     .foregroundStyle(WatchTheme.secondary)
             }
@@ -144,13 +148,6 @@ private struct RecordingRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(WatchTheme.surface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .accessibilityElement(children: .combine)
-    }
-
-    static func length(_ seconds: Double) -> String {
-        let total = Int(seconds.rounded())
-        return total >= 3600
-            ? String(format: "%d:%02d:%02d", total / 3600, (total % 3600) / 60, total % 60)
-            : String(format: "%d:%02d", total / 60, total % 60)
     }
 }
 

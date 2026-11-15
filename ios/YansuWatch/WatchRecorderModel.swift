@@ -6,7 +6,8 @@ import WidgetKit
 
 // Records on the watch. Audio is written to the watch's own storage as AAC, mono, in parts of
 // WatchRecordingWire.partSeconds; each finished part is handed to the phone link at once, so a
-// long recording never waits for its end to start travelling. The audio session keeps recording
+// long recording never waits for its end to start travelling. Recordings are kept by the clock
+// hour (WatchHourClock): at each hour the open recording is closed and the next begins by itself. The audio session keeps recording
 // with the screen off (UIBackgroundModes: audio in Info.plist).
 @MainActor
 final class WatchRecorderModel: NSObject, ObservableObject {
@@ -33,6 +34,13 @@ final class WatchRecorderModel: NSObject, ObservableObject {
     private var recorder: AVAudioRecorder?
     private var recordingID: String?
     private var partStartedAt: Date?
+    /// The number of the part being written, and how long it was asked to run.
+    private var partNumber = 0
+    private var partPlannedSeconds: TimeInterval = 0
+    /// The running part ends at the hour: the recording closes with it and the next one begins.
+    private var partClosesHour = false
+    /// When the open recording is closed and the next one begins.
+    private var hourCut: Date?
     private var interrupted = false
     private let heartRate = WatchHeartRateSampler()
     private let location = WatchLocationSampler()
@@ -88,10 +96,8 @@ final class WatchRecorderModel: NSObject, ObservableObject {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.record, mode: .default)
             try session.setActive(true)
-            let id = WatchRecordingWire.newRecordingID()
             let now = Date()
-            library.begin(id: id, at: now)
-            recordingID = id
+            openHour(at: now)
             try startPart(at: now)
             phase = .recording(since: now)
             WKInterfaceDevice.current().play(.start)
@@ -108,15 +114,26 @@ final class WatchRecorderModel: NSObject, ObservableObject {
         guard isRecording else { return }
         finishPart(last: true)
         recordingID = nil
+        hourCut = nil
         phase = .idle
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         WKInterfaceDevice.current().play(.stop)
         reload()
     }
 
+    /// Opens the recording for the hour `date` falls in. The one before, if any, is already closed.
+    private func openHour(at date: Date) {
+        let id = WatchRecordingWire.newRecordingID()
+        library.begin(id: id, at: date)
+        recordingID = id
+        partNumber = 0
+        hourCut = WatchHourClock.cut(after: date)
+    }
+
     private func startPart(at date: Date) throws {
-        guard let recordingID, let entry = library.all().first(where: { $0.id == recordingID }) else { return }
-        let url = library.fileURL(recordingID: recordingID, part: entry.parts.count)
+        guard let recordingID, let hourCut else { return }
+        let url = library.fileURL(recordingID: recordingID, part: partNumber)
+        let plan = WatchHourClock.part(from: date, cut: hourCut)
         let settings: [String: Any] = [
             AVFormatIDKey: kAudioFormatMPEG4AAC,
             AVSampleRateKey: 16_000,
@@ -126,35 +143,41 @@ final class WatchRecorderModel: NSObject, ObservableObject {
         ]
         let recorder = try AVAudioRecorder(url: url, settings: settings)
         recorder.delegate = self
-        // The recorder ends the part itself at the part length, also with the screen off; the
-        // delegate then cuts it and starts the next one.
-        guard recorder.record(forDuration: WatchRecordingWire.partSeconds) else { throw CocoaError(.fileWriteUnknown) }
+        // The recorder ends the part itself at the part length or at the hour, also with the
+        // screen off; the delegate then cuts it and starts the next one.
+        guard recorder.record(forDuration: plan.seconds) else { throw CocoaError(.fileWriteUnknown) }
         self.recorder = recorder
         partStartedAt = date
+        partPlannedSeconds = plan.seconds
+        partClosesHour = plan.closesHour
         // Only when the wearer turned it on, and only while a part is being recorded.
         if WatchContextSettings.heartRate { heartRate.begin(at: date) }
         if WatchContextSettings.location { location.begin() } else { location.reset() }
     }
 
-    /// The running part reached its length: keep it and start the next one.
+    /// The running part reached its length: keep it and start the next one. At the hour the
+    /// recording is closed with it and the next hour's recording begins, without stopping.
     private func roll(_ finished: AVAudioRecorder) {
         guard isRecording, finished === recorder else { return }
-        finishPart(last: false, length: WatchRecordingWire.partSeconds)
-        guard recordingID != nil, library.all().first(where: { $0.id == recordingID })?.finished == false else {
-            // The part limit closed the recording.
-            stopAfterLimit()
-            return
-        }
+        let closes = partClosesHour || WatchHourClock.mustClose(afterPart: partNumber)
+        finishPart(last: closes, length: partPlannedSeconds)
+        let now = Date()
+        if closes { openHour(at: now) }
         do {
-            try startPart(at: Date())
+            try startPart(at: now)
+            if closes { reload() }
         } catch {
+            if closes, let recordingID { library.discardIfEmpty(recordingID: recordingID) }
             stopAfterLimit()
         }
     }
 
+    /// The next part could not be started: what was recorded is kept and the watch goes idle.
     private func stopAfterLimit() {
         location.reset()
+        if let recordingID { library.close(recordingID: recordingID) }
         recordingID = nil
+        hourCut = nil
         phase = .idle
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         reload()
@@ -185,6 +208,7 @@ final class WatchRecorderModel: NSObject, ObservableObject {
         }
         library.addPart(recordingID: recordingID, startedAt: partStartedAt, durationSeconds: seconds, last: last,
                         model: WKInterfaceDevice.current().model, context: context)
+        partNumber += 1
         link.sendUnsent()
     }
 
@@ -203,7 +227,16 @@ final class WatchRecorderModel: NSObject, ObservableObject {
                 self.interrupted = false
                 do {
                     try AVAudioSession.sharedInstance().setActive(true)
-                    try self.startPart(at: Date())
+                    let now = Date()
+                    if let cut = self.hourCut, WatchHourClock.isPast(cut, at: now) {
+                        // The call ran across the hour: what came before it is one recording,
+                        // what comes now is the next.
+                        if let open = self.recordingID { self.library.close(recordingID: open) }
+                        self.openHour(at: now)
+                        self.link.sendUnsent()
+                    }
+                    try self.startPart(at: now)
+                    self.reload()
                 } catch {
                     self.stop()
                 }
