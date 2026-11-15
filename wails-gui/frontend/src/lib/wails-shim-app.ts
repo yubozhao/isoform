@@ -2104,16 +2104,6 @@ export interface ShadowExecutionAttempt {
     createdAt: number;
 }
 
-export const GetShadowAgentDebugSnapshot = appBinding<
-    [number],
-    ShadowAgentDebugSnapshot
->("GetShadowAgentDebugSnapshot");
-
-export const GetShadowAgentDebugRun = appBinding<
-    [string],
-    ShadowRunDebugDetail
->("GetShadowAgentDebugRun");
-
 export interface TaskContextLearningProvenance {
     version: string;
     runId: string;
@@ -2938,16 +2928,6 @@ export interface TaskShadowDebugDetail {
     }>;
 }
 
-export const GetTaskShadowDebugSnapshot = appBinding<
-    [number],
-    TaskShadowDebugSnapshot
->("GetTaskShadowDebugSnapshot");
-
-export const GetTaskShadowDebugDetail = appBinding<
-    [string, string, number],
-    TaskShadowDebugDetail
->("GetTaskShadowDebugDetail");
-
 export interface TaskShadowWorkflowReadinessDecision {
     source: string;
     taskEpisodeId: string;
@@ -3110,16 +3090,6 @@ export interface TaskShadowObserverDebugDetail {
     attemptLinks: TaskShadowObserverDebugAttemptLink[];
 }
 
-export const GetTaskShadowObserverDebugSnapshot = appBinding<
-    [number],
-    TaskShadowObserverDebugSnapshot
->("GetTaskShadowObserverDebugSnapshot");
-
-export const GetTaskShadowObserverDebugDetail = appBinding<
-    [string],
-    TaskShadowObserverDebugDetail
->("GetTaskShadowObserverDebugDetail");
-
 export interface TaskShadowObserverCoverageCounts {
     instrumentedSources: number;
     legacySources: number;
@@ -3171,16 +3141,6 @@ export interface TaskShadowObserverCoverageSnapshot {
     loadedItems: number;
     scannedTraces: number;
 }
-
-export const GetTaskShadowObserverCoverageSnapshot = appBinding<
-    [number],
-    TaskShadowObserverCoverageSnapshot
->("GetTaskShadowObserverCoverageSnapshot");
-
-export const RunTaskShadowQualityCampaign = appBinding<
-    [],
-    TaskShadowQualityCampaignRunResult
->("RunTaskShadowQualityCampaign");
 
 export interface WorkPatternMetric {
     name: string;
@@ -3610,14 +3570,6 @@ export interface WorkPatternProfileDebugDetail {
     rollout: WorkPatternProfileRolloutStatus;
 }
 
-export const GetWorkPatternProfileDebugSnapshot = appBinding<
-    [number],
-    WorkPatternProfileDebugSnapshot
->("GetWorkPatternProfileDebugSnapshot");
-export const GetWorkPatternProfileDebugDetail = appBinding<
-    [string, number],
-    WorkPatternProfileDebugDetail
->("GetWorkPatternProfileDebugDetail");
 export const GetSelfDreamDebugSnapshot = appBinding<[number], unknown>(
     "GetSelfDreamDebugSnapshot",
 );
