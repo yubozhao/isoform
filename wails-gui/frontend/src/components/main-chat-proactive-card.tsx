@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { ChevronDown, ChevronRight, CircleAlert, CircleCheck, MoreHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { WorkOnItButton } from '@/components/work-on-it/work-on-it';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import { MAIN_CHAT_HELD_ACTIONS, holdMainChatCardAction, undoMainChatCardAction, useMainChatHeldAction } from '@/lib/main-chat-held-action';
@@ -421,6 +422,9 @@ function ProactiveMessage({ item, message, onOpenTarget, nested = false, topicId
             {t('mainChat.proactive.editDraft')}
         </Button>
     );
+    const workOnIt = (
+        <WorkOnItButton look="button" input={{ sourceKind: 'chat_card', sourceId: message.momentId, title: displayHeadline, detail: message.body ?? '', done: '' }} />
+    );
     const moreMenu = menuActions.length > 0 && (
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -629,6 +633,7 @@ function ProactiveMessage({ item, message, onOpenTarget, nested = false, topicId
                         </Button>
                     ))}
                     {editable && editButton}
+                    {workOnIt}
                     {moreMenu}
                 </div>
             ) : !briefCard && (cardActions.length > 0 || panelActions.length > 0 || menuActions.length > 0 || editable) && (
@@ -663,6 +668,7 @@ function ProactiveMessage({ item, message, onOpenTarget, nested = false, topicId
                         </Button>
                     ))}
                     {editable && editButton}
+                    {workOnIt}
                     {moreMenu}
                 </div>
             )}

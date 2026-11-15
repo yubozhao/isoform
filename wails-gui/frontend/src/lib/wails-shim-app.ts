@@ -4138,6 +4138,19 @@ export interface ActivityDayThreads {
 }
 
 export const GetDayThreads = appBinding<[number, number], ActivityDayThreads>("GetDayThreads");
+
+// Work on it (work_on_it.go): prepare a task from what a surface shows and
+// hand it to the person's agent on their tap. Off unless work_on_it_enabled.
+export type WorkOnItSourceKind = "brief_item" | "topic_proposal" | "chat_card";
+export type WorkOnItMethod = "deep_link" | "open_copy" | "message" | "share";
+export interface WorkOnItInput { sourceKind: WorkOnItSourceKind; sourceId: string; title: string; detail: string; done: string }
+export interface WorkOnItAgentView { id: string; name: string; methods: WorkOnItMethod[]; default: boolean; termsNote?: string; needsHandle?: boolean }
+export interface WorkOnItPrepared { taskId: string; text: string; agents: WorkOnItAgentView[] }
+export interface WorkOnItSent { recordId: string; method: WorkOnItMethod; copied: boolean }
+export const GetWorkOnItEnabled = appBinding<[], boolean>("GetWorkOnItEnabled");
+export const PrepareWorkOnIt = appBinding<[WorkOnItInput], WorkOnItPrepared>("PrepareWorkOnIt");
+export const SendWorkOnIt = appBinding<[string, string, string], WorkOnItSent>("SendWorkOnIt");
+export const SetWorkOnItHandle = appBinding<[string, string], void>("SetWorkOnItHandle");
 export const ConfirmActivityThreadLink = appBinding<[string], void>("ConfirmActivityThreadLink");
 export const MoveActivityToThread = appBinding<[string, string], string>("MoveActivityToThread");
 export const RenameActivityThread = appBinding<[string, string], void>("RenameActivityThread");
