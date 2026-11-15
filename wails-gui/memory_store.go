@@ -123,6 +123,10 @@ type MemoryStore struct {
 	// covers the dirty window.
 	syncMu sync.Mutex
 
+	// hiddenIndex caches, per file key, the content that was found hidden
+	// (learned from agents, a duplicate, or forgotten). Guarded by syncMu.
+	hiddenIndex map[string]memoryHiddenVerdict
+
 	// File state cache for change detection (polling watcher)
 	fileHashes map[string]string // path → hash
 
