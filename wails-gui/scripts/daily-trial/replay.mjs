@@ -4,16 +4,19 @@
 // with the previous saved day and writes OUT/DAY.md and OUT/latest.txt.
 // Only counts, timings and log tags are read out of a line; never its text.
 import { readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
+import { checkTodayBudgets, todayBudgetTable } from "./today-budgets.mjs";
 
 const [day, out, briefsFile, ...logs] = process.argv.slice(2);
 const stamp = day.replaceAll("-", "/");
 const paints = {}, bindings = {}, errors = {}, turns = {};
 let lines = 0;
+const perfLines = [];
 const push = (map, key, value) => { (map[key] ??= []).push(value); };
 for (const file of logs) {
     for (const line of readFileSync(file, "utf8").split("\n")) {
         if (!line.startsWith(stamp)) continue;
         lines++;
+        if (line.includes("[perf] ")) perfLines.push(line);
         let m;
         if ((m = line.match(/\[perf\] first_paint page=([\w-]+) ms=(\d+)/))) push(paints, m[1], Number(m[2]));
         else if ((m = line.match(/\[perf\] binding=(\w+) ms=(\d+)/))) push(bindings, m[1], Number(m[2]));
@@ -64,9 +67,16 @@ if (prev) {
     const noAudio = briefs.filter((b) => !b.audio).length;
     if (noAudio > prev.briefs.filter((b) => !b.audio).length) worse.push(`${noAudio} brief(s) without audio`);
 }
-const line = !prev ? `${day} baseline saved (${lines} log lines, ${briefs.length} briefs); nothing to compare yet`
+// Today's absolute budgets (today-budgets.json) fail the day on their own,
+// whatever the day before was.
+const budget = checkTodayBudgets(perfLines);
+metrics.todayBudgetFailures = budget.failures;
+writeFileSync(`${out}/${day}.json`, JSON.stringify(metrics, null, 2));
+const overBudget = budget.failures.length ? `${day} OVER BUDGET on Today: ${budget.failures.slice(0, 4).join("; ")}${budget.failures.length > 4 ? `; ${budget.failures.length - 4} more` : ""}. ` : "";
+const comparison = !prev ? `${day} baseline saved (${lines} log lines, ${briefs.length} briefs); nothing to compare yet`
     : worse.length ? `${day} WORSE than ${previousDay.slice(0, 10)}: ${worse.slice(0, 4).join("; ")}`
         : `${day} no worse than ${previousDay.slice(0, 10)} (${lines} log lines, ${briefs.length} briefs)`;
+const line = overBudget + comparison;
 writeFileSync(`${out}/latest.txt`, line + "\n");
 
 const table = (map, label) => {
@@ -80,6 +90,9 @@ ${line}
 
 ## Briefs
 ${briefs.length ? briefs.map((b) => `- ${b.id}: ${b.decision}, ${b.narrative} paragraphs, ${b.cards} cards, ${b.evidence} sources, audio ${b.audio ? "yes" : "no"}`).join("\n") : "- none stored for this day"}
+
+## Today read budgets (today-budgets.json)
+${todayBudgetTable(budget)}
 
 ## First paint by page
 ${table(metrics.paints, "paints")}

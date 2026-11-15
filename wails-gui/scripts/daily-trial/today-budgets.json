@@ -1,0 +1,27 @@
+{
+  "_doc": "Today's read budgets (2026-11-15). Window reads only (origin=window). steadyP95Ms: p95 of reads more than launchWindowMs after start; Today reads saved snapshots, so 100 ms. launchMaxMs: the slowest read in the launch window. minSamples: fewer steady reads than this are judged by their maximum. Checked by today-budgets.mjs in replay.mjs (the person's log) and report.mjs (the trial).",
+  "launchWindowMs": 90000,
+  "minSamples": 5,
+  "default": { "steadyP95Ms": 100, "launchMaxMs": 1500 },
+  "bindings": {
+    "GetTodayDayShape": {},
+    "GetTodayBeforeYouTalk": {},
+    "GetPortraitTodayCard": {},
+    "GetTopicFinds": {},
+    "GetTodaySuggestion": {},
+    "GetTodayQuietLines": {},
+    "GetTodayTopics": {},
+    "GetTodayNews": {},
+    "GetNeedsYou": {},
+    "GetDoneForYou": {},
+    "GetFirstWeekDay": {},
+    "GetGoalCheckIn": {},
+    "GetEngagementWeekSummary": {},
+    "GetMobileBriefHealth": {},
+    "GetLatestBrief": {},
+    "GetMainChatWaiting": {},
+    "ListMainChatWaitingItems": {},
+    "LoadStreamItemsPage": {},
+    "IsClosedEyesModeEnabled": {}
+  }
+}

@@ -3,6 +3,7 @@
 // real-app test's Markdown report to stdout and RUN/summary.txt (first line
 // "PASS ..." or "FAIL ...") for the morning report.
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { checkTodayBudgets, todayBudgetTable } from "./today-budgets.mjs";
 
 const [run, date, sha, buildSecs, startupSecs, logErrors, branch = "feat/iphone-companion"] = process.argv.slice(2);
 const read = (name) => (existsSync(`${run}/${name}`) ? readFileSync(`${run}/${name}`, "utf8") : "");
@@ -11,8 +12,10 @@ const paints = read("first-paint.txt").split("\n").filter(Boolean).map((line) =>
 const refused = read("refused-methods.txt").split("\n").filter(Boolean);
 const errors = read("log-errors.txt").split("\n").filter(Boolean);
 const failed = pages.filter((p) => !p.ok);
+// Today's window reads against today-budgets.json (perf.txt: the app's [perf] lines).
+const budget = checkTodayBudgets(read("perf.txt").split("\n"));
 const expected = 13;
-const ok = pages.length >= expected && failed.length === 0 && Number(logErrors) === 0 && refused.length === 0;
+const ok = pages.length >= expected && failed.length === 0 && Number(logErrors) === 0 && refused.length === 0 && budget.failures.length === 0;
 const line = ok
     ? `PASS ${pages.length} pages on ${sha}, build ${buildSecs}s, start ${startupSecs}s`
     : `FAIL on ${sha}: ${[
@@ -20,6 +23,7 @@ const line = ok
         pages.length < expected ? `${expected - pages.length} page(s) not reached` : "",
         Number(logErrors) > 0 ? `${logErrors} log error(s)` : "",
         refused.length ? `bridge refused ${refused.join(", ")}` : "",
+        budget.failures.length ? `Today over budget: ${budget.failures.slice(0, 3).join(", ")}` : "",
     ].filter(Boolean).join("; ")}`;
 writeFileSync(`${run}/summary.txt`, line + "\n");
 
@@ -37,6 +41,10 @@ ${line}
 | Page | Result | Paint ms / budget | Screenshot | Notes |
 |---|---|---|---|---|
 ${rows.join("\n")}
+
+## Today read budgets
+
+${todayBudgetTable(budget)}
 
 ## Brief reads
 

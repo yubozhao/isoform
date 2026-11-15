@@ -27,6 +27,10 @@ Run it by hand on the mini: `ISOFORM_TRIAL_BRANCH=<branch> bash ~/isoform-trials
 
 `replay-day.sh [YYYY-MM-DD]` reads, never writes: the stored briefs through `cmd/brief-replay` (counts only), and the app's log for first paints, binding timings, error counts by log tag and `[chat-turn]` outcomes. No message, title or log text is kept. It saves the day's numbers, compares them with the previous saved day, and writes `~/isoform-trials/replay/<date>.md` and `latest.txt`.
 
+## Today's read budgets
+
+`today-budgets.json` sets, for each binding Today reads, a budget for window reads (`origin=window` in `[perf] binding=` lines): a steady p95 (100 ms, since Today reads saved snapshots) and a maximum for the first 90 s after launch (1500 ms). `today-budgets.mjs` checks a log against it. The replay marks the day `OVER BUDGET` in `latest.txt` and its report, and the real-app test fails, when any budget is exceeded. A binding that has to be slower gets its own budget in the JSON, on purpose. Tests: `node --test today-budgets.test.mjs`.
+
 ## Install
 
 On each machine, once: `./install.sh trial` (Mac mini) or `./install.sh replay` (the person's computer). Each adds one launchd job. `ISOFORM_TRIAL_BRANCH=<branch> ./install.sh trial` pins the branch the trial builds, for one not merged yet.
