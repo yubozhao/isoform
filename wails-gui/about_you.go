@@ -187,6 +187,24 @@ func (a *App) aboutYouBelief(dir string, entry MemoryEntry, now time.Time) (Abou
 		}
 		out.DayCount = len(days)
 	}
+	// A belief from an assistant's history is seen in its own sessions; each
+	// one counts, so a belief seen again ranks above a one-off.
+	if entry.Source == assistantHistorySource && a.memorySourceAllowsRead(entry.Content) {
+		if doc, ok := parseOKFDocument(legacyMemoryWithoutConfirmation(entry.Content)); ok {
+			seen := map[int64]bool{}
+			days := map[string]bool{}
+			for _, stamp := range historyBeliefStamps(doc.Frontmatter) {
+				at := parseOKFTimestampMs(stamp)
+				if at == 0 || seen[at] {
+					continue
+				}
+				seen[at] = true
+				days[time.UnixMilli(at).In(time.Local).Format("2006-01-02")] = true
+			}
+			out.SessionCount += len(seen)
+			out.DayCount += len(days)
+		}
+	}
 	out.Status, out.Confidence = beliefStatusConfidence(out, entry.Source, now)
 	return out, nil
 }

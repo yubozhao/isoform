@@ -90,9 +90,10 @@ func (p *mcpReadPrivacy) loadMemoryEntries() ([]MemoryEntry, error) {
 			continue
 		}
 		body := string(data)
-		if learnedFromAgents(body) {
-			// Learned only from agent activity: hidden on every page, so
-			// never served to an external assistant either.
+		if learnedHidden(body) {
+			// Learned only from agent activity, or a repeat of another
+			// belief: hidden on every page, so never served to an external
+			// assistant either.
 			continue
 		}
 		fm := parseMemoryFrontmatter(body)

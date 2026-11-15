@@ -65,7 +65,9 @@ func (a *App) loadModelDedupSummaryWithCapture(store *MemoryStore, query string,
 		if !readAllowed(id, content) {
 			return false
 		}
-		return true
+		// A hidden file is never offered as an update target: new evidence
+		// would land where no page shows it.
+		return !learnedHidden(content)
 	}
 	emitted := func(id, content string) {
 		selected++

@@ -631,8 +631,9 @@ func readMemoryEntries(dir string) ([]MemoryEntry, error) {
 		}
 
 		content := string(data)
-		if learnedFromAgents(content) {
-			// Learned only from agent activity: hidden, kept on disk.
+		if learnedHidden(content) {
+			// Learned only from agent activity, or a repeat of another
+			// belief: hidden, kept on disk.
 			parsedNotes.storeHidden(path, info, int64(len(data)))
 			continue
 		}

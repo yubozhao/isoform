@@ -312,9 +312,10 @@ func (s *MemoryStore) removeFile(db *sql.DB, path string, contexts ...context.Co
 // indexFile chunks content, optionally embeds, and stores in DB + FTS.
 func (s *MemoryStore) indexFile(db *sql.DB, file memoryFileRecord, content string, contexts ...context.Context) error {
 	ctx := memoryOperationContext(contexts)
-	if (file.Source == MemorySourceMemory || file.Source == MemorySourceKnowledge) && learnedFromAgents(content) {
-		// Learned only from agent activity: hidden on every page, so memory
-		// search (chat tools, scheduled prompts) never finds it either.
+	if (file.Source == MemorySourceMemory || file.Source == MemorySourceKnowledge) && learnedHidden(content) {
+		// Learned only from agent activity, or a repeat of another belief:
+		// hidden on every page, so memory search (chat tools, scheduled
+		// prompts) never finds it either.
 		return removeForgottenMemoryIndex(db, file.Path, []string{content})
 	}
 	if file.Source == MemorySourceMemory {

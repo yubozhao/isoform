@@ -1202,7 +1202,12 @@ func (a *App) startupServices(ctx context.Context) {
 	a.deferBackgroundLaunchTask("know_how_backfill", func() { a.runKnowHowKindBackfill(a.ctx) })
 	// One-time: hide memories and know-how learned only from agent activity.
 	// It reads session files, so it runs off the launch path.
-	a.deferBackgroundLaunchTask("agent_activity_cleanup", func() { a.runAgentActivityCleanup(a.ctx) })
+	// Then, one-time, hide history beliefs that repeat another one; after the
+	// agent cleanup, so a repeat never folds into a belief it hides.
+	a.deferBackgroundLaunchTask("agent_activity_cleanup", func() {
+		a.runAgentActivityCleanup(a.ctx)
+		a.runMemoryDuplicateCleanup(a.ctx)
+	})
 
 	// Memory Dream consolidator: a nightly cycle that archives exact
 	// duplicates, expired temporaries, and near-duplicate clusters of
