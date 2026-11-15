@@ -31,6 +31,8 @@ struct RecordingPartRequest: Encodable, Equatable, Sendable {
     let durationSeconds: Double
     let source: String
     var device: Device?
+    /// Heart rate and coarse location of the part (24.4), only for a computer that takes it.
+    var context: WatchRecordingContext?
 }
 
 /// The computer's view of a recording (24.3).
@@ -48,12 +50,15 @@ struct RecordingList: Decodable, Equatable, Sendable {
 
 protocol RecordingHubAPI: Sendable {
     func recordingsAvailable() async throws -> Bool
+    /// The computer takes the heart rate and location of a part (PROTOCOL.md 24.4).
+    func recordingContextAvailable() async throws -> Bool
     func postRecording(_ request: RecordingPartRequest) async throws -> RecordingView
     func recordingStates(ids: [String]) async throws -> [RecordingView]
 }
 
 extension HubChannel: RecordingHubAPI {
     func recordingsAvailable() async throws -> Bool { try await status().recordings == true }
+    func recordingContextAvailable() async throws -> Bool { try await status().recordingContext == true }
 
     func postRecording(_ request: RecordingPartRequest) async throws -> RecordingView {
         let body = try JSONEncoder().encode(request)
@@ -295,9 +300,15 @@ actor WatchRecordingForwarder {
                 return .waiting
             }
         }
+        // An older computer refuses a request with fields it does not know, so the context is
+        // sent only to one that says it takes it. Not knowing counts as no.
+        var takesContext = false
+        if pending.contains(where: { $0.info.context != nil }) {
+            takesContext = (try? await hub.recordingContextAvailable()) ?? false
+        }
         for item in pending {
             do {
-                try await send(item)
+                try await send(item, withContext: takesContext)
             } catch HubRequestError.rejected(let status, _) where status == 400 {
                 // The computer says this part is not valid. Count it and move on; the audio stays.
                 inbox.refused(item)
@@ -313,7 +324,7 @@ actor WatchRecordingForwarder {
         return .drained
     }
 
-    private func send(_ item: WatchRecordingInbox.Pending) async throws {
+    private func send(_ item: WatchRecordingInbox.Pending, withContext: Bool) async throws {
         let context = try session()
         let info = item.info
         let plaintext = try Data(contentsOf: inbox.audioURL(info), options: .mappedIfSafe)
@@ -330,7 +341,8 @@ actor WatchRecordingForwarder {
             idempotencyKey: "rec-\(info.recordingID)-\(info.part)", recordingId: info.recordingID, part: info.part,
             last: info.last, upload: upload, sha256: RelayCrypto.sha256Hex(plaintext), bytes: plaintext.count,
             mime: WatchRecordingWire.mime, startedAt: RecordingTime.format(info.startedAt),
-            durationSeconds: info.durationSeconds, source: "watch", device: info.model.map { .init(model: $0) })
+            durationSeconds: info.durationSeconds, source: "watch", device: info.model.map { .init(model: $0) },
+            context: withContext ? info.context : nil)
         let view: RecordingView
         do {
             view = try await hub.postRecording(request)

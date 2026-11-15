@@ -31,7 +31,48 @@ final class WatchRecordingWireTests: XCTestCase {
         XCTAssertEqual(WatchRecordingRemoteState(computerState: "a state from a newer computer"), .onComputer)
     }
 
+    func testHeartRateAndCoarseLocationSurviveTheTransferMetadata() throws {
+        let context = try XCTUnwrap(WatchRecordingContext(
+            heartRate: .init(readings: [71.4, 104.2, 131.3, 300, 0]),
+            location: .init(latitude: 37.759812, longitude: -122.414923, accuracyMeters: 35, place: " Mission District\n")))
+        XCTAssertEqual(context.heartRate, .init(avg: 102, min: 71, max: 131, samples: 3))
+        // Two decimals, about a kilometer: the precise position never leaves the watch.
+        XCTAssertEqual(context.location?.latitude, 37.76)
+        XCTAssertEqual(context.location?.longitude, -122.41)
+        XCTAssertEqual(context.location?.accuracyMeters, 1_000)
+        XCTAssertEqual(context.location?.place, "Mission District")
+
+        let info = WatchRecordingPartInfo(recordingID: WatchRecordingWire.newRecordingID(), part: 1, last: false,
+                                          startedAt: Date(timeIntervalSince1970: 1_800_000_000), durationSeconds: 900,
+                                          context: context)
+        // The metadata crosses the watch link as a property list.
+        let data = try PropertyListSerialization.data(fromPropertyList: info.metadata, format: .binary, options: 0)
+        let back = try XCTUnwrap(PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
+        XCTAssertEqual(WatchRecordingPartInfo(metadata: back), info)
+    }
+
+    func testAnUnusableContextIsLeftOutAndThePartStillArrives() throws {
+        XCTAssertNil(WatchRecordingContext.HeartRate(readings: []))
+        XCTAssertNil(WatchRecordingContext.HeartRate(readings: [0, 400]))
+        XCTAssertNil(WatchRecordingContext.Location(latitude: 0, longitude: 0))
+        XCTAssertNil(WatchRecordingContext.Location(latitude: 91, longitude: 10))
+        XCTAssertNil(WatchRecordingContext(heartRate: nil, location: nil))
+
+        var metadata = WatchRecordingPartInfo(recordingID: WatchRecordingWire.newRecordingID(), part: 0, last: true,
+                                              startedAt: Date(timeIntervalSince1970: 1_800_000_000),
+                                              durationSeconds: 60).metadata
+        metadata["hrAvg"] = 900.0
+        metadata["hrMin"] = 1.0
+        metadata["hrMax"] = 950.0
+        metadata["hrSamples"] = 4
+        metadata["lat"] = 200.0
+        metadata["lon"] = 10.0
+        let info = try XCTUnwrap(WatchRecordingPartInfo(metadata: metadata))
+        XCTAssertNil(info.context)
+    }
+
     func testOlderComputerOmitsTheRecordingsCapability() throws {
+        XCTAssertNil(try JSONDecoder().decode(HubStatus.self, from: Data("{}".utf8)).recordingContext)
         XCTAssertNil(try JSONDecoder().decode(HubStatus.self, from: Data("{}".utf8)).recordings)
     }
 
@@ -97,6 +138,26 @@ final class WatchRecordingLibraryTests: XCTestCase {
         XCTAssertEqual(WatchRecordingLibrary(directory: directory).all().first?.display, .remote(.transcribed))
     }
 
+    func testAPartsContextLeavesTheWatchWithItsAudio() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let library = WatchRecordingLibrary(directory: directory)
+        let id = WatchRecordingWire.newRecordingID()
+        library.begin(id: id, at: Date())
+        let context = try XCTUnwrap(WatchRecordingContext(heartRate: .init(readings: [90, 110]), location: nil))
+        try Data("audio".utf8).write(to: library.fileURL(recordingID: id, part: 0))
+        let info = try XCTUnwrap(library.addPart(recordingID: id, startedAt: Date(), durationSeconds: 30, last: true,
+                                                 context: context))
+        XCTAssertEqual(info.context, context)
+        // A resend after a restart still carries it.
+        XCTAssertEqual(WatchRecordingLibrary(directory: directory).unsentParts().first?.info.context, context)
+
+        library.markSent(recordingID: id, part: 0)
+        XCTAssertNil(library.all().first?.parts.first?.context)
+        let index = try String(contentsOf: directory.appendingPathComponent("index.json"), encoding: .utf8)
+        XCTAssertFalse(index.contains("heartRate"), "the heart rate is gone from the watch once the phone holds the part")
+    }
+
     func testARecordingCutShortByAKillIsClosedAndKept() throws {
         let library = WatchRecordingLibrary(directory: directory)
         let withAudio = WatchRecordingWire.newRecordingID()
@@ -160,7 +221,10 @@ private actor StubRecordingHub: RecordingHubAPI {
     func set(answerState: String) { self.answerState = answerState }
     func set(listed: [RecordingView]) { self.listed = listed }
 
+    var takesContext = false
+    func set(takesContext: Bool) { self.takesContext = takesContext }
     func recordingsAvailable() async throws -> Bool { available }
+    func recordingContextAvailable() async throws -> Bool { takesContext }
     func postRecording(_ request: RecordingPartRequest) async throws -> RecordingView {
         if let postError { throw postError }
         posted.append(request)
@@ -290,6 +354,42 @@ final class WatchRecordingForwarderTests: XCTestCase {
         XCTAssertEqual(outcome, .drained)
         XCTAssertTrue(inbox.pending().isEmpty)
         XCTAssertEqual(uploads.count, 1)
+    }
+
+    func testContextGoesOnlyToAComputerThatTakesItAndLeavesThePhoneWithThePart() async throws {
+        let context = try XCTUnwrap(WatchRecordingContext(
+            heartRate: .init(readings: [88, 96]), location: .init(latitude: 48.8566, longitude: 2.3522, place: "Le Marais")))
+        for takes in [false, true] {
+            let hub = StubRecordingHub()
+            await hub.set(takesContext: takes)
+            let uploads = StubUploads()
+            let inbox = WatchRecordingInbox(directory: directory.appendingPathComponent("inbox-\(takes)"))
+            let session = self.context()
+            let forwarder = WatchRecordingForwarder(inbox: inbox, hub: hub, relay: uploads, session: { session })
+            let source = directory.appendingPathComponent(UUID().uuidString)
+            try Data("audio".utf8).write(to: source)
+            let info = WatchRecordingPartInfo(recordingID: WatchRecordingWire.newRecordingID(), part: 0, last: true,
+                                              startedAt: Date(timeIntervalSince1970: 1_800_000_000), durationSeconds: 60,
+                                              context: context)
+            try inbox.accept(file: source, info: info)
+            await forwarder.received(info)
+            let outcome = await forwarder.drain()
+            XCTAssertEqual(outcome, .drained)
+
+            let posted = await hub.posted
+            let request = try XCTUnwrap(posted.first)
+            XCTAssertEqual(request.context, takes ? context : nil)
+            let body = String(decoding: try JSONEncoder().encode(request), as: UTF8.self)
+            XCTAssertEqual(body.contains("\"context\""), takes, "an older computer refuses fields it does not know")
+            if takes {
+                XCTAssertTrue(body.contains("\"heartRate\""))
+                XCTAssertTrue(body.contains("\"place\":\"Le Marais\""))
+                XCTAssertFalse(body.contains("48.8566"), "only the coarse position is sent")
+            }
+            // Nothing about the part stays on the phone once the computer holds it.
+            let left = try FileManager.default.contentsOfDirectory(atPath: inbox.directory.path)
+            XCTAssertEqual(left.filter { $0 != "states.json" }, [])
+        }
     }
 
     func testAnOlderComputerLeavesRecordingsOnThePhone() async throws {

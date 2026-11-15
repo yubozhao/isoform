@@ -25,6 +25,8 @@ struct WatchRecordingPartInfo: Codable, Equatable, Sendable {
     let startedAt: Date
     let durationSeconds: Double
     var model: String?
+    /// The wearer's heart rate and coarse location during this part, when they allowed each.
+    var context: WatchRecordingContext?
 
     /// The metadata dictionary of a WCSession file transfer (property-list values only).
     var metadata: [String: Any] {
@@ -33,16 +35,19 @@ struct WatchRecordingPartInfo: Codable, Equatable, Sendable {
             "startedAt": startedAt.timeIntervalSince1970, "durationSeconds": durationSeconds,
         ]
         if let model { out["model"] = model }
+        context?.write(into: &out)
         return out
     }
 
-    init(recordingID: String, part: Int, last: Bool, startedAt: Date, durationSeconds: Double, model: String? = nil) {
+    init(recordingID: String, part: Int, last: Bool, startedAt: Date, durationSeconds: Double, model: String? = nil,
+         context: WatchRecordingContext? = nil) {
         self.recordingID = recordingID
         self.part = part
         self.last = last
         self.startedAt = startedAt
         self.durationSeconds = durationSeconds
         self.model = model
+        self.context = context
     }
 
     /// Reads a transfer's metadata. Anything malformed is refused, so a file is never forwarded
@@ -57,7 +62,8 @@ struct WatchRecordingPartInfo: Codable, Equatable, Sendable {
             return nil
         }
         self.init(recordingID: id, part: part, last: last, startedAt: Date(timeIntervalSince1970: started),
-                  durationSeconds: duration, model: (metadata["model"] as? String).map { String($0.prefix(40)) })
+                  durationSeconds: duration, model: (metadata["model"] as? String).map { String($0.prefix(40)) },
+                  context: WatchRecordingContext(metadata: metadata))
     }
 }
 
