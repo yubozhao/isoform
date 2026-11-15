@@ -245,7 +245,7 @@ func buildMobileBriefV1(in mobileBriefInput) MobileBriefV1 {
 		prepareMobileBriefPurposeCandidates(in.Commitments, mobileBriefPurposeFirst))
 	waitingOnYou := builder.sectionLimit(mobileBriefSectionWaitingOnYou,
 		prepareMobileBriefPurposeCandidates(in.WaitingOnYou, mobileBriefOldestTouchFirst), 3)
-	builder.reserveRecap(in.RecapEvidence)
+	builder.reserveWritten(in.RecapEvidence)
 
 	moved := builder.section(
 		mobileBriefSectionMoved,
@@ -511,6 +511,12 @@ func (b *mobileBriefBuilder) sectionLimit(name string, items []mobileBriefCandid
 }
 
 func (b *mobileBriefBuilder) refFor(item mobileBriefCandidate) (string, bool) {
+	return b.refForWithin(item, mobileBriefCalendarLimit)
+}
+
+// refForWithin is refFor with its own calendar limit: the sections show two
+// meetings, but the words a brief was written with cite up to the writer's.
+func (b *mobileBriefBuilder) refForWithin(item mobileBriefCandidate, calendarLimit int) (string, bool) {
 	key := item.SourceKind + "\x00" + item.SourceID
 	if ref, ok := b.index[key]; ok {
 		return ref, true
@@ -518,7 +524,7 @@ func (b *mobileBriefBuilder) refFor(item mobileBriefCandidate) (string, bool) {
 	if len(b.evidence) >= mobileBriefEvidenceLimit {
 		return "", false
 	}
-	if item.SourceKind == mobileBriefCalendarSource && mobileBriefEvidenceCounts(b.evidence)[mobileBriefCalendarSource] >= mobileBriefCalendarLimit {
+	if item.SourceKind == mobileBriefCalendarSource && mobileBriefEvidenceCounts(b.evidence)[mobileBriefCalendarSource] >= calendarLimit {
 		return "", false
 	}
 	ref := "e" + strconv.Itoa(len(b.evidence)+1)

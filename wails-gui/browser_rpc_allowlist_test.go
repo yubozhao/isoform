@@ -310,6 +310,7 @@ var browserRPCReadOnly = []string{
 	"GetAssistantSignOut",
 	"GetScreenRecordingRelaunch",
 	"GetMobileBriefHealth",
+	"GetMobileBriefAudio",
 	"GetTodayDayShape",
 	"GetGoalCheckIn",
 	"GetTodayQuietLines",

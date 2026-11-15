@@ -98,8 +98,10 @@ func TestMobileBriefTodayRefreshWithdrawsSynthesisBeforeDiscardingSources(t *tes
 						if !ok {
 							t.Fatal("first refresh missing")
 						}
-						if citations == "q-only" && (len(first.Narrative) != 0 || first.Audio != nil) {
-							t.Error("first refresh kept synthesis after uncited dependency disappeared")
+						// Bo, 2026-11-15: a goal closing after the build is not a
+						// reason to take the written brief away. The words stay.
+						if citations == "q-only" && (len(first.Narrative) != 1 || first.NarrativeStatus != "ok") {
+							t.Error("first refresh dropped the written brief after an uncited goal closed")
 						}
 						reopened := newMobileBriefStore(filepath.Dir(svc.store.dir))
 						if _, ok := reopened.load(base.BriefID); !ok {
@@ -129,6 +131,15 @@ func TestMobileBriefTodayRefreshWithdrawsSynthesisBeforeDiscardingSources(t *tes
 							}
 							if len(brief.Offers) != 1 || len(brief.Narrative) != 1 || brief.Narrative[0].Text != base.Narrative[0].Text || brief.NarrativeStatus != "ok" || !reflect.DeepEqual(brief.Audio, &expectedAudio) || !reflect.DeepEqual(brief.DayShape, &day) || !reflect.DeepEqual(brief.Counts, base.Counts) {
 								t.Fatalf("%s withdrew synthesis with readable P: %+v", stage, brief)
+							}
+							return
+						}
+						if state == "completed-then-protected" && citations == "q-only" && stage != "refresh helper" {
+							// The words never cited P, and P left the brief when it
+							// closed, before it was protected: the stored brief keeps
+							// its words (ranked goals, docs/today-rework-2026-11-15.md).
+							if len(brief.Narrative) != 1 || brief.NarrativeStatus != "ok" {
+								t.Fatalf("%s dropped the written brief: %+v", stage, brief)
 							}
 							return
 						}
