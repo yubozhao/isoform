@@ -1,0 +1,31 @@
+# Daily real-app test
+
+Two runs every morning, before the day starts (docs/rework-2026-11.md, step 4).
+
+## 1. Real app on test data (Mac mini, 05:00)
+
+`daily-trial.sh` checks out the feat tip, builds it with `build-wails.sh`, seeds a fresh data folder with a scripted day (`TestTrialSeed` in `wails-gui/trial_seed_test.go`: invented people, a main-chat exchange, a watch recording, and the morning brief due three minutes after launch; never anyone's data), launches the built app on that folder with the browser bridge on, and drives it with Playwright (`frontend/e2e/daily-real-app.spec.ts`, `playwright.daily.config.ts`):
+
+| Check | What passes |
+|---|---|
+| today | Today shows within its paint budget |
+| brief-audio | the scheduled brief arrives on Today with its recording, and the play button switches to playing |
+| chat | a message is sent and an answer arrives |
+| tasks, activity, about-you, how-you-do-things, who-you-know, settings | the page shows within its budget |
+| watch-recordings | Activity > From your watch lists the seeded recording |
+| quick-chat | one prompt through the quick chat helper's own route to the launched app gets an answer (`quick-chat.mjs`; the panel window itself is not drawn) |
+| phone-relay | `TestMobileEndToEndThroughRelayBinary`: the relay binary, the hub code and a scripted phone pair, and a brief reaches the phone (not the launched app) |
+
+Every page must also raise no page errors and match the baseline screenshot (`~/isoform-trials/baseline`; a missing baseline is written by that run). A call the browser bridge refuses fails the run, except the ones kept native-only on purpose (listed in the spec). The app's own log is read for `first_paint` times, error lines (`known-noise.txt` lists the ones a test machine always has) and how each brief read went (shown, or withheld and why).
+
+Results: `~/isoform-trials/daily/<date>.md`, artifacts in `~/isoform-trials/daily/<date>/`, and one line in `~/isoform-trials/daily/latest.txt` for the morning report.
+
+Run it by hand on the mini: `ISOFORM_TRIAL_BRANCH=<branch> bash ~/isoform-trials/bin/daily-trial.sh`. `ISOFORM_TRIAL_REUSE_BUILD=1` keeps the last build when only the spec or the seed changed.
+
+## 2. Replay of the previous day (the person's computer, 04:30)
+
+`replay-day.sh [YYYY-MM-DD]` reads, never writes: the stored briefs through `cmd/brief-replay` (counts only), and the app's log for first paints, binding timings, error counts by log tag and `[chat-turn]` outcomes. No message, title or log text is kept. It saves the day's numbers, compares them with the previous saved day, and writes `~/isoform-trials/replay/<date>.md` and `latest.txt`.
+
+## Install
+
+On each machine, once: `./install.sh trial` (Mac mini) or `./install.sh replay` (the person's computer). Each adds one launchd job. `ISOFORM_TRIAL_BRANCH=<branch> ./install.sh trial` pins the branch the trial builds, for one not merged yet.

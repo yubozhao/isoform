@@ -1,0 +1,14 @@
+# Log lines the daily test does not count as errors (one extended regex per line).
+# Keep this short; every entry needs a reason.
+# The test machine has no microphone permission for the test data folder.
+\[background-audio\]
+# The test data folder never downloads the speech or memory models.
+model not downloaded; confirm its download
+# The test build has no Accessibility permission, so the quick chat hotkey is off (quick chat is checked through its route).
+\[quickchat\] global hotkey unavailable
+# No phone is connected to the test app.
+the phone connection is offline
+# A one-day scripted folder has too little evidence for Self Dream.
+Self Dream needs at least two durable evidence items
+# A timing line whose fields include failed=false, not an error.
+\[brief-prerun\] slot=[a-z_]+ ms=[0-9]+ timed_out=false failed=false
