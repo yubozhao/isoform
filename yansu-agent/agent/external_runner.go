@@ -478,7 +478,10 @@ func parseClaudeLine(line []byte, emit func(*StreamEvent) error) (bool, error) {
 				OutputTokens:             l.Usage.OutputTokens,
 				CacheReadInputTokens:     l.Usage.CacheReadInputTokens,
 				CacheCreationInputTokens: l.Usage.CacheCreationInputTokens,
+				CostUSD:                  l.TotalCostUSD,
 			}
+		} else if l.TotalCostUSD > 0 {
+			done.Usage = &Usage{CostUSD: l.TotalCostUSD}
 		}
 		if err := emit(done); err != nil {
 			return true, err

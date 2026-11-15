@@ -95,6 +95,9 @@ type Usage struct {
 	OutputTokens             int `json:"output_tokens,omitempty"`
 	CacheReadInputTokens     int `json:"cache_read_input_tokens,omitempty"`
 	CacheCreationInputTokens int `json:"cache_creation_input_tokens,omitempty"`
+	// CostUSD is the turn's cost as the assistant CLI reports it, or zero
+	// when it reports none.
+	CostUSD float64 `json:"cost_usd,omitempty"`
 }
 
 // StreamCallback is called for each streaming event during task execution.
