@@ -243,11 +243,24 @@ func (a *App) clearPageSnapshots() {
 	if a == nil {
 		return
 	}
+	// Saved page snapshots go in the same step (derived_views_disk.go).
+	derivedDiskDropAll()
+	a.clearPermissionPageSnapshot()
+}
+
+// clearPermissionPageSnapshot clears the permission display snapshot and
+// Today's phone copy, keeping the saved derived pages. A memory index pass
+// uses it: that is not a privacy action, and dropping every saved page on each
+// pass (97 on 2026-11-14) left none for the next launch, so About you and Who
+// you know were built live on the first visit (2 to 14 s, 36 s behind the
+// prefetch). Removed sources are checked when a copy loads.
+func (a *App) clearPermissionPageSnapshot() {
+	if a == nil {
+		return
+	}
 	if bridge := a.mobileBridgeForUse(); bridge != nil {
 		bridge.invalidateToday()
 	}
-	// Saved page snapshots go in the same step (derived_views_disk.go).
-	derivedDiskDropAll()
 	c := &a.pagePermissions
 	c.mu.Lock()
 	defer c.mu.Unlock()
