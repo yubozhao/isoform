@@ -150,6 +150,12 @@ export function installPageQueryEvents() {
         if (active && wasAway) pageQueryCache.invalidateStale([...today, ...activity, ...aboutYou, ...knowHow, ...firstDay]);
         wasAway = !active;
     }));
+    cleanups.push(onLocalDayChange(() => {
+        // A new local day: every Today read is re-read, the brief included, so
+        // day words ("today", "yesterday") and the day's cards follow the date.
+        // What is shown stays until each answer arrives.
+        pageQueryCache.invalidate(today, false);
+    }));
     cleanups.push(onPagePrivacyCacheWithdrawal(() => {
         pageQueryCache.clear();
         clearSavedPeopleView();
@@ -184,6 +190,34 @@ export function installPageQueryEvents() {
         window.addEventListener(event, invalidate);
         cleanups.push(() => window.removeEventListener(event, invalidate));
     }
+}
+
+const dayKey = (at: Date) => `${at.getFullYear()}-${at.getMonth() + 1}-${at.getDate()}`;
+/** Calls listener once each time the local date changes: at local midnight
+ *  while the window is looked at, otherwise the moment it is shown again. */
+export function onLocalDayChange(listener: () => void): () => void {
+    let day = dayKey(new Date());
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const check = () => {
+        const now = dayKey(new Date());
+        if (now === day) return;
+        day = now;
+        listener();
+    };
+    const schedule = () => {
+        const now = new Date();
+        const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime();
+        timer = setTimeout(() => {
+            if (appActive()) check();
+            schedule();
+        }, midnight - now.getTime() + 1000);
+    };
+    schedule();
+    const off = onAppActivity((active) => { if (active) check(); });
+    return () => {
+        if (timer !== undefined) clearTimeout(timer);
+        off();
+    };
 }
 
 const pageReads: Record<string, readonly string[]> = { today, chat, activity, goals, 'about-you': aboutYou, 'know-how': knowHow, people, settings, search };
