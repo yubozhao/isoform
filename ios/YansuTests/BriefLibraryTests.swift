@@ -365,6 +365,48 @@ final class BriefLibraryTests: XCTestCase {
         XCTAssertEqual(h.store.current, newer, "a copy that arrives later and is older never becomes current")
     }
 
+    /// 2026-11-15-morning: the Mac withdrew a brief's words by mistake, the phone took that package from the relay,
+    /// then the Mac gave the words back under the same brief id and time. The relay still holds the stripped
+    /// package; a later relay read must not put it back over the restored one the Today snapshot names.
+    func testAStrippedRelayCopyNeverReplacesTheRestoredPackageTodayNames() async throws {
+        let h = try harness()
+        var stripped = full("brief-1", asOf: "2026-10-20T07:00:00Z")
+        stripped.narrativeStatus = "unavailable"
+        stripped.narrative = []
+        let strippedPackage = try package(stripped)
+        try h.cache.save(package: strippedPackage, version: BriefCache.sha256Hex(strippedPackage), relayVersion: 9)
+        let restored = full("brief-1", asOf: "2026-10-20T07:00:00Z", text: "Restored text.")
+        let restoredPackage = try package(restored)
+        let restoredVersion = BriefCache.sha256Hex(restoredPackage)
+        await h.bodies.serve("brief-1", restoredPackage)
+        h.store.reconcileToday(snapshot(current: TodayBriefRef(id: "brief-1", version: restoredVersion),
+                                        briefs: [index("brief-1", version: restoredVersion)]))
+        let fetched = await awaitCondition { h.cache.load(identifier: "brief-1")?.version == restoredVersion }
+        XCTAssertTrue(fetched, "the version Today names replaces the stripped copy")
+        XCTAssertEqual(h.store.current, restored)
+
+        try Self.serveHistory([try Self.seal(stripped, sequence: 9, session: h.session)])
+        await h.store.refreshHistory()
+        XCTAssertEqual(h.cache.load(identifier: "brief-1")?.version, restoredVersion,
+                       "the relay's stripped copy of the same brief never comes back")
+        XCTAssertEqual(h.store.current, restored, "the restored brief stays current")
+    }
+
+    func testARelayCopyWithANewerSequenceReplacesTheSameBriefWhenTodayNamesNoVersion() async throws {
+        let h = try harness()
+        var stripped = full("brief-1", asOf: "2026-10-20T07:00:00Z")
+        stripped.narrativeStatus = "unavailable"
+        stripped.narrative = []
+        let strippedPackage = try package(stripped)
+        try h.cache.save(package: strippedPackage, version: BriefCache.sha256Hex(strippedPackage), relayVersion: 9)
+        let restored = full("brief-1", asOf: "2026-10-20T07:00:00Z", text: "Restored text.")
+        try Self.serveHistory([try Self.seal(restored, sequence: 10, session: h.session),
+                               try Self.seal(stripped, sequence: 9, session: h.session)])
+        await h.store.refreshHistory()
+        XCTAssertEqual(h.cache.load(identifier: "brief-1")?.brief, restored,
+                       "the Mac's later package wins, whatever order the relay lists them in")
+    }
+
     func testARelayCopyOfAWithdrawnBriefIsNotSavedAgain() async throws {
         let h = try harness()
         let withdrawn = full("brief-1", asOf: "2026-10-19T07:00:00Z", text: "Withdrawn text.")
