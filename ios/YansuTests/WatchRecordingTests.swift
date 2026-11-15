@@ -71,6 +71,27 @@ final class WatchRecordingWireTests: XCTestCase {
         XCTAssertNil(info.context)
     }
 
+    func testTheComplicationReadsOnlyARunningRecordingsStartTime() throws {
+        let suite = "watch-live-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        XCTAssertNil(WatchLiveState.recordingSince(in: defaults, now: now))
+
+        let since = now.addingTimeInterval(-125)
+        WatchLiveState.write(recordingSince: since, to: defaults)
+        XCTAssertEqual(WatchLiveState.recordingSince(in: defaults, now: now), since)
+        // The shared container holds that one number and nothing else.
+        XCTAssertEqual(defaults.persistentDomain(forName: suite)?.keys.sorted(), [WatchLiveState.key])
+
+        // A start left behind by a killed app stops counting after the longest recording.
+        XCTAssertNil(WatchLiveState.recordingSince(in: defaults, now: since.addingTimeInterval(WatchLiveState.longest + 1)))
+
+        WatchLiveState.write(recordingSince: nil, to: defaults)
+        XCTAssertNil(WatchLiveState.recordingSince(in: defaults, now: now))
+        XCTAssertNil(defaults.persistentDomain(forName: suite)?[WatchLiveState.key])
+    }
+
     func testAnAreaNamedBeforeIsNotLookedUpAgain() throws {
         var names = WatchPlaceNames()
         XCTAssertNil(names.name(latitude: 37.76, longitude: -122.41))

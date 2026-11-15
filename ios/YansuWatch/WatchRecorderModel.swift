@@ -2,6 +2,7 @@ import AVFoundation
 import Foundation
 import SwiftUI
 import WatchKit
+import WidgetKit
 
 // Records on the watch. Audio is written to the watch's own storage as AAC, mono, in parts of
 // WatchRecordingWire.partSeconds; each finished part is handed to the phone link at once, so a
@@ -19,7 +20,12 @@ final class WatchRecorderModel: NSObject, ObservableObject {
         case failed
     }
 
-    @Published private(set) var phase: Phase = .idle
+    @Published private(set) var phase: Phase = .idle {
+        didSet {
+            guard phase != oldValue else { return }
+            publishLiveState()
+        }
+    }
     @Published private(set) var entries: [WatchRecordingEntry] = []
 
     let library: WatchRecordingLibrary
@@ -45,6 +51,8 @@ final class WatchRecorderModel: NSObject, ObservableObject {
             (try? AVAudioPlayer(contentsOf: url))?.duration ?? 0
         }
         link.activate()
+        // Nothing is recording at launch: clear what a killed app may have left for the complication.
+        publishLiveState()
         if !recovered.isEmpty { link.sendUnsent() }
         NotificationCenter.default.addObserver(self, selector: #selector(interruption(_:)),
                                                name: AVAudioSession.interruptionNotification, object: nil)
@@ -207,6 +215,15 @@ final class WatchRecorderModel: NSObject, ObservableObject {
 
     func reload() {
         entries = library.all()
+    }
+
+    /// Tells the complication whether a recording is running. Only the start time is shared.
+    private func publishLiveState() {
+        var since: Date?
+        if case .recording(let started) = phase { since = started }
+        guard WatchLiveState.recordingSince() != since else { return }
+        WatchLiveState.write(recordingSince: since)
+        WidgetCenter.shared.reloadTimelines(ofKind: WatchLiveState.complicationKind)
     }
 }
 
