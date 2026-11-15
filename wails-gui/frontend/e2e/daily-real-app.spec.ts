@@ -91,11 +91,28 @@ test("Today", async () => {
     await visit("today", 3000, async () => { await page.goto("/"); }, () => page.locator("main h1").filter({ visible: true }));
 });
 
+// trialSeedBriefWords in wails-gui/trial_seed_test.go.
+const SEEDED_BRIEF_WORDS = "Daily test brief: the Halcyon review is the first thing today.";
+
+test("A built brief a later pass stripped still shows and plays", async () => {
+    // The seed saved an earlier brief again without its words and recording,
+    // as the live refresh did on 2026-11-15. Once built, the latest brief
+    // always shows with both (mobile_brief_show_built.go).
+    await visit("stripped-brief", 3000, async () => {}, () => page.getByText(SEEDED_BRIEF_WORDS).filter({ visible: true }), async (r) => {
+        r.checks.push("the built words show");
+        await page.getByTestId("brief-audio-toggle").filter({ visible: true }).first().click();
+        await expect(page.locator('[data-testid="brief-audio-toggle"][aria-pressed="true"]').filter({ visible: true }).first()).toBeVisible({ timeout: 15_000 });
+        r.checks.push("its recording plays");
+        await page.getByTestId("brief-audio-toggle").filter({ visible: true }).first().click();
+    });
+});
+
 test("The scheduled brief arrives and plays", async () => {
     // The seed set the morning brief three minutes after launch: the app
     // writes, seals and records it on its own schedule. Wait for it on Today,
     // then press play.
-    await visit("brief-audio", 420_000, async () => {}, () => page.getByTestId("brief-audio-toggle").filter({ visible: true }), async (r) => {
+    // The seeded earlier brief must give way: the newest brief wins.
+    await visit("brief-audio", 420_000, async () => {}, () => page.locator("main").filter({ hasNot: page.getByText(SEEDED_BRIEF_WORDS) }).getByTestId("brief-audio-toggle").filter({ visible: true }), async (r) => {
         r.checks.push("scheduled brief arrived with a recording");
         await page.getByTestId("brief-audio-toggle").filter({ visible: true }).first().click();
         await expect(page.locator('[data-testid="brief-audio-toggle"][aria-pressed="true"]').filter({ visible: true }).first()).toBeVisible({ timeout: 15_000 });

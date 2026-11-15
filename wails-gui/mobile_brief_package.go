@@ -387,10 +387,10 @@ func (a *App) mobileBriefSealedRead(source MobileBriefV1) (MobileBriefV1, bool) 
 }
 
 // mobileBriefSealedSource is the brief service and the stored brief source
-// names, when the phone may read its sealed copy. Closed Eyes is a passing
-// state the live projection already withholds for, so it keeps that path.
+// names, when the phone may read its sealed copy. Closed Eyes stops new
+// capture; it does not hide a brief already built (mobile_brief_show_built.go).
 func (a *App) mobileBriefSealedSource(source MobileBriefV1) (*mobileBriefService, MobileBriefV1, bool) {
-	if a == nil || a.IsClosedEyesModeEnabled() {
+	if a == nil {
 		return nil, MobileBriefV1{}, false
 	}
 	service, ok := a.mobileBriefSource().(*mobileBriefService)
