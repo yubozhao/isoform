@@ -27,6 +27,7 @@ struct SettingsView: View {
     @State private var faceIDFailure = false
     @State private var status: HubStatus?
     @AppStorage("faceIDToOpen") private var faceIDToOpen = false
+    @AppStorage(WorkOnIt.enabledKey) private var workOnItEnabled = false
 
     var body: some View {
         ScrollView {
@@ -448,6 +449,16 @@ struct SettingsView: View {
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("settings.whatIsoformSees")
                 }
+                Toggle(isOn: $workOnItEnabled) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Work on it")
+                        Text("Hand a brief item to Claude, ChatGPT or Grok. You see exactly what goes.")
+                            .font(.footnote)
+                            .foregroundStyle(YansuTheme.secondary)
+                    }
+                }
+                    .tint(YansuTheme.accent)
+                    .accessibilityIdentifier("settings.workOnIt")
                 Toggle(isOn: Binding(get: { faceIDToOpen }, set: { enabled in
                     if enabled { Task { await enableFaceID() } } else { faceIDToOpen = false }
                 })) { Text("Face ID to open") }
