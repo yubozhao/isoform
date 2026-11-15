@@ -366,12 +366,6 @@ func overviewAccountFor(accounts []ModelAccount, provider string) (ModelAccount,
 	return ModelAccount{}, false
 }
 
-// overviewBindingWindow picks the window that runs out first: the lowest
-// remaining percent, ties broken by the earlier reset label.
-func overviewBindingWindow(windows []QuotaWindow) (QuotaWindow, bool) {
-	return overviewBindingWindowAt(windows, time.Now().UTC())
-}
-
 func overviewBindingWindowAt(windows []QuotaWindow, now time.Time) (QuotaWindow, bool) {
 	var best QuotaWindow
 	known := false

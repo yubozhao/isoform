@@ -22,6 +22,7 @@
 #   ISOFORM_IOS_NOTIFICATION_PROFILE notification profile name or UUID (optional)
 #   ISOFORM_IOS_CERTIFICATE    distribution certificate SHA-1 (optional)
 #   ISOFORM_IOS_INTERNAL_ONLY  true (default) or false for App Store review
+#   ISOFORM_IOS_EMBED_WATCH    YES to archive with the watch app inside (default NO; verify, archive)
 # Set both API IDs to use ~/.appstoreconnect/private_keys/AuthKey_<KEY_ID>.p8;
 # otherwise export/upload uses the Xcode account.
 set -euo pipefail
@@ -33,6 +34,7 @@ ACTION="${1:-}"
 TEAM_ID="${YANSU_IOS_TEAM_ID:-}"
 EXPORT_METHOD="${YANSU_IOS_EXPORT_METHOD:-}"
 INTERNAL_ONLY="${ISOFORM_IOS_INTERNAL_ONLY:-true}"
+EMBED_WATCH="${ISOFORM_IOS_EMBED_WATCH:-NO}"
 BUILD_NUMBER="${YANSU_IOS_BUILD_NUMBER:-}"
 ARCHIVE_PATH="${2:-}"
 ASC_KEY_ID="${ISOFORM_ASC_KEY_ID:-}"
@@ -183,12 +185,19 @@ if [[ "$ACTION" == verify || "$ACTION" == archive ]]; then
     if [[ "$ACTION" == archive ]]; then
         SIGNING_ARGS=(-allowProvisioningUpdates CODE_SIGNING_ALLOWED=YES "DEVELOPMENT_TEAM=$TEAM_ID" "CODE_SIGN_IDENTITY=Apple Development")
     fi
-    echo "Preparing Release iPhone build $BUILD_NUMBER: $ARCHIVE_PATH"
+    # With the watch app inside, the YansuWithWatch scheme builds the watch targets first and
+    # the embed setting lets them into the iPhone app. No -sdk then: it would force the iPhone
+    # SDK onto the watch targets.
+    case "$EMBED_WATCH" in
+        NO) SCHEME_ARGS=(-scheme Yansu -sdk iphoneos) ;;
+        YES) SCHEME_ARGS=(-scheme YansuWithWatch ISOFORM_EMBED_WATCH=YES) ;;
+        *) fail "ISOFORM_IOS_EMBED_WATCH must be YES or NO." ;;
+    esac
+    echo "Preparing Release iPhone build $BUILD_NUMBER (watch app inside: $EMBED_WATCH): $ARCHIVE_PATH"
     xcodebuild \
         -project "$REPO_ROOT/ios/Yansu.xcodeproj" \
-        -scheme Yansu \
+        "${SCHEME_ARGS[@]}" \
         -configuration Release \
-        -sdk iphoneos \
         -destination 'generic/platform=iOS' \
         -derivedDataPath "$RUN_ROOT/DerivedData" \
         -archivePath "$ARCHIVE_PATH" \
@@ -199,6 +208,9 @@ if [[ "$ACTION" == verify || "$ACTION" == archive ]]; then
         echo "Unsigned iPhone Release compilation passed. This archive cannot be installed, exported, or uploaded."
     else
         inspect_archive
+        if [[ "$EMBED_WATCH" == YES ]]; then
+            [[ -d "$ARCHIVED_APP/Watch/YansuWatch.app" ]] || fail "The archive was built with ISOFORM_IOS_EMBED_WATCH=YES but has no watch app inside."
+        fi
         echo "Signed archive prepared. Export it with the same YANSU_IOS_TEAM_ID and YANSU_IOS_EXPORT_METHOD: $0 export '$ARCHIVE_PATH'"
     fi
     exit 0

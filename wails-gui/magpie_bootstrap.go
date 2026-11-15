@@ -818,14 +818,6 @@ func (s *magpieSidecar) bootstrapStatePath() string {
 	return filepath.Join(s.stateDir, magpieBootstrapFileName)
 }
 
-func (s *magpieSidecar) loadBootstrapState() magpieBootstrapState {
-	var state magpieBootstrapState
-	if data, err := os.ReadFile(s.bootstrapStatePath()); err == nil {
-		_ = json.Unmarshal(data, &state)
-	}
-	return state
-}
-
 func (s *magpieSidecar) saveBootstrapState(state magpieBootstrapState) error {
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {

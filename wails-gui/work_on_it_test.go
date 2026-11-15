@@ -29,6 +29,8 @@ func newWorkOnItTestApp(t *testing.T, enabled bool) (*App, *workOnItSeams) {
 	s.send = func(_ context.Context, to, body string) error { seams.sent = append(seams.sent, to+"|"+body); return nil }
 	s.present = func(agent workonit.Agent) bool { return agent.ID == "claude" }
 	s.now = func() time.Time { return seams.now }
+	// No computer-use agent unless a test sets one.
+	s.paste = &pasteDeps{lookPath: pasteLookPath(), frontmost: func() string { return "" }, now: time.Now}
 	if enabled {
 		if err := app.store.SetUIState(context.Background(), workOnItEnabledKey, "true"); err != nil {
 			t.Fatal(err)

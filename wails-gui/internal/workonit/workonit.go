@@ -36,9 +36,17 @@ func ValidSource(kind string) bool {
 
 // Handoff methods, best first.
 const (
+	// MethodTaskLink makes a one-time /t/<token> link to the task and sends
+	// the agent one line with the link, by the best carrier it has (see
+	// TaskLinkCarrier). It is the default for every agent and ranks first
+	// because a result comes back.
+	MethodTaskLink = "task_link"
 	// MethodDeepLink opens the agent with the task already in its composer;
 	// the person sends it there.
 	MethodDeepLink = "deep_link"
+	// MethodPaste has an existing computer-use agent open the agent and paste
+	// the task into its message box, then stop; the person sends it there.
+	MethodPaste = "paste"
 	// MethodOpenCopy opens the agent's app or site and puts the task on the
 	// clipboard; the person pastes and sends.
 	MethodOpenCopy = "open_copy"
@@ -70,6 +78,24 @@ type Agent struct {
 	// TermsNote names the one-line note the sheet shows before the first
 	// handoff (an i18n key), empty when there is none.
 	TermsNote string
+}
+
+// TaskLinkCarrier is how the one-line task-link prompt reaches the agent:
+// its deep link, a message, or opening it with the line on the clipboard.
+// Every personal agent can fetch a page (Bo, 2026-11-14: "all of them have
+// browser"), so the task link is the default for each; MCP connectors are
+// optional and later. Empty when the agent has no way to receive the line.
+func (a Agent) TaskLinkCarrier(installed bool, handle string) string {
+	switch {
+	case a.DeepLink != "" && installed:
+		return MethodDeepLink
+	case a.Message && strings.TrimSpace(handle) != "":
+		return MethodMessage
+	case (installed && len(a.BundleIDs) > 0) || a.OpenURL != "":
+		return MethodOpenCopy
+	default:
+		return ""
+	}
 }
 
 // Catalog is the declared list. Order is the tie-break.
@@ -136,8 +162,8 @@ func (a Agent) Methods(installed bool, handle string) []string {
 	if a.DeepLink != "" && installed {
 		out = append(out, MethodDeepLink)
 	}
-	if a.OpenURL != "" || (installed && len(a.BundleIDs) > 0) {
-		out = append(out, MethodOpenCopy)
+	if (installed && len(a.BundleIDs) > 0) || a.OpenURL != "" {
+		out = append(out, MethodPaste, MethodOpenCopy)
 	}
 	if a.Message && strings.TrimSpace(handle) != "" {
 		out = append(out, MethodMessage)

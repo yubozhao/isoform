@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/mark3labs/mcp-go/mcp"
 	yansutools "yansu-agent/agent/tools"
+
+	"github.com/mark3labs/mcp-go/mcp"
 )
 
 // BridgeManager is the narrow capability the Bridge needs from the
@@ -110,18 +111,6 @@ func (b *Bridge) SetExposureMode(serverID string, mode ExposureMode) error {
 		return nil
 	default:
 		return fmt.Errorf("unsupported MCP exposure mode %q for server %q", mode, serverID)
-	}
-}
-
-func (b *Bridge) exposureMode(serverID string) ExposureMode {
-	b.mu.RLock()
-	mode := b.exposureModes[serverID]
-	b.mu.RUnlock()
-	switch mode {
-	case ExposureModeGateway:
-		return ExposureModeGateway
-	default:
-		return ExposureModeDirect
 	}
 }
 

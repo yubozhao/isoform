@@ -101,12 +101,6 @@ func (fc *frameComparer) compareGrayLocked(gray []byte) float64 {
 	return dist
 }
 
-// isDifferent returns true when the current RGBA frame differs visually from
-// the previous one beyond the configured dedup threshold.
-func (fc *frameComparer) isDifferent(rgba []byte, w, h int) bool {
-	return fc.distance(rgba, w, h) >= dedupThreshold
-}
-
 // reset clears the comparison state (e.g. on session boundary).
 func (fc *frameComparer) reset() {
 	fc.mu.Lock()

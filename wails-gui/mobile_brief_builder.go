@@ -610,13 +610,6 @@ func mobileBriefNewestFirst(a, b mobileBriefCandidate) bool {
 	return a.SourceID < b.SourceID
 }
 
-func mobileBriefGroupedByKind(a, b mobileBriefCandidate) bool {
-	if a.Kind != b.Kind {
-		return a.Kind < b.Kind
-	}
-	return mobileBriefNewestFirst(a, b)
-}
-
 // mobileBriefCleanNames trims app names and drops empty ones.
 func mobileBriefCleanNames(names []string) []string {
 	out := []string{}

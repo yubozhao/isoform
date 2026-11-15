@@ -73,14 +73,6 @@ func memoryReadProvenanceFromDocument(content string, fm memoryFrontmatter, yaml
 	return blocked
 }
 
-// Old activity writers emitted these fields once, followed by Memory Points.
-// Reject ambiguous documents, including a forged first header injected through
-// a multiline model title. Counting the entire document is conservative: a body
-// that repeats header syntax is withheld rather than interpreted as authority.
-func legacyActivityMemoryEnvelope(content string) bool {
-	return legacyActivityMemoryEnvelopeFromFrontmatter(content, parseMemoryFrontmatter(content))
-}
-
 func legacyActivityMemoryEnvelopeFromFrontmatter(content string, fm memoryFrontmatter) bool {
 	if fm.Source != "activity" || fm.UpdatedAt == 0 || fm.Dimension == "" || len(fm.ActivitySessionIDs) == 0 || fm.ReadProvenance != "" {
 		return false

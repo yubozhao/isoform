@@ -103,17 +103,6 @@ func (r meetingNotesRecord) SessionIDs() []string {
 	return ids
 }
 
-// HasOutline reports whether the after-call pass wrote anything for the
-// meeting: a summary, a decision or a follow-up.
-func (r meetingNotesRecord) HasOutline() bool {
-	for _, s := range r.Slices {
-		if strings.TrimSpace(s.Summary) != "" || len(s.Decisions) > 0 || len(s.Followups) > 0 {
-			return true
-		}
-	}
-	return false
-}
-
 // meetingNotesHeader is what a publish knows about the meeting itself.
 type meetingNotesHeader struct {
 	Key        string

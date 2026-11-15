@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -65,11 +64,6 @@ func ensureLocalModel(configDir string, onProgress downloadProgressFn) (*modelPa
 	}
 
 	return paths, nil
-}
-
-// hfRawURL builds a HuggingFace raw file download URL.
-func hfRawURL(repo, file string) string {
-	return fmt.Sprintf("https://huggingface.co/%s/resolve/main/%s", repo, file)
 }
 
 // progressReader wraps an io.Reader and reports download progress.
@@ -147,56 +141,6 @@ func downloadFile(url, dest, displayName string, onProgress downloadProgressFn) 
 	}
 
 	return os.Rename(tmp, dest)
-}
-
-// downloadONNXRuntime downloads and extracts the ONNX Runtime shared library.
-func downloadONNXRuntime(runtimeDir, destLib string, onProgress downloadProgressFn) error {
-	archiveURL, err := onnxdl.ArchiveURL()
-	if err != nil {
-		return err
-	}
-
-	log.Printf("[memory] downloading ONNX Runtime v%s ...", onnxdl.Version)
-
-	client := &http.Client{Timeout: modelDownloadTimeout}
-	resp, err := client.Get(archiveURL)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, archiveURL)
-	}
-
-	displayName := fmt.Sprintf("ONNX Runtime v%s", onnxdl.Version)
-	reader := io.Reader(resp.Body)
-	if onProgress != nil {
-		reader = &progressReader{
-			reader:      resp.Body,
-			fileName:    displayName,
-			total:       resp.ContentLength,
-			startTime:   time.Now(),
-			lastReport:  time.Time{},
-			onProgress:  onProgress,
-			reportIntvl: 200 * time.Millisecond,
-		}
-	}
-
-	if err := onnxdl.ExtractLib(reader, runtimeDir, destLib, "memory"); err != nil {
-		return err
-	}
-
-	if onProgress != nil && resp.ContentLength > 0 {
-		onProgress(displayName, resp.ContentLength, resp.ContentLength, 0)
-	}
-
-	return nil
-}
-
-// modelFileExists checks if a file exists at the given path.
-func modelFileExists(path string) bool {
-	return onnxdl.FileExists(path)
 }
 
 func requireBundledRuntime(path string) error {

@@ -58,20 +58,6 @@ func (a *App) emitTtsEvent(name string, data ...interface{}) {
 	emit(a.ctx, name, data...)
 }
 
-func (a *App) ttsDownloadProgress(lang string) sherpaDownloadProgress {
-	return func(asset string, downloaded, total int64, bytesPerSec float64) {
-		if a.ctx != nil {
-			a.emitTtsEvent("tts:download-progress", map[string]any{
-				"lang":        lang,
-				"fileName":    asset,
-				"downloaded":  downloaded,
-				"total":       total,
-				"bytesPerSec": bytesPerSec,
-			})
-		}
-	}
-}
-
 // ttsModelPresentForLang reports whether the on-disk model for a language is
 // already downloaded, without touching the network.
 func (a *App) ttsModelPresentForLang(lang string) bool {
@@ -116,18 +102,6 @@ func (st *ttsState) languageLoadMutex(lang string) *sync.Mutex {
 		st.loadMu[lang] = lm
 	}
 	return lm
-}
-
-// ensureTtsVoiceAssets checks the manifest's installed assets. Callers hold
-// the per-language load mutex; asset acquisition belongs to setup jobs.
-func (a *App) ensureTtsVoiceAssets(ctx context.Context, lang string, progress sherpaDownloadProgress) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if !a.ttsModelPresentForLang(lang) {
-		return models.ErrNotReady
-	}
-	return nil
 }
 
 // startTtsVoiceDownload reports an already confirmed setup download. Briefs

@@ -1590,20 +1590,6 @@ var activitySubjectStopwords = map[string]bool{
 	"yansu": true, "zoom": true,
 }
 
-func isDurableLocalActivityAnchor(k string) bool {
-	k = normalizeActivityAnchor(k)
-	if k == "" {
-		return false
-	}
-	if concreteActivityAnchor(k) != "" {
-		return true
-	}
-	if len([]rune(k)) >= 4 && !activityLocalStopwords[k] {
-		return true
-	}
-	return false
-}
-
 var activityLocalStopwords = map[string]bool{
 	"activity": true, "timeline": true, "summary": true, "review": true,
 	"opened": true, "viewed": true, "clicked": true, "switched": true,

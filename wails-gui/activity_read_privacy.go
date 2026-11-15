@@ -92,10 +92,6 @@ func (a *App) activitySessionAllowsModelReadResultContext(ctx context.Context, s
 	return a.activitySessionAllowsModelReadResultWithInputsAndCacheContext(ctx, store, session, nil, nil)
 }
 
-func (a *App) activitySessionAllowsModelReadResultWithInputs(store *ActivityStore, session ActivitySessionRow, inputs *activityPrivacyProvenanceInputs) (bool, error) {
-	return a.activitySessionAllowsModelReadResultWithInputsAndCache(store, session, inputs, nil)
-}
-
 func (a *App) activitySessionAllowsModelReadResultWithInputsAndCache(store *ActivityStore, session ActivitySessionRow, inputs *activityPrivacyProvenanceInputs, cache *peopleReadGateCache) (bool, error) {
 	return a.activitySessionAllowsModelReadResultWithInputsAndCacheContext(context.Background(), store, session, inputs, cache)
 }

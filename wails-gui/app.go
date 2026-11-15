@@ -2,10 +2,8 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
 	"embed"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -375,6 +373,11 @@ type App struct {
 	// Work on it: prepared tasks, the agent ranking and the counts.
 	workOnItOnce sync.Once
 	workOnItS    *workOnItState
+
+	// taskLinks serves one-time task links (task_link_service.go).
+	taskLinks taskLinkState
+	// front is the computer's end of the Isoform front (front_service.go).
+	front frontState
 }
 
 type AgentStatus struct {
@@ -563,17 +566,6 @@ func (a *App) stopAllDaemons() {
 	}
 }
 
-// restartRelayDaemonsForCurrentEnv re-runs the per-platform auto-start flow using the current base URL.
-// Existing daemons are stopped first so reconnect loops cannot stay pinned to an old environment.
-func (a *App) restartRelayDaemonsForCurrentEnv() {
-	a.stopAllDaemons()
-
-	go a.tryAutoStartDaemon()
-	go a.tryAutoStartFeishuDaemon()
-	go a.tryAutoStartDiscordDaemon()
-	go a.tryAutoStartTelegramDaemon()
-}
-
 type AgentEvent struct {
 	Type              string                   `json:"type"`
 	RunID             string                   `json:"run_id,omitempty"`
@@ -683,6 +675,8 @@ func (a *App) startupServices(ctx context.Context) {
 
 	a.deferLaunchTask("storage_repair", func() { repairStartupStorage(a.store) })
 	a.deferLaunchTask("unanswered_turns", func() { a.markUnansweredTurns(ctx) })
+	a.deferLaunchTask("task_links", a.startTaskLinksIfEnabled)
+	a.deferLaunchTask("front", a.startFrontIfEnabled)
 	a.deferLaunchTask("ocr_prewarm", ocr.PrewarmHelper)
 	a.deferLaunchTask("assistant_history", a.scheduleAssistantHistory)
 	a.startActivityMaintenance()
@@ -1439,6 +1433,8 @@ func (a *App) handleSingletonMessages() {
 
 func (a *App) shutdown(ctx context.Context) {
 	a.handoffShuttingDown.Store(true)
+	a.shutdownTaskLinks()
+	a.stopFront()
 	// Before any teardown and before telemetry starts its final flush, so the
 	// quit install and its event are sent with the rest.
 	a.installStagedUpdateOnQuit()
@@ -2199,13 +2195,6 @@ func (a *App) notifyIconPath() string {
 	return "" // no icon found — the OS will use its default
 }
 
-// buildLocalID generates a unique ID matching the frontend's buildId() format.
-func buildLocalID() string {
-	b := make([]byte, 8)
-	rand.Read(b)
-	return fmt.Sprintf("%d-%s", time.Now().UnixMilli(), hex.EncodeToString(b))
-}
-
 // formatAutomationNotification builds a branded notification message for automation runs.
 func formatAutomationNotification(automationName, runStatus string, runResult string) string {
 	statusLabel := "Completed"
@@ -2216,27 +2205,6 @@ func formatAutomationNotification(automationName, runStatus string, runResult st
 		statusLabel = "Skipped"
 	}
 	return fmt.Sprintf("[Isoform Automation] %s — %s\n\n%s", automationName, statusLabel, runResult)
-}
-
-// sendLocalWeChatDM attempts to send a WeChat DM locally.
-// Returns a JSON result string on success, or "" if WeChat is unavailable or fails.
-func (a *App) sendLocalWeChatDM(automationName, runStatus, runResult string) string {
-	creds := loadWeChatCredentials()
-	if creds == nil || creds.UserID == "" {
-		return ""
-	}
-	api := newWeChatAPIClient(creds.BaseURL, creds.BotToken)
-	msg := formatAutomationNotification(automationName, runStatus, runResult)
-	if err := sendWeChatText(api, creds.UserID, "", msg); err != nil {
-		log.Printf("[cron] notify: WeChat DM failed: %v", err)
-		return ""
-	}
-	log.Printf("[cron] notify: WeChat DM sent to %s", creds.UserID)
-	wechatResultJSON, _ := json.Marshal(map[string]any{
-		"sent":     true,
-		"platform": "wechat",
-	})
-	return string(wechatResultJSON)
 }
 
 // sendLocalWeChatDMWithFiles sends the text notification first, then attempts
@@ -2931,14 +2899,6 @@ func (a *App) listCronJobsContext(ctx context.Context) []CronJobState {
 	return result
 }
 
-func (a *App) listCronJobsFromDB() []CronJobState {
-	ctx := a.ctx
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	return a.listCronJobsFromDBContext(ctx)
-}
-
 func (a *App) listCronJobsFromDBContext(ctx context.Context) []CronJobState {
 	if a.store == nil {
 		return nil
@@ -3564,13 +3524,6 @@ func readActivityRetentionConfig() (days, gb int) {
 		gb = cfg.MaxStorageGB
 	}
 	return
-}
-
-// readActivityRetentionDays is a thin shim kept for callers that only need
-// the days value. Prefer readActivityRetentionConfig in new code.
-func readActivityRetentionDays() int {
-	d, _ := readActivityRetentionConfig()
-	return d
 }
 
 // activityRotatorConfigFor builds a RotatorConfig from the two user-facing

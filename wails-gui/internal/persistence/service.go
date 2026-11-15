@@ -624,30 +624,6 @@ func (s *Service) ReorderSidebarGroupItems(ctx context.Context, groupID string, 
 	return s.store.ReorderSidebarGroupItems(ctx, groupID, itemIDs)
 }
 
-// CleanupOrphanGroupItems removes sidebar group items with invalid references.
-func (s *Service) CleanupOrphanGroupItems(ctx context.Context, validChatIDs, validAutomationIDs []string) error {
-	if s.store == nil {
-		return nil
-	}
-	return s.store.CleanupOrphanGroupItems(ctx, validChatIDs, validAutomationIDs)
-}
-
-// DeleteProjectWithGroupCleanup removes a project and cleans up group references.
-func (s *Service) DeleteProjectWithGroupCleanup(ctx context.Context, projectID string) error {
-	if s.store == nil {
-		return nil
-	}
-	return s.store.DeleteProjectWithGroupCleanup(ctx, projectID)
-}
-
-// DeleteWorkspaceWithGroupCleanup removes a workspace and cleans up group references.
-func (s *Service) DeleteWorkspaceWithGroupCleanup(ctx context.Context, workspaceID string) error {
-	if s.store == nil {
-		return nil
-	}
-	return s.store.DeleteWorkspaceWithGroupCleanup(ctx, workspaceID)
-}
-
 func toSidebarGroupItemData(ir storage.SidebarGroupItemRow) SidebarGroupItemData {
 	return SidebarGroupItemData{
 		ID:        ir.ID,

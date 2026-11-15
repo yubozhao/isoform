@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"log"
 	"os"
@@ -295,22 +294,6 @@ func (a *App) SendSlackMessage(channelID, threadTS, text string) error {
 		"channel_id": channelID,
 		"thread_ts":  threadTS,
 		"text":       text,
-	}, nil)
-}
-
-// sendSlackMessageWithImage posts a message with a JPEG screenshot to a Slack channel.
-// imageData is the raw JPEG bytes. The caller is responsible for falling back to
-// text-only (via SendSlackMessage) when imageData is empty.
-func (a *App) sendSlackMessageWithImage(channelID, threadTS, text string, imageData []byte) error {
-	token, err := loadYansuToken()
-	if err != nil || token == "" {
-		return fmt.Errorf("not authenticated")
-	}
-	return apiPost(loadAPIBaseURL(), token, "/api/slack/send-with-image", map[string]string{
-		"channel_id": channelID,
-		"thread_ts":  threadTS,
-		"text":       text,
-		"image_data": base64.StdEncoding.EncodeToString(imageData),
 	}, nil)
 }
 

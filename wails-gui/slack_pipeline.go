@@ -217,21 +217,6 @@ func (a *App) scanDir() string {
 	return filepath.Join(dataRoot, "slack-scan")
 }
 
-// loadChannelsList reads the persisted channels.json from a scan directory.
-func loadChannelsList(scanDir string) []SlackScanChannel {
-	data, err := os.ReadFile(filepath.Join(scanDir, "channels.json"))
-	if err != nil {
-		log.Printf("loadChannelsList: failed to read channels.json in %s: %v", scanDir, err)
-		return nil
-	}
-	var channels []SlackScanChannel
-	if err := json.Unmarshal(data, &channels); err != nil {
-		log.Printf("loadChannelsList: failed to parse channels.json in %s: %v", scanDir, err)
-		return nil
-	}
-	return channels
-}
-
 // ── Known processed dedup ─────────────────────────────────────────────
 
 func loadKnownProcessed(scanDir string) map[string]bool {
@@ -1039,18 +1024,3 @@ func extractJSONArray(s string) string {
 }
 
 // ── Memory notification helpers ───────────────────────────────────────
-
-// countConvFiles returns the number of *.json files in dir.
-func countConvFiles(dir string) int {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return 0
-	}
-	n := 0
-	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".json") {
-			n++
-		}
-	}
-	return n
-}

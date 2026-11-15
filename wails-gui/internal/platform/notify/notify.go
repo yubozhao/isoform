@@ -9,26 +9,6 @@ var (
 	clickHandler ClickHandler
 )
 
-// SetClickHandler registers a function called when the user clicks a
-// delivered desktop notification. Only one handler can be active; calling
-// this again replaces the previous handler.
-func SetClickHandler(handler ClickHandler) {
-	clickMu.Lock()
-	defer clickMu.Unlock()
-	clickHandler = handler
-}
-
-// invokeClickHandler dispatches the click event to the registered handler.
-// Called from platform-specific code; safe to call from any goroutine.
-func invokeClickHandler(clickData string) {
-	clickMu.Lock()
-	handler := clickHandler
-	clickMu.Unlock()
-	if handler != nil && clickData != "" {
-		go handler(clickData)
-	}
-}
-
 // ClickHandler is called when the user clicks a delivered desktop notification.
 // The clickData argument is the same string that was passed in Options.ClickData.
 type ClickHandler func(clickData string)

@@ -100,14 +100,6 @@ func (c AIProviderConfig) aiReady() bool {
 	return strings.TrimSpace(c.APIKey) != "" && strings.TrimSpace(c.Model) != ""
 }
 
-// byoaEffective reports whether a BYOA provider is configured. With the
-// Yansu AI Gateway retired, every configured BYOA provider (API key or
-// external agent) is effective — there is no longer an entitlement gate to
-// fall back through. Equivalent to byoaActive().
-func (a *App) byoaEffective() bool {
-	return byoaActive()
-}
-
 // GetAIProviderConfig returns the persisted BYOA provider configuration
 // for the settings UI.
 func (a *App) GetAIProviderConfig() AIProviderConfig {

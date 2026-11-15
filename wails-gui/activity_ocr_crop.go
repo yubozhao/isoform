@@ -180,33 +180,3 @@ func cropJPEGToWeChatMainArea(jpegData []byte, nx, ny, nw, nh, sidebarFraction f
 	}
 	return buf.Bytes(), mainRect, nil
 }
-
-// upscaleJPEG2x decodes the JPEG, doubles each axis via nearest-
-// neighbor sampling, and re-encodes. Used by the DevTools probe to
-// experiment with Vision's recognition floor — small CJK glyphs
-// (~14-16 px in dark-mode UIs) often get misclassified at native
-// resolution; the same content at 28-32 px sometimes flips into
-// usable output.
-//
-// Returns the original bytes unchanged on any decode/encode failure
-// so callers can use the result unconditionally without separate
-// fallback paths.
-//
-// Callers that need to chain multiple image transforms should decode
-// once and use upscaleImage2x directly.
-func upscaleJPEG2x(jpegData []byte, quality int) ([]byte, error) {
-	src, _, err := image.Decode(bytes.NewReader(jpegData))
-	if err != nil {
-		return jpegData, fmt.Errorf("decode jpeg: %w", err)
-	}
-	bounds := src.Bounds()
-	if bounds.Dx() <= 0 || bounds.Dy() <= 0 {
-		return jpegData, nil
-	}
-	dst := upscaleImage2x(src)
-	var buf bytes.Buffer
-	if err := jpeg.Encode(&buf, dst, &jpeg.Options{Quality: quality}); err != nil {
-		return jpegData, fmt.Errorf("encode upscaled jpeg: %w", err)
-	}
-	return buf.Bytes(), nil
-}

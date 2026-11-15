@@ -389,14 +389,6 @@ func aiProviderActive() (AIProviderConfig, bool) {
 	return cfg, cfg.isBYOA()
 }
 
-// byoaActive is the boolean shorthand used by the gateway gates. It is
-// true for BOTH an API BYOA provider and an external-agent provider, since
-// either one fully replaces the Yansu gateway path.
-func byoaActive() bool {
-	cfg := loadAIProviderConfig()
-	return cfg.isBYOA() || cfg.isExternalAgent()
-}
-
 // externalAgentActive returns the external-agent runner config and true
 // when the user has selected Claude Code / Codex as their agent backend.
 func externalAgentActive() (agent.ExternalAgentConfig, bool) {

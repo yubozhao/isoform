@@ -1,0 +1,22 @@
+[package]
+name = "isoform-front"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Isoform front: SNI passthrough to a person's computer over iroh. It reads only the TLS hostname and never ends TLS."
+publish = false
+
+[[bin]]
+name = "isoform-front"
+path = "src/main.rs"
+
+[dependencies]
+iroh = "1.4.1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "time", "sync", "signal"] }
+anyhow = "1"
+data-encoding = "2"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

@@ -4142,11 +4142,11 @@ export const GetDayThreads = appBinding<[number, number], ActivityDayThreads>("G
 // Work on it (work_on_it.go): prepare a task from what a surface shows and
 // hand it to the person's agent on their tap. Off unless work_on_it_enabled.
 export type WorkOnItSourceKind = "brief_item" | "topic_proposal" | "chat_card";
-export type WorkOnItMethod = "deep_link" | "open_copy" | "message" | "share";
+export type WorkOnItMethod = "task_link" | "deep_link" | "paste" | "open_copy" | "message" | "share";
 export interface WorkOnItInput { sourceKind: WorkOnItSourceKind; sourceId: string; title: string; detail: string; done: string }
 export interface WorkOnItAgentView { id: string; name: string; methods: WorkOnItMethod[]; default: boolean; termsNote?: string; needsHandle?: boolean }
 export interface WorkOnItPrepared { taskId: string; text: string; agents: WorkOnItAgentView[] }
-export interface WorkOnItSent { recordId: string; method: WorkOnItMethod; copied: boolean }
+export interface WorkOnItSent { recordId: string; method: WorkOnItMethod; copied: boolean; via?: "deep_link" | "message" | "open_copy" }
 export const GetWorkOnItEnabled = appBinding<[], boolean>("GetWorkOnItEnabled");
 export const PrepareWorkOnIt = appBinding<[WorkOnItInput], WorkOnItPrepared>("PrepareWorkOnIt");
 export const SendWorkOnIt = appBinding<[string, string, string], WorkOnItSent>("SendWorkOnIt");

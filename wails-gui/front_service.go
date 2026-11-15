@@ -1,0 +1,430 @@
+package main
+
+// The computer's end of the Isoform front (docs/design/mcp-public-front.md).
+// A cloud agent's TLS connection reaches this computer through the front
+// and isoform-front-link (front/, Rust) still encrypted; TLS ends here, on a
+// loopback listener, with this computer's own certificate for its
+// <label>.agents.isoform.ai hostname. The certificate comes from an ACME CA
+// by TLS-ALPN-01, which travels through the same passthrough, and its key
+// never leaves the computer. Behind TLS: task links (/t/), later MCP.
+//
+// Off unless front_enabled is true and the front ids are known. ACME
+// defaults to Let's Encrypt staging until production is chosen on purpose.
+
+import (
+	"bufio"
+	"context"
+	"crypto/tls"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log"
+	"net"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"sync"
+	"time"
+
+	"golang.org/x/crypto/acme"
+	"golang.org/x/crypto/acme/autocert"
+
+	"wails-gui/internal/remoteaccess"
+	"wails-gui/internal/tasklink"
+)
+
+const (
+	frontEnabledKey = "front_enabled"
+	frontDirName    = "front"
+	// frontLinkBinEnv overrides the bundled isoform-front-link.
+	frontLinkBinEnv = "ISOFORM_FRONT_LINK_BIN"
+	// frontIDsEnv lists the front endpoint ids the link accepts.
+	frontIDsEnv = "ISOFORM_FRONT_IDS"
+	// frontACMEDirectoryEnv picks the CA; staging unless set.
+	frontACMEDirectoryEnv = "ISOFORM_FRONT_ACME_DIRECTORY"
+	frontSuffixEnv        = "ISOFORM_FRONT_SUFFIX"
+	frontDefaultSuffix    = "agents.isoform.ai"
+	frontACMEStaging      = "https://acme-staging-v02.api.letsencrypt.org/directory"
+	// frontCertBackoff: after a failed issuance, no new attempt for this
+	// long. Let's Encrypt allows 5 failed validations an hour and 5
+	// certificates per name a week, so the computer must never loop.
+	frontCertBackoff     = time.Hour
+	frontLinkReadyWithin = 30 * time.Second
+	frontLinkRestartWait = 30 * time.Second
+)
+
+var (
+	errFrontOff     = errors.New("the front is off")
+	errFrontNoIDs   = errors.New("no front ids are set")
+	errFrontBadLink = errors.New("the front link did not report a hostname")
+	frontLabelRE    = regexp.MustCompile(`^[a-z2-7]{52}$`)
+	frontIDRE       = regexp.MustCompile(`^[0-9a-f]{64}$`)
+)
+
+// frontLinkInfo is the link's ready line.
+type frontLinkInfo struct {
+	EndpointID string `json:"endpointId"`
+	Label      string `json:"label"`
+	Hostname   string `json:"hostname"`
+}
+
+// parseFrontLinkLine checks the link's ready line: a 52-character label
+// that, under the suffix, is exactly the hostname.
+func parseFrontLinkLine(line, suffix string) (frontLinkInfo, error) {
+	var info frontLinkInfo
+	if err := json.Unmarshal([]byte(strings.TrimSpace(line)), &info); err != nil {
+		return frontLinkInfo{}, errFrontBadLink
+	}
+	if !frontIDRE.MatchString(info.EndpointID) || !frontLabelRE.MatchString(info.Label) || info.Hostname != info.Label+"."+suffix {
+		return frontLinkInfo{}, errFrontBadLink
+	}
+	return info, nil
+}
+
+// frontCertSource hands out the certificate and refuses to ask the CA again
+// for frontCertBackoff after a failure.
+type frontCertSource struct {
+	mu       sync.Mutex
+	get      func(*tls.ClientHelloInfo) (*tls.Certificate, error)
+	failedAt time.Time
+	lastErr  error
+	now      func() time.Time
+}
+
+func (c *frontCertSource) clock() time.Time {
+	if c.now != nil {
+		return c.now()
+	}
+	return time.Now()
+}
+
+func (c *frontCertSource) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+	// The ACME challenge handshake itself must always be answered.
+	isChallenge := len(hello.SupportedProtos) == 1 && hello.SupportedProtos[0] == acme.ALPNProto
+	c.mu.Lock()
+	if !isChallenge && !c.failedAt.IsZero() && c.clock().Sub(c.failedAt) < frontCertBackoff {
+		err := c.lastErr
+		c.mu.Unlock()
+		return nil, fmt.Errorf("certificate unavailable, retrying after a pause: %w", err)
+	}
+	c.mu.Unlock()
+	cert, err := c.get(hello)
+	if isChallenge {
+		return cert, err
+	}
+	c.mu.Lock()
+	if err != nil {
+		c.failedAt, c.lastErr = c.clock(), err
+	} else {
+		c.failedAt, c.lastErr = time.Time{}, nil
+	}
+	c.mu.Unlock()
+	return cert, err
+}
+
+// frontState is the app's front service. Zero value is ready.
+type frontState struct {
+	mu       sync.Mutex
+	running  bool
+	stopping bool
+	cmd      *exec.Cmd
+	server   *http.Server
+	listener net.Listener
+	info     frontLinkInfo
+	ctCancel context.CancelFunc
+	// test seams
+	ctAPI    string
+	dir      string
+	enabled  func() bool
+	certFunc func(hostname string, cacheDir string) func(*tls.ClientHelloInfo) (*tls.Certificate, error)
+}
+
+func (s *frontState) dirPath() (string, error) {
+	if s.dir != "" {
+		return s.dir, nil
+	}
+	root, err := flavorDataDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(root, frontDirName), nil
+}
+
+func (a *App) frontEnabled() bool {
+	if a.front.enabled != nil {
+		return a.front.enabled()
+	}
+	if a.store == nil {
+		return false
+	}
+	value, err := a.store.GetUIState(context.Background(), frontEnabledKey)
+	return err == nil && strings.EqualFold(strings.TrimSpace(value), "true")
+}
+
+func frontSuffix() string {
+	if s := strings.Trim(strings.ToLower(strings.TrimSpace(os.Getenv(frontSuffixEnv))), "."); s != "" {
+		return s
+	}
+	return frontDefaultSuffix
+}
+
+func frontAllowedIDs() ([]string, error) {
+	var ids []string
+	for _, id := range strings.Split(os.Getenv(frontIDsEnv), ",") {
+		id = strings.ToLower(strings.TrimSpace(id))
+		if id == "" {
+			continue
+		}
+		if !frontIDRE.MatchString(id) {
+			return nil, fmt.Errorf("%s: %q is not an endpoint id", frontIDsEnv, id)
+		}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return nil, errFrontNoIDs
+	}
+	return ids, nil
+}
+
+func locateFrontLink() (string, error) {
+	return remoteaccess.LocateBundledBinary(frontLinkBinEnv, "front-link-bundle", "isoform-front-link", "isoform-front-link", "isoform-front-link")
+}
+
+// frontHostname is the public hostname while the front runs, else "".
+func (a *App) frontHostname() string {
+	a.front.mu.Lock()
+	defer a.front.mu.Unlock()
+	if !a.front.running {
+		return ""
+	}
+	return a.front.info.Hostname
+}
+
+// startFront starts the TLS listener and the link. It is idempotent.
+func (a *App) startFront() error {
+	if !a.frontEnabled() {
+		return errFrontOff
+	}
+	ids, err := frontAllowedIDs()
+	if err != nil {
+		return err
+	}
+	s := &a.front
+	s.mu.Lock()
+	if s.running {
+		s.mu.Unlock()
+		return nil
+	}
+	s.stopping = false
+	s.mu.Unlock()
+
+	dir, err := s.dirPath()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return fmt.Errorf("front TLS listener: %w", err)
+	}
+	info, cmd, err := a.startFrontLink(dir, ids, ln.Addr().String())
+	if err != nil {
+		_ = ln.Close()
+		return err
+	}
+	get := a.frontCertGetter(info.Hostname, filepath.Join(dir, "acme"))
+	certs := &frontCertSource{get: get}
+	tlsConfig := &tls.Config{
+		MinVersion:     tls.VersionTLS12,
+		GetCertificate: certs.GetCertificate,
+		NextProtos:     []string{"h2", "http/1.1", acme.ALPNProto},
+	}
+	mux := http.NewServeMux()
+	mux.Handle(tasklink.PathPrefix, a.taskLinkStore())
+	server := &http.Server{
+		Handler:           frontHostOnly(info.Hostname, mux),
+		TLSConfig:         tlsConfig,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		MaxHeaderBytes:    16 << 10,
+	}
+	ctCtx, ctCancel := context.WithCancel(context.Background())
+	watch := &frontCTWatch{hostname: info.Hostname, dir: dir, api: s.ctAPI, notify: func(title, body, click string) { a.NotifyUser(title, body, click) }, language: normalizeUILanguage(a.currentUILanguage())}
+	s.mu.Lock()
+	s.running, s.cmd, s.server, s.listener, s.info, s.ctCancel = true, cmd, server, ln, info, ctCancel
+	s.mu.Unlock()
+	go a.runFrontCTWatch(ctCtx, watch)
+	go func() {
+		if err := server.ServeTLS(ln, "", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("[front] TLS server stopped: %v", err)
+		}
+	}()
+	go a.superviseFrontLink(cmd)
+	log.Printf("[front] serving %s", info.Hostname)
+	return nil
+}
+
+// frontHostOnly answers only requests for the computer's own hostname.
+func frontHostOnly(hostname string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host := r.Host
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
+		}
+		if !strings.EqualFold(host, hostname) {
+			http.NotFound(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (a *App) frontCertGetter(hostname, cacheDir string) func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+	if a.front.certFunc != nil {
+		return a.front.certFunc(hostname, cacheDir)
+	}
+	directory := strings.TrimSpace(os.Getenv(frontACMEDirectoryEnv))
+	if directory == "" {
+		directory = frontACMEStaging
+	}
+	m := &autocert.Manager{
+		// Turning the front on is the person's choice to get a certificate
+		// for their hostname under the CA's subscriber terms.
+		Prompt:     autocert.AcceptTOS,
+		Cache:      autocert.DirCache(cacheDir),
+		HostPolicy: autocert.HostWhitelist(hostname),
+		Client:     &acme.Client{DirectoryURL: directory},
+	}
+	return m.GetCertificate
+}
+
+// startFrontLink runs isoform-front-link and waits for its ready line.
+func (a *App) startFrontLink(dir string, ids []string, forward string) (frontLinkInfo, *exec.Cmd, error) {
+	bin, err := locateFrontLink()
+	if err != nil {
+		return frontLinkInfo{}, nil, fmt.Errorf("isoform-front-link: %w", err)
+	}
+	suffix := frontSuffix()
+	cmd := exec.Command(bin,
+		"--key-file", filepath.Join(dir, "link.key"),
+		"--allow", strings.Join(ids, ","),
+		"--forward", forward,
+		"--suffix", suffix,
+	)
+	cmd.Env = []string{"PATH=/usr/bin:/bin", "HOME=" + dir}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return frontLinkInfo{}, nil, err
+	}
+	cmd.Stderr = nil
+	if err := cmd.Start(); err != nil {
+		return frontLinkInfo{}, nil, err
+	}
+	lines := make(chan string, 1)
+	go func() {
+		sc := bufio.NewScanner(stdout)
+		if sc.Scan() {
+			lines <- sc.Text()
+		}
+		close(lines)
+		for sc.Scan() {
+		}
+	}()
+	select {
+	case line, ok := <-lines:
+		if ok {
+			info, err := parseFrontLinkLine(line, suffix)
+			if err == nil {
+				return info, cmd, nil
+			}
+		}
+	case <-time.After(frontLinkReadyWithin):
+	}
+	_ = cmd.Process.Kill()
+	_ = cmd.Wait()
+	return frontLinkInfo{}, nil, errFrontBadLink
+}
+
+// superviseFrontLink restarts the link after a pause if it exits while the
+// front should be running.
+func (a *App) superviseFrontLink(cmd *exec.Cmd) {
+	err := cmd.Wait()
+	s := &a.front
+	s.mu.Lock()
+	current := s.cmd == cmd
+	stopping := s.stopping
+	s.mu.Unlock()
+	if !current || stopping {
+		return
+	}
+	log.Printf("[front] link exited (%v); restarting in %s", err, frontLinkRestartWait)
+	time.Sleep(frontLinkRestartWait)
+	a.stopFront()
+	if a.frontEnabled() {
+		if err := a.startFront(); err != nil {
+			log.Printf("[front] restart failed: %v", err)
+		}
+	}
+}
+
+func (a *App) stopFront() {
+	s := &a.front
+	s.mu.Lock()
+	cmd, server, ctCancel := s.cmd, s.server, s.ctCancel
+	s.stopping = true
+	s.running, s.cmd, s.server, s.listener, s.info, s.ctCancel = false, nil, nil, nil, frontLinkInfo{}, nil
+	s.mu.Unlock()
+	if ctCancel != nil {
+		ctCancel()
+	}
+	if server != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		_ = server.Shutdown(ctx)
+		cancel()
+	}
+	if cmd != nil && cmd.Process != nil {
+		_ = cmd.Process.Kill()
+	}
+}
+
+func (a *App) startFrontIfEnabled() {
+	if !a.frontEnabled() {
+		return
+	}
+	if err := a.startFront(); err != nil {
+		log.Printf("[front] not started: %v", err)
+	}
+}
+
+// GetFrontStatus reports whether the front runs and its hostname.
+func (a *App) GetFrontStatus() map[string]any {
+	host := a.frontHostname()
+	status := map[string]any{"enabled": a.frontEnabled(), "running": host != "", "hostname": host}
+	if dir, err := a.front.dirPath(); err == nil {
+		if alerts, err := readFrontCTAlerts(dir); err == nil && len(alerts) > 0 {
+			status["unexpectedCertificates"] = alerts
+		}
+	}
+	return status
+}
+
+// SetFrontEnabled turns the front on or off.
+func (a *App) SetFrontEnabled(enabled bool) error {
+	if a.store == nil {
+		return errors.New("storage is not ready")
+	}
+	if err := a.store.SetUIState(context.Background(), frontEnabledKey, fmt.Sprintf("%t", enabled)); err != nil {
+		return err
+	}
+	if !enabled {
+		a.stopFront()
+		return nil
+	}
+	return a.startFront()
+}

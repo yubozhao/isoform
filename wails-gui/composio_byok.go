@@ -77,14 +77,6 @@ func loadComposioByokLocked() composioByokState {
 	return st
 }
 
-// saveComposioByok persists the full state with 0600 perms. Generates a stable
-// entity id on first save when absent.
-func saveComposioByok(st composioByokState) error {
-	composioByokMu.Lock()
-	defer composioByokMu.Unlock()
-	return saveComposioByokLocked(st)
-}
-
 func saveComposioByokLocked(st composioByokState) error {
 	if strings.TrimSpace(st.EntityID) == "" {
 		st.EntityID = newComposioEntityID()

@@ -57,13 +57,6 @@ func ParseMarkedValue(output, startMarker, endMarker string) string {
 	return strings.TrimSpace(output[start : start+end])
 }
 
-func ResolveEnvVar(name string) string {
-	if !isSafeEnvVarName(name) {
-		return ""
-	}
-	return resolveEnvVarViaLoginShell(name)
-}
-
 func ApplyEnvVars(names ...string) []string {
 	// Batch-resolve all variables in a single login shell invocation to avoid
 	// spawning N×2 shell processes (critical for heavy .zshrc like oh-my-zsh).

@@ -206,17 +206,6 @@ func sharesHighSpecificityEntity(a, b []Entity) bool {
 	return sharesEntityKey(a, b, highSpecificityKey)
 }
 
-// hasHighSpecificityEntity reports whether an observation carries a repo/pr
-// identity (used by the verifier safety net to detect dropped real work).
-func hasHighSpecificityEntity(ents []Entity) bool {
-	for _, e := range ents {
-		if highSpecificityKey(e) != "" {
-			return true
-		}
-	}
-	return false
-}
-
 // observationComponents returns the connected components (sorted source indices,
 // in stable root order) of the given observation indices under the edge predicate
 // over their entity sets.

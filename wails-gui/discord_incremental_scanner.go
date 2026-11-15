@@ -942,23 +942,6 @@ func (s *DiscordIncrementalScanner) emitStage(recordID, stage string) {
 	s.emitHistorySlice(hist)
 }
 
-// emitStageParallel marks a stage as "running" without finishing other running stages.
-// It also updates the backward-compat Stage field so legacy consumers see a current value.
-func (s *DiscordIncrementalScanner) emitStageParallel(recordID, stage string) {
-	s.historyMu.Lock()
-	defer s.historyMu.Unlock()
-	hist := s.loadHistory()
-	for i := range hist {
-		if hist[i].ID == recordID {
-			hist[i].Stage = stage
-			hist[i].Stages = startStageParallel(hist[i].Stages, stage)
-			break
-		}
-	}
-	s.saveHistory(hist)
-	s.emitHistorySlice(hist)
-}
-
 // emitFinishStage marks a single named stage as "done".
 // The backward-compat Stage field is set to whichever stage is still running
 // (if any), so legacy consumers always see "current stage while running".

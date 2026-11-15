@@ -428,13 +428,6 @@ func newFeishuLocalReceiver(app *App, creds feishuLocalCredentials) *feishuLocal
 	}
 }
 
-// credsSnapshot copies the credentials under ownerMu, since pairing updates them.
-func (r *feishuLocalReceiver) credsSnapshot() feishuLocalCredentials {
-	r.ownerMu.Lock()
-	defer r.ownerMu.Unlock()
-	return r.creds
-}
-
 // ownerPaired reports whether an owner has paired with this app.
 func (r *feishuLocalReceiver) ownerPaired() bool {
 	r.ownerMu.Lock()

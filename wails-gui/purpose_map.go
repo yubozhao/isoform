@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -801,16 +800,6 @@ func purposeEvidenceSetHash(items []PurposeEvidenceRecord) (string, []string, er
 		return "", nil, err
 	}
 	return agencyPayloadHash([]byte(raw)), ids, nil
-}
-
-func purposeEqualJSON(left, right string) bool {
-	var leftValue, rightValue any
-	if json.Unmarshal([]byte(left), &leftValue) != nil || json.Unmarshal([]byte(right), &rightValue) != nil {
-		return false
-	}
-	leftRaw, leftErr := json.Marshal(leftValue)
-	rightRaw, rightErr := json.Marshal(rightValue)
-	return leftErr == nil && rightErr == nil && string(leftRaw) == string(rightRaw)
 }
 
 const purposeRootSelectColumns = `

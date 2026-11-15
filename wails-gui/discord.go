@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"log"
 	"os"
@@ -258,19 +257,6 @@ func (a *App) SendDiscordDM(userID, text string) error {
 	return apiPost(loadAPIBaseURL(), token, "/api/discord/dm", map[string]string{
 		"user_id": userID,
 		"text":    text,
-	}, nil)
-}
-
-// sendDiscordMessageWithImage posts a message with a JPEG screenshot to a Discord channel.
-func (a *App) sendDiscordMessageWithImage(channelID, text string, imageData []byte) error {
-	token, err := loadYansuToken()
-	if err != nil || token == "" {
-		return fmt.Errorf("not authenticated")
-	}
-	return apiPost(loadAPIBaseURL(), token, "/api/discord/send-with-image", map[string]string{
-		"channel_id": channelID,
-		"text":       text,
-		"image_data": base64.StdEncoding.EncodeToString(imageData),
 	}, nil)
 }
 

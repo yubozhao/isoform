@@ -2,13 +2,8 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/json"
 	"log"
 	"time"
-
-	"wails-gui/internal/pii"
-	"wails-gui/storage"
 )
 
 const topicTodayReadBudget = 100 * time.Millisecond
@@ -83,14 +78,6 @@ func (s *topicsService) makeTodaySnapshot(ctx context.Context, c *topicRegistryC
 func (s *topicsService) todayViews() ([]TopicView, bool, bool) {
 	views, refreshing, firstRun := s.snapshotRead()
 	return views, refreshing, !firstRun && len(views) == 0
-}
-
-func (s *topicsService) todayRegistryViews(parent context.Context) (topicRegistryResult, bool, bool) {
-	if s.app.IsClosedEyesModeEnabled() {
-		return s.closedEyesRegistry(s.store.load(), s.now()), false, true
-	}
-	views, refreshing, firstRun := s.snapshotRead()
-	return s.snapshotRegistryResult(views), refreshing, !firstRun && len(views) == 0
 }
 
 func (s *topicsService) snapshotRead() (views []TopicView, refreshing, firstRun bool) {
@@ -170,87 +157,6 @@ func (s *topicsService) topicsStale() bool {
 	s.registryWorkerMu.Lock()
 	defer s.registryWorkerMu.Unlock()
 	return s.registryStale
-}
-
-func (s *topicsService) readableTodaySnapshot(ctx context.Context, state topicsStateFile) bool {
-	readable, _, _ := s.readableTodaySnapshotWithRetry(ctx, state)
-	return readable
-}
-
-func (s *topicsService) readableTodaySnapshotWithRetry(ctx context.Context, state topicsStateFile) (bool, bool, bool) {
-	saved := state.Today
-	now := s.now()
-	if saved == nil || now.Before(saved.At) || !now.Before(saved.Until) || saved.State != topicTodayStateHash(state) {
-		return false, false, true
-	}
-	paths, err := s.registryDatabaseFiles(ctx)
-	if err != nil {
-		return false, false, ctx.Err() == nil
-	}
-	if proactiveVoiceHash(paths) != proactiveVoiceHash(saved.DatabaseFiles) {
-		return false, false, true
-	}
-	var releases []func()
-	defer func() {
-		for i := len(releases) - 1; i >= 0; i-- {
-			releases[i]()
-		}
-	}()
-	if s.app.activity != nil && s.app.activity.store != nil {
-		revision, err := storage.DatabaseRevision(ctx, s.app.activity.store.db)
-		if err != nil {
-			return false, false, ctx.Err() == nil
-		}
-		release, err := storage.LockDatabaseRevision(ctx, s.app.activity.store.db, revision)
-		if err != nil {
-			return false, false, ctx.Err() == nil
-		}
-		releases = append(releases, release)
-	}
-	if s.app.store != nil {
-		revision, err := s.app.store.ReadRevision(ctx)
-		if err != nil {
-			return false, false, ctx.Err() == nil
-		}
-		release, err := s.app.store.LockReadRevision(ctx, revision)
-		if err != nil {
-			return false, false, ctx.Err() == nil
-		}
-		releases = append(releases, release)
-	}
-	// This revision needs no row walk or observer installation on launch.
-	policy, err := json.Marshal([]any{false, pii.GetUserSensitiveApps(), GetUserVoiceInputApps()})
-	if err != nil {
-		return false, ctx.Err() != nil, ctx.Err() == nil
-	}
-	if sha256.Sum256(policy) != saved.Policy {
-		return false, false, true
-	}
-	if proactiveVoiceHash(s.app.interestsSvc().store.load()) != saved.Interests {
-		return false, false, true
-	}
-	files, err := s.registrySourceFileStats(ctx)
-	if err != nil {
-		return false, ctx.Err() != nil, ctx.Err() == nil
-	}
-	if files != saved.Sources {
-		return false, false, true
-	}
-	stats, err := topicSessionFileStats(ctx, saved.Sessions.Paths)
-	if err != nil {
-		return false, ctx.Err() != nil, ctx.Err() == nil
-	}
-	if stats != saved.Sessions.Stats {
-		return false, false, true
-	}
-	stats, err = topicSessionFileStats(ctx, saved.DatabaseFiles)
-	if err != nil {
-		return false, ctx.Err() != nil, ctx.Err() == nil
-	}
-	if stats != saved.DatabaseStats {
-		return false, false, true
-	}
-	return ctx.Err() == nil, ctx.Err() != nil, false
 }
 
 func (s *topicsService) registryWorkerRunning() bool {

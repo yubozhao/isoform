@@ -24,6 +24,9 @@ type privacyWithdrawalScope struct {
 
 type privacyWithdrawal struct {
 	Scope privacyWithdrawalScope
+	// Retention is true when retention cleanup removed the source: readers
+	// drop raw copies, but it is not the person withdrawing anything.
+	Retention bool
 }
 
 type privacyWithdrawalPublisher struct {
@@ -71,7 +74,7 @@ func subscribePrivacyWithdrawals(subscriber func(privacyWithdrawal)) func() {
 // removed one, without moving the brief privacy print: retention cleanup never
 // withdraws or amends a sealed brief (docs/design/brief-seal-v2.md rule 2).
 func publishRetentionRemoval(scope privacyWithdrawalScope) {
-	privacyWithdrawals.publish(privacyWithdrawal{Scope: scope})
+	privacyWithdrawals.publish(privacyWithdrawal{Scope: scope, Retention: true})
 }
 
 func publishPrivacyWithdrawal(scope privacyWithdrawalScope) {

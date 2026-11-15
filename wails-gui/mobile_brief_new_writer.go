@@ -263,11 +263,6 @@ const (
 	newBriefReserveCopy  = "copy"
 )
 
-func newBriefReserve(brief *MobileBriefV1, src newBriefSource) (string, bool) {
-	ref, reason := newBriefReserveRef(brief, src)
-	return ref, reason == newBriefReserveOK
-}
-
 func newBriefReserveRef(brief *MobileBriefV1, src newBriefSource) (string, string) {
 	key := mobileBriefSourceKey(src.kind, src.id)
 	used := map[string]bool{}
@@ -310,14 +305,6 @@ func newBriefReserveRef(brief *MobileBriefV1, src newBriefSource) (string, strin
 	}
 	brief.Evidence = append(brief.Evidence, MobileBriefRef{Ref: ref, SourceKind: src.kind, SourceID: src.id, Label: label, ObservedAt: brief.AsOf})
 	return ref, newBriefReserveOK
-}
-
-// newBriefParagraphs maps the draft's material ids to evidence refs and labels
-// each paragraph with its part. A ref that cannot be given evidence is dropped,
-// and a paragraph left with none is dropped; both are named in the codes.
-func newBriefParagraphs(brief *MobileBriefV1, draft briefcore.Draft, sources map[string]newBriefSource) ([]MobileBriefPara, []string) {
-	paragraphs, codes, _, _ := newBriefParagraphsTracked(brief, draft, sources)
-	return paragraphs, codes
 }
 
 // newBriefParagraphsTracked is newBriefParagraphs that also returns the

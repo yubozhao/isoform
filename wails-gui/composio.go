@@ -113,11 +113,6 @@ type ComposioToolInfo struct {
 // proxy URL and attach the normal yansu Bearer token at runtime.
 type composioBackendFetcher struct{ app *App }
 
-func (f *composioBackendFetcher) GetMCPURL(ctx context.Context, app string) (string, error) {
-	mcpURL, _, err := f.GetMCPConfig(ctx, app)
-	return mcpURL, err
-}
-
 func (f *composioBackendFetcher) GetMCPConfig(ctx context.Context, app string) (string, map[string]string, error) {
 	token, err := loadYansuToken()
 	if err != nil || token == "" {
@@ -527,11 +522,6 @@ func (a *App) CallComposioTool(server, tool string, args map[string]any) (string
 		return "", err
 	}
 	return string(b), nil
-}
-
-// shutdownComposio is kept for the App shutdown hook. Composio clients are
-// ordinary MCP manager clients now, so shutdownMcpRuntime owns the cleanup.
-func (a *App) shutdownComposio() {
 }
 
 func composioManagedServerID(app string) (string, error) {

@@ -3,7 +3,6 @@ package main
 import (
 	"archive/tar"
 	"compress/bzip2"
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -85,14 +84,6 @@ func defaultTtsPaths() ttsPaths {
 	}
 }
 
-// ttsModelPresent reports whether the essential model files exist and are
-// non-empty (network-free check).
-func ttsModelPresent(p ttsPaths) bool {
-	return fileExistsAndNonEmpty(p.model) &&
-		fileExistsAndNonEmpty(p.lexicon) &&
-		fileExistsAndNonEmpty(p.tokens)
-}
-
 // kokoroPaths describes where the Kokoro English model files live on disk.
 type kokoroPaths struct {
 	root     string // ~/.yansu-agent/sherpa/tts
@@ -115,24 +106,6 @@ func defaultKokoroPaths() kokoroPaths {
 		tokens:   filepath.Join(md, "tokens.txt"),
 		dataDir:  filepath.Join(md, "espeak-ng-data"),
 	}
-}
-
-func kokoroModelPresent(p kokoroPaths) bool {
-	return fileExistsAndNonEmpty(p.model) &&
-		fileExistsAndNonEmpty(p.voices) &&
-		fileExistsAndNonEmpty(p.tokens)
-}
-
-// ensureKokoroAssets checks this specific installed model without acquisition.
-// Runtime routing chooses a voice through the saved manifest choice.
-func ensureKokoroAssets(ctx context.Context, paths kokoroPaths, progress sherpaDownloadProgress) error {
-	return models.Require(configDirOrFallback(), "kokoro-en")
-}
-
-// ensureTtsAssets checks this specific installed model without acquisition.
-// Setup jobs alone own downloading and extraction.
-func ensureTtsAssets(ctx context.Context, paths ttsPaths, progress sherpaDownloadProgress) error {
-	return models.Require(configDirOrFallback(), "melotts-zh-en")
 }
 
 // extractTarBz2 unpacks a .tar.bz2 archive into destRoot, guarding against path

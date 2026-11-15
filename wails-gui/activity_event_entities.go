@@ -169,22 +169,3 @@ func strongEntityKey(e Entity) string {
 	}
 	return e.Type + "|" + name
 }
-
-// buildCandidateClusters builds an inverted index strongEntityKey ->
-// observation indices. Observations sharing a strong entity across apps are
-// candidates for the same event (§4, consumed by gating §6).
-func buildCandidateClusters(seq ObservationSequence) map[string][]int {
-	inv := map[string][]int{}
-	for _, o := range seq.Observations {
-		local := map[string]bool{}
-		for _, e := range o.Entities {
-			key := strongEntityKey(e)
-			if key == "" || local[key] {
-				continue
-			}
-			local[key] = true
-			inv[key] = append(inv[key], o.Index)
-		}
-	}
-	return inv
-}

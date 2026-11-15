@@ -286,12 +286,6 @@ func mobileBriefMeetingLink(ev calendar.Event, status string) string {
 	return mobileBriefLink(ev.ConferenceURL)
 }
 
-// mobileBriefCalendarOutcome says what a past event turned into: a meeting
-// session with notes, and what the notes found.
-func mobileBriefCalendarOutcome(a *App, ev calendar.Event) []string {
-	return mobileBriefCalendarOutcomeContext(context.Background(), a, ev)
-}
-
 func mobileBriefCalendarOutcomeContext(ctx context.Context, a *App, ev calendar.Event) []string {
 	row, found, err := a.store.GetCalendarEvent(ctx, ev.ID)
 	if err != nil || !found || row.SessionID == "" {

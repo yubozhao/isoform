@@ -1215,7 +1215,11 @@
         "result": {
             "deep_link": "Opened in {{agent}}. Review it there and send.",
             "open_copy": "Copied. Paste it in {{agent}} and send.",
-            "message": "Sent to {{agent}}."
+            "message": "Sent to {{agent}}.",
+            "paste": "Isoform is pasting it into {{agent}}. Review it there and send. You can follow it in Tasks.",
+            "task_link_deep_link": "Opened in {{agent}} with a one-time link to this task. Send it there, and its result comes back here.",
+            "task_link_message": "Sent {{agent}} a one-time link to this task. Its result comes back here.",
+            "task_link_open_copy": "Copied a one-time link to this task. Paste it in {{agent}} and send, and its result comes back here."
         },
         "handleLabel": "{{agent}}'s phone number or Apple ID",
         "handleSave": "Save number",

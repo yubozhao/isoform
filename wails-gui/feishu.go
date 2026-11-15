@@ -50,17 +50,6 @@ type feishuBindingResponse struct {
 	Status         string `json:"status"`
 }
 
-func getLatestFeishuBinding(baseURL, token string) (*feishuBindingResponse, error) {
-	bindings, err := apiGetList[feishuBindingResponse](baseURL, token, "/api/daemon/feishu-bindings")
-	if err != nil {
-		return nil, err
-	}
-	if len(bindings) == 0 {
-		return nil, nil
-	}
-	return &bindings[0], nil
-}
-
 // getActiveFeishuBinding calls GET /api/daemon/me/feishu-binding which filters
 // by active app status. Returns (nil, nil) when no active binding exists (HTTP 404).
 // Returns (nil, err) on network/server errors — callers must not clear state on error.
@@ -516,90 +505,6 @@ func (a *App) tryAutoStartFeishuDaemon() {
 		if err := a.StartFeishuDaemon(brand); err != nil {
 			log.Printf("[feishu-local] %s auto-start failed: %v", brand, err)
 		}
-	}
-}
-
-// ensureFeishuReceiverHealthy is a watchdog goroutine that periodically checks
-// the backend Feishu receiver status and restarts it if unhealthy for too long.
-// It runs until ctx is cancelled (app shutdown or daemon disconnect).
-func (a *App) ensureFeishuReceiverHealthy(ctx context.Context) {
-	const (
-		initialDelay    = 10 * time.Second
-		checkInterval   = 15 * time.Second
-		unhealthyWindow = 90 * time.Second
-		restartCooldown = 120 * time.Second
-	)
-
-	select {
-	case <-time.After(initialDelay):
-	case <-ctx.Done():
-		return
-	}
-
-	var unhealthySince time.Time
-	var lastRestart time.Time
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(checkInterval):
-		}
-
-		// If daemon was stopped, exit the watchdog.
-		a.mu.Lock()
-		daemon := a.feishuDaemon
-		a.mu.Unlock()
-		if daemon == nil {
-			log.Printf("[feishu-watchdog] daemon is nil, stopping watchdog")
-			return
-		}
-
-		rs, err := a.GetFeishuReceiverStatus("feishu")
-		if err != nil {
-			log.Printf("[feishu-watchdog] failed to fetch receiver status: %v", err)
-			continue
-		}
-
-		switch rs.Status {
-		case "connected":
-			// Healthy — reset the unhealthy timer.
-			unhealthySince = time.Time{}
-			continue
-		case "reconnecting", "starting":
-			// The SDK or backend is actively recovering — don't interfere.
-			// Reset the unhealthy timer so we give it a full window after
-			// it transitions to a terminal error state.
-			if !unhealthySince.IsZero() {
-				log.Printf("[feishu-watchdog] receiver is %s, resetting unhealthy timer", rs.Status)
-			}
-			unhealthySince = time.Time{}
-			continue
-		}
-
-		// Not connected and not recovering — track how long it has been unhealthy.
-		now := time.Now()
-		if unhealthySince.IsZero() {
-			unhealthySince = now
-			log.Printf("[feishu-watchdog] receiver not connected (status=%s), watching...", rs.Status)
-			continue
-		}
-
-		if now.Sub(unhealthySince) < unhealthyWindow {
-			continue // still within grace period
-		}
-
-		// Unhealthy beyond threshold — restart if cooldown has passed.
-		if !lastRestart.IsZero() && now.Sub(lastRestart) < restartCooldown {
-			continue
-		}
-
-		log.Printf("[feishu-watchdog] receiver unhealthy for %s (status=%s), restarting", now.Sub(unhealthySince).Round(time.Second), rs.Status)
-		if restartErr := a.RestartFeishuReceiver("feishu"); restartErr != nil {
-			log.Printf("[feishu-watchdog] restart failed: %v", restartErr)
-		}
-		lastRestart = now
-		unhealthySince = time.Time{} // reset so we give it time to come back up
 	}
 }
 

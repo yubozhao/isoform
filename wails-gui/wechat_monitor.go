@@ -267,30 +267,6 @@ func (m *wechatMonitor) stop() {
 	<-m.done
 }
 
-// emitSessionExpired notifies the frontend that the WeChat session has expired
-// and clears the monitor reference so the UI shows disconnected.
-func (m *wechatMonitor) emitSessionExpired() {
-	// Clear monitor reference so GetWeChatStatus returns online=false.
-	m.app.mu.Lock()
-	if m.app.wechatMon == m {
-		m.app.wechatMon = nil
-	}
-	m.app.mu.Unlock()
-
-	// Clear stale credentials so auto-start doesn't loop on next launch.
-	if err := updateConfig(func(c *yansuConfig) {
-		c.WeChat = nil
-	}); err != nil {
-		log.Printf("[wechat] failed to clear config on session expiry: %s", activityPrivateLogField("error", err.Error()))
-	}
-
-	// Notify frontend.
-	if m.app.ctx != nil {
-		m.app.emitBrowserEvent("wechat:session_expired")
-		log.Printf("[wechat] emitted wechat:session_expired event to frontend")
-	}
-}
-
 // handleMessage processes a single incoming WeChat user message.
 func (m *wechatMonitor) handleMessage(ctx context.Context, msg wechatMessage) {
 	// Pairing and the owner check come first, so a stranger's message changes

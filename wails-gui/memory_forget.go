@@ -39,12 +39,6 @@ type memoryForgetScope struct {
 	preserveRoot    bool
 }
 
-// GetMemoryForgetPreview describes the exact current local deletion scope.
-// The token binds confirmation to the file contents and dependent record list.
-func (a *App) readMemoryForgetPreview(id string) (MemoryForgetPreview, *memoryForgetScope, error) {
-	return a.readMemoryForgetPreviewScoped(id, false)
-}
-
 func (a *App) readMemoryForgetPreviewScoped(id string, historyVersionsOnly bool) (MemoryForgetPreview, *memoryForgetScope, error) {
 	memoryMutationMu.RLock()
 	defer memoryMutationMu.RUnlock()
@@ -253,10 +247,6 @@ func (a *App) lockMemoryForgetIndex() (*sql.DB, func(), error) {
 		return nil, nil, err
 	}
 	return db, func() { db.Close() }, nil
-}
-
-func (a *App) memoryForgetPreview(id string, tx *sql.Tx, index *sql.DB) (MemoryForgetPreview, *memoryForgetScope, error) {
-	return a.memoryForgetPreviewScoped(id, tx, index, false)
 }
 
 func (a *App) memoryForgetPreviewScoped(id string, tx *sql.Tx, index *sql.DB, historyVersionsOnly bool) (MemoryForgetPreview, *memoryForgetScope, error) {
