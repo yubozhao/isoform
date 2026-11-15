@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -21,5 +21,27 @@ describe("spotlight wails-app-stub covers the main shim", () => {
         );
         const missing = bindings.filter((name) => !stubbed.has(name));
         expect(missing, "add `export const X = makeNoop(\"X\");` to wails-app-stub.ts").toEqual([]);
+    });
+});
+
+// A binding whose Go method was deleted only fails when a page calls it, so a
+// deletion that forgets the shim leaves dead names behind (the shadow-agent
+// debug bindings outlived their methods this way).
+describe("main shim bindings", () => {
+    it("each names an App method in the Go code", () => {
+        const here = resolve(__dirname);
+        const shim = readFileSync(resolve(here, "wails-shim-app.ts"), "utf8");
+        const goDir = resolve(here, "../../..");
+        const methods = new Set<string>();
+        for (const file of readdirSync(goDir)) {
+            if (!file.endsWith(".go") || file.endsWith("_test.go")) continue;
+            const src = readFileSync(resolve(goDir, file), "utf8");
+            for (const m of src.matchAll(/^func \(\w+ \*App\) (\w+)\(/gm)) methods.add(m[1]);
+        }
+        // The name literal closes each appBinding<...>("Name") call.
+        const bindings = [...shim.matchAll(/(?:>|appBinding)\(\s*["'](\w+)["']\s*,?\s*\)/g)].map((m) => m[1]);
+        expect(bindings.length).toBeGreaterThan(100);
+        const gone = bindings.filter((name) => !methods.has(name));
+        expect(gone, "remove the shim binding (and its spotlight stub) or restore the Go method").toEqual([]);
     });
 });
