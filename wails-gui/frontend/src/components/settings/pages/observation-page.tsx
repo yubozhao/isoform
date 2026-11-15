@@ -5,6 +5,7 @@ import { Loader2, RefreshCw } from "lucide-react";
 import { activeInterval } from "@/lib/app-activity";
 import { SettingsFailureLine, useSettingsFailure, type SettingsFailure } from "@/components/settings/settings-failure";
 import { Button } from "@/components/ui/button";
+import { Combobox } from "@/components/ui/combobox";
 import { Switch } from "@/components/ui/switch";
 import {
     GetActivityMonitorStatus,
@@ -20,8 +21,12 @@ import {
     SetOfferHolds,
     SetHoldCalendar,
     GetFilesOverview,
+    ForgetMessages,
     GetMailOverview,
+    GetMessagesOverview,
     GetRemindersOverview,
+    ListPrincipals,
+    SetPeopleLeftOut,
     GetSystemAudioOutsideCallsEnabled,
     IsClosedEyesModeEnabled,
     RemoveAfterCallSpeechModel,
@@ -34,6 +39,7 @@ import {
     SyncCalendarsNow,
     SyncFilesNow,
     SyncMailNow,
+    SyncMessagesNow,
     SyncRemindersNow,
     type AfterCallSpeechModelView,
     type CalendarOverview,
@@ -42,6 +48,8 @@ import {
     type FilesFolderView,
     type FilesOverview,
     type MailOverview,
+    type MessagesOverview,
+    type PrincipalDTO,
     type ReminderListView,
     type RemindersOverview,
 } from "@/lib/wails-shim-app";
@@ -81,6 +89,7 @@ const CALENDAR_SYNCED_EVENT = "calendar:synced";
 const REMINDERS_SYNCED_EVENT = "reminders:synced";
 const FILES_READ_EVENT = "files:read";
 const MAIL_SYNCED_EVENT = "mail:synced";
+const MESSAGES_SYNCED_EVENT = "imessage:synced";
 const CALENDARS_PERMISSION_KEY = "calendars";
 const REMINDERS_PERMISSION_KEY = "reminders";
 const CLIPBOARD_PERMISSION_KEY = "clipboard";
@@ -1387,6 +1396,232 @@ function MailCard({
     );
 }
 
+// ── Messages Isoform can see ──
+
+/** Asks and commitments read from the Messages app: Full Disk Access (Grant
+ *  only opens System Settings, and only when tapped), the reading switch, the
+ *  people left out, and Forget. */
+function MessagesCard({
+    permissions,
+    paused,
+    onGrant,
+    onChanged,
+}: {
+    permissions: PlatformPermissions | null;
+    paused: boolean;
+    onGrant: (item: PermissionItem) => void;
+    onChanged: () => Promise<unknown>;
+}) {
+    const { t, i18n } = useTranslation("settings");
+    const { failure: changeFailure, fail: failChange } = useSettingsFailure();
+    const [overview, setOverview] = useState<MessagesOverview | null>(null);
+    const [people, setPeople] = useState<PrincipalDTO[]>([]);
+    const [loadFailed, setLoadFailed] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
+    const [changing, setChanging] = useState(false);
+    const [pendingRead, setPendingRead] = useState<boolean | null>(null);
+
+    const reload = useCallback(() => {
+        GetMessagesOverview()
+            .then((next) => {
+                setOverview(next);
+                setLoadFailed(false);
+            })
+            .catch(() => setLoadFailed(true));
+    }, []);
+
+    useEffect(() => {
+        reload();
+        const offs = [MESSAGES_SYNCED_EVENT, "permissions:changed"].map((name) => EventsOn(name, () => reload()));
+        window.addEventListener("focus", reload);
+        return () => {
+            offs.forEach((off) => off());
+            window.removeEventListener("focus", reload);
+        };
+    }, [reload]);
+
+    const item = (permissions?.items ?? []).find((entry) => entry.key === MESSAGES_PERMISSION_KEY) ?? null;
+    const granted = item?.granted ?? false;
+    const reading = pendingRead ?? item?.enabled ?? false;
+
+    // People are listed only once the picker can be used.
+    useEffect(() => {
+        if (!item || !granted) return;
+        ListPrincipals()
+            .then((rows) => setPeople(rows ?? []))
+            .catch(() => setPeople([]));
+    }, [item, granted]);
+
+    const leftOut = overview?.leftOut ?? [];
+    const leftOutIds = useMemo(() => new Set(leftOut.map((person) => person.id)), [leftOut]);
+    const options = useMemo(
+        () =>
+            people
+                .filter((person) => !["self", "anonymous", "content_subject"].includes(person.kind) && person.displayName.trim() !== "" && !leftOutIds.has(person.id))
+                .map((person) => ({ value: person.id, label: person.displayName }))
+                .sort((a, b) => a.label.localeCompare(b.label, i18n.language)),
+        [people, leftOutIds, i18n.language],
+    );
+
+    if (!item) return null;
+
+    const handleRead = async (next: boolean) => {
+        setPendingRead(next);
+        try {
+            await SetPermissionEnabled(MESSAGES_PERMISSION_KEY, next);
+        } catch {
+            failChange(t("observation.messages.toggleFailed"), () => void handleRead(next));
+        } finally {
+            await onChanged();
+            setPendingRead(null);
+            reload();
+        }
+    };
+
+    const handleRefresh = async () => {
+        setRefreshing(true);
+        try {
+            await SyncMessagesNow();
+        } catch {
+            failChange(t("observation.messages.refreshFailed"), () => void handleRefresh());
+        } finally {
+            setRefreshing(false);
+            reload();
+        }
+    };
+
+    const saveLeftOut = async (ids: string[]) => {
+        setChanging(true);
+        try {
+            await SetPeopleLeftOut(ids);
+        } catch {
+            failChange(t("observation.messages.leftOut.changeFailed"), () => void saveLeftOut(ids));
+        } finally {
+            setChanging(false);
+            reload();
+        }
+    };
+
+    const handleForget = async () => {
+        setChanging(true);
+        try {
+            await ForgetMessages();
+        } catch {
+            failChange(t("observation.messages.forget.failed"), () => void handleForget());
+        } finally {
+            setChanging(false);
+            reload();
+        }
+    };
+
+    const lastSync = formatWhen(overview?.lastReadAt ?? "", i18n.language);
+    let readingDescription = t("observation.messages.readingOff");
+    if (reading) {
+        const parts: string[] = [];
+        if (overview) {
+            parts.push(t("observation.messages.asks", { count: overview.asks }));
+            parts.push(t("observation.messages.commitments", { count: overview.commitments }));
+        }
+        if (lastSync) parts.push(t("observation.messages.lastSync", { when: lastSync }));
+        readingDescription = parts.join(" \u00b7 ") || t("observation.messages.readingDescription");
+    }
+    const readingTitle = t("observation.messages.readingTitle");
+    const kept = (overview?.asks ?? 0) + (overview?.commitments ?? 0);
+
+    return (
+        <SettingsCard
+            title={t("observation.messages.title")}
+            description={t("observation.messages.description")}
+            headerRight={
+                <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void handleRefresh()}
+                    disabled={!granted || !reading || refreshing || paused}
+                >
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    {t("observation.messages.refresh")}
+                </Button>
+            }
+        >
+            {loadFailed && <SettingsFailureLine failure={{ text: t("observation.messages.loadFailed"), retry: reload }} />}
+            {paused && granted && <SettingsReason>{t("observation.pausedReason")}</SettingsReason>}
+            {!granted && (
+                <>
+                    <SettingsReason>{t("observation.messages.needsAccess")}</SettingsReason>
+                    <MissingPermissionRow item={item} onGrant={onGrant} />
+                </>
+            )}
+            {granted && (
+                <SettingsRow
+                    title={readingTitle}
+                    description={readingDescription}
+                    control={
+                        <Switch
+                            aria-label={readingTitle}
+                            checked={reading}
+                            disabled={pendingRead !== null || paused}
+                            onCheckedChange={(next) => void handleRead(next)}
+                        />
+                    }
+                />
+            )}
+            {granted && (
+                <SettingsRow
+                    title={t("observation.messages.leftOut.title")}
+                    description={t("observation.messages.leftOut.description")}
+                    control={
+                        <Combobox
+                            options={options}
+                            value=""
+                            onValueChange={(id) => {
+                                if (id) void saveLeftOut([...leftOut.map((person) => person.id), id]);
+                            }}
+                            placeholder={t("observation.messages.leftOut.add")}
+                            searchPlaceholder={t("observation.messages.leftOut.search")}
+                            emptyMessage={t("observation.messages.leftOut.empty")}
+                            disabled={!overview || changing}
+                            className="w-48"
+                        />
+                    }
+                />
+            )}
+            {leftOut.map((person) => {
+                const name = person.name || t("observation.messages.leftOut.unnamed");
+                return (
+                    <SettingsRow
+                        key={person.id}
+                        title={name}
+                        control={
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                aria-label={t("observation.messages.leftOut.removeLabel", { name })}
+                                onClick={() => void saveLeftOut(leftOut.filter((other) => other.id !== person.id).map((other) => other.id))}
+                                disabled={changing}
+                            >
+                                {t("observation.messages.leftOut.remove")}
+                            </Button>
+                        }
+                    />
+                );
+            })}
+            {kept > 0 && (
+                <SettingsRow
+                    title={t("observation.messages.forget.title")}
+                    description={t("observation.messages.forget.description")}
+                    control={
+                        <Button size="sm" variant="outline" onClick={() => void handleForget()} disabled={changing}>
+                            {t("observation.messages.forget.action")}
+                        </Button>
+                    }
+                />
+            )}
+            <SettingsFailureLine failure={changeFailure} />
+        </SettingsCard>
+    );
+}
+
 // ── Advanced: capture status ──
 
 type CaptureState = "running" | "paused" | "off" | "stopped";
@@ -1626,6 +1861,12 @@ export function ObservationPage({ onOpenPage }: { onOpenPage?: OpenSettingsPage 
                 onChanged={refresh}
             />
             <div {...settingsAnchor("sees-mail")}><MailCard
+                permissions={permissions}
+                paused={paused}
+                onGrant={(item) => void requestPermission(item)}
+                onChanged={refresh}
+            /></div>
+            <div {...settingsAnchor("sees-messages")}><MessagesCard
                 permissions={permissions}
                 paused={paused}
                 onGrant={(item) => void requestPermission(item)}

@@ -5603,6 +5603,28 @@ export interface MailOverview {
 export const GetMailOverview = appBinding<[], MailOverview>("GetMailOverview");
 export const SyncMailNow = appBinding<[], void>("SyncMailNow");
 
+// Messages: asks and commitments read from the Messages app (Settings >
+// Observation). See wails-gui/imessage_bindings.go and people_left_out.go.
+export interface LeftOutPerson {
+    id: string;
+    name: string;
+}
+export interface MessagesOverview {
+    supported: boolean;
+    // Full Disk Access: Isoform can open the Messages database.
+    granted: boolean;
+    enabled: boolean;
+    lastReadAt: string;
+    lastError: string;
+    asks: number;
+    commitments: number;
+    leftOut: LeftOutPerson[];
+}
+export const GetMessagesOverview = appBinding<[], MessagesOverview>("GetMessagesOverview");
+export const SyncMessagesNow = appBinding<[], void>("SyncMessagesNow");
+export const SetPeopleLeftOut = appBinding<[string[]], void>("SetPeopleLeftOut");
+export const ForgetMessages = appBinding<[], void>("ForgetMessages");
+
 // The token the activity page adds to its host-bridge screenshot and
 // recording URLs. See wails-gui/activity_video.go.
 export const GetHostBridgeMediaToken = appBinding<[], string>("GetHostBridgeMediaToken");

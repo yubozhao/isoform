@@ -40,6 +40,11 @@ const mocks = vi.hoisted(() => ({
     removePrivateFolder: vi.fn(),
     mailOverview: vi.fn(),
     syncMail: vi.fn(),
+    messagesOverview: vi.fn(),
+    syncMessages: vi.fn(),
+    setLeftOut: vi.fn(),
+    forgetMessages: vi.fn(),
+    listPrincipals: vi.fn(),
     captureCounts: vi.fn(),
     emit: vi.fn(),
     toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn() },
@@ -95,6 +100,11 @@ vi.mock("@/lib/wails-shim-app", () => ({
     RemoveFilesPrivateFolder: mocks.removePrivateFolder,
     GetMailOverview: mocks.mailOverview,
     SyncMailNow: mocks.syncMail,
+    GetMessagesOverview: mocks.messagesOverview,
+    SyncMessagesNow: mocks.syncMessages,
+    SetPeopleLeftOut: mocks.setLeftOut,
+    ForgetMessages: mocks.forgetMessages,
+    ListPrincipals: mocks.listPrincipals,
     GetCaptureCounts: mocks.captureCounts,
 }));
 
@@ -253,6 +263,27 @@ function mailOverview(overrides: Record<string, unknown> = {}) {
     };
 }
 
+function messagesOverview(overrides: Record<string, unknown> = {}) {
+    return {
+        supported: true,
+        granted: true,
+        enabled: true,
+        lastReadAt: new Date(Date.now() - 4 * 60_000).toISOString(),
+        lastError: "",
+        asks: 3,
+        commitments: 1,
+        leftOut: [],
+        ...overrides,
+    };
+}
+
+function withMessages(base: PlatformPermissions, overrides: Partial<PermissionItem> = {}): PlatformPermissions {
+    return {
+        ...base,
+        items: [...base.items, permission("messages_history", { toggleable: true, enabled: true, ...overrides })],
+    };
+}
+
 function withMail(base: PlatformPermissions, overrides: Partial<PermissionItem> = {}): PlatformPermissions {
     return {
         ...base,
@@ -300,6 +331,14 @@ describe("ObservationPage", () => {
         mocks.removePrivateFolder.mockResolvedValue(undefined);
         mocks.mailOverview.mockResolvedValue(mailOverview());
         mocks.syncMail.mockResolvedValue(undefined);
+        mocks.messagesOverview.mockResolvedValue(messagesOverview());
+        mocks.syncMessages.mockResolvedValue(undefined);
+        mocks.setLeftOut.mockResolvedValue(undefined);
+        mocks.forgetMessages.mockResolvedValue(undefined);
+        mocks.listPrincipals.mockResolvedValue([
+            { id: "p1", kind: "contact", displayName: "Priya" },
+            { id: "me", kind: "self", displayName: "Sam" },
+        ]);
     });
 
     afterEach(() => {
@@ -783,6 +822,43 @@ describe("ObservationPage", () => {
         const card = reading.closest(".settings-card") as HTMLElement;
         expect(within(card).getByText("Observing is paused. Resume it to change this.")).toBeInTheDocument();
         expect(within(card).getByRole("button", { name: "Refresh" })).toBeDisabled();
+    });
+
+    it("asks for Full Disk Access only from Grant and opens System Settings", async () => {
+        mocks.getPermissions.mockResolvedValue(withMessages(macPermissions(), { granted: false }));
+        mocks.messagesOverview.mockResolvedValue(messagesOverview({ granted: false, asks: 0, commitments: 0 }));
+        render(<ObservationPage />);
+
+        const card = (await screen.findByText("Messages Isoform can see")).closest(".settings-card") as HTMLElement;
+        expect(await within(card).findByText(/Isoform needs Full Disk Access to read Messages/)).toBeInTheDocument();
+        expect(within(card).queryByRole("switch", { name: "Read my Messages" })).not.toBeInTheDocument();
+        expect(mocks.requestPermission).not.toHaveBeenCalled();
+        expect(mocks.openPermissionSettings).not.toHaveBeenCalled();
+        expect(mocks.listPrincipals).not.toHaveBeenCalled();
+        fireEvent.click(within(card).getByRole("button", { name: "Allow" }));
+        await waitFor(() => expect(mocks.requestPermission).toHaveBeenCalledWith("messages_history"));
+        await waitFor(() => expect(mocks.openPermissionSettings).toHaveBeenCalledWith("messages_history"));
+    });
+
+    it("leaves a person out, takes them back and forgets what was noted", async () => {
+        mocks.getPermissions.mockResolvedValue(withMessages(macPermissions()));
+        mocks.messagesOverview.mockResolvedValue(messagesOverview({ leftOut: [{ id: "p2", name: "Lee" }] }));
+        render(<ObservationPage />);
+
+        const reading = await screen.findByRole("switch", { name: "Read my Messages" });
+        const card = reading.closest(".settings-card") as HTMLElement;
+        expect(await within(card).findByText(/3 asks/)).toBeInTheDocument();
+        fireEvent.click(await within(card).findByRole("button", { name: "Stop leaving out Lee" }));
+        await waitFor(() => expect(mocks.setLeftOut).toHaveBeenCalledWith([]));
+
+        fireEvent.click(within(card).getByRole("button", { name: "Forget" }));
+        await waitFor(() => expect(mocks.forgetMessages).toHaveBeenCalled());
+
+        // The switch is its own; Watch my screen never turns it.
+        mocks.setPermission.mockClear();
+        fireEvent.click(screen.getByRole("switch", { name: "Watch my screen" }));
+        await waitFor(() => expect(mocks.setPermission).toHaveBeenCalledTimes(2));
+        expect(mocks.setPermission).not.toHaveBeenCalledWith("messages_history", expect.anything());
     });
 
     it("hides the mail card where the computer has no Mail", async () => {

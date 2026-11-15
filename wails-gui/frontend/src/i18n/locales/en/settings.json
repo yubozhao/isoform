@@ -3362,6 +3362,40 @@
             "waiting_other": "{{count}} waiting on your reply",
             "lastSync": "Last read {{when}}"
         },
+        "messages": {
+            "title": "Messages Isoform can see",
+            "description": "Isoform reads your recent Messages conversations with people you know and notes what someone asked of you and what you promised, in a sentence of its own, such as who asked you for what and by when. It never keeps the messages themselves. To write that sentence, the messages of the last two days are sent, with personal details removed, to the AI you chose. What Isoform noted stays on this computer and can appear in your brief, on your paired phone too, for two weeks or less if you keep activity for less. Nothing is read while observing is paused, and nothing sent during a pause is noted. Protecting Messages in Privacy deletes what was noted.",
+            "needsAccess": "Isoform needs Full Disk Access to read Messages. Grant opens System Settings; turn on Isoform there. Isoform asks for nothing until you tap it.",
+            "readingTitle": "Read my Messages",
+            "readingDescription": "Notice what people asked of you and what you promised.",
+            "readingOff": "Messages reading is off and Isoform reads none of it.",
+            "asks_one": "{{count}} ask",
+            "asks_other": "{{count}} asks",
+            "commitments_one": "{{count}} promise",
+            "commitments_other": "{{count}} promises",
+            "lastSync": "Last read {{when}}",
+            "refresh": "Refresh",
+            "refreshFailed": "Couldn't read Messages.",
+            "toggleFailed": "Couldn't change this.",
+            "loadFailed": "Couldn't read what Isoform sees in Messages.",
+            "leftOut": {
+                "title": "People left out",
+                "description": "Isoform never reads conversations with these people, group chats included, and forgets what it noted from them.",
+                "add": "Leave someone out",
+                "search": "Search people",
+                "empty": "No one found.",
+                "remove": "Remove",
+                "removeLabel": "Stop leaving out {{name}}",
+                "unnamed": "Someone you know",
+                "changeFailed": "Couldn't change this."
+            },
+            "forget": {
+                "title": "Forget what Isoform noted",
+                "description": "Deletes every ask and promise noted from Messages. Messages already read are not read again.",
+                "action": "Forget",
+                "failed": "Couldn't forget this."
+            }
+        },
         "clipboard": {
             "title": "Note what I copy",
             "description": "A copy is a good sign of what you are about to do. Isoform notes what kind of thing you copied and in which app and, where macOS lets it read the copy, a short preview with personal details, codes, recovery phrases, single words such as passwords and anything labelled as a secret removed. Nothing is noted from password managers, copies apps mark as passwords, private browser windows, Isoform itself or the apps you protect. Safari does not mark its private windows, so from Safari only the kind of copy is noted, never a preview.",
