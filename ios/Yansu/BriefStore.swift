@@ -571,13 +571,37 @@ final class BriefStore: ObservableObject {
                                    session: SessionContext) throws -> (brief: MobileBriefV1, saved: Bool) {
         // A relay copy of a brief the Mac withdrew must not bring its text back.
         guard !withdrawnIDs.contains(opened.brief.identifier) else { return (opened.brief, false) }
-        let stored = cache.load(identifier: opened.brief.identifier)?.brief
-        let replaces = (stored?.asOfDate ?? .distantPast) <= (opened.brief.asOfDate ?? .distantPast)
-        guard replaces else { return (opened.brief, false) }
-        try cache.save(package: opened.package, version: BriefCache.sha256Hex(opened.package),
+        let version = BriefCache.sha256Hex(opened.package)
+        let stored = cache.load(identifier: opened.brief.identifier)
+        guard Self.relayCopyReplaces(stored, asOf: opened.brief.asOfDate, version: version, sequence: record.version,
+                                     named: targets[opened.brief.identifier]?.version) else {
+            return (opened.brief, false)
+        }
+        try cache.save(package: opened.package, version: version,
                        relayVersion: record.version, audioReceipt: receipt(for: record, session: session))
         rebuildHistory()
         return (opened.brief, true)
+    }
+
+    /// Whether a relay copy of a brief replaces the one in the library (PROTOCOL.md 8.1: a package is replaced,
+    /// never edited). A newer brief always does and an older one never does. Two packages of the same brief made
+    /// at the same moment differ when the Mac replaced one, for example when it gave back words a read had
+    /// withdrawn (2026-11-15-morning). Then the version the newest Today snapshot names wins, and otherwise the
+    /// newer relay sequence. The relay keeps the earlier package beside the later one, so without this rule a
+    /// history read would put the earlier package back over the one the Mac now serves.
+    static func relayCopyReplaces(_ stored: CachedBrief?, asOf: Date?, version: String, sequence: UInt64,
+                                  named: String?) -> Bool {
+        guard let stored else { return true }
+        let held = stored.brief.asOfDate ?? .distantPast
+        let arriving = asOf ?? .distantPast
+        if arriving != held { return arriving > held }
+        if stored.version == nil || stored.version == version { return true }
+        if let named {
+            if version == named { return true }
+            if stored.version == named { return false }
+        }
+        guard let heldSequence = stored.relayVersion else { return false }
+        return sequence > heldSequence
     }
 
     private func handleRelayError(_ error: RelayClientError) {
