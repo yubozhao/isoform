@@ -111,6 +111,7 @@ func (a *App) GetDailyTopics() (perfValue DailyTopicsView, perfErr error) {
 	if !ok {
 		return view, nil
 	}
+	saved = a.syncDailyTopicTasks(store, saved)
 	view.Day, view.BuiltAt = saved.Day, saved.BuiltAt
 	for _, t := range saved.Topics {
 		view.Topics = append(view.Topics, dailyTopicView(t))
