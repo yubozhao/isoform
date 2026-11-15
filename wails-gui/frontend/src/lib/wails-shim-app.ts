@@ -849,6 +849,8 @@ export interface MobileBriefAudio {
     bytes: number;
     durationSeconds: number;
     attachment?: { id: string; key: string; nonce: string };
+    /** A recording being made again after the person removed a part of the brief. */
+    updating?: boolean;
 }
 
 // Scheduled brief health: last run, next run, missed runs in the last seven

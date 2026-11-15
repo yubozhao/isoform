@@ -413,7 +413,33 @@ func (s *mobileBriefStore) finishedReadPath(briefID string) (string, bool) {
 	return filepath.Join(s.dir, briefID+mobileBriefFinishedReadExt), true
 }
 
+// keepBuiltSeal applies mobileBriefKeepBuilt to a copy about to be sealed:
+// every reader reads the seal, so a seal never holds fewer words or less audio
+// than the build. A seal whose words come back carries no withholding.
+func (s *mobileBriefStore) keepBuiltSeal(briefID string, read mobileBriefFinishedRead) mobileBriefFinishedRead {
+	built, ok := s.loadBuilt(briefID)
+	if !ok {
+		return read
+	}
+	var sealed MobileBriefV1
+	if unmarshalStoredMobileBrief(read.Brief, &sealed) != nil || sealed.BriefID != briefID {
+		return read
+	}
+	kept, changed := mobileBriefKeepBuilt(sealed, built, mobileBriefAllWithdrawnKeys())
+	if !changed {
+		return read
+	}
+	raw, err := marshalStoredMobileBrief(kept)
+	if err != nil {
+		return read
+	}
+	log.Printf("[mobile-brief] kept the %s brief's built words and recording in its sealed copy: paragraphs=%d audio=%t", kept.Slot, len(kept.Narrative), kept.Audio != nil)
+	read.Brief, read.WithheldReason, read.WithheldKind = raw, "", ""
+	return read
+}
+
 func (s *mobileBriefStore) saveFinishedRead(briefID string, read mobileBriefFinishedRead) error {
+	read = s.keepBuiltSeal(briefID, read)
 	if _, ok := s.finishedReadPath(briefID); !ok {
 		return errMobileBriefStateUnavailable
 	}
@@ -437,6 +463,7 @@ var errMobileBriefStaleSeal = errors.New("a newer privacy epoch already sealed t
 // only if no copy sealed under a newer epoch is saved. The check and the write
 // hold the store lock, so two seals of one brief cannot interleave.
 func (s *mobileBriefStore) saveFinishedReadIfCurrent(briefID string, read mobileBriefFinishedRead) error {
+	read = s.keepBuiltSeal(briefID, read)
 	if _, ok := s.finishedReadPath(briefID); !ok {
 		return errMobileBriefStateUnavailable
 	}

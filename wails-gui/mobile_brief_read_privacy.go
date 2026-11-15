@@ -128,6 +128,7 @@ func (a *App) mobileBriefForProjectionWithholding(ctx context.Context, brief Mob
 	// Audio and feed readers need only the privacy projection. Navigation is
 	// added by card/phone readers with their request's existing source snapshot.
 	quiet := brief.NarrativeStatus == "quiet"
+	stored := brief
 	brief.WeekQuestion = nil
 	brief = mobileBriefWithoutParagraphTopics(brief)
 	if a != nil && useRunTiming {
@@ -142,6 +143,15 @@ func (a *App) mobileBriefForProjectionWithholding(ctx context.Context, brief Mob
 		brief.NarrativeStatus = "quiet"
 	}
 	brief = a.mobileBriefWithoutClosedPurposes(brief)
+	// The latest brief shows first (Bo, 2026-11-15): no read-time gate removes
+	// a paragraph the build wrote. Only the person's keyed withdrawals leave
+	// one out (mobileBriefKeepBuilt); a stated exclusion amends below.
+	if kept, ok := a.mobileBriefKeptBuilt(brief); ok {
+		brief, withheld = kept, mobileBriefWithholding{}
+		if quiet {
+			brief.NarrativeStatus = "quiet"
+		}
+	}
 	language := a.modelDisplayLanguage()
 	closing := mobileBriefClosingParagraph(brief)
 	brief = mobileBriefBlankExcluded(brief, a.mobileBriefExclusions())
@@ -166,7 +176,47 @@ func (a *App) mobileBriefForProjectionWithholding(ctx context.Context, brief Mob
 	brief.WeekQuestion = a.morningBriefWeekQuestion(brief, time.Now())
 	brief.ConversationKey = mobileBriefConversationKey(brief)
 	brief.Audio = mobileBriefAudioForRead(brief)
+	if played, ok := a.mobileBriefBuiltRecordingPlayed(brief, stored); ok {
+		brief = played
+	}
 	return brief, withheld
+}
+
+// mobileBriefBuiltRecordingPlayed is mobileBriefBuiltRecordingFor against the
+// stored build of brief: the read renders the build's words, so it plays the
+// build's recording.
+func (a *App) mobileBriefBuiltRecordingPlayed(shown, stored MobileBriefV1) (MobileBriefV1, bool) {
+	if a == nil {
+		return shown, false
+	}
+	service, ok := a.mobileBriefSource().(*mobileBriefService)
+	if !ok || service == nil || service.store == nil {
+		return shown, false
+	}
+	built, ok := service.store.loadBuilt(shown.BriefID)
+	if !ok {
+		return shown, false
+	}
+	withdrawn := mobileBriefAllWithdrawnKeys()
+	stored, _ = mobileBriefKeepBuilt(stored, built, withdrawn)
+	return mobileBriefBuiltRecordingFor(shown, stored, built, withdrawn)
+}
+
+// mobileBriefKeptBuilt is brief with the build's words put back where a read
+// gate removed them. It reports false when nothing changed.
+func (a *App) mobileBriefKeptBuilt(brief MobileBriefV1) (MobileBriefV1, bool) {
+	if a == nil {
+		return brief, false
+	}
+	service, ok := a.mobileBriefSource().(*mobileBriefService)
+	if !ok || service == nil || service.store == nil {
+		return brief, false
+	}
+	built, ok := service.store.loadBuilt(brief.BriefID)
+	if !ok {
+		return brief, false
+	}
+	return mobileBriefKeepBuilt(brief, built, mobileBriefAllWithdrawnKeys())
 }
 
 func mobileBriefWeeklyRecapMatches(left, right []MobileBriefPara) bool {

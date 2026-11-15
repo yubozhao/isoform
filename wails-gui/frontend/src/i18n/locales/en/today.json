@@ -224,6 +224,7 @@
         "lateReason": { "asleep": "your computer was asleep", "closed": "Isoform wasn't open" },
         "noRecording": "{{brief}} · No recording",
         "preparingAudio": "{{brief}} · Preparing audio",
+        "updatingAudio": "{{brief}} · Updating the recording",
         "askAboutParagraph": "Ask about this",
         "askParagraphPlaceholder": "Ask anything about this paragraph",
         "askParagraphButton": "Ask",

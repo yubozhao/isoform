@@ -1,6 +1,7 @@
 package main
 
 import (
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -45,19 +46,177 @@ func (s *mobileBriefService) mobileBriefShowBuilt(source, result MobileBriefV1) 
 	if base.BriefID != source.BriefID {
 		base, changed = source, true
 	}
-	if !mobileBriefShowsWrittenWords(base) {
-		base = mobileBriefWithBuiltWords(base, built, mobileBriefAllWithdrawnKeys())
-		changed = true
+	withdrawn := mobileBriefAllWithdrawnKeys()
+	kept, keptChanged := mobileBriefKeepBuilt(base, built, withdrawn)
+	stored, _ := mobileBriefKeepBuilt(source, built, withdrawn)
+	kept, played := mobileBriefBuiltRecordingFor(kept, stored, built, withdrawn)
+	return kept, changed || keptChanged || played
+}
+
+// mobileBriefBuiltRecordingFor gives shown the build's recording when shown
+// says the build's words as the read renders them. The sealed copy renders
+// times and days for the moment it was sealed, so its text can differ from
+// .built while saying the same thing (2026-11-14 morning: three of four
+// paragraphs rendered differently, recording dropped). That holds when the
+// stored words (what every rendering starts from) are still the build's,
+// shown has every paragraph with words in it (a stated exclusion blanks one),
+// and no explicit withdrawal touches what the build cites. A stored rewrite
+// or a removal never plays the old recording
+// (TestMobileBriefAudioNeverSpeaksTextTheBriefNoLongerShows).
+func mobileBriefBuiltRecordingFor(shown, stored, built MobileBriefV1, withdrawn []briefWithdrawn) (MobileBriefV1, bool) {
+	if built.Audio == nil || built.Audio.Status != mobileBriefAudioStatusOK || built.Audio.Bytes == 0 || built.BriefID != shown.BriefID || built.AsOf != shown.AsOf {
+		return shown, false
 	}
-	// The recording comes back with the words it speaks: when the words
-	// shown are the build's own. A paragraph the person withdrew is never
-	// spoken (TestMobileBriefAudioNeverSpeaksTextTheBriefNoLongerShows).
-	if base.Audio == nil && built.Audio != nil && mobileBriefSameNarrativeText(base, built) {
+	if shown.Audio != nil && shown.Audio.Status == mobileBriefAudioStatusOK {
+		return shown, false
+	}
+	if !mobileBriefShowsWrittenWords(shown) || len(shown.Narrative) != len(built.Narrative) || !mobileBriefSameNarrativeText(stored, built) {
+		return shown, false
+	}
+	for _, para := range shown.Narrative {
+		if strings.TrimSpace(para.Text) == "" {
+			return shown, false
+		}
+	}
+	if _, touched := mobileBriefDropWithdrawnParagraphs(built, withdrawn); touched {
+		return shown, false
+	}
+	audio := *built.Audio
+	shown.Audio = &audio
+	return shown, true
+}
+
+// mobileBriefKeepBuilt is the one rule every save, seal and read of a built
+// brief follows: doc keeps at least the build's words and its recording.
+// Only the person's explicit keyed withdrawals (forget, withdraw, a stated
+// exclusion) leave out the paragraphs that cite what they name. A gate, a
+// live refresh or a citation limit never removes a paragraph the build
+// wrote: a paragraph it dropped comes back from the build, and a paragraph
+// it kept (corrected wording included) stays as it is. The recording comes
+// back with the words it speaks, when those are the build's own words. It
+// reports whether it changed doc.
+func mobileBriefKeepBuilt(doc, built MobileBriefV1, withdrawn []briefWithdrawn) (MobileBriefV1, bool) {
+	if doc.BriefID == "" || built.BriefID != doc.BriefID || built.AsOf != doc.AsOf || built.NarrativeStatus != "ok" || len(built.Narrative) == 0 {
+		return doc, false
+	}
+	changed := false
+	// What the person withdrew leaves every copy, not only the build's words.
+	if amended, dropped := mobileBriefDropWithdrawnParagraphs(doc, withdrawn); dropped {
+		doc, changed = amended, true
+	}
+	want := mobileBriefWithBuiltWords(doc, built, withdrawn)
+	if merged, missing := mobileBriefMergeBuiltWords(doc, want); missing {
+		doc, changed = merged, true
+	}
+	// A paragraph the person withdrew is never spoken
+	// (TestMobileBriefAudioNeverSpeaksTextTheBriefNoLongerShows).
+	if built.Audio != nil && built.Audio.Status == mobileBriefAudioStatusOK && (doc.Audio == nil || doc.Audio.Status != mobileBriefAudioStatusOK) && mobileBriefSameNarrativeText(doc, built) {
 		audio := *built.Audio
-		base.Audio = &audio
+		doc.Audio = &audio
 		changed = true
 	}
-	return base, changed
+	return doc, changed
+}
+
+// mobileBriefDropWithdrawnParagraphs leaves out of doc each paragraph that
+// cites a source the person explicitly withdrew (a correction, which leaves
+// wording in its place, is not a removal).
+func mobileBriefDropWithdrawnParagraphs(doc MobileBriefV1, withdrawn []briefWithdrawn) (MobileBriefV1, bool) {
+	removed := map[string]bool{}
+	for _, ref := range doc.Evidence {
+		for _, w := range withdrawn {
+			if w.Text == "" && briefRefWithdrawn(ref.SourceID, []briefWithdrawn{w}) {
+				removed[ref.Ref] = true
+			}
+		}
+	}
+	if len(removed) == 0 {
+		return doc, false
+	}
+	kept := make([]MobileBriefPara, 0, len(doc.Narrative))
+	for _, para := range doc.Narrative {
+		cites := false
+		for _, ref := range para.Refs {
+			cites = cites || removed[ref]
+		}
+		if !cites {
+			kept = append(kept, para)
+		}
+	}
+	if len(kept) == len(doc.Narrative) {
+		return doc, false
+	}
+	doc.Narrative, doc.NarrativeParts = kept, nil
+	return doc, true
+}
+
+// mobileBriefMergeBuiltWords puts back the paragraphs of want (the build's
+// words less what the person withdrew) that doc no longer has. A paragraph of
+// doc with the same words, or citing the same sources (a correction), stands
+// for its built paragraph. It reports whether any paragraph was missing.
+func mobileBriefMergeBuiltWords(doc, want MobileBriefV1) (MobileBriefV1, bool) {
+	if !mobileBriefShowsWrittenWords(doc) {
+		return want, len(want.Narrative) > 0
+	}
+	// want's evidence starts with doc's, so both narratives cite into it.
+	byRef := make(map[string]string, len(want.Evidence))
+	for _, ref := range want.Evidence {
+		byRef[ref.Ref] = mobileBriefSourceKey(ref.SourceKind, ref.SourceID)
+	}
+	sources := func(para MobileBriefPara) string {
+		keys := make([]string, 0, len(para.Refs))
+		for _, id := range para.Refs {
+			if key, ok := byRef[id]; ok {
+				keys = append(keys, key)
+			}
+		}
+		sort.Strings(keys)
+		return strings.Join(keys, "\x01")
+	}
+	used := make([]bool, len(doc.Narrative))
+	match := func(para MobileBriefPara) int {
+		for i, have := range doc.Narrative {
+			if !used[i] && have.Text == para.Text {
+				return i
+			}
+		}
+		if len(para.Refs) == 0 {
+			return -1
+		}
+		key := sources(para)
+		for i, have := range doc.Narrative {
+			if !used[i] && len(have.Refs) > 0 && sources(have) == key {
+				return i
+			}
+		}
+		return -1
+	}
+	merged := make([]MobileBriefPara, 0, len(want.Narrative))
+	missing := false
+	for _, para := range want.Narrative {
+		if i := match(para); i >= 0 {
+			used[i] = true
+			merged = append(merged, doc.Narrative[i])
+			continue
+		}
+		missing = true
+		merged = append(merged, para)
+	}
+	if !missing {
+		return doc, false
+	}
+	// A paragraph the build did not write (none today) is kept at the end.
+	for i, have := range doc.Narrative {
+		if !used[i] {
+			merged = append(merged, have)
+		}
+	}
+	out := want
+	out.Narrative = merged
+	if len(merged) != len(want.Narrative) {
+		out.NarrativeParts = nil
+	}
+	return out, true
 }
 
 // mobileBriefShowsWrittenWords reports whether brief shows the words a model
