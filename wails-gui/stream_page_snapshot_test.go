@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -563,8 +564,8 @@ func TestASavedCopyKeepsItsFullCheckAcrossSaves(t *testing.T) {
 }
 
 // With a writer appending to the chat all the time and a slow projection, the
-// first page still paints from its copy in under 100 ms, and the page is told
-// to reload once the live page is saved.
+// first page still paints from its copy without computing or waiting on a
+// computation, and the page is told to reload once the live page is saved.
 func TestLatestStreamPagePaintsFastWithABackgroundWriter(t *testing.T) {
 	a, session := streamPageTestApp(t)
 	for i := 0; i < 30; i++ {
@@ -574,11 +575,16 @@ func TestLatestStreamPagePaintsFastWithABackgroundWriter(t *testing.T) {
 	waitStreamPageVerified(t, a)
 	waitStreamPageCardChecks(t, a)
 	reloads := captureStreamPageReloads(t)
-	// The projection of Bo's page took 1 to 16 s; stand in for it.
+	// The projection of Bo's page took 1 to 16 s; stand in for it with a
+	// computation held open until the reads are done. A read that computed, or
+	// waited on a computation, could not finish: this measures the work, not
+	// the clock, so a loaded machine cannot fail it.
+	hold := make(chan struct{})
 	a.streamPages.mu.Lock()
-	a.streamPages.computeGate = func() { time.Sleep(1500 * time.Millisecond) }
+	a.streamPages.computeGate = func() { <-hold }
 	a.streamPages.mu.Unlock()
 
+	computesBefore := a.streamPages.computes.Load()
 	stop := make(chan struct{})
 	var writer sync.WaitGroup
 	writer.Add(1)
@@ -598,24 +604,41 @@ func TestLatestStreamPagePaintsFastWithABackgroundWriter(t *testing.T) {
 		}
 	}()
 	var worst time.Duration
-	for i := 0; i < 20; i++ {
-		start := time.Now()
-		page, err := a.LoadStreamItemsPage(session, -1, 50)
-		took := time.Since(start)
+	reads := make(chan error, 1)
+	go func() {
+		for i := 0; i < 20; i++ {
+			start := time.Now()
+			page, err := a.LoadStreamItemsPage(session, -1, 50)
+			worst = max(worst, time.Since(start))
+			if err != nil {
+				reads <- err
+				return
+			}
+			if len(page.Items) == 0 {
+				reads <- errors.New("an empty first page was painted")
+				return
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		reads <- nil
+	}()
+	select {
+	case err := <-reads:
 		if err != nil {
+			close(hold)
 			t.Fatal(err)
 		}
-		if len(page.Items) == 0 {
-			t.Fatal("an empty first page was painted")
-		}
-		worst = max(worst, took)
-		time.Sleep(20 * time.Millisecond)
+	case <-time.After(60 * time.Second):
+		close(hold)
+		t.Fatal("a first-page read waited on a computation; the saved copy should be served")
 	}
+	computing := a.streamPages.computes.Load() - computesBefore
 	close(stop)
 	writer.Wait()
-	t.Logf("worst first-page read with a background writer: %s", worst)
-	if worst >= 100*time.Millisecond {
-		t.Fatalf("a first-page read took %s with a background writer; want under 100 ms", worst)
+	t.Logf("worst first-page read with a background writer: %s (%d computations held open)", worst, computing)
+	close(hold)
+	if computing == 0 {
+		t.Fatal("no computation ran while the page was read, so the reads proved nothing")
 	}
 	deadline := time.Now().Add(10 * time.Second)
 	for reloads.Load() == 0 {
