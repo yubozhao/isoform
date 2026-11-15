@@ -201,19 +201,6 @@ func taskWorkflowProductionShadowScope() string {
 	return strings.Join(taskWorkflowProductionShadowWorkflows(), ", ")
 }
 
-func taskWorkflowTextResult(capabilityKey string) bool {
-	switch strings.TrimSpace(capabilityKey) {
-	case TaskWorkflowComposeText, TaskWorkflowAnalyzeText:
-		return true
-	default:
-		return false
-	}
-}
-
-func taskWorkflowNoTools(capabilityKey string) bool {
-	return taskWorkflowTextResult(capabilityKey)
-}
-
 func taskWorkflowCapabilityKey(
 	task, desiredResult, fallbackSeed string,
 ) string {
@@ -245,12 +232,6 @@ func taskEpisodeProductionShadowCapability(episode TaskEpisode) string {
 		episode.LatestHypothesis.TaskHypothesis,
 		episode.LatestHypothesis.DesiredResultHypothesis,
 		episode.ID,
-	)
-}
-
-func taskEpisodeProductionShadowEligible(episode TaskEpisode) bool {
-	return taskWorkflowProductionShadowEligible(
-		taskEpisodeProductionShadowCapability(episode),
 	)
 }
 
@@ -296,15 +277,6 @@ func taskWorkflowProductionShadowReadiness(
 		return false, err
 	}
 	return true, nil
-}
-
-func taskEpisodeFrozenContextSafetyError(episode TaskEpisode) error {
-	workflow := taskEpisodeProductionShadowCapability(episode)
-	return taskWorkflowFrozenContextSafetyError(
-		workflow,
-		episode.LatestHypothesis.TaskHypothesis,
-		taskEpisodeHasFrozenSourceContext(episode),
-	)
 }
 
 func taskWorkflowFrozenContextSafetyError(

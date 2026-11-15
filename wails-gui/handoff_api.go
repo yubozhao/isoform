@@ -267,7 +267,7 @@ var handoffAcceptableStatuses = []handoff.Status{
 // checkAgencyHandoffStartable refuses Agency-written work that may no longer
 // run. A stale Agency entry was retired, and an entry whose stored plan is
 // missing or no longer matches it has nothing the user could have approved
-// (see handoff_agency_plan.go). Other sources start as they always have.
+// (see handoff_legacy_plan.go). Other sources start as they always have.
 func (a *App) checkAgencyHandoffStartable(entry handoff.Entry) error {
 	if entry.Source != handoff.SourceAgency {
 		return nil

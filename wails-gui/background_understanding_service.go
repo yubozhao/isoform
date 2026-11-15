@@ -102,40 +102,6 @@ type BackgroundUnderstandingService struct {
 	wg             sync.WaitGroup
 }
 
-func NewBackgroundUnderstandingService(
-	app *App,
-) (*BackgroundUnderstandingService, error) {
-	if app == nil || app.activity == nil || app.activity.store == nil {
-		return nil, errors.New(
-			"background understanding requires the activity store",
-		)
-	}
-	store, err := newBackgroundUnderstandingStore(app.activity.store.db)
-	if err != nil {
-		return nil, err
-	}
-	return &BackgroundUnderstandingService{
-		app:          app,
-		store:        store,
-		now:          time.Now,
-		screenLocked: activitymon.IsScreenLocked,
-		computerUseReady: func() bool {
-			// Another Isoform reader (the web calendar peek) may hold the screen.
-			return app.cuaDriver != nil && activitymon.ComputerUsePermitted() && sharedComputerUseLease.Holder() == ""
-		},
-		gmail: newBackgroundGmailReader(
-			func() (backgroundComputerUseCaller, error) {
-				if app.cuaDriver == nil {
-					return nil, errors.New("Computer Use is unavailable")
-				}
-				return app.cuaDriver, nil
-			},
-			app.authorizeBackgroundGmailComputerUseAction,
-		),
-		fallbackSignal: make(chan struct{}, 1),
-	}, nil
-}
-
 func (service *BackgroundUnderstandingService) Start(
 	parent context.Context,
 ) {
@@ -1233,31 +1199,6 @@ func (a *App) cancelBackgroundUnderstandingForPrimaryActivity() {
 	service := a.backgroundUnderstanding
 	a.backgroundUnderstandingMu.RUnlock()
 	if service != nil {
-		service.CancelCurrent()
-	}
-}
-
-func (a *App) offerBackgroundUnderstandingForShadowFallback(reason string) {
-	if a == nil {
-		return
-	}
-	a.backgroundUnderstandingMu.RLock()
-	service := a.backgroundUnderstanding
-	a.backgroundUnderstandingMu.RUnlock()
-	if service != nil {
-		service.OfferShadowFallback(reason)
-	}
-}
-
-func (a *App) clearBackgroundUnderstandingShadowFallback() {
-	if a == nil {
-		return
-	}
-	a.backgroundUnderstandingMu.RLock()
-	service := a.backgroundUnderstanding
-	a.backgroundUnderstandingMu.RUnlock()
-	if service != nil {
-		service.ClearShadowFallback()
 		service.CancelCurrent()
 	}
 }

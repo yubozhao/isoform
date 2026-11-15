@@ -164,7 +164,6 @@ type App struct {
 	autoSummaryGenWeekly      func(dateStr string) error      // test seam; nil → GenerateWeeklySummary
 	autoSummaryRunnerWait     time.Duration                   // test seam; 0 → autoSummaryRunnerWait
 	generateTodayNewsSF       singleflight.Group              // dedups concurrent GenerateTodayNews calls per date+language
-	shadowTaskEvaluationSF    singleflight.Group              // dedups task-mirror comparison when runtime and lifecycle finish together
 	purposeUnderstandingMu    sync.RWMutex                    // guards ambient Purpose-understanding lifecycle and event reads
 	purposeUnderstanding      *PurposeUnderstandingService    // source-backed current-Purpose scheduler
 	backgroundUnderstandingMu sync.RWMutex                    // guards the low-priority learning coordinator
@@ -2594,7 +2593,7 @@ func (a *App) CreateCronJob(input CronJobInput) (CronJobState, error) {
 
 // UpdateCronJob patches an existing scheduled automation. Turning on a
 // schedule the Agency proposed that nobody approved yet approves it (see
-// cron_agency_proposals.go); every other edit, enable and pause, approved
+// cron_legacy_proposals.go); every other edit, enable and pause, approved
 // Agency schedules included, applies like any other automation.
 func (a *App) UpdateCronJob(id string, patch CronJobPatch) (CronJobState, error) {
 	return a.updateCronJob(id, patch, true)

@@ -11,8 +11,6 @@ import (
 	"sync/atomic"
 )
 
-const taskEpisodeRepeatedOnsetReason = "repeated_task_start"
-
 var ErrTaskEpisodeRepeatedOnset = errors.New(
 	"task episode shares one exact observed start with another immutable episode",
 )
@@ -227,47 +225,6 @@ func (index taskEpisodeOnsetIdentityIndex) repeatedEpisodeIDs() map[string]struc
 	return result
 }
 
-func (index taskEpisodeOnsetIdentityIndex) repeatedPeers(
-	episodeID string,
-) []string {
-	record, ok := index.byEpisode[strings.TrimSpace(episodeID)]
-	if !ok {
-		return []string{}
-	}
-	records := index.byKey[taskEpisodeOnsetIdentityKey(
-		record.Anchor,
-		record.InferredStartAt,
-	)]
-	if len(records) < 2 {
-		return []string{}
-	}
-	result := make([]string, 0, len(records))
-	for _, peer := range records {
-		result = append(result, peer.EpisodeID)
-	}
-	return result
-}
-
-func (index taskEpisodeOnsetIdentityIndex) observationKey(
-	episodeID string,
-) string {
-	episodeID = strings.TrimSpace(episodeID)
-	if record, ok := index.byEpisode[episodeID]; ok {
-		return "task-onset:" + sha256Hex([]byte(
-			taskEpisodeOnsetIdentityKey(record.Anchor, record.InferredStartAt),
-		))
-
-	}
-	return "task-episode:" + episodeID
-}
-
-func (s *ActivityStore) taskEpisodeRepeatedOnsetSet() (
-	map[string]struct{},
-	error,
-) {
-	return s.taskEpisodeRepeatedOnsetSetAt(0)
-}
-
 // taskEpisodeRepeatedOnsetSetContext is the all-time repeated-onset set. It is
 // served from a cache keyed on the trigger-maintained read revision (inserts only:
 // task episodes are immutable). Concurrent callers at one revision share one scan.
@@ -319,36 +276,4 @@ func (s *ActivityStore) taskEpisodeRepeatedOnsetSetAt(
 		return nil, err
 	}
 	return index.repeatedEpisodeIDs(), nil
-}
-
-func (s *ActivityStore) taskEpisodeRepeatedOnsetError(
-	episodeID string,
-) error {
-	if s == nil || s.db == nil {
-		return errors.New("activity store is unavailable")
-	}
-	episodeID = strings.TrimSpace(episodeID)
-	if episodeID == "" {
-		return errors.New("task episode ID is required")
-	}
-	var inferredStartAt int64
-	if err := s.db.QueryRow(
-		`SELECT inferred_start_at FROM task_episodes WHERE id = ?`,
-		episodeID,
-	).Scan(&inferredStartAt); err != nil {
-		return err
-	}
-	index, err := s.taskEpisodeOnsetIdentityIndex(inferredStartAt)
-	if err != nil {
-		return err
-	}
-	peers := index.repeatedPeers(episodeID)
-	if len(peers) < 2 {
-		return nil
-	}
-	return fmt.Errorf(
-		"%w: %s",
-		ErrTaskEpisodeRepeatedOnset,
-		strings.Join(peers, ", "),
-	)
 }

@@ -247,23 +247,6 @@ func (collector *taskContextSourceCollector) exclude(
 	)
 }
 
-func (collector *taskContextSourceCollector) addExclusion(
-	exclusion TaskContextSourceExclusion,
-) {
-	before := len(collector.result.Exclusions)
-	collector.exclude(
-		exclusion.Ref,
-		exclusion.SourceKind,
-		exclusion.SourceID,
-		exclusion.ObservedAt,
-		exclusion.Reason,
-	)
-	if exclusion.Learning != nil && len(collector.result.Exclusions) > before {
-		collector.result.Exclusions[len(collector.result.Exclusions)-1].Learning =
-			exclusion.Learning
-	}
-}
-
 func (collector *taskContextSourceCollector) add(
 	candidate TaskContextCandidate,
 ) {

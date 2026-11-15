@@ -119,23 +119,6 @@ func TestTaskLifecycleResultDestinationRejectsForgedRole(t *testing.T) {
 	}
 }
 
-func TestTaskLifecycleResultDestinationDigestBindsRawFields(t *testing.T) {
-	destination := taskLifecycleTestResultDestination()
-	first, err := taskLifecycleResultDestinationSHA256(destination)
-	if err != nil {
-		t.Fatal(err)
-	}
-	changed := *destination
-	changed.WindowTitle = "Another draft"
-	second, err := taskLifecycleResultDestinationSHA256(&changed)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if first == second {
-		t.Fatal("destination digest did not bind the window title")
-	}
-}
-
 func TestTaskLifecycleTextCommitTerminalPolicy(t *testing.T) {
 	tests := []struct {
 		name        string

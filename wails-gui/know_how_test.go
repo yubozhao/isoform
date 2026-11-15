@@ -326,20 +326,6 @@ func TestKnowHowBackfillRedactsAndRechecksSource(t *testing.T) {
 	}
 }
 
-func TestKnowHowShadowKindDoesNotChangeProvenance(t *testing.T) {
-	legacy := buildOKFKnowledgeMarkdown("shadow", "Pattern", "", time.Now(), "shadow_task_evaluation", nil, nil, []string{"Keep evidence"})
-	classified, err := insertKnowHowKind(legacy, "how_to")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !knowHowDocumentsEqualExceptKind(legacy, classified) {
-		t.Fatal("classification invalidated verified document")
-	}
-	if knowHowDocumentsEqualExceptKind(legacy, strings.Replace(classified, "Keep evidence", "Invent evidence", 1)) {
-		t.Fatal("changed evidence passed verification")
-	}
-}
-
 // The fixture uses actual Activity and memory SQLite stores. Only the embedding
 // provider is counted; local matching must not call even a configured provider.
 type knowHowCountingEmbedder struct{ calls int }

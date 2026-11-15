@@ -8,8 +8,6 @@ func TestBackgroundUnderstandingReadersTolerateNoService(t *testing.T) {
 	var nilApp *App
 	for _, app := range []*App{nilApp, {}} {
 		app.cancelBackgroundUnderstandingForPrimaryActivity()
-		app.offerBackgroundUnderstandingForShadowFallback("shadow readiness")
-		app.clearBackgroundUnderstandingShadowFallback()
 		if service, err := app.backgroundUnderstandingService(); err == nil || service != nil {
 			t.Fatalf("service=%v err=%v", service, err)
 		}

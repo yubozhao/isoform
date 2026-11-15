@@ -309,27 +309,6 @@ func insertKnowHowKind(content, kind string) (string, error) {
 	return content[:end] + "kind: " + kind + newline + content[end:], nil
 }
 
-// Verified shadow documents compare all content except this classification
-// metadata. Both pre-kind receipts and backfilled receipts retain provenance.
-func knowHowDocumentsEqualExceptKind(left, right string) bool {
-	strip := func(content string) string {
-		end := knowHowHeaderEnd(content)
-		if end < 0 {
-			return content
-		}
-		lines := strings.SplitAfter(content[:end], "\n")
-		var kept strings.Builder
-		for _, line := range lines {
-			if strings.HasPrefix(line, "kind:") {
-				continue
-			}
-			kept.WriteString(line)
-		}
-		return kept.String() + content[end:]
-	}
-	return strip(left) == strip(right)
-}
-
 func writeKnowHowAtomic(path string, data []byte) (err error) {
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".know-how-*.tmp")
 	if err != nil {
