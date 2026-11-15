@@ -900,9 +900,8 @@ func (in mobileBriefInput) inWindow(at time.Time) bool {
 }
 
 // collectMobileBriefUnderstanding adds the current Purposes as open loops and
-// the patterns shadow learning supports as learned items, and decides whether
-// the Mac is still in its cold start: no Self, no work, no automations and no
-// Purpose yet.
+// decides whether the Mac is still in its cold start: no Self, no work, no
+// automations and no Purpose yet.
 func collectMobileBriefUnderstanding(a *App, in *mobileBriefInput) {
 	if a.activity == nil || a.activity.store == nil {
 		return
@@ -914,21 +913,6 @@ func collectMobileBriefUnderstanding(a *App, in *mobileBriefInput) {
 			log.Printf("[mobile-brief] purposes unavailable: %v", err)
 		}
 		collectMobileBriefPurposes(a, in, details, nil)
-	}
-	patterns, err := store.learnedPatterns()
-	if err != nil {
-		log.Printf("[mobile-brief] learning unavailable: %v", err)
-	}
-	for _, pattern := range patterns {
-		in.Learned = append(in.Learned, mobileBriefCandidate{
-			SourceKind: "learning",
-			SourceID:   pattern.ID,
-			Title:      pattern.Statement,
-			Detail:     pattern.Uncertainty,
-			Status:     "supported",
-			Kind:       "supported",
-			At:         mobileBriefMillis(pattern.LastAt),
-		})
 	}
 	selfEntries, err := store.listUsableSelfModelEntries()
 	if err != nil {

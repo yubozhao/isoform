@@ -322,39 +322,28 @@ func TestMCPReadBriefFindsKeepOriginalSearchProvenance(t *testing.T) {
 	}
 }
 
-func TestMCPReadBriefLearningRevalidatesFrozenSources(t *testing.T) {
-	for _, mode := range []string{"safe", "no_manifest", "protected"} {
-		t.Run(mode, func(t *testing.T) {
-			a := newMCPReadTestApp(t)
-			at := seedMCPReadActivity(t, a, "learning-source", "Editor", "com.example.editor", "Visible project", "", "")
-			input := taskEpisodeFixture("episode-1", at, at+1, TaskEpisodeStatusActive)
-			input.InitialEvidence[0].SourceID = "learning-source"
-			if mode != "no_manifest" {
-				input.FrozenContext.Manifest = []TaskContextManifestEntry{{SourceKind: "activity_session", SourceID: "learning-source", Included: true, PrivacyDecision: TaskContextPrivacyRedact}}
-			}
-			episode, _, err := a.activity.store.CreateTaskEpisode(input)
-			if err != nil {
-				t.Fatal(err)
-			}
-			projection := testShadowTaskLearningProjection()
-			projection.Candidates[0].Evidence[0].ContextHash = episode.FrozenContext.SHA256
-			if _, _, err := PersistShadowTaskLearningProjection(a.activity.store, projection, at+2); err != nil {
-				t.Fatal(err)
-			}
-			if mode == "protected" {
-				if _, err := a.activity.store.db.Exec(`UPDATE activity_sessions SET triage_status='protected' WHERE id='learning-source'`); err != nil {
-					t.Fatal(err)
-				}
-			}
-			p, err := a.mcpReadPrivacy(a.ctx)
-			if err != nil {
-				t.Fatal(err)
-			}
-			_, ok := p.briefReferenceItem(MobileBriefRef{SourceKind: "learning", SourceID: "revision:one"})
-			if ok != (mode == "safe") {
-				t.Fatalf("learning mode=%s allowed=%v", mode, ok)
-			}
-		})
+// Shadow learning is removed: a brief's learning ref resolves only when the
+// user corrected that pattern, and then it shows the user's own words.
+func TestMCPReadBriefLearningResolvesOnlyTheUsersCorrection(t *testing.T) {
+	a := newMCPReadTestApp(t)
+	if _, err := a.activity.store.db.Exec(`INSERT INTO agency_learning_corrections_v1 (
+		id, idempotency_key, journey_id, capability_key, learning_revision_id,
+		original_statement, correction, payload_json, payload_hash, created_at
+	) VALUES ('correction-1', 'correction-1', 'journey-1', 'capability-1',
+		'revision:corrected', 'You review pull requests on Fridays.',
+		'I review pull requests on Mondays.', '{}', 'hash', 1000)`); err != nil {
+		t.Fatal(err)
+	}
+	p, err := a.mcpReadPrivacy(a.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, ok := p.briefReferenceItem(MobileBriefRef{SourceKind: "learning", SourceID: "revision:corrected"})
+	if !ok || item.Title == nil || item.Title.Text != "I review pull requests on Mondays." {
+		t.Fatalf("corrected learning = %+v, allowed=%v", item, ok)
+	}
+	if _, ok := p.briefReferenceItem(MobileBriefRef{SourceKind: "learning", SourceID: "revision:one"}); ok {
+		t.Fatal("an uncorrected learning ref still resolved")
 	}
 }
 
