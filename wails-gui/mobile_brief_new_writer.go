@@ -48,10 +48,11 @@ func newBriefMaterial(in mobileBriefInput, brief MobileBriefV1, larger, name str
 	now := in.AsOf.In(loc)
 	// Day words are the reader's: a brief made ahead is read on its own day,
 	// so the evening it was made is "yesterday".
-	dayRef := in.AsOf
+	// The words' day is the brief's day (brief_clock.go): the builder stamps
+	// the same day as the brief's LocalDate, which every reader anchors on.
+	dayRef := in.briefDayRef(loc)
 	nowWords := now.Format("Monday, January 2, 3:04 PM")
 	if !in.BriefDay.IsZero() {
-		dayRef = in.briefDayRef(loc)
 		nowWords = "the morning of " + dayRef.In(loc).Format("Monday, January 2") + " (the brief is read then)"
 	}
 	// Today is the reader's day: the slot's day for a brief made ahead.

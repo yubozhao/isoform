@@ -22,7 +22,8 @@ func dayAnchorWordsOf(brief MobileBriefV1) string {
 // on the first run recorded under the ID, the evening copy's, so every day word
 // moved back one day ("Start yesterday with your calf raises", Monday's
 // interview "today"), and those words were saved with the recording. A run older
-// than the brief is another build's; the brief's own time anchors its words.
+// than the brief is another build's; the day the words are written for
+// (briefWordsDay, the brief's LocalDate) anchors them.
 func TestBriefDayWordsAnchorOnTheirOwnBuild(t *testing.T) {
 	loc, err := time.LoadLocation("America/Los_Angeles")
 	if err != nil {
@@ -30,15 +31,6 @@ func TestBriefDayWordsAnchorOnTheirOwnBuild(t *testing.T) {
 	}
 	built := time.Date(2026, 11, 15, 6, 50, 51, 0, loc)
 	madeAhead := time.Date(2026, 11, 14, 21, 52, 17, 0, loc)
-	if got := mobileBriefDayAnchor(built, madeAhead); !got.Equal(built) {
-		t.Fatalf("the evening copy's run anchors the morning build: %s", got)
-	}
-	if got := mobileBriefDayAnchor(built, built); !got.Equal(built) {
-		t.Fatalf("the brief's own run is not its anchor: %s", got)
-	}
-	if got := mobileBriefDayAnchor(built, time.Time{}); !got.Equal(built) {
-		t.Fatalf("no run: %s", got)
-	}
 	brief := MobileBriefV1{
 		BriefID: "2026-11-15-morning", Slot: mobileBriefSlotMorning, LocalDate: "2026-11-15",
 		AsOf: built.UTC().Format(time.RFC3339), Timezone: "America/Los_Angeles", NarrativeStatus: "ok",
@@ -57,7 +49,10 @@ func TestBriefDayWordsAnchorOnTheirOwnBuild(t *testing.T) {
 		{"read that evening, after a restore", time.Date(2026, 11, 15, 19, 30, 0, 0, loc), "yesterday today tomorrow"},
 		{"read the next morning", time.Date(2026, 11, 16, 8, 0, 0, 0, loc), "saturday yesterday today"},
 	} {
-		anchor := mobileBriefDayAnchor(mobileBriefAsOfTime(brief), madeAhead)
+		// The made-ahead copy's run (madeAhead) plays no part: the words are
+		// about the brief's LocalDate (brief_clock.go).
+		_ = madeAhead
+		anchor := briefWordsDay(brief)
 		read := mobileBriefRelativeDaysAtRead(brief, tc.now, anchor, loc, "English")
 		if got := dayAnchorWordsOf(read); got != tc.want {
 			t.Errorf("%s: day words %q, want %q", tc.name, got, tc.want)
@@ -82,5 +77,32 @@ func TestBriefReadKeepsDayWordsWhenAnEarlierCopyRanUnderItsID(t *testing.T) {
 	}
 	if got := dayAnchorWordsOf(read); got != "today tomorrow" {
 		t.Fatalf("day words %q after an earlier copy's run, want %q", got, "today tomorrow")
+	}
+}
+
+// A brief made ahead: written at 21:52 for the next morning's slot. Its words
+// are about that morning (its LocalDate), so read that morning they stay as
+// written. Anchoring on the time it was made moved them a day.
+func TestMadeAheadBriefDayWordsAreAboutItsOwnDay(t *testing.T) {
+	loc, err := time.LoadLocation("America/Los_Angeles")
+	if err != nil {
+		t.Fatal(err)
+	}
+	made := time.Date(2026, 11, 14, 21, 52, 0, 0, loc)
+	brief := MobileBriefV1{
+		BriefID: "2026-11-15-morning", Slot: mobileBriefSlotMorning, LocalDate: "2026-11-15",
+		AsOf: made.UTC().Format(time.RFC3339), Timezone: "America/Los_Angeles", NarrativeStatus: "ok",
+		Narrative: []MobileBriefPara{{Text: "Start today with your calf raises; the interview is tomorrow."}},
+	}
+	if got := briefWordsDay(brief); got.Format("2006-01-02") != "2026-11-15" {
+		t.Fatalf("the brief's words day is %s, want its LocalDate", got.Format("2006-01-02"))
+	}
+	read := mobileBriefRelativeDaysForRead(brief, time.Date(2026, 11, 15, 7, 5, 0, 0, loc), "English")
+	if got := dayAnchorWordsOf(read); got != "today tomorrow" {
+		t.Fatalf("read that morning: %q, want %q", got, "today tomorrow")
+	}
+	next := mobileBriefRelativeDaysForRead(brief, time.Date(2026, 11, 16, 7, 5, 0, 0, loc), "English")
+	if got := dayAnchorWordsOf(next); got != "yesterday today" {
+		t.Fatalf("read the next morning: %q, want %q", got, "yesterday today")
 	}
 }
