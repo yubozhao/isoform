@@ -230,6 +230,7 @@
         "title_other": "{{count}} profiles look like one person: {{name}}",
         "reasonHandle": "Same {{app}} account under different display names: {{names}}.",
         "reasonEmail": "Same email address under different names: {{names}}.",
+        "reasonName": "Same {{app}} name, written with different spacing or capitals: {{names}}.",
         "namesMore": "{{names}} and {{count}} more",
         "mergeIntoOne": "Merge into one",
         "reviewEach": "Review each",

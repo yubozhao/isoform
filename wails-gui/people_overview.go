@@ -671,6 +671,13 @@ func (a *App) peopleDuplicateGroups(ctx context.Context, rows []PrincipalWithSta
 				continue
 			}
 			key := signal{reason: "same_handle", app: h.App, value: strings.TrimSpace(h.HandleID)}
+			if key.value == "" && h.App != "email" {
+				// Chat readers often see only the rendered name. Two
+				// profiles whose names differ only in case or spacing on
+				// the same app are one person read twice.
+				key.reason = "same_name"
+				key.value = strings.ToLower(identity.CollapseNameSpace(h.DisplayHandle))
+			}
 			if h.App == "email" {
 				key.reason = "same_email"
 				key.value = strings.ToLower(strings.TrimSpace(h.HandleID))

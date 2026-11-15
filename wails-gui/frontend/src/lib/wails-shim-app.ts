@@ -4722,7 +4722,7 @@ export type DuplicateGroup = {
     id: string;
     memberIds: string[];
     suggestedTargetId: string;
-    reason: "same_handle" | "same_email";
+    reason: "same_handle" | "same_email" | "same_name";
     app: string;
 };
 export type PeopleOverview = {

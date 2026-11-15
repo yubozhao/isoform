@@ -518,7 +518,10 @@ func (a *App) CleanupAnonymousPrincipals() (CleanupReportDTO, error) {
 		context.Background(),
 		identity.NormalizeSenderName,
 		identity.IsChatApp,
-		func(name string) bool { return !identity.PlausibleAutoContactName(identity.NormalizeSenderName(name)) },
+		func(name string) bool {
+			clean := identity.NormalizeSenderName(name)
+			return !identity.PlausibleAutoContactName(clean) || identity.IsSystemSender(clean)
+		},
 	)
 	if err != nil {
 		return CleanupReportDTO{}, err

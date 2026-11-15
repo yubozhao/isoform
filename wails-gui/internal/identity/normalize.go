@@ -3,6 +3,7 @@ package identity
 import (
 	"regexp"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -82,10 +83,57 @@ var trailingSentenceBleedPattern = regexp.MustCompile(`\s+[A-Z][^.!?]{4,80}[.!?]
 // all collapse to `Username`. Returns the original input unchanged when
 // normalization would empty the string — never silently destroys data.
 func NormalizeSenderName(raw string) string {
-	cleaned := strings.TrimSpace(raw)
-	if cleaned == "" {
-		return raw
+	name, _ := normalizeSender(raw)
+	return name
+}
+
+// automatedBadges are the trailing role badges that mark a sender as an
+// app or bot rather than a person. The other badges (Original Poster,
+// Server Owner) decorate human senders.
+var automatedBadges = map[string]bool{"bot": true, "app": true}
+
+// SenderIsAutomated reports whether the raw sender carries a chat
+// platform's BOT or APP badge, as Slack apps and Discord bots do.
+// NormalizeSenderName strips the badge to keep the label readable, so the
+// decision whether this sender is a person has to be made on the raw
+// string: "GitHub APP" normalizes to "GitHub", which would otherwise
+// become a person on the Who you know page.
+func SenderIsAutomated(raw string) bool {
+	_, automated := normalizeSender(raw)
+	return automated
+}
+
+// CollapseNameSpace folds every run of whitespace (including no-break and
+// ideographic spaces) into one ASCII space and drops zero-width
+// characters. Accessibility and OCR readers render the same display name
+// with one or two spaces between words; without folding, each variant
+// became a separate person.
+func CollapseNameSpace(name string) string {
+	var b strings.Builder
+	space := false
+	for _, r := range name {
+		switch {
+		case r == '\u200b' || r == '\u200c' || r == '\u200d' || r == '\u2060' || r == '\ufeff':
+			continue
+		case unicode.IsSpace(r) || r == '\u00a0' || r == '\u3000':
+			space = true
+			continue
+		}
+		if space && b.Len() > 0 {
+			b.WriteByte(' ')
+		}
+		space = false
+		b.WriteRune(r)
 	}
+	return b.String()
+}
+
+func normalizeSender(raw string) (string, bool) {
+	cleaned := CollapseNameSpace(raw)
+	if cleaned == "" {
+		return raw, false
+	}
+	automated := false
 	for changed := true; changed; {
 		changed = false
 
@@ -122,6 +170,7 @@ func NormalizeSenderName(raw string) string {
 			if strings.HasSuffix(lowered, suffix) {
 				next := strings.TrimSpace(cleaned[:len(cleaned)-len(badge)])
 				if next != "" {
+					automated = automated || automatedBadges[strings.ToLower(badge)]
 					cleaned = next
 					changed = true
 					break
@@ -147,9 +196,9 @@ func NormalizeSenderName(raw string) string {
 
 	cleaned = strings.TrimSpace(cleaned)
 	if cleaned == "" {
-		return raw
+		return raw, false
 	}
-	return cleaned
+	return cleaned, automated
 }
 
 // proseBleedPattern detects sentence-shaped text bleeding through the

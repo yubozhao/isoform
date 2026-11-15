@@ -500,7 +500,14 @@ func (s *Store) ResolveByDisplayHandle(ctx context.Context, app, displayHandle s
 		app, displayHandle,
 	).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
+		// Readers render one name with one or two spaces between words;
+		// a variant must reach the person the first spelling created.
+		id, err = s.principalIDBySpacedName(ctx,
+			"SELECT h.principal_id, h.display_handle FROM app_handles h JOIN principals p ON p.id=h.principal_id WHERE p.merged_into='' AND h.app = ? AND "+squeezedLowerSQL("h.display_handle")+" = ? ORDER BY h.id",
+			displayHandle, app)
+		if err == nil && id == "" {
+			return nil, nil
+		}
 	}
 	if err != nil {
 		return nil, fmt.Errorf("resolve display handle: %w", err)
@@ -539,7 +546,15 @@ func (s *Store) ResolveByAlias(ctx context.Context, name string) (*PrincipalRow,
 			 LIMIT 1`, name).Scan(&id)
 	}
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
+		id, err = s.principalIDBySpacedName(ctx, `
+			SELECT pa.principal_id, pa.alias FROM principal_aliases pa JOIN principals p ON p.id = pa.principal_id
+			 WHERE p.merged_into = '' AND `+squeezedLowerSQL("pa.alias")+` = ?
+			UNION ALL
+			SELECT id, display_name FROM principals
+			 WHERE merged_into = '' AND `+squeezedLowerSQL("display_name")+` = ?`, name)
+		if err == nil && id == "" {
+			return nil, nil
+		}
 	}
 	if err != nil {
 		return nil, fmt.Errorf("resolve alias: %w", err)
@@ -549,6 +564,51 @@ func (s *Store) ResolveByAlias(ctx context.Context, name string) (*PrincipalRow,
 		return nil, err
 	}
 	return &p, nil
+}
+
+// spacedNameKey is the comparison form of a display name: lower case with
+// every whitespace run folded into one space.
+func spacedNameKey(name string) string {
+	return strings.Join(strings.Fields(strings.ToLower(name)), " ")
+}
+
+// squeezedLowerSQL removes the spaces a reader puts between words so SQL can
+// narrow the candidates; spacedNameKey then decides in Go, which keeps
+// "Ann Lee" and "Annlee" apart.
+func squeezedLowerSQL(column string) string {
+	return "replace(replace(replace(replace(lower(" + column + "), ' ', ''), char(9), ''), char(160), ''), char(12288), '')"
+}
+
+// principalIDBySpacedName runs query, selecting (principal_id, name), and
+// returns the first row whose name matches name up to whitespace. The extra
+// args fill the leading placeholders and the squeezed name fills the rest.
+// "" means no match.
+func (s *Store) principalIDBySpacedName(ctx context.Context, query, name string, extra ...any) (string, error) {
+	want := spacedNameKey(name)
+	if want == "" {
+		return "", nil
+	}
+	squeezed := strings.Join(strings.Fields(strings.ToLower(name)), "")
+	args := make([]any, 0, strings.Count(query, "?"))
+	args = append(args, extra...)
+	for len(args) < cap(args) {
+		args = append(args, squeezed)
+	}
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return "", fmt.Errorf("resolve spaced name: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, candidate string
+		if err := rows.Scan(&id, &candidate); err != nil {
+			return "", fmt.Errorf("resolve spaced name: %w", err)
+		}
+		if spacedNameKey(candidate) == want {
+			return id, nil
+		}
+	}
+	return "", rows.Err()
 }
 
 // EnsureAnonymousContact returns (or creates) the anonymous-bucket principal
@@ -1440,7 +1500,7 @@ func (s *Store) CleanupAnonymousPrincipals(ctx context.Context, normalize func(s
 		if clean == "" {
 			continue
 		}
-		key := strings.ToLower(clean)
+		key := spacedNameKey(clean)
 
 		// a) named principal absorbs the Anonymous.
 		if namedID, ok := namedIndex[key]; ok && namedID != a.id {
@@ -1551,7 +1611,7 @@ func (s *Store) buildNamedNameIndex(ctx context.Context) (map[string]string, err
 			displayRows.Close()
 			return nil, fmt.Errorf("scan named display_name: %w", err)
 		}
-		out[strings.ToLower(strings.TrimSpace(name))] = id
+		out[spacedNameKey(name)] = id
 	}
 	if err := displayRows.Err(); err != nil {
 		displayRows.Close()
@@ -1573,7 +1633,7 @@ func (s *Store) buildNamedNameIndex(ctx context.Context) (map[string]string, err
 			aliasRows.Close()
 			return nil, fmt.Errorf("scan named alias: %w", err)
 		}
-		key := strings.ToLower(strings.TrimSpace(alias))
+		key := spacedNameKey(alias)
 		if key == "" {
 			continue
 		}
