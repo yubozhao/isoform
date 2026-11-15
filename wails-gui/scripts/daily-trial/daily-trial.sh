@@ -108,6 +108,7 @@ node "$TIP/wails-gui/scripts/daily-trial/quick-chat.mjs" "$APP" "$RUN" > "$RUN/q
 # 5. The app's own log: first paints and errors since launch.
 cleanup
 LOG="$DATA/yansu-gui.log"
+grep -E '\[perf\] (binding=|launch stage=logging_ready)' "$LOG" 2>/dev/null > "$RUN/perf.txt" || true
 grep -E '\[perf\] first_paint page=' "$LOG" 2>/dev/null | sed -E 's/.*first_paint page=([a-z_-]+) ms=([0-9]+).*/\1 \2/' > "$RUN/first-paint.txt"
 grep -iE 'panic|fatal|\[error\]| error[:=]|failed' "$LOG" 2>/dev/null | grep -vE "$(cat "$TIP/wails-gui/scripts/daily-trial/known-noise.txt" 2>/dev/null | grep -v '^#' | paste -sd'|' - || echo '^$')" > "$RUN/log-errors.txt" || true
 ERRORS=$(wc -l < "$RUN/log-errors.txt" | tr -d ' ')
