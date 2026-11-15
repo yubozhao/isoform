@@ -35,7 +35,7 @@ watch (records AAC, mono) -> phone (WatchConnectivity file transfer)
 | Recording continues with the screen off (background audio session) | yes | |
 | Start from a complication | yes: `YansuWatchComplication` (circular, corner, inline, rectangular) opens the app recording | show the live recording state on the face (needs an App Group) |
 | Start from the Action button (Apple Watch Ultra) | yes: the "Start recording" shortcut, assigned in Settings > Action Button > Shortcut | |
-| Long recordings | yes: cut into 15-minute files, each sent on its own | all-day mode with battery guard |
+| Long recordings | yes: kept by the clock hour, each hour its own recording that is closed, sent and turned into text on its own (see "Kept by the hour"); inside an hour, 15-minute files | talk-only capture, battery guard |
 | Recent recordings list with state | yes | |
 | Recordings listed on the phone | yes: Settings > Watch > Recordings, shown once a recording has arrived | the designed place; play back, delete |
 | Upload state per recording (On watch, Sent to phone, On your computer, Transcribed) | yes | |
@@ -81,6 +81,73 @@ has read it, from the computer when the request ends, and from the phone when it
 The phone can list the owner's samples (including ones made on the computer) and remove one or
 all. Computer side: `wails-gui/mobile_voice.go`.
 
+## The phone's Watch page (2026-11-14)
+
+Bo could not tell where a recording was or how to move it along. The phone now has one page for
+that, reached from Settings › Watch › "Recordings and sync" (shown whenever a watch is paired, or
+a recording exists) and from a line on Today that shows only while a recording has not reached
+the computer.
+
+- **Top card:** a count of what is where ("1 on your watch · 2 on this phone", or "Everything is
+  on your computer"), whether the watch is connected, why recordings are waiting, **Sync now**
+  and when the phone last checked. Sync now asks the watch to queue what it holds (when the watch
+  is reachable), sends what the phone holds, and reads the computer's states again. Pulling down
+  does the same.
+- **Recordings:** each row says where it is: Recording now, On your watch, On this phone,
+  Sending to your computer, On your computer, Transcribed, Couldn't send, Your computer couldn't
+  read it.
+- **A recording's page:** the state with one line on what happens next; "Where the audio is" for
+  the watch, this phone and the computer; Play while the audio is on the phone; "What it heard"
+  with You / Speaker N once transcribed (PROTOCOL.md 24.5; shown, never stored on the phone);
+  Try again for a recording the computer refused; Delete everywhere.
+- **"Where a recording goes":** three lines: the watch keeps it until the phone has it, the phone
+  until the computer has it, the computer keeps the audio 14 days.
+
+Plumbing added for it:
+
+- **Watch to phone:** the watch's application context lists what it still holds
+  (`WatchRecordingWire.summaryContext`: id, start, length, unsent parts, finished), so the phone
+  can show "On your watch" before any part arrives. The phone's context to the watch still
+  carries states; the two directions do not read each other's payload.
+- **Delete:** a new state `deleted` crosses the watch link; the watch removes the recording and
+  its files when it reads it (a recording still running is left alone). The phone deletes its
+  parts, and when any part had reached the computer it sends `POST /recordings/delete`; a
+  computer that cannot be reached is asked again on every later pass, across relaunches. A
+  recording deleted on the computer comes back through `GET /recordings?deleted=1` and is
+  removed on the phone and the watch the same way.
+- **Sync now message:** `syncRecordings` over `WCSession.sendMessage`, only when reachable.
+
+Differences from the handoff (watch v1.0.0, section 7): the Today line shows as soon as something
+is waiting, not after ten minutes; there is no byte progress bar, no daily notification, no
+"Ways to record" list, and the transcript is the first 300 lines rather than "a few lines".
+
+## Kept by the hour (2026-11-15, watch v1.1.0 piece 1)
+
+Bo, on the first design: "it records automatically, and I think they splice it into hours. In the
+design I see 'we have been recording for 2hr'. I don't think that's the right way."
+
+- While the watch records, the open recording is closed at the next clock hour and a new one
+  begins at once, by itself, with the screen off. A morning from 9:40 to 11:20 is three recordings:
+  9:40 to 10:00, 10:00 to 11:00, 11:00 to 11:20. The rule is `WatchHourClock`
+  (`ios/YansuWatchShared`), guarded by `WatchHourClockTests`.
+- Each hour has its own id, so the pieces that already work on a recording work on an hour with
+  no change: the phone forwards it, the computer transcribes it when its last part arrives and
+  matches the owner's voice ("Knowing the owner's voice"), and its state, transcript, playback and delete are per
+  hour on the phone's Watch page and in "From your watch" on the computer.
+- Inside an hour the audio is still written in 15-minute files, so it starts travelling before the
+  hour ends. A file that would run past the hour is shortened to end on it.
+- An hour begun in its last minute runs through the next one, so nothing is cut seconds after it
+  began. After a call that ran across the hour, what follows is a new recording.
+- The watch shows no running clock. While recording it reads "Recording" and "Kept by the hour.
+  Hold to stop."; the list names each row by its hour ("Sat 10 AM") with whole minutes.
+- The watch keeps a week of rows (168) instead of 30.
+- There is no 16-hour end any more: a recording used to stop at 64 files; an hour never gets there.
+
+Not in this piece, from design's v1.1.0: starting by itself when the watch goes on the wrist, keeping
+only talk, the shared pause (Closed Eyes), marks, Forget, the mark on the watch face in place of
+the timer, and one named conversation across an hour's edge on the computer. Between two hours
+there is a gap of a fraction of a second while one file closes and the next opens; not measured on
+a real watch.
 ## Marked moments (2026-11-15, watch v1.1.0 piece 7, computer)
 
 - A part may carry `marks`, the moments the wearer marked, in seconds from the part's start

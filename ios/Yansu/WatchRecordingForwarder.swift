@@ -48,12 +48,35 @@ struct RecordingList: Decodable, Equatable, Sendable {
     let recordings: [RecordingView]
 }
 
+/// What one recording heard (PROTOCOL.md 24.5). The phone shows it and does not keep it.
+struct RecordingTranscript: Decodable, Equatable, Sendable {
+    struct Line: Decodable, Equatable, Sendable {
+        let at: String
+        var speaker: String? = nil
+        let text: String
+    }
+    let id: String
+    var state: String? = nil
+    let lines: [Line]
+    var truncated: Bool? = nil
+}
+
 protocol RecordingHubAPI: Sendable {
     func recordingsAvailable() async throws -> Bool
     /// The computer takes the heart rate and location of a part (PROTOCOL.md 24.4).
     func recordingContextAvailable() async throws -> Bool
     func postRecording(_ request: RecordingPartRequest) async throws -> RecordingView
     func recordingStates(ids: [String]) async throws -> [RecordingView]
+    /// The computer serves a recording's transcript and its delete (PROTOCOL.md 24.5).
+    func recordingDetailAvailable() async throws -> Bool
+    func recordingTranscript(id: String) async throws -> RecordingTranscript
+    func deleteRecording(id: String) async throws -> RecordingView
+}
+
+extension RecordingHubAPI {
+    func recordingDetailAvailable() async throws -> Bool { false }
+    func recordingTranscript(id: String) async throws -> RecordingTranscript { throw HubRequestError.invalidIdentifier }
+    func deleteRecording(id: String) async throws -> RecordingView { throw HubRequestError.invalidIdentifier }
 }
 
 extension HubChannel: RecordingHubAPI {
@@ -70,6 +93,19 @@ extension HubChannel: RecordingHubAPI {
     func recordingStates(ids: [String]) async throws -> [RecordingView] {
         guard ids.allSatisfy(WatchRecordingWire.isRecordingID) else { throw HubRequestError.invalidIdentifier }
         return try await perform(.recordings(ids: ids)).payload(RecordingList.self).recordings
+    }
+
+    func recordingDetailAvailable() async throws -> Bool { try await status().recordingDetail == true }
+
+    func recordingTranscript(id: String) async throws -> RecordingTranscript {
+        guard WatchRecordingWire.isRecordingID(id) else { throw HubRequestError.invalidIdentifier }
+        return try await perform(.recordingTranscript(id: id)).payload(RecordingTranscript.self)
+    }
+
+    func deleteRecording(id: String) async throws -> RecordingView {
+        guard WatchRecordingWire.isRecordingID(id) else { throw HubRequestError.invalidIdentifier }
+        return try await perform(.write(path: "/recordings/delete", body: "{\"recordingId\":\"\(id)\"}"))
+            .payload(RecordingView.self)
     }
 }
 
@@ -181,6 +217,29 @@ final class WatchRecordingInbox: @unchecked Sendable {
         }
     }
 
+    /// Removes every part of a recording from the phone.
+    func removeAll(recordingID: String) {
+        for item in pending() where item.info.recordingID == recordingID { remove(item.info) }
+    }
+
+    /// The person asked to try again: parts the computer refused get another round.
+    func resetRefusals(recordingID: String) {
+        for item in pending() where item.info.recordingID == recordingID && item.refusals > 0 {
+            lock.withLock {
+                var next = item
+                next.refusals = 0
+                try? write(next)
+            }
+        }
+    }
+
+    /// The audio of a recording still on the phone, in order, and its size.
+    func audio(recordingID: String) -> (urls: [URL], bytes: Int) {
+        let urls = pending().filter { $0.info.recordingID == recordingID }.map { audioURL($0.info) }
+        let bytes = urls.reduce(0) { $0 + (((try? fileManager.attributesOfItem(atPath: $1.path))?[.size] as? Int) ?? 0) }
+        return (urls, bytes)
+    }
+
     /// Remembers the upload a part now has on the relay.
     func hold(_ held: HeldUpload?, for info: WatchRecordingPartInfo) {
         lock.withLock {
@@ -220,13 +279,22 @@ actor WatchRecordingForwarder {
         var order: [String]
         var states: [String: WatchRecordingRemoteState]
         var details: [String: Detail]?
+        var pendingDeletes: [String]?
     }
 
     /// What the phone knows about a recording beyond its state: when it began and the parts seen.
     private struct Detail: Codable {
         var startedAt: Date
         var parts: [Int: Double]
+        /// Some part of it reached the computer, so a delete has to reach the computer too.
+        var crossed: Bool?
     }
+
+    /// Recordings deleted here that the computer has not been told about yet.
+    private var pendingDeletes: [String] = []
+    /// The recording a part of which is being sent right now.
+    private(set) var sending: String?
+    private var onActivity: (@Sendable () -> Void)?
 
     private var details: [String: Detail] = [:]
     private(set) var lastOutcome: Outcome = .drained
@@ -242,6 +310,7 @@ actor WatchRecordingForwarder {
             states = stored.states
             order = stored.order
             details = stored.details ?? [:]
+            pendingDeletes = stored.pendingDeletes ?? []
         } else {
             states = [:]
             order = []
@@ -252,10 +321,20 @@ actor WatchRecordingForwarder {
         onStates = handler
     }
 
+    /// Called when a send starts or ends, so the list can say "Sending to your computer".
+    func onActivityChanged(_ handler: @escaping @Sendable () -> Void) {
+        onActivity = handler
+    }
+
     func currentStates() -> [String: WatchRecordingRemoteState] { states }
 
     /// A part arrived from the watch.
     func received(_ info: WatchRecordingPartInfo) {
+        if states[info.recordingID] == .deleted {
+            // Deleted while this part was on its way from the watch: it is not kept.
+            inbox.remove(info)
+            return
+        }
         var detail = details[info.recordingID] ?? Detail(startedAt: info.startedAt, parts: [:])
         detail.startedAt = min(detail.startedAt, info.startedAt)
         detail.parts[info.part] = info.durationSeconds
@@ -264,13 +343,63 @@ actor WatchRecordingForwarder {
         set(info.recordingID, .onPhone)
     }
 
-    /// Recent recordings for the phone's list, newest first.
+    /// Recent recordings for the phone's list, newest first. Deleted ones are left out.
     func recordings() -> [PhoneRecording] {
         order.compactMap { id -> PhoneRecording? in
-            guard let state = states[id], let detail = details[id] else { return nil }
+            guard let state = states[id], state != .deleted, let detail = details[id] else { return nil }
+            let audio = inbox.audio(recordingID: id)
             return PhoneRecording(id: id, startedAt: detail.startedAt,
-                                  durationSeconds: detail.parts.values.reduce(0, +), state: state)
+                                  durationSeconds: detail.parts.values.reduce(0, +), state: state,
+                                  partsOnPhone: audio.urls.count, bytesOnPhone: audio.bytes, sending: sending == id)
         }.sorted { $0.startedAt > $1.startedAt }
+    }
+
+    /// The audio files of a recording that are still on the phone, in order.
+    func audioOnPhone(_ id: String) -> [URL] { inbox.audio(recordingID: id).urls }
+
+    /// Deletes a recording everywhere the phone can reach: its audio here, the watch's copy
+    /// (through the state the watch reads), and the computer's copy with what was learned from it.
+    func delete(_ id: String) async {
+        guard WatchRecordingWire.isRecordingID(id), states[id] != .deleted else { return }
+        let crossed = details[id]?.crossed == true || (states[id].map { $0 > .onPhone } ?? false)
+        inbox.removeAll(recordingID: id)
+        if crossed, !pendingDeletes.contains(id) { pendingDeletes.append(id) }
+        set(id, .deleted)
+        save()
+        await flushDeletes()
+    }
+
+    /// Tells the computer about deletes it has not heard of. A computer that cannot be reached,
+    /// or does not serve deletes yet, is asked again on the next pass.
+    func flushDeletes() async {
+        guard !pendingDeletes.isEmpty, (try? await hub.recordingDetailAvailable()) == true else { return }
+        for id in pendingDeletes {
+            do {
+                _ = try await hub.deleteRecording(id: id)
+            } catch HubRequestError.rejected(let status, _) where status == 404 || status == 400 {
+                // The computer never had it, or no longer does.
+            } catch {
+                continue
+            }
+            pendingDeletes.removeAll { $0 == id }
+            save()
+        }
+    }
+
+    /// Whether a delete is still owed to the computer.
+    func deletesWaiting() -> Int { pendingDeletes.count }
+
+    /// The person asked to send a recording again after the computer refused it.
+    func retry(_ id: String) async -> Outcome {
+        inbox.resetRefusals(recordingID: id)
+        if states[id] == .failed, !inbox.audio(recordingID: id).urls.isEmpty { set(id, .onPhone) }
+        return await drain()
+    }
+
+    /// What the recording heard, from the computer. Nil when the computer does not serve it.
+    func transcript(_ id: String) async throws -> RecordingTranscript? {
+        guard try await hub.recordingDetailAvailable() else { return nil }
+        return try await hub.recordingTranscript(id: id)
     }
 
     /// Sends what is waiting. A call while one runs asks for one more pass and returns.
@@ -292,6 +421,7 @@ actor WatchRecordingForwarder {
     }
 
     private func pass() async -> Outcome {
+        await flushDeletes()
         let pending = inbox.pending().filter { $0.refusals < WatchRecordingInbox.maxRefusals }
         if !pending.isEmpty {
             do {
@@ -308,6 +438,12 @@ actor WatchRecordingForwarder {
         }
         for item in pending {
             do {
+                sending = item.info.recordingID
+                onActivity?()
+                defer {
+                    sending = nil
+                    onActivity?()
+                }
                 try await send(item, withContext: takesContext)
             } catch HubRequestError.rejected(let status, _) where status == 400 {
                 // The computer says this part is not valid. Count it and move on; the audio stays.
@@ -352,17 +488,38 @@ actor WatchRecordingForwarder {
             throw HubRequestError.rejected(status: status, message: "upload_missing")
         }
         inbox.remove(info)
+        if states[info.recordingID] == .deleted || view.state == "deleted" {
+            // Deleted meanwhile, here or on the computer: nothing more of it is kept or sent.
+            inbox.removeAll(recordingID: info.recordingID)
+            set(info.recordingID, .deleted)
+            return
+        }
+        if details[info.recordingID]?.crossed != true {
+            details[info.recordingID]?.crossed = true
+            save()
+        }
         // Parts still waiting here keep the recording "on phone" until the last one is across.
         let more = inbox.pending().contains { $0.info.recordingID == info.recordingID }
         set(info.recordingID, more ? .onPhone : WatchRecordingRemoteState(computerState: view.state))
     }
 
-    /// Asks the computer about recordings that are across but not yet transcribed.
+    /// Asks the computer about recordings that are across: whether they are transcribed yet, and
+    /// whether one was deleted there (then it is deleted here and on the watch too).
     func refreshStates() async {
-        let open = order.filter { states[$0] == .onComputer }
-        guard !open.isEmpty, let views = try? await hub.recordingStates(ids: Array(open.prefix(50))) else { return }
-        for view in views where states[view.id] == .onComputer {
-            set(view.id, WatchRecordingRemoteState(computerState: view.state))
+        let across = order.reversed().filter { id in
+            guard let state = states[id] else { return false }
+            return state == .onComputer || state == .transcribed || (state == .failed && inbox.audio(recordingID: id).urls.isEmpty)
+        }
+        guard !across.isEmpty, let views = try? await hub.recordingStates(ids: Array(across.prefix(50))) else { return }
+        for view in views {
+            let next = WatchRecordingRemoteState(computerState: view.state)
+            if next == .deleted {
+                inbox.removeAll(recordingID: view.id)
+                pendingDeletes.removeAll { $0 == view.id }
+                set(view.id, .deleted)
+            } else if states[view.id] == .onComputer {
+                set(view.id, next)
+            }
         }
     }
 
@@ -381,7 +538,8 @@ actor WatchRecordingForwarder {
     }
 
     private func save() {
-        if let data = try? JSONEncoder().encode(Stored(order: order, states: states, details: details)) {
+        if let data = try? JSONEncoder().encode(Stored(order: order, states: states, details: details,
+                                                       pendingDeletes: pendingDeletes)) {
             try? data.write(to: statesURL, options: .atomic)
         }
     }
@@ -393,6 +551,11 @@ struct PhoneRecording: Equatable, Identifiable, Sendable {
     let startedAt: Date
     let durationSeconds: Double
     let state: WatchRecordingRemoteState
+    /// Parts whose audio is still on this phone, and their size.
+    var partsOnPhone: Int = 0
+    var bytesOnPhone: Int = 0
+    /// A part is being sent to the computer right now.
+    var sending: Bool = false
 }
 
 enum RecordingTime {

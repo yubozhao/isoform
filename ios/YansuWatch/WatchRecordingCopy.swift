@@ -17,6 +17,8 @@ enum WatchRecordingCopy {
             return String(localized: "On your computer", comment: "State of a recording: the computer has it")
         case .remote(.transcribed):
             return String(localized: "In Isoform", comment: "State of a recording: transcribed on the computer and part of memory")
+        case .remote(.deleted):
+            return String(localized: "Deleted", comment: "State of a recording: deleted on another device")
         case .remote(.failed):
             return String(localized: "Could not be read", comment: "State of a recording: the computer could not transcribe it")
         }

@@ -66,18 +66,18 @@ struct SettingsView: View {
                     }
                 }
                 settingsGroup("Your computer", identifier: "settings.group.mac") { pairingSection }
-                // Shown only once a recording has arrived from the watch.
-                if !watchRecordings.recordings.isEmpty {
+                // Shown when a watch is paired or a recording has arrived from one.
+                if watchRecordings.worthShowing {
                     settingsGroup("Watch", identifier: "settings.group.watch") {
                         NavigationLink {
                             WatchRecordingsView(model: watchRecordings)
                         } label: {
                             YansuCard {
                                 HStack(spacing: 8) {
-                                    Text("Recordings").font(.body).foregroundStyle(YansuTheme.ink)
+                                    Text("Recordings and sync").font(.body).foregroundStyle(YansuTheme.ink)
                                     Spacer(minLength: 4)
-                                    Text("\(watchRecordings.recordings.count)").font(.body)
-                                        .foregroundStyle(YansuTheme.secondary)
+                                    Text(WatchRecordingsCopy.summary(watchRecordings.rows)).font(.footnote)
+                                        .foregroundStyle(YansuTheme.secondary).lineLimit(1)
                                     Image(systemName: "chevron.right").font(.footnote.weight(.semibold))
                                         .foregroundStyle(YansuTheme.tertiary)
                                 }
