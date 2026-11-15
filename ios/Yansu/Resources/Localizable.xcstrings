@@ -1,6 +1,14 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Work on it" : {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Work on it"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"交给智能体"}}}},
+    "Hand a brief item to Claude, ChatGPT or Grok. You see exactly what goes." : {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Hand a brief item to Claude, ChatGPT or Grok. You see exactly what goes."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"把简报中的一项交给 Claude、ChatGPT 或 Grok。发送前你会看到完整内容。"}}}},
+    "This is exactly what goes:" : {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"This is exactly what goes:"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"将发送的内容如下："}}}},
+    "Copied. Paste it in %@ and send." : {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Copied. Paste it in %@ and send."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"已复制。请粘贴到 %@ 并发送。"}}}},
+    "Send to %@" : {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Send to %@"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"发送给 %@"}}}},
+    "Share..." : {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Share..."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"分享..."}}}},
+    "Done looks like: %@" : {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Done looks like: %@"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"完成的样子：%@"}}}},
+    "When you're done, tell me what you did." : {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"When you're done, tell me what you did."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"做完后，请告诉我你做了什么。"}}}},
     "Turn off Your week notifications" : {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Turn off Your week notifications"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"关闭“你的一周”通知"}}}},
     "Turn on Your week notifications" : {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Turn on Your week notifications"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"打开“你的一周”通知"}}}},
     "Recording on its way" : {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Recording on its way"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"录音即将就绪"}}}},

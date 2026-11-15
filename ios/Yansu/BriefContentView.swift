@@ -142,6 +142,9 @@ struct BriefContentView: View {
                     .accessibilityIdentifier("brief.notRight")
                 }
             }
+            if !readOnly, item.evidenceUnavailable != true {
+                WorkOnItButton(title: item.title ?? "", detail: item.detail, done: item.nextStep)
+            }
             if let card, !readOnly {
                 BriefItemActions(card: card,
                                  canGiveFeedback: SettingsView.allowsFeedFeedback(pairing.paired?.scopes ?? []),

@@ -29,6 +29,12 @@
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>$(MARKETING_VERSION)</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>claude</string>
+		<string>chatgpt</string>
+		<string>grok</string>
+	</array>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
