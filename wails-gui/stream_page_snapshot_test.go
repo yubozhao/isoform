@@ -742,13 +742,22 @@ func TestStreamPageWorkerStopsWhenTheDataFolderMoves(t *testing.T) {
 	a.queueStreamWork(time.Now().Add(300*time.Millisecond), true, nil)
 	next := t.TempDir()
 	t.Setenv("HOME", next)
-	time.Sleep(time.Second)
-	a.streamPages.mu.Lock()
-	running := a.streamPages.running
-	a.streamPages.mu.Unlock()
-	if running {
-		t.Fatal("the worker kept running after the data folder moved")
+	// The worker sleeps at most a second at a time and checks the folder
+	// each time it wakes.
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+		a.streamPages.mu.Lock()
+		running := a.streamPages.running
+		a.streamPages.mu.Unlock()
+		if !running {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the worker kept running after the data folder moved")
+		}
 	}
+	// Work queued after the move is not this app's and starts no worker.
+	a.queueStreamWork(time.Now(), true, nil)
+	time.Sleep(300 * time.Millisecond)
 	entries, err := os.ReadDir(next)
 	if err != nil {
 		t.Fatal(err)

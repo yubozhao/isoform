@@ -521,6 +521,16 @@ func (a *App) queueStreamWork(at time.Time, recompute bool, verify *streamPageKe
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	st.settings()
+	// The app's data folder is bound once, on its first queue. Work queued
+	// under another folder (only a test moves HOME) is not this app's: it is
+	// ignored rather than letting the worker follow HOME into another home.
+	if root, err := flavorDataDir(); err == nil {
+		if st.root == "" {
+			st.root = root
+		} else if root != st.root {
+			return
+		}
+	}
 	if recompute {
 		st.dueRecompute = true
 		if st.dueAt.IsZero() || at.Before(st.dueAt) {
@@ -538,9 +548,6 @@ func (a *App) queueStreamWork(at time.Time, recompute bool, verify *streamPageKe
 		if st.verifyAt.IsZero() || at.Before(st.verifyAt) {
 			st.verifyAt = at
 		}
-	}
-	if root, err := flavorDataDir(); err == nil && root != st.root {
-		st.root = root
 	}
 	if st.running {
 		return
