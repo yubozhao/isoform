@@ -201,7 +201,7 @@ export function resetPageQueries() {
     resetPagePrivacyWithdrawal();
     handlers.clear();
     installed = false;
-    pageQueryCache.clear();
+    pageQueryCache.reset();
     clearSavedPeopleView();
 }
 

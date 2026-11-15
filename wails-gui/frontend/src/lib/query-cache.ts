@@ -163,6 +163,11 @@ export class QueryCache {
         this.entries.clear();
         for (const name of names) this.notify(name);
     }
+
+    /** Teardown wipe (tests, sign-out reset): readers are told first and
+     * anything they read while told is dropped with the rest, so no read
+     * started by the old page survives into the next one. */
+    reset() { this.invalidate(); this.entries.clear(); }
     get size() { return this.entries.size; }
 
     read<T>(name: string, args: readonly unknown[], load: () => Promise<T>, ttl = 60_000): Promise<T> {
