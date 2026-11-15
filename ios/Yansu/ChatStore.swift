@@ -859,6 +859,14 @@ final class ChatStore: ObservableObject {
         await presence.value
     }
 
+    /// The brief's cards that already have a saved answer, in one pass (one support check, stops at a 409).
+    func answeredBriefCards(reference: ChatBriefReference, cards: [(id: String, message: String)]) async -> Set<String> {
+        guard isPaired(), !cards.isEmpty else { return [] }
+        let generation = pairingGeneration
+        let answered = await hub.answeredBriefCards(reference: reference, cards: cards)
+        return isCurrent(generation) ? answered : []
+    }
+
     func savedBriefAsk(reference: ChatBriefReference) async -> SavedBriefAsk? {
         guard isPaired() else { return nil }
         let generation = pairingGeneration
