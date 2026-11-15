@@ -250,7 +250,7 @@ func shadowTaskLearningProjectionInputHash(
 	if err != nil {
 		return "", nil, err
 	}
-	return hashShadowPayload(payload), payload, nil
+	return sha256Hex(payload), payload, nil
 }
 
 func PersistShadowTaskLearningProjection(
@@ -669,7 +669,7 @@ func shadowTaskLearningTitle(statement string) string {
 }
 
 func shadowTaskLearningTargetID(candidate ShadowTaskLearningCandidate) string {
-	return "shadow-learning-" + hashShadowPayload([]byte(candidate.ProjectionKey))[:16]
+	return "shadow-learning-" + sha256Hex([]byte(candidate.ProjectionKey))[:16]
 }
 
 func shadowTaskLearningMemoryContent(candidate ShadowTaskLearningCandidate, createdAt int64) string {

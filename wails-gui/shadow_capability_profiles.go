@@ -421,7 +421,7 @@ func buildShadowCapabilityProfile(
 		ID:                       uuid.NewString(),
 		CapabilityKey:            capabilityKey,
 		PolicyVersion:            shadowCapabilityProfilePolicyVersion,
-		EvidenceHash:             hashShadowPayload(fingerprintPayload),
+		EvidenceHash:             sha256Hex(fingerprintPayload),
 		EvaluationCount:          len(records),
 		QualifiedEvaluationCount: qualifiedCount,
 		ExcludedEvaluationCount:  len(records) - qualifiedCount,

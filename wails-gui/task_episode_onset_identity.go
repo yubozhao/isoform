@@ -253,9 +253,10 @@ func (index taskEpisodeOnsetIdentityIndex) observationKey(
 ) string {
 	episodeID = strings.TrimSpace(episodeID)
 	if record, ok := index.byEpisode[episodeID]; ok {
-		return "task-onset:" + hashShadowPayload([]byte(
+		return "task-onset:" + sha256Hex([]byte(
 			taskEpisodeOnsetIdentityKey(record.Anchor, record.InferredStartAt),
 		))
+
 	}
 	return "task-episode:" + episodeID
 }

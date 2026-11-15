@@ -227,7 +227,7 @@ func BuildShadowTaskPairReadiness(
 		output := strings.TrimSpace(attempt.AssistantOutput)
 		if output != "" {
 			result.ShadowResultMaterialized = true
-			result.ShadowResultSHA256 = hashShadowPayload([]byte(output))
+			result.ShadowResultSHA256 = sha256Hex([]byte(output))
 		}
 		for _, artifact := range attempt.Artifacts {
 			digest := strings.TrimSpace(artifact.SHA256)
@@ -246,9 +246,9 @@ func BuildShadowTaskPairReadiness(
 			!taskWorkflowTextResult(run.CapabilityKey) &&
 			len(result.ShadowArtifactDigests) > 0 {
 			result.ShadowResultMaterialized = true
-			result.ShadowResultSHA256 = hashShadowPayload(
-				[]byte(strings.Join(result.ShadowArtifactDigests, "\n")),
-			)
+			result.ShadowResultSHA256 = sha256Hex(
+				[]byte(strings.Join(result.ShadowArtifactDigests, "\n")))
+
 		}
 	}
 

@@ -52,7 +52,7 @@ func TestShadowCorrelationAttemptRoundTripAndImmutability(t *testing.T) {
 	if attempt.CandidateCount != 2 || attempt.SelectedCount != 1 {
 		t.Fatalf("derived candidate counts=%+v", attempt)
 	}
-	if attempt.ComparatorHash != hashShadowPayload([]byte(attempt.ComparatorPrompt)) {
+	if attempt.ComparatorHash != sha256Hex([]byte(attempt.ComparatorPrompt)) {
 		t.Fatalf("comparator hash=%q", attempt.ComparatorHash)
 	}
 

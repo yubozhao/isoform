@@ -89,7 +89,7 @@ func verifiedShadowLearningCandidateEvidenceHash(
 	if err != nil {
 		return "", err
 	}
-	return hashShadowPayload(payload), nil
+	return sha256Hex(payload), nil
 }
 
 func verifiedShadowLearningQualificationValid(
@@ -186,9 +186,10 @@ func validateVerifiedShadowLearningCandidate(
 	if err != nil || evidenceHash != candidate.EvidenceHash {
 		return errors.New("learning evidence hash does not match")
 	}
-	wantRevisionID := "shadow-task-learning-revision:" + hashShadowPayload([]byte(
+	wantRevisionID := "shadow-task-learning-revision:" + sha256Hex([]byte(
 		candidate.ProjectionKey+"\x00"+candidate.EvidenceHash,
 	))
+
 	wantProjectionKey := "shadow-task-learning:" + shadowTaskLearningGroupKey(
 		candidate.TargetKind,
 		candidate.LearningKind,

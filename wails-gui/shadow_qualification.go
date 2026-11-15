@@ -162,24 +162,6 @@ func qualificationRiskTier(effects []ShadowQualificationEffect) (string, []strin
 	return tier, uniqueSortedStrings(blockers)
 }
 
-func uniqueSortedStrings(values []string) []string {
-	seen := make(map[string]struct{}, len(values))
-	out := make([]string, 0, len(values))
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			continue
-		}
-		if _, ok := seen[value]; ok {
-			continue
-		}
-		seen[value] = struct{}{}
-		out = append(out, value)
-	}
-	sort.Strings(out)
-	return out
-}
-
 func (s *ActivityStore) loadShadowQualificationInputs(
 	profile ShadowCapabilityProfile,
 ) (shadowQualificationInputs, error) {
@@ -260,7 +242,7 @@ func (s *ActivityStore) loadShadowQualificationInputs(
 	if err != nil {
 		return shadowQualificationInputs{}, err
 	}
-	inputs.RuntimeHash = hashShadowPayload(payload)
+	inputs.RuntimeHash = sha256Hex(payload)
 	return inputs, nil
 }
 
@@ -381,7 +363,7 @@ func buildShadowCapabilityQualification(
 		if err != nil {
 			return ShadowCapabilityQualification{}, nil, err
 		}
-		candidatePlanHash = hashShadowPayload(payload)
+		candidatePlanHash = sha256Hex(payload)
 	}
 	keyPayload, err := json.Marshal(struct {
 		PolicyVersion       string `json:"policyVersion"`
@@ -397,7 +379,7 @@ func buildShadowCapabilityQualification(
 	if err != nil {
 		return ShadowCapabilityQualification{}, nil, err
 	}
-	qualificationKey := hashShadowPayload(keyPayload)
+	qualificationKey := sha256Hex(keyPayload)
 	return ShadowCapabilityQualification{
 		ID:                        uuid.NewString(),
 		QualificationKey:          qualificationKey,
@@ -558,11 +540,12 @@ func (s *ActivityStore) AddShadowCapabilityQualification(
 }
 
 func qualifiedInitiativeFingerprint(capabilityKey, planHash string) string {
-	return hashShadowPayload([]byte(
+	return sha256Hex([]byte(
 		shadowQualificationPolicyVersion + "\x00" +
 			strings.TrimSpace(capabilityKey) + "\x00" +
 			strings.TrimSpace(planHash),
 	))
+
 }
 
 func (a *App) qualifyShadowCapability(profile ShadowCapabilityProfile) {

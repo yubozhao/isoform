@@ -445,7 +445,7 @@ func TestTaskLifecycleMaterializesComposeTextResult(t *testing.T) {
 	if result == nil ||
 		result.Workflow != TaskWorkflowComposeText ||
 		result.Content != "The rollout is complete and verification passed." ||
-		result.SHA256 != hashShadowPayload([]byte(result.Content)) ||
+		result.SHA256 != sha256Hex([]byte(result.Content)) ||
 		result.Destination == nil ||
 		result.Destination.SemanticRole !=
 			TaskLifecycleDestinationUserResultCandidate ||

@@ -180,11 +180,6 @@ const shadowRunSelectColumns = `
 	model, prompt_version, runner_version, observation_horizon_start,
 	observation_horizon_end, created_at`
 
-func hashShadowPayload(payload []byte) string {
-	sum := sha256.Sum256(payload)
-	return hex.EncodeToString(sum[:])
-}
-
 func normalizeShadowCapabilityKey(value, fallbackSeed string) string {
 	value = strings.ToLower(strings.TrimSpace(value))
 	var b strings.Builder
@@ -332,7 +327,7 @@ func normalizeShadowReference(ref ShadowEvidenceReference) (ShadowEvidenceRefere
 		if payload == "" {
 			payload = ref.SourceKind + "\x00" + ref.SourceID + "\x00" + ref.Summary
 		}
-		ref.ContentHash = hashShadowPayload([]byte(payload))
+		ref.ContentHash = sha256Hex([]byte(payload))
 	}
 	return ref, nil
 }
@@ -511,11 +506,11 @@ func normalizeShadowRun(run ShadowRun) (ShadowRun, []byte, []byte, error) {
 	if err != nil {
 		return ShadowRun{}, nil, nil, err
 	}
-	contextHash := hashShadowPayload(contextPayload)
+	contextHash := sha256Hex(contextPayload)
 	if run.ContextHash != "" && run.ContextHash != contextHash {
 		return ShadowRun{}, nil, nil, errors.New("shadow context hash does not match payload")
 	}
-	predictionHash := hashShadowPayload(predictionPayload)
+	predictionHash := sha256Hex(predictionPayload)
 	if run.PredictionHash != "" && run.PredictionHash != predictionHash {
 		return ShadowRun{}, nil, nil, errors.New("shadow prediction hash does not match payload")
 	}
@@ -864,7 +859,7 @@ func normalizeShadowRunEvaluation(input ShadowRunEvaluation) (ShadowRunEvaluatio
 	}
 	input.ComparatorHash = strings.TrimSpace(input.ComparatorHash)
 	if input.ComparatorPrompt != "" {
-		expectedHash := hashShadowPayload([]byte(input.ComparatorPrompt))
+		expectedHash := sha256Hex([]byte(input.ComparatorPrompt))
 		if input.ComparatorHash != "" && input.ComparatorHash != expectedHash {
 			return ShadowRunEvaluation{}, errors.New("shadow comparator hash does not match prompt")
 		}

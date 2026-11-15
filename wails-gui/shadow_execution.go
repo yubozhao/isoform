@@ -101,7 +101,7 @@ func normalizeShadowExecutionAttempt(input ShadowExecutionAttempt) (ShadowExecut
 	if err != nil {
 		return ShadowExecutionAttempt{}, fmt.Errorf("encode shadow execution plan: %w", err)
 	}
-	expectedPlanHash := hashShadowPayload(planPayload)
+	expectedPlanHash := sha256Hex(planPayload)
 	if input.PlanHash != "" && input.PlanHash != expectedPlanHash {
 		return ShadowExecutionAttempt{}, errors.New("shadow execution plan hash does not match")
 	}

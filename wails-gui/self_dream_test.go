@@ -900,17 +900,17 @@ func TestSelfDreamRolloutRequiresRealPairedEvidence(t *testing.T) {
 			AssemblerVersion: SelfDreamAssemblerVersion,
 			SourceCutoffAt:   now + int64(index),
 			BaseSelf:         base,
-			BaseSelfHash:     hashShadowPayload(baseJSON),
+			BaseSelfHash:     sha256Hex(baseJSON),
 			Context: AssembledTaskContext{
 				CanonicalJSON: "{}",
-				SHA256:        hashShadowPayload([]byte("{}")),
+				SHA256:        sha256Hex([]byte("{}")),
 			},
-			ContextHash:   hashShadowPayload([]byte("{}")),
+			ContextHash:   sha256Hex([]byte("{}")),
 			Manifest:      []TaskContextManifestEntry{},
 			InputHash:     runID,
 			PromptVersion: SelfDreamPromptVersion,
 			Prompt:        "test",
-			PromptHash:    hashShadowPayload([]byte("test")),
+			PromptHash:    sha256Hex([]byte("test")),
 			CreatedAt:     now + int64(index),
 		})
 		if err != nil || !added {

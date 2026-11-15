@@ -149,7 +149,7 @@ func taskLifecycleResultDestinationSHA256(
 	if err != nil {
 		return "", err
 	}
-	return hashShadowPayload(payload), nil
+	return sha256Hex(payload), nil
 }
 
 func taskLifecycleResultDestinationsEqual(

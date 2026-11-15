@@ -374,7 +374,7 @@ func TestShadowRunEvaluationKeepsUnknownReasoningOutOfFailureScore(t *testing.T)
 	if created.Reasoning.Score != nil {
 		t.Fatalf("unknown reasoning received a failure score: %+v", created.Reasoning)
 	}
-	if created.ComparatorHash != hashShadowPayload([]byte(input.ComparatorPrompt)) {
+	if created.ComparatorHash != sha256Hex([]byte(input.ComparatorPrompt)) {
 		t.Fatalf("comparator prompt hash=%q", created.ComparatorHash)
 	}
 	replayed, added, err := store.AddShadowRunEvaluation(input)

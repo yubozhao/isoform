@@ -366,7 +366,7 @@ func selfDreamOperationHash(draft SelfDreamOperationDraft) string {
 	draft.EvidenceRefs = uniqueSortedStrings(draft.EvidenceRefs)
 	draft.SplitStatements = uniqueSortedStrings(draft.SplitStatements)
 	payload, _ := json.Marshal(draft)
-	return hashShadowPayload(payload)
+	return sha256Hex(payload)
 }
 
 func selfDreamCurrentEntryByID(

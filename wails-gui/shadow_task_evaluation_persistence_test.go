@@ -64,7 +64,7 @@ func appendCurrentTaskResultEvidence(
 			Workflow:          workflow,
 			Kind:              TaskLifecycleContentCommittedText,
 			Content:           content,
-			SHA256:            hashShadowPayload([]byte(content)),
+			SHA256:            sha256Hex([]byte(content)),
 			EvidenceRefs:      []string{"suffix:" + sourceID},
 			Destination:       destination,
 			DestinationSHA256: destinationSHA256,
@@ -655,7 +655,7 @@ func TestBuildShadowTaskEvaluationUsesMaterializedComposeTextPair(t *testing.T) 
 	}
 	if input.Observed.Result != userText ||
 		len(input.Observed.Artifacts) != 1 ||
-		input.Observed.Artifacts[0].Digest != hashShadowPayload([]byte(userText)) {
+		input.Observed.Artifacts[0].Digest != sha256Hex([]byte(userText)) {
 		t.Fatalf("observed materialized result=%+v", input.Observed)
 	}
 	if len(input.QualityCriteria) < 6 {
@@ -679,7 +679,7 @@ func TestBuildShadowTaskEvaluationUsesMaterializedAnalyzeTextPair(t *testing.T) 
 	}
 	if input.Observed.Result != userText ||
 		len(input.Observed.Artifacts) != 1 ||
-		input.Observed.Artifacts[0].Digest != hashShadowPayload([]byte(userText)) {
+		input.Observed.Artifacts[0].Digest != sha256Hex([]byte(userText)) {
 		t.Fatalf("observed materialized analysis=%+v", input.Observed)
 	}
 	criteria := strings.Join(input.QualityCriteria, "\n")
@@ -715,7 +715,7 @@ func TestBuildShadowTaskEvaluationSelectsLatestSameDestinationResult(t *testing.
 	}
 	if input.Observed.Result != latestText ||
 		len(input.Observed.Artifacts) != 1 ||
-		input.Observed.Artifacts[0].Digest != hashShadowPayload([]byte(latestText)) {
+		input.Observed.Artifacts[0].Digest != sha256Hex([]byte(latestText)) {
 		t.Fatalf("latest observed result=%+v", input.Observed)
 	}
 	for _, item := range input.Evidence {
@@ -727,7 +727,7 @@ func TestBuildShadowTaskEvaluationSelectsLatestSameDestinationResult(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if readiness.UserResultSHA256 != hashShadowPayload([]byte(latestText)) ||
+	if readiness.UserResultSHA256 != sha256Hex([]byte(latestText)) ||
 		readiness.UserResultDestinationSHA256 == "" ||
 		len(readiness.UserResultEvidenceIDs) != 1 ||
 		readiness.UserResultEvidenceIDs[0] != latest.ID {
@@ -779,7 +779,7 @@ func TestTaskEpisodeMaterializedResultRejectsCrossWorkflowReuse(t *testing.T) {
 			Workflow:     TaskWorkflowComposeText,
 			Kind:         TaskLifecycleContentCommittedText,
 			Content:      content,
-			SHA256:       hashShadowPayload([]byte(content)),
+			SHA256:       sha256Hex([]byte(content)),
 			EvidenceRefs: []string{"suffix:return"},
 		},
 	})
@@ -804,7 +804,7 @@ func TestTaskEpisodeMaterializedResultKeepsLegacyDestinationOutOfComparison(
 			Workflow:     TaskWorkflowComposeText,
 			Kind:         TaskLifecycleContentCommittedText,
 			Content:      content,
-			SHA256:       hashShadowPayload([]byte(content)),
+			SHA256:       sha256Hex([]byte(content)),
 			EvidenceRefs: []string{"suffix:return"},
 		},
 	})
@@ -834,7 +834,7 @@ func TestTaskEpisodeMaterializedResultRejectsDestinationDigestTampering(
 			Workflow:          TaskWorkflowComposeText,
 			Kind:              TaskLifecycleContentCommittedText,
 			Content:           content,
-			SHA256:            hashShadowPayload([]byte(content)),
+			SHA256:            sha256Hex([]byte(content)),
 			EvidenceRefs:      []string{"suffix:return"},
 			Destination:       destination,
 			DestinationSHA256: destinationSHA256,

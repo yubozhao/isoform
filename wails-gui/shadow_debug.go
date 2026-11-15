@@ -108,7 +108,7 @@ func normalizeShadowCorrelationAttempt(input ShadowCorrelationAttempt) (ShadowCo
 		input.ComparatorVersion = shadowCorrelationPromptVersion
 	}
 	if input.ComparatorPrompt != "" {
-		expected := hashShadowPayload([]byte(input.ComparatorPrompt))
+		expected := sha256Hex([]byte(input.ComparatorPrompt))
 		if input.ComparatorHash != "" && input.ComparatorHash != expected {
 			return ShadowCorrelationAttempt{}, errors.New("shadow correlation attempt prompt hash does not match")
 		}

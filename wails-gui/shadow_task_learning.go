@@ -166,7 +166,7 @@ type shadowTaskLearningCandidateGroup struct {
 
 func shadowTaskLearningRecordKey(record ShadowTaskLearningEvaluationRecord) string {
 	payload, _ := json.Marshal(record)
-	return "shadow-task-learning-record:" + hashShadowPayload(payload)
+	return "shadow-task-learning-record:" + sha256Hex(payload)
 }
 
 func shadowTaskLearningSafeEvidence(item ShadowTaskEvaluationEvidence) bool {
@@ -317,7 +317,7 @@ func shadowTaskLearningNormalizeRecord(
 	if err != nil {
 		return normalizedShadowTaskLearningRecord{}, nil, err
 	}
-	normalized.PayloadHash = hashShadowPayload(payload)
+	normalized.PayloadHash = sha256Hex(payload)
 	return normalized, nil, nil
 }
 
@@ -452,7 +452,7 @@ func shadowTaskLearningGroupKey(
 		capabilityKey,
 		shadowTaskLearningCanonicalStatement(statement),
 	}, "\x00")
-	return hashShadowPayload([]byte(payload))
+	return sha256Hex([]byte(payload))
 }
 
 func shadowTaskLearningGetGroup(
@@ -996,14 +996,14 @@ func shadowTaskLearningFinalizeGroup(
 	if err != nil {
 		return ShadowTaskLearningCandidate{}, err
 	}
-	evidenceHash := hashShadowPayload(evidencePayload)
+	evidenceHash := sha256Hex(evidencePayload)
 	projectionKey := "shadow-task-learning:" + shadowTaskLearningGroupKey(
 		group.targetKind,
 		group.learningKind,
 		group.capabilityKey,
 		group.statement,
 	)
-	revisionID := "shadow-task-learning-revision:" + hashShadowPayload([]byte(
+	revisionID := "shadow-task-learning-revision:" + sha256Hex([]byte(
 		projectionKey+"\x00"+evidenceHash,
 	))
 

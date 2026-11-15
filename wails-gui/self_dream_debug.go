@@ -96,15 +96,15 @@ func (a *App) ReplaySelfDreamDebug(
 			"configure an AI provider before replaying Self Dream",
 		)
 	}
-	promptHash := hashShadowPayload([]byte(prompt))
+	promptHash := sha256Hex([]byte(prompt))
 	promptVersion := selfDreamDebugCustomPrompt
 	if promptHash == detail.Run.PromptHash {
 		promptVersion = SelfDreamPromptVersion
 	}
 	contextMatches := detail.Run.ContextHash != "" &&
-		hashShadowPayload(
-			[]byte(detail.Run.Context.CanonicalJSON),
-		) == detail.Run.ContextHash
+		sha256Hex(
+			[]byte(detail.Run.Context.CanonicalJSON)) ==
+			detail.Run.ContextHash
 	started := time.Now()
 	ctx, cancel := context.WithTimeout(
 		agencyContext(a),
@@ -126,7 +126,7 @@ func (a *App) ReplaySelfDreamDebug(
 		Model:                model,
 		PromptHash:           promptHash,
 		RawOutput:            raw,
-		RawOutputHash:        hashShadowPayload([]byte(raw)),
+		RawOutputHash:        sha256Hex([]byte(raw)),
 		Operations:           []SelfDreamOperationRecord{},
 		DurationMs:           time.Since(started).Milliseconds(),
 		CreatedAt:            time.Now().UnixMilli(),

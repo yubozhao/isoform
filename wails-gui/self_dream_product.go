@@ -106,7 +106,7 @@ func selfDreamProposalKey(op SelfDreamOperationRecord) string {
 		Targets:    uniqueSortedStrings(op.TargetEntryIDs),
 		Statements: statements,
 	})
-	return hashShadowPayload(payload)
+	return sha256Hex(payload)
 }
 
 // selfDreamReviewQueue decides which proposals still wait for the user. The

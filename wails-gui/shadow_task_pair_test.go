@@ -64,7 +64,7 @@ func TestShadowTaskPairReadinessRecognizesMaterializedPair(t *testing.T) {
 	}
 	if readiness.State != ShadowTaskPairStateReady ||
 		!readiness.Ready ||
-		readiness.UserResultSHA256 != hashShadowPayload([]byte(userText)) ||
+		readiness.UserResultSHA256 != sha256Hex([]byte(userText)) ||
 		!readiness.ShadowResultMaterialized {
 		t.Fatalf("readiness=%+v, want pair ready", readiness)
 	}
@@ -81,7 +81,7 @@ func TestShadowTaskPairReadinessRecognizesAnalyzeTextPair(t *testing.T) {
 		readiness.State != ShadowTaskPairStateReady ||
 		!readiness.Ready ||
 		!readiness.UserResultMaterialized ||
-		readiness.UserResultSHA256 != hashShadowPayload([]byte(userText)) {
+		readiness.UserResultSHA256 != sha256Hex([]byte(userText)) {
 		t.Fatalf("analysis readiness=%+v", readiness)
 	}
 }
@@ -318,7 +318,7 @@ func TestShadowTaskPairReadinessAllowsExpiredEpisodeWithObservedResult(
 	}
 	if readiness.State != ShadowTaskPairStateReady ||
 		!readiness.Ready ||
-		readiness.UserResultSHA256 != hashShadowPayload([]byte(userText)) ||
+		readiness.UserResultSHA256 != sha256Hex([]byte(userText)) ||
 		readiness.UserResultDestinationSHA256 == "" {
 		t.Fatalf("readiness=%+v", readiness)
 	}
@@ -335,7 +335,7 @@ func TestShadowTaskPairReadinessFailsClosedOnLaterInvalidResultProvenance(
 			Workflow:          TaskWorkflowComposeText,
 			Kind:              TaskLifecycleContentCommittedText,
 			Content:           content,
-			SHA256:            hashShadowPayload([]byte(content)),
+			SHA256:            sha256Hex([]byte(content)),
 			EvidenceRefs:      []string{"later:commit"},
 			Destination:       taskLifecycleTestResultDestination(),
 			DestinationSHA256: "tampered",
@@ -551,7 +551,7 @@ func TestShadowTaskPairReadinessRejectsTextWorkflowToolActivity(t *testing.T) {
 			artifacts: []ShadowExecutionArtifact{{
 				Path:      "unexpected.txt",
 				SizeBytes: 10,
-				SHA256:    hashShadowPayload([]byte("unexpected")),
+				SHA256:    sha256Hex([]byte("unexpected")),
 			}},
 			reason:    "isolated_text_workflow_created_artifacts",
 			evaluated: true,
