@@ -3362,6 +3362,40 @@
             "waiting_other": "{{count}} 封在等你回复",
             "lastSync": "上次读取：{{when}}"
         },
+        "messages": {
+            "title": "Isoform 能看到的信息",
+            "description": "Isoform 会读取你与认识的人最近的“信息”对话，用它自己的一句话记下别人请你做的事和你答应过的事，例如谁请你在什么时候之前做什么。它从不保留消息本身。为了写出这句话，最近两天的消息会在去掉个人信息后发送给你选择的 AI。Isoform 记下的内容保存在这台电脑上，可能出现在你的简报中，包括已配对的手机上，最多保留两周；如果你的活动保留时间更短，则保留更短时间。暂停观察期间不会读取任何内容，暂停期间发送的消息也不会被记下。在“隐私”中保护“信息”会删除已记下的内容。",
+            "needsAccess": "Isoform 需要“完全磁盘访问权限”才能读取“信息”。点按“授权”会打开“系统设置”，请在那里打开 Isoform。在你点按之前，Isoform 不会请求任何权限。",
+            "readingTitle": "读取我的信息",
+            "readingDescription": "留意别人请你做的事和你答应过的事。",
+            "readingOff": "信息读取已关闭，Isoform 不会读取任何内容。",
+            "asks_one": "{{count}} 个请求",
+            "asks_other": "{{count}} 个请求",
+            "commitments_one": "{{count}} 个承诺",
+            "commitments_other": "{{count}} 个承诺",
+            "lastSync": "上次读取：{{when}}",
+            "refresh": "刷新",
+            "refreshFailed": "无法读取信息。",
+            "toggleFailed": "无法更改此项。",
+            "loadFailed": "无法读取 Isoform 在信息中看到的内容。",
+            "leftOut": {
+                "title": "不读取的人",
+                "description": "Isoform 从不读取与这些人的对话（包括群聊），并会忘记从中记下的内容。",
+                "add": "不读取某人",
+                "search": "搜索联系人",
+                "empty": "未找到联系人。",
+                "remove": "移除",
+                "removeLabel": "恢复读取与 {{name}} 的对话",
+                "unnamed": "你认识的人",
+                "changeFailed": "无法更改此项。"
+            },
+            "forget": {
+                "title": "忘记 Isoform 记下的内容",
+                "description": "删除从信息中记下的所有请求和承诺。已读取过的消息不会再次读取。",
+                "action": "忘记",
+                "failed": "无法忘记这些内容。"
+            }
+        },
         "clipboard": {
             "title": "记录我复制的内容",
             "description": "复制往往说明你接下来要做什么。Isoform 会记录你复制的内容类型和所在的应用；在 macOS 允许读取时，还会保留一段简短预览，其中的个人信息、验证码、助记词、密码这类单个词以及任何标明为密码或密钥的内容都会被去除。来自密码管理器、被应用标记为密码的内容、浏览器无痕窗口、Isoform 本身以及你保护的应用都不会被记录。Safari 不会标明它的无痕窗口，因此对于在 Safari 中复制的内容，Isoform 只记录内容类型，从不保留预览。",
