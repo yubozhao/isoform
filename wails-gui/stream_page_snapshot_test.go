@@ -728,3 +728,32 @@ func TestConcurrentSavesOfOnePageLeaveAReadableCopy(t *testing.T) {
 	close(stop)
 	writers.Wait()
 }
+
+// A worker left over from an earlier test stops when HOME moves to the next
+// test's folder: it neither reads nor writes there (the leak behind the
+// "search created memory" and TempDir cleanup flakes).
+func TestStreamPageWorkerStopsWhenTheDataFolderMoves(t *testing.T) {
+	a, session := streamPageTestApp(t)
+	latestPage(t, a, session) // the page has a saved copy to recompute
+	a.streamPages.mu.Lock()
+	a.streamPages.launchDelay = 0
+	a.streamPages.mu.Unlock()
+	setStreamPageRecomputeWait(a, 0, 0)
+	a.queueStreamWork(time.Now().Add(300*time.Millisecond), true, nil)
+	next := t.TempDir()
+	t.Setenv("HOME", next)
+	time.Sleep(time.Second)
+	a.streamPages.mu.Lock()
+	running := a.streamPages.running
+	a.streamPages.mu.Unlock()
+	if running {
+		t.Fatal("the worker kept running after the data folder moved")
+	}
+	entries, err := os.ReadDir(next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("the old worker wrote into the new home: %v", entries)
+	}
+}

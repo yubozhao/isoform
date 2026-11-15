@@ -87,7 +87,12 @@ type streamPageReadResult struct {
 
 // streamPageState is the saved-page bookkeeping kept on the app.
 type streamPageState struct {
-	mu                         sync.Mutex
+	mu sync.Mutex
+	// root is the data folder the queued work belongs to. The worker stops
+	// when the folder changes under it: in the app it never does, but a test
+	// sets a new HOME per test, and a worker left over from an earlier test
+	// would otherwise read (and create folders in) the next test's home.
+	root                       string
 	launchAt                   time.Time
 	keys                       map[streamPageKey]bool
 	reads                      map[streamPageKey]*trailingCall[streamPageReadResult]
@@ -534,6 +539,9 @@ func (a *App) queueStreamWork(at time.Time, recompute bool, verify *streamPageKe
 			st.verifyAt = at
 		}
 	}
+	if root, err := flavorDataDir(); err == nil && root != st.root {
+		st.root = root
+	}
 	if st.running {
 		return
 	}
@@ -541,10 +549,27 @@ func (a *App) queueStreamWork(at time.Time, recompute bool, verify *streamPageKe
 	go a.runStreamPageRefreshes()
 }
 
+// streamPageRootMovedLocked reports whether the data folder changed since the
+// work was queued, and if so drops the queued work.
+func (st *streamPageState) streamPageRootMovedLocked() bool {
+	root, err := flavorDataDir()
+	if err != nil || root == st.root {
+		return false
+	}
+	st.dueRecompute, st.dueAt = false, time.Time{}
+	st.verifyKeys, st.verifyAt = nil, time.Time{}
+	return true
+}
+
 func (a *App) runStreamPageRefreshes() {
 	st := &a.streamPages
 	for {
 		st.mu.Lock()
+		if st.streamPageRootMovedLocked() {
+			st.running = false
+			st.mu.Unlock()
+			return
+		}
 		now := time.Now()
 		runRecompute := st.dueRecompute && !st.dueAt.IsZero() && !now.Before(st.dueAt)
 		runVerify := len(st.verifyKeys) > 0 && !now.Before(st.verifyAt)

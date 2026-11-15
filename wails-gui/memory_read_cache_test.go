@@ -27,6 +27,13 @@ type memoryReadCountRig struct {
 func newMemoryReadCountRig(t *testing.T) *memoryReadCountRig {
 	t.Helper()
 	rig := newHandoffTestRig(t)
+	// The counts come from a process-wide hook, so the chat's background
+	// recompute (its own memory read) must not run inside a counted read.
+	rig.app.streamPages.mu.Lock()
+	rig.app.streamPages.settings()
+	rig.app.streamPages.launchDelay = time.Hour
+	rig.app.streamPages.eventDelay = time.Hour
+	rig.app.streamPages.mu.Unlock()
 	clock := &fakeMobileBriefClock{now: mobileBriefTestDay(7, 0)}
 	svc, _ := newTestMobileBriefService(t, clock)
 	svc.app, rig.app.mobileBriefSvc = rig.app, svc
