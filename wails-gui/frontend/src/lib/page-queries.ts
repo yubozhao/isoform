@@ -196,6 +196,7 @@ export function revalidatePageQueries(page: string) {
 export function pageReadNames(page: string): readonly string[] { return pageReads[page] ?? []; }
 
 export function resetPageQueries() {
+    clearTodayRetries();
     cleanups.splice(0).forEach((off) => off?.());
     resetAppActivity();
     resetPagePrivacyWithdrawal();
@@ -224,10 +225,43 @@ export function usePageQueryRefresh(names: readonly string[], refresh: () => unk
     }, [key, enabled]);
 }
 
+// A Today read that fails is read again on its own: after 5 s, 30 s, then
+// every 2 minutes while the window is looked at, until it succeeds. The card
+// keeps what it shows meanwhile (its refresh subscription takes the answer);
+// before, a failed read stayed failed until some unrelated event re-read it.
+export const TODAY_READ_RETRY_MS = [5_000, 30_000, 120_000];
+const todayRetries = new Map<string, { attempt: number; timer?: ReturnType<typeof setTimeout> }>();
+function retryTodayRead<T>(name: string, args: readonly unknown[], read: Promise<T>): Promise<T> {
+    if (!today.includes(name)) return read;
+    const key = JSON.stringify([name, args]);
+    return read.then((value) => {
+        const pending = todayRetries.get(key);
+        if (pending?.timer !== undefined) clearTimeout(pending.timer);
+        todayRetries.delete(key);
+        return value;
+    }, (error) => {
+        const pending = todayRetries.get(key) ?? { attempt: 0 };
+        if (pending.timer === undefined) {
+            const wait = TODAY_READ_RETRY_MS[Math.min(pending.attempt, TODAY_READ_RETRY_MS.length - 1)];
+            // The re-read itself waits for a shown, unlocked window (the cache's gate).
+            pending.timer = setTimeout(() => {
+                todayRetries.set(key, { attempt: pending.attempt + 1 });
+                pageQueryCache.invalidate([name], false, [...args]);
+            }, wait);
+            todayRetries.set(key, pending);
+        }
+        throw error;
+    });
+}
+function clearTodayRetries() {
+    for (const { timer } of todayRetries.values()) if (timer !== undefined) clearTimeout(timer);
+    todayRetries.clear();
+}
+
 function cached<K extends keyof typeof app>(name: K, ttl = 60_000): typeof app[K] {
     return ((...args: unknown[]) => {
         installPageQueryEvents();
-        return pageQueryCache.read(name, args, () => (app[name] as (...params: unknown[]) => Promise<unknown>)(...args), ttl);
+        return retryTodayRead(name, args, pageQueryCache.read(name, args, () => (app[name] as (...params: unknown[]) => Promise<unknown>)(...args), ttl));
     }) as typeof app[K];
 }
 
@@ -256,7 +290,7 @@ export const TODAY_TOPICS_TTL_MS = 2 * 60 * 60_000;
 export const GetTodayTopics: typeof app.GetTodayTopics = (...args) => {
     installPageQueryEvents();
     const prior = pageQueryCache.peek<{ refreshing?: boolean }>('GetTodayTopics', args);
-    return pageQueryCache.read('GetTodayTopics', args, () => app.GetTodayTopics(...args), prior?.refreshing ? TODAY_TOPICS_PENDING_RESYNC_MS : TODAY_TOPICS_TTL_MS);
+    return retryTodayRead('GetTodayTopics', args, pageQueryCache.read('GetTodayTopics', args, () => app.GetTodayTopics(...args), prior?.refreshing ? TODAY_TOPICS_PENDING_RESYNC_MS : TODAY_TOPICS_TTL_MS));
 };
 // The brief's budget is BRIEF_RESYNC_MS (hooks/useLatestBrief): a show or
 // focus reads it again only past that age; brief events re-read it at once.
