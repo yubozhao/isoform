@@ -60,8 +60,12 @@ if [ "$ARCH" != "$HOST_ARCH" ]; then
     BIN_DIR="$FRONT_DIR/target/$TRIPLE/release"
 fi
 
+# build-wails.sh exports MACOSX_DEPLOYMENT_TARGET=14.0 for cgo. rustc applies
+# it to the host proc-macro dylibs too, and then cannot load them (E0463,
+# "can't find crate for `zeroize_derive`"). Rust's own default (11.0 on arm64,
+# 10.12 on x86_64) is below the app's 14.0 floor, so drop it for cargo.
 echo "[front-link] building isoform-front-link for $ARCH..."
-(cd "$FRONT_DIR" && "$CARGO" build --release --locked --bin isoform-front-link ${TARGET_ARGS[@]+"${TARGET_ARGS[@]}"})
+(cd "$FRONT_DIR" && unset MACOSX_DEPLOYMENT_TARGET && "$CARGO" build --release --locked --bin isoform-front-link ${TARGET_ARGS[@]+"${TARGET_ARGS[@]}"})
 mkdir -p "$OUT_DIR"
 cp "$BIN_DIR/isoform-front-link" "$OUT_DIR/isoform-front-link-darwin-$ARCH"
 chmod +x "$OUT_DIR/isoform-front-link-darwin-$ARCH"
