@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -320,18 +321,52 @@ func TestSearchPeopleAliasesHandlesNotMessages(t *testing.T) {
 	}
 }
 
+const searchNoFoldersChildEnv = "ISOFORM_SEARCH_NO_FOLDERS_TEST"
+
+// A search on missing page folders must not create them. The search runs in a
+// child test process: every test in this package shares one HOME variable, so a
+// background writer left by an earlier test could create the folder during the
+// search and the failure would blame the search.
+func TestSearchMissingPageFoldersStayMissing(t *testing.T) {
+	if os.Getenv(searchNoFoldersChildEnv) == "1" {
+		a := newMCPReadTestApp(t)
+		root, err := flavorDataDir()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, place := range []string{"about_you", "know_how"} {
+			_ = searchTestResults(t, a, "isoform", place, 5)
+		}
+		for _, folder := range []string{"memory", "knowledge"} {
+			if _, err := os.Stat(filepath.Join(root, folder)); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("search created %s", folder)
+			}
+		}
+		return
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(executable, "-test.run=^TestSearchMissingPageFoldersStayMissing$", "-test.count=1", "-test.v")
+	cmd.Env = append(os.Environ(), searchNoFoldersChildEnv+"=1")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("child search: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "--- PASS: TestSearchMissingPageFoldersStayMissing") {
+		t.Fatalf("child search did not run:\n%s", out)
+	}
+}
+
 func TestSearchEntriesForgetSuppressionFrontmatterAndNoWrites(t *testing.T) {
 	a := newMCPReadTestApp(t)
 	root, err := flavorDataDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A search on missing page directories must not create them.
-	_ = searchTestResults(t, a, "isoform", "about_you", 5)
+	// TestSearchMissingPageFoldersStayMissing checks that a search creates no folder.
 	for _, folder := range []string{"memory", "knowledge"} {
-		if _, err := os.Stat(filepath.Join(root, folder)); !errors.Is(err, os.ErrNotExist) {
-			t.Fatalf("search created %s", folder)
-		}
 		if err := os.MkdirAll(filepath.Join(root, folder), 0700); err != nil {
 			t.Fatal(err)
 		}

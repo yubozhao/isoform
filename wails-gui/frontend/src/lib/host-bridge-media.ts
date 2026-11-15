@@ -10,7 +10,7 @@ export function setHostBridgeMediaToken(token: string): void {
     mediaToken = token;
 }
 
-export type HostBridgeMediaRoute = 'snapshot' | 'frame' | 'video' | 'audio';
+export type HostBridgeMediaRoute = 'snapshot' | 'frame' | 'video' | 'audio' | 'recording';
 
 export function hostBridgeMediaURL(
     port: number,

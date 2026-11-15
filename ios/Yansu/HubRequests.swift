@@ -39,10 +39,12 @@ enum HubRoute: Equatable, Sendable {
     case write(path: String, body: String)
     /// The state of this phone's recordings on the computer (PROTOCOL.md 24.3).
     case recordings(ids: [String])
+    /// The owner's enrolled voice samples on the computer (PROTOCOL.md 25.1).
+    case voice
 
     var method: String {
         switch self {
-        case .yourAgent, .recordings: return "GET"
+        case .yourAgent, .recordings, .voice: return "GET"
         case .refreshBrief, .write, .briefReceived: return "POST"
         case .status, .today, .todayMeetingPrep, .findTime, .findTimeLegacy, .holdProposal, .holdStatus, .todayPart, .latestBrief, .briefList, .brief, .briefPackage, .briefPart, .briefAudio, .briefAskAnswer, .briefCardAskAnswer, .briefWeekDecline, .briefWeekAskAnswer, .chats, .chat, .notifications, .keepAwake, .tasks, .task, .goals, .goal, .offers, .offersWithHolds,
              .topics, .topic, .privacy: return "GET"
@@ -53,6 +55,7 @@ enum HubRoute: Equatable, Sendable {
         switch self {
         case .yourAgent: return "/your-agent"
         case .recordings: return "/recordings"
+        case .voice: return "/voice"
         case .status: return "/status"
         case .today, .todayPart: return "/today"
         case .todayMeetingPrep: return "/today/meeting-prep"
@@ -89,7 +92,7 @@ enum HubRoute: Equatable, Sendable {
 
     var query: String {
         switch self {
-        case .yourAgent: return ""
+        case .yourAgent, .voice: return ""
         case .recordings(let ids): return ids.isEmpty ? "" : "ids=" + ids.joined(separator: ",")
         case .todayPart(let version, let part): return "version=\(version)&part=\(part)"
         case .todayMeetingPrep(let id):
@@ -154,7 +157,7 @@ enum HubRoute: Equatable, Sendable {
 
     var body: String {
         switch self {
-        case .yourAgent, .recordings: return ""
+        case .yourAgent, .recordings, .voice: return ""
         case .refreshBrief: return "{}"
         case .write(_, let body): return body
         case .briefReceived(_, let version): return "{\"version\":\"\(version)\"}"
@@ -167,6 +170,7 @@ enum HubRoute: Equatable, Sendable {
         switch self {
         case .yourAgent: return "your-agent"
         case .recordings: return "recordings.list"
+        case .voice: return "voice.list"
         case .status: return "status"
         case .today, .todayPart: return "today"
         case .todayMeetingPrep: return "today.meeting-prep"
@@ -304,6 +308,8 @@ struct HubStatus: Decodable, Equatable, Sendable {
     var brainDump: Bool? = nil
     /// The computer takes watch and phone recordings (PROTOCOL.md 24). Older computers omit it.
     var recordings: Bool? = nil
+    /// The computer takes the owner's voice from the phone (PROTOCOL.md 25). Older computers omit it.
+    var ownerVoice: Bool? = nil
     var briefSchedule: [ScheduledPhoneBrief]? = nil
 }
 

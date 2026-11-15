@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -132,7 +133,7 @@ func TestReceiveRecordingPartStoresPrivatelyAndClearsTheRelay(t *testing.T) {
 	if _, _, err := receiveMobileRecordingPart(context.Background(), store, uploads, recordingTestHub, "dev-b", foreign); !errors.Is(err, errMobileRecordingInvalid) {
 		t.Fatalf("foreign device: %v", err)
 	}
-	if views, _ := store.list("dev-b", nil, 50); len(views) != 0 {
+	if views, _ := store.list("dev-b", nil, 50, false); len(views) != 0 {
 		t.Fatalf("dev-b sees %+v", views)
 	}
 }
@@ -197,11 +198,12 @@ func TestTranscribedRecordingBecomesSpeechActivity(t *testing.T) {
 
 	oldT, oldS := mobileRecordingTranscriber, mobileRecordingSaver
 	t.Cleanup(func() { mobileRecordingTranscriber, mobileRecordingSaver = oldT, oldS })
-	mobileRecordingTranscriber = func(_ *App, path string) ([]asr.Segment, error) {
+	mobileRecordingTranscriber = func(_ *App, path string) ([]mobileRecordingSegment, error) {
 		if !strings.HasSuffix(path, "part-00.m4a") {
 			t.Fatalf("transcribed %s", path)
 		}
-		return []asr.Segment{{Start: 2 * time.Second, Text: " Call Sam about the launch "}, {Start: 9 * time.Second, Text: "  "}}, nil
+		return mobileRecordingSpeakerSegments([]asr.Segment{{Start: 2 * time.Second, Text: " Call Sam about the launch "}, {Start: 9 * time.Second, Text: "  "}},
+			func(asr.Segment) (*bool, []float32) { return nil, nil }), nil
 	}
 	var saved ActivitySessionRow
 	var savedEvents []activitymon.ActivityEvent
@@ -223,7 +225,7 @@ func TestTranscribedRecordingBecomesSpeechActivity(t *testing.T) {
 		evt.SpeechSource != "microphone" || evt.Timestamp != started.Add(2*time.Second).UnixMilli() {
 		t.Fatalf("event %+v", evt)
 	}
-	views, _ := store.list("dev-a", []string{recordingID}, 50)
+	views, _ := store.list("dev-a", []string{recordingID}, 50, false)
 	if len(views) != 1 || views[0].State != mobileRecordingTranscribed || views[0].Words != 5 {
 		t.Fatalf("views %+v", views)
 	}
@@ -242,12 +244,12 @@ func TestFailedTranscriptionIsMarkedAndNotRetriedInALoop(t *testing.T) {
 	oldT := mobileRecordingTranscriber
 	t.Cleanup(func() { mobileRecordingTranscriber = oldT })
 	calls := 0
-	mobileRecordingTranscriber = func(*App, string) ([]asr.Segment, error) {
+	mobileRecordingTranscriber = func(*App, string) ([]mobileRecordingSegment, error) {
 		calls++
 		return nil, errors.New("no engine")
 	}
 	(&App{}).transcribeMobileRecordings(context.Background(), store)
-	views, _ := store.list("dev-a", nil, 50)
+	views, _ := store.list("dev-a", nil, 50, false)
 	if calls != 1 || len(views) != 1 || views[0].State != mobileRecordingFailed {
 		t.Fatalf("calls=%d views=%+v", calls, views)
 	}
@@ -331,7 +333,7 @@ func TestOldTranscribedAudioIsRemovedAndFailedOnesRetried(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(store.dir, done)); !os.IsNotExist(err) {
 		t.Fatalf("old audio still on disk: %v", err)
 	}
-	if views, _ := store.list("dev-a", []string{done}, 50); len(views) != 1 || views[0].State != mobileRecordingTranscribed {
+	if views, _ := store.list("dev-a", []string{done}, 50, false); len(views) != 1 || views[0].State != mobileRecordingTranscribed {
 		t.Fatalf("the row must outlive its audio: %+v", views)
 	}
 }
@@ -378,5 +380,274 @@ func TestDeletedTranscriptTakesItsAudio(t *testing.T) {
 	}
 	if pending := store.pending(); len(pending) != 0 {
 		t.Fatalf("a removed transcript must not be transcribed again: %+v", pending)
+	}
+}
+
+// voiceOf is a made-up fingerprint: one axis per voice, so two segments by the
+// same voice are identical and different voices are orthogonal.
+func voiceOf(axis int) []float32 {
+	v := make([]float32, 8)
+	v[axis] = 1
+	return v
+}
+
+func TestRecordingSpeechIsSplitByWhoSpoke(t *testing.T) {
+	store := newMobileRecordingStore(t.TempDir())
+	uploads := &mapUploads{bodies: map[string][]byte{}}
+	recordingID := uuid.NewString()
+	started := time.Date(2026, 11, 14, 9, 0, 0, 0, time.UTC)
+	for part := 0; part < 2; part++ {
+		req := sealedRecordingPart(t, uploads, "dev-a", recordingID, part, part == 1, []byte("audio"), started.Add(time.Duration(part)*30*time.Second))
+		if _, _, err := receiveMobileRecordingPart(context.Background(), store, uploads, recordingTestHub, "dev-a", req); err != nil {
+			t.Fatal(err)
+		}
+	}
+	yes, no := true, false
+	oldT, oldS := mobileRecordingTranscriber, mobileRecordingSaver
+	t.Cleanup(func() { mobileRecordingTranscriber, mobileRecordingSaver = oldT, oldS })
+	mobileRecordingTranscriber = func(_ *App, path string) ([]mobileRecordingSegment, error) {
+		if strings.HasSuffix(path, "part-00.m4a") {
+			return []mobileRecordingSegment{
+				{Segment: asr.Segment{Start: 0, End: 4 * time.Second, Text: "I will send the deck"}, OwnerVerified: &yes, Embedding: voiceOf(0)},
+				{Segment: asr.Segment{Start: 5 * time.Second, End: 9 * time.Second, Text: "Thursday works for me"}, OwnerVerified: &no, Embedding: voiceOf(1)},
+				{Segment: asr.Segment{Start: 10 * time.Second, End: 10500 * time.Millisecond, Text: "ok"}},
+			}, nil
+		}
+		return []mobileRecordingSegment{
+			{Segment: asr.Segment{Start: 0, End: 3 * time.Second, Text: "Can legal see it first"}, OwnerVerified: &no, Embedding: voiceOf(2)},
+			{Segment: asr.Segment{Start: 4 * time.Second, End: 8 * time.Second, Text: "and Thursday is fine"}, OwnerVerified: &no, Embedding: voiceOf(1)},
+		}, nil
+	}
+	var saved []activitymon.ActivityEvent
+	mobileRecordingSaver = func(_ *App, _ ActivitySessionRow, events []activitymon.ActivityEvent) error {
+		saved = events
+		return nil
+	}
+	(&App{}).transcribeMobileRecordings(context.Background(), store)
+
+	var labels []string
+	for _, evt := range saved {
+		labels = append(labels, evt.SpeechSpeakerLabel)
+	}
+	// The owner is "you"; the second voice keeps its number in the next part;
+	// a stretch too short to judge carries no label.
+	want := []string{"you", "speaker_1", "", "speaker_2", "speaker_1"}
+	if strings.Join(labels, ",") != strings.Join(want, ",") {
+		t.Fatalf("labels %v want %v", labels, want)
+	}
+	if saved[0].SpeechSpeakerVerified == nil || !*saved[0].SpeechSpeakerVerified || saved[1].SpeechSpeakerVerified == nil || *saved[1].SpeechSpeakerVerified {
+		t.Fatal("the verdict the brief and memory read must be stored per segment")
+	}
+	views, _ := store.list("dev-a", []string{recordingID}, 50, false)
+	if len(views) != 1 || views[0].OwnerVoice != mobileOwnerVoiceLabelled {
+		t.Fatalf("views %+v", views)
+	}
+}
+
+func TestWithoutAnEnrolledVoiceNobodyIsYou(t *testing.T) {
+	events := []activitymon.ActivityEvent{
+		{Kind: activitymon.EventSpeech, SpeechText: "a", SpeechSpeakerEmbedding: voiceOf(0)},
+		{Kind: activitymon.EventSpeech, SpeechText: "b", SpeechSpeakerEmbedding: voiceOf(1)},
+		{Kind: activitymon.EventSpeech, SpeechText: "c", SpeechSpeakerEmbedding: voiceOf(0)},
+	}
+	if got := labelMobileRecordingSpeakers(events); got != mobileOwnerVoiceNotEnrolled {
+		t.Fatalf("status %q", got)
+	}
+	if events[0].SpeechSpeakerLabel != "speaker_1" || events[1].SpeechSpeakerLabel != "speaker_2" || events[2].SpeechSpeakerLabel != "speaker_1" {
+		t.Fatalf("labels %q %q %q", events[0].SpeechSpeakerLabel, events[1].SpeechSpeakerLabel, events[2].SpeechSpeakerLabel)
+	}
+	bare := []activitymon.ActivityEvent{{Kind: activitymon.EventSpeech, SpeechText: "a"}}
+	if got := labelMobileRecordingSpeakers(bare); got != mobileOwnerVoiceUnavailable || bare[0].SpeechSpeakerLabel != "" {
+		t.Fatalf("no voice model: status %q label %q", got, bare[0].SpeechSpeakerLabel)
+	}
+}
+
+func TestSpeakerVerdictSkipsShortAndEmptySegmentsAndCapsLongOnes(t *testing.T) {
+	var spans []time.Duration
+	out := mobileRecordingSpeakerSegments([]asr.Segment{
+		{Start: 0, End: 500 * time.Millisecond, Text: "hm"},
+		{Start: time.Second, End: 5 * time.Second, Text: "  "},
+		{Start: 6 * time.Second, End: 96 * time.Second, Text: "a long story"},
+	}, func(seg asr.Segment) (*bool, []float32) {
+		spans = append(spans, seg.End-seg.Start)
+		return nil, voiceOf(0)
+	})
+	if len(out) != 3 || len(spans) != 1 || spans[0] != mobileRecordingSpeakerMaxSpan {
+		t.Fatalf("spans %v out %d", spans, len(out))
+	}
+	if out[0].Embedding != nil || out[1].Embedding != nil || out[2].Embedding == nil {
+		t.Fatal("only the long spoken segment gets a fingerprint")
+	}
+}
+
+func TestReadWAVSpanReadsOnlyTheAskedStretch(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "a.wav")
+	// 3 seconds of 16 kHz mono: second 0 is silence, second 1 is +0.5, second 2 is -0.5.
+	data := make([]byte, 0, 3*16000*2)
+	for sec, v := range []int16{0, 16384, -16384} {
+		_ = sec
+		for i := 0; i < 16000; i++ {
+			data = append(data, byte(uint16(v)), byte(uint16(v)>>8))
+		}
+	}
+	header := []byte("RIFF\x00\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x80\x3e\x00\x00\x00\x7d\x00\x00\x02\x00\x10\x00data\x00\x00\x00\x00")
+	if err := os.WriteFile(path, append(header, data...), 0600); err != nil {
+		t.Fatal(err)
+	}
+	info, err := readMeetingWAVInfo(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	samples, err := readMeetingWAVSpan(path, info, time.Second, 2*time.Second)
+	if err != nil || len(samples) != 16000 || samples[0] != 0.5 || samples[15999] != 0.5 {
+		t.Fatalf("span: %d samples, first %v, err %v", len(samples), samples[:1], err)
+	}
+	if tail, err := readMeetingWAVSpan(path, info, 2500*time.Millisecond, 10*time.Second); err != nil || len(tail) != 8000 || tail[0] != -0.5 {
+		t.Fatalf("a span past the end is cut at the end: %d %v", len(tail), err)
+	}
+	if _, err := readMeetingWAVSpan(path, info, 5*time.Second, 6*time.Second); err == nil {
+		t.Fatal("a span wholly past the end must fail")
+	}
+}
+
+func TestRecordingContextIsCoarsenedAndBadValuesAreDropped(t *testing.T) {
+	got := sanitizeMobileRecordingContext(&MobileRecordingPartContext{
+		HeartRate: &MobileRecordingHeartRate{Avg: 103.6, Min: 71.2, Max: 131.4, Samples: 40},
+		Location:  &MobileRecordingLocation{Latitude: 37.759812, Longitude: -122.414923, AccuracyMeters: 1234.5, Place: " Mission District,\n San Francisco "},
+	})
+	if got == nil || got.HeartRate == nil || got.Location == nil {
+		t.Fatalf("context %+v", got)
+	}
+	if *got.HeartRate != (MobileRecordingHeartRate{Avg: 104, Min: 71, Max: 131, Samples: 40}) {
+		t.Fatalf("heart rate %+v", got.HeartRate)
+	}
+	if got.Location.Latitude != 37.76 || got.Location.Longitude != -122.41 || got.Location.AccuracyMeters != 1235 ||
+		got.Location.Place != "Mission District, San Francisco" {
+		t.Fatalf("location %+v", got.Location)
+	}
+
+	for name, bad := range map[string]*MobileRecordingPartContext{
+		"nil":                  nil,
+		"empty":                {},
+		"no samples":           {HeartRate: &MobileRecordingHeartRate{Avg: 80, Min: 70, Max: 90}},
+		"impossible rate":      {HeartRate: &MobileRecordingHeartRate{Avg: 400, Min: 70, Max: 500, Samples: 3}},
+		"min above avg":        {HeartRate: &MobileRecordingHeartRate{Avg: 80, Min: 95, Max: 99, Samples: 3}},
+		"latitude off the map": {Location: &MobileRecordingLocation{Latitude: 91, Longitude: 10}},
+		"null island":          {Location: &MobileRecordingLocation{}},
+	} {
+		if got := sanitizeMobileRecordingContext(bad); got != nil {
+			t.Fatalf("%s kept: %+v", name, got)
+		}
+	}
+	// A place that is really coordinates never becomes a name.
+	for _, place := range []string{"37.7598, -122.4149", "N 37 45 35", "   ", "\x00\x01"} {
+		if got := cleanMobileRecordingPlace(place); got != "" {
+			t.Fatalf("place %q kept as %q", place, got)
+		}
+	}
+	if got := cleanMobileRecordingPlace(strings.Repeat("Llanfair ", 30)); len([]rune(got)) > mobileRecordingMaxPlaceRunes {
+		t.Fatalf("place not shortened: %d", len([]rune(got)))
+	}
+}
+
+func TestRecordingContextReachesTheSessionAsWordsNeverCoordinates(t *testing.T) {
+	store := newMobileRecordingStore(t.TempDir())
+	uploads := &mapUploads{bodies: map[string][]byte{}}
+	recordingID := uuid.NewString()
+	started := time.Date(2026, 11, 14, 9, 0, 0, 0, time.UTC)
+	first := sealedRecordingPart(t, uploads, "dev-a", recordingID, 0, false, []byte("audio one"), started)
+	first.Context = &MobileRecordingPartContext{
+		HeartRate: &MobileRecordingHeartRate{Avg: 128, Min: 96, Max: 151, Samples: 60},
+		Location:  &MobileRecordingLocation{Latitude: 37.759812, Longitude: -122.414923, Place: "Mission District"},
+	}
+	second := sealedRecordingPart(t, uploads, "dev-a", recordingID, 1, true, []byte("audio two"), started.Add(15*time.Minute))
+	// The second part has a location without a name: nothing is said about where.
+	second.Context = &MobileRecordingPartContext{Location: &MobileRecordingLocation{Latitude: 37.80, Longitude: -122.27}}
+	for _, req := range []MobileRecordingRequest{first, second} {
+		if _, _, err := receiveMobileRecordingPart(context.Background(), store, uploads, recordingTestHub, "dev-a", req); err != nil {
+			t.Fatal(err)
+		}
+	}
+	index, err := os.ReadFile(filepath.Join(store.dir, "index.json"))
+	if err != nil || strings.Contains(string(index), "37.759812") || !strings.Contains(string(index), "37.76") {
+		t.Fatalf("the index must hold the coarse position only: %v %s", err, index)
+	}
+
+	oldT, oldS := mobileRecordingTranscriber, mobileRecordingSaver
+	t.Cleanup(func() { mobileRecordingTranscriber, mobileRecordingSaver = oldT, oldS })
+	mobileRecordingTranscriber = func(_ *App, path string) ([]mobileRecordingSegment, error) {
+		return []mobileRecordingSegment{{Segment: asr.Segment{Start: 3 * time.Second, Text: "keep going"}}}, nil
+	}
+	var savedEvents []activitymon.ActivityEvent
+	mobileRecordingSaver = func(_ *App, _ ActivitySessionRow, events []activitymon.ActivityEvent) error {
+		savedEvents = events
+		return nil
+	}
+	(&App{}).transcribeMobileRecordings(context.Background(), store)
+	if len(savedEvents) != 2 {
+		t.Fatalf("events %+v", savedEvents)
+	}
+	want := mobileRecordingAppName + " · at Mission District · heart rate high (avg 128, peak 151)"
+	if savedEvents[0].WindowTitle != want {
+		t.Fatalf("first part title %q, want %q", savedEvents[0].WindowTitle, want)
+	}
+	if savedEvents[1].WindowTitle != mobileRecordingAppName {
+		t.Fatalf("a part with no name and no heart rate must keep the plain title: %q", savedEvents[1].WindowTitle)
+	}
+	for _, evt := range savedEvents {
+		if strings.Contains(evt.WindowTitle, "37.") || strings.Contains(evt.WindowTitle, "122.") {
+			t.Fatalf("coordinates reached text: %q", evt.WindowTitle)
+		}
+	}
+}
+
+func TestRecordingContextIsDeletedWithTheAudio(t *testing.T) {
+	store := newMobileRecordingStore(t.TempDir())
+	uploads := &mapUploads{bodies: map[string][]byte{}}
+	withdrawn, old := uuid.NewString(), uuid.NewString()
+	for _, id := range []string{withdrawn, old} {
+		req := sealedRecordingPart(t, uploads, "dev-a", id, 0, true, []byte("audio"), time.Now())
+		req.Context = &MobileRecordingPartContext{
+			HeartRate: &MobileRecordingHeartRate{Avg: 88, Min: 70, Max: 99, Samples: 12},
+			Location:  &MobileRecordingLocation{Latitude: 48.86, Longitude: 2.35, Place: "Le Marais"},
+		}
+		if _, _, err := receiveMobileRecordingPart(context.Background(), store, uploads, recordingTestHub, "dev-a", req); err != nil {
+			t.Fatal(err)
+		}
+		store.setState(id, mobileRecordingTranscribed, "rec-"+id, 3, "")
+	}
+	if index, _ := os.ReadFile(filepath.Join(store.dir, "index.json")); !strings.Contains(string(index), "Le Marais") {
+		t.Fatalf("context not stored with the part: %s", index)
+	}
+
+	// The transcript is deleted: audio and context go.
+	store.forgetAudioOfSession("rec-" + withdrawn)
+	// The keep time of the other one passes: audio and context go.
+	store.now = func() time.Time { return time.Now().Add(mobileRecordingAudioKeep + time.Hour) }
+	store.retryFailedAndPrune()
+
+	index, err := os.ReadFile(filepath.Join(store.dir, "index.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, gone := range []string{"Le Marais", "48.86", "heartRate", "location"} {
+		if strings.Contains(string(index), gone) {
+			t.Fatalf("%q outlived the audio: %s", gone, index)
+		}
+	}
+}
+
+func TestStatusAdvertisesRecordingContextAndTheRequestTakesIt(t *testing.T) {
+	var req MobileRecordingRequest
+	body := `{"idempotencyKey":"k","recordingId":"r","part":0,"last":true,"upload":{"id":"u","key":"k","nonce":"n"},"sha256":"s","bytes":1,"mime":"audio/mp4","startedAt":"t","durationSeconds":1,"source":"watch","context":{"heartRate":{"avg":90,"min":80,"max":99,"samples":5},"location":{"latitude":1.5,"longitude":2.5,"accuracyMeters":900,"place":"Somewhere"}}}`
+	if err := mobileDecodeStrict([]byte(body), &req); err != nil {
+		t.Fatalf("the strict decoder refuses the context: %v", err)
+	}
+	if req.Context == nil || req.Context.HeartRate.Samples != 5 || req.Context.Location.Place != "Somewhere" {
+		t.Fatalf("context %+v", req.Context)
+	}
+	raw, _ := json.Marshal(mobileStatusView{RecordingContext: true})
+	if !strings.Contains(string(raw), `"recordingContext":true`) {
+		t.Fatalf("status %s", raw)
 	}
 }

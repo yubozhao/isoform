@@ -368,8 +368,11 @@ func TestMemoryReadsParseOnlyChangedNotesWithABackgroundWriter(t *testing.T) {
 	close(stop)
 	<-done
 	t.Logf("%d writes; worst read %s, at most %d files opened in one read", writes.Load(), worst, worstFiles)
-	// Folder listings plus the notes the writer touched; never every note.
-	if worstFiles > 100 {
+	// Folder listings plus the notes the writer touched; never every note. The
+	// count grows with the writes that land during a slow read (116 on a loaded
+	// machine), so the bound is a fraction of the folder, which a full re-read
+	// of 2,000 notes would pass many times over.
+	if worstFiles > fictionalMemoryNotes/4 {
 		t.Fatalf("a read during background writes opened %d files; want only the changed notes", worstFiles)
 	}
 	// The writer's last words are what is read.

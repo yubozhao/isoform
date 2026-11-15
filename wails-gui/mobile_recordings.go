@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +24,7 @@ import (
 	"wails-gui/internal/asr"
 	"wails-gui/internal/platform/activitymon"
 	"wails-gui/internal/platform/cmdutil"
+	"wails-gui/internal/speakerid"
 )
 
 // Recordings from the watch and the phone (PROTOCOL.md section 24). The phone
@@ -58,6 +60,9 @@ const (
 	mobileRecordingTranscribing = "transcribing"
 	mobileRecordingTranscribed  = "transcribed"
 	mobileRecordingFailed       = "failed"
+	// mobileRecordingDeleted: the user deleted the recording (24.5). The row
+	// stays so a late part is never imported again; nothing else is kept.
+	mobileRecordingDeleted = "deleted"
 )
 
 var (
@@ -125,6 +130,9 @@ type MobileRecordingRequest struct {
 	Source          string                  `json:"source"`
 	Title           string                  `json:"title,omitempty"`
 	Device          *MobileRecordingContext `json:"device,omitempty"`
+	// Context is the wearer's heart rate and coarse location during this part
+	// (24.4). Optional; sent only to a computer that advertises it.
+	Context *MobileRecordingPartContext `json:"context,omitempty"`
 }
 
 // MobileRecordingUpload names the sealed part on the relay and its key.
@@ -149,6 +157,8 @@ type mobileRecordingPart struct {
 	SHA256          string  `json:"sha256"`
 	StartedAt       string  `json:"startedAt"`
 	DurationSeconds float64 `json:"durationSeconds"`
+	// Context is removed together with the audio.
+	Context *MobileRecordingPartContext `json:"context,omitempty"`
 }
 
 // mobileRecording is one recording in the index.
@@ -164,6 +174,8 @@ type mobileRecording struct {
 	Error     string                `json:"error,omitempty"`
 	SessionID string                `json:"sessionId,omitempty"`
 	Words     int                   `json:"words"`
+	// OwnerVoice says how the transcript's speech was labelled by speaker.
+	OwnerVoice string `json:"ownerVoice,omitempty"`
 	// AudioRemoved is set once the audio was deleted after its keep time.
 	AudioRemoved bool   `json:"audioRemoved,omitempty"`
 	ReceivedAt   string `json:"receivedAt"`
@@ -179,8 +191,11 @@ type MobileRecordingView struct {
 	DurationSeconds float64 `json:"durationSeconds"`
 	StartedAt       string  `json:"startedAt"`
 	Words           int     `json:"words"`
-	ReceivedAt      string  `json:"receivedAt"`
-	UpdatedAt       string  `json:"updatedAt"`
+	// OwnerVoice is "labelled", "not_enrolled" or "unavailable" once the
+	// recording is transcribed and something was said (24.3).
+	OwnerVoice string `json:"ownerVoice,omitempty"`
+	ReceivedAt string `json:"receivedAt"`
+	UpdatedAt  string `json:"updatedAt"`
 }
 
 // complete reports whether the last part and every part before it are stored.
@@ -189,7 +204,7 @@ func (r *mobileRecording) complete() bool { return r.Parts > 0 && len(r.Received
 
 func (r *mobileRecording) view() MobileRecordingView {
 	view := MobileRecordingView{ID: r.ID, State: r.State, PartsReceived: len(r.Received), Parts: r.Parts,
-		Words: r.Words, ReceivedAt: r.ReceivedAt, UpdatedAt: r.UpdatedAt}
+		Words: r.Words, OwnerVoice: r.OwnerVoice, ReceivedAt: r.ReceivedAt, UpdatedAt: r.UpdatedAt}
 	for i, part := range r.Received {
 		view.DurationSeconds += part.DurationSeconds
 		if i == 0 || part.StartedAt < view.StartedAt {
@@ -271,6 +286,10 @@ func (s *mobileRecordingStore) has(deviceID, recordingID string, part int) (Mobi
 	if rec == nil || rec.DeviceID != deviceID {
 		return MobileRecordingView{}, false, nil
 	}
+	if rec.State == mobileRecordingDeleted {
+		// A part of a deleted recording is never fetched or stored again.
+		return rec.view(), true, nil
+	}
 	for _, got := range rec.Received {
 		if got.Part == part {
 			return rec.view(), true, nil
@@ -333,7 +352,8 @@ func (s *mobileRecordingStore) addPart(deviceID string, req MobileRecordingReque
 		return MobileRecordingView{}, false, err
 	}
 	rec.Received = append(rec.Received, mobileRecordingPart{Part: req.Part, UploadID: req.Upload.ID, File: name,
-		Bytes: int64(len(plaintext)), SHA256: req.SHA256, StartedAt: req.StartedAt, DurationSeconds: req.DurationSeconds})
+		Bytes: int64(len(plaintext)), SHA256: req.SHA256, StartedAt: req.StartedAt, DurationSeconds: req.DurationSeconds,
+		Context: sanitizeMobileRecordingContext(req.Context)})
 	sort.Slice(rec.Received, func(i, j int) bool { return rec.Received[i].Part < rec.Received[j].Part })
 	rec.UpdatedAt = now
 	if err := s.saveLocked(); err != nil {
@@ -342,16 +362,20 @@ func (s *mobileRecordingStore) addPart(deviceID string, req MobileRecordingReque
 	return rec.view(), rec.complete(), nil
 }
 
-// setState moves a recording to a state and saves.
-func (s *mobileRecordingStore) setState(id, state, sessionID string, words int, failure string) {
+// setState moves a recording to a state and saves. It reports false, and
+// changes nothing, when the recording was deleted meanwhile.
+func (s *mobileRecordingStore) setState(id, state, sessionID string, words int, failure string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.loadLocked(); err != nil {
-		return
+		return true
 	}
 	rec := s.recordings[id]
 	if rec == nil {
-		return
+		return true
+	}
+	if rec.State == mobileRecordingDeleted {
+		return false
 	}
 	rec.State, rec.Error, rec.UpdatedAt = state, failure, mobileTimestamp(s.now())
 	if sessionID != "" {
@@ -362,6 +386,22 @@ func (s *mobileRecordingStore) setState(id, state, sessionID string, words int, 
 	}
 	if err := s.saveLocked(); err != nil {
 		log.Printf("[recordings] index save failed: %v", err)
+	}
+	return true
+}
+
+// setOwnerVoice records how a recording's speech was labelled by speaker.
+func (s *mobileRecordingStore) setOwnerVoice(id, ownerVoice string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.loadLocked(); err != nil {
+		return
+	}
+	if rec := s.recordings[id]; rec != nil && rec.OwnerVoice != ownerVoice {
+		rec.OwnerVoice = ownerVoice
+		if err := s.saveLocked(); err != nil {
+			log.Printf("[recordings] index save failed: %v", err)
+		}
 	}
 }
 
@@ -419,7 +459,8 @@ func (r *mobileRecording) closeIfAbandoned(now time.Time) bool {
 }
 
 // list returns one device's recordings, newest first, or the named ones.
-func (s *mobileRecordingStore) list(deviceID string, ids []string, limit int) ([]MobileRecordingView, error) {
+// Deleted recordings are listed only for a phone that asked for them (24.5).
+func (s *mobileRecordingStore) list(deviceID string, ids []string, limit int, withDeleted bool) ([]MobileRecordingView, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.loadLocked(); err != nil {
@@ -432,6 +473,9 @@ func (s *mobileRecordingStore) list(deviceID string, ids []string, limit int) ([
 	var out []MobileRecordingView
 	for _, rec := range s.recordings {
 		if rec.DeviceID != deviceID || (len(wanted) > 0 && !wanted[rec.ID]) {
+			continue
+		}
+		if rec.State == mobileRecordingDeleted && !withDeleted {
 			continue
 		}
 		out = append(out, rec.view())
@@ -473,6 +517,7 @@ func (s *mobileRecordingStore) retryFailedAndPrune() {
 				continue
 			}
 			rec.AudioRemoved = true
+			rec.dropContext()
 			changed = true
 		}
 	}
@@ -508,6 +553,7 @@ func (s *mobileRecordingStore) forgetAudioOfSession(sessionID string) {
 		return
 	}
 	rec.AudioRemoved = true
+	rec.dropContext()
 	if err := s.saveLocked(); err != nil {
 		log.Printf("[recordings] index save failed: %v", err)
 	}
@@ -677,7 +723,7 @@ func (bridge *mobileBridge) serveRecordingList(w http.ResponseWriter, r *http.Re
 		mobileJSON(w, http.StatusServiceUnavailable, nil, errMobileStoreUnavailable.Error())
 		return
 	}
-	views, err := store.list(device.DeviceID, ids, mobileRecordingListMax)
+	views, err := store.list(device.DeviceID, ids, mobileRecordingListMax, r.URL.Query().Get("deleted") == "1")
 	if err != nil {
 		mobileJSON(w, http.StatusServiceUnavailable, nil, errMobileStoreUnavailable.Error())
 		return
@@ -803,7 +849,7 @@ var mobileRecordingFFmpeg = func(ffmpegPath, in, out string) ([]byte, error) {
 // mobileRecordingTranscriber turns one part file into timed speech segments.
 // The default decodes with the bundled ffmpeg and runs the after-call engine;
 // tests replace it.
-var mobileRecordingTranscriber = func(a *App, path string) ([]asr.Segment, error) {
+var mobileRecordingTranscriber = func(a *App, path string) ([]mobileRecordingSegment, error) {
 	wavPath, cleanup, err := decodeMobileRecordingToWAV(installedFFmpegPath(), path)
 	if err != nil {
 		return nil, err
@@ -823,7 +869,17 @@ var mobileRecordingTranscriber = func(a *App, path string) ([]asr.Segment, error
 		return nil, err
 	}
 	defer reader.Close()
-	return transcriber.TranscribeLongForm(reader, string(backgroundListeningSourceMicrophone))
+	segments, err := transcriber.TranscribeLongForm(reader, string(backgroundListeningSourceMicrophone))
+	if err != nil {
+		return nil, err
+	}
+	return mobileRecordingSpeakerSegments(segments, func(seg asr.Segment) (*bool, []float32) {
+		samples, err := readMeetingWAVSpan(wavPath, info, seg.Start, seg.End)
+		if err != nil {
+			return nil, nil
+		}
+		return a.verifySpeakerOnSamples(samples)
+	}), nil
 }
 
 // decodeMobileRecordingToWAV decodes a part to a 16 kHz mono WAV in a
@@ -922,7 +978,10 @@ func (a *App) transcribeMobileRecordings(ctx context.Context, store *mobileRecor
 			continue
 		}
 		log.Printf("[recordings] %s transcribed: %d words", rec.ID, words)
-		store.setState(rec.ID, mobileRecordingTranscribed, sessionID, words, "")
+		if !store.setState(rec.ID, mobileRecordingTranscribed, sessionID, words, "") && sessionID != "" {
+			// Deleted while it was transcribed: the transcript goes too.
+			a.deleteMobileRecordingSession(sessionID)
+		}
 	}
 }
 
@@ -954,6 +1013,8 @@ func (a *App) transcribeMobileRecording(store *mobileRecordingStore, rec mobileR
 		}
 		events = append(events, mobileRecordingSpeechEvents(segments, partStart, appName, bundleID)...)
 	}
+	// One pass over the whole recording, so a voice keeps its number across parts.
+	ownerVoice := labelMobileRecordingSpeakers(events)
 	for _, evt := range events {
 		words += len(strings.Fields(evt.SpeechText))
 	}
@@ -964,6 +1025,7 @@ func (a *App) transcribeMobileRecording(store *mobileRecordingStore, rec mobileR
 		// Nothing was said: the recording is done, with no session.
 		return "", 0, nil
 	}
+	applyMobileRecordingContext(events, rec.Received, appName)
 	appNames, _ := json.Marshal([]string{appName})
 	session := ActivitySessionRow{
 		ID:           "rec-" + rec.ID,
@@ -978,12 +1040,13 @@ func (a *App) transcribeMobileRecording(store *mobileRecordingStore, rec mobileR
 	if err := mobileRecordingSaver(a, session, events); err != nil {
 		return "", 0, err
 	}
+	store.setOwnerVoice(rec.ID, ownerVoice)
 	return session.ID, words, nil
 }
 
 // mobileRecordingSpeechEvents turns segments into speech events at their
 // wall-clock times. Empty segments are dropped.
-func mobileRecordingSpeechEvents(segments []asr.Segment, partStart time.Time, appName, bundleID string) []activitymon.ActivityEvent {
+func mobileRecordingSpeechEvents(segments []mobileRecordingSegment, partStart time.Time, appName, bundleID string) []activitymon.ActivityEvent {
 	events := make([]activitymon.ActivityEvent, 0, len(segments))
 	for _, seg := range segments {
 		text := strings.TrimSpace(seg.Text)
@@ -998,7 +1061,145 @@ func mobileRecordingSpeechEvents(segments []asr.Segment, partStart time.Time, ap
 			WindowTitle:  appName,
 			SpeechText:   text,
 			SpeechSource: string(backgroundListeningSourceMicrophone),
+			// Who spoke: the verdict against the owner's enrolled voice and
+			// the fingerprint the labels are grouped by.
+			SpeechSpeakerVerified:  seg.OwnerVerified,
+			SpeechSpeakerEmbedding: seg.Embedding,
 		})
 	}
 	return events
+}
+
+// mobileRecordingSegment is one stretch of speech and who spoke it.
+// OwnerVerified is nil when no verdict could be made: no enrolled voice, no
+// voice model, or a stretch shorter than a second.
+type mobileRecordingSegment struct {
+	asr.Segment
+	OwnerVerified *bool
+	Embedding     []float32
+}
+
+// mobileRecordingSpeakerMaxSpan bounds how much of one segment is read for
+// its voice fingerprint; a longer monologue is judged by its opening.
+const mobileRecordingSpeakerMaxSpan = 30 * time.Second
+
+// mobileRecordingSpeakerSegments attaches a speaker verdict to each segment
+// that has words. verify gets the segment and answers as verifySpeakerOnWAV
+// does.
+func mobileRecordingSpeakerSegments(segments []asr.Segment, verify func(asr.Segment) (*bool, []float32)) []mobileRecordingSegment {
+	out := make([]mobileRecordingSegment, 0, len(segments))
+	for _, seg := range segments {
+		item := mobileRecordingSegment{Segment: seg}
+		if strings.TrimSpace(seg.Text) != "" && seg.End-seg.Start >= time.Second {
+			span := seg
+			if span.End-span.Start > mobileRecordingSpeakerMaxSpan {
+				span.End = span.Start + mobileRecordingSpeakerMaxSpan
+			}
+			item.OwnerVerified, item.Embedding = verify(span)
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
+// readMeetingWAVSpan reads the first channel of a 16 kHz PCM WAV between two
+// offsets, without loading the rest of the file.
+func readMeetingWAVSpan(path string, info meetingWAVInfo, start, end time.Duration) ([]float32, error) {
+	frame := int64(2 * info.channels)
+	first := int64(start.Seconds()*meetingAudioSampleRate) * frame
+	last := int64(end.Seconds()*meetingAudioSampleRate) * frame
+	if last > info.dataSize {
+		last = info.dataSize / frame * frame
+	}
+	if first < 0 || first >= last {
+		return nil, errMobileRecordingInvalid
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	raw := make([]byte, last-first)
+	if _, err := f.ReadAt(raw, info.dataOffset+first); err != nil && !errors.Is(err, io.EOF) {
+		return nil, err
+	}
+	samples := make([]float32, len(raw)/int(frame))
+	const scale = float32(1.0 / 32768.0)
+	for i := range samples {
+		at := i * int(frame)
+		samples[i] = float32(int16(uint16(raw[at])|uint16(raw[at+1])<<8)) * scale
+	}
+	return samples, nil
+}
+
+// Speaker labels a watch recording's speech carries (ActivityEvent.SpeechSpeakerLabel).
+const (
+	mobileRecordingSpeakerOwner  = "you"
+	mobileRecordingSpeakerPrefix = "speaker_"
+)
+
+// How a recording's speech was labelled, for the phone (24.3 `ownerVoice`).
+const (
+	// mobileOwnerVoiceLabelled: the owner has an enrolled voice and it was checked.
+	mobileOwnerVoiceLabelled = "labelled"
+	// mobileOwnerVoiceNotEnrolled: voices were told apart but nobody is "you",
+	// because the owner has not added their voice.
+	mobileOwnerVoiceNotEnrolled = "not_enrolled"
+	// mobileOwnerVoiceUnavailable: no voice model on this computer, or nothing
+	// long enough to tell; the speech carries no speaker labels.
+	mobileOwnerVoiceUnavailable = "unavailable"
+)
+
+// labelMobileRecordingSpeakers writes SpeechSpeakerLabel on every event that
+// has a voice fingerprint and reports how the recording was labelled. The
+// owner's verified stretches are "you"; every other voice gets a number in the
+// order it is first heard, grouped by the same greedy rule and threshold as
+// the Activity page's speaker chips (ListSessionSpeakerClusters). Without an
+// enrollment no stretch is verified, so every voice is a numbered speaker.
+func labelMobileRecordingSpeakers(events []activitymon.ActivityEvent) string {
+	type cluster struct {
+		centroid []float32
+		count    int
+	}
+	var others []*cluster
+	judged, fingerprinted := false, false
+	for i := range events {
+		evt := &events[i]
+		if evt.Kind != activitymon.EventSpeech || len(evt.SpeechSpeakerEmbedding) == 0 {
+			continue
+		}
+		fingerprinted = true
+		if evt.SpeechSpeakerVerified != nil {
+			judged = true
+			if *evt.SpeechSpeakerVerified {
+				evt.SpeechSpeakerLabel = mobileRecordingSpeakerOwner
+				continue
+			}
+		}
+		best, bestSim := -1, -2.0
+		for j, c := range others {
+			if sim := speakerid.CosineSimilarity(evt.SpeechSpeakerEmbedding, c.centroid); sim > bestSim {
+				best, bestSim = j, sim
+			}
+		}
+		if best < 0 || bestSim < speakerClusterMergeThreshold {
+			others = append(others, &cluster{centroid: append([]float32(nil), evt.SpeechSpeakerEmbedding...)})
+			best = len(others) - 1
+		}
+		target := others[best]
+		target.count++
+		n := float32(target.count)
+		for k := range target.centroid {
+			target.centroid[k] = (target.centroid[k]*(n-1) + evt.SpeechSpeakerEmbedding[k]) / n
+		}
+		evt.SpeechSpeakerLabel = mobileRecordingSpeakerPrefix + strconv.Itoa(best+1)
+	}
+	switch {
+	case judged:
+		return mobileOwnerVoiceLabelled
+	case fingerprinted:
+		return mobileOwnerVoiceNotEnrolled
+	default:
+		return mobileOwnerVoiceUnavailable
+	}
 }

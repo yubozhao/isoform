@@ -148,6 +148,14 @@ type ActivityEvent struct {
 	// detection alone couldn't cover.
 	SpeechSpeakerVerified *bool `json:"speechSpeakerVerified,omitempty"`
 
+	// SpeechSpeakerLabel names who spoke within one recording that was split
+	// by speaker (a recording from the watch): "you" for the enrolled owner,
+	// "speaker_1", "speaker_2" and so on for other voices in the order they
+	// were first heard. Empty when the speech was not split, the stretch was
+	// too short to tell, or no voice model is installed. Without an
+	// enrollment nobody is "you": every voice is a numbered speaker.
+	SpeechSpeakerLabel string `json:"speechSpeakerLabel,omitempty"`
+
 	// Transient fingerprint from microphone verification (~192-512 floats).
 	// Never serialize biometric bytes through general Activity DTOs or event
 	// persistence. Named call signatures have their own local-only table and

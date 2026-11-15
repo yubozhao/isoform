@@ -13,6 +13,7 @@ import {
     ChevronRight,
     AlertTriangle,
     Film,
+    Watch,
     Play,
     Pause,
     Maximize2,
@@ -69,6 +70,7 @@ import type { TodayChatContextRef } from '@/lib/today-chat-navigation';
 import {
     GetActivitySessions,
     GetActivitySessionDetail,
+    GetWatchRecordings,
     GetActivityOCRMatches,
     GetSnapshotOCRText,
     GetOCRHighlightBoxes,
@@ -95,6 +97,7 @@ import {
 import { cn } from '../lib/utils';
 import { hostBridgeMediaURL, setHostBridgeMediaToken, snapshotImageURL } from '../lib/host-bridge-media';
 import { ActivityMeetingNotes } from './activity-meeting-notes';
+import { ActivityWatchRecordings } from './activity-watch-recordings';
 import { MarkdownContent } from '@/components/markdown-content';
 import { CopyButton } from '@/components/copy-button';
 import { isWindows } from '@/lib/platform';
@@ -103,7 +106,7 @@ import type { main, activitymon } from '../../wailsjs/go/models';
 
 /** The sections the Activity page's left panel offers. The first three are
  *  the Day view's own sections; 'timeline' is the Screen timeline. */
-export type ActivitySectionId = 'yourDay' | 'workedOn' | 'learned' | 'timeline';
+export type ActivitySectionId = 'yourDay' | 'workedOn' | 'learned' | 'timeline' | 'watch';
 
 interface ActivityPageProps {
     /** Optional close handler (Escape ladder's last rung). The page is a main
@@ -2021,7 +2024,15 @@ export function ActivityPage({ onClose, initialSessionId, initialDate, noticedFo
     // Screen timeline section shows the snapshot view.
     const isTimeline = section === 'timeline';
     // The Day view's section; unreachable while the timeline shows.
-    const daySection: ActivityDaySection = isTimeline ? 'yourDay' : section;
+    // 'watch' is From your watch: the recordings the watch sent. Its door
+    // shows only once one has arrived, so a computer without a watch looks
+    // as it did.
+    const isWatch = section === 'watch';
+    const [watchRecordingCount, setWatchRecordingCount] = useState(0);
+    useEffect(() => {
+        GetWatchRecordings().then((list) => setWatchRecordingCount((list ?? []).length)).catch(() => {});
+    }, []);
+    const daySection: ActivityDaySection = isTimeline || isWatch ? 'yourDay' : section;
     // The day the Day and Week views show. The section panel's prev/next
     // buttons and date picker drive it; useCalendarData keeps the month
     // heatmap (day dots) and the day's learned entries and scheduled runs.
@@ -3594,7 +3605,7 @@ export function ActivityPage({ onClose, initialSessionId, initialDate, noticedFo
                     picked section shows on the right; the pick lives in the
                     parent so it is remembered for the app session. ── */}
                 <nav aria-label={t('sections.label') as string} className="w-[220px] shrink-0 flex flex-col border-r border-border px-3 py-3 gap-4">
-                    {!isTimeline && (
+                    {!isTimeline && !isWatch && (
                         <div className="flex flex-col gap-3">
                             {/* Date navigation — the Screen timeline has its own
                                 time filter in its sidebar, so it hides this. */}
@@ -3730,6 +3741,22 @@ export function ActivityPage({ onClose, initialSessionId, initialDate, noticedFo
                             <Film className="size-3.5 shrink-0" />
                             <span className="flex-1 min-w-0 text-left truncate">{t('viewMode.timeline')}</span>
                         </button>
+                        {(watchRecordingCount > 0 || isWatch) && (
+                            <button
+                                type="button"
+                                data-activity-section="watch"
+                                aria-current={isWatch ? 'page' : undefined}
+                                onClick={() => onSectionChange('watch')}
+                                className={`flex items-center gap-2 w-full px-3 py-[5px] text-[13px] rounded-md transition-colors duration-[var(--motion-duration-fast)] ease-[var(--motion-ease-out)] cursor-pointer ${
+                                    isWatch
+                                        ? 'bg-surface-active text-ink'
+                                        : 'text-muted hover:bg-surface-hover'
+                                }`}
+                            >
+                                <Watch className="size-3.5 shrink-0" />
+                                <span className="flex-1 min-w-0 text-left truncate">{t('watch.nav')}</span>
+                            </button>
+                        )}
                     </div>
                 </nav>
 
@@ -3989,7 +4016,13 @@ export function ActivityPage({ onClose, initialSessionId, initialDate, noticedFo
                 {/* ── Right content area ── */}
                 <div className="flex-1 min-w-0 flex flex-col">
                     <ActivityOpenChatContext.Provider value={onOpenChat}>
-                    {!isTimeline && scope === 'day' ? (
+                    {isWatch ? (
+                        <ActivityWatchRecordings
+                            bridgePort={bridgePort}
+                            onOpenSession={openSessionInTimeline}
+                            onCount={setWatchRecordingCount}
+                        />
+                    ) : !isTimeline && scope === 'day' ? (
                         <ActivityDayView
                             date={selectedDate}
                             noticedFocus={noticedFocus}
@@ -4029,7 +4062,7 @@ export function ActivityPage({ onClose, initialSessionId, initialDate, noticedFo
                         />
                     ) : null}
                     </ActivityOpenChatContext.Provider>
-                    {!isTimeline && (scope === 'day' || scope === 'week') ? null : (
+                    {isWatch || (!isTimeline && (scope === 'day' || scope === 'week')) ? null : (
                     <>
                     {sessionsFailed && (
                         <ActivityInlineNotice notice={{ tone: 'error', text: t('timeline.sessionsFailed'), onAction: () => refreshSessionsRef.current() }} className="px-8 pt-4" />

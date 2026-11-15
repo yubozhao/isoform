@@ -34,8 +34,14 @@ type mobileStatusView struct {
 	BrainDump bool `json:"brainDump,omitempty"`
 	// Recordings is true when this computer takes watch and phone recordings (24).
 	Recordings bool `json:"recordings,omitempty"`
-	FirstRead  bool `json:"firstRead,omitempty"`
-	Holds      bool `json:"holds,omitempty"`
+	// OwnerVoice is true when this computer takes the owner's voice from the phone (25).
+	OwnerVoice bool `json:"ownerVoice,omitempty"`
+	// RecordingContext is true when POST /recordings takes the optional heart rate and location of a part (24.4).
+	RecordingContext bool `json:"recordingContext,omitempty"`
+	// RecordingDetail is true when this computer serves a recording's transcript and its delete (24.5).
+	RecordingDetail bool `json:"recordingDetail,omitempty"`
+	FirstRead       bool `json:"firstRead,omitempty"`
+	Holds           bool `json:"holds,omitempty"`
 	// Sees is true when this Mac serves What Isoform sees (20.7e).
 	Sees bool `json:"sees,omitempty"`
 	// TaskThreads is true when this Mac serves task threads (20.7b): thread
@@ -236,6 +242,21 @@ func (bridge *mobileBridge) handleAuthorized(w http.ResponseWriter, r *http.Requ
 			return
 		}
 		bridge.serveTaskListForDevice(w, device)
+	case "GET /voice":
+		if !mobileRequireScope(w, device, mobileScopeMemoryFix) {
+			return
+		}
+		bridge.serveVoice(w, r)
+	case "POST /voice/samples":
+		if !mobileRequireScope(w, device, mobileScopeMemoryFix) || !mobileRequireScope(w, device, mobileScopeChatWrite) {
+			return
+		}
+		bridge.serveVoiceSample(w, r, device)
+	case "POST /voice/forget":
+		if !mobileRequireScope(w, device, mobileScopeMemoryFix) {
+			return
+		}
+		bridge.serveVoiceForget(w, r, device)
 	case "POST /recordings":
 		if !mobileRequireScope(w, device, mobileScopeChatWrite) {
 			return
@@ -246,6 +267,16 @@ func (bridge *mobileBridge) handleAuthorized(w http.ResponseWriter, r *http.Requ
 			return
 		}
 		bridge.serveRecordingList(w, r, device)
+	case "GET /recordings/transcript":
+		if !mobileRequireScope(w, device, mobileScopeChatWrite) || !mobileRequireScope(w, device, mobileScopeBriefRead) {
+			return
+		}
+		bridge.serveRecordingTranscript(w, r, device)
+	case "POST /recordings/delete":
+		if !mobileRequireScope(w, device, mobileScopeChatWrite) {
+			return
+		}
+		bridge.serveRecordingDelete(w, r, device)
 	case "POST /tasks/parse":
 		if !mobileRequireScope(w, device, mobileScopeHandoff) {
 			return
@@ -578,7 +609,7 @@ func mobileRequireScope(w http.ResponseWriter, device mobileDeviceRecord, scope 
 
 func (bridge *mobileBridge) serveStatus(w http.ResponseWriter) {
 	view := mobileStatusView{
-		HubName: mobileHubName(), AppVersion: Version, ProtocolVersion: 1, Topics: true, TaskThreads: true, BrainDump: true, Recordings: true, Sees: true, FirstRead: true, TodayMeetingPrep: true, ChatMainSend: true, NotificationTest: true, BriefRelevanceFeedback: true, BriefAsk: true, BriefWeekDecline: true,
+		HubName: mobileHubName(), AppVersion: Version, ProtocolVersion: 1, Topics: true, TaskThreads: true, BrainDump: true, Recordings: true, OwnerVoice: true, RecordingContext: true, RecordingDetail: true, Sees: true, FirstRead: true, TodayMeetingPrep: true, ChatMainSend: true, NotificationTest: true, BriefRelevanceFeedback: true, BriefAsk: true, BriefWeekDecline: true,
 		KeepAwake: bridge.keepAwakeSetting(), InstantPush: mobileInstantPushConfigured(),
 		BriefSchedule: []mobileBriefSlotTime{},
 	}

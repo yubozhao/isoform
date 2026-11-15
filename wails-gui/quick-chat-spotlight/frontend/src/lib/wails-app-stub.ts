@@ -1116,3 +1116,6 @@ export const DiscardWorkProfileDraft = makeNoop("DiscardWorkProfileDraft");
 export const PreviewWorkProfileUpload = makeNoop("PreviewWorkProfileUpload");
 export const ApproveWorkProfile = makeNoop("ApproveWorkProfile");
 export const BuildWorkProfileDraft = makeNoop("BuildWorkProfileDraft");
+export const GetWatchRecordings = makeNoop("GetWatchRecordings");
+export const GetWatchRecordingTranscript = makeNoop("GetWatchRecordingTranscript");
+export const DeleteWatchRecording = makeNoop("DeleteWatchRecording");

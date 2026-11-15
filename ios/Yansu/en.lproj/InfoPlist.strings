@@ -1,2 +1,2 @@
-"NSMicrophoneUsageDescription" = "Isoform uses the microphone when you hold to talk.";
+"NSMicrophoneUsageDescription" = "Isoform uses the microphone when you hold to talk or record a sample of your voice.";
 "NSSpeechRecognitionUsageDescription" = "Isoform turns what you say into text when you hold to talk.";

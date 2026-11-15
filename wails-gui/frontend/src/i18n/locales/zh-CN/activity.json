@@ -614,5 +614,42 @@
     },
     "privacy": {
         "privateItem": "一项私密内容"
+    },
+    "watch": {
+        "nav": "来自你的手表",
+        "title": "来自你的手表",
+        "subtitle": "手表上的录音，与你的其他录音一起保存在这台电脑上。",
+        "empty": "手机把手表录音发送过来后，会显示在这里。",
+        "loadFailed": "无法加载录音。",
+        "untimed": "录音",
+        "sourceWatch": "手表",
+        "sourcePhone": "手机",
+        "meta": "{{duration}} · {{state}}",
+        "state": {
+            "receiving": "正在从手机传来",
+            "onComputer": "在你的电脑上",
+            "transcribed": "已转写",
+            "nothingSaid": "没有说话内容",
+            "failed": "无法转写。Isoform 下次启动时会重试。"
+        },
+        "part": "第 {{index}} 段 · {{time}} · {{duration}}",
+        "place": "在{{place}}",
+        "heartRate": {
+            "calm": "心率平稳（平均 {{avg}}，最高 {{peak}}）",
+            "raised": "心率偏高（平均 {{avg}}，最高 {{peak}}）",
+            "high": "心率很高（平均 {{avg}}，最高 {{peak}}）"
+        },
+        "audioLabel": "录音，第 {{index}} 段",
+        "audioGone": "音频已不再保留，文字仍在。",
+        "audioUnavailable": "无法播放音频。",
+        "heard": "听到的内容",
+        "transcriptEmpty": "没有可显示的内容。文字为私密内容，或观察已暂停。",
+        "voiceNotEnrolled": "在设置中添加你的声音，Isoform 就能分辨哪些话是你说的。",
+        "openTimeline": "在屏幕时间线中显示",
+        "delete": "全部删除",
+        "deleteTitle": "全部删除？",
+        "deleteBody": "这段录音以及 Isoform 仅从中了解到的内容，会从你的手表、手机和电脑上删除。",
+        "deleteConfirm": "删除",
+        "deleteFailed": "未能删除，请重试。"
     }
 }

@@ -265,8 +265,15 @@ final class WatchRecordingForwarderTests: XCTestCase {
         let id = WatchRecordingWire.newRecordingID()
         let info = try await deliver(inbox, forwarder, id: id, part: 0, last: true, audio: "audio")
 
-        await hub.set(postError: HubRequestError.noAnswer)
+        // The relay cannot be reached: nothing is uploaded, the part stays.
+        uploads.error = RelayClientError.offline
         var outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .waiting)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: inbox.audioURL(info).path))
+
+        uploads.error = nil
+        await hub.set(postError: HubRequestError.noAnswer)
+        outcome = await forwarder.drain()
         XCTAssertEqual(outcome, .waiting)
         XCTAssertTrue(FileManager.default.fileExists(atPath: inbox.audioURL(info).path))
 
@@ -276,15 +283,13 @@ final class WatchRecordingForwarderTests: XCTestCase {
         XCTAssertEqual(outcome, .waiting)
         XCTAssertEqual(inbox.pending().count, 1)
 
+        // The copy already on the relay is reused, so the relay being offline now does not matter.
         uploads.error = RelayClientError.offline
         await hub.set(postError: nil)
         outcome = await forwarder.drain()
-        XCTAssertEqual(outcome, .waiting)
-
-        uploads.error = nil
-        outcome = await forwarder.drain()
         XCTAssertEqual(outcome, .drained)
         XCTAssertTrue(inbox.pending().isEmpty)
+        XCTAssertEqual(uploads.count, 1)
     }
 
     func testAnOlderComputerLeavesRecordingsOnThePhone() async throws {

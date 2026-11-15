@@ -48,6 +48,21 @@ struct SettingsView: View {
                             }
                         }
                     }.buttonStyle(.plain).accessibilityIdentifier("settings.yourAgent.open")
+                    // Shown only when the paired computer takes a voice sample from the phone.
+                    if status?.ownerVoice == true, Self.allowsOwnerVoice(pairing.paired?.scopes ?? []) {
+                        NavigationLink {
+                            OwnerVoiceView(hub: app.hub, session: { [vault = app.vault] in try vault.session() })
+                        } label: {
+                            YansuCard {
+                                HStack(spacing: 8) {
+                                    Text("Your voice").font(.body).foregroundStyle(YansuTheme.ink)
+                                    Spacer(minLength: 4)
+                                    Image(systemName: "chevron.right").font(.footnote.weight(.semibold))
+                                        .foregroundStyle(YansuTheme.tertiary)
+                                }
+                            }
+                        }.buttonStyle(.plain).accessibilityIdentifier("settings.ownerVoice.open")
+                    }
                 }
                 settingsGroup("Your computer", identifier: "settings.group.mac") { pairingSection }
                 // Shown only once a recording has arrived from the watch.
@@ -589,6 +604,11 @@ struct SettingsView: View {
     /// "Not right" on a memory the brief used.
     static func allowsMemoryCorrection(_ scopes: [String]) -> Bool {
         scopes.contains("memory:correct")
+    }
+
+    /// Adding a voice sample from the phone (PROTOCOL.md 25).
+    static func allowsOwnerVoice(_ scopes: [String]) -> Bool {
+        scopes.contains("memory:correct") && scopes.contains("chat:write")
     }
 
     /// "New one-time work" in the Chat tab.
