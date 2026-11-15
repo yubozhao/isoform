@@ -2363,7 +2363,7 @@ func (a *App) startCronScheduler() {
 		func(title, body string) { a.NotifyUser(title, body, "") },
 		a.executeAgentJob,
 	)
-	a.cronScheduler.SetGenerateName(a.GenerateAutomationName)
+	a.cronScheduler.SetGenerateName(a.generateAutomationName)
 	a.cronScheduler.SetCheckDuplicate(a.checkAutomationDuplicate)
 	a.cronScheduler.SetRunLifecycle(func(event CronRunLifecycleEvent) {
 		a.handleCronRunLifecycle(event)
@@ -2567,8 +2567,11 @@ func (a *App) startCronScheduler() {
 		a.mu.Unlock()
 	}
 
-	// Ensure sidebar groups exist.
-	a.ensureAutomationsGroup()
+	// Ensure sidebar groups exist. The Automations group is an entry of a
+	// feature that may be off.
+	if featureOn(featureAutomations) {
+		a.ensureAutomationsGroup()
+	}
 	a.ensureHandoffsGroup()
 	a.ensureTranscriptsGroup()
 	a.ensureMainChatOnStartup()
@@ -2945,6 +2948,10 @@ func (a *App) listCronJobsFromDBContext(ctx context.Context) []CronJobState {
 
 	result := make([]CronJobState, 0, len(rows))
 	for i := range rows {
+		// Jobs of a feature that is off are not listed (feature_switches.go).
+		if !cronSurfaceOn(rows[i].SurfaceKind) {
+			continue
+		}
 		result = append(result, jobRowToState(&rows[i]))
 	}
 	return result
@@ -3004,8 +3011,20 @@ func (a *App) getCronRunsByDateRangeContext(ctx context.Context, startMs, endMs 
 		jobNames[j.ID] = j.Name
 	}
 
+	// Runs of a job whose feature is off are not shown.
+	offJobs := map[string]bool{}
+	if all, err := a.store.ListCronJobs(ctx); err == nil {
+		for i := range all {
+			if !cronSurfaceOn(all[i].SurfaceKind) {
+				offJobs[all[i].ID] = true
+			}
+		}
+	}
 	result := make([]CronRunWithJobName, 0, len(rows))
 	for _, row := range rows {
+		if offJobs[row.JobID] {
+			continue
+		}
 		state := runRowToState(row)
 		result = append(result, CronRunWithJobName{
 			CronRunState: state,

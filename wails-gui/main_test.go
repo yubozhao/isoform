@@ -32,6 +32,12 @@ func TestMain(m *testing.M) {
 	// No test, helper children included, starts the user's real Claude Code
 	// or Codex (testmain_cli_test.go).
 	installCLIProbeFakes()
+	// The rework's turned-off features stay testable: existing tests run with
+	// them on, and each switch's guard tests turn it off explicitly
+	// (feature_switches_test.go).
+	if _, set := os.LookupEnv(featureSwitchesEnv); !set {
+		_ = os.Setenv(featureSwitchesEnv, "all")
+	}
 	// Headless permission snapshots must not enter native Automation probes.
 	// Permission-specific tests override this hook with their own fixtures.
 	todayBriefPermissionStatus = func(*App) PlatformPermissions { return PlatformPermissions{} }
