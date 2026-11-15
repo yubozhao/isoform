@@ -578,23 +578,37 @@ func threadOutcomeMessagingAllowed(out *ActivityThreadOutcome, evidence []thread
 	if threadOutcomeQuoted.MatchString(written) {
 		return errors.New("an outcome near chat text quotes")
 	}
-	summary := threadOutcomeCanonical(written)
+	var chats []string
 	for _, item := range evidence {
-		if !item.Messaging {
-			continue
+		if item.Messaging {
+			chats = append(chats, item.Text)
 		}
-		text := []rune(threadOutcomeCanonical(item.Text))
+	}
+	if chatTextRepeated(written, chats) {
+		return errors.New("an outcome repeats chat text")
+	}
+	return nil
+}
+
+// chatTextRepeated reports written words that repeat a run of any chat text:
+// threadOutcomeChatEchoRunes letters and digits in a row, or
+// threadOutcomeChatEchoHanRunes Han characters, ignoring case, spacing and
+// punctuation.
+func chatTextRepeated(written string, chats []string) bool {
+	summary := threadOutcomeCanonical(written)
+	for _, chat := range chats {
+		text := []rune(threadOutcomeCanonical(chat))
 		for i := range text {
 			size := threadOutcomeChatEchoRunes
 			if unicode.Is(unicode.Han, text[i]) {
 				size = threadOutcomeChatEchoHanRunes
 			}
 			if i+size <= len(text) && strings.Contains(summary, string(text[i:i+size])) {
-				return errors.New("an outcome repeats chat text")
+				return true
 			}
 		}
 	}
-	return nil
+	return false
 }
 
 // Captured typing, terminal input and AI-chat input are evidence of what the

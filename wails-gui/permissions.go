@@ -134,6 +134,9 @@ func (a *App) RequestPermission(key string) (granted bool) {
 	if key == mailPermissionKey && granted {
 		a.mailPermissionChanged(true, a.isPermissionEnabled(key))
 	}
+	if key == messagesPermissionKey && granted {
+		a.imessagePermissionChanged(a.isPermissionEnabled(key))
+	}
 	return granted
 }
 
@@ -240,6 +243,9 @@ func (a *App) SetPermissionEnabled(key string, enabled bool) error {
 	case mailPermissionKey:
 		log.Printf("[permissions] %s reading switched %t by user", key, enabled)
 		a.mailPermissionChanged(mailAllowedCache.Load() == 1, enabled)
+	case messagesPermissionKey:
+		log.Printf("[permissions] %s reading switched %t by user", key, enabled)
+		a.imessagePermissionChanged(enabled)
 	}
 
 	a.emitBrowserEvent("permissions:changed")

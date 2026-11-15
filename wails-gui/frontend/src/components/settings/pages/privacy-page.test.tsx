@@ -656,6 +656,7 @@ describe("Observation and Privacy copy", () => {
             "notifications",
             "automation_messages",
             "automation_mail",
+            "messages_history",
             "contacts",
             "calendars",
             "reminders",

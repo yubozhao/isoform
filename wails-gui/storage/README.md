@@ -30,7 +30,7 @@ Deleting a project cascades through its workspaces, sessions, and all associated
 
 | File | Responsibility |
 |---|---|
-| `storage.go` | `Store` struct, `New()`, schema migrations (v1–v74), orphan cleanup, `Vacuum()` |
+| `storage.go` | `Store` struct, `New()`, schema migrations (v1–v75), orphan cleanup, `Vacuum()` |
 | `types.go` | Plain-Go row structs for all tables |
 | `principals_import_migration.go` | Transactional v61 import provenance migration and legacy contact backfill |
 | `projects.go` | Project CRUD, sort-order management, atomic project+sessions save |
@@ -59,7 +59,7 @@ defer store.Close()
 
 `New` checks existing database headers and then uses a read-only connection to include any newer version committed in the WAL. A stored schema newer than the audited compatibility ceiling (**73**) returns a typed `*SchemaVersionError` before opening for writes or changing the journal mode. The header check avoids creating WAL sidecars just to reject an already-newer database. The app can present a localized error using its `StoredVersion` and `SupportedVersion` fields.
 
-The schema is currently **74**. The migration target and compatibility ceiling are both **74**. Earlier databases upgrade to 74 with the pre-migration snapshot policy below. Route history remains migration v60: it adds columns with defaults to `cron_runs` and the independent `agent_run_routes` table, and tolerates populated route objects from earlier assistant-first builds that used v58. Versions above 74 are refused before writes.
+The schema is currently **75**. The migration target and compatibility ceiling are both **75**. Earlier databases upgrade to 75 with the pre-migration snapshot policy below. Route history remains migration v60: it adds columns with defaults to `cron_runs` and the independent `agent_run_routes` table, and tolerates populated route objects from earlier assistant-first builds that used v58. Versions above 75 are refused before writes.
 
 Migration v62 adds `imported_contact_cards`, `contact_handle_provenance` and `principal_contact_links` and `principal_contact_link_updates`. Link receipts and merges commit together. Unlink restores the card and its handles, aliases and the original kind of the seen person; pre-link activity returns to its original person, while later observations and merges are preserved. A schema-61 binary needs the pre-migration snapshot when reverting.
 
@@ -83,7 +83,7 @@ The target now includes #140 (v63), merged here before C5 (v64); #143 follows at
 
 ### Schema migrations
 
-Migrations are idempotent. Schema additions tolerate existing columns, and the v74 name repair leaves unrelated names alone. The current schema version is stamped in `PRAGMA user_version` (currently **74**).
+Migrations are idempotent. Schema additions tolerate existing columns, and the v74 name repair leaves unrelated names alone. v75 adds `message_asks` (`message_asks.go`): asks and commitments read from Messages, in Isoform's words, never message text. The current schema version is stamped in `PRAGMA user_version` (currently **75**).
 
 | Version | Changes |
 |---|---|
