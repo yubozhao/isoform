@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -109,7 +110,17 @@ func newStore(dbPath string, availableBytes func(string) (uint64, error)) (*Stor
 	return newStoreWithSnapshotOptions(dbPath, snapshotOptions{availableBytes: availableBytes, removeFile: os.Remove})
 }
 
+// NewDatabaseSeed, when set, fills a missing database before it is opened.
+// Only test binaries set it, to a copy of an already-migrated database, so a
+// test's fresh store does not run every migration again. The app leaves it nil.
+var NewDatabaseSeed func(dbPath string)
+
 func newStoreWithSnapshotOptions(dbPath string, snapshots snapshotOptions) (*Store, error) {
+	if NewDatabaseSeed != nil {
+		if _, err := os.Stat(dbPath); errors.Is(err, os.ErrNotExist) {
+			NewDatabaseSeed(dbPath)
+		}
+	}
 	// Reject newer databases through a read-only connection before opening a
 	// writable handle or changing the journal mode.
 	if err := checkExistingSchemaVersion(dbPath); err != nil {

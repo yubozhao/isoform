@@ -504,7 +504,11 @@ func TestDerivedViewFreshnessChangeNeverBlocksARead(t *testing.T) {
 	readDerivedTestValue(t, app, derivedPortrait, build)
 	slow.Store(true)
 	d.touch(derivedPortrait)
-	go d.tick(context.Background(), true) // the rebuild, held open
+	rebuilt := make(chan struct{})
+	go func() { // the rebuild, held open
+		defer close(rebuilt)
+		d.tick(context.Background(), true)
+	}()
 	time.Sleep(20 * time.Millisecond)
 	started := time.Now()
 	readDerivedTestValue(t, app, derivedPortrait, build)
@@ -512,4 +516,6 @@ func TestDerivedViewFreshnessChangeNeverBlocksARead(t *testing.T) {
 		t.Fatalf("a read after a touch took %v while the rebuild ran", took)
 	}
 	close(release)
+	// The rebuild writes into the test's folder; let it finish before cleanup.
+	<-rebuilt
 }

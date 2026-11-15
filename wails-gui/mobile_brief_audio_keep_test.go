@@ -226,6 +226,9 @@ func TestMobileBriefAudioReturnsWhenAClosedGoalIsReopened(t *testing.T) {
 	if view, err := rig.app.GetLatestBrief(); err != nil || view.Brief == nil || view.Brief.Audio != nil {
 		t.Fatalf("Today plays a recording that speaks of a closed goal: %+v, %v", view.Brief, err)
 	}
+	// The read starts a background live refresh; let it finish before the
+	// stored copy is checked, as the other tests in this file do.
+	svc.todayRefreshWG.Wait()
 	if phone, _ := svc.GetMobileBrief(brief.BriefID); phone.Audio != nil {
 		t.Fatal("the phone plays a recording that speaks of a closed goal")
 	}
