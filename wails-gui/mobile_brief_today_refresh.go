@@ -282,6 +282,22 @@ func (s *mobileBriefService) refreshToday(liveOnly bool) (MobileBriefV1, bool, b
 	// never stay in the working copy. The build's own copy (.built) keeps
 	// them, so a gate that later says yes gives them back (withBuiltWords).
 	toSave := updated
+	if scheduled && mobileBriefShowsWrittenWords(base) && !mobileBriefShowsWrittenWords(updated) && !mobileBriefPrivacyRefused(withheld) {
+		// Once built, the brief keeps its words and recording (Bo,
+		// 2026-11-15; mobile_brief_show_built.go). A live pass refreshes the
+		// cards around them and does not save the brief without them because
+		// a citation no longer fits, a goal closed or a card left: every
+		// reader of the stored brief (the phone push, the feed, chat about
+		// the brief, Your week) keeps the words. A privacy gate that names a
+		// refusal is still stored as such; the shared read shows the build's
+		// words, less what the person withdrew.
+		kept := mobileBriefWithBuiltWords(updated, base, mobileBriefAllWithdrawnKeys())
+		if kept.Audio == nil && base.Audio != nil && mobileBriefSameNarrativeText(kept, base) {
+			audio := *base.Audio
+			kept.Audio = &audio
+		}
+		toSave, updated, withheld = kept, kept, mobileBriefWithholding{}
+	}
 	before, _ := json.Marshal(stored)
 	after, _ := json.Marshal(toSave)
 	changed := !bytes.Equal(before, after)
@@ -651,7 +667,7 @@ func projectMobileBriefToday(base MobileBriefV1, in mobileBriefInput) MobileBrie
 				complete = false
 				continue
 			}
-			ref, ok := builder.refFor(mobileBriefCandidate{SourceKind: old.SourceKind, SourceID: old.SourceID, WebSource: old.WebSource, Title: old.Label, At: mobileBriefParseTime(old.ObservedAt)})
+			ref, ok := builder.refForWithin(mobileBriefCandidate{SourceKind: old.SourceKind, SourceID: old.SourceID, WebSource: old.WebSource, Title: old.Label, At: mobileBriefParseTime(old.ObservedAt)}, newBriefCalendarLimit)
 			if ok {
 				refs = append(refs, ref)
 			} else {
@@ -798,8 +814,18 @@ func (b *mobileBriefBuilder) reserveToday(in mobileBriefInput) []MobileBriefItem
 		}
 	}
 	// projectMobileBriefToday puts each paragraph's first citation at the front.
-	b.reserveRecap(in.RecapEvidence[:min(len(in.RecapEvidence), mobileBriefNarrativeMaxParagraphs)])
+	b.reserveWritten(in.RecapEvidence[:min(len(in.RecapEvidence), mobileBriefNarrativeMaxParagraphs)])
 	return upcoming
+}
+
+// reserveWritten keeps the sources a written brief cites or read (Today's
+// recap evidence). They are the words' dependencies: cut to the sections'
+// two-meeting limit, the rest read as dropped and withdrew every written word
+// (2026-11-15 morning, five meetings cited). The writer's limit holds instead.
+func (b *mobileBriefBuilder) reserveWritten(refs []MobileBriefRef) {
+	for _, ref := range refs {
+		b.refForWithin(mobileBriefCandidate{SourceKind: ref.SourceKind, SourceID: ref.SourceID, WebSource: ref.WebSource, Title: ref.Label, At: mobileBriefParseTime(ref.ObservedAt)}, newBriefCalendarLimit)
+	}
 }
 
 func (b *mobileBriefBuilder) reserveRecap(refs []MobileBriefRef) {

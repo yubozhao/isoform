@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -172,5 +174,35 @@ func TestStrippedBriefIsShownFromItsBuild(t *testing.T) {
 	}
 	if got := svc.store.mobileBriefStoredAudio(stripped); got == nil || got.SHA256 != built.Audio.SHA256 {
 		t.Fatal("the play button has no recording for the stripped brief")
+	}
+}
+
+// The play button plays the stripped brief's recording: Audio() serves the
+// build's recording, bound to the words the build wrote (the daily check's
+// stripped-brief scenario).
+func TestStrippedBriefRecordingPlays(t *testing.T) {
+	_, svc, built := builtBriefFixture(t)
+	wav := trialSeedTone(1)
+	sum := sha256.Sum256(wav)
+	built.Audio = &MobileBriefAudio{Status: mobileBriefAudioStatusOK, Mime: mobileBriefAudioMimeWAV, Bytes: len(wav), SHA256: hex.EncodeToString(sum[:]), DurationSeconds: 1}
+	built.Audio.binding = mobileBriefAudioBinding(built, "en")
+	if err := svc.store.saveBuilt(built); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(svc.store.dir, built.BriefID+mobileBriefAudioExtWAV), wav, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stripped := stripMobileBriefWords(built)
+	if err := svc.store.save(stripped, svc.now()); err != nil {
+		t.Fatal(err)
+	}
+	svc.wg.Wait()
+	health := svc.app.GetMobileBriefHealth()
+	if health.Audio == nil || health.CurrentBriefID != built.BriefID {
+		t.Fatalf("Today offers no recording: current=%q audio=%v", health.CurrentBriefID, health.Audio != nil)
+	}
+	data, ok := svc.Audio(built.BriefID)
+	if !ok || data.Base64 == "" {
+		t.Fatal("the stripped brief's recording does not play")
 	}
 }
