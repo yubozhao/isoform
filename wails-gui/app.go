@@ -1338,6 +1338,8 @@ func (a *App) startupServices(ctx context.Context) {
 	// New finds on the user's topics, once a day after the morning brief.
 	a.startTopics(ctx)
 	a.startMainChatTopicBackfill(ctx)
+	// The daily topics copy with proposed work, behind its switch.
+	a.startDailyTopics(ctx)
 	// The interests behind the topics, refreshed a few times a day.
 	a.interestsSvc().start(ctx)
 	// The day ahead: calendars are read once access is granted (never asked
