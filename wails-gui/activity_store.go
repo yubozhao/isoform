@@ -228,6 +228,12 @@ func NewActivityStore(baseDir string) (*ActivityStore, error) {
 	return openActivityStore(baseDir, true)
 }
 
+// activityStoreSeed, when set, fills a missing activity database before it is
+// opened. Only the test binary sets it, to a copy of an already-migrated
+// database, so a test's fresh store does not run every migration again. The
+// app leaves it nil.
+var activityStoreSeed func(dbPath string)
+
 func openActivityStore(baseDir string, refreshProfiles bool) (*ActivityStore, error) {
 	dbPath, err := filepath.Abs(filepath.Join(baseDir, "activity.db"))
 	if err != nil {
@@ -246,6 +252,12 @@ func openActivityStore(baseDir string, refreshProfiles bool) (*ActivityStore, er
 
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0700); err != nil {
 		return nil, fmt.Errorf("create db directory: %w", err)
+	}
+
+	if activityStoreSeed != nil {
+		if _, err := os.Stat(dbPath); errors.Is(err, os.ErrNotExist) {
+			activityStoreSeed(dbPath)
+		}
 	}
 
 	writerURI := activityDatabaseURI(dbPath)

@@ -35,9 +35,12 @@ func TestMain(m *testing.M) {
 	// Headless permission snapshots must not enter native Automation probes.
 	// Permission-specific tests override this hook with their own fixtures.
 	todayBriefPermissionStatus = func(*App) PlatformPermissions { return PlatformPermissions{} }
+	installStoreSeeds()
 	if testHelperChildProcess() {
 		installSharedTextPermissionFake()
-		os.Exit(m.Run())
+		code := m.Run()
+		removeStoreSeeds()
+		os.Exit(code)
 	}
 	cleanup := setupIsolatedTestHome()
 	installSharedTextPermissionFake()
@@ -45,6 +48,7 @@ func TestMain(m *testing.M) {
 	code := m.Run()
 	stopLeakScan()
 	cleanup()
+	removeStoreSeeds()
 	removeSharedFakeMagpie()
 	os.Exit(code)
 }
