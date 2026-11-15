@@ -56,6 +56,8 @@ type WatchRecordingLine struct {
 	At      int64  `json:"at"`
 	Speaker string `json:"speaker"`
 	Text    string `json:"text"`
+	// Marked is true when the wearer marked the moment these words were said.
+	Marked bool `json:"marked"`
 }
 
 var errWatchRecordingNotFound = errors.New("recording not found")
@@ -137,6 +139,7 @@ func (s *mobileRecordingStore) markDeleted(id, deviceID string) (string, MobileR
 	// files, sizes and context are gone.
 	for i := range rec.Received {
 		rec.Received[i].Context = nil
+		rec.Received[i].Marks = nil
 	}
 	rec.UpdatedAt = mobileTimestamp(s.now())
 	if err := s.saveLocked(); err != nil {
@@ -243,7 +246,9 @@ func (a *App) GetWatchRecordingTranscript(id string) ([]WatchRecordingLine, erro
 	if !ok || rec.State == mobileRecordingDeleted {
 		return nil, errWatchRecordingNotFound
 	}
-	return a.watchRecordingLines(rec.SessionID), nil
+	lines := a.watchRecordingLines(rec.SessionID)
+	markWatchRecordingLines(lines, rec.marksAt())
+	return lines, nil
 }
 
 // DeleteWatchRecording deletes one recording from this computer. The phone
@@ -306,6 +311,8 @@ type MobileRecordingTranscriptLine struct {
 	At      string `json:"at"`
 	Speaker string `json:"speaker,omitempty"`
 	Text    string `json:"text"`
+	// Marked is true when the wearer marked the moment these words were said (24.9).
+	Marked bool `json:"marked,omitempty"`
 }
 
 // serveRecordingTranscript handles GET /recordings/transcript?id=<uuid> (24.5).
@@ -334,14 +341,16 @@ func (bridge *mobileBridge) serveRecordingTranscript(w http.ResponseWriter, r *h
 		return
 	}
 	size := 0
-	for _, line := range bridge.app.watchRecordingLines(rec.SessionID) {
+	lines := bridge.app.watchRecordingLines(rec.SessionID)
+	markWatchRecordingLines(lines, rec.marksAt())
+	for _, line := range lines {
 		size += len(line.Text)
 		if len(out.Lines) >= mobileRecordingTranscriptMaxLines || size > mobileRecordingTranscriptMaxBytes {
 			out.Truncated = true
 			break
 		}
 		out.Lines = append(out.Lines, MobileRecordingTranscriptLine{
-			At: mobileTimestamp(time.UnixMilli(line.At)), Speaker: line.Speaker, Text: line.Text})
+			At: mobileTimestamp(time.UnixMilli(line.At)), Speaker: line.Speaker, Text: line.Text, Marked: line.Marked})
 	}
 	mobileJSON(w, http.StatusOK, out, "")
 }

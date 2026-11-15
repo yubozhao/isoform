@@ -5687,6 +5687,8 @@ export interface WatchRecordingLine {
     at: number;
     speaker: string;
     text: string;
+    /** The wearer marked the moment these words were said. */
+    marked: boolean;
 }
 export const GetWatchRecordings = appBinding<[], WatchRecording[]>('GetWatchRecordings');
 export const GetWatchRecordingTranscript = appBinding<[string], WatchRecordingLine[]>('GetWatchRecordingTranscript');

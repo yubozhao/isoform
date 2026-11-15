@@ -643,6 +643,7 @@
         "audioGone": "The audio is no longer kept. The words stay.",
         "audioUnavailable": "The audio could not be played.",
         "heard": "What it heard",
+        "marked": "Marked",
         "transcriptEmpty": "Nothing to show. The words are private, or observing is paused.",
         "voiceNotEnrolled": "Add your voice in Settings so Isoform can tell which words are yours.",
         "openTimeline": "Show in Screen timeline",

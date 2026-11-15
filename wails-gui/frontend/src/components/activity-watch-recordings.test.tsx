@@ -45,8 +45,8 @@ describe('ActivityWatchRecordings', () => {
         setHostBridgeMediaToken('tok');
         mocks.list.mockResolvedValue([recording()]);
         mocks.transcript.mockResolvedValue([
-            { at: started.getTime() + 2000, speaker: 'you', text: 'Call Sam about the launch' },
-            { at: started.getTime() + 9000, speaker: 'speaker_1', text: 'Friday works for me' },
+            { at: started.getTime() + 2000, speaker: 'you', text: 'Call Sam about the launch', marked: true },
+            { at: started.getTime() + 9000, speaker: 'speaker_1', text: 'Friday works for me', marked: false },
         ]);
         mocks.remove.mockResolvedValue(undefined);
     });
@@ -66,6 +66,8 @@ describe('ActivityWatchRecordings', () => {
         expect(await screen.findByText('Friday works for me')).toBeTruthy();
         expect(screen.getByText('You')).toBeTruthy();
         expect(screen.getByText('Speaker 1')).toBeTruthy();
+        // The wearer marked the first line; only it carries the label.
+        expect(screen.getAllByText('Marked')).toHaveLength(1);
         expect(screen.getByText('at Mission District · heart rate raised (avg 104, peak 131)')).toBeTruthy();
         const players = container.querySelectorAll('audio');
         expect(players).toHaveLength(2);
