@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"wails-gui/internal/engagement"
@@ -230,11 +231,15 @@ type mobileTodayCache struct {
 	fullParts  []string
 	briefParts []string
 	epoch      uint64
-	updates    chan struct{}
-	deadlines  chan struct{}
-	changed    chan struct{}
-	wake       chan struct{}
-	once       sync.Once
+	// memoryEpoch is the privacy epoch at the last memory:updated, so only a
+	// memory update that was a privacy action drops the projection.
+	memoryEpoch atomic.Uint64
+	memorySeen  atomic.Bool
+	updates     chan struct{}
+	deadlines   chan struct{}
+	changed     chan struct{}
+	wake        chan struct{}
+	once        sync.Once
 	// loopMu guards loopsStarted, so the Today loops start at most once.
 	loopMu       sync.Mutex
 	loopsStarted bool
@@ -858,6 +863,13 @@ func (bridge *mobileBridge) noteTodayChanged() {
 	case bridge.today.updates <- struct{}{}:
 	default:
 	}
+}
+
+// memoryPrivacyEpochChanged reports whether the privacy epoch moved since the
+// last memory:updated. The first update after launch counts as a change.
+func (c *mobileTodayCache) memoryPrivacyEpochChanged(epoch uint64) bool {
+	previous := c.memoryEpoch.Swap(epoch)
+	return !c.memorySeen.Swap(true) || previous != epoch
 }
 
 // Withdrawn data must not remain available from the fast cache while a

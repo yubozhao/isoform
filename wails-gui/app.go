@@ -447,7 +447,22 @@ func (a *App) emitBrowserEvent(eventName string, data ...interface{}) {
 		a.noteTopicFindsSourceChanged(eventName)
 	}
 	switch eventName {
-	case "memory:updated", "sensitive-apps:updated", closedEyesModeChangedEvent, "background-listening:changed", "topics:withdrawn":
+	case "memory:updated":
+		// The index emits memory:updated for every learned belief, and each
+		// phone Today rebuild reads every stored brief (todayBriefs): about 60
+		// sealed reads per update. Only a privacy action withdraws (a forget or
+		// correction advances the privacy epoch first); the projection then
+		// drops at once. Other updates wait for the hourly rebuild (periodic,
+		// not real-time). With snapshots off (tests, onboarding) every update
+		// still drops it, as before.
+		if bridge := a.mobileBridgeForUse(); bridge != nil {
+			if bridge.today.memoryPrivacyEpochChanged(mobileBriefPrivacyEpoch.Load()) || !a.derivedViews().active() {
+				bridge.invalidateToday()
+			}
+		}
+	case "memory:withdrawn", "sensitive-apps:updated", closedEyesModeChangedEvent, "background-listening:changed", "topics:withdrawn":
+		// memory:withdrawn is the privacy half of a memory change (a forget or
+		// any edit the person made), sent just before its memory:updated.
 		if bridge := a.mobileBridgeForUse(); bridge != nil {
 			bridge.invalidateToday()
 		}
