@@ -160,9 +160,7 @@ func (a *App) mobileBriefForProjectionWithholding(ctx context.Context, brief Mob
 			}
 			if service.runs != nil {
 				if run := todayBriefRecordedRun(service, brief.BriefID); run != nil {
-					if ready := mobileBriefParseTime(run.At); !ready.IsZero() {
-						anchor = ready
-					}
+					anchor = mobileBriefDayAnchor(anchor, mobileBriefParseTime(run.At))
 				}
 			}
 		}
@@ -173,6 +171,19 @@ func (a *App) mobileBriefForProjectionWithholding(ctx context.Context, brief Mob
 	brief.ConversationKey = mobileBriefConversationKey(brief)
 	brief.Audio = mobileBriefAudioForRead(brief)
 	return brief, withheld
+}
+
+// mobileBriefDayAnchor is the time a brief's day words were written from: its
+// recorded run when that run made these words, otherwise the brief's own time.
+// A run older than the brief belongs to another build under the same ID (the
+// copy made the evening before, which the slot's build replaced). Anchoring on
+// it shifted every day word back one day: on 2026-11-15 the morning brief read
+// "yesterday" for that day's plans and "today" for Monday's.
+func mobileBriefDayAnchor(asOf, run time.Time) time.Time {
+	if run.IsZero() || !asOf.IsZero() && run.Before(asOf) {
+		return asOf
+	}
+	return run
 }
 
 func mobileBriefWeeklyRecapMatches(left, right []MobileBriefPara) bool {
