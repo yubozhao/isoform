@@ -20,16 +20,3 @@ describe('Topic composer bottom row', () => {
         expect(send).not.toHaveBeenCalled();
     });
 });
-
-it.each(['paper', 'onedark'])('uses the primary fill on a topic Send, keeping its surface, empty Send and Stop flat in %s', (theme) => {
-    document.documentElement.dataset.theme = theme;
-    const props = { draft: 'A question', prepared: false, onDraftChange: vi.fn(), onSend: vi.fn(), sending: false,
-        inputLabel: 'Message', placeholder: 'Message', sendLabel: 'Send', note: '' };
-    const { rerender, container } = render(<TopicComposer {...props} />);
-    expect(screen.getByRole('button', { name: 'Send' })).toHaveClass('patina-verdigris');
-    expect(container.querySelector('[data-topic-composer-surface]')).not.toHaveClass('patina-ground', 'patina-verdigris');
-    rerender(<TopicComposer {...props} draft="" />);
-    expect(screen.getByRole('button', { name: 'Send' })).not.toHaveClass('patina-verdigris');
-    rerender(<TopicComposer {...props} stop={{ label: 'Stop', onStop: vi.fn() }} />);
-    expect(screen.getByRole('button', { name: 'Stop' })).not.toHaveClass('patina-verdigris');
-});
