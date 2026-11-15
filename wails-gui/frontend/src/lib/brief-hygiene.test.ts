@@ -29,13 +29,13 @@ describe("brief display hygiene", () => {
         expect(briefForDisplay(brief).cards?.map((card) => card.id)).toEqual(["safe"]);
         expect(brief.cards).toHaveLength(3);
     });
-    it("keeps named copy and removes cached placeholder paragraphs, chips and audio", () => {
+    it("keeps named copy and the recording, and removes cached placeholder paragraphs and chips", () => {
         const brief = { narrative: [{ text: "The Halcyon launch proposal is ready.", refs: ["e1"] }, { text: "Want me to draft a reply to Name?", refs: ["e1"] }],
             cards: [{ id: "q", kind: "question", paragraph: 1, label: "Draft a reply", message: "Draft a reply", refs: ["e1"] }], audio: { bytes: 123 } } as MobileBriefDocument;
         const got = briefForDisplay(brief);
         expect(got.narrative.map((para) => para.text)).toEqual(["The Halcyon launch proposal is ready."]);
         expect(got.cards).toEqual([]);
-        expect(got.audio).toBeUndefined();
+        expect(got.audio).toEqual({ bytes: 123 });
         expect(brief.narrative).toHaveLength(2);
         expect(briefCopySafe("Want me to draft a reply to Dana?")).toBe(true);
         expect(briefCopySafe("The NameError is fixed.")).toBe(true);
@@ -79,7 +79,7 @@ it('withholds whole unsafe cached paragraphs and items without rewriting their s
     expect(shown.narrative.map((p) => p.text)).toEqual([good]);
     expect(shown.sections.moved).toEqual([brief.sections.moved[0]]);
     expect(shown.weeklyRecap).toEqual([brief.weeklyRecap![0]]);
-    expect(shown.audio).toBeUndefined();
+    expect(shown.audio).toEqual({ bytes: 123 });
     expect(brief.narrative).toHaveLength(2);
 });
 
@@ -112,4 +112,14 @@ it("sanitizes cached prose, withholds masked questions and old audio, and preser
     expect(brief.cards?.[0].facts).toBe("masked-proof");
     expect(shown.audio).toBeUndefined();
     expect(brief.narrative[0].text).toContain(mask);
+});
+
+// Bo, 2026-11-15: the latest brief shows its words and recording. The display
+// guard used to drop every paragraph it flagged, which could leave no words,
+// and took the recording away whenever it changed anything.
+it("never leaves the brief without words or its recording", () => {
+    const brief = { narrative: [{ text: "Reply to Name?", refs: [] }], sections: {}, evidence: [], audio: { bytes: 123 } } as unknown as MobileBriefDocument;
+    const shown = briefForDisplay(brief);
+    expect(shown.narrative.map((p) => p.text)).toEqual(["Reply to Name?"]);
+    expect(shown.audio).toEqual({ bytes: 123 });
 });

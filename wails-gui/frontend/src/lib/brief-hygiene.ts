@@ -44,12 +44,22 @@ export function briefForDisplay(brief: MobileBriefDocument): MobileBriefDocument
         if (items) sections[name] = safeItems(items);
     }
     const positions = new Map<number, number>();
-    const narrative = (brief.narrative ?? []).flatMap((paragraph, index) => {
+    let narrative = (brief.narrative ?? []).flatMap((paragraph, index) => {
         const text = paragraph.text;
         if (!safeCopy(text)) return [];
         positions.set(index, positions.size);
         return [{ ...paragraph, text, ...(!briefCopySafe(paragraph.topicName ?? "") ? { topicId: undefined, topicName: undefined } : {}) }];
     });
+    // The latest brief always shows its words (Bo, 2026-11-15): a check that
+    // would leave none keeps them all. It may leave out a flagged paragraph
+    // only while others remain.
+    if (narrative.length === 0 && (brief.narrative?.length ?? 0) > 0) {
+        positions.clear();
+        narrative = brief.narrative.map((paragraph, index) => {
+            positions.set(index, index);
+            return paragraph;
+        });
+    }
     const changed = narrative.length !== brief.narrative?.length || narrative.some((para, i) => para.text !== brief.narrative[i]?.text);
     const closing = narrative.at(-1)?.text;
     const closingWithheld = closing !== brief.narrative?.at(-1)?.text;
@@ -63,7 +73,10 @@ export function briefForDisplay(brief: MobileBriefDocument): MobileBriefDocument
         yourWeek: safeWeek(brief.yourWeek),
         weekQuestion: brief.weekQuestion && safeCopy(brief.weekQuestion.recommendation ?? "") && !maskedSubject.test(brief.weekQuestion.recommendation ?? "")
             ? brief.weekQuestion : undefined,
-        audio: changed || redactedCopy ? undefined : brief.audio,
+        // The recording stays with the brief: a left-out paragraph or a
+        // display-only rewrite does not take the play button away. A brief
+        // whose own words carry a privacy mask is not played.
+        audio: maskedSubject.test(JSON.stringify(original.narrative ?? [])) ? undefined : brief.audio,
         cards: brief.cards?.flatMap((card, index) => {
             const source = original.cards?.[index] ?? card;
             if (maskedSubject.test(source.label ?? "") || maskedSubject.test(source.message)) return [];
