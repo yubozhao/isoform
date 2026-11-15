@@ -31,7 +31,7 @@ watch (records AAC, mono) -> phone (WatchConnectivity file transfer)
 
 | Feature | v1 | Later |
 | --- | --- | --- |
-| One-tap record and stop on the watch | yes | |
+| Tap to record, hold one second to stop on the watch: a tap never stops (`WatchRecordControl`), a ring fills while holding, VoiceOver activate stops | yes | |
 | Recording continues with the screen off (background audio session) | yes | |
 | Start from a complication | yes: `YansuWatchComplication` (circular, corner, inline, rectangular) opens the app recording | show the live recording state on the face (needs an App Group) |
 | Start from the Action button (Apple Watch Ultra) | yes: the "Start recording" shortcut, assigned in Settings > Action Button > Shortcut | |

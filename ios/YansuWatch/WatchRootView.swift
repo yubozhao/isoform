@@ -46,6 +46,9 @@ struct WatchRootView: View {
                 .font(.title3.monospacedDigit())
                 .foregroundStyle(WatchTheme.text)
                 .accessibilityLabel(Text("Recording time", comment: "Accessibility label for the elapsed recording time"))
+            Text("Hold to stop", comment: "Hint under the stop button on the watch while it records")
+                .font(.footnote)
+                .foregroundStyle(WatchTheme.secondary)
         case .denied:
             Text("Allow the microphone for Isoform in Settings on this watch.",
                  comment: "Shown on the watch when microphone permission is off")
@@ -64,31 +67,56 @@ struct WatchRootView: View {
 
 private struct RecordButton: View {
     @EnvironmentObject private var model: WatchRecorderModel
+    /// How far the hold to stop has come, 0 to 1; drawn as the ring round the control.
+    @State private var holdProgress: Double = 0
 
     var body: some View {
-        Button {
-            model.toggle()
-        } label: {
-            ZStack {
+        ZStack {
+            Circle()
+                .fill(model.isRecording ? WatchTheme.recording.opacity(0.18) : WatchTheme.surface)
+            if model.isRecording {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(WatchTheme.recording)
+                    .frame(width: 30, height: 30)
                 Circle()
-                    .fill(model.isRecording ? WatchTheme.recording.opacity(0.18) : WatchTheme.surface)
-                if model.isRecording {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(WatchTheme.recording)
-                        .frame(width: 30, height: 30)
-                } else {
-                    Circle()
-                        .fill(WatchTheme.recording)
-                        .frame(width: 44, height: 44)
-                }
+                    .trim(from: 0, to: holdProgress)
+                    .stroke(WatchTheme.recording, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .padding(2)
+            } else {
+                Circle()
+                    .fill(WatchTheme.recording)
+                    .frame(width: 44, height: 44)
             }
-            .frame(width: 92, height: 92)
         }
-        .buttonStyle(.plain)
+        .frame(width: 92, height: 92)
+        .contentShape(Circle())
+        // A tap starts and never stops; stopping is a hold, so a wrist bump cannot end a recording.
+        .onTapGesture { perform(.tap) }
+        .onLongPressGesture(minimumDuration: WatchRecordControl.holdSeconds, maximumDistance: 40) {
+            perform(.hold(seconds: WatchRecordControl.holdSeconds))
+        } onPressingChanged: { pressing in
+            let filling = pressing && model.isRecording
+            withAnimation(filling ? .linear(duration: WatchRecordControl.holdSeconds) : .easeOut(duration: 0.15)) {
+                holdProgress = filling ? WatchRecordControl.progress(heldSeconds: WatchRecordControl.holdSeconds) : 0
+            }
+        }
+        .onChange(of: model.isRecording) { holdProgress = 0 }
+        .accessibilityElement()
+        .accessibilityAddTraits(.isButton)
         .accessibilityLabel(model.isRecording
             ? Text("Stop recording", comment: "Accessibility label of the stop button on the watch")
             : Text("Start recording", comment: "Accessibility label of the record button on the watch"))
+        .accessibilityAction { perform(.accessibilityActivate) }
         .padding(.top, 2)
+    }
+
+    private func perform(_ touch: WatchRecordControl.Touch) {
+        switch WatchRecordControl.action(for: touch, isRecording: model.isRecording) {
+        case .none: break
+        case .start: model.start()
+        case .stop: model.stop() // plays the stop haptic
+        }
     }
 }
 
