@@ -4,6 +4,7 @@ import { SettingsCard, SettingsRow } from "@/components/settings/settings-primit
 import { SettingsFailureLine } from "@/components/settings/settings-failure";
 import { formatBytes } from "@/components/settings/settings-format";
 import { VoiceMemoryCard } from "@/components/settings/voice-memory-card";
+import { ForgetEverythingCard } from "@/components/settings/forget-everything-card";
 import { Button } from "@/components/ui/button";
 import type { SettingsPageId } from "@/components/settings/settings-registry";
 import { DeleteAnswers, ExportAnswers, GetYourDataSummary, type YourDataSummary } from "@/lib/wails-shim-app";
@@ -142,6 +143,7 @@ export function YourDataPage({ onOpenPage }: { onOpenPage?: OpenSettingsPage } =
                     <SettingsRow title={t("yourData.notifications")} description={t("yourData.notificationsSub")} />
                 </div>
             </SettingsCard>
+            <ForgetEverythingCard />
         </>
     );
 }
