@@ -157,6 +157,29 @@ a real watch.
   transcript show it.
 - Not yet: marking on the watch (the iOS half), and marked moments first in the brief.
 
+## Marked moments open the brief (2026-11-15, watch v1.1.0 piece 7, the brief)
+
+A mark is the one thing in a day of listening the wearer pointed at on purpose, so the brief
+opens with it. Agreed with the Today owner, who owns the brief writer.
+
+- `wails-gui/mobile_brief_watch_marks.go` gathers one item for each watch recording that holds a
+  mark in the brief's window, newest first, at most three. Its source is the recording's activity
+  session (`activity_session`, `rec-<id>`), so the brief's own checks for a deleted, private or
+  withdrawn session apply when the brief is bound and read.
+- The writer's item carries `"marked": true` and a day word ("today", "yesterday"), never a clock
+  time. One prompt rule tells the writer to open with marked items and say when only from the
+  item's when value.
+- What was being said goes to the writer only when the marked line is the owner's own voice, and
+  the writer is told to put it in its own words and never quote it. Another person's words never
+  go. With no owner line, the brief can only say that a moment was marked.
+- Nothing is gathered while observing is paused, when the pause log cannot be read, from a mark
+  made during a pause, or from a deleted recording. No transcript text is logged.
+- Only the new brief writer uses these items; the brief's sections are unchanged.
+
+Not proven: no brief has been written from a real marked recording yet. Whether the writer leads
+with the mark, and whether its paragraph keeps its evidence through binding, is to be read off a
+real brief.
+
 ## Privacy
 
 - Audio is recorded to the watch's own storage, moved to the phone, and deleted from the watch

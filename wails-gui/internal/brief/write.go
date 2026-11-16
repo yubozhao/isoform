@@ -59,6 +59,8 @@ type MaterialItem struct {
 	// Since is true for items after the previous brief.
 	Since bool `json:"since_last_brief,omitempty"`
 	Agent bool `json:"agent,omitempty"`
+	// Marked is true for a moment the user marked on their watch on purpose.
+	Marked bool `json:"marked,omitempty"`
 }
 
 // Material is the writer's whole input for one brief.
@@ -174,6 +176,7 @@ func WritePrompt(m Material, lang string) string {
 	b.WriteString("\nRules:\n")
 	b.WriteString("- Group \"done\" and \"attended\" are the user's own work and meetings.\n")
 	b.WriteString("- Items marked \"agent\": true (and group \"agents\") are work AI agents did on the user's computer: Claude Code and Codex sessions, scheduled prompts, automations. The user directed them. Mention them only as context, in the done part, as what the agents did (for example \"your agents merged three fixes\"). Never present them as the user's own work, never as a habit of the user, and never make them a next step.\n")
+	b.WriteString("- Items with \"marked\": true are moments the user marked on purpose on their watch. Open the brief with them, before anything else in the done part: say that they marked the moment and, when the detail says what they were saying, what it was about in your own words. Never quote the detail and never add what anyone else said. Say when it was only from the item's when value.\n")
 	b.WriteString("- A next step must cite at least one item from groups ahead, commitment, waiting, follow_up or open_loop.\n")
 	b.WriteString("- Group \"context\" is background. Use it to choose emphasis; do not report it as news and never cite it in refs.\n")
 	b.WriteString("- If a lot happened, say so. Never say nothing moved when the done or attended groups have items.\n")

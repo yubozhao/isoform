@@ -136,3 +136,32 @@ func TestTokensShadowLineIsCountsOnly(t *testing.T) {
 		t.Fatal("the line carries draft text")
 	}
 }
+
+// A moment marked on the watch is dated by its token like any other item: the
+// paragraph keeps its template, so each reader gets their own day word.
+func TestRepairDraftKeepsTheTemplateOfAMarkedMoment(t *testing.T) {
+	m := Material{Slot: "evening", Larger: PartDone, Tokens: true, Lang: "en", Items: []MaterialItem{
+		{ID: "m1", Group: GroupDone, Title: "A moment you marked on your watch", When: "today", Marked: true,
+			Detail: "what you were saying then, to put in your own words and never quote: the pricing number is the one that matters"},
+		{ID: "m2", Group: GroupDone, Title: "Launch memo", When: "today"},
+	}}
+	raw := `{"done":[{"text":"You marked a moment on your watch {when:m1}, about the pricing number.","refs":["m1"]},` +
+		`{"text":"You also finished the launch memo.","refs":["m2"]}],"next":[]}`
+	draft, _, err := RepairDraft(raw, m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := draft.Done[0]
+	if got.Template != "You marked a moment on your watch {when:m1}, about the pricing number." ||
+		got.Text != "You marked a moment on your watch today, about the pricing number." {
+		t.Fatalf("marked paragraph: %+v", got)
+	}
+	prompt := WritePrompt(m, "en")
+	if !strings.Contains(prompt, `"marked":true`) || !strings.Contains(prompt, "Open the brief with them") || !strings.Contains(prompt, "Never quote the detail") {
+		t.Fatal("the prompt must carry the marked flag and say to open with it without quoting")
+	}
+	plain := WritePrompt(Material{Slot: "evening", Larger: PartDone, Items: m.Items[1:]}, "en")
+	if strings.Contains(plain, `"marked":true`) {
+		t.Fatal("an unmarked item carried the flag")
+	}
+}

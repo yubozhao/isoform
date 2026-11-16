@@ -106,7 +106,10 @@ type mobileBriefInput struct {
 	// Conversations are activity summaries from messaging apps (WeChat, Slack,
 	// Messages, ...). They reach only the new writer, never a section, and
 	// pass the same sensitive-app, pause and private-window gates as the recap.
-	Conversations          []mobileBriefCandidate
+	Conversations []mobileBriefCandidate
+	// Marked are moments the wearer marked on their watch
+	// (mobile_brief_watch_marks.go). They reach only the new writer.
+	Marked                 []mobileBriefCandidate
 	ExcludedSensitiveItems int
 
 	DayShape   *MobileBriefDay
@@ -883,6 +886,7 @@ func collectMobileBriefInput(
 	collectMobileBriefRecall(a, &in)
 	collectMobileBriefDeliverables(a, &in)
 	collectMobileBriefRecap(a, &in)
+	collectMobileBriefWatchMarks(a, &in)
 	collectMobileBriefMessageAsks(ctx, a, &in)
 	collectMobileBriefOlderThreads(ctx, a, &in)
 	collectMobileBriefWaitingReplies(ctx, a, &in)
