@@ -32,3 +32,18 @@ Design: phone-agent v1.1.0 §2 and §4 (B5), computer-agents v1.0.0 rules 11 to 
 
 - `isoform.ai/j/{code}` as a short link (a redirect on our website to the person's front hostname).
 - Joining when the computer is asleep (through the relay).
+
+## Part 3: Isoform's tools (agents-join v1.0.0 §4 and §5, v1.1.0)
+
+- **The tool server** is at `/mcp`, beside the task links, on loopback and through the front. It uses mark3labs/mcp-go, the library the app already uses, over streamable HTTP with sessions.
+- **Joining with it.** The join page, in the design's words, gives the agent the address `<origin>/mcp?join=<key>`. The key is a second secret, shown only on the page and never in the pasted message. When a client connects with it, it asks to join under its client name (`clientInfo.name`), and the attempt gets its own check number. Until the person's Yes, every tool answers "Show your person this code: NNNN". Only the session that asked is told the code: a second client with the same address learns nothing and can't replace the first attempt. The Yes spends the link.
+- **On the Yes, the key rotates.** The join page's address stops working at once, on every session, old or new. The agent gets a fresh key that only the tool-server session which completed the code can receive: its next tool call carries the new address (`/mcp?key=<key>`, or `Authorization: Bearer <key>`), shown once. That session keeps working without it; a new connection needs the fresh key. Someone who read the join page and kept its address is refused after the Yes. Disconnect ends both the key and the session at once. With only the pasted message (its join code), nothing opens.
+- **Later:** OAuth on the tool server (dynamic client registration, which Claude, ChatGPT and Grok connectors support), so a chat-app connector picks up its credential without the person changing the address.
+- **Six tools, nothing else:**
+  - `get_handoffs` marks them "has it".
+  - `get_handoff`.
+  - `post_progress` keeps one line in the agent's own words, for "Working · {line}".
+  - `post_result` takes a summary, the result text (kept as `result.md`) and up to 5 text files, with the same checks as `/a/results`.
+  - `ask_agent` and `get_answer` answer "not available yet" until C2.
+  - No tool reads the person's memory, day or files.
+- The bearer-token inbox (`/a/inbox`) stays for agents without a tool server.

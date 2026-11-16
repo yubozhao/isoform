@@ -44,7 +44,20 @@ type Item struct {
 	SentAt     int64  `json:"sentAt"`
 	ExpiresAt  int64  `json:"expiresAt"`
 	TakenAt    int64  `json:"takenAt,omitempty"`
+	// Progress is the agent's own last line on how it's going, and when.
+	Progress   string `json:"progress,omitempty"`
+	ProgressAt int64  `json:"progressAt,omitempty"`
 }
+
+// MaxProgress bounds a progress line.
+const MaxProgress = 200
+
+var (
+	// ErrNoItem is a hand-off that isn't waiting for this agent.
+	ErrNoItem = errors.New("no hand-off with that id is waiting for you")
+	// ErrBadProgress is a progress line that isn't one short line.
+	ErrBadProgress = errors.New("progress is one line, under 200 characters")
+)
 
 // File is one text file an agent made.
 type File struct {
@@ -70,7 +83,9 @@ type Hooks struct {
 	Taken func(Item)
 	// Resulted is told an accepted result; the item is gone after it.
 	Resulted func(Item, Result)
-	Now      func() time.Time
+	// Progressed is told a new progress line.
+	Progressed func(Item)
+	Now        func() time.Time
 }
 
 // Inbox holds the waiting hand-offs.
@@ -156,6 +171,124 @@ func (b *Inbox) sweepLocked() {
 	}
 }
 
+// ForAgent lists an agent's waiting hand-offs, oldest first, and marks the
+// unread ones taken (the agent has it). read is false for a look that
+// mustn't count, such as a HEAD.
+func (b *Inbox) ForAgent(agentID string, read bool) []Item {
+	var taken []Item
+	var out []Item
+	b.mu.Lock()
+	b.sweepLocked()
+	for _, item := range b.items {
+		if item.AgentID != agentID {
+			continue
+		}
+		if item.TakenAt == 0 && read {
+			item.TakenAt = b.now().UnixMilli()
+			taken = append(taken, *item)
+		}
+		out = append(out, *item)
+	}
+	b.mu.Unlock()
+	sort.Slice(out, func(i, j int) bool { return out[i].SentAt < out[j].SentAt })
+	for _, item := range taken {
+		if b.hooks.Taken != nil {
+			b.hooks.Taken(item)
+		}
+	}
+	if len(taken) > 0 {
+		b.changed()
+	}
+	return out
+}
+
+// Get is one of an agent's waiting hand-offs; reading it marks it taken.
+func (b *Inbox) Get(agentID, id string) (Item, error) {
+	for _, item := range b.ForAgent(agentID, true) {
+		if item.ID == id {
+			return item, nil
+		}
+	}
+	return Item{}, ErrNoItem
+}
+
+// Progress keeps the agent's own line on how a hand-off is going.
+func (b *Inbox) Progress(agentID, id, line string) error {
+	line = strings.TrimSpace(line)
+	if line == "" || !utf8.ValidString(line) || utf8.RuneCountInString(line) > MaxProgress || strings.ContainsAny(line, "\r\n") {
+		return ErrBadProgress
+	}
+	b.mu.Lock()
+	b.sweepLocked()
+	item, ok := b.items[id]
+	if !ok || item.AgentID != agentID {
+		b.mu.Unlock()
+		return ErrNoItem
+	}
+	if item.TakenAt == 0 {
+		item.TakenAt = b.now().UnixMilli()
+	}
+	item.Progress, item.ProgressAt = line, b.now().UnixMilli()
+	snapshot := *item
+	b.mu.Unlock()
+	b.changed()
+	if b.hooks.Progressed != nil {
+		b.hooks.Progressed(snapshot)
+	}
+	return nil
+}
+
+// Submit takes an agent's result for one of its hand-offs, once.
+func (b *Inbox) Submit(agentID, id string, result Result) error {
+	b.mu.Lock()
+	b.sweepLocked()
+	item, ok := b.items[id]
+	if !ok || item.AgentID != agentID {
+		b.mu.Unlock()
+		return ErrNoItem
+	}
+	if item.TakenAt == 0 {
+		item.TakenAt = b.now().UnixMilli()
+	}
+	snapshot := *item
+	delete(b.items, id)
+	b.mu.Unlock()
+	b.changed()
+	if b.hooks.Resulted != nil {
+		b.hooks.Resulted(snapshot, result)
+	}
+	return nil
+}
+
+// Find is a waiting hand-off by id, for the app's status and Take it back.
+func (b *Inbox) Find(id string) (Item, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.sweepLocked()
+	item, ok := b.items[id]
+	if !ok {
+		return Item{}, false
+	}
+	return *item, true
+}
+
+// Reoffer makes a waiting hand-off new again for its agent (Ask again):
+// unread, with a fresh lifetime.
+func (b *Inbox) Reoffer(id string) bool {
+	b.mu.Lock()
+	item, ok := b.items[id]
+	if ok {
+		now := b.now()
+		item.TakenAt, item.Progress, item.ProgressAt = 0, "", 0
+		item.SentAt, item.ExpiresAt = now.UnixMilli(), now.Add(Lifetime).UnixMilli()
+	}
+	b.mu.Unlock()
+	if ok {
+		b.changed()
+	}
+	return ok
+}
+
 func headers(w http.ResponseWriter) {
 	h := w.Header()
 	h.Set("Cache-Control", "no-store")
@@ -212,29 +345,9 @@ func (b *Inbox) serveInbox(w http.ResponseWriter, r *http.Request, agentID strin
 	if r.TLS != nil {
 		base = "https://" + r.Host
 	}
-	var taken []Item
 	out := []inboxItem{}
-	b.mu.Lock()
-	b.sweepLocked()
-	for _, item := range b.items {
-		if item.AgentID != agentID {
-			continue
-		}
-		if item.TakenAt == 0 && r.Method == http.MethodGet {
-			item.TakenAt = b.now().UnixMilli()
-			taken = append(taken, *item)
-		}
+	for _, item := range b.ForAgent(agentID, r.Method == http.MethodGet) {
 		out = append(out, inboxItem{ID: item.ID, Task: item.Text, SentAt: item.SentAt, ExpiresAt: item.ExpiresAt, ResultURL: base + ResultsPrefix + item.ID})
-	}
-	b.mu.Unlock()
-	sort.Slice(out, func(i, j int) bool { return out[i].SentAt < out[j].SentAt })
-	for _, item := range taken {
-		if b.hooks.Taken != nil {
-			b.hooks.Taken(item)
-		}
-	}
-	if len(taken) > 0 {
-		b.changed()
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
@@ -310,23 +423,9 @@ func (b *Inbox) serveResult(w http.ResponseWriter, r *http.Request, agentID, id 
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	b.mu.Lock()
-	b.sweepLocked()
-	item, ok := b.items[id]
-	if !ok || item.AgentID != agentID {
-		b.mu.Unlock()
+	if err := b.Submit(agentID, id, result); err != nil {
 		http.Error(w, "No task with that id is waiting for you.", http.StatusNotFound)
 		return
-	}
-	if item.TakenAt == 0 {
-		item.TakenAt = b.now().UnixMilli()
-	}
-	snapshot := *item
-	delete(b.items, id)
-	b.mu.Unlock()
-	b.changed()
-	if b.hooks.Resulted != nil {
-		b.hooks.Resulted(snapshot, result)
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	_, _ = io.WriteString(w, "Result received.\n")

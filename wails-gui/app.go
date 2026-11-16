@@ -378,6 +378,8 @@ type App struct {
 	agentJoin agentJoinState
 	// agentInbox is the joined agents' channel (agent_inbox_service.go).
 	agentInbox agentInboxState
+	// agentMCP is Isoform's tool server for agents (agent_mcp_service.go).
+	agentMCP agentMCPState
 }
 
 type AgentStatus struct {
