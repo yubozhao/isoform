@@ -142,6 +142,7 @@ func (s *mobileBriefService) runAdaptiveSlot(ctx context.Context, occurrence mob
 	}
 	s.running = true
 	s.runningSince = now
+	s.runningSlot = occurrence.Slot
 	s.runFinished = make(chan struct{})
 	s.coalesceQueuedPhoneRequestLocked(now)
 	s.mu.Unlock()
@@ -170,6 +171,7 @@ func (s *mobileBriefService) runAdaptiveSlot(ctx context.Context, occurrence mob
 	s.mu.Lock()
 	s.running = false
 	s.runningSince = time.Time{}
+	s.runningSlot = ""
 	if s.runFinished != nil {
 		close(s.runFinished)
 		s.runFinished = nil

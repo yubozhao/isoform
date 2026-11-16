@@ -33,8 +33,10 @@ type MobileTodayV1 struct {
 	Day           mobileTodayDay           `json:"day"`
 	Topics        []mobileTopicView        `json:"topics"`
 	BriefRequest  *mobileTodayBriefRequest `json:"briefRequest,omitempty"`
-	Schedule      MobileBriefSchedule      `json:"schedule"`
-	NoticePacing  *mobileTodayNoticePacing `json:"noticePacing,omitempty"`
+	// BriefStatus is the current, making and next brief (PROTOCOL.md 8.2).
+	BriefStatus  *mobileBriefStatus       `json:"briefStatus,omitempty"`
+	Schedule     MobileBriefSchedule      `json:"schedule"`
+	NoticePacing *mobileTodayNoticePacing `json:"noticePacing,omitempty"`
 	// AssistantSignOut is additive (R75): present only when the chosen
 	// assistant is confirmed signed out on the computer.
 	AssistantSignOut *mobileTodayAssistantSignOut `json:"assistantSignOut,omitempty"`
@@ -398,6 +400,7 @@ func (bridge *mobileBridge) buildToday() (MobileTodayV1, error) {
 			view.CurrentBrief = &mobileTodayBriefRef{ID: current.BriefID, Version: pkg.Version}
 		}
 	}
+	view.BriefStatus = bridge.briefStatus(now)
 	if source, ok := svc.(*mobileBriefService); ok {
 		source.mu.Lock()
 		if source.phoneRequest != nil {

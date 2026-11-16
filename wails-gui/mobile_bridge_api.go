@@ -64,6 +64,8 @@ type mobileStatusView struct {
 	NarrativeAvailable     bool                `json:"narrativeAvailable"`
 	Schedule               MobileBriefSchedule `json:"schedule"`
 	LastBriefAt            string              `json:"lastBriefAt"`
+	// BriefStatus is the current, making and next brief (PROTOCOL.md 8.2).
+	BriefStatus *mobileBriefStatus `json:"briefStatus,omitempty"`
 	// KeepAwake is the saved "Keep this Mac awake" switch.
 	KeepAwake bool `json:"keepAwake"`
 	// InstantPush is true when this Mac's relay can deliver notices at once.
@@ -637,6 +639,7 @@ func (bridge *mobileBridge) serveStatus(w http.ResponseWriter) {
 		if brief, ok := currentMobileBrief(svc); ok {
 			view.LastBriefAt = brief.AsOf
 		}
+		view.BriefStatus = bridge.cachedBriefStatus()
 	}
 	mobileJSON(w, http.StatusOK, view, "")
 }
