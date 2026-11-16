@@ -288,6 +288,7 @@
             "words": "搜索内容中的文字，而不只是标题"
         },
         "groups": {
+            "ready": "待处理",
             "recent": "最近",
             "actions": "操作",
             "topics": "主题",
@@ -324,6 +325,7 @@
             "aboutYou": "打开关于你"
         },
         "meta": {
+            "ready": "待处理",
             "today": "今日",
             "chat": "对话",
             "topic": "主题",

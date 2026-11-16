@@ -191,6 +191,14 @@ describe("TodayYourWork", () => {
         expect(screen.getByTestId("your-work-no-agents")).toHaveTextContent("None connected yet.");
     });
 
+    it("opens what the source line names", () => {
+        const onOpenRef = vi.fn().mockReturnValue(true);
+        render(<TodayYourWork list={list([item("a", 0, { first: [{ text: "Halcyon import" }, { text: "from your topics", ref: "topic:halcyon" }] })])} active onAnswer={vi.fn()} onUndo={vi.fn()} onOpenRef={onOpenRef} now={NOW} />);
+        expect(screen.getByTestId("your-work-first")).toHaveTextContent("Halcyon import · from your topics");
+        fireEvent.click(screen.getByTestId("your-work-source"));
+        expect(onOpenRef).toHaveBeenCalledWith("topic:halcyon");
+    });
+
     it("answers only the focused item, never with a modifier or while composing", async () => {
         const { onAnswer } = setup([item("a", 0)]);
         await act(async () => { fireEvent.keyDown(document.body, { key: "y" }); });
