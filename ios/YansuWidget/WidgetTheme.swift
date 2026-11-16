@@ -9,7 +9,7 @@ enum WidgetTheme {
     static let border = dynamic(light: 0xe2e3ec, dark: 0x2a2b35) // color-border
     static let ink = dynamic(light: 0x16161d, dark: 0xececf2) // color-ink
     static let secondary = dynamic(light: 0x5d5f6e, dark: 0xa6a8b8) // color-muted
-    static let tertiary = dynamic(light: 0x6f7185, dark: 0x868899) // color-subtle
+    static let tertiary = dynamic(light: 0x66687c, dark: 0x868899) // color-subtle
     static let accent = dynamic(light: 0x4f5ed8, dark: 0x7a8aff) // color-accent
     static let warning = dynamic(light: 0x9b4f1d, dark: 0xe8a066) // color-warning
 

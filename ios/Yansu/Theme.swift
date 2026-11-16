@@ -13,7 +13,7 @@ enum YansuTheme {
     static let borderSubtle = dynamic(light: 0xe8e9f0, dark: 0x23232c) // color-border-subtle
     static let ink = dynamic(light: 0x16161d, dark: 0xececf2) // color-ink
     static let secondary = dynamic(light: 0x5d5f6e, dark: 0xa6a8b8) // color-muted
-    static let tertiary = dynamic(light: 0x6f7185, dark: 0x868899) // color-subtle
+    static let tertiary = dynamic(light: 0x66687c, dark: 0x868899) // color-subtle
     static let faint = dynamic(light: 0xb4b6c4, dark: 0x4f5162) // color-faint
     static let accent = dynamic(light: 0x4f5ed8, dark: 0x7a8aff) // color-accent
     static let accentWash = dynamic(light: 0x5968df, 0.1, dark: 0x7a8aff, 0.14) // color-accent-light

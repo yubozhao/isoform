@@ -75,9 +75,9 @@ Violet means Isoform acts or speaks, including automation, links, primary action
 | `color-claude` | `#d97757` | `#e08a6c` |
 | `color-solid` | `#5968df` | `#7a8aff` |
 | `color-solid-fg` | `#ffffff` | `#101016` |
-| `color-subtle` | `#6f7185` | `#868899` |
+| `color-subtle` | `#66687c` | `#868899` |
 | `color-faint` | `#b4b6c4` | `#4f5162` |
-| `color-label` | `#6f7185` | `#868899` |
+| `color-label` | `#66687c` | `#868899` |
 | `color-dropdown-label` | `#5d5f6e` | `#a6a8b8` |
 | `color-welcome-sub` | `#5d5f6e` | `#a6a8b8` |
 | `color-heading-strong` | `#16161d` | `#ececf2` |
