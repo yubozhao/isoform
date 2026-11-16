@@ -2,10 +2,11 @@ import SwiftUI
 import WidgetKit
 
 // The watch face complication: one tap opens Isoform already recording
-// (isoformwatch://record, handled in YansuWatchApp). While a recording runs it shows that and
-// for how long, read from the app group (WatchLiveState: one start time, nothing else). The
-// watch app reloads it when a recording starts or stops, so it never wakes on a schedule. The
-// mark is drawn here; the designed one replaces it.
+// (isoformwatch://record, handled in YansuWatchApp). While the watch records it says so, with no
+// clock: recordings are kept by the hour, so there is no length to show. It reads one time from
+// the app group (WatchLiveState: when the watch last said it was recording, nothing else). The
+// watch app reloads it when recording starts or stops and once at each hour, so it never wakes on
+// a schedule of its own. The mark is drawn here; the designed one replaces it.
 @main
 struct IsoformWatchComplications: WidgetBundle {
     var body: some Widget {
@@ -48,8 +49,8 @@ struct RecordProvider: TimelineProvider {
             completion(Timeline(entries: [RecordEntry(date: now)], policy: .never))
             return
         }
-        // Recording: the timer counts by itself. One more entry at the longest a recording can
-        // run puts the button back if the app was killed and never said it stopped.
+        // Recording. One more entry, at the longest the watch goes without saying so again, puts
+        // the button back if the app was killed and never said it stopped.
         let end = since.addingTimeInterval(WatchLiveState.longest)
         completion(Timeline(entries: [RecordEntry(date: now, recordingSince: since), RecordEntry(date: end)],
                             policy: .never))
@@ -61,25 +62,25 @@ struct RecordComplicationView: View {
     var recordingSince: Date?
 
     var body: some View {
-        if let recordingSince {
-            recording(since: recordingSince)
+        if recordingSince != nil {
+            recording
         } else {
             idle
         }
     }
 
     @ViewBuilder
-    private func recording(since: Date) -> some View {
+    private var recording: some View {
         switch family {
         case .accessoryInline:
-            Text("Recording \(Text(since, style: .timer))", comment: "Inline watch complication while a recording runs; the value is the elapsed time")
+            Text("Recording in Isoform", comment: "Inline watch complication while the watch records; no elapsed time is shown")
         case .accessoryRectangular:
             HStack(spacing: 8) {
                 RecordingMark().frame(width: 30, height: 30)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Recording", comment: "Watch complication while a recording runs").font(.headline)
-                    Text(since, style: .timer)
-                        .font(.caption.monospacedDigit())
+                    Text("Kept by the hour", comment: "Rectangular watch complication, second line while the watch records")
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
@@ -87,7 +88,7 @@ struct RecordComplicationView: View {
         case .accessoryCorner:
             RecordingMark()
                 .widgetLabel {
-                    Text(since, style: .timer)
+                    Text("Recording", comment: "Corner watch complication label while the watch records")
                 }
         default:
             ZStack {

@@ -86,6 +86,10 @@ final class WatchRecordingWireTests: XCTestCase {
 
         // A start left behind by a killed app stops counting after the longest recording.
         XCTAssertNil(WatchLiveState.recordingSince(in: defaults, now: since.addingTimeInterval(WatchLiveState.longest + 1)))
+        // The watch says it records again at every hour, so the leftover is believed for two
+        // hours at most, not for a whole day.
+        XCTAssertLessThanOrEqual(WatchLiveState.longest, 2 * 60 * 60)
+        XCTAssertGreaterThan(WatchLiveState.longest, 61 * 60)
 
         WatchLiveState.write(recordingSince: nil, to: defaults)
         XCTAssertNil(WatchLiveState.recordingSince(in: defaults, now: now))

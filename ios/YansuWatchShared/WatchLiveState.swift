@@ -1,15 +1,16 @@
 import Foundation
 
 // Whether the watch is recording right now, shared between the watch app and its complication
-// through the app group's defaults. It holds one time and nothing else: no audio, no words, no
-// heart rate and no place ever go into the shared container.
+// through the app group's defaults. It holds one time (when the watch last said it records) and
+// nothing else: no audio, no words, no heart rate and no place ever go into the shared container.
 enum WatchLiveState {
     static let group = "group.com.isoform.companion"
     static let key = "watch.recordingSince"
     static let complicationKind = "com.isoform.companion.watch.record"
-    /// The longest a recording can run (64 parts). A start older than this is a leftover from an
-    /// app that was killed, and reads as not recording.
-    static let longest = Double(WatchRecordingWire.maxParts) * WatchRecordingWire.partSeconds
+    /// The longest the watch goes without saying again that it records: it says so when
+    /// recording starts and at every clock hour (an hour runs 61 minutes at most). A time older
+    /// than this is a leftover from an app that was killed, and reads as not recording.
+    static let longest: Double = 2 * 60 * 60
 
     static var shared: UserDefaults? { UserDefaults(suiteName: group) }
 
