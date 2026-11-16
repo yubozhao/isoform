@@ -18,6 +18,20 @@ describe('Today context status', () => {
         await i18n.changeLanguage('en');
     });
 
+    it('names what the message was attached to', async () => {
+        const counts = JSON.stringify({ memories: 1, activities: 0, people: 1 });
+        const { unmount } = render(<StreamCard item={{ ...receipt(counts), toolInput: JSON.stringify({ userItemId: 'u1', about: 'Prep for Lena', aboutKind: 'handoff' }) }} />);
+        expect(screen.getByText('About: Prep for Lena')).toHaveAttribute('data-chat-about');
+        unmount();
+        render(<StreamCard item={{ ...receipt(counts), toolInput: { userItemId: 'u2', about: 'The Thursday review is slipping.', aboutKind: 'brief' } }} />);
+        expect(screen.getByText('About your brief: \u201cThe Thursday review is slipping.\u201d')).toBeInTheDocument();
+    });
+
+    it('shows no About line for a receipt without one', () => {
+        const { container } = render(<StreamCard item={{ ...receipt(), toolInput: JSON.stringify({ userItemId: 'u1' }) }} />);
+        expect(container.querySelector('[data-chat-about]')).toBeNull();
+    });
+
     it.each(['context_status', 'system'] as const)('renders %s metadata as a localized tertiary line, without raw JSON', (kind) => {
         const item = receipt(JSON.stringify({ memories: 2, activities: 3, people: 4, sourceText: 'private source' }), kind);
         render(<StreamCard item={item} />);

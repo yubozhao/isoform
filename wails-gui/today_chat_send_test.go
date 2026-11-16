@@ -168,6 +168,11 @@ func TestTodayChatSendInjectsOnceWithoutPersistingSourceText(t *testing.T) {
 			if !strings.Contains(row.ToolInput, "today-user") {
 				t.Fatal("receipt is not tied to its user turn")
 			}
+			// It names what the message was attached to, the draft's title.
+			var receipt map[string]string
+			if json.Unmarshal([]byte(row.ToolInput), &receipt) != nil || receipt["about"] != "Launch plan" || receipt["aboutKind"] != ref.SourceKind {
+				t.Fatalf("receipt = %s", row.ToolInput)
+			}
 		}
 	}
 	if counts != 1 {

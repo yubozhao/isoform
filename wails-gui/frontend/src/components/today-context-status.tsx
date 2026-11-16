@@ -15,13 +15,34 @@ function parseCounts(content: string | undefined): TodayContextCounts | null {
     }
 }
 
-/** Only counts are rendered: malformed or additional payload fields stay hidden. */
-export function TodayContextStatus({ content }: { content?: string }) {
+/** What the message was attached to (phone-chat v1.0.0 rule 10): the title
+ *  the draft showed, saved on the receipt. */
+export function parseAbout(toolInput: unknown): { title: string; brief: boolean } | null {
+    let raw = toolInput;
+    if (typeof raw === 'string') {
+        try { raw = JSON.parse(raw); } catch { return null; }
+    }
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const { about, aboutKind } = raw as Record<string, unknown>;
+    if (typeof about !== 'string' || !about.trim()) return null;
+    return { title: about.trim(), brief: typeof aboutKind === 'string' && aboutKind.startsWith('brief') };
+}
+
+/** Only counts and what it was about are rendered: malformed or additional
+ *  payload fields stay hidden. */
+export function TodayContextStatus({ content, toolInput }: { content?: string; toolInput?: unknown }) {
     const { t } = useTranslation('chat');
     const counts = parseCounts(content);
     if (!counts) return null;
+    const about = parseAbout(toolInput);
 
     return (
+        <>
+        {about ? (
+            <p data-chat-about className="m-0 text-center text-[12px] leading-relaxed text-muted">
+                {about.brief ? t('about.brief', { sentence: about.title }) : t('about.item', { title: about.title })}
+            </p>
+        ) : null}
         <p data-today-context-status className="m-0 text-center text-[12px] leading-relaxed text-muted/70">
             {t('todayContext.status', {
                 memories: t('todayContext.memories', { count: counts.memories }),
@@ -29,6 +50,7 @@ export function TodayContextStatus({ content }: { content?: string }) {
                 people: t('todayContext.people', { count: counts.people }),
             })}
         </p>
+        </>
     );
 }
 
