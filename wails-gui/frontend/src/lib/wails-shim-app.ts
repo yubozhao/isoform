@@ -568,6 +568,7 @@ export interface YourDataSummary {
 export const GetYourDataSummary = appBinding<[], YourDataSummary>("GetYourDataSummary");
 // Saves Your answers to a file the person picks; false when cancelled.
 export const ExportAnswers = appBinding<[], boolean>("ExportAnswers");
+export const DeleteAnswers = appBinding<[], void>("DeleteAnswers");
 // When a timed Closed Eyes ends (RFC 3339), or "" (Settings › Closed Eyes).
 export const GetClosedEyesResumeAt = appBinding<[], string>("GetClosedEyesResumeAt");
 

@@ -1169,4 +1169,5 @@ export const ForgetActivityFeedRow = makeNoop("ForgetActivityFeedRow");
 export const GetAnswers = makeNoop("GetAnswers");
 export const GetJudgmentStats = makeNoop("GetJudgmentStats");
 export const ForgetAnswer = makeNoop("ForgetAnswer");
+export const DeleteAnswers = makeNoop("DeleteAnswers");
 export const RewordMemoryEntry = makeNoop("RewordMemoryEntry");

@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
     summary: { retentionDays: 30, ignoredApps: 3, handoffsThisWeek: 4, pairedDevices: 1, answers: 12, answersSince: "2026-11-02T17:00:00Z", screenBytes: 2 * 1024 ** 3, audioBytes: 300 * 1024 ** 2, usedBytes: 3 * 1024 ** 3, capBytes: 10 * 1024 ** 3 } as Record<string, number | string>,
     fail: false,
     exportAnswers: vi.fn(async () => true),
+    deleteAnswers: vi.fn(async () => {}),
 }));
 vi.mock("@/lib/wails-shim-app", () => ({
     GetYourDataSummary: vi.fn(async () => {
@@ -17,6 +18,7 @@ vi.mock("@/lib/wails-shim-app", () => ({
     }),
     ForgetVoices: vi.fn(async () => {}),
     ExportAnswers: mocks.exportAnswers,
+    DeleteAnswers: mocks.deleteAnswers,
 }));
 
 const row = (key: string) => document.querySelector(`[data-your-data-row=${key}]`) as HTMLElement;
@@ -90,5 +92,15 @@ describe("Settings › Your data", () => {
 
     it("keeps both locales in step", () => {
         expect(Object.keys(zh.yourData).sort()).toEqual(Object.keys(en.yourData).sort());
+    });
+
+    it("deletes your answers only after the confirmation", async () => {
+        render(<YourDataPage />);
+        fireEvent.click(await screen.findByRole("button", { name: en.yourData.deleteLabel }));
+        expect(mocks.deleteAnswers).not.toHaveBeenCalled();
+        const dialog = await screen.findByRole("dialog");
+        expect(dialog).toHaveTextContent("12 answers");
+        fireEvent.click(within(dialog).getByRole("button", { name: en.yourData.deleteConfirmButton }));
+        expect(mocks.deleteAnswers).toHaveBeenCalledTimes(1);
     });
 });

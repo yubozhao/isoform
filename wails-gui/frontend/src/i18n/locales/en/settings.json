@@ -2089,38 +2089,6 @@
                 "label": "Open settings",
                 "description": "Open this Settings window"
             },
-            "go-today": {
-                "label": "Go to Today",
-                "description": "Open Today"
-            },
-            "go-chat": {
-                "label": "Go to Chat",
-                "description": "Open Chat"
-            },
-            "go-agents": {
-                "label": "Go to Agents",
-                "description": "Open your agents and the work they have"
-            },
-            "go-activity": {
-                "label": "Go to Activity",
-                "description": "Open Activity"
-            },
-            "go-you": {
-                "label": "Go to You",
-                "description": "Open what Isoform knows about you"
-            },
-            "zoom-in": {
-                "label": "Zoom in",
-                "description": "Make everything in this window larger, up to 150%"
-            },
-            "zoom-out": {
-                "label": "Zoom out",
-                "description": "Make everything in this window smaller, down to 90%"
-            },
-            "zoom-reset": {
-                "label": "Actual size",
-                "description": "Set this window back to 100%"
-            },
             "new-chat": {
                 "label": "New chat",
                 "description": "Start a new conversation"
@@ -2184,6 +2152,38 @@
             "keyboard-shortcuts": {
                 "label": "Keyboard shortcuts",
                 "description": "Open keyboard shortcuts"
+            },
+            "go-today": {
+                "label": "Go to Today",
+                "description": "Open Today"
+            },
+            "go-chat": {
+                "label": "Go to Chat",
+                "description": "Open Chat"
+            },
+            "go-agents": {
+                "label": "Go to Agents",
+                "description": "Open your agents and the work they have"
+            },
+            "go-activity": {
+                "label": "Go to Activity",
+                "description": "Open Activity"
+            },
+            "go-you": {
+                "label": "Go to You",
+                "description": "Open what Isoform knows about you"
+            },
+            "zoom-in": {
+                "label": "Zoom in",
+                "description": "Make everything in this window larger, up to 150%"
+            },
+            "zoom-out": {
+                "label": "Zoom out",
+                "description": "Make everything in this window smaller, down to 90%"
+            },
+            "zoom-reset": {
+                "label": "Actual size",
+                "description": "Set this window back to 100%"
             }
         },
         "title": "Keyboard shortcuts",
@@ -4024,7 +4024,14 @@
         "notificationsSub": "Sealed too. Apple's push service sees only a fixed line, such as \"A meeting is about to start.\"",
         "export": "Export",
         "exportLabel": "Export your answers",
-        "exportFailed": "Couldn't export your answers."
+        "exportFailed": "Couldn't export your answers.",
+        "delete": "Delete…",
+        "deleteLabel": "Delete your answers",
+        "deleteConfirmTitle": "Delete your answers?",
+        "deleteConfirm_one": "Removes the record of your {{count}} answer and what Isoform learned from it. Items keep what they show now, without Undo. This can't be undone.",
+        "deleteConfirm_other": "Removes the record of your {{count}} answers and what Isoform learned from them. Items keep what they show now, without Undo. This can't be undone.",
+        "deleteConfirmButton": "Delete",
+        "deleteFailed": "Couldn't delete your answers."
     },
     "aoy": {
         "aoy": "Agent of You",
