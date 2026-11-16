@@ -562,6 +562,19 @@ final class WatchTabTests: XCTestCase {
                        String(localized: "1 hour couldn't be sent."), "a failure comes first")
     }
 
+    @MainActor
+    func testWatchIsATabOfItsOwn() {
+        let router = NotificationRouter()
+        router.selectedTab = .watch
+        XCTAssertEqual(router.selectedTab, .watch, "the Watch tab is a place of its own, not sent back to Today")
+        router.selectedTab = .tasks
+        XCTAssertEqual(router.selectedTab, .today, "Tasks still lands on Today")
+        XCTAssertEqual(RootView.tabTitle(.watch, locale: Locale(identifier: "en_US")), "Watch")
+        XCTAssertTrue(WatchConnection.appMissing.hasWatch, "a paired watch without Isoform still gets the tab, for its setup card")
+        XCTAssertFalse(WatchConnection.noWatch.hasWatch)
+        XCTAssertFalse(WatchConnection.unknown.hasWatch)
+    }
+
     // Names, notes and follow-ups are kept in memory only, and never outlive the computer they came from.
     @MainActor
     func testWhatWasHeardGoesWithThePairing() throws {
@@ -588,6 +601,68 @@ final class WatchTabTests: XCTestCase {
         XCTAssertEqual(one.path, "/recordings/conversation")
         XCTAssertEqual(one.query, "id=0b9d6e2c-3f4a%3A1800000000000%20x", "the id is escaped, never pasted")
         XCTAssertEqual(HubRoute.watchNotes.path, "/settings/watch-notes")
+    }
+}
+
+// A conversation's page: its words, who spoke, and the guess to judge.
+final class WatchConversationPageTests: XCTestCase {
+    private let utc = TimeZone(identifier: "UTC")!
+    private let english = Locale(identifier: "en_US")
+
+    private func conversation(_ extra: String = "") throws -> WatchConversation {
+        let json = """
+        {"id":"dev:2","name":"Pricing with Sam","startAt":"2026-11-15T22:05:00Z","endAt":"2026-11-15T22:41:00Z","talkSeconds":1310,
+         "speakers":["you","speaker_1","speaker_2"],"marks":["2026-11-15T22:31:04Z"],"place":"Mission District","heartRate":"calm"\(extra)}
+        """
+        return try JSONDecoder().decode(WatchConversation.self, from: Data(json.utf8))
+    }
+
+    func testNamesAndTheGuessAreRead() throws {
+        let plain = try conversation()
+        XCTAssertEqual(plain.speakerNames, [:])
+        XCTAssertNil(plain.speakerGuess)
+        XCTAssertEqual(plain.unknownSpeakers, ["speaker_1", "speaker_2"])
+        let named = try conversation("""
+        ,"itemIds":["followup:abc"],"speakerNames":{"speaker_1":"Sam Li"},
+         "speakerGuess":{"speaker":"speaker_2","name":"Priya Shah","reason":"calendar","eventStartAt":1794780000000}
+        """)
+        XCTAssertEqual(named.itemIds, ["followup:abc"])
+        XCTAssertEqual(named.unknownSpeakers, ["speaker_2"], "a named speaker is no longer asked about")
+        XCTAssertEqual(WatchConversationCopy.speaker("speaker_1", in: named), "Sam Li")
+        XCTAssertEqual(WatchConversationCopy.speaker("speaker_2", in: named), String(localized: "Speaker \(2)"))
+        XCTAssertEqual(WatchConversationCopy.speaker("you", in: named), String(localized: "You"))
+        XCTAssertTrue(WatchTabCopy.meta(named, locale: english, timeZone: utc).contains("You, Sam Li, Speaker 2"))
+        let guess = WatchConversationCopy.guess(try XCTUnwrap(named.speakerGuess), locale: english, timeZone: utc)
+        XCTAssertTrue(guess.hasPrefix("Speaker 2 might be Priya Shah: your "), guess)
+        XCTAssertTrue(guess.hasSuffix("meeting was with them."), guess)
+    }
+
+    func testTheSubtitleAndTheNoteLine() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = utc
+        let now = try XCTUnwrap(WatchConversationDates.parse("2026-11-15T23:00:00Z"))
+        let subtitle = WatchConversationCopy.subtitle(try conversation(), now: now, calendar: calendar, locale: english, timeZone: utc)
+        let lines = subtitle.components(separatedBy: "\n")
+        XCTAssertEqual(lines.count, 2, subtitle)
+        XCTAssertTrue(lines[0].hasPrefix(String(localized: "Today")), subtitle)
+        XCTAssertTrue(lines[0].contains("36 min"), subtitle)
+        XCTAssertEqual(lines[1], "at Mission District · heart rate calm")
+        XCTAssertNil(WatchConversationCopy.heartRate("104"), "only the three words are shown, never a number")
+        XCTAssertEqual(WatchConversationCopy.noNote(try conversation()), String(localized: "No note for this conversation yet."))
+        let short = try JSONDecoder().decode(WatchConversation.self, from: Data("""
+        {"id":"dev:1","startAt":"2026-11-15T22:05:00Z","endAt":"2026-11-15T22:07:00Z"}
+        """.utf8))
+        XCTAssertEqual(WatchConversationCopy.noNote(short), String(localized: "Notes come for conversations over 5 minutes."))
+    }
+
+    func testAMarkedLineIsRead() throws {
+        let detail = try JSONDecoder().decode(WatchConversationDetail.self, from: Data("""
+        {"conversation":{"id":"dev:2","startAt":"2026-11-15T22:05:00Z","endAt":"2026-11-15T22:41:00Z"},
+         "lines":[{"at":"2026-11-15T22:05:00Z","speaker":"speaker_1","text":"What is the number"},
+                  {"at":"2026-11-15T22:31:00Z","speaker":"you","text":"Fifteen percent","marked":true}],"truncated":true}
+        """.utf8))
+        XCTAssertEqual(detail.lines.map { $0.marked == true }, [false, true])
+        XCTAssertEqual(detail.truncated, true)
     }
 }
 

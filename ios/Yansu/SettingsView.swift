@@ -66,16 +66,37 @@ struct SettingsView: View {
                     }
                 }
                 settingsGroup("Your computer", identifier: "settings.group.mac") { pairingSection }
-                // Shown when a watch is paired or a recording has arrived from one.
-                if watchRecordings.worthShowing {
+                // Apple Watch opens the Watch tab (phone-settings v1.0.0 rule 7). Shown only while a
+                // watch is paired; with none, nothing about a watch shows.
+                if watchRecordings.connection.hasWatch {
                     settingsGroup("Watch", identifier: "settings.group.watch") {
-                        NavigationLink {
-                            WatchTabView(recordings: watchRecordings)
-                                .navigationBarTitleDisplayMode(.inline)
+                        Button {
+                            app.router.selectedTab = .watch
+                            app.router.sheet = nil
                         } label: {
                             YansuCard {
                                 HStack(spacing: 8) {
-                                    Text("What your watch heard").font(.body).foregroundStyle(YansuTheme.ink)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Apple Watch").font(.body).foregroundStyle(YansuTheme.ink)
+                                        Text("Opens the Watch tab").font(.footnote).foregroundStyle(YansuTheme.secondary)
+                                    }
+                                    Spacer(minLength: 4)
+                                    Image(systemName: "chevron.right").font(.footnote.weight(.semibold))
+                                        .foregroundStyle(YansuTheme.tertiary)
+                                }
+                            }
+                        }.buttonStyle(.plain).accessibilityIdentifier("settings.watchRecordings.open")
+                    }
+                } else if watchRecordings.worthShowing {
+                    // No watch is paired, but recordings are still held (made on this phone, or from a
+                    // watch since unpaired): their list stays reachable here, as it was.
+                    settingsGroup("Recordings", identifier: "settings.group.watch") {
+                        NavigationLink {
+                            WatchRecordingsView(model: watchRecordings)
+                        } label: {
+                            YansuCard {
+                                HStack(spacing: 8) {
+                                    Text("Hours and where they are").font(.body).foregroundStyle(YansuTheme.ink)
                                     Spacer(minLength: 4)
                                     Text(WatchRecordingsCopy.summary(watchRecordings.rows)).font(.footnote)
                                         .foregroundStyle(YansuTheme.secondary).lineLimit(1)
@@ -83,7 +104,7 @@ struct SettingsView: View {
                                         .foregroundStyle(YansuTheme.tertiary)
                                 }
                             }
-                        }.buttonStyle(.plain).accessibilityIdentifier("settings.watchRecordings.open")
+                        }.buttonStyle(.plain).accessibilityIdentifier("settings.recordings.open")
                     }
                 }
                 if let notice = brief.notice {

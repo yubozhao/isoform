@@ -5,6 +5,7 @@ import SwiftUI
 struct RootView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var router: NotificationRouter
+    @ObservedObject private var watchRecordings = WatchRecordingsModel.shared
     @EnvironmentObject private var push: PushRegistration
     @EnvironmentObject private var firstRun: FirstRunStore
     @EnvironmentObject private var pairing: PairingStore
@@ -26,6 +27,7 @@ struct RootView: View {
         let copy = ChatPresentationLanguage(locale: locale)
         switch tab {
         case .today: return copy.text(en: String(localized: "Today tab", locale: locale), zhCN: "今日")
+        case .watch: return copy.text(en: "Watch", zhCN: "手表")
         case .chat: return copy.text(en: "Chat", zhCN: "聊天")
         case .tasks: return copy.text(en: "Tasks", zhCN: "任务")
         case .settings: return copy.text(en: "Settings", zhCN: "设置")
@@ -226,6 +228,19 @@ struct RootView: View {
                 .tag(NotificationRouter.Tab.today)
                 .toolbar(.hidden, for: .tabBar)
 
+                // Watch is a tab only while this phone has an Apple Watch paired.
+                if watchRecordings.connection.hasWatch {
+                    NavigationStack {
+                        WatchTabView(recordings: watchRecordings)
+                            .navigationBarTitleDisplayMode(.large)
+                            .tabRootBar()
+                            .onAppear { router.openThreads.removeAll() }
+                    }
+                    .tabItem { Label(Self.tabTitle(.watch, locale: locale), systemImage: "applewatch") }
+                    .tag(NotificationRouter.Tab.watch)
+                    .toolbar(.hidden, for: .tabBar)
+                }
+
                 NavigationStack(path: navigationPath(.chat)) {
                     ChatTabView()
                         .navigationTitle(String(localized: "Chat"))
@@ -258,6 +273,10 @@ struct RootView: View {
 
             }
         .toolbar(.hidden, for: .tabBar)
+        // The watch was unpaired while its tab was open: the tab is gone, so Today shows.
+        .onChange(of: watchRecordings.connection.hasWatch) { _, hasWatch in
+            if !hasWatch, router.selectedTab == .watch { router.selectedTab = .today }
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 7) {
                 if showsMiniPlayer {

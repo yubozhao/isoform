@@ -55,6 +55,14 @@ struct WatchConversation: Decodable, Equatable, Identifiable, Sendable {
         var due: String? = nil
     }
 
+    /// Who a speaker might be, to be judged (PROTOCOL.md 24.13).
+    struct SpeakerGuess: Decodable, Equatable, Sendable {
+        let speaker: String
+        let name: String
+        var reason: String? = nil
+        var eventStartAt: Int64? = nil
+    }
+
     let id: String
     var name: String? = nil
     let startAt: String
@@ -68,9 +76,15 @@ struct WatchConversation: Decodable, Equatable, Identifiable, Sendable {
     var followups: [Followup] = []
     var place: String? = nil
     var heartRate: String? = nil
+    /// The owner's own follow-ups as items of the one list of work.
+    var itemIds: [String] = []
+    /// The names the person gave its speakers, by label, and the guess still open.
+    var speakerNames: [String: String] = [:]
+    var speakerGuess: SpeakerGuess? = nil
 
     enum CodingKeys: String, CodingKey {
         case id, name, startAt, endAt, talkSeconds, speakers, marks, recordingIds, summary, decisions, followups, place, heartRate
+        case itemIds, speakerNames, speakerGuess
     }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -87,6 +101,9 @@ struct WatchConversation: Decodable, Equatable, Identifiable, Sendable {
         followups = try c.decodeIfPresent([Followup].self, forKey: .followups) ?? []
         place = try c.decodeIfPresent(String.self, forKey: .place)
         heartRate = try c.decodeIfPresent(String.self, forKey: .heartRate)
+        itemIds = try c.decodeIfPresent([String].self, forKey: .itemIds) ?? []
+        speakerNames = try c.decodeIfPresent([String: String].self, forKey: .speakerNames) ?? [:]
+        speakerGuess = try c.decodeIfPresent(SpeakerGuess.self, forKey: .speakerGuess)
     }
 
     var start: Date? { WatchConversationDates.parse(startAt) }
@@ -94,8 +111,8 @@ struct WatchConversation: Decodable, Equatable, Identifiable, Sendable {
     var hasNote: Bool { !(summary ?? "").isEmpty || !decisions.isEmpty }
     /// What the wearer said they would do.
     var mine: [Followup] { followups.filter { $0.owner == "me" } }
-    /// Speakers the computer could not put a name to.
-    var unknownSpeakers: [String] { speakers.filter { $0.hasPrefix("speaker_") } }
+    /// Speakers nobody has put a name to.
+    var unknownSpeakers: [String] { speakers.filter { $0.hasPrefix("speaker_") && speakerNames[$0] == nil } }
 }
 
 /// The answer of `GET /recordings/conversation?id=`.
@@ -136,6 +153,7 @@ extension RecordingHubAPI {
     func recordingConversation(id: String) async throws -> WatchConversationDetail? { nil }
     func watchNotes() async throws -> Bool? { nil }
     func setWatchNotes(_ on: Bool) async throws -> Bool { throw HubRequestError.invalidIdentifier }
+    func answerSpeaker(conversation: String, speaker: String, answer: String, name: String) async throws -> WatchConversation? { nil }
 }
 
 extension HubChannel {
@@ -150,6 +168,13 @@ extension HubChannel {
     }
 
     func watchNotes() async throws -> Bool? { try await status().watchNotes?.on }
+
+    func answerSpeaker(conversation: String, speaker: String, answer: String, name: String) async throws -> WatchConversation? {
+        guard try await status().recordingSpeakers == true else { return nil }
+        let body = try JSONEncoder().encode(["conversationId": conversation, "speaker": speaker, "answer": answer, "name": name])
+        return try await perform(.write(path: "/recordings/conversation/speaker", body: String(decoding: body, as: UTF8.self)))
+            .payload(WatchConversation.self)
+    }
 
     func setWatchNotes(_ on: Bool) async throws -> Bool {
         try await perform(.write(path: "/settings/watch-notes", body: "{\"on\":\(on)}")).payload(WatchNotesSetting.self).on
@@ -250,7 +275,9 @@ enum WatchTabCopy {
             parts.append(clock(start, locale: locale, timeZone: timeZone) + "–" + clock(end, locale: locale, timeZone: timeZone))
             parts.append(duration(Int(end.timeIntervalSince(start))))
         }
-        if !conversation.speakers.isEmpty { parts.append(conversation.speakers.map(speaker).joined(separator: ", ")) }
+        if !conversation.speakers.isEmpty {
+            parts.append(conversation.speakers.map { conversation.speakerNames[$0] ?? speaker($0) }.joined(separator: ", "))
+        }
         if let marks = marks(conversation.marks.count) { parts.append(marks) }
         return parts.joined(separator: " · ")
     }

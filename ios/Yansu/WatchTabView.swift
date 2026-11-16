@@ -134,7 +134,10 @@ struct WatchTabView: View {
                 note(String(localized: "Nothing heard today yet."))
             } else {
                 ForEach(split.today) { conversation in
-                    WatchConversationRow(conversation: conversation)
+                    NavigationLink { WatchConversationView(conversation: conversation) } label: {
+                        WatchConversationRow(conversation: conversation)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
             // Earlier days only beside a list this computer just served.
@@ -144,7 +147,12 @@ struct WatchTabView: View {
                 ForEach(split.earlier) { day in
                     DisclosureGroup {
                         VStack(spacing: 8) {
-                            ForEach(day.conversations) { WatchConversationRow(conversation: $0) }
+                            ForEach(day.conversations) { conversation in
+                                NavigationLink { WatchConversationView(conversation: conversation) } label: {
+                                    WatchConversationRow(conversation: conversation)
+                                }
+                                .buttonStyle(.plain)
+                            }
                         }
                         .padding(.top, 8)
                     } label: {

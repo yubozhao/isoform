@@ -343,6 +343,8 @@ struct HubStatus: Decodable, Equatable, Sendable {
     var recordingMarks: Bool? = nil
     /// The computer serves the conversations it found in the recordings (PROTOCOL.md 24.11).
     var recordingConversations: Bool? = nil
+    /// The computer takes answers about who a speaker is (PROTOCOL.md 24.13).
+    var recordingSpeakers: Bool? = nil
     /// "Notes for long talks" on the computer (PROTOCOL.md 24.12); absent on a computer that has no such setting.
     var watchNotes: WatchNotesSetting? = nil
     /// The phone may pause observing on the computer and end a pause it started (PROTOCOL.md 24.10).

@@ -89,6 +89,8 @@ protocol RecordingHubAPI: Sendable {
     /// "Notes for long talks" on the computer (PROTOCOL.md 24.12); nil when it has no such setting.
     func watchNotes() async throws -> Bool?
     func setWatchNotes(_ on: Bool) async throws -> Bool
+    /// Says who a speaker is (PROTOCOL.md 24.13); nil from a computer that does not take it.
+    func answerSpeaker(conversation: String, speaker: String, answer: String, name: String) async throws -> WatchConversation?
 }
 
 extension RecordingHubAPI {
@@ -446,6 +448,9 @@ actor WatchRecordingForwarder {
     func conversation(_ id: String) async throws -> WatchConversationDetail? { try await hub.recordingConversation(id: id) }
     func notesSetting() async throws -> Bool? { try await hub.watchNotes() }
     func setNotes(_ on: Bool) async throws -> Bool { try await hub.setWatchNotes(on) }
+    func answerSpeaker(conversation: String, speaker: String, answer: String, name: String) async throws -> WatchConversation? {
+        try await hub.answerSpeaker(conversation: conversation, speaker: speaker, answer: answer, name: name)
+    }
     /// When the pause on the computer ends by itself; nil with no pause or no end.
     func pauseUntil() async -> Date? { (try? await hub.observingPause())?.until }
 

@@ -141,6 +141,11 @@ struct DuoWideRootView: View {
                 fullScreen = false
                 switch tab {
                 case .today: break
+                // The wide layout has no Watch tab yet: the page opens as a sheet over Today, so the
+                // mark and the watch line on Today still lead somewhere.
+                case .watch:
+                    router.selectedTab = .today
+                    router.showsWatchSheet = true
                 case .chat:
                     if navigation.path(for: .chat).isEmpty {
                         navigation.replaceCurrent(with: .topics, on: .chat)
@@ -150,6 +155,17 @@ struct DuoWideRootView: View {
                     }
                 case .tasks: if navigation.path(for: .tasks).isEmpty { navigation.replaceCurrent(with: .tasks, on: .tasks) }
                 case .settings: break
+                }
+            }
+            .sheet(isPresented: $router.showsWatchSheet) {
+                NavigationStack {
+                    WatchTabView()
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar {
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button(String(localized: "Done")) { router.showsWatchSheet = false }
+                            }
+                        }
                 }
             }
             .onAppear(perform: reconcileTodaySelection)
