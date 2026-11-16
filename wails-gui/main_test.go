@@ -1,7 +1,12 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
+	"io/fs"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"testing"
 )
 
@@ -53,6 +58,12 @@ func TestMain(m *testing.M) {
 	stopLeakScan := startLeakScan()
 	code := m.Run()
 	stopLeakScan()
+	if leaked := goCachesUnder(os.Getenv("HOME")); len(leaked) > 0 {
+		fmt.Fprintf(os.Stderr, "a go command filled the temporary test home: %v\n", leaked)
+		if code == 0 {
+			code = 1
+		}
+	}
 	cleanup()
 	removeStoreSeeds()
 	removeSharedFakeMagpie()
@@ -83,6 +94,10 @@ func setupIsolatedTestHome() func() {
 	testRealHomeDir, _ = os.UserHomeDir()
 	testRealClaudeConfigDir = os.Getenv("CLAUDE_CONFIG_DIR")
 	testRealCodexHome = os.Getenv("CODEX_HOME")
+	// A go command a test runs would otherwise put its module cache
+	// (hundreds of MB of read-only files) and build cache under the
+	// temporary home and lose the user's go env file.
+	pinGoEnv()
 	home := shortTestHome("wgt-home-")
 	_ = os.Setenv("HOME", home)
 	_ = os.Setenv("USERPROFILE", home)
@@ -103,7 +118,66 @@ func setupIsolatedTestHome() func() {
 	} {
 		_ = os.Unsetenv(key)
 	}
-	return func() { _ = os.RemoveAll(home) }
+	return func() { removeTestHome(home) }
+}
+
+// goEnvPinned are the go command's folders and its env file, all of which
+// default to places under HOME.
+var goEnvPinned = []string{"GOPATH", "GOMODCACHE", "GOCACHE", "GOENV"}
+
+// pinGoEnv sets the go command's folders to the values it resolves with the
+// real home, unless they are already set, so go subprocesses reuse the real
+// caches. Without a go command on PATH there is nothing to pin.
+func pinGoEnv() {
+	unset := []string{}
+	for _, key := range goEnvPinned {
+		if os.Getenv(key) == "" {
+			unset = append(unset, key)
+		}
+	}
+	if len(unset) == 0 {
+		return
+	}
+	out, err := exec.Command("go", append([]string{"env", "-json"}, unset...)...).Output()
+	if err != nil {
+		return
+	}
+	values := map[string]string{}
+	if json.Unmarshal(out, &values) != nil {
+		return
+	}
+	for _, key := range unset {
+		if value := values[key]; value != "" && value != "off" {
+			_ = os.Setenv(key, value)
+		}
+	}
+}
+
+// goCachesUnder lists the go module and build caches found under home.
+func goCachesUnder(home string) []string {
+	if home == "" {
+		return nil
+	}
+	leaked := []string{}
+	for _, rel := range []string{filepath.Join("go", "pkg", "mod"), filepath.Join("Library", "Caches", "go-build"), filepath.Join(".cache", "go-build")} {
+		if _, err := os.Stat(filepath.Join(home, rel)); err == nil {
+			leaked = append(leaked, rel)
+		}
+	}
+	return leaked
+}
+
+// removeTestHome removes the temporary home even when it holds read-only
+// folders (the go module cache makes its folders read-only), the way Go's
+// own tests clean a module cache: make every folder writable first.
+func removeTestHome(home string) {
+	_ = filepath.WalkDir(home, func(path string, d fs.DirEntry, err error) error {
+		if err == nil && d.IsDir() {
+			_ = os.Chmod(path, 0o700)
+		}
+		return nil
+	})
+	_ = os.RemoveAll(home)
 }
 
 // shortTestHome creates the isolated home under /tmp so Unix socket paths

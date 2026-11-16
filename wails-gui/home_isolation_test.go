@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -118,5 +119,45 @@ func TestOnlySanctionedTestsSeeTheRealHome(t *testing.T) {
 		if bytes.Contains(data, []byte("testReal")) {
 			t.Fatalf("%s reaches the user's real home; only the guard and the env-gated magpie, interests, portrait and PostHog integration tests may", file)
 		}
+	}
+}
+
+// TestGoCommandsKeepTheRealCaches guards the temporary home against the go
+// module cache: a go command a test runs must resolve its module and build
+// caches outside the temporary home, and a home holding a read-only module
+// cache must still be removed.
+func TestGoCommandsKeepTheRealCaches(t *testing.T) {
+	tempHome := os.Getenv("HOME")
+	if _, err := exec.LookPath("go"); err == nil {
+		out, err := exec.Command("go", "env", "GOPATH", "GOMODCACHE", "GOCACHE").Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, dir := range strings.Fields(string(out)) {
+			if strings.HasPrefix(dir, tempHome+string(os.PathSeparator)) {
+				t.Fatalf("a go command resolves %q inside the temporary home %q", dir, tempHome)
+			}
+		}
+	}
+
+	home := shortTestHome("wgt-rm-")
+	mod := filepath.Join(home, "go", "pkg", "mod", "example.com", "m@v1.0.0")
+	if err := os.MkdirAll(mod, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(mod, "go.mod"), []byte("module example.com/m\n"), 0o444); err != nil {
+		t.Fatal(err)
+	}
+	for dir := mod; dir != home; dir = filepath.Dir(dir) {
+		if err := os.Chmod(dir, 0o555); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := goCachesUnder(home); len(got) != 1 {
+		t.Fatalf("goCachesUnder(%q) = %v, want the module cache", home, got)
+	}
+	removeTestHome(home)
+	if _, err := os.Stat(home); !os.IsNotExist(err) {
+		t.Fatalf("a home with a read-only module cache was left behind: %v", err)
 	}
 }
