@@ -470,7 +470,7 @@ func (a *App) workResultItems(now time.Time, held []WorkItem) []WorkItem {
 			owned[item.Ref.TaskID] = true
 		}
 	}
-	for _, record := range a.workAnswers().current() {
+	for _, record := range a.answersLedger().current() {
 		if record.TaskID != "" {
 			owned[record.TaskID] = true
 		}

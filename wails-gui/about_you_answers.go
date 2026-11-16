@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"log"
 	"strings"
 	"time"
 )
@@ -13,7 +14,11 @@ import (
 
 // UndoConfirmMemoryEntry is Undo after That's me on a belief.
 func (a *App) UndoConfirmMemoryEntry(id string) error {
-	return a.unconfirmMemoryEntry(id)
+	if err := a.unconfirmMemoryEntry(id); err != nil {
+		return err
+	}
+	a.ledgerBeliefUndo(id)
+	return nil
 }
 
 // NotQuiteMemoryEntry is Not quite left blank: the belief stops being used
@@ -28,6 +33,7 @@ func (a *App) NotQuiteMemoryEntry(id string) (int64, error) {
 	if err := a.markMemoryNotQuite(id); err != nil {
 		return 0, err
 	}
+	a.ledgerBeliefAnswer(id, entry.Content, workActionNo)
 	return confirmedAt, nil
 }
 
@@ -66,6 +72,7 @@ func (a *App) UndoNotQuiteMemoryEntry(id string, confirmedAt int64) error {
 		return err
 	}
 	a.markMemoryDirty("not_quite_undo")
+	a.ledgerBeliefUndo(id)
 	return nil
 }
 
@@ -113,4 +120,23 @@ func (a *App) UndoMemoryWording(id, wording string) (MemoryEntry, error) {
 	}
 	a.markMemoryDirty("wording_undo")
 	return a.GetMemoryEntry(id)
+}
+
+// ledgerBeliefAnswer keeps a belief's That's me (yes) or Not quite (no) in the
+// answers ledger. The ledger never blocks the answer.
+func (a *App) ledgerBeliefAnswer(id, content, action string) {
+	title := ""
+	if points := parseMemoryPoints(content); len(points) > 0 {
+		title = points[0]
+	}
+	if _, err := a.recordAnswer(AnswerRecord{ItemID: "belief:" + id, Kind: answerKindBelief, Title: title, Action: action,
+		Surface: workSurfaceComputer}); err != nil {
+		log.Printf("[answers] a belief's answer was not kept: %v", err)
+	}
+}
+
+func (a *App) ledgerBeliefUndo(id string) {
+	if err := a.undoAnswerFor("belief:"+id, answerKindBelief, workSurfaceComputer); err != nil {
+		log.Printf("[answers] a belief's Undo was not kept: %v", err)
+	}
 }

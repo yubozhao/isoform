@@ -24,7 +24,7 @@ func workAnswersTestApp(t *testing.T) (*App, *handoff.Store) {
 	app.mobileBriefSvc = &workTestBriefSource{mobileTestBriefSource{brief: workTestBrief()}}
 	started := dailyTopicTaskStart
 	dailyTopicTaskStart = func(*App, string) error { return nil }
-	t.Cleanup(func() { dailyTopicTaskStart = started; workAnswerStores.Delete(app) })
+	t.Cleanup(func() { dailyTopicTaskStart = started; answersLedgers.Delete(app) })
 	return app, handoffs
 }
 

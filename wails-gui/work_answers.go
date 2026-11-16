@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -40,10 +38,7 @@ const (
 	workSurfacePhone        = "phone"
 	workSurfaceNotification = "notification"
 
-	workAnswersDirName  = "work"
-	workAnswersFileName = "answers.json"
-	workAnswersKeep     = 2000
-	workEditMaxBytes    = 4000
+	workEditMaxBytes = 4000
 )
 
 var (
@@ -52,103 +47,6 @@ var (
 	errWorkAnswerInvalid = errors.New("this answer doesn't fit this item")
 	errWorkUndoClosed    = errors.New("this answer can no longer be undone")
 )
-
-// workAnswerRecord is one answer in the log. Undone answers stay, marked.
-type workAnswerRecord struct {
-	ID        string      `json:"id"`
-	Action    string      `json:"action"`
-	Reason    string      `json:"reason,omitempty"`
-	Edited    *WorkEdited `json:"edited,omitempty"`
-	At        string      `json:"at"`
-	Surface   string      `json:"surface"`
-	DeviceID  string      `json:"deviceId,omitempty"`
-	Seq       uint64      `json:"seq,omitempty"`
-	TaskID    string      `json:"taskId,omitempty"`
-	UndoUntil string      `json:"undoUntil,omitempty"`
-	Undone    bool        `json:"undone,omitempty"`
-}
-
-type workAnswersFile struct {
-	Version int                `json:"version"`
-	Answers []workAnswerRecord `json:"answers"`
-}
-
-// workAnswerStore is the log on disk (mode 0600), newest last.
-type workAnswerStore struct {
-	mu   sync.Mutex
-	path string
-}
-
-var workAnswerStores sync.Map // *App -> *workAnswerStore
-
-func (a *App) workAnswers() *workAnswerStore {
-	if s, ok := workAnswerStores.Load(a); ok {
-		return s.(*workAnswerStore)
-	}
-	path := ""
-	if root, err := flavorDataDir(); err == nil {
-		path = filepath.Join(root, workAnswersDirName, workAnswersFileName)
-	}
-	s, _ := workAnswerStores.LoadOrStore(a, &workAnswerStore{path: path})
-	return s.(*workAnswerStore)
-}
-
-func (s *workAnswerStore) load() []workAnswerRecord {
-	if s == nil || s.path == "" {
-		return nil
-	}
-	raw, err := os.ReadFile(s.path)
-	if err != nil {
-		return nil
-	}
-	var file workAnswersFile
-	if json.Unmarshal(raw, &file) != nil {
-		return nil
-	}
-	return file.Answers
-}
-
-func (s *workAnswerStore) save(answers []workAnswerRecord) error {
-	if s == nil || s.path == "" {
-		return errMobileStoreUnavailable
-	}
-	if over := len(answers) - workAnswersKeep; over > 0 {
-		answers = answers[over:]
-	}
-	raw, err := json.Marshal(workAnswersFile{Version: 1, Answers: answers})
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
-		return err
-	}
-	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, s.path); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-	return nil
-}
-
-// current is each item's newest answer that wasn't undone.
-func (s *workAnswerStore) current() map[string]workAnswerRecord {
-	out := map[string]workAnswerRecord{}
-	for _, record := range s.load() {
-		if record.Undone {
-			continue
-		}
-		previous, seen := out[record.ID]
-		// A result's Useful never hides the Yes that started its work.
-		if seen && workResultJudgment(record.Action) && !workResultJudgment(previous.Action) {
-			record.TaskID = previous.TaskID
-		}
-		out[record.ID] = record
-	}
-	return out
-}
 
 func workResultJudgment(action string) bool {
 	return action == workActionUseful || action == workActionNotUseful
@@ -194,23 +92,25 @@ func (a *App) answerWork(ctx context.Context, id string, input WorkAnswerInput, 
 	if !ok {
 		return WorkItem{}, errWorkItemGone
 	}
-	store := a.workAnswers()
-	answers := store.load()
+	ledger := a.answersLedger()
+	answers := ledger.entries()
 	if meta.Seq > 0 {
 		for _, record := range answers {
-			if record.ID == id && record.DeviceID == meta.DeviceID && record.Seq >= meta.Seq {
+			if record.ItemID == id && record.DeviceID == meta.DeviceID && record.Seq >= meta.Seq {
 				return item, errWorkItemChanged
 			}
 		}
 	}
-	record := workAnswerRecord{ID: id, Action: input.Action, At: mobileTimestamp(now), Surface: meta.Surface,
-		DeviceID: meta.DeviceID, Seq: meta.Seq, UndoUntil: list.UndoUntil}
+	record := AnswerRecord{ItemID: id, Kind: answerKindWork, Title: item.Work.Title, Action: input.Action, At: mobileTimestamp(now),
+		Surface: meta.Surface, DeviceID: meta.DeviceID, Seq: meta.Seq, UndoUntil: list.UndoUntil}
 	switch input.Action {
 	case workActionUndo:
-		if err := a.undoWorkAnswer(item, answers, now); err != nil {
+		undone, err := a.undoWorkAnswer(item, answers, now)
+		if err != nil {
 			return item, err
 		}
-		if err := store.save(answers); err != nil {
+		record.Undoes, record.UndoUntil = undone.EntryID, ""
+		if _, err := ledger.append(record); err != nil {
 			return item, err
 		}
 	case workActionYes, workActionNo, workActionNotMine, workActionEdit:
@@ -232,14 +132,14 @@ func (a *App) answerWork(ctx context.Context, id string, input WorkAnswerInput, 
 			return item, err
 		}
 		record.TaskID = taskID
-		if err := store.save(append(answers, record)); err != nil {
+		if _, err := ledger.append(record); err != nil {
 			return item, err
 		}
 	case workActionUseful, workActionNotUseful:
 		if item.State != workStateBack {
 			return item, errWorkItemChanged
 		}
-		if err := store.save(append(answers, record)); err != nil {
+		if _, err := ledger.append(record); err != nil {
 			return item, err
 		}
 	default:
@@ -385,38 +285,30 @@ func (a *App) startWorkTask(item WorkItem, prompt string) (string, error) {
 	return saved.ID, nil
 }
 
-// undoWorkAnswer marks the item's last answer undone in answers. A Yes that
-// handed the work to an agent is not undone here: the task is stopped on
-// its own page.
-func (a *App) undoWorkAnswer(item WorkItem, answers []workAnswerRecord, now time.Time) error {
-	last := -1
-	for i := len(answers) - 1; i >= 0; i-- {
-		if answers[i].ID == item.ID && !answers[i].Undone {
-			last = i
-			break
-		}
+// undoWorkAnswer finds the item's last answer still standing, for the undo
+// entry that takes it back. A Yes that handed the work to an agent is not
+// undone here: the task is stopped on its own page.
+func (a *App) undoWorkAnswer(item WorkItem, answers []AnswerRecord, now time.Time) (AnswerRecord, error) {
+	record, ok := answersStanding(answers)[item.ID]
+	if !ok {
+		return AnswerRecord{}, errWorkItemChanged
 	}
-	if last < 0 {
-		return errWorkItemChanged
-	}
-	record := answers[last]
 	if until, err := time.Parse(time.RFC3339, record.UndoUntil); err == nil && now.After(until) {
-		return errWorkUndoClosed
+		return AnswerRecord{}, errWorkUndoClosed
 	}
 	switch record.Action {
 	case workActionYes, workActionEdit:
 		if record.TaskID != "" {
-			return errWorkUndoClosed
+			return AnswerRecord{}, errWorkUndoClosed
 		}
 	case workActionNo, workActionNotMine:
 		if item.Source == workSourceTopic {
 			if err := a.reopenDailyTopicProposal(item.Ref.TopicID, item.Ref.ProposalID); err != nil {
-				return err
+				return AnswerRecord{}, err
 			}
 		}
 	}
-	answers[last].Undone = true
-	return nil
+	return record, nil
 }
 
 // reopenDailyTopicProposal puts a declined proposal back to proposed.
@@ -452,7 +344,7 @@ func workFind(list WorkList, id string) (WorkItem, bool) {
 // applyWorkAnswers gives each item its state from the answers log and, for a
 // Yes that started a task, from that task.
 func (a *App) applyWorkAnswers(items []WorkItem) []WorkItem {
-	answers := a.workAnswers().current()
+	answers := a.answersLedger().current()
 	for i := range items {
 		item := &items[i]
 		record, ok := answers[item.ID]

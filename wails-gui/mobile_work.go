@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"sync"
 )
 
@@ -156,4 +157,28 @@ func (bridge *mobileBridge) serveWorkAnswer(w http.ResponseWriter, r *http.Reque
 			mobileJSON(w, http.StatusServiceUnavailable, nil, "the answer could not be saved; try again")
 		}
 	})
+}
+
+// serveAnswers answers GET /answers?limit=&before= (section 26.2): the
+// answers ledger for Your data on the phone, newest first.
+func (bridge *mobileBridge) serveAnswers(w http.ResponseWriter, r *http.Request) {
+	if bridge.app == nil {
+		mobileJSON(w, http.StatusServiceUnavailable, nil, errMobileStoreUnavailable.Error())
+		return
+	}
+	limit := 50
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > answersPageMax {
+			mobileJSON(w, http.StatusBadRequest, nil, "limit must be between 1 and 200")
+			return
+		}
+		limit = parsed
+	}
+	page, err := bridge.app.GetAnswers(limit, r.URL.Query().Get("before"))
+	if err != nil {
+		mobileJSON(w, http.StatusServiceUnavailable, nil, errMobileStoreUnavailable.Error())
+		return
+	}
+	mobileJSON(w, http.StatusOK, page, "")
 }

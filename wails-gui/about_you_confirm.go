@@ -309,6 +309,7 @@ func (a *App) ConfirmMemoryEntry(id string) (MemoryEntry, error) {
 		return MemoryEntry{}, err
 	}
 	a.markMemoryDirty("confirm")
+	a.ledgerBeliefAnswer(id, entry.Content, workActionYes)
 	return a.GetMemoryEntry(id)
 }
 

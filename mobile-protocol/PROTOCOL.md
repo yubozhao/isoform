@@ -3760,6 +3760,27 @@ older phones.
   reopens the item (and the topic's proposal), a Useful or Not useful puts the result back. A Yes
   that started a task is stopped from the task, not undone here. Not mine on a topic's proposal takes
   the topic out of Your work, as on Topics: the answer returns the item answered, with no Undo.
-- **The log.** Every answer is kept on the computer (`work/answers.json` in the data folder, 0600,
-  the newest 2000) with its item id, action, reason, edit, time, surface and device: one record for
-  Your answers on both devices. Apart from an edit's before and after, no item text is stored there.
+- **The ledger.** Every answer, and every Undo, is an entry in the answers ledger (26.2), with its
+  surface and device.
+
+### 26.2 The answers ledger (design A37)
+
+Every judgment the person gives, on every surface, is kept in one ledger on the computer: Your work's
+Yes, No (with its reason), Not mine, Edit (before and after), Useful and Not useful from the computer,
+the phone and notifications; About you's That's me and Not quite on a belief and on the portrait (with
+the person's note); and chat corrections. It is the most valuable data Isoform has, so:
+
+- **Append-only.** One JSON object per line in `answers/ledger.jsonl` in the data folder (0600, folder
+  0700). An Undo is its own entry, `{"action":"undo","undoes":"<entry id>"}`; nothing is ever rewritten
+  or dropped. A line that cannot be read (a torn last write) is skipped, never repaired in place.
+- **Durable.** Each entry is written through to disk (`fsync`) before the answer returns.
+- **Private.** It stays on the computer. A paired phone reads it only inside the sealed channel, for
+  Your data.
+- **Entry:** `{"v":1,"id":"<uuid>","item":"<item id>","kind":"work|belief|portrait|correction",
+  "title":"<what the item said, at most 160 characters>","action":"yes|no|not_mine|edit|useful|not_useful|undo",
+  "reason","note","edited":{"before","after"},"at":"<RFC 3339>","surface":"computer|phone|notification|chat",
+  "deviceId","seq","taskId","undoUntil","undoes"}`. Item ids: Your work's (section 26), `belief:<memoryId>`,
+  `portrait`, `correction:<id>`.
+- **Your data.** `GET /answers?limit=<1..200, default 50>&before=<entry id>` (`brief:read`) and the desktop
+  binding `GetAnswers(limit, before)` answer `{"answers":[<entry> + "undone":true when an Undo took it
+  back], "next":"<cursor>"}`, newest first; undo entries themselves are not listed.
