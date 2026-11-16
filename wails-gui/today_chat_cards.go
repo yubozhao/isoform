@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"log"
 	"strings"
 	"time"
 
@@ -265,19 +266,30 @@ func (a *App) todayBriefParagraphMessage(ctx context.Context, briefID, version s
 		return MobileBriefV1{}, "", errTodayChatItemUnavailable
 	}
 	if a.IsClosedEyesModeEnabled() {
+		log.Printf("[today-chat] paragraph brief=%s unavailable reason=observation_paused", briefID)
 		return MobileBriefV1{}, "", errTodayChatObservationPaused
 	}
-	now := time.Now()
-	sources := a.collectTodayChatSources(ctx, now)
-	brief, ok := a.todayChatDeliveredBriefFrom(ctx, briefID, &sources)
+	// The paragraph is found in the brief Today shows: the sealed read, which
+	// is cached and needs none of the card sources. Gathering those first
+	// (every memory through its gate, the activity store) ran into the eight
+	// second limit on a busy evening, and the reply said "Couldn't open the
+	// chat" (Bo, 2026-11-15). The delivered read stays as the fallback.
+	brief, ok := a.todayChatSealedBrief(briefID)
+	if !ok || version != "" && version != brief.ConversationKey || matchText && !mobileBriefHasParagraphText(brief, text) {
+		sources := a.collectTodayChatSources(ctx, time.Now())
+		brief, ok = a.todayChatDeliveredBriefFrom(ctx, briefID, &sources)
+	}
 	if err := ctx.Err(); err != nil {
+		log.Printf("[today-chat] paragraph brief=%s unavailable reason=timeout", briefID)
 		return MobileBriefV1{}, "", err
 	}
 	if !ok || version != "" && version != brief.ConversationKey {
+		log.Printf("[today-chat] paragraph brief=%s unavailable reason=brief_not_found", briefID)
 		return MobileBriefV1{}, "", errTodayChatItemUnavailable
 	}
 	text = strings.TrimSpace(text)
 	if matchText && text == "" {
+		log.Printf("[today-chat] paragraph brief=%s unavailable reason=empty_text", briefID)
 		return MobileBriefV1{}, "", errTodayChatItemUnavailable
 	}
 	closing := -1
@@ -297,6 +309,11 @@ func (a *App) todayBriefParagraphMessage(ctx context.Context, briefID, version s
 		}
 	}
 	if selected < 0 || selected == closing {
+		reason := "text_changed"
+		if selected == closing && selected >= 0 {
+			reason = "closing_question"
+		}
+		log.Printf("[today-chat] paragraph brief=%s index=%d paragraphs=%d unavailable reason=%s", briefID, paragraph, len(brief.Narrative), reason)
 		return MobileBriefV1{}, "", errTodayChatItemUnavailable
 	}
 	body := strings.TrimSpace(brief.Narrative[selected].Text)
@@ -361,4 +378,16 @@ func (a *App) postTodayBriefOpener(ctx context.Context, mainID, message, reason 
 		return errors.New("could not post brief opener")
 	}
 	return nil
+}
+
+// mobileBriefHasParagraphText reports whether a brief has a paragraph with
+// exactly this text (trimmed), the check a reply's selected text must pass.
+func mobileBriefHasParagraphText(brief MobileBriefV1, text string) bool {
+	text = strings.TrimSpace(text)
+	for _, para := range brief.Narrative {
+		if text != "" && strings.TrimSpace(para.Text) == text {
+			return true
+		}
+	}
+	return false
 }
