@@ -10,7 +10,7 @@ import type { Project } from "@/types";
 import sidebarSource from "./sidebar.tsx?raw";
 import footSource from "./sidebar-foot.tsx?raw";
 import { Sidebar } from "./sidebar";
-import { phoneLineState, watchLineState } from "./sidebar-foot";
+import { phoneLineState, watchHeardTime, watchLineState } from "./sidebar-foot";
 import { PAGE_KEYS, PAUSE_OBSERVING_COMBO, comboToDisplayString, useKeybindings } from "@/hooks/useKeybindings";
 import { axeViolations } from "@/test-utils/axe";
 
@@ -309,6 +309,18 @@ describe("Sidebar foot states", () => {
         expect(watchLineState([{ startedAt: "2026-11-15T17:30:00Z" }] as never, now)).toEqual({ kind: "listening" });
         const old = watchLineState([{ startedAt: "2026-11-15T12:00:00Z" }, { startedAt: "bad" }] as never, now);
         expect(old.kind).toBe("heard");
+    });
+
+    // 2026-11-16: "last heard 5:43" was two days old and read like that morning.
+    it("says the day of a last-heard time that is not today", () => {
+        const now = new Date(2026, 10, 16, 14, 30);
+        expect(watchHeardTime(new Date(2026, 10, 16, 5, 43), "en-US", now)).toBe("5:43 AM");
+        const saturday = watchHeardTime(new Date(2026, 10, 14, 17, 43), "en-US", now);
+        expect(saturday).toContain("Sat");
+        expect(saturday).toContain("5:43");
+        const older = watchHeardTime(new Date(2026, 10, 2, 17, 43), "en-US", now);
+        expect(older).toContain("Nov 2");
+        expect(older).toContain("5:43");
     });
 });
 

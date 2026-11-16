@@ -6,7 +6,8 @@ import { formatBytes } from "@/components/settings/settings-format";
 import { VoiceMemoryCard } from "@/components/settings/voice-memory-card";
 import { Button } from "@/components/ui/button";
 import type { SettingsPageId } from "@/components/settings/settings-registry";
-import { ExportAnswers, GetYourDataSummary, type YourDataSummary } from "@/lib/wails-shim-app";
+import { DeleteAnswers, ExportAnswers, GetYourDataSummary, type YourDataSummary } from "@/lib/wails-shim-app";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useSettingsFailure } from "@/components/settings/settings-failure";
 import { openSettingsPage, type OpenSettingsPage } from "./capture-shared";
 
@@ -23,6 +24,17 @@ export function YourDataPage({ onOpenPage }: { onOpenPage?: OpenSettingsPage } =
     const { failure: exportFailure, fail: failExport } = useSettingsFailure();
     const exportAnswers = () => {
         ExportAnswers().catch(() => failExport(t("yourData.exportFailed"), exportAnswers));
+    };
+    // Delete your answers (rule 4): the record and what was learned from it go;
+    // each item keeps its state, without Undo.
+    const [askingDelete, setAskingDelete] = useState(false);
+    const [deleting, setDeleting] = useState(false);
+    const deleteAnswers = () => {
+        setDeleting(true);
+        DeleteAnswers()
+            .then(() => reload())
+            .catch(() => failExport(t("yourData.deleteFailed"), deleteAnswers))
+            .finally(() => setDeleting(false));
     };
 
     const reload = useCallback(() => {
@@ -91,10 +103,24 @@ export function YourDataPage({ onOpenPage }: { onOpenPage?: OpenSettingsPage } =
                         description={t("yourData.answersKept")}
                         failure={exportFailure}
                         control={summary && summary.answers > 0 ? (
-                            <Button size="sm" variant="outline" aria-label={t("yourData.exportLabel")} onClick={exportAnswers}>
-                                {t("yourData.export")}
-                            </Button>
+                            <span className="flex gap-2">
+                                <Button size="sm" variant="outline" aria-label={t("yourData.exportLabel")} onClick={exportAnswers}>
+                                    {t("yourData.export")}
+                                </Button>
+                                <Button size="sm" variant="outline" disabled={deleting} aria-label={t("yourData.deleteLabel")} onClick={() => setAskingDelete(true)}>
+                                    {t("yourData.delete")}
+                                </Button>
+                            </span>
                         ) : undefined}
+                    />
+                    <ConfirmDialog
+                        open={askingDelete}
+                        onOpenChange={setAskingDelete}
+                        title={t("yourData.deleteConfirmTitle")}
+                        description={t("yourData.deleteConfirm", { count: summary?.answers ?? 0 })}
+                        confirmLabel={t("yourData.deleteConfirmButton")}
+                        variant="danger"
+                        onConfirm={deleteAnswers}
                     />
                 </div>
             </SettingsCard>

@@ -257,3 +257,40 @@ func closeEarlierJudgmentDays(dir, today string) {
 func closeJudgmentDaysAtLaunch() {
 	updateJudgments(func(*judgmentDay) {})
 }
+
+// clearJudgmentAnswers takes the answers out of the daily measures (Your
+// data's Delete your answers): each day keeps the proposals it made and
+// loses what was answered and accepted, and the brief items acted on. The
+// closed days' summary lines, which carry the same counts, go too.
+func clearJudgmentAnswers() error {
+	judgmentsMu.Lock()
+	defer judgmentsMu.Unlock()
+	dir, err := judgmentsDir()
+	if err != nil {
+		return err
+	}
+	files, err := filepath.Glob(filepath.Join(dir, "*.json"))
+	if err != nil {
+		return err
+	}
+	for _, path := range files {
+		day := strings.TrimSuffix(filepath.Base(path), ".json")
+		d := readJudgmentDay(dir, day)
+		for _, c := range d.Kinds {
+			c.Answered, c.Accepted = 0, 0
+		}
+		// Seen keeps its short hashes, so a proposal is still counted made
+		// once a day; they hold no answer.
+		d.BriefActed = 0
+		if err := writeJudgmentDay(dir, d); err != nil {
+			return err
+		}
+		if judgmentsDay != nil && judgmentsDay.Day == day {
+			judgmentsDay = d
+		}
+	}
+	if err := os.Remove(filepath.Join(dir, "summary.log")); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}

@@ -8,7 +8,7 @@ import Foundation
 enum WatchRecordingWire {
     static let version = 1
     /// A long recording is cut into parts of this length; each part is a complete audio file.
-    static let partSeconds: TimeInterval = 15 * 60
+    static let partSeconds: TimeInterval = 5 * 60
     /// PROTOCOL.md section 24: parts are numbered 0 to 63.
     static let maxParts = 64
     static let mime = "audio/mp4"

@@ -697,6 +697,8 @@ func (a *App) startupServices(ctx context.Context) {
 	a.deferLaunchTask("front", a.startFrontIfEnabled)
 	a.deferLaunchTask("ocr_prewarm", ocr.PrewarmHelper)
 	a.deferLaunchTask("assistant_history", a.scheduleAssistantHistory)
+	// A Forget everything that was running or pending carries on.
+	a.deferLaunchTask("forget_everything", a.resumeForgetEverything)
 	a.startActivityMaintenance()
 	manager, err := a.setupModelManager()
 	if err != nil {

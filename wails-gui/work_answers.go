@@ -658,7 +658,7 @@ func workFind(list WorkList, id string) (WorkItem, bool) {
 // applyWorkAnswers gives each item its state from the answers log and, for a
 // Yes that started a task, from that task.
 func (a *App) applyWorkAnswers(items []WorkItem) []WorkItem {
-	answers := a.answersLedger().current()
+	answers := a.answersLedger().standing()
 	for i := range items {
 		item := &items[i]
 		record, ok := answers[item.ID]

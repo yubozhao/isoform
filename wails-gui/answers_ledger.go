@@ -355,6 +355,11 @@ func (ledger *answersLedgerStore) forget(entryID string) error {
 	if !found {
 		return errAnswerNotFound
 	}
+	return ledger.writeLocked(kept)
+}
+
+// writeLocked writes the ledger again whole and syncs it; the caller holds mu.
+func (ledger *answersLedgerStore) writeLocked(kept []AnswerRecord) error {
 	var buf bytes.Buffer
 	for _, record := range kept {
 		line, err := json.Marshal(record)

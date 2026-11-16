@@ -36,6 +36,20 @@ export function watchLineState(recordings: WatchRecording[] | null, now = Date.n
     return now - latest.getTime() <= WATCH_LISTENING_WINDOW_MS ? { kind: "listening" } : { kind: "heard", at: latest };
 }
 
+/** When the watch was last heard, in words that cannot be mistaken for today:
+ *  the time alone only for today, with the weekday for the last week, and
+ *  with the date before that. (On 2026-11-16 "last heard 5:43" was Saturday's
+ *  5:43 PM and read like that morning.) */
+export function watchHeardTime(at: Date, locale: string | undefined, now = new Date()): string {
+    const time: Intl.DateTimeFormatOptions = { hour: "numeric", minute: "2-digit" };
+    const sameDay = at.getFullYear() === now.getFullYear() && at.getMonth() === now.getMonth() && at.getDate() === now.getDate();
+    if (sameDay) return at.toLocaleTimeString(locale, time);
+    const days = (now.getTime() - at.getTime()) / 86_400_000;
+    return days < 6
+        ? at.toLocaleString(locale, { weekday: "short", ...time })
+        : at.toLocaleString(locale, { month: "short", day: "numeric", ...time });
+}
+
 /** The Closed Eyes state, kept in step with every surface that changes it. */
 export function useClosedEyes() {
     const [closed, setClosed] = useState(false);
@@ -91,7 +105,7 @@ export function SidebarFoot({ collapsed, onOpenSettings, onOpenPhone, closedEyes
         : watch.kind === "listening"
           ? t("sidebar.watch.listening")
           : watch.kind === "heard"
-            ? t("sidebar.watch.heard", { time: watch.at.toLocaleTimeString(i18n.language, { hour: "numeric", minute: "2-digit" }) })
+            ? t("sidebar.watch.heard", { time: watchHeardTime(watch.at, i18n.language) })
             : "";
     // One Closed Eyes shortcut, system-wide and in the app (design,
     // pass-questions v1.0.0): the hotkey Go installs, shown on the button.

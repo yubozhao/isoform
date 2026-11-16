@@ -45,11 +45,11 @@ final class WatchHourClockTests: XCTestCase {
             at = at.addingTimeInterval(plan.seconds)
             XCTAssertLessThan(lengths.count, 10)
         }
-        XCTAssertEqual(lengths, [15 * 60, 15 * 60, 7 * 60])
+        XCTAssertEqual(lengths, Array(repeating: 5 * 60, count: 7) + [2 * 60])
         XCTAssertEqual(at, cut)
     }
 
-    func testAFullHourIsFourPartsAndNeverOneLongRecording() {
+    func testAFullHourIsTwelvePartsAndNeverOneLongRecording() {
         let start = date(10, 0)
         let cut = WatchHourClock.cut(after: start, calendar: calendar)
         var at = start
@@ -61,7 +61,7 @@ final class WatchHourClockTests: XCTestCase {
             XCTAssertLessThanOrEqual(plan.seconds, WatchRecordingWire.partSeconds)
             if plan.closesHour { break }
         }
-        XCTAssertEqual(parts, 4)
+        XCTAssertEqual(parts, 12)
         XCTAssertEqual(at.timeIntervalSince(start), 3600)
     }
 

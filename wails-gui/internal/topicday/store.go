@@ -179,3 +179,35 @@ func NotMine(feedback []Feedback) map[string]bool {
 	}
 	return out
 }
+
+// KeepFeedback writes the answer log again with what keep returns for each
+// answer, dropping those it says false for (Your data's Delete your answers
+// keeps Not mine, which keeps a topic the person said isn't theirs away).
+func (s *Store) KeepFeedback(keep func(Feedback) (Feedback, bool)) error {
+	all, err := s.Feedback()
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var buf []byte
+	for _, f := range all {
+		f, ok := keep(f)
+		if !ok {
+			continue
+		}
+		raw, err := json.Marshal(f)
+		if err != nil {
+			return err
+		}
+		buf = append(append(buf, raw...), '\n')
+	}
+	path := filepath.Join(s.dir, feedbackFile)
+	if len(all) == 0 {
+		return nil
+	}
+	if err := os.WriteFile(path+".tmp", buf, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(path+".tmp", path)
+}
