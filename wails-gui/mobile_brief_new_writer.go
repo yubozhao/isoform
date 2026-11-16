@@ -109,7 +109,8 @@ func newBriefMaterial(in mobileBriefInput, brief MobileBriefV1, larger, name str
 		if key == "" {
 			key = mobileBriefSourceKey(c.SourceKind, c.SourceID)
 		}
-		if seen[key] {
+		if seen[key] || in.NotRight[mobileBriefSourceKey(c.SourceKind, c.SourceID)] {
+			// A sentence the person said wasn't right rested on it: not again.
 			return
 		}
 		if existing[mobileBriefSourceKey(c.SourceKind, c.SourceID)] == "" {
@@ -528,6 +529,9 @@ func (s *mobileBriefService) composeNewBrief(ctx context.Context, input mobileBr
 	name := ""
 	if s.app != nil {
 		name = s.app.mobileBriefProfileFor(brief).Name
+	}
+	if s.app != nil && input.NotRight == nil {
+		input.NotRight = s.app.briefNotRightSources(input.AsOf)
 	}
 	material, sources := newBriefMaterial(input, brief, larger, name)
 	counts := map[string]int{}

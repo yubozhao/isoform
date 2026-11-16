@@ -3953,7 +3953,7 @@ when the list changes; the phone reads `GET /work` again then.
 - **Words** (`first[].text`, `yes.line`, `answer.line`) are composed on the computer once, so both
   devices say the same thing (phone-map rule 10). Content Isoform wrote (`noticed`, `work`) is in the
   person's language. The phone joins `first` with " · ". Each part may carry `key`, the fixed phrase's
-  id (`for_meeting`, `from_brief`, `from_topics`, `kind_project`, `kind_subject`, `back_from_agent`), so a
+  id (`for_meeting`, `from_brief`, `from_topics`, `kind_project`, `kind_subject`, `back_from_agent`, `from_not_right`), so a
   client can word it in its own language, and `at` for a time. **No stored text holds a day or a
   clock**: a part with `key` `when` (the day) or `clock` (the time) gets its `text` when the list is
   read (`GET /work`, `GetWorkList`), for the reader's now ("today", "tomorrow", "yesterday", the weekday
@@ -3970,7 +3970,19 @@ when the list changes; the phone reads `GET /work` again then.
   `open` and `back`.
 - **Reasons** a No may carry, by kind: offered `already_done`, `not_now`, `not_useful`, `myself`; done
   `not_needed`, `wrong_facts`, `not_how_id_say`, `myself`; claim `was_true_once`, `only_sometimes`,
-  `not_at_all`.
+  `not_at_all`; a brief's sentence `didnt_happen`, `wrong_person`, `already_done`, `not_mine`.
+- **Not right on a brief's sentence** (computer-brief v1.0.0 rules 7 and 8; additive, 2026-11-15).
+  `brief:<briefId>:p<index>` (the zero-based paragraph of any brief the computer still keeps) can be
+  answered like an item although it is never a row: `{"action":"no","reason"?,"after"?}`, where
+  `after` is "Or say what's right" (at most 4000 bytes) and `reason` is one of the sentence reasons
+  above; both may be left out. Any other action is `400`; a brief or paragraph that doesn't exist is
+  `404`; a second Not right is `409 item_changed`. The answer is the sentence as an item (`kind`
+  `claim`, `row` `check`, `source` `brief`, `noticed` the sentence, `ref.briefId` and
+  `ref.paragraph`), answered, with `answer.edited.after` holding the words given. It is kept in Your
+  answers (26.2) and undone like any answer. While it stands, the brief's items under that paragraph
+  (`ref.paragraph`) carry a `first` part with key `from_not_right` ("From a sentence you said wasn't
+  right") for the person to keep or drop, and for a week new briefs leave out the sources that
+  sentence rested on, so tomorrow's brief doesn't say it again.
 - **Sources in this version:** the current brief's offers (from its phone package), the daily
   topics' proposals (section 15.9, while they are on), the next meeting's prep (Today's Before you talk:
   `prep:<eventId>`, kind `done`, Yes keeps it with the meeting, No with `not_needed`), and tasks that
