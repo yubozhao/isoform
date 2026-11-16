@@ -907,7 +907,7 @@ export const StreamCard = memo(function StreamCard({
     }
 
     if (isTodayContextItem(item)) {
-        return <TodayContextStatus content={item.content} />;
+        return <TodayContextStatus content={item.content} toolInput={item.toolInput} />;
     }
 
     // ── Error message ──

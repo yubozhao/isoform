@@ -860,5 +860,9 @@
         "line": "Couldn't answer: {{reason}}",
         "kept": "Your question is kept. Nothing about your day left this computer except the question and what it needed.",
         "askAgain": "Ask again"
+    },
+    "about": {
+        "item": "About: {{title}}",
+        "brief": "About your brief: “{{sentence}}”"
     }
 }

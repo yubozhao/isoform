@@ -155,7 +155,7 @@ func (a *App) sendPromptWithTodayContext(prompt string, workDir string, model st
 			// A paused draft attached nothing, so it gets no context receipt.
 			posted.Do(func() {
 				a.recordContextEntries(result.Uses, "today_chat", tag)
-				a.postTodayContextCounts(tag, userItem.ID, result.Counts)
+				a.postTodayContextCounts(tag, userItem.ID, result.Counts, result.Title, ref.SourceKind)
 			})
 		}
 		return result.Text + composed
@@ -189,8 +189,11 @@ func (a *App) sendPromptWithTodayContext(prompt string, workDir string, model st
 }
 
 // Counts are desktop-only metadata. The dedicated kind stays out of prompt
-// history and the phone's existing projection of user-visible chat rows.
-func (a *App) postTodayContextCounts(tag string, userItemID string, counts TodayChatContextCounts) {
+// history and the phone's existing projection of user-visible chat rows. The
+// receipt also names what the message was attached to, the title the draft
+// already showed, so the thread reads "About: {title}" (phone-chat v1.0.0
+// rule 10, phone-map B10).
+func (a *App) postTodayContextCounts(tag string, userItemID string, counts TodayChatContextCounts, about, aboutKind string) {
 	if a == nil || a.store == nil {
 		return
 	}
@@ -198,7 +201,12 @@ func (a *App) postTodayContextCounts(tag string, userItemID string, counts Today
 	if err != nil {
 		return
 	}
-	turn, _ := json.Marshal(map[string]string{"userItemId": userItemID})
+	receipt := map[string]string{"userItemId": userItemID}
+	if about = strings.TrimSpace(about); about != "" && aboutKind != todayChatPausedKind {
+		receipt["about"] = truncateAtRuneBoundary(about, 400)
+		receipt["aboutKind"] = aboutKind
+	}
+	turn, _ := json.Marshal(receipt)
 	a.appendMainChatItem(context.Background(), tag, storage.StreamItemRow{
 		ID: uuid.NewString(), Kind: "context_status", ToolName: "today_context", Content: string(payload), ToolInput: string(turn),
 	}, "today_context")
