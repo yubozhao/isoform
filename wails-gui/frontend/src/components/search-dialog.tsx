@@ -55,8 +55,14 @@ import { calendarDaysAgo } from "@/lib/memory-content";
 import { markPageContent } from "@/lib/page-switch-timing";
 import { STANDALONE_CHAT_PROJECT_ID, isMainChatSession } from "@/lib/stream-helpers";
 import {
+    FindAnything,
+    ForgetFound,
     GenerateMobileBriefNow,
+    GetMemoryForgetPreview,
+    NoteFindSearch,
     SearchEverything,
+    type FindResult,
+    type FindResults,
     SetClosedEyesModeEnabled,
     type HandoffEntry,
     type SearchPlace,
@@ -117,6 +123,9 @@ interface SearchDialogProps {
 // Library pages) sit after the artboard's places.
 type GroupId =
     | "ready"
+    | "conversations"
+    | "claims"
+    | "answers"
     | "recent"
     | "actions"
     | "topics"
@@ -152,7 +161,11 @@ const PLACE_ORDER: readonly GroupId[] = [
  *  action ("brief", "observ") never puts it on top. */
 function queryOrder(actionsNamed: boolean): readonly GroupId[] {
     // Ready work leads (computer-find v1.0.0 rule 4): prep, drafts, results.
-    return actionsNamed ? ["ready", "actions", ...PLACE_ORDER, "settings"] : ["ready", ...PLACE_ORDER, "actions", "settings"];
+    // Then what FindAnything found (rule 4): conversations, claims, your
+    // answers; its people join Who you know in that place's own order.
+    const found: GroupId[] = ["ready", "conversations", "claims", "answers"];
+    const places = PLACE_ORDER.filter((id) => !found.includes(id));
+    return actionsNamed ? ["actions", ...found, ...places, "settings"] : [...found, ...places, "actions", "settings"];
 }
 
 const PLACE_GROUP: Record<SearchPlace, GroupId> = {
@@ -191,6 +204,8 @@ interface Row {
     /** Running it changes something (pauses observing, makes a brief): it is
      *  never selected for the person, so Enter alone cannot run it. */
     changesState?: boolean;
+    /** Forget on a found thing (computer-find v1.0.0 rule 5). */
+    forget?: () => Promise<void>;
 }
 
 interface Group {
@@ -458,6 +473,25 @@ function SearchBody({ escapeRef, movedRef, selected, setSelected, close, project
         return () => window.clearTimeout(timer);
     }, [query, paused]);
     const current = remote && remote.query === query.trim() ? remote : null;
+
+    // ⌘K over everything Isoform keeps (computer-find v1.0.0 rule 4; FindAnything).
+    const [found, setFound] = useState<FindResults | null>(null);
+    const findRef = useRef(0);
+    useEffect(() => {
+        const text = query.trim();
+        const request = ++findRef.current;
+        if (!text || paused) { setFound(null); return; }
+        const timer = window.setTimeout(() => {
+            Promise.resolve().then(() => FindAnything(text, RESULTS_PER_PLACE))
+                .then((results) => { if (request === findRef.current) setFound(results ?? null); })
+                .catch(() => { if (request === findRef.current) setFound(null); });
+        }, SEARCH_DEBOUNCE_MS);
+        return () => window.clearTimeout(timer);
+    }, [query, paused]);
+    const foundNow = found && found.query === query.trim() ? found : null;
+    // Found things the person forgot leave the list at once.
+    const [forgotten, setForgotten] = useState<ReadonlySet<string>>(new Set());
+    const [forgetFailed, setForgetFailed] = useState(false);
     const searching = Boolean(needle) && !current;
 
     // A privacy transition while the dialog is open withdraws the query, the
@@ -477,8 +511,14 @@ function SearchBody({ escapeRef, movedRef, selected, setSelected, close, project
 
     // ── Rows ──
 
+    // What you search for is kept on this computer, once a result opens
+    // (rule 6; NoteFindSearch).
+    const queryRef = useRef(query);
+    queryRef.current = query;
     const run = useCallback(
         (fn: () => void) => () => {
+            const text = queryRef.current.trim();
+            if (text) void Promise.resolve().then(() => NoteFindSearch(text)).catch(() => {});
             close();
             fn();
         },
@@ -688,6 +728,43 @@ function SearchBody({ escapeRef, movedRef, selected, setSelected, close, project
         [ts, act],
     );
 
+    // One FindAnything result as a row: its title, its snippet or source
+    // line, and where it opens.
+    const foundRow = (result: FindResult): Row | null => {
+        const target = result.target;
+        const open = target.kind === "work" ? () => (act().openWorkItem ?? act().openToday)(target.itemId ?? target.id ?? "")
+            : target.kind === "session" && target.sessionId ? () => (target.itemId ? act().openChatMessage(target.sessionId!, target.itemId) : act().openSession(projectIdFor(target.sessionId!), target.sessionId!))
+            : target.kind === "activity" ? () => act().openActivity(target.at ?? target.startMs)
+            : target.kind === "person" && target.id ? () => act().openPerson(target.id!)
+            : target.kind === "belief" ? () => act().openAboutYou(target.id)
+            : target.kind === "answer" ? () => act().openToday()
+            : null;
+        if (!open) return null;
+        const key = `${result.group}:${result.id}`;
+        if (forgotten.has(key)) return null;
+        const what = result.forget;
+        const forget = what ? async () => {
+            setForgetFailed(false);
+            try {
+                const token = what.kind === "belief" ? (await GetMemoryForgetPreview(what.id)).confirmationToken : "";
+                await ForgetFound(what.kind, what.id, token);
+                setForgotten((current) => new Set(current).add(key));
+            } catch {
+                setForgetFailed(true);
+            }
+        } : undefined;
+        const sourceKey = result.source ? `searchDialog.findSource.${result.source}` : "";
+        const source = sourceKey && i18n.exists(`app:${sourceKey}`) ? t(sourceKey as never) as string : "";
+        return {
+            key,
+            forget,
+            title: result.title,
+            meta: [result.snippet, source].filter(Boolean).join(" · ") || undefined,
+            Icon: result.group === "people" ? CircleUser : result.group === "claims" ? Brain : result.group === "answers" ? ListChecks : Activity,
+            run: run(open),
+        };
+    };
+
     const groups = useMemo<Group[]>(() => {
         if (!needle) {
             const recent: Row[] = [
@@ -709,6 +786,14 @@ function SearchBody({ escapeRef, movedRef, selected, setSelected, close, project
         };
 
         for (const row of actionRows) push("actions", row);
+
+        for (const group of foundNow?.groups ?? []) {
+            for (const result of group.results ?? []) {
+                const id: GroupId = group.group === "people" ? "people" : group.group;
+                const row = foundRow(result);
+                if (row) push(id, row);
+            }
+        }
 
         // Ready: what Isoform made or offers that waits for the person.
         for (const item of work?.items ?? []) {
@@ -813,6 +898,8 @@ function SearchBody({ escapeRef, movedRef, selected, setSelected, close, project
             .filter((group) => group.rows.length > 0);
     }, [
         work,
+        foundNow,
+        forgotten,
         needle,
         query,
         topics,
@@ -894,6 +981,15 @@ function SearchBody({ escapeRef, movedRef, selected, setSelected, close, project
                                     <span className="truncate text-[13.5px] font-medium text-ink">{row.title}</span>
                                     {row.meta ? <span className="truncate text-xs text-muted">{row.meta}</span> : null}
                                 </span>
+                                {row.forget && (
+                                    <button
+                                        type="button"
+                                        data-testid="find-forget"
+                                        className="shrink-0 rounded px-1.5 text-xs text-muted hover:text-ink"
+                                        onPointerDown={(event) => event.stopPropagation()}
+                                        onClick={(event) => { event.stopPropagation(); event.preventDefault(); void row.forget!(); }}
+                                    >{t("searchDialog.forget")}</button>
+                                )}
                                 {row.shortcut ? (
                                     <kbd className="shrink-0 font-sans text-xs text-muted">{row.shortcut}</kbd>
                                 ) : (
@@ -929,7 +1025,9 @@ function SearchBody({ escapeRef, movedRef, selected, setSelected, close, project
                     </p>
                 ) : null}
             </CommandList>
-            <div className="flex items-center gap-3 whitespace-nowrap border-t border-border px-4 py-2.5 text-xs text-muted">
+            {forgetFailed && <p role="alert" className="border-t border-border px-4 pt-2 text-[11.5px] text-copper">{t("searchDialog.forgetFailed")}</p>}
+            <p className="border-t border-border px-4 pt-2 text-[11.5px] text-muted" data-testid="find-foot">{t("searchDialog.findFoot")}</p>
+            <div className="flex items-center gap-3 whitespace-nowrap px-4 py-2.5 text-xs text-muted">
                 {combo ? <span>{t("searchDialog.hints.anywhere", { combo })}</span> : null}
                 <span>{t("searchDialog.hints.move")}</span>
                 <span>{t("searchDialog.hints.open")}</span>
