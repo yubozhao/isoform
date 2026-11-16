@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
     listVersions: vi.fn(),
     search: vi.fn(),
     saveEntry: vi.fn(),
+    rewordEntry: vi.fn(),
     getPreview: vi.fn(),
     forgetEntry: vi.fn(),
     rejectWithPreview: vi.fn(),
@@ -46,6 +47,7 @@ vi.mock('@/lib/wails-shim-app', () => ({
     GetMemoryEntries: mocks.getEntries,
     GetMemoryStatus: mocks.getStatus,
     SaveMemoryEntry: mocks.saveEntry,
+    RewordMemoryEntry: mocks.rewordEntry,
     GetMemoryForgetPreview: mocks.getPreview,
     ForgetMemoryEntry: mocks.forgetEntry,
     SearchMemory: mocks.search,
@@ -1259,7 +1261,7 @@ describe('About you new this week', () => {
     });
 
     it('returns Not quite to the open card on Cancel or Esc, and with words saves the wording with Undo', async () => {
-        mocks.saveEntry.mockImplementation(async (id: string, content: string) => ({ ...fresh, id, content, source: 'user_edit' }));
+        mocks.rewordEntry.mockImplementation(async (id: string, content: string) => ({ ...fresh, id, content, source: 'user_edit' }));
         mocks.undoWording.mockResolvedValue({ ...fresh });
         render(<MemoryPage devToolsUnlocked />);
         let article = await card();
@@ -1275,7 +1277,8 @@ describe('About you new this week', () => {
         fireEvent.change(field, { target: { value: 'You keep calls short before noon.' } });
         // Return saves.
         fireEvent.keyDown(field, { key: 'Enter' });
-        await waitFor(() => expect(mocks.saveEntry).toHaveBeenCalledWith('fresh', fresh.content.replace('You keep calls short before 11 AM.', 'You keep calls short before noon.')));
+        // The words are kept as an Edit in the answers ledger, beside the save.
+        await waitFor(() => expect(mocks.rewordEntry).toHaveBeenCalledWith('fresh', fresh.content.replace('You keep calls short before 11 AM.', 'You keep calls short before noon.'), 'You keep calls short before noon.'));
         expect(await within(article).findByText('Corrected. Isoform will use your wording.')).toBeInTheDocument();
         expect(within(article).getByText('Confirmed', { selector: '[data-status]' })).toBeInTheDocument();
         fireEvent.click(within(article).getByRole('button', { name: 'Undo' }));

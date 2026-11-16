@@ -5,6 +5,7 @@
 // Only counts, timings and log tags are read out of a line; never its text.
 import { readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { checkTodayBudgets, todayBudgetTable } from "./today-budgets.mjs";
+import { judgmentsSection, readLedger } from "./judgments.mjs";
 
 const [day, out, briefsFile, ...logs] = process.argv.slice(2);
 const stamp = day.replaceAll("-", "/");
@@ -143,6 +144,9 @@ ${Object.keys(errors).length ? Object.entries(errors).sort((a, b) => b[1] - a[1]
 
 ## Brief writer: tokens against the old writer
 ${tokensShadow(shadows)}
+
+## Judgments (answers ledger)
+${judgmentsSection(readLedger(process.env.ISOFORM_REPLAY_LEDGER), day)}
 
 ## Chat and Task turns
 ${Object.keys(turns).length ? Object.entries(turns).map(([k, n]) => `- ${k}: ${n}`).join("\n") : "- none logged"}

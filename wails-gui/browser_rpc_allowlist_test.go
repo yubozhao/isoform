@@ -300,6 +300,7 @@ var browserRPCReadOnly = []string{
 	"GetActivityFeed",
 	"GetActivityForgetPreview",
 	"GetAnswers",
+	"GetJudgmentStats",
 	"GetKnowHowCandidate",
 	"GetSavedCopyStamp",
 	"GetThemePreference",
@@ -508,7 +509,7 @@ var browserRPCReadOnly = []string{
 // Activity's timeline and Your answers read through the bridge in the daily
 // trial ("bridge refused GetActivityFeed"); their Forgets stay off it.
 func TestActivityTimelineAndAnswersReadThroughTheBridge(t *testing.T) {
-	for _, method := range []string{"GetActivityFeed", "GetActivityForgetPreview", "GetAnswers"} {
+	for _, method := range []string{"GetActivityFeed", "GetActivityForgetPreview", "GetAnswers", "GetJudgmentStats"} {
 		if !browserRPCAllowlist[method] {
 			t.Errorf("%s is not allowlisted", method)
 		}

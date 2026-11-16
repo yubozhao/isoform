@@ -262,14 +262,17 @@ func TestBeliefAnswersAndUndo(t *testing.T) {
 	}
 
 	// Not quite with words is the Edit wording save: confirmed, Not quite
-	// gone. Undo puts back the version history kept.
+	// gone, and an Edit in the answers ledger with the words before and
+	// after. Undo puts back the version history kept, and the ledger keeps the
+	// Undo.
+	t.Cleanup(func() { answersLedgers.Delete(app) })
 	if _, err := app.NotQuiteMemoryEntry("belief-4"); err != nil {
 		t.Fatal(err)
 	}
 	before := read("belief-4")
 	points := parseMemoryPoints(before)
 	wording := "Says yes within the hour"
-	saved, err := app.SaveMemoryEntry("belief-4", strings.Replace(before, "- "+points[0], "- "+wording, 1))
+	saved, err := app.RewordMemoryEntry("belief-4", strings.Replace(before, "- "+points[0], "- "+wording, 1), wording)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -284,6 +287,25 @@ func TestBeliefAnswersAndUndo(t *testing.T) {
 	}
 	if read("belief-4") != before {
 		t.Fatalf("Undo did not restore the snapshot:\n%s", read("belief-4"))
+	}
+	var edit, undo *AnswerRecord
+	entries := app.answersLedger().entries()
+	for i := range entries {
+		if entries[i].ItemID != "belief:belief-4" {
+			continue
+		}
+		switch entries[i].Action {
+		case workActionEdit:
+			edit = &entries[i]
+		case workActionUndo:
+			undo = &entries[i]
+		}
+	}
+	if edit == nil || edit.Edited == nil || edit.Edited.Before != strings.TrimSpace(points[0]) || edit.Edited.After != wording || edit.Kind != answerKindBelief || edit.Source != answerSourceAboutYou {
+		t.Fatalf("the reword is not an Edit in the ledger: %+v", entries)
+	}
+	if undo == nil || undo.Undoes != edit.EntryID {
+		t.Fatalf("the reword's Undo is not in the ledger: %+v", entries)
 	}
 }
 

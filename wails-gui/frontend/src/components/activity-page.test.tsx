@@ -143,13 +143,13 @@ describe('ActivityPage section panel', () => {
 
     // computer-activity v1.0.0 rule 2: the tabs are Your day, Screen, Watch
     // and Agents. What it learned moved to You.
-    it('offers the tabs Your day, Screen, Watch and Agents, and no What it learned', async () => {
+    it('offers the tabs Your day, Screen, Watch, Agents and Your answers, and no What it learned', async () => {
         binding('GetWatchRecordings').mockResolvedValue([]);
         await act(async () => {
             render(<Harness initialSection="yourDay" />);
         });
         const tabs = [...document.querySelectorAll('[data-activity-section]')].map((row) => row.textContent);
-        expect(tabs).toEqual([enActivity.day.yourDay, enActivity.act.tabScreen, enActivity.act.tabWatch, enActivity.act.tabAgents]);
+        expect(tabs).toEqual([enActivity.day.yourDay, enActivity.act.tabScreen, enActivity.act.tabWatch, enActivity.act.tabAgents, enActivity.act.tabAnswers]);
         expect(document.querySelector('[data-activity-section="learned"]')).toBeNull();
     });
 
