@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"strings"
 	"sync"
 	"time"
 
 	"wails-gui/internal/handoff"
 	"wails-gui/internal/topicday"
+	"wails-gui/internal/workonit"
 )
 
 // Answers on Your work (phone redesign B3; PROTOCOL.md section 26.1): Yes, No
@@ -28,11 +30,47 @@ type WorkAnswerInput struct {
 	Removed []string `json:"removed,omitempty"`
 	// AgentID changes the agent for this one hand-off.
 	AgentID string `json:"agentId,omitempty"`
+	// Send false on a Yes or Edit of work for an agent records the Yes and
+	// sends nothing (the hand-off sheet's first tap); the action "send" then
+	// hands it over. Omitted, a Yes hands it over at once.
+	Send *bool `json:"send,omitempty"`
+	// RecordID, on send, names the Work on it hand-off the person already
+	// made from the computer's own sheet (an agent that hasn't joined: a deep
+	// link or a copy into its app). Nothing is sent again.
+	RecordID string `json:"recordId,omitempty"`
 }
 
-// workAgentKnown says whether an agent id may take a hand-off. Until the
-// person's agents are a setting (B4), the agents on this computer are.
-var workAgentKnown = func(id string) bool { return id == "claude-code" || id == "codex" }
+// workAgentKnown says whether an agent id may take a hand-off: one of the
+// person's agents (B4's catalog) or an agent that joined (B5).
+func (a *App) workAgentKnown(id string) bool {
+	if _, ok := workonit.AgentByID(id); ok {
+		return true
+	}
+	for _, agent := range a.GetConnectedAgents() {
+		if agent.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// workAgentName is the name Your work shows for an agent id.
+func (a *App) workAgentName(id string) string {
+	if agent, ok := workonit.AgentByID(id); ok {
+		return agent.Name
+	}
+	for _, agent := range a.GetConnectedAgents() {
+		if agent.ID == id {
+			return agent.Name
+		}
+	}
+	return "your agent"
+}
+
+// workLocalAgent says whether an agent runs here as a local task.
+func workLocalAgent(id string) bool { return id == "claude-code" || id == "codex" }
+
+var errWorkAgentAway = errors.New("that agent isn't connected")
 
 // workHandOffText is exactly what goes to the agent: the work (or the
 // person's words) and each What it gets item the person kept.
@@ -72,6 +110,9 @@ const (
 	workActionUseful    = "useful"
 	workActionNotUseful = "not_useful"
 	workActionUndo      = "undo"
+	// workActionSend hands over work a Yes kept for the sheet (phone-map §2,
+	// item 3: the Yes on the first tap, Send on the second).
+	workActionSend = "send"
 
 	workSurfaceComputer     = "computer"
 	workSurfacePhone        = "phone"
@@ -162,7 +203,7 @@ func (a *App) answerWork(ctx context.Context, id string, input WorkAnswerInput, 
 		record.Reason = input.Reason
 		if len(input.Removed) > 0 || input.AgentID != "" {
 			if (input.Action != workActionYes && input.Action != workActionEdit) || item.Yes.Does != "agent" ||
-				(input.AgentID != "" && !workAgentKnown(input.AgentID)) {
+				(input.AgentID != "" && !a.workAgentKnown(input.AgentID)) {
 				return item, errWorkAnswerInvalid
 			}
 			record.Removed, record.AgentID = append([]string(nil), input.Removed...), input.AgentID
@@ -173,11 +214,65 @@ func (a *App) answerWork(ctx context.Context, id string, input WorkAnswerInput, 
 			}
 			record.Edited = &WorkEdited{Before: input.Before, After: input.After}
 		}
-		taskID, err := a.dispatchWorkAnswer(ctx, item, input)
+		if input.Send != nil && !*input.Send {
+			if (input.Action != workActionYes && input.Action != workActionEdit) || item.Yes.Does != "agent" {
+				return item, errWorkAnswerInvalid
+			}
+			// The Yes is the judgment; nothing goes until Send.
+			record.NotSent = true
+			if _, err := ledger.append(record); err != nil {
+				return item, err
+			}
+			break
+		}
+		sent, err := a.dispatchWorkAnswer(ctx, item, input, meta.Surface)
 		if err != nil {
 			return item, err
 		}
-		record.TaskID = taskID
+		record.TaskID, record.HandoffID = sent.TaskID, sent.HandoffID
+		if sent.AgentID != "" {
+			record.AgentID = sent.AgentID
+		}
+		if _, err := ledger.append(record); err != nil {
+			return item, err
+		}
+	case workActionSend:
+		standing, ok := answersStanding(answers)[id]
+		if !ok || !standing.NotSent {
+			return item, errWorkItemChanged
+		}
+		send := WorkAnswerInput{Action: standing.Action, Removed: standing.Removed, AgentID: standing.AgentID}
+		if standing.Edited != nil {
+			send.Before, send.After = standing.Edited.Before, standing.Edited.After
+		}
+		if input.Removed != nil {
+			send.Removed = input.Removed
+		}
+		if input.AgentID != "" {
+			if !a.workAgentKnown(input.AgentID) {
+				return item, errWorkAnswerInvalid
+			}
+			send.AgentID = input.AgentID
+		}
+		// The item stood answered while the sheet was open; it is sent as the
+		// open item it was.
+		pending := item
+		pending.State, pending.Answer = workStateOpen, nil
+		var sent workSent
+		var err error
+		if input.RecordID != "" {
+			sent, err = a.workHandedByWorkOnIt(pending, input.RecordID)
+		} else {
+			sent, err = a.dispatchWorkAnswer(ctx, pending, send, meta.Surface)
+		}
+		if err != nil {
+			return item, err
+		}
+		record.TaskID, record.HandoffID, record.Removed, record.AgentID = sent.TaskID, sent.HandoffID, send.Removed, send.AgentID
+		if sent.AgentID != "" {
+			record.AgentID = sent.AgentID
+		}
+		record.UndoUntil = ""
 		if _, err := ledger.append(record); err != nil {
 			return item, err
 		}
@@ -191,7 +286,7 @@ func (a *App) answerWork(ctx context.Context, id string, input WorkAnswerInput, 
 	default:
 		return item, errWorkAnswerInvalid
 	}
-	if input.Action != workActionUndo {
+	if input.Action != workActionUndo && input.Action != workActionSend {
 		noteProposalAnswered(workJudgmentKind(item), id, input.Action == workActionYes || input.Action == workActionEdit || input.Action == workActionUseful)
 	}
 	a.emitBrowserEvent(workAnsweredEvent, id)
@@ -228,57 +323,202 @@ func workReasonAllowed(item WorkItem, reason string) bool {
 	return false
 }
 
-// dispatchWorkAnswer does what the answer means at the item's source and
-// returns the task a Yes started, if any.
-func (a *App) dispatchWorkAnswer(ctx context.Context, item WorkItem, input WorkAnswerInput) (string, error) {
+// workSent is where a Yes sent the work: a local task, or a hand-off to a
+// connected agent (B5), and the agent it went to.
+type workSent struct {
+	TaskID    string
+	HandoffID string
+	AgentID   string
+}
+
+// dispatchWorkAnswer does what the answer means at the item's source.
+func (a *App) dispatchWorkAnswer(ctx context.Context, item WorkItem, input WorkAnswerInput, surface string) (workSent, error) {
 	switch item.Source {
 	case workSourceTopic:
 		verdict := input.Action
 		if verdict == workActionEdit {
 			// A topic's proposal starts as it was proposed.
-			return "", errWorkAnswerInvalid
+			return workSent{}, errWorkAnswerInvalid
+		}
+		if len(input.Removed) > 0 {
+			return workSent{}, errWorkAnswerInvalid
+		}
+		if verdict == workActionYes {
+			// The same rule as the brief's work: the person's agent takes it.
+			// The agents on this computer run the topic's own task; another
+			// agent gets it in its inbox, or not from here.
+			agent := input.AgentID
+			if agent == "" {
+				agent = a.yourAgentChoice(workonit.KindOf(workonit.Input{Kind: item.Yes.Kind}))
+			}
+			if agent != "" && !workLocalAgent(agent) {
+				return a.handOffTopicProposal(ctx, item, agent, surface)
+			}
 		}
 		view, err := a.answerDailyTopicProposal(ctx, item.Ref.TopicID, item.Ref.ProposalID, verdict)
 		switch {
 		case errors.Is(err, errDailyTopicAnswered):
-			return "", errWorkItemChanged
+			return workSent{}, errWorkItemChanged
 		case errors.Is(err, topicday.ErrNotFound), errors.Is(err, errDailyTopicNotAllowed):
-			return "", errWorkItemGone
+			return workSent{}, errWorkItemGone
 		case err != nil:
-			return "", err
+			return workSent{}, err
 		}
 		if view.Proposal != nil {
-			return view.Proposal.TaskID, nil
+			return workSent{TaskID: view.Proposal.TaskID, AgentID: input.AgentID}, nil
 		}
-		return "", nil
+		return workSent{}, nil
 	case workSourcePrep:
 		// Prep is work Isoform did: a Yes keeps it with the meeting and a No
 		// says it isn't needed; both are recorded. It can't be rewritten here.
 		if input.Action == workActionEdit {
-			return "", errWorkAnswerInvalid
+			return workSent{}, errWorkAnswerInvalid
 		}
-		return "", nil
+		return workSent{}, nil
 	case workSourceAgent:
 		// A result is judged Useful or Not useful, not answered Yes or No.
-		return "", errWorkAnswerInvalid
+		return workSent{}, errWorkAnswerInvalid
 	case workSourceBrief:
 		if input.Action != workActionYes && input.Action != workActionEdit {
-			return "", nil
+			return workSent{}, nil
 		}
 		prompt, ok := a.workBriefOfferPrompt(ctx, item)
 		if !ok {
-			return "", errWorkItemGone
+			return workSent{}, errWorkItemGone
 		}
 		if input.Action == workActionEdit {
 			prompt = strings.TrimSpace(input.After)
 		}
 		text, err := workHandOffText(prompt, item, input.Removed)
 		if err != nil {
-			return "", err
+			return workSent{}, err
 		}
-		return a.startWorkTask(item, text)
+		return a.handOffWork(item, text, input.AgentID, surface)
 	}
-	return "", errWorkAnswerInvalid
+	return workSent{}, errWorkAnswerInvalid
+}
+
+// handOffWork sends offered work to the person's agent (phone-agent v1.1.0):
+// to a connected agent's inbox through Work on it (B5), else, for the agents
+// on this computer, as a local task, kept in the hand-offs either way so Your
+// data sees every one.
+func (a *App) handOffWork(item WorkItem, text, agentID, surface string) (workSent, error) {
+	in := workonit.Input{SourceKind: workonit.SourceWorkItem, SourceID: item.ID, Title: item.Work.Title, Detail: text, Kind: item.Yes.Kind}
+	recordID, sentTo, err := a.handOffToConnectedAgent(in, agentID, surface)
+	if err == nil {
+		return workSent{HandoffID: recordID, AgentID: sentTo}, nil
+	}
+	if !errors.Is(err, errAgentNotConnected) {
+		return workSent{}, err
+	}
+	local := agentID
+	if local == "" {
+		local = a.yourAgentChoice(workonit.KindOf(in))
+	}
+	if local != "" && !workLocalAgent(local) {
+		return workSent{}, errWorkAgentAway
+	}
+	taskID, err := a.startWorkTask(item, text)
+	if err != nil {
+		return workSent{}, err
+	}
+	a.keepWorkOnItHandoff(workonit.Handoff{ID: taskID, SourceKind: workonit.SourceWorkItem, SourceID: item.ID, Kind: workonit.KindOf(in),
+		AgentID: local, Method: workonit.MethodLocalTask, Text: text, SentAt: time.Now().UnixMilli(), Surface: surface})
+	return workSent{TaskID: taskID, AgentID: local}, nil
+}
+
+// handOffTopicProposal hands a topic's proposal to an agent that joined, and
+// keeps the topic's answer as a Yes with its agent, with no task here. An
+// agent that hasn't joined can't take it from the computer.
+func (a *App) handOffTopicProposal(ctx context.Context, item WorkItem, agentID, surface string) (workSent, error) {
+	store, err := a.topicsDailyStore()
+	if err != nil {
+		return workSent{}, err
+	}
+	feedback, err := store.Feedback()
+	if err != nil {
+		return workSent{}, err
+	}
+	topic, proposal, err := dailyTopicProposal(store, item.Ref.TopicID, item.Ref.ProposalID)
+	if err != nil {
+		return workSent{}, errWorkItemGone
+	}
+	if proposal.State != topicday.StateProposed {
+		return workSent{}, errWorkItemChanged
+	}
+	// The work leaves the computer: the same filter as the build, again now.
+	if !a.topicsDailyChoices(feedback).Allowed(topic.ID, topic.Name, topic.Apps) {
+		return workSent{}, errWorkItemGone
+	}
+	in := workonit.Input{SourceKind: workonit.SourceWorkItem, SourceID: item.ID, Title: item.Work.Title, Detail: proposal.Prompt, Kind: item.Yes.Kind}
+	recordID, sentTo, err := a.handOffToConnectedAgent(in, agentID, surface)
+	switch {
+	case errors.Is(err, errAgentNotConnected):
+		return workSent{}, errWorkAgentAway
+	case err != nil:
+		return workSent{}, err
+	}
+	if err := a.markDailyTopicHandedOff(topic, proposal); err != nil {
+		log.Printf("[work] the topic did not record its hand-off: %v", err)
+	}
+	return workSent{HandoffID: recordID, AgentID: sentTo}, nil
+}
+
+// markDailyTopicHandedOff records a topic's Yes whose work went to an agent's
+// inbox: the proposal is running, with no task on this computer.
+func (a *App) markDailyTopicHandedOff(topic topicday.Topic, proposal topicday.Proposal) error {
+	store, err := a.topicsDailyStore()
+	if err != nil {
+		return err
+	}
+	topicsDailyAnswerMu.Lock()
+	defer topicsDailyAnswerMu.Unlock()
+	now := time.Now().UnixMilli()
+	if _, err := store.UpdateProposal(topic.ID, proposal.ID, func(_ *topicday.Topic, p *topicday.Proposal) error {
+		if p.State != topicday.StateProposed {
+			return errDailyTopicAnswered
+		}
+		p.State, p.AnsweredAt = topicday.StateRunning, now
+		return nil
+	}); err != nil {
+		return err
+	}
+	if err := store.AppendFeedback(topicday.Feedback{TopicID: topic.ID, TopicName: topic.Name, ProposalID: proposal.ID,
+		ProposalTitle: proposal.Title, Verdict: topicday.VerdictYes, At: now}); err != nil {
+		return err
+	}
+	noteProposalAnswered(judgmentTopic, proposal.ID, true)
+	a.emitBrowserEvent("topics-daily:updated", map[string]any{"topicId": topic.ID})
+	return nil
+}
+
+// workHandedByWorkOnIt takes a hand-off the person made from the computer's
+// Work on it sheet as this item's Send: it must be for this item.
+func (a *App) workHandedByWorkOnIt(item WorkItem, recordID string) (workSent, error) {
+	handoffs, err := a.GetWorkOnItHandoffs()
+	if err != nil {
+		return workSent{}, err
+	}
+	for _, h := range handoffs {
+		if h.ID != recordID {
+			continue
+		}
+		if h.SourceKind != workonit.SourceWorkItem || h.SourceID != item.ID {
+			return workSent{}, errWorkAnswerInvalid
+		}
+		if item.Source == workSourceTopic {
+			store, err := a.topicsDailyStore()
+			if err == nil {
+				if topic, proposal, err := dailyTopicProposal(store, item.Ref.TopicID, item.Ref.ProposalID); err == nil && proposal.State == topicday.StateProposed {
+					if err := a.markDailyTopicHandedOff(topic, proposal); err != nil {
+						log.Printf("[work] the topic did not record its hand-off: %v", err)
+					}
+				}
+			}
+		}
+		return workSent{HandoffID: h.ID, AgentID: h.AgentID}, nil
+	}
+	return workSent{}, errWorkAnswerInvalid
 }
 
 // workBriefOfferPrompt reads the offer's request from the brief's package.
@@ -348,7 +588,8 @@ func (a *App) undoWorkAnswer(item WorkItem, answers []AnswerRecord, now time.Tim
 	}
 	switch record.Action {
 	case workActionYes, workActionEdit:
-		if record.TaskID != "" {
+		// The work left: a local task, or an agent's inbox, which keeps it.
+		if record.TaskID != "" || record.HandoffID != "" {
 			return AnswerRecord{}, errWorkUndoClosed
 		}
 	case workActionNo, workActionNotMine:
@@ -402,7 +643,7 @@ func (a *App) applyWorkAnswers(items []WorkItem) []WorkItem {
 			continue
 		}
 		answer := &WorkAnswer{Action: record.Action, Reason: record.Reason, Edited: record.Edited, At: record.At,
-			Surface: record.Surface, UndoUntil: record.UndoUntil}
+			Surface: record.Surface, UndoUntil: record.UndoUntil, NotSent: record.NotSent}
 		switch item.Source {
 		case workSourceTopic:
 			// The topic store holds the state; the log adds where and why.
@@ -418,10 +659,20 @@ func (a *App) applyWorkAnswers(items []WorkItem) []WorkItem {
 		case workSourceBrief:
 			item.Answer = answer
 			item.State = workStateAnswered
+			if record.HandoffID != "" && (record.Action == workActionYes || record.Action == workActionEdit) {
+				// With a connected agent: its result comes back through the
+				// task's results (B5).
+				item.State = workStateWithAgent
+				item.Agent = &WorkAgent{Name: a.workAgentName(record.AgentID), Since: record.At}
+			}
 			if record.TaskID != "" && (record.Action == workActionYes || record.Action == workActionEdit || workResultJudgment(record.Action)) {
 				item.Ref.TaskID = record.TaskID
 				item.State = workStateWithAgent
-				item.Agent = &WorkAgent{Name: "your agent", Since: record.At}
+				name := "your agent"
+				if record.AgentID != "" {
+					name = a.workAgentName(record.AgentID)
+				}
+				item.Agent = &WorkAgent{Name: name, Since: record.At}
 				if a.handoffStore != nil {
 					if entry, err := a.handoffStore.Get(record.TaskID); err == nil {
 						if state, result := dailyTopicTaskState(entry); state != topicday.StateRunning {
@@ -431,6 +682,12 @@ func (a *App) applyWorkAnswers(items []WorkItem) []WorkItem {
 					}
 				}
 			}
+		}
+		if record.NotSent {
+			item.State = workStateAnswered
+			item.Answer = answer
+			item.Answer.Line = item.Work.Title + ": yes · not sent"
+			continue
 		}
 		if item.State == workStateBack && workResultJudgment(record.Action) {
 			item.State = workStateAnswered

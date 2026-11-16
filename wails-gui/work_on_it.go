@@ -75,6 +75,8 @@ type workOnItState struct {
 	pasteDone func(err error)
 	// taskLinkReady says whether a task link can reach an outside agent.
 	taskLinkReady func() bool
+	// connectedReady says whether an agent has joined and can take work now.
+	connectedReady func(agentID string) bool
 }
 
 func (s *workOnItState) pasteDeps() pasteDeps {
@@ -89,6 +91,9 @@ func (s *workOnItState) pasteDeps() pasteDeps {
 func (s *workOnItState) agentMethods(agent workonit.Agent, handle string) []string {
 	installed := s.agentPresent(agent)
 	var out []string
+	if s.connectedReady != nil && s.connectedReady(agent.ID) {
+		out = append(out, workonit.MethodConnected)
+	}
 	if s.taskLinkReady != nil && s.taskLinkReady() && agent.TaskLinkCarrier(installed, handle) != "" {
 		out = append(out, workonit.MethodTaskLink)
 	}
@@ -105,7 +110,7 @@ func (s *workOnItState) agentMethods(agent workonit.Agent, handle string) []stri
 
 func (a *App) workOnIt() *workOnItState {
 	a.workOnItOnce.Do(func() {
-		a.workOnItS = &workOnItState{prepared: map[string]workonit.Task{}, taskLinkReady: a.taskLinkHandoffReady}
+		a.workOnItS = &workOnItState{prepared: map[string]workonit.Task{}, taskLinkReady: a.taskLinkHandoffReady, connectedReady: a.connectedHandoffReady}
 	})
 	return a.workOnItS
 }
@@ -243,6 +248,27 @@ func (a *App) workOnItAgents() ([]WorkOnItAgentView, error) {
 		}
 		out = append(out, WorkOnItAgentView{ID: r.Agent.ID, Name: r.Agent.Name, Methods: methods, Default: len(out) == 0, TermsNote: r.Agent.TermsNote})
 	}
+	// A known agent that only joined (Claude Code) has no other way in.
+	listed := map[string]bool{}
+	for _, view := range out {
+		listed[view.ID] = true
+	}
+	for _, agent := range workonit.Catalog() {
+		if listed[agent.ID] {
+			continue
+		}
+		if methods := s.agentMethods(agent, handles[agent.ID]); len(methods) > 0 {
+			out = append(out, WorkOnItAgentView{ID: agent.ID, Name: agent.Name, Methods: methods, Default: len(out) == 0, TermsNote: agent.TermsNote})
+		}
+	}
+	// Any other agent that joined takes work in its inbox.
+	if a.agentsAllowed() == nil {
+		for _, c := range a.GetConnectedAgents() {
+			if c.CatalogID == "" {
+				out = append(out, WorkOnItAgentView{ID: c.ID, Name: c.Name, Methods: []string{workonit.MethodConnected}, Default: len(out) == 0})
+			}
+		}
+	}
 	// A text agent with no number is still offered, to set one.
 	for _, agent := range workonit.Catalog() {
 		if agent.Message && handles[agent.ID] == "" {
@@ -290,7 +316,11 @@ func (a *App) SendWorkOnIt(taskID, agentID, method string) (WorkOnItSent, error)
 	}
 	agent, ok := workonit.AgentByID(agentID)
 	if !ok {
-		return WorkOnItSent{}, errWorkOnItNoAgent
+		joined, found := a.connectedAgentFor(agentID)
+		if !found || joined.CatalogID != "" {
+			return WorkOnItSent{}, errWorkOnItNoAgent
+		}
+		agent = workonit.Agent{ID: joined.ID, Name: joined.Name, Kind: workonit.KindElse}
 	}
 	handle := a.workOnItHandle(agent.ID)
 	allowed := false
@@ -299,6 +329,9 @@ func (a *App) SendWorkOnIt(taskID, agentID, method string) (WorkOnItSent, error)
 			allowed = true
 		}
 	}
+	if !ok && method == workonit.MethodConnected {
+		allowed = true // a joined agent outside the catalog
+	}
 	if !allowed {
 		return WorkOnItSent{}, errWorkOnItNoMethod
 	}
@@ -306,6 +339,11 @@ func (a *App) SendWorkOnIt(taskID, agentID, method string) (WorkOnItSent, error)
 	recordID := workOnItID()
 	sentLine := ""
 	switch method {
+	case workonit.MethodConnected:
+		if err := a.sendWorkOnItConnected(task, agent.ID, recordID); err != nil {
+			return WorkOnItSent{}, err
+		}
+		out.Via = "inbox"
 	case workonit.MethodTaskLink:
 		via, line, err := a.sendWorkOnItTaskLink(s, task, agent, handle, recordID)
 		if err != nil {

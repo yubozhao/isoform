@@ -320,11 +320,18 @@ func (a *App) loadLatestStreamPageNow(key streamPageKey) (StreamItemPageData, er
 	versionMs := time.Since(versionStart).Milliseconds()
 	log.Printf("[perf] binding=LoadStreamItemsPage stage=version ms=%d", versionMs)
 	saved, reason := readStreamPageSnapshot(key, stamp)
-	if reason == "" && !a.streamPageSourcesHold(saved.Sessions) {
-		// A session a card rests on changed outside the withdrawal path (protected,
-		// removed, its notes deleted on disk): the copy never paints again.
-		removeStreamPageCopy(key)
-		saved, reason = streamPageSnapshot{}, "sources-changed"
+	if reason == "" {
+		switch check := a.streamPageSourcesCheck(saved.Sessions); check {
+		case "sources-changed":
+			// A session a card rests on changed outside the withdrawal path (protected,
+			// removed, its notes deleted on disk): the copy never paints again.
+			removeStreamPageCopy(key)
+			saved, reason = streamPageSnapshot{}, check
+		case "sources-unread":
+			// The check ran out of time (a busy launch): this read recomputes, and
+			// the copy stays for the next one instead of being thrown away.
+			saved, reason = streamPageSnapshot{}, check
+		}
 	}
 	cards := 0
 	if reason == "" {

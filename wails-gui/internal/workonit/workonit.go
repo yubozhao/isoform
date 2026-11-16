@@ -22,12 +22,14 @@ const (
 	SourceBriefItem     = "brief_item"
 	SourceTopicProposal = "topic_proposal"
 	SourceChatCard      = "chat_card"
+	// SourceWorkItem is an item of Your work (phone-map B2), named by its id.
+	SourceWorkItem = "work_item"
 )
 
 // ValidSource reports a known source kind.
 func ValidSource(kind string) bool {
 	switch kind {
-	case SourceBriefItem, SourceTopicProposal, SourceChatCard:
+	case SourceBriefItem, SourceTopicProposal, SourceChatCard, SourceWorkItem:
 		return true
 	default:
 		return false
@@ -36,6 +38,13 @@ func ValidSource(kind string) bool {
 
 // Handoff methods, best first.
 const (
+	// MethodConnected puts the task in a joined agent's inbox: it reads the
+	// task and posts its result back, with no copying (phone-agent v1.1.0
+	// rule 7). It ranks first for an agent that has joined.
+	MethodConnected = "connected"
+	// MethodLocalTask runs the work as a task on this computer, with the
+	// agent installed here (Claude Code or Codex).
+	MethodLocalTask = "local_task"
 	// MethodTaskLink makes a one-time /t/<token> link to the task and sends
 	// the agent one line with the link, by the best carrier it has (see
 	// TaskLinkCarrier). It is the default for every agent and ranks first

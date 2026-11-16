@@ -26,6 +26,7 @@ import (
 	"sync"
 	"time"
 
+	"wails-gui/internal/agentjoin"
 	"wails-gui/internal/tasklink"
 )
 
@@ -58,8 +59,13 @@ type TaskLinkResult struct {
 	Status     string   `json:"status"`
 	Summary    string   `json:"summary"`
 	Links      []string `json:"links,omitempty"`
-	TakenAt    int64    `json:"takenAt,omitempty"`
-	ResultAt   int64    `json:"resultAt"`
+	// Files are the names of the text files a connected agent posted with
+	// its result, kept under agents/files/<linkId>/.
+	Files    []string `json:"files,omitempty"`
+	TakenAt  int64    `json:"takenAt,omitempty"`
+	ResultAt int64    `json:"resultAt"`
+	// Via is "inbox" for a connected agent's result, empty for a task link.
+	Via string `json:"via,omitempty"`
 }
 
 // taskLinkState is the app's task-link service. Zero value is ready; the
@@ -134,7 +140,11 @@ func (a *App) taskLinkStore() *tasklink.Store {
 
 // taskLinkAllowed runs on every request: a link answers only while the
 // switch is on and Closed Eyes is off.
-func (a *App) taskLinkAllowed(tasklink.Link) error {
+func (a *App) taskLinkAllowed(tasklink.Link) error { return a.agentsAllowed() }
+
+// agentsAllowed is the gate for everything agents reach: task links and
+// joining answer only while the switch is on and Closed Eyes is off.
+func (a *App) agentsAllowed() error {
 	if !a.taskLinksEnabled() {
 		return errTaskLinksOff
 	}
@@ -294,10 +304,8 @@ func (a *App) startTaskLinkListener() error {
 	if err != nil {
 		return fmt.Errorf("task link listener: %w", err)
 	}
-	mux := http.NewServeMux()
-	mux.Handle(tasklink.PathPrefix, a.taskLinkStore())
 	server := &http.Server{
-		Handler:           mux,
+		Handler:           a.agentMux(),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -330,11 +338,18 @@ func (a *App) stopTaskLinkListener() {
 // startTaskLinksIfEnabled runs at launch: open links answer again only when
 // the switch is on.
 func (a *App) startTaskLinksIfEnabled() {
+	// The inbox restores its waiting hand-offs and listens for privacy
+	// withdrawals from launch, not from first use: a withdrawal before then
+	// must still spend them.
+	a.agentInboxService()
 	if !a.taskLinksEnabled() {
 		return
 	}
 	a.taskLinkStore()
-	if len(a.taskLinkStore().Links()) == 0 {
+	// The listener serves task links and the agents' channel: start it when
+	// a link is open or an agent has joined, so a joined agent can reach its
+	// inbox after a restart.
+	if len(a.taskLinkStore().Links()) == 0 && len(a.agentJoinService().Agents()) == 0 && len(a.agentInboxService().Items()) == 0 {
 		return
 	}
 	if err := a.startTaskLinkListener(); err != nil {
@@ -379,6 +394,9 @@ func (a *App) GetTaskLinkResults() ([]TaskLinkResult, error) {
 func (a *App) shutdownTaskLinks() {
 	a.stopTaskLinkListener()
 	if unsubscribe := a.taskLinks.unsubscribe; unsubscribe != nil {
+		unsubscribe()
+	}
+	if unsubscribe := a.agentInbox.unsubscribe; unsubscribe != nil {
 		unsubscribe()
 	}
 }
@@ -471,12 +489,29 @@ func (a *App) writeTaskLinkJSON(name string, value any) error {
 }
 
 // taskLinkHandoffReady says whether Work on it may offer a task link: the
-// switch is on and a public https origin reaches the listener (a loopback
+// switch is on and a public https origin reaches the listener: the front
+// while it runs, or a bridge named by ISOFORM_TASK_LINK_BASE_URL (a loopback
 // link is useless to an agent in the cloud).
 func (a *App) taskLinkHandoffReady() bool {
-	if !a.taskLinksEnabled() || strings.TrimSpace(os.Getenv(taskLinkBaseURLEnv)) == "" {
+	if !a.taskLinksEnabled() {
+		return false
+	}
+	if a.frontHostname() != "" {
+		return true
+	}
+	if strings.TrimSpace(os.Getenv(taskLinkBaseURLEnv)) == "" {
 		return false
 	}
 	_, err := a.taskLinkBaseURL()
 	return err == nil
+}
+
+// agentMux serves what agents reach, on loopback and through the front:
+// task links (/t/) and the join link (/j/).
+func (a *App) agentMux() *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.Handle(tasklink.PathPrefix, a.taskLinkStore())
+	mux.Handle(agentjoin.PathPrefix, a.agentJoinService())
+	mux.Handle("/a/", a.agentInboxService())
+	return mux
 }

@@ -59,11 +59,11 @@ func TestWorkListBringsBackATaskThatFinishedToday(t *testing.T) {
 func TestWorkAnswersOnPrep(t *testing.T) {
 	item := WorkItem{ID: "prep:m1", Source: workSourcePrep, Work: WorkBody{Title: "Prep for Lena"}}
 	app := &App{}
-	if _, err := app.dispatchWorkAnswer(t.Context(), item, WorkAnswerInput{Action: workActionEdit, After: "x"}); !errors.Is(err, errWorkAnswerInvalid) {
+	if _, err := app.dispatchWorkAnswer(t.Context(), item, WorkAnswerInput{Action: workActionEdit, After: "x"}, workSurfaceComputer); !errors.Is(err, errWorkAnswerInvalid) {
 		t.Fatalf("Edit on prep = %v", err)
 	}
-	if task, err := app.dispatchWorkAnswer(t.Context(), item, WorkAnswerInput{Action: workActionNo, Reason: "not_needed"}); err != nil || task != "" {
-		t.Fatalf("No on prep = %q %v", task, err)
+	if sent, err := app.dispatchWorkAnswer(t.Context(), item, WorkAnswerInput{Action: workActionNo, Reason: "not_needed"}, workSurfaceComputer); err != nil || sent != (workSent{}) {
+		t.Fatalf("No on prep = %+v %v", sent, err)
 	}
 	if got := workAnswerLine("Prep for Lena", workActionNo, "not_needed", workStateAnswered); got != "Prep for Lena: not needed" {
 		t.Fatalf("line = %q", got)

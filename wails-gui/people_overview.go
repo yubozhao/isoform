@@ -916,8 +916,21 @@ func (a *App) personTogether(ctx context.Context, p storage.PrincipalRow, recent
 		return err
 	}
 	names := personTogetherNames(p)
-	seen := map[string]bool{}
+	// The readable sessions the person was seen in. Their moments are read in
+	// one range query, and only a moment whose title names the person is
+	// checked further: reading each session's moments and every moment's runs
+	// took 2.9 s of a 3.1 s open on Bo's computer (2026-11-15).
+	type togetherSession struct {
+		id         string
+		start, end int64
+	}
+	var sessions []togetherSession
+	listed := map[string]bool{}
 	for _, sighting := range sightings {
+		if listed[sighting.SessionID] {
+			continue
+		}
+		listed[sighting.SessionID] = true
 		session, err := a.peopleSessionRow(sighting.SessionID, cache)
 		if err != nil {
 			return err
@@ -925,45 +938,73 @@ func (a *App) personTogether(ctx context.Context, p storage.PrincipalRow, recent
 		if session == nil || !a.peopleSessionReadableCached(ctx, sighting.SessionID, cache) {
 			continue
 		}
-		moments, err := a.activity.store.GetActivitiesInRange(session.StartTime, session.EndTime+1)
-		if err != nil {
-			return err
+		sessions = append(sessions, togetherSession{id: session.ID, start: session.StartTime, end: session.EndTime})
+	}
+	if len(sessions) == 0 {
+		return nil
+	}
+	// A moment belongs to a session's range as GetActivitiesInRange reads it.
+	overlaps := func(moment ActivityRow, s togetherSession) bool {
+		return moment.EndMs >= s.start && moment.StartMs <= s.end+1
+	}
+	lo, hi := sessions[0].start, sessions[0].end
+	for _, s := range sessions[1:] {
+		lo, hi = min(lo, s.start), max(hi, s.end)
+	}
+	all, err := a.activity.store.GetActivitiesInRangeContext(ctx, lo, hi+1)
+	if err != nil {
+		return err
+	}
+	var named []ActivityRow
+	for _, moment := range all {
+		if !personTogetherParticipant(moment.Title, names) {
+			continue
 		}
-		moments = a.filterComposerModelCandidates(a.activity.store, moments)
-		for _, moment := range moments {
-			if seen[moment.ID] || !personTogetherParticipant(moment.Title, names) || !a.peopleActivityReadable(ctx, moment, policy.pauses) {
-				continue
+		for _, s := range sessions {
+			if overlaps(moment, s) {
+				named = append(named, moment)
+				break
 			}
-			var runIDs []string
-			if json.Unmarshal([]byte(moment.RunIDs), &runIDs) != nil {
-				continue
-			}
-			associated := false
-			for _, runID := range runIDs {
-				run, err := a.activity.store.GetTimelineRunByIDContext(ctx, runID)
-				if err != nil {
-					return err
-				}
-				if run == nil {
-					continue
-				}
-				for _, sessionID := range run.SessionIDs {
-					if sessionID == session.ID {
-						associated = true
-					}
-				}
-			}
-			if !associated {
-				continue
-			}
-			seen[moment.ID] = true
-			apps, _ := topicAppTime(moment.ActiveMsByApp)
-			app := ""
-			if len(apps) > 0 {
-				app = apps[0]
-			}
-			detail.Together = append(detail.Together, PersonTogether{Kind: "activity", At: moment.StartMs, Title: personTogetherTitle(moment.Title, app), App: app, DurationMs: moment.EndMs - moment.StartMs})
 		}
+	}
+	named = a.filterComposerModelCandidates(a.activity.store, named)
+	for _, moment := range named {
+		if !a.peopleActivityReadable(ctx, moment, policy.pauses) {
+			continue
+		}
+		var runIDs []string
+		if json.Unmarshal([]byte(moment.RunIDs), &runIDs) != nil {
+			continue
+		}
+		runSessions := map[string]bool{}
+		for _, runID := range runIDs {
+			run, err := a.activity.store.GetTimelineRunByIDContext(ctx, runID)
+			if err != nil {
+				return err
+			}
+			if run == nil {
+				continue
+			}
+			for _, sessionID := range run.SessionIDs {
+				runSessions[sessionID] = true
+			}
+		}
+		associated := false
+		for _, s := range sessions {
+			if runSessions[s.id] && overlaps(moment, s) {
+				associated = true
+				break
+			}
+		}
+		if !associated {
+			continue
+		}
+		apps, _ := topicAppTime(moment.ActiveMsByApp)
+		app := ""
+		if len(apps) > 0 {
+			app = apps[0]
+		}
+		detail.Together = append(detail.Together, PersonTogether{Kind: "activity", At: moment.StartMs, Title: personTogetherTitle(moment.Title, app), App: app, DurationMs: moment.EndMs - moment.StartMs})
 	}
 	return nil
 }

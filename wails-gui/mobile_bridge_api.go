@@ -30,9 +30,11 @@ var (
 )
 
 type mobileStatusView struct {
-	// Work is true when this computer serves Your work (section 26).
-	Work   bool `json:"work,omitempty"`
-	Topics bool `json:"topics,omitempty"`
+	// Work is true when this computer serves Your work (section 26);
+	// WorkSend when a Yes can wait for the hand-off sheet's Send (26.1).
+	Work     bool `json:"work,omitempty"`
+	WorkSend bool `json:"workSend,omitempty"`
+	Topics   bool `json:"topics,omitempty"`
 	// TopicsDaily is true when this computer serves the daily topics (15.9).
 	TopicsDaily bool `json:"topicsDaily,omitempty"`
 	BrainDump   bool `json:"brainDump,omitempty"`
@@ -215,6 +217,11 @@ func (bridge *mobileBridge) handleAuthorized(w http.ResponseWriter, r *http.Requ
 			return
 		}
 		bridge.serveYourAgentChoice(w, r, device)
+	case "POST /agents/handoffs":
+		if !mobileRequireScope(w, device, mobileScopeHandoff) {
+			return
+		}
+		bridge.serveAgentHandoff(w, r, device)
 	case "GET /notifications":
 		if !mobileRequireScope(w, device, mobileScopePush) {
 			return
@@ -661,7 +668,7 @@ func mobileRequireScope(w http.ResponseWriter, device mobileDeviceRecord, scope 
 
 func (bridge *mobileBridge) serveStatus(w http.ResponseWriter) {
 	view := mobileStatusView{
-		HubName: mobileHubName(), AppVersion: Version, ProtocolVersion: 1, Topics: true, TopicsDaily: true, TaskThreads: true, BrainDump: true, Recordings: true, OwnerVoice: true, RecordingContext: true, RecordingDetail: true, RecordingMarks: true, Sees: true, FirstRead: true, TodayMeetingPrep: true, ChatMainSend: true, NotificationTest: true, Work: true, BriefRelevanceFeedback: true, BriefAsk: true, BriefWeekDecline: true,
+		HubName: mobileHubName(), AppVersion: Version, ProtocolVersion: 1, Topics: true, TopicsDaily: true, TaskThreads: true, BrainDump: true, Recordings: true, OwnerVoice: true, RecordingContext: true, RecordingDetail: true, RecordingMarks: true, Sees: true, FirstRead: true, TodayMeetingPrep: true, ChatMainSend: true, NotificationTest: true, Work: true, WorkSend: true, BriefRelevanceFeedback: true, BriefAsk: true, BriefWeekDecline: true,
 		KeepAwake: bridge.keepAwakeSetting(), InstantPush: mobileInstantPushConfigured(),
 		BriefSchedule: []mobileBriefSlotTime{},
 	}

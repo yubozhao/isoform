@@ -4064,12 +4064,12 @@ export const GetDayThreads = appBinding<[number, number], ActivityDayThreads>("G
 // Work on it (work_on_it.go): prepare a task from what a surface shows and
 // hand it to the person's agent on their tap. On unless work_on_it_enabled is "false".
 export type WorkOnItSourceKind = "brief_item" | "topic_proposal" | "chat_card";
-export type WorkOnItMethod = "task_link" | "deep_link" | "paste" | "open_copy" | "message" | "share";
+export type WorkOnItMethod = "connected" | "task_link" | "deep_link" | "paste" | "open_copy" | "message" | "share";
 export type WorkOnItKind = "code" | "else";
 export interface WorkOnItInput { sourceKind: WorkOnItSourceKind; sourceId: string; title: string; detail: string; done: string; kind?: WorkOnItKind }
 export interface WorkOnItAgentView { id: string; name: string; methods: WorkOnItMethod[]; default: boolean; termsNote?: string; needsHandle?: boolean }
 export interface WorkOnItPrepared { taskId: string; text: string; kind?: WorkOnItKind; agents: WorkOnItAgentView[] }
-export interface WorkOnItSent { recordId: string; method: WorkOnItMethod; copied: boolean; via?: "deep_link" | "message" | "open_copy" }
+export interface WorkOnItSent { recordId: string; method: WorkOnItMethod; copied: boolean; via?: "deep_link" | "message" | "open_copy" | "inbox" }
 export const GetWorkOnItEnabled = appBinding<[], boolean>("GetWorkOnItEnabled");
 export const SetWorkOnItEnabled = appBinding<[boolean], void>("SetWorkOnItEnabled");
 export const PrepareWorkOnIt = appBinding<[WorkOnItInput], WorkOnItPrepared>("PrepareWorkOnIt");
@@ -4084,6 +4084,20 @@ export const GetYourAgents = appBinding<[], YourAgents>("GetYourAgents");
 export const SetYourAgent = appBinding<[WorkOnItKind, string], YourAgents>("SetYourAgent");
 export const GetWorkOnItHandoffs = appBinding<[], WorkOnItHandoff[]>("GetWorkOnItHandoffs");
 export const ForgetWorkOnItHandoff = appBinding<[string], void>("ForgetWorkOnItHandoff");
+// Agents join your Isoform once (agent_join_service.go, phone-agent v1.1.0 B5).
+export interface AgentJoinStart { message: string; link: string; expiresAt: number; local: boolean }
+export type AgentJoinState = "waiting" | "requested" | "allowed" | "denied" | "expired";
+export interface AgentJoin { state: AgentJoinState; expiresAt: number; name?: string; device?: string; mayOpen?: string; check?: string; agentId?: string }
+export interface ConnectedAgent { id: string; name: string; device: string; mayOpen: string; joinedAt: number; lastSeenAt?: number; catalogId?: string }
+export const StartAgentJoin = appBinding<[], AgentJoinStart>("StartAgentJoin");
+export const GetAgentJoin = appBinding<[], AgentJoin | null>("GetAgentJoin");
+export const AnswerAgentJoin = appBinding<[boolean], void>("AnswerAgentJoin");
+export const CancelAgentJoin = appBinding<[], void>("CancelAgentJoin");
+export const GetConnectedAgents = appBinding<[], ConnectedAgent[]>("GetConnectedAgents");
+export const DisconnectAgent = appBinding<[string], void>("DisconnectAgent");
+// What came back from agents: task-link and inbox results (task_link_service.go).
+export interface TaskLinkResult { linkId: string; agentId: string; sourceKind?: string; sourceId?: string; status: "done" | "blocked" | "declined"; summary: string; links?: string[]; files?: string[]; takenAt?: number; resultAt: number; via?: "inbox" }
+export const GetTaskLinkResults = appBinding<[], TaskLinkResult[]>("GetTaskLinkResults");
 export const ConfirmActivityThreadLink = appBinding<[string], void>("ConfirmActivityThreadLink");
 export const MoveActivityToThread = appBinding<[string, string], string>("MoveActivityToThread");
 export const RenameActivityThread = appBinding<[string, string], void>("RenameActivityThread");
@@ -6355,3 +6369,43 @@ export const AnswerDailyTopicProposal = appBinding<
     [string, string, "yes" | "no" | "not_mine"],
     DailyTopic
 >("AnswerDailyTopicProposal");
+
+// ⌘K (computer-find v1.0.0 §18b; find_anything.go, find_searches.go).
+export type FindGroupName = "ready" | "conversations" | "people" | "claims" | "answers";
+export interface FindTarget {
+    kind: string;
+    id?: string;
+    sessionId?: string;
+    itemId?: string;
+    activityId?: string;
+    threadId?: string;
+    at?: number;
+    startMs?: number;
+    endMs?: number;
+}
+export interface FindResult {
+    id: string;
+    group: FindGroupName;
+    title: string;
+    snippet?: string;
+    source?: string;
+    at?: number;
+    target: FindTarget;
+    /** For ForgetFound. A belief also needs its forget-preview token; Your work items, threads and people have none. */
+    forget?: { kind: "screen" | "belief" | "answer"; id: string };
+}
+export interface FindResults {
+    query: string;
+    groups: { group: FindGroupName; results: FindResult[] }[];
+    failedGroups: FindGroupName[];
+}
+export interface FindSearch {
+    id: string;
+    query: string;
+    at: number;
+}
+export const FindAnything = appBinding<[string, number], FindResults>("FindAnything");
+export const NoteFindSearch = appBinding<[string], void>("NoteFindSearch");
+export const ListFindSearches = appBinding<[number, number], FindSearch[]>("ListFindSearches");
+export const ForgetFindSearch = appBinding<[string], void>("ForgetFindSearch");
+export const ForgetFound = appBinding<[string, string, string], void>("ForgetFound");
