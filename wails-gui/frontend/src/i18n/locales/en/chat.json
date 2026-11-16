@@ -746,10 +746,9 @@
     "quickChat": {
         "brand": "Isoform",
         "title": "Quick Chat",
-        "openInApp": "Open in Isoform",
-        "placeholder": "Message Isoform",
+        "openInApp": "Open in Chat ›",
+        "placeholder": "Ask about your day, or correct Isoform",
         "followupPlaceholder": "Refine or confirm…",
-        "detected": "{{app}} – Detected",
         "voiceInput": "Voice input",
         "send": "Send",
         "stopRecording": "Click to stop recording",
@@ -764,7 +763,10 @@
         "connectionLost": "Connection lost.",
         "historyUnavailable": "Response history couldn't be loaded.",
         "streamError": "Stream error",
-        "tool": "tool"
+        "tool": "tool",
+        "aboutScreen": "About: what's on screen · {{app}}, {{title}}",
+        "aboutScreenApp": "About: what's on screen · {{app}}",
+        "removeScreen": "Don't send what's on screen"
     },
     "stream": {
         "openProject": "Open a project to get started.",

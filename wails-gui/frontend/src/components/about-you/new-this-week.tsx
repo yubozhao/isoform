@@ -450,17 +450,78 @@ export function ReviewOutcome({ item, review, className }: { item: ReviewItem; r
     );
 }
 
+/** Move the focus to the next or previous claim on the page. */
+function focusClaim(from: HTMLElement, step: 1 | -1) {
+    const rows = Array.from(document.querySelectorAll<HTMLElement>('[data-claim-row]'));
+    const next = rows[rows.indexOf(from) + step];
+    next?.focus();
+}
+
+/**
+ * Y, N and E answer the focused claim (computer-you v1.0.0 rule 3, as on
+ * Today); the arrows move between claims. Keys typed into a field, or with a
+ * modifier, are left alone.
+ */
+export function claimKeyAction(event: Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'altKey' | 'target'> & { isComposing?: boolean }): 'yes' | 'no' | 'edit' | 'next' | 'previous' | null {
+    // pass-access v1.0.0 rule 2: never while typing, an input method composing included.
+    if (event.metaKey || event.ctrlKey || event.altKey || event.isComposing) return null;
+    const target = event.target as HTMLElement | null;
+    if (target && (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.isContentEditable)) return null;
+    switch (event.key) {
+        case 'y':
+        case 'Y':
+            return 'yes';
+        case 'n':
+        case 'N':
+            return 'no';
+        case 'e':
+        case 'E':
+            return 'edit';
+        case 'ArrowDown':
+            return 'next';
+        case 'ArrowUp':
+            return 'previous';
+        default:
+            return null;
+    }
+}
+
+/**
+ * One claim: where it came from, "Right?" and the claim, then Yes, No and
+ * Edit (computer-you v1.0.0 rule 3). Yes confirms it; No stops Isoform using
+ * it; Edit asks for the right words. Forget stays, quieter, beside the source.
+ */
 function ReviewCard({ item, review }: { item: ReviewItem; review: BeliefReview }) {
     const { t } = useTranslation(['memory', 'common']);
-    const quoteId = useId();
     const result = review.results[item.id];
     const open = reviewOpen(result);
     const forgetting = result?.kind === 'pending' || result?.kind === 'forgetting' || result?.kind === 'forgotten';
     const status = answeredStatus(result, item.status);
+    const answer = (action: 'yes' | 'no' | 'edit') => {
+        if (action === 'yes') void review.confirm(item.id);
+        else if (action === 'no') void review.answerNotQuite(item.id, '');
+        else review.ask(item.id);
+    };
 
     return (
         <article
-            aria-labelledby={quoteId}
+            // pass-access v1.0.0 rule 4: one element, read in order: source, sentence, what Yes does.
+            aria-label={item.where ? t('aboutYou.review.cardLabel', { where: item.where, text: item.text }) : t('aboutYou.review.cardLabelNoSource', { text: item.text })}
+            tabIndex={0}
+            data-claim-row
+            aria-keyshortcuts="Y N E"
+            onKeyDown={(event) => {
+                const action = claimKeyAction({ key: event.key, metaKey: event.metaKey, ctrlKey: event.ctrlKey, altKey: event.altKey, target: event.target, isComposing: event.nativeEvent.isComposing });
+                if (!action) return;
+                if (action === 'next' || action === 'previous') {
+                    event.preventDefault();
+                    focusClaim(event.currentTarget, action === 'next' ? 1 : -1);
+                    return;
+                }
+                if (event.target !== event.currentTarget || !open) return;
+                event.preventDefault();
+                answer(action);
+            }}
             className={cn(
                 'flex flex-col gap-2.5 rounded-xl border border-border p-4',
                 open || result?.kind === 'asking' ? 'bg-panel' : 'bg-panel-warm',
@@ -471,24 +532,33 @@ function ReviewCard({ item, review }: { item: ReviewItem; review: BeliefReview }
                 {(item.copies ?? 0) > 1 && <span className="text-xs text-muted">{t('aboutYou.review.copies', { count: item.copies })}</span>}
                 {!forgetting && status !== 'learned_today' && <BeliefChip status={status} className="ml-auto" />}
             </div>
-            <p id={quoteId} className={cn('m-0 text-sm leading-[1.45] text-ink break-words', forgetting && 'text-muted line-through')}>
-                {t('aboutYou.review.quote', { text: item.text })}
+            <p className={cn('m-0 text-sm leading-[1.45] text-ink break-words', forgetting && 'text-muted line-through')}>
+                {!forgetting && <span className="mr-1.5 text-muted">{t('aboutYou.review.right')}</span>}
+                <span>{t('aboutYou.review.quote', { text: item.text })}</span>
             </p>
             {open ? (
                 <>
                     {result?.kind === 'confirmFailed' && (
                         <p role="alert" className="m-0 text-[12.5px] text-copper">{t('aboutYou.review.confirmFailed')}</p>
                     )}
-                    <div className="mt-auto flex flex-wrap gap-1.5">
-                        <Button size="sm" onClick={() => void review.confirm(item.id)}>
-                            {t('aboutYou.review.confirm')}
+                    <div className="mt-auto flex flex-wrap items-center gap-1.5">
+                        <Button size="sm" aria-keyshortcuts="Y" onClick={() => answer('yes')}>
+                            {t('aboutYou.review.yes')}
                         </Button>
-                        <Button size="sm" variant="secondary" onClick={() => review.ask(item.id)}>
-                            {t('aboutYou.review.notQuite')}
+                        <Button size="sm" variant="secondary" aria-keyshortcuts="N" onClick={() => answer('no')}>
+                            {t('aboutYou.review.no')}
                         </Button>
-                        <Button size="sm" variant="outline" onClick={() => review.forget(item.id)}>
+                        <Button size="sm" variant="outline" aria-keyshortcuts="E" onClick={() => answer('edit')}>
+                            {t('aboutYou.review.edit')}
+                        </Button>
+                        <button
+                            type="button"
+                            onClick={() => review.forget(item.id)}
+                            aria-label={t('aboutYou.review.forgetClaim', { claim: item.text })}
+                            className="ml-auto cursor-pointer rounded-sm border-0 bg-transparent px-1 text-xs text-muted hover:text-ink"
+                        >
                             {t('aboutYou.review.forget')}
-                        </Button>
+                        </button>
                     </div>
                 </>
             ) : result?.kind === 'asking' || result?.kind === 'saving' || result?.kind === 'answerFailed' ? (
@@ -524,8 +594,8 @@ export function NewThisWeek({
                 <h2 id={headingId} className="m-0 text-lg font-semibold text-ink">{title ?? t('aboutYou.review.title')}</h2>
                 {hint && <span className="text-[13px] text-muted">{hint}</span>}
             </div>
-            {/* 300px keeps That's me, Not quite and Forget on one row (about 250px
-                in English); narrower windows get one card per row. */}
+            {/* 300px keeps Yes, No, Edit and Forget on one row in English;
+                narrower windows get one card per row. */}
             <div data-testid="review-cards" className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr))]">
                 {items.map((item) => (
                     <ReviewCard key={item.id} item={item} review={review} />

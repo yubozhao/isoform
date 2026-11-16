@@ -125,7 +125,7 @@ final class NoticeDeliveryTests: XCTestCase {
 
     func testReceiptStatesAndCategoriesUseTheProtocolSpelling() {
         XCTAssertEqual(NoticeReceiptState.allCases.map(\.rawValue), ["delivered", "opened", "acted", "dismissed"])
-        XCTAssertEqual(NoticeCategory.allCases.map(\.rawValue), ["YANSU_MOMENT", "YANSU_BRIEF"])
+        XCTAssertEqual(NoticeCategory.allCases.map(\.rawValue), ["YANSU_MOMENT", "YANSU_BRIEF", "YANSU_PREP", "YANSU_RESULT"])
     }
 
     func testNoticeIdentifiersMustBeSafeInAPath() {

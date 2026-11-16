@@ -89,6 +89,7 @@ import {
 } from "lucide-react";
 
 import { Sidebar, isYouMode, type AppMode } from "@/components/sidebar";
+import { YouPage, type YouPageTab } from "@/components/you/you-page";
 import { useClosedEyes } from "@/components/sidebar-foot";
 import { MainChatPageColumn, MainChatStreamBody } from "@/components/main-chat/main-chat-stream-body";
 import { useMainChatItemPanel } from "@/hooks/useMainChatItemPanel";
@@ -1326,6 +1327,13 @@ export default function App() {
     const activeStreaming = Boolean(projects.activeSession?.streaming);
     useEffect(() => setPrefetchStreaming(activeStreaming), [activeStreaming]);
     useLazyPagesIdleWarm(todayContentReady || chatContentReady);
+    // You's tabs (computer-you v1.0.0): each is the page that was there,
+    // opened as the sidebar's You row opens it.
+    const openYouTab = (tab: YouPageTab) => {
+        if (tab === "howYouDo") setKnowledgeOpen(true);
+        else if (tab === "people") setPeopleOpen(true);
+        else setMemoryOpen(true);
+    };
     // The Agents place shows the Tasks page until the Agents page replaces it,
     // and Tasks reports its first paint as "tasks": time the switch under the
     // same name, so the line is logged and the speed check can read it.
@@ -3646,6 +3654,7 @@ export default function App() {
                     Today and Chat), so a jump to Activity and back keeps
                     their lists, scroll and open entry. */}
                 <RetainedPage page="about-you" active={appMode === 'memory' && !selectedAutomationJob}>
+                    <YouPage tab="about" onTabChange={openYouTab}>
                     <MemoryPage
                         onOpenActivitySession={(id) =>
                             openActivityWithSession(id, "memory")
@@ -3663,8 +3672,10 @@ export default function App() {
                             setGoalOpenRequest((prev) => ({ id: "", signal: prev.signal }))
                         }
                     />
+                    </YouPage>
                 </RetainedPage>
                 <RetainedPage page="know-how" active={appMode === 'knowledge' && !selectedAutomationJob}>
+                    <YouPage tab="howYouDo" onTabChange={openYouTab}>
                     <DevToolsContext.Provider value={devToolsUnlocked}>
                     <ActivityOpenChatContext.Provider value={() => { setKnowledgeOpen(false); openMainChatRef.current(); }}>
                     <KnowledgePage
@@ -3690,8 +3701,10 @@ export default function App() {
                     />
                     </ActivityOpenChatContext.Provider>
                     </DevToolsContext.Provider>
+                    </YouPage>
                 </RetainedPage>
                 <RetainedPage page="people" active={appMode === 'people' && !selectedAutomationJob}>
+                    <YouPage tab="people" onTabChange={openYouTab}>
                     <PeoplePage
                         active={peopleOpen}
                         escapeRef={peopleEscapeRef}
@@ -3713,6 +3726,7 @@ export default function App() {
                             );
                         }}
                     />
+                    </YouPage>
                 </RetainedPage>
 
                 {selectedAutomationJob ? (

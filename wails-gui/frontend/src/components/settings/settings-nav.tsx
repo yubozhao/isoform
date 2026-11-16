@@ -14,6 +14,7 @@ import {
     Wrench,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useAoyNavTag } from "@/components/settings/pages/agent-of-you/aoy-shared";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
     DEV_TOOLS_GROUPS,
@@ -78,6 +79,7 @@ export interface SettingsNavProps {
  */
 export function SettingsNav({ activePage, onSelect, showDevTools }: SettingsNavProps) {
     const { t } = useTranslation("settings");
+    const aoyTag = useAoyNavTag();
     const [query, setQuery] = useState("");
 
     const activeSection: SettingsSectionId | null = isSettingsPageId(activePage)
@@ -135,7 +137,14 @@ export function SettingsNav({ activePage, onSelect, showDevTools }: SettingsNavP
             className={NAV_ITEM_CLASS}
         >
             <entry.icon className="h-4 w-4 shrink-0" />
-            {entry.comingSoon ? (
+            {entry.id === "your-agent" && aoyTag ? (
+                <span className="flex min-w-0 flex-1 items-center gap-2">
+                    <span className="truncate">{t("aoy.aoy")}</span>
+                    <span className="settings-nav-soon settings-nav-tag" data-testid="aoy-nav-tag">
+                        {t(aoyTag === "on" ? "aoy.tagOn" : aoyTag === "paused" ? "aoy.tagPaused" : "aoy.tagSetup")}
+                    </span>
+                </span>
+            ) : entry.comingSoon ? (
                 <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
                     <span className="max-w-full truncate">{t(entry.labelKey as never)}</span>
                     <span className="settings-nav-soon">{t("nav.soon")}</span>

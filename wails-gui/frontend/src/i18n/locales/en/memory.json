@@ -689,7 +689,14 @@
             "stoppedUsing": "Isoform stopped using this.",
             "answerFailed": "Could not save that. Try again.",
             "wordsFailed": "Your words didn't save. They're still here.",
-            "undoFailed": "Undo didn't save."
+            "undoFailed": "Undo didn't save.",
+            "right": "Right?",
+            "yes": "Yes",
+            "no": "No",
+            "edit": "Edit",
+            "cardLabel": "{{where}}. {{text}}. Yes confirms it, and Isoform treats it as fact.",
+            "cardLabelNoSource": "{{text}}. Yes confirms it, and Isoform treats it as fact.",
+            "forgetClaim": "Forget: {{claim}}"
         },
         "detail": {
             "label": "Belief detail",
@@ -754,5 +761,17 @@
         "title": "Add a note about you",
         "line": "Isoform puts what you write here ahead of what it learned.",
         "placeholder": "For example: I keep emails to three sentences."
+    },
+    "you": {
+        "title": "You",
+        "sub": "What Isoform thinks about you, your way of working and the people around you. Each line is yours to judge.",
+        "tabsLabel": "You",
+        "tabAbout": "About you",
+        "tabHowYouDo": "How you do things",
+        "tabPeople": "Who you know",
+        "tabAgent": "Agent of You",
+        "soon": "Soon",
+        "agentSoon": "Soon: Agent of You answers clients from what you've judged here.",
+        "aoySetupLink": "Set up and records are in Settings › Agent of You ›"
     }
 }

@@ -3,7 +3,7 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { PAGE_LAYOUT_WIDTHS, pageLayoutFailures } from "./page-layout-checks";
 
 // The layout check of today-layout.spec.ts for the other pages of the
-// computer pass (computer-activity v1.0.0), on fixture data, at a narrow and
+// computer pass (computer-activity and computer-you v1.0.0), on fixture data, at a narrow and
 // a wide window. Runs in the daily trial with Today's (same config); also by
 // hand: pnpm exec playwright test --config playwright.today-layout.config.ts
 const out = process.env.DAILY_TRIAL_OUT;
@@ -12,6 +12,7 @@ if (out) mkdirSync(out, { recursive: true });
 const PAGES = [
     { name: "activity", query: "page=activity&section=yourDay", area: '[data-testid="activity-feed"]', rows: "[data-feed-kind]" },
     { name: "activity-agents", query: "page=activity&section=agents", area: '[data-testid="activity-feed"]', rows: "[data-feed-kind]" },
+    { name: "you", query: "page=you", area: '[data-testid="you-page"]', rows: "[data-claim-row]" },
 ] as const;
 
 for (const target of PAGES) {

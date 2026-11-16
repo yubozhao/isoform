@@ -649,6 +649,14 @@ func (a *App) sendMainChat(text string, origin promptOrigin, telemetryAction ...
 }
 
 func (a *App) sendMainChatAttached(text string, images []ImageData, files []FileData, origin promptOrigin, telemetryAction ...string) (MainChatTopicSendResult, error) {
+	return a.sendMainChatAs(uuid.NewString(), text, images, files, origin, nil, telemetryAction...)
+}
+
+// sendMainChatAs is sendMainChatAttached with the user row's id chosen by the
+// caller (Quick chat keys it by its request, so a retry stores it once) and
+// an optional step run once the row is admitted, before the prompt is
+// composed: no other turn on the main chat can run in between.
+func (a *App) sendMainChatAs(id, text string, images []ImageData, files []FileData, origin promptOrigin, admitted func(), telemetryAction ...string) (MainChatTopicSendResult, error) {
 	var result MainChatTopicSendResult
 	if a == nil || a.store == nil || strings.TrimSpace(text) == "" || len(text) > 64<<10 {
 		return result, errTodayChatItemUnavailable
@@ -676,7 +684,6 @@ func (a *App) sendMainChatAttached(text string, images []ImageData, files []File
 	if err != nil {
 		return result, err
 	}
-	id := uuid.NewString()
 	order := -1
 	admit := func(turnCtx context.Context) error {
 		if len(telemetryAction) > 0 {
@@ -696,6 +703,9 @@ func (a *App) sendMainChatAttached(text string, images []ImageData, files []File
 		a.scheduleOpenAnswerAskPromotion(main.LocalID, id, text)
 		a.emitBrowserEvent(mainChatItemsAppendedEvent, map[string]any{"sessionId": main.LocalID, "itemId": id, "sortOrder": order, "kind": "user", "source": "today"})
 		_ = a.observeCommunicationMessage(communicationMessage{Source: "isoform_chat", App: "Isoform", MessageID: id, AuthorID: "owner", OwnerID: "owner", Text: text, SentAt: time.Now(), BodyAvailable: true})
+		if admitted != nil {
+			admitted()
+		}
 		return nil
 	}
 	prompt := text

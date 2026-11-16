@@ -33,7 +33,8 @@ enum NoticeDelivery {
     static func apply(_ notice: OpenedNotice, to content: UNMutableNotificationContent) {
         content.title = notice.plaintext.title
         content.body = notice.plaintext.body ?? ""
-        content.categoryIdentifier = notice.plaintext.category
+        // A notice that can be answered from the notification gets the phone category with that button (9.2).
+        content.categoryIdentifier = NoticeWorkAnswer.category(for: notice.plaintext)?.rawValue ?? notice.plaintext.category
         // Notices of one kind stack together in Notification Center, so several read as one group (P145).
         content.threadIdentifier = NoticeDelivery.threadIdentifier(kind: notice.plaintext.kind)
         var userInfo = content.userInfo

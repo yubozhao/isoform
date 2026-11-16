@@ -9,6 +9,9 @@ enum NotificationCategories {
         /// The brief ready notice (LocalBriefNotices): open its brief view, or open it and play it.
         static let read = "read"
         static let play = "play"
+        /// Answers from the notification (PROTOCOL.md 9.2), recorded without opening the app.
+        static let notNeeded = NoticeWorkAnswer.notNeeded.rawValue
+        static let useful = NoticeWorkAnswer.useful.rawValue
     }
 
     /// The category of the "Your brief is ready" notice, which has its own two buttons.
@@ -27,6 +30,14 @@ enum NotificationCategories {
                                    intentIdentifiers: [], options: options),
             UNNotificationCategory(identifier: NoticeCategory.brief.rawValue,
                                    actions: [read, play],
+                                   intentIdentifiers: [], options: options),
+            UNNotificationCategory(identifier: NoticeCategory.prep.rawValue,
+                                   actions: [read, UNNotificationAction(identifier: Action.notNeeded,
+                                                                        title: String(localized: "work.reason.notNeeded"), options: [])],
+                                   intentIdentifiers: [], options: options),
+            UNNotificationCategory(identifier: NoticeCategory.result.rawValue,
+                                   actions: [read, UNNotificationAction(identifier: Action.useful,
+                                                                        title: String(localized: "work.useful"), options: [])],
                                    intentIdentifiers: [], options: options),
             UNNotificationCategory(identifier: localBriefCategory,
                                    actions: [read, play],

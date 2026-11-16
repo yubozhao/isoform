@@ -746,10 +746,9 @@
     "quickChat": {
         "brand": "Isoform",
         "title": "快捷聊天",
-        "openInApp": "在 Isoform 中打开",
-        "placeholder": "给 Isoform 发消息",
+        "openInApp": "在聊天中打开 ›",
+        "placeholder": "问问你的一天，或纠正 Isoform",
         "followupPlaceholder": "补充或确认…",
-        "detected": "已检测到 {{app}}",
         "voiceInput": "语音输入",
         "send": "发送",
         "stopRecording": "点击停止录音",
@@ -764,7 +763,10 @@
         "connectionLost": "连接已断开。",
         "historyUnavailable": "无法载入回复历史。",
         "streamError": "消息流出错",
-        "tool": "工具"
+        "tool": "工具",
+        "aboutScreen": "关于：屏幕上的内容 · {{app}}，{{title}}",
+        "aboutScreenApp": "关于：屏幕上的内容 · {{app}}",
+        "removeScreen": "不发送屏幕上的内容"
     },
     "stream": {
         "openProject": "打开一个项目即可开始。",

@@ -8,6 +8,39 @@ import Foundation
 enum NoticeCategory: String, CaseIterable, Sendable {
     case moment = "YANSU_MOMENT"
     case brief = "YANSU_BRIEF"
+    /// Phone-only categories the extension sets when a notice can be answered from the notification (PROTOCOL.md
+    /// 9.2): meeting prep with Not needed, finished work with Useful. The sealed plaintext keeps YANSU_MOMENT.
+    case prep = "YANSU_PREP"
+    case result = "YANSU_RESULT"
+}
+
+/// The answers a notification can give without opening the app (PROTOCOL.md 9.2), and the category that shows them.
+enum NoticeWorkAnswer: String, Sendable {
+    case notNeeded = "not_needed"
+    case useful
+
+    /// The phone category for a notice whose plaintext names a work item and carries this answer's action.
+    static func category(for plaintext: NoticePlaintext) -> NoticeCategory? {
+        guard plaintext.workItemID != nil else { return nil }
+        let ids = Set(plaintext.actions.map(\.id))
+        switch plaintext.kind {
+        case "meeting_prep" where ids.contains(NoticeWorkAnswer.notNeeded.rawValue): return .prep
+        case "work_finished" where ids.contains(NoticeWorkAnswer.useful.rawValue): return .result
+        default: return nil
+        }
+    }
+
+    /// The B3 answer body: Not needed is a No with that reason, Useful is Useful; the key is the notice's own.
+    func body(noticeID: String, answeredAt: String) -> [String: String] {
+        switch self {
+        case .notNeeded:
+            return ["idempotencyKey": "notice:\(noticeID):not_needed", "action": "no", "reason": "not_needed",
+                    "surface": "notification", "answeredAt": answeredAt]
+        case .useful:
+            return ["idempotencyKey": "notice:\(noticeID):useful", "action": "useful",
+                    "surface": "notification", "answeredAt": answeredAt]
+        }
+    }
 }
 
 enum NoticeRoute: Equatable, Sendable {
@@ -77,6 +110,8 @@ struct NoticePlaintext: Codable, Equatable, Sendable {
     let momentID: String?
     let destinationKind: String?
     let destinationID: String?
+    /// The Your work item a meeting_prep or work_finished notice answers (PROTOCOL.md 9.2), on a phone that reads /work.
+    let workItemID: String?
     let createdAt: String
     let expiresAt: String?
 
@@ -92,6 +127,7 @@ struct NoticePlaintext: Codable, Equatable, Sendable {
         case momentID = "momentId"
         case destinationKind
         case destinationID = "destinationId"
+        case workItemID = "workItemId"
         case createdAt
         case expiresAt
     }
@@ -120,6 +156,8 @@ extension NoticePlaintext {
             destinationKind = nil
             destinationID = nil
         }
+        let work: String? = try? container.decodeIfPresent(String.self, forKey: .workItemID)
+        workItemID = work.flatMap { !$0.isEmpty && $0.utf8.count <= 256 && !$0.contains("/") ? $0 : nil }
         createdAt = (try? container.decodeIfPresent(String.self, forKey: .createdAt)) ?? ""
         let expires: String? = try? container.decodeIfPresent(String.self, forKey: .expiresAt)
         expiresAt = expires.flatMap { $0.isEmpty ? nil : $0 }

@@ -6,12 +6,12 @@ import { useVoiceInput } from "@/hooks/useVoiceInput";
 import { LogoIcon } from "@/assets/icons/LogoIcon";
 import { VoiceRecordingIndicator } from "@/components/voice-recording-indicator";
 import { DetectionChip } from "./DetectionChip";
-import type { DetectionContext, Suggestion } from "../api/types";
+import type { DetectionContext } from "../api/types";
 
 interface Props {
     detection: DetectionContext | null;
-    suggestions: Suggestion[];
-    onSubmit: (prompt: string) => void;
+    /** withScreen: the screen chip was still there when it was sent. */
+    onSubmit: (prompt: string, withScreen: boolean) => void;
     /** Bumps every time the panel surfaces so the textarea re-focuses (Wails only). */
     showNonce?: number;
 }
@@ -51,11 +51,16 @@ function isNativeSpotlight(): boolean {
  */
 export function PillInput({
     detection,
-    suggestions,
     onSubmit,
     showNonce,
 }: Props) {
     const { t } = useTranslation("chat");
+    // What's on screen is offered as a chip and goes with the question only
+    // while it is there (computer-chat v1.0.0 rule 8). Each summon offers it
+    // again.
+    const [screenChip, setScreenChip] = useState(true);
+    useEffect(() => { setScreenChip(true); }, [detection?.bundleID, showNonce]);
+    const withScreen = screenChip && Boolean(detection?.bundleID);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const [text, setText] = useState("");
 
@@ -105,7 +110,7 @@ export function PillInput({
     const submit = () => {
         const trimmed = text.trim();
         if (!trimmed) return;
-        onSubmit(trimmed);
+        onSubmit(trimmed, withScreen);
         setText("");
     };
 
@@ -115,6 +120,12 @@ export function PillInput({
         // engines that don't set isComposing on the confirming keydown
         // (mirrors the main composer's guard).
         if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) {
+            return;
+        }
+        // Backspace in an empty field removes the screen chip.
+        if (e.key === "Backspace" && withScreen && e.currentTarget.selectionStart === 0 && e.currentTarget.selectionEnd === 0) {
+            e.preventDefault();
+            setScreenChip(false);
             return;
         }
         if (
@@ -141,8 +152,7 @@ export function PillInput({
         }
     };
 
-    const top = suggestions[0] ?? null;
-    const placeholder = top?.prompt ?? t("quickChat.placeholder");
+    const placeholder = t("quickChat.placeholder");
 
     // Wails draggable convention: outer card drags, interactive
     // inner regions opt out via --wails-draggable: no-drag.
@@ -156,9 +166,8 @@ export function PillInput({
                 </span>
                 <div style={noDrag}>
                     <DetectionChip
-                        detection={detection}
-                        topSuggestion={top}
-                        onActivate={(s) => onSubmit(s.prompt)}
+                        detection={withScreen ? detection : null}
+                        onRemove={() => setScreenChip(false)}
                     />
                 </div>
             </div>
@@ -350,7 +359,8 @@ const pillStyles = `
     font-family: inherit;
     line-height: 1;
     white-space: nowrap;
-    cursor: pointer;
+    max-width: 560px;
+    cursor: default;
 }
 .detection-chip__icon {
     display: inline-flex;
@@ -368,9 +378,31 @@ const pillStyles = `
     vertical-align: middle;
 }
 .detection-chip__label {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.2;
+}
+.detection-chip__remove {
     display: inline-flex;
     align-items: center;
-    line-height: 1;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    margin-left: 2px;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: inherit;
+    opacity: 0.7;
+    cursor: pointer;
+}
+.detection-chip__remove:hover,
+.detection-chip__remove:focus-visible {
+    opacity: 1;
+    background: var(--color-sample-border);
 }
 .detection-chip:disabled {
     cursor: default;

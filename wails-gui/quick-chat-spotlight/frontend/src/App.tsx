@@ -9,14 +9,15 @@ import {
 } from "./lib/wails-app-stub";
 import { PillInput } from "./components/PillInput";
 import { ConversationPanel } from "./components/ConversationPanel";
-import { fetchSuggestions, fetchAppearance, submitPrompt, newSpotlightRequestId } from "./api/yansu";
-import type { DetectionContext, Suggestion } from "./api/types";
+import { fetchAppearance, submitPrompt, newSpotlightRequestId } from "./api/yansu";
+import type { DetectionContext } from "./api/types";
 
 type View = "pill" | "conversation";
 
 interface SpotlightShowEvent {
     bundleID?: string | null;
     appName?: string | null;
+    windowTitle?: string | null;
 }
 
 /**
@@ -34,7 +35,6 @@ interface SpotlightShowEvent {
 export function App() {
     const [view, setView] = useState<View>("pill");
     const [detection, setDetection] = useState<DetectionContext | null>(null);
-    const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
     const [submittedPrompt, setSubmittedPrompt] = useState<string>("");
     const [sessionLocalId, setSessionLocalId] = useState<string | null>(null);
     const [firstUserAck, setFirstUserAck] = useState<{ clientId: string; itemId: string; sortOrder: number } | null>(null);
@@ -100,8 +100,8 @@ export function App() {
             }
         });
         appearancePendingRef.current = pending;
-        // A focus refresh can supersede a show refresh. Before that show
-        // requests suggestions, wait for the newest language to settle too.
+        // A focus refresh can supersede a show refresh. Wait for the newest
+        // language to settle too.
         for (;;) {
             await pending;
             const latest = appearancePendingRef.current;
@@ -149,10 +149,10 @@ export function App() {
                 const next: DetectionContext = {
                     bundleID: payload?.bundleID ?? "",
                     appName: payload?.appName ?? "",
+                    windowTitle: payload?.windowTitle ?? "",
                 };
                 setDetection(next);
                 setView("pill");
-                setSuggestions([]);
                 // Each global-hotkey summon starts a fresh conversation —
                 // resetting the persisted prompt + session id (the
                 // ConversationPanel is keyed off `showNonce`, so bumping
@@ -172,18 +172,15 @@ export function App() {
                 // Each summon picks up Settings changes from the host, whose
                 // language may differ from this helper's OS/storage defaults.
                 await syncAppearance();
-                try {
-                    const list = await fetchSuggestions(next.bundleID, i18n.resolvedLanguage ?? i18n.language);
-                    setSuggestions(list);
-                } catch {
-                    /* non-fatal */
-                }
             },
         );
         return off;
     }, [syncAppearance]);
 
-    const handleSubmit = async (prompt: string, retry = false) => {
+    // withScreen: the screen chip was still there when the person sent it
+    // (computer-chat v1.0.0 rule 8). A retry keeps the first send's choice.
+    const firstWithScreenRef = useRef(true);
+    const handleSubmit = async (prompt: string, retry = false, withScreen = true) => {
         if (firstRequestPendingRef.current) return;
         const trimmed = prompt.trim();
         if (!trimmed) return;
@@ -204,7 +201,10 @@ export function App() {
         // gap where the pill sat at the bottom of an already-resized
         // window with empty surface area above it before the conv
         // layer rendered — the residual flicker QA noticed.
-        if (!retry) firstRequestRef.current = newSpotlightRequestId();
+        if (!retry) {
+            firstRequestRef.current = newSpotlightRequestId();
+            firstWithScreenRef.current = withScreen;
+        }
         const requestId = firstRequestRef.current!;
         const version = conversationVersionRef.current;
         firstRequestPendingRef.current = true;
@@ -228,7 +228,7 @@ export function App() {
         try {
             const response = await submitPrompt(
                 trimmed,
-                detection?.bundleID ?? "",
+                firstWithScreenRef.current ? detection?.bundleID ?? "" : "",
                 undefined,
                 undefined,
                 requestId,
@@ -279,8 +279,7 @@ export function App() {
             >
                 <PillInput
                     detection={detection}
-                    suggestions={suggestions}
-                    onSubmit={(prompt) => void handleSubmit(prompt)}
+                    onSubmit={(prompt, withScreen) => void handleSubmit(prompt, false, withScreen)}
                     showNonce={showNonce}
                 />
             </div>

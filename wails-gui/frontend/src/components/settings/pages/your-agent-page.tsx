@@ -73,7 +73,7 @@ function PlaceholderRows({ count, rowClass, gapClass, testId }: { count: number;
  * Isoform's server holds the request and emails them to confirm. Nothing is
  * sent by the email line until the person presses Send in their mail app.
  */
-export function YourAgentPage() {
+export function YourAgentPage({ ownerCard }: { ownerCard?: (reservation: YourAgentReservation) => ReactNode } = {}) {
     const { t, i18n } = useTranslation("settings");
     const [page, setPage] = useState<YourAgentPageData | null>(null);
     const [reservation, setReservation] = useState<YourAgentReservation | null>(null);
@@ -462,8 +462,12 @@ export function YourAgentPage() {
         return null;
     })();
 
+    // Agent of You (v2.1.3 o01, o02): once the name is confirmed, the join card sits on top.
+    const confirmed = reservation && !showForm && !["pending", "choice", "unconfirmed"].includes(reservation.status ?? "") ? reservation : null;
+
     return (
         <div className="flex flex-col gap-4" data-testid="your-agent-page">
+            {confirmed && ownerCard?.(confirmed)}
             <div className="flex flex-col gap-2">
                 <span className={CHIP_CLASS}>{t("yourAgent.comingSoon")}</span>
                 {/* The header carries the first sentence of the lead; the rest sits here. */}

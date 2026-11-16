@@ -132,22 +132,14 @@ describe("Sidebar: five places (computer-map v1.0.0 §2)", () => {
         expect(sidebarSource).not.toMatch(/onOpenSearch|onSwitchSession|pinnedTopics|onOpenTasks/);
     });
 
-    it.each([["memory", "about"], ["knowledge", "howYouDo"], ["people", "people"]] as const)("selects You and its tab on %s, and keeps every tab one click away", (appMode, tab) => {
-        const { props } = renderSidebar({ appMode });
+    // computer-you v1.0.0 rule 6: You shows once; its tabs are on the You page.
+    it.each(["memory", "knowledge", "people"] as const)("selects You on %s, with no tab rows in the sidebar", (appMode) => {
+        renderSidebar({ appMode });
         const places = [...document.querySelectorAll("[data-sidebar-place][aria-current=page]")];
         expect(places).toHaveLength(1);
         expect(places[0]).toHaveAttribute("data-sidebar-place", "you");
         expect(places[0].className).not.toMatch(/border-l/);
-        const tabs = [...document.querySelectorAll<HTMLElement>("[data-you-tab]")];
-        expect(tabs.map((row) => row.textContent)).toEqual([en.userMenu.memory, en.userMenu.knowledge, en.userMenu.people]);
-        expect(document.querySelector("[data-you-tab][aria-current=page]")).toHaveAttribute("data-you-tab", tab);
-        tabs.forEach((row) => fireEvent.click(row));
-        expect(vi.mocked(props.onOpenYou).mock.calls).toEqual([["about"], ["howYouDo"], ["people"]]);
-    });
-
-    it("shows You's tabs only while You is open", () => {
-        renderSidebar({ appMode: "today" });
-        expect(document.querySelector("[data-sidebar-you-tabs]")).toBeNull();
+        expect(document.querySelector("[data-sidebar-you-tabs], [data-you-tab]")).toBeNull();
     });
 
     it("selects Agents on the agents view", () => {

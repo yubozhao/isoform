@@ -146,6 +146,13 @@ final class AgentPushAppDelegate: NSObject, UIApplicationDelegate, UNUserNotific
                 app.router.noticeOpened(NoticeRouting.route(kind: notice.kind, momentID: plaintext?.momentID))
             }
             await app.receipts.post(noticeID: notice.id, state: .opened)
+        case NotificationCategories.Action.notNeeded, NotificationCategories.Action.useful:
+            // Answered without opening the app (PROTOCOL.md 9.2). The receipt is measurement only, never the answer.
+            if let answer = NoticeWorkAnswer(rawValue: action), let plaintext = NoticePush.plaintext(in: userInfo),
+               let itemID = plaintext.workItemID {
+                await app.answerWorkFromNotice(itemID: itemID, answer: answer, noticeID: notice.id)
+            }
+            await app.receipts.post(noticeID: notice.id, state: .acted, action: action)
         case NotificationCategories.Action.later:
             guard let laterContent else { return }
             do {

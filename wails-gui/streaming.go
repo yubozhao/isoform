@@ -623,6 +623,9 @@ func (a *App) executePromptOwned(prompt string, userPrompt string, workDir strin
 		return err
 	}
 	input.ExtraTools = append(a.mainChatExtraTools(tag, origin), a.mainChatDraftTools(tag, origin)...)
+	if a.quickChatTurnActive(tag) {
+		input.ExtraTools = withoutQuickChatCards(input.ExtraTools)
+	}
 	input.BeforeDispatch = func(dispatchCtx context.Context) error {
 		if err := dispatchCtx.Err(); err != nil {
 			return err
@@ -1656,6 +1659,7 @@ func (a *App) composePromptFor(prompt string, personal bool, opts ...string) str
 		// After the yansu context, whose cron instructions it narrows for
 		// the main chat.
 		{"draft-tool", func() string { return a.injectChatDraftToolContext(tag, origin) }},
+		{"quick-chat", func() string { return a.injectQuickChatContext(tag) }},
 		{"upcoming-tools", func() string { return a.injectUpcomingToolsContext(tag, origin) }},
 		{"goal-tools", func() string { return a.injectGoalToolsContext(tag) }},
 		{"web-search-tool", func() string { return a.injectWebSearchToolContext(tag, origin) }},

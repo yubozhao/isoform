@@ -44,6 +44,16 @@ final class NotificationService: UNNotificationServiceExtension {
         let relay = RelayClient(requestTimeout: 5, resourceTimeout: 5)
         await NoticeReceipts(relay: relay, secrets: secrets, attempts: 1).post(noticeID: push.id, state: .delivered)
         guard let opened, let content else { return nil }
+        if opened.plaintext.kind == "brief_ready", opened.plaintext.destinationKind == "brief",
+           let briefID = opened.plaintext.destinationID {
+            // The computer's brief notice is the brief's one notification: the local one yields (PROTOCOL.md 9.1).
+            SharedNoticeDedup.recordRemoteBrief(hub: push.hub, device: push.dev, briefID: briefID)
+            let center = UNUserNotificationCenter.current()
+            let local = await center.pendingNotificationRequests()
+                .filter { $0.identifier.hasPrefix("local.brief.") && ($0.content.userInfo["localBriefID"] as? String) == briefID }
+                .map(\.identifier)
+            center.removePendingNotificationRequests(withIdentifiers: local)
+        }
         NoticeDelivery.apply(opened, to: content)
         return content
     }

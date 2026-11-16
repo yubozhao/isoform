@@ -1,4 +1,5 @@
-// One page on fixture data for e2e/page-layout.spec.ts (?page=activity):
+// One page on fixture data for e2e/page-layout.spec.ts (?page=activity or
+// ?page=you):
 // production layout and styles, in-memory reads only. It never contacts the
 // running desktop, its browser bridge, or its persisted state.
 import React from 'react';
@@ -6,6 +7,8 @@ import { createRoot } from 'react-dom/client';
 import i18n from '@/i18n';
 import '@/index.css';
 import { ActivityPage } from '@/components/activity-page';
+import { YouPage } from '@/components/you/you-page';
+import { NewThisWeek, useBeliefReview, type ReviewItem } from '@/components/about-you/new-this-week';
 
 const params = new URLSearchParams(location.search);
 const noop = () => {};
@@ -28,11 +31,27 @@ const cronJobs = { jobs: [], loading: false, toggleEnabled: noop, deleteJob: noo
 await i18n.changeLanguage(params.get('lang') ?? 'en');
 document.documentElement.dataset.theme = params.get('theme') ?? 'paper';
 const section = (params.get('section') ?? 'yourDay') as never;
+const claims: ReviewItem[] = [
+    { id: 'c1', text: 'You build the system first, then the product on top of it.', where: 'Seen 6 times · Mail, Zoom', status: 'inferred' },
+    { id: 'c2', text: 'You keep calls short before 11 AM, and move longer reviews to the afternoon when the team is in the same time zone.', where: 'Seen 3 times · Calendar', status: 'learned_today' },
+    { id: 'c3', text: 'You write to Jia in Chinese.', where: 'Messages · 12 sent', status: 'inferred', communication: true },
+    { id: 'c4', text: 'You release after the tests pass, never on a Friday.', where: 'Seen twice · Terminal', status: 'inferred' },
+];
+function YouFixture() {
+    const review = useBeliefReview({ onConfirmed: noop, onForgotten: noop, onChanged: noop, contentOf: () => '' });
+    return (
+        <YouPage tab="about" onTabChange={noop}>
+            <div className="flex-1 overflow-y-auto px-10 py-6"><NewThisWeek items={claims} review={review} /></div>
+        </YouPage>
+    );
+}
 createRoot(document.getElementById('root')!).render(
     <div className="flex h-screen w-screen">
         <aside aria-hidden style={{ width: Number(params.get('sidebar') ?? 240), flexShrink: 0 }} />
         <main data-testid="page-area" className="flex min-w-0 flex-1">
-            <ActivityPage initialDate="2026-10-23" cronJobs={cronJobs} section={section} onSectionChange={noop} />
+            {params.get('page') === 'you'
+                ? <YouFixture />
+                : <ActivityPage initialDate="2026-10-23" cronJobs={cronJobs} section={section} onSectionChange={noop} />}
         </main>
     </div>,
 );

@@ -298,7 +298,7 @@ func (s *spotlightSupervisor) Stop() {
 // foreground-app context. Returns ErrSpotlightUnavailable when the
 // helper isn't installed, or when it doesn't become ready within a
 // short grace window.
-func (s *spotlightSupervisor) Show(bundleID, appName string) error {
+func (s *spotlightSupervisor) Show(bundleID, appName, windowTitle string) error {
 	s.mu.Lock()
 	running := s.cmd != nil
 	s.mu.Unlock()
@@ -334,8 +334,9 @@ func (s *spotlightSupervisor) Show(bundleID, appName string) error {
 		return ErrSpotlightUnavailable
 	}
 	body, err := json.Marshal(map[string]string{
-		"bundleID": bundleID,
-		"appName":  appName,
+		"bundleID":    bundleID,
+		"appName":     appName,
+		"windowTitle": windowTitle,
 	})
 	if err != nil {
 		return fmt.Errorf("marshal show payload: %w", err)

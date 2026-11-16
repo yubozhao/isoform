@@ -601,7 +601,10 @@ func (s *quickChatHotkey) handleTrigger() {
 	// the helper isn't installed (typical in dev) or hasn't reached
 	// /health yet.
 	if app.spotlight != nil {
-		if err := app.spotlight.Show(bundleID, appName); err == nil {
+		// The screen chip (computer-chat v1.0.0 rule 8): none with Closed
+		// Eyes on or for a sensitive app.
+		chipBundle, chipName, chipTitle := app.spotlightScreenChip(bundleID, appName)
+		if err := app.spotlight.Show(chipBundle, chipName, chipTitle); err == nil {
 			return
 		} else if err != ErrSpotlightUnavailable {
 			log.Printf("[quickchat] spotlight.Show failed: %v — falling back to in-app overlay", err)

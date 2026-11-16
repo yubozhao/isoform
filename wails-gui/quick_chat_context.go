@@ -36,7 +36,9 @@ type focusedAppSnapshot struct {
 // Returns nil if no usable current, same-app, or general signal could be
 // gathered. Never returns an error; callers can render an empty suggestion set.
 func (a *App) captureFocusedAppContext(bundleID string, _ time.Duration) *focusedAppSnapshot {
-	if a == nil || a.IsClosedEyesModeEnabled() {
+	// With "Watch my screen" off nothing on screen is read (computer-chat
+	// v1.0.0 rule 8).
+	if a == nil || a.IsClosedEyesModeEnabled() || !a.screenWatchingEnabled() {
 		return nil
 	}
 	bundleID = strings.TrimSpace(bundleID)
@@ -91,7 +93,7 @@ func (a *App) captureFocusedAppContext(bundleID string, _ time.Duration) *focuse
 // every model boundary. A rejected stored source is not usable as a dedup
 // sibling, OCR lookup source, title, or local suggestion fallback either.
 func (a *App) focusedAppContextForModelRead(snap *focusedAppSnapshot) *focusedAppSnapshot {
-	if a == nil || snap == nil || a.IsClosedEyesModeEnabled() ||
+	if a == nil || snap == nil || a.IsClosedEyesModeEnabled() || !a.screenWatchingEnabled() ||
 		activitySourceAppIsSensitive(snap.BundleID, snap.AppName) || activitymon.IsPrivateBrowsing(snap.WindowTitle) {
 		return nil
 	}
@@ -642,4 +644,39 @@ func hasFocusedAppContext(tag string) bool {
 	value, ok := focusedAppStash.Load(tag)
 	entry, valid := value.(focusedAppStashEntry)
 	return ok && valid && time.Since(entry.storedAt) <= focusedAppStashTTL
+}
+
+// spotlightScreenChip is what Quick chat may offer as its screen chip
+// (computer-chat v1.0.0 rule 8): the app, and its window title when it is the
+// frontmost window's. With "Watch my screen" off, Closed Eyes on, or for a
+// sensitive app or a private browser window, there is no chip: everything comes back empty, so
+// no screen context can go with the question either.
+func (a *App) spotlightScreenChip(bundleID, appName string) (string, string, string) {
+	return a.spotlightScreenChipFrom(bundleID, appName, activitymon.FrontmostAppInfo())
+}
+
+func (a *App) spotlightScreenChipFrom(bundleID, appName string, front activitymon.AppInfo) (string, string, string) {
+	// Opened over Isoform itself, Quick chat offers no chip
+	// (computer-chat v1.1.0 rule 8).
+	if a == nil || strings.TrimSpace(bundleID) == "" || isOwnAppName(appName) || isOwnBundleID(bundleID) || a.IsClosedEyesModeEnabled() || !a.screenWatchingEnabled() || activitySourceAppIsSensitive(bundleID, appName) {
+		return "", "", ""
+	}
+	title := ""
+	if !front.FocusUnavailable && (front.BundleID == bundleID || (appName != "" && strings.EqualFold(front.AppName, appName))) &&
+		!activitySourceAppIsSensitive(front.BundleID, front.AppName) {
+		if activitymon.IsPrivateBrowsing(front.WindowTitle) {
+			return "", "", ""
+		}
+		title = truncateAtRuneBoundary(strings.Join(strings.Fields(front.WindowTitle), " "), 160)
+	}
+	return bundleID, appName, title
+}
+
+// isOwnBundleID is Isoform's own app, by bundle id.
+func isOwnBundleID(bundleID string) bool {
+	switch strings.ToLower(strings.TrimSpace(bundleID)) {
+	case "com.wails.isoform", "com.wails.yansu":
+		return true
+	}
+	return false
 }

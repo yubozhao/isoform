@@ -250,9 +250,36 @@ test("Activity, from your watch", async () => {
     });
 });
 
-for (const [name, label] of [["about-you", "About you"], ["how-you-do-things", "How you do things"], ["who-you-know", "Who you know"]] as const) {
-    test(label, async () => {
-        await visit(name, 1500, nav(label), () => page.locator("main").getByRole("heading").first());
+// You is one sidebar row with tabs (computer-you v1.0.0); each tab is the
+// page that was there.
+test("You", async () => {
+    await visit("about-you", 1500, nav("You"), () => page.getByTestId("you-page"));
+});
+
+for (const [name, tab] of [["how-you-do-things", "howYouDo"], ["who-you-know", "people"]] as const) {
+    test(`You, ${tab}`, async () => {
+        await visit(name, 1500, async () => {
+            await page.locator(`[data-you-tab="${tab}"]`).first().click();
+        }, () => page.locator(`[data-you-tab="${tab}"][aria-selected="true"]`));
+    });
+}
+
+// About you's claims in a narrow and a wide window; page-layout.spec.ts
+// checks the same rules on fixture claims.
+for (const width of PAGE_LAYOUT_WIDTHS) {
+    test(`You at ${width} px`, async () => {
+        try {
+            await visit(`you-${width}`, 1500, async () => {
+                await page.setViewportSize({ width, height: 900 });
+                await page.locator('[data-you-tab="about"]').first().click();
+            }, () => page.locator('[data-you-tab="about"][aria-selected="true"]'), async (result) => {
+                await page.waitForTimeout(800);
+                result.checks.push("no sideways overflow", "sections never overlap", "claims never overlap");
+                result.failures.push(...await pageLayoutFailures(page, '[data-testid="you-page"]', "[data-claim-row]", false));
+            });
+        } finally {
+            await page.setViewportSize({ width: 1280, height: 820 });
+        }
     });
 }
 
