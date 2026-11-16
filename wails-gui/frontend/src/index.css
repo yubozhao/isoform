@@ -1561,6 +1561,13 @@ code,
     background: color-mix(in srgb, var(--color-copper) 12%, transparent);
 }
 
+/* Agent of You's state once Bo approves (Set up, On, Paused): the accent, not copper. */
+.settings-surface .settings-nav-soon.settings-nav-tag {
+    margin-left: auto;
+    color: var(--color-accent);
+    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+}
+
 .settings-surface .settings-nav-label {
     color: var(--s-muted-soft);
     letter-spacing: 0.025em;

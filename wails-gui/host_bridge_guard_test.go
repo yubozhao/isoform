@@ -529,7 +529,7 @@ func fakeSpotlightHelper(t *testing.T) (port string, shows *atomic.Int32) {
 func TestSpotlightShowWaitsForTheHelpersPorts(t *testing.T) {
 	port, shows := fakeSpotlightHelper(t)
 	s := newSpotlightSupervisor(0)
-	if err := s.Show("", ""); !errors.Is(err, ErrSpotlightUnavailable) {
+	if err := s.Show("", "", ""); !errors.Is(err, ErrSpotlightUnavailable) {
 		t.Fatalf("no helper: Show = %v, want ErrSpotlightUnavailable", err)
 	}
 	cmd := &exec.Cmd{}
@@ -542,7 +542,7 @@ func TestSpotlightShowWaitsForTheHelpersPorts(t *testing.T) {
 		s.recordHelperPort(cmd, "SPOTLIGHT_ASSET_PORT=5555")
 		s.recordHelperPort(cmd, "SPOTLIGHT_IPC_PORT="+port)
 	}()
-	if err := s.Show("com.example", "Example"); err != nil {
+	if err := s.Show("com.example", "Example", ""); err != nil {
 		t.Fatalf("Show before the ports arrived = %v, want the helper to show", err)
 	}
 	if shows.Load() != 1 {
@@ -565,14 +565,14 @@ func TestSpotlightShowFallsBackWithoutAnAssetPort(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go s.waitForReady(ctx)
-	if err := s.Show("", ""); !errors.Is(err, ErrSpotlightUnavailable) {
+	if err := s.Show("", "", ""); !errors.Is(err, ErrSpotlightUnavailable) {
 		t.Fatalf("Show = %v, want ErrSpotlightUnavailable", err)
 	}
 	if s.IsReady() {
 		t.Fatal("a helper with no asset port must not be ready")
 	}
 	s.ready.Store(true)
-	if err := s.Show("", ""); !errors.Is(err, ErrSpotlightUnavailable) {
+	if err := s.Show("", "", ""); !errors.Is(err, ErrSpotlightUnavailable) {
 		t.Fatalf("ready without an asset port: Show = %v, want ErrSpotlightUnavailable", err)
 	}
 	if shows.Load() != 0 {

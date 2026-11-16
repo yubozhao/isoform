@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"wails-gui/internal/persistence"
+	"wails-gui/storage"
 	"wails-gui/internal/platform/activitymon"
 )
 
@@ -266,7 +267,18 @@ func (a *App) spotlightSnapshot(ctx context.Context, tag string, state *spotligh
 	if state.persistErr != nil {
 		return spotlightSnapshotResponse{}, errSpotlightReplayUnavailable
 	}
-	rows, err := a.store.LoadStreamItems(ctx, tag)
+	var rows []storage.StreamItemRow
+	var err error
+	switch {
+	case !state.main:
+		rows, err = a.store.LoadStreamItems(ctx, tag)
+	case state.fromSortOrder >= 0:
+		// A Quick chat exchange in the main chat shows only itself, from
+		// its first question on, never the whole thread.
+		var page storage.StreamItemPage
+		page, err = a.store.LoadStreamItemsAfter(ctx, tag, state.fromSortOrder-1, 500)
+		rows = page.Items
+	}
 	if err != nil {
 		return spotlightSnapshotResponse{}, err
 	}
@@ -573,7 +585,7 @@ func (hb *hostBridge) handleSpotlightVoiceInit(w http.ResponseWriter, r *http.Re
 // Yansu itself (we don't want to chip-suggest about ourselves).
 func isOwnAppName(appName string) bool {
 	a := strings.ToLower(strings.TrimSpace(appName))
-	return a == "yansu" || a == "yansu spotlight" || a == "wails-gui" ||
+	return a == "isoform" || a == "yansu" || a == "yansu spotlight" || a == "wails-gui" ||
 		a == "wails-gui.exe" || a == "quick-chat-spotlight" ||
 		a == "quick-chat-spotlight.exe"
 }

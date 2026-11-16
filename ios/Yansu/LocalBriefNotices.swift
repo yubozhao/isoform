@@ -112,6 +112,12 @@ enum LocalBriefNotices {
         guard let delivery = deliveryDate(scheduled: ready, now: now, quietStart: settings.quietStart,
                                           quietEnd: settings.quietEnd) else { return }
         let identifier = "local.brief.\(digest(brief.identifier, pairing: pairing))"
+        if remoteNoticeCame(for: brief.identifier, pairing: pairing) {
+            // The computer's own notice for this brief reached the phone: it is the one notification (9.1).
+            center.removePendingNotificationRequests(withIdentifiers: [identifier])
+            markSent(brief.identifier, pairing: pairing, defaults: defaults)
+            return
+        }
         let delivered = await center.deliveredNotifications()
         let pending = await center.pendingNotificationRequests()
         guard isCurrent() else { return }
@@ -142,6 +148,13 @@ enum LocalBriefNotices {
         } catch {
             // The next refresh may retry the same id.
         }
+    }
+
+    /// Whether the extension recorded the computer's brief_ready notice for this brief on this pairing.
+    static func remoteNoticeCame(for briefID: String, pairing: TodayPairingIdentity,
+                                 directory: URL? = SharedNoticeDedup.defaultDirectory) -> Bool {
+        SharedNoticeDedup.containsRemoteBrief(hub: pairing.hubID, device: pairing.deviceID, briefID: briefID,
+                                              directory: directory)
     }
 
     private static func markSent(_ briefID: String, pairing: TodayPairingIdentity, defaults: UserDefaults) {

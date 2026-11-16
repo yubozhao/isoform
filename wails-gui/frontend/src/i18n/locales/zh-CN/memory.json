@@ -689,7 +689,14 @@
             "stoppedUsing": "Isoform 不再用这一条了。",
             "answerFailed": "没能保存，请重试。",
             "wordsFailed": "你的话没能保存，内容还在这里。",
-            "undoFailed": "撤销没能保存。"
+            "undoFailed": "撤销没能保存。",
+            "right": "对吗？",
+            "yes": "是",
+            "no": "不是",
+            "edit": "编辑",
+            "cardLabel": "{{where}}。{{text}}。选“是”即确认，Isoform 会把它当作事实。",
+            "cardLabelNoSource": "{{text}}。选“是”即确认，Isoform 会把它当作事实。",
+            "forgetClaim": "忘记：{{claim}}"
         },
         "detail": {
             "label": "认识详情",
@@ -754,5 +761,17 @@
         "title": "添加一条关于你的说明",
         "line": "你写在这里的内容，Isoform 会优先于它学到的内容。",
         "placeholder": "例如：我的邮件一般不超过三句话。"
+    },
+    "you": {
+        "title": "你",
+        "sub": "Isoform 对你、你的工作方式以及你身边的人的看法。每一条都由你来判断。",
+        "tabsLabel": "你",
+        "tabAbout": "关于你",
+        "tabHowYouDo": "你的做事方式",
+        "tabPeople": "你认识的人",
+        "tabAgent": "Agent of You",
+        "soon": "即将推出",
+        "agentSoon": "即将推出：Agent of You 会根据你在这里确认过的内容回答客户。",
+        "aoySetupLink": "设置和记录在 设置 › Agent of You ›"
     }
 }

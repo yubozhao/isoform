@@ -13,6 +13,7 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
+import { useInsideYou } from '@/components/you/you-page';
 import {
     SearchMemory,
     SyncMemoryIndex,
@@ -150,6 +151,7 @@ export function MemoryPage({
     openGoalSignal,
     onOpenGoalHandled,
 }: MemoryPageProps) {
+    const insideYou = useInsideYou();
     const { t, i18n } = useTranslation(['memory', 'common']);
     // A warm reopen paints the cached reads first and revalidates behind
     // them; only a true first load shows the skeleton.
@@ -875,11 +877,11 @@ export function MemoryPage({
     return (
         <div ref={rootRef} className="flex h-full min-h-0 bg-background text-ink">
             <ScrollArea className="min-w-0 flex-1">
-                <main className="flex flex-col gap-7 px-10 pt-9 pb-14">
+                <main className={cn('flex flex-col gap-7 px-10 pb-14', insideYou ? 'pt-2' : 'pt-9')}>
                     <header className="flex items-start gap-3 pr-10">
                         <div className="flex min-w-0 flex-1 flex-col gap-2">
-                            <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted">{t('aboutYou.eyebrow')}</div>
-                            <h1 className="m-0 text-[26px] font-normal leading-[1.3] text-ink">{t('aboutYou.title')}</h1>
+                            {!insideYou && <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted">{t('aboutYou.eyebrow')}</div>}
+                            {!insideYou && <h1 className="m-0 text-[26px] font-normal leading-[1.3] text-ink">{t('aboutYou.title')}</h1>}
                             {entriesState === 'ready' && (
                                 <p className="m-0 text-sm text-muted">
                                     {historyBeliefs.length > 0 && totals.confirmed === 0 && firstDay.history
@@ -916,6 +918,10 @@ export function MemoryPage({
                         hint={firstDay.history ? t('aboutYou.firstDay.checkFirstHint', { history: historyName(firstDay.history.assistants, tCommon) }) : undefined}
                     />
 
+                    {/* New claims first, so this week's learning is checked while
+                        it's fresh (computer-you v1.0.0 rule 4). */}
+                    <NewThisWeek items={reviewItems} review={review} />
+
                     {entriesState === 'ready' && entries.length > 0 && (
                         <AboutYouPortraitCard describe={describePortraitBelief} onShowBelief={handleSelect} onNotQuiteBelief={handleNotQuite} />
                     )}
@@ -938,8 +944,6 @@ export function MemoryPage({
                         selectedId={goalOpenId}
                         groupRef={goalsRef}
                     />
-
-                    <NewThisWeek items={reviewItems} review={review} />
 
                     {beliefs}
 

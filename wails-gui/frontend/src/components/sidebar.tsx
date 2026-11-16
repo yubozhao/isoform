@@ -192,12 +192,6 @@ export function Sidebar({
         { key: "you", label: t("sidebar.you"), Icon: User, onClick: () => onOpenYou(), active: youOpen, page: "about-you" },
     ];
 
-    const youTabs: Array<{ key: YouTab; label: string; tooltip: string; active: boolean; page: string }> = [
-        { key: "about", label: t("userMenu.memory"), tooltip: t("userMenu.aboutDescription"), active: appMode === "memory", page: "about-you" },
-        { key: "howYouDo", label: t("userMenu.knowledge"), tooltip: t("userMenu.knowHowDescription"), active: appMode === "knowledge", page: "know-how" },
-        { key: "people", label: t("userMenu.people"), tooltip: t("userMenu.peopleDescription"), active: appMode === "people", page: "people" },
-    ];
-
     // One expanded row. The active row has the rounded highlight only (no
     // left-edge bar, project rule 12).
     const navRow = (place: Place, delay: number) => {
@@ -325,25 +319,6 @@ export function Sidebar({
                     <nav aria-label={t("sidebar.mainNavigation")} className="px-3 flex flex-col gap-1 mb-2">
                         {places.map((place, index) => navRow(place, index * 15))}
                     </nav>
-
-                    {/* You's tabs, while You is open, until the one You page
-                        with tabs replaces the three pages (computer-map §3
-                        item 5): nothing it had is out of reach meanwhile. */}
-                    {youOpen && (
-                        <nav aria-label={t("sidebar.youTabs")} data-sidebar-you-tabs className="px-3 flex flex-col gap-0.5 mb-2">
-                            {youTabs.map((tab) => (
-                                <Button key={tab.key} variant="quiet" size="sm"
-                                    data-you-tab={tab.key}
-                                    aria-current={tab.active ? "page" : undefined}
-                                    title={tab.tooltip}
-                                    onClick={() => onOpenYou(tab.key)}
-                                    {...warm(tab.page)}
-                                    className={`flex items-center justify-start font-normal w-full pl-[31px] pr-2 h-7 text-[12.5px] rounded-lg transition-none cursor-pointer ${tab.active ? "bg-surface-active text-ink" : "text-muted hover:bg-surface-hover"}`}>
-                                    <span className="flex-1 min-w-0 text-left truncate">{tab.label}</span>
-                                </Button>
-                            ))}
-                        </nav>
-                    )}
 
                     <div className="flex-1 min-h-0" />
 

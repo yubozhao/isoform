@@ -226,8 +226,9 @@ func (a *app) handleHealth(w http.ResponseWriter, r *http.Request) {
 // showPayload is what Yansu posts to /show — the foreground app context
 // the user pressed the hotkey from.
 type showPayload struct {
-	BundleID string `json:"bundleID,omitempty"`
-	AppName  string `json:"appName,omitempty"`
+	BundleID    string `json:"bundleID,omitempty"`
+	AppName     string `json:"appName,omitempty"`
+	WindowTitle string `json:"windowTitle,omitempty"`
 }
 
 func (a *app) handleShow(w http.ResponseWriter, r *http.Request) {

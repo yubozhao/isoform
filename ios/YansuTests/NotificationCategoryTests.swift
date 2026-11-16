@@ -13,10 +13,11 @@ final class NotificationCategoryTests: XCTestCase {
         try XCTUnwrap(category.actions.first { $0.identifier == identifier }, "missing action \(identifier)")
     }
 
-    func testThreeCategoriesAreRegistered() {
-        // The brief-ready notice (LocalBriefNotices) has its own category with Read it and Play.
+    func testTheCategoriesAreRegistered() {
+        // The brief-ready notice (LocalBriefNotices) has its own category with Read it and Play; prep and finished
+        // work can be answered from the notification (PROTOCOL.md 9.2).
         XCTAssertEqual(Set(NotificationCategories.all.map(\.identifier)),
-                       ["YANSU_MOMENT", "YANSU_BRIEF", NotificationCategories.localBriefCategory])
+                       ["YANSU_MOMENT", "YANSU_BRIEF", "YANSU_PREP", "YANSU_RESULT", NotificationCategories.localBriefCategory])
     }
 
     func testTheRetiredDecisionCategoryAndItsButtonsAreGone() {

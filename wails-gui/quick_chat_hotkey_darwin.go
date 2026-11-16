@@ -897,22 +897,7 @@ func goQuickChatHotkeyTriggered(cBundleID *C.char) {
 			return
 		}
 
-		appName := bundleIDPrettyName(bundleID)
-
-		if app.spotlight != nil {
-			if err := app.spotlight.Show(bundleID, appName); err == nil {
-				// Arm dismiss-on-typing: the pill is now shown but not
-				// engaged, so typing in the user's app should dismiss it.
-				setSpotlightDismissOnKey(true)
-				return
-			} else if err != ErrSpotlightUnavailable {
-				log.Printf("[quickchat] spotlight.Show failed: %v — falling back to NSPanel", err)
-			}
-		}
-
-		app.ShowQuickChatWindow(bundleID)
-		wailsruntime.EventsEmit(app.ctx, "quickChat:invoke",
-			QuickChatInvokeEvent{FrontmostBundleID: bundleID, NativeWindow: true})
+		app.openQuickChat(bundleID)
 	}()
 }
 
@@ -945,4 +930,30 @@ func goClosedEyesHotkeyTriggered() {
 		}
 		app.toggleMenuBarObservation()
 	}()
+}
+
+// openQuickChat opens Quick chat over the app in front, the one path for the
+// hotkey and the menu bar: the spotlight pill with its screen chip, else the
+// in-app panel. The pill's questions go to the one Chat thread.
+func (a *App) openQuickChat(bundleID string) {
+	if a == nil || a.ctx == nil {
+		return
+	}
+	appName := bundleIDPrettyName(bundleID)
+	if a.spotlight != nil {
+		// The screen chip (computer-chat v1.0.0 rule 8): none with Watch my
+		// screen off, Closed Eyes on, or for a sensitive app.
+		chipBundle, chipName, chipTitle := a.spotlightScreenChip(bundleID, appName)
+		if err := a.spotlight.Show(chipBundle, chipName, chipTitle); err == nil {
+			// Arm dismiss-on-typing: the pill is now shown but not
+			// engaged, so typing in the user's app should dismiss it.
+			setSpotlightDismissOnKey(true)
+			return
+		} else if err != ErrSpotlightUnavailable {
+			log.Printf("[quickchat] spotlight.Show failed: %v — falling back to NSPanel", err)
+		}
+	}
+	a.ShowQuickChatWindow(bundleID)
+	wailsruntime.EventsEmit(a.ctx, "quickChat:invoke",
+		QuickChatInvokeEvent{FrontmostBundleID: bundleID, NativeWindow: true})
 }

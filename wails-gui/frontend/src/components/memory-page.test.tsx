@@ -7,6 +7,7 @@ import zh from '@/i18n/locales/zh-CN/memory.json';
 import type { GoalItemView, GoalsPageView, MemoryForgetPreview } from '@/lib/wails-shim-app';
 import { resetPageQueries } from '@/lib/page-queries';
 import { pageQueryCache } from '@/lib/query-cache';
+import { YouPage } from '@/components/you/you-page';
 import { MemoryPage } from './memory-page';
 import { Dialog, DialogTitle } from '@/components/ui/dialog';
 import { RetainedDialogContent } from '@/components/retained-dialog-content';
@@ -1059,7 +1060,7 @@ describe('About you new this week', () => {
 
     async function card() {
         const section = await screen.findByRole('region', { name: 'New this week' });
-        return within(section).getByRole('article', { name: 'You keep calls short before 11 AM.' });
+        return within(section).getByRole('article', { name: /You keep calls short before 11 AM\./ });
     }
 
     it('lists each new belief with how often it was seen and where, never a system app', async () => {
@@ -1094,7 +1095,7 @@ describe('About you new this week', () => {
         const article = await card();
         expect(within(article).getByText('Inferred')).toHaveAttribute('data-status', 'inferred');
         mocks.getAbout.mockImplementation(async () => aboutFor([entry, fresh]));
-        fireEvent.click(within(article).getByRole('button', { name: 'That’s me' }));
+        fireEvent.click(within(article).getByRole('button', { name: 'Yes' }));
         await waitFor(() => expect(mocks.confirm).toHaveBeenCalledWith('fresh'));
         const line = await within(article).findByText('Confirmed. Isoform treats this as fact now.');
         expect(line).toHaveAttribute('role', 'status');
@@ -1109,14 +1110,46 @@ describe('About you new this week', () => {
 
         fireEvent.click(within(article).getByRole('button', { name: 'Undo' }));
         await waitFor(() => expect(mocks.undoConfirm).toHaveBeenCalledWith('fresh'));
-        expect(await within(article).findByRole('button', { name: 'That’s me' })).toBeInTheDocument();
+        expect(await within(article).findByRole('button', { name: 'Yes' })).toBeInTheDocument();
+    });
+
+    // computer-you v1.0.0 rule 3: every line is a claim, "Right?" with Yes,
+    // No and Edit, and Y, N and E answer the focused one.
+    it('judges a claim with the keyboard: Y confirms, N stops using it, E asks for the words', async () => {
+        mocks.notQuite.mockResolvedValue(0);
+        render(<MemoryPage devToolsUnlocked />);
+        const article = await card();
+        expect(article).toHaveTextContent('Right?');
+        expect(article).toHaveAttribute('tabindex', '0');
+        article.focus();
+        fireEvent.keyDown(article, { key: 'e' });
+        expect(within(article).getByRole('textbox', { name: 'What’s closer? You can leave it blank.' })).toHaveFocus();
+        fireEvent.keyDown(within(article).getByRole('textbox'), { key: 'Escape' });
+        expect(await within(article).findByRole('button', { name: 'Yes' })).toBeInTheDocument();
+        fireEvent.keyDown(article, { key: 'n' });
+        await waitFor(() => expect(mocks.notQuite).toHaveBeenCalledWith('fresh'));
+        expect(await within(article).findByText('Isoform stopped using this.')).toBeInTheDocument();
+        fireEvent.click(within(article).getByRole('button', { name: 'Undo' }));
+        await waitFor(() => expect(mocks.undoNotQuite).toHaveBeenCalledWith('fresh', 0));
+        const reopened = await card();
+        fireEvent.keyDown(reopened, { key: 'y' });
+        await waitFor(() => expect(mocks.confirm).toHaveBeenCalledWith('fresh'));
+        expect(mocks.saveEntry).not.toHaveBeenCalled();
+    });
+
+    // computer-you v1.0.0: You's header is the one header under its tabs.
+    it('drops its own title under You, keeping its summary', async () => {
+        render(<YouPage tab="about" onTabChange={() => {}}><MemoryPage devToolsUnlocked /></YouPage>);
+        await card();
+        expect(screen.getAllByRole('heading', { level: 1 }).map((h) => h.textContent)).toEqual(['You']);
+        expect(screen.queryByText('About you', { selector: 'h1' })).toBeNull();
     });
 
     it('says the portrait can use a confirm-row belief now', async () => {
         mocks.getAbout.mockImplementation(async () => aboutFor([entry, fresh], { newThisWeek: ['fresh'], portraitCandidate: true }));
         render(<MemoryPage devToolsUnlocked />);
         const article = await card();
-        fireEvent.click(within(article).getByRole('button', { name: 'That’s me' }));
+        fireEvent.click(within(article).getByRole('button', { name: 'Yes' }));
         expect(await within(article).findByText('Confirmed. Your portrait can use this now.')).toBeInTheDocument();
     });
 
@@ -1124,16 +1157,16 @@ describe('About you new this week', () => {
         mocks.confirm.mockRejectedValueOnce(new Error('suppressed'));
         render(<MemoryPage devToolsUnlocked />);
         const article = await card();
-        fireEvent.click(within(article).getByRole('button', { name: 'That’s me' }));
+        fireEvent.click(within(article).getByRole('button', { name: 'Yes' }));
         expect(await within(article).findByRole('alert')).toHaveTextContent("Didn't save.");
-        expect(within(article).getByRole('button', { name: 'That’s me' })).toBeEnabled();
+        expect(within(article).getByRole('button', { name: 'Yes' })).toBeEnabled();
     });
 
     it('asks Not quite in place; left blank, Isoform stops using it, and Undo puts it back', async () => {
         mocks.notQuite.mockResolvedValue(0);
         render(<MemoryPage devToolsUnlocked />);
         const article = await card();
-        fireEvent.click(within(article).getByRole('button', { name: 'Not quite' }));
+        fireEvent.click(within(article).getByRole('button', { name: 'Edit' }));
         const field = within(article).getByRole('textbox', { name: 'What’s closer? You can leave it blank.' });
         expect(field).toHaveFocus();
         expect(field).toHaveAttribute('placeholder', 'You keep calls short before 11 AM.');
@@ -1146,14 +1179,14 @@ describe('About you new this week', () => {
         expect(mocks.saveEntry).not.toHaveBeenCalled();
         fireEvent.click(within(article).getByRole('button', { name: 'Undo' }));
         await waitFor(() => expect(mocks.undoNotQuite).toHaveBeenCalledWith('fresh', 0));
-        expect(await within(article).findByRole('button', { name: 'That’s me' })).toBeInTheDocument();
+        expect(await within(article).findByRole('button', { name: 'Yes' })).toBeInTheDocument();
     });
 
     it('forgets in one click after 10 seconds with the reviewed preview token, and Undo cancels it', async () => {
         vi.useFakeTimers({ shouldAdvanceTime: true });
         render(<MemoryPage devToolsUnlocked />);
         let article = await card();
-        fireEvent.click(within(article).getByRole('button', { name: 'Forget' }));
+        fireEvent.click(within(article).getByRole('button', { name: /^Forget: / }));
         // Announced once; the visible countdown is silent.
         expect(within(article).getByRole('status')).toHaveTextContent('Forgetting in 10 seconds.');
         expect(within(article).getByRole('button', { name: 'Undo' })).toHaveFocus();
@@ -1165,9 +1198,9 @@ describe('About you new this week', () => {
         expect(mocks.getPreview).not.toHaveBeenCalled();
         expect(mocks.forgetEntry).not.toHaveBeenCalled();
         article = await card();
-        expect(within(article).getByRole('button', { name: 'That’s me' })).toBeInTheDocument();
+        expect(within(article).getByRole('button', { name: 'Yes' })).toBeInTheDocument();
 
-        fireEvent.click(within(article).getByRole('button', { name: 'Forget' }));
+        fireEvent.click(within(article).getByRole('button', { name: /^Forget: / }));
         mocks.getEntries.mockResolvedValue([entry]);
         mocks.getAbout.mockImplementation(async () => aboutFor([entry]));
         // The backend emits memory:withdrawn on a forget; the mocked runtime
@@ -1187,7 +1220,7 @@ describe('About you new this week', () => {
         mocks.forgetEntry.mockRejectedValueOnce(new Error('scope changed'));
         render(<MemoryPage devToolsUnlocked />);
         const article = await card();
-        fireEvent.click(within(article).getByRole('button', { name: 'Forget' }));
+        fireEvent.click(within(article).getByRole('button', { name: /^Forget: / }));
         await act(async () => { vi.advanceTimersByTime(10_000); });
         expect(await within(article).findByText('Could not forget this. Nothing was removed.')).toBeInTheDocument();
         fireEvent.click(within(article).getByRole('button', { name: 'Try again' }));
@@ -1199,7 +1232,7 @@ describe('About you new this week', () => {
         vi.useFakeTimers({ shouldAdvanceTime: true });
         const { unmount } = render(<MemoryPage devToolsUnlocked />);
         const article = await card();
-        fireEvent.click(within(article).getByRole('button', { name: 'Forget' }));
+        fireEvent.click(within(article).getByRole('button', { name: /^Forget: / }));
         expect(within(article).getByRole('button', { name: 'Undo' })).toHaveFocus();
         unmount();
         await act(async () => { vi.advanceTimersByTime(15_000); });
@@ -1211,7 +1244,7 @@ describe('About you new this week', () => {
         vi.useFakeTimers({ shouldAdvanceTime: true });
         render(<MemoryPage devToolsUnlocked initialSelectedId="fresh" />);
         const article = await card();
-        fireEvent.click(within(article).getByRole('button', { name: 'Forget' }));
+        fireEvent.click(within(article).getByRole('button', { name: /^Forget: / }));
         const detail = screen.getByRole('complementary', { name: 'Belief detail' });
         fireEvent.click(within(detail).getByRole('button', { name: 'Forget this' }));
         const dialog = await screen.findByRole('dialog', { name: 'Forget this?' });
@@ -1230,14 +1263,14 @@ describe('About you new this week', () => {
         mocks.undoWording.mockResolvedValue({ ...fresh });
         render(<MemoryPage devToolsUnlocked />);
         let article = await card();
-        fireEvent.click(within(article).getByRole('button', { name: 'Not quite' }));
+        fireEvent.click(within(article).getByRole('button', { name: 'Edit' }));
         fireEvent.click(within(article).getByRole('button', { name: 'Cancel' }));
         article = await card();
-        expect(within(article).getByRole('button', { name: 'That’s me' })).toBeInTheDocument();
-        fireEvent.click(within(article).getByRole('button', { name: 'Not quite' }));
+        expect(within(article).getByRole('button', { name: 'Yes' })).toBeInTheDocument();
+        fireEvent.click(within(article).getByRole('button', { name: 'Edit' }));
         fireEvent.keyDown(within(article).getByRole('textbox'), { key: 'Escape' });
-        expect(within(article).getByRole('button', { name: 'That’s me' })).toBeInTheDocument();
-        fireEvent.click(within(article).getByRole('button', { name: 'Not quite' }));
+        expect(within(article).getByRole('button', { name: 'Yes' })).toBeInTheDocument();
+        fireEvent.click(within(article).getByRole('button', { name: 'Edit' }));
         const field = within(article).getByRole('textbox');
         fireEvent.change(field, { target: { value: 'You keep calls short before noon.' } });
         // Return saves.
@@ -1294,7 +1327,7 @@ describe('About you new this week', () => {
         }
         render(<Host />);
         const article = await card();
-        fireEvent.click(within(article).getByRole('button', { name: 'Forget' }));
+        fireEvent.click(within(article).getByRole('button', { name: /^Forget: / }));
         fireEvent.click(await screen.findByRole('button', { name: 'See these moments in Activity' }));
         expect(onOpen).toHaveBeenCalledWith('s-9');
         await act(async () => { vi.advanceTimersByTime(15_000); });
@@ -1306,7 +1339,7 @@ describe('About you new this week', () => {
         vi.useFakeTimers({ shouldAdvanceTime: true });
         const { rerender } = render(<MemoryPage devToolsUnlocked active />);
         const article = await card();
-        fireEvent.click(within(article).getByRole('button', { name: 'Forget' }));
+        fireEvent.click(within(article).getByRole('button', { name: /^Forget: / }));
         rerender(<MemoryPage devToolsUnlocked active={false} />);
         await act(async () => { vi.advanceTimersByTime(15_000); });
         expect(mocks.forgetEntry).not.toHaveBeenCalled();
@@ -1446,12 +1479,12 @@ describe('About you communication', () => {
             evidenceLastAt: Date.now(),
         }));
         render(<MemoryPage devToolsUnlocked />);
-        const article = await screen.findByRole('article', { name: 'You write to Jia in Chinese.' });
+        const article = await screen.findByRole('article', { name: /You write to Jia in Chinese\./ });
         expect(article).toHaveTextContent('How you communicate');
         expect(article).toHaveTextContent('14 messages you sent');
         expect(article).toHaveTextContent('Sep 30, 2026 to today');
         expect(article).toHaveTextContent('WeChat and Mail');
-        fireEvent.click(within(article).getByRole('button', { name: 'That’s me' }));
+        fireEvent.click(within(article).getByRole('button', { name: 'Yes' }));
         expect(await within(article).findByText('Confirmed. Drafts will follow this.')).toBeInTheDocument();
         expect(mocks.confirm).toHaveBeenCalledWith('communication');
     });
@@ -1867,14 +1900,15 @@ describe('MemoryPage goals group', () => {
         expect(within(group).getByRole('button', { name: 'Mark done, Send Dana the notes' })).toBeInTheDocument();
     });
 
-    it('shows the Goals group above New this week and the belief groups', async () => {
+    // computer-you v1.0.0 rule 4: new claims first, then the rest.
+    it('shows New this week first, then the Goals group and the belief groups', async () => {
         mocks.listGoals.mockResolvedValue(GOAL_PAGE);
         render(<MemoryPage devToolsUnlocked />);
         const goalsGroup = await screen.findByRole('region', { name: 'Goals' });
         const review = await screen.findByRole('region', { name: 'New this week' });
         const groups = await screen.findByTestId('belief-groups');
-        expect(goalsGroup.compareDocumentPosition(review) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-        expect(review.compareDocumentPosition(groups) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        expect(review.compareDocumentPosition(goalsGroup) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        expect(goalsGroup.compareDocumentPosition(groups) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
         expect(within(goalsGroup).getByText('Renew passport')).toBeInTheDocument();
         expect(within(goalsGroup).getByText('Waiting on someone')).toHaveClass('text-copper');
         expect(within(goalsGroup).getAllByText('Tracking')).toHaveLength(2);
@@ -2077,7 +2111,7 @@ describe('MemoryPage one card per idea', () => {
         mocks.getAbout.mockImplementation(async () => aboutFor(fiveCopies, { newThisWeek: fiveCopies.map((row) => row.id), area: 'communication' }));
         render(<MemoryPage devToolsUnlocked />);
         const review = await screen.findByRole('region', { name: 'New this week' });
-        fireEvent.click(within(review).getByRole('button', { name: 'Forget' }));
+        fireEvent.click(within(review).getByRole('button', { name: /^Forget: / }));
         const dialog = await screen.findByRole('dialog', { name: 'Forget this?' });
         expect(within(within(dialog).getByTestId('forget-copies')).getAllByRole('listitem')).toHaveLength(4);
         expect(mocks.forgetEntry).not.toHaveBeenCalled();

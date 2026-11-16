@@ -1,27 +1,22 @@
 import type React from "react";
+import { X } from "lucide-react";
 import { useTranslation } from "@/i18n";
-import type { DetectionContext, Suggestion } from "../api/types";
+import type { DetectionContext } from "../api/types";
 
 interface Props {
     detection: DetectionContext | null;
-    topSuggestion: Suggestion | null;
-    onActivate?: (suggestion: Suggestion) => void;
+    onRemove?: () => void;
 }
 
 /**
- * Detection chip rendered inside the pill (image 1):
- *   "[icon] {appName} – Detected"
- * The label intentionally omits the top suggestion's title — that
- * surfaced as duplicate, distracting text inside the chip (the
- * suggestion's own prompt already populates the textarea
- * placeholder, so showing it twice is noise). Falls back to a
- * neutral "Isoform" label when no app context was supplied.
- *
- * Clicking a chip with a top suggestion still fills the composer
- * via onActivate; the chip is just disabled (non-clickable) when
- * no suggestion exists for that app.
+ * The screen chip inside the pill (computer-chat v1.0.0 rule 8):
+ *   "About: what's on screen · {app}, {title}"  [x]
+ * What's on screen goes with the question only while the chip is there;
+ * x (or Backspace in an empty field) removes it. With no app context (Closed
+ * Eyes on, a sensitive app, or the chip removed) the neutral Isoform label
+ * shows instead.
  */
-export function DetectionChip({ detection, topSuggestion, onActivate }: Props) {
+export function DetectionChip({ detection, onRemove }: Props) {
     const { t } = useTranslation("chat");
     if (!detection || !detection.appName) {
         return (
@@ -31,22 +26,33 @@ export function DetectionChip({ detection, topSuggestion, onActivate }: Props) {
         );
     }
 
-    const label = t("quickChat.detected", { app: detection.appName });
+    const title = detection.windowTitle?.trim() ?? "";
+    const label = title
+        ? t("quickChat.aboutScreen", { app: detection.appName, title })
+        : t("quickChat.aboutScreenApp", { app: detection.appName });
 
     return (
-        <button
-            type="button"
+        <div
             className="detection-chip"
-            onClick={() => topSuggestion && onActivate?.(topSuggestion)}
-            disabled={!topSuggestion}
+            data-screen-chip
             style={{ "--wails-draggable": "no-drag" } as React.CSSProperties}
-            aria-label={label}
         >
             <span className="detection-chip__icon" aria-hidden>
                 <AppIcon name={detection.appName} />
             </span>
-            <span className="detection-chip__label">{label}</span>
-        </button>
+            <span className="detection-chip__label" title={label}>{label}</span>
+            {onRemove ? (
+                <button
+                    type="button"
+                    className="detection-chip__remove"
+                    aria-label={t("quickChat.removeScreen")}
+                    title={t("quickChat.removeScreen")}
+                    onClick={onRemove}
+                >
+                    <X aria-hidden size={12} />
+                </button>
+            ) : null}
+        </div>
     );
 }
 

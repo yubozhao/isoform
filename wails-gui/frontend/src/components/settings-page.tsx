@@ -95,7 +95,8 @@ import { LearningMemoryPage } from "@/components/settings/pages/learning-memory-
 import { PrivacyPage } from "@/components/settings/pages/privacy-page";
 import { StoragePage } from "@/components/settings/pages/storage-page";
 import { IPhonePage } from "@/components/settings/pages/iphone-page";
-import { YourAgentPage } from "@/components/settings/pages/your-agent-page";
+import { AgentOfYouPage } from "@/components/settings/pages/agent-of-you/agent-of-you-page";
+import { useAoyHeader } from "@/components/settings/pages/agent-of-you/aoy-shared";
 import { PluginsPage } from "@/components/settings/pages/plugins-page";
 import { SkillsPage } from "@/components/settings/pages/skills-page";
 import { ToolServersPage } from "@/components/settings/pages/tool-servers-page";
@@ -265,6 +266,9 @@ export function SettingsPage({
         ? (t((pageEntry.titleKey ?? pageEntry.labelKey) as never) as string)
         : (t(`topics.${activePage}` as never) as string);
     const subtitle = pageEntry ? (t(pageEntry.subtitleKey as never) as string) : null;
+    // Agent of You sets its own title and breadcrumb once Bo approves (v2.1.3 §5).
+    const aoyStore = useAoyHeader();
+    const aoyHeader = activePage === "your-agent" ? aoyStore : null;
 
     // Escape key closes settings. The dialog content is retained after the
     // first open, so this listener must exist only while the dialog shows —
@@ -321,7 +325,7 @@ export function SettingsPage({
             case "iphone":
                 return <IPhonePage onOpenPage={selectPage} />;
             case "your-agent":
-                return <YourAgentPage />;
+                return <AgentOfYouPage />;
             case "plugins":
                 return <PluginsPage />;
             case "skills":
@@ -369,8 +373,31 @@ export function SettingsPage({
                 <div className="flex-1 min-w-0 flex flex-col">
                     {/* Page header: title plus one sentence on what the page is for */}
                     <div className="window-drag w-full max-w-[760px] mx-auto px-4 pr-12 pt-5 pb-5 shrink-0 flex flex-col gap-1 md:px-10 md:pr-12">
-                        <h1 className="settings-page-title">{title}</h1>
-                        {subtitle && <p className="settings-page-sub">{subtitle}</p>}
+                        {aoyHeader ? (
+                            <>
+                                {aoyHeader.crumbs.length > 0 && (
+                                    <nav className="flex items-center gap-1.5 text-sm text-muted" data-testid="aoy-crumbs">
+                                        {aoyHeader.crumbs.map((crumb) => (
+                                            <span key={crumb.label} className="flex items-center gap-1.5">
+                                                <button type="button" className="text-accent hover:underline underline-offset-2" onClick={crumb.onClick}>{crumb.label}</button>
+                                                <ChevronRight className="h-3.5 w-3.5" aria-hidden />
+                                            </span>
+                                        ))}
+                                        <span className="truncate">{aoyHeader.title}</span>
+                                    </nav>
+                                )}
+                                <div className="flex items-center justify-between gap-3">
+                                    <h1 className="settings-page-title">{aoyHeader.title}</h1>
+                                    {aoyHeader.trailing}
+                                </div>
+                                {aoyHeader.lead && <p className="settings-page-sub">{aoyHeader.lead}</p>}
+                            </>
+                        ) : (
+                            <>
+                                <h1 className="settings-page-title">{title}</h1>
+                                {subtitle && <p className="settings-page-sub">{subtitle}</p>}
+                            </>
+                        )}
                     </div>
 
                     {/* Settings content — scrollable */}

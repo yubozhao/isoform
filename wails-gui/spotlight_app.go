@@ -37,6 +37,13 @@ type spotlightTagState struct {
 	currentAssistant *spotlightLiveItem
 	currentThinking  *spotlightLiveItem
 	pending          []StreamItemData
+	// main: this state mirrors a Quick chat exchange in the main chat. The
+	// turn is a normal main-chat turn whose rows the window or the desktop
+	// turn keeper store; the spotlight only forwards its events.
+	main bool
+	// fromSortOrder is the main chat's sort order of the exchange's first
+	// user row: the panel's snapshot starts there, not at the thread's top.
+	fromSortOrder int
 	// done is closed when the in-flight executePrompt goroutine for
 	// this tag has fully returned (which means flushSpotlightItems has
 	// already run for the close event, so all pending rows are in the
@@ -87,6 +94,11 @@ func (a *App) startSpotlightSubmission(prompt, bundleID, sessionLocalID, request
 
 	tag := strings.TrimSpace(sessionLocalID)
 	isFollowup := tag != ""
+	// Quick chat answers in the one Chat thread (computer-chat v1.0.0 rules
+	// 10 and 11). Without a main chat (setup not done) it keeps its own.
+	if main := a.spotlightMainChatTag(tag); main != "" {
+		return a.startSpotlightMainTurn(prompt, bundleID, main, requestID, isFollowup)
+	}
 	if !isFollowup {
 		if requestID != "" {
 			tag = "spotlight_" + requestID
@@ -142,6 +154,13 @@ func (a *App) startSpotlightSubmission(prompt, bundleID, sessionLocalID, request
 	if err != nil {
 		return spotlightSubmitResponse{}, err
 	}
+	// What's on screen goes with the first question only while its chip was
+	// there: the pill sends no bundle ID once the person removed it
+	// (computer-chat v1.0.0 rule 8). Closed Eyes and sensitive apps are
+	// checked again when the prompt reads it.
+	if !isFollowup && strings.TrimSpace(bundleID) != "" {
+		_ = a.AttachQuickChatContext(tag, bundleID)
+	}
 	a.publishSpotlightUserPromptEcho(tag, prompt)
 	a.notifySpotlightSessionChanged(tag)
 	a.runSpotlightTurn(tag, prompt, state, isFollowup, bundleID)
@@ -167,6 +186,10 @@ func (a *App) startSpotlightSubmission(prompt, bundleID, sessionLocalID, request
 func (a *App) editSpotlightSubmission(prompt, bundleID, sessionLocalID, editItemID string, editFromSortOrder int) error {
 	if a.ctx == nil {
 		return fmt.Errorf("app not started")
+	}
+	if a.spotlightIsMainTag(strings.TrimSpace(sessionLocalID)) {
+		// The exchange is in the Chat thread: edit it there.
+		return errSpotlightMainEdit
 	}
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
@@ -393,8 +416,11 @@ func (a *App) bridgeAgentEventToSpotlight(evt AgentEvent, state *spotlightTagSta
 	state.mu.Unlock()
 
 	// Track the event for persistence before publishing so the stored
-	// stream reflects what the panel renders.
-	a.accumulateSpotlightItem(evt, state)
+	// stream reflects what the panel renders. A main-chat exchange is
+	// stored by the window or the turn keeper, never here.
+	if !state.main {
+		a.accumulateSpotlightItem(evt, state)
+	}
 
 	// Forward the entire AgentEvent. Receiver decides what to render
 	// per Type (assistant / tool_use / tool_result / thinking /
@@ -412,7 +438,7 @@ func (a *App) bridgeAgentEventToSpotlight(evt AgentEvent, state *spotlightTagSta
 	// synthesises one). We do NOT CloseSession the hub here —
 	// follow-up turns reuse the same SSE connection so the panel
 	// stays mounted.
-	if evt.Type == "close" || evt.Type == "error" {
+	if !state.main && (evt.Type == "close" || evt.Type == "error") {
 		a.flushSpotlightItems(evt.Tag, state)
 	}
 }

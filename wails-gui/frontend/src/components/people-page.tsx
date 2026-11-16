@@ -51,6 +51,7 @@ import {
     type Translate,
 } from './people/people-format';
 import { cn } from '../lib/utils';
+import { useInsideYou } from '@/components/you/you-page';
 import { PeopleDevToolsContext, PeopleFailureLine } from './people/people-failure';
 import { ContactsStatusLine } from './people/contacts-status-line';
 import { clearSavedPeopleView, peopleReadStamp, readSavedPeopleView, savePeopleView } from '../lib/people-saved-view';
@@ -118,6 +119,9 @@ async function settledPeopleRead<T>(name: string, read: () => Promise<T>): Promi
 }
 
 export function PeoplePage({ escapeRef, initialSelection, devToolsUnlocked = false, active = true }: PeoplePageProps) {
+    // Under You's tabs, You's title is the page's one h1.
+    const insideYou = useInsideYou();
+    const HeadlineTag = insideYou ? 'h2' : 'h1';
     const { t } = useTranslation(['people', 'common']);
     const tr = useCallback<Translate>((key, options) => t(`people:${key}` as never, options as never) as unknown as string, [t]);
     const paused = useObservationPaused() === true;
@@ -563,10 +567,10 @@ export function PeoplePage({ escapeRef, initialSelection, devToolsUnlocked = fal
         <PeopleDevToolsContext.Provider value={devToolsUnlocked}>
         <div className="flex h-full bg-background">
             <ScrollArea className="min-w-0 flex-1">
-                <main className="flex flex-col gap-[26px] px-10 pb-14 pt-9">
+                <main className={cn('flex flex-col gap-[26px] px-10 pb-14', insideYou ? 'pt-2' : 'pt-9')}>
                     <header className="flex flex-col gap-2">
                         <div className="flex items-center justify-between gap-3">
-                            <span className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted">{tr('title')}</span>
+                            {insideYou ? <span /> : <span className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted">{tr('title')}</span>}
                             <div className="flex items-center gap-1.5">
                                 <div className="relative">
                                     <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted" aria-hidden />
@@ -601,9 +605,9 @@ export function PeoplePage({ escapeRef, initialSelection, devToolsUnlocked = fal
                         {load === 'loading' ? (
                             <span aria-hidden className="mt-1 h-7 w-3/5 animate-pulse rounded-md bg-surface-active" />
                         ) : (
-                            <h1 className="text-[26px] font-normal leading-[1.3] text-ink">
+                            <HeadlineTag className="text-[26px] font-normal leading-[1.3] text-ink">
                                 {headline}
-                            </h1>
+                            </HeadlineTag>
                         )}
                         {load === 'ready' && subline && <p className="text-[14px] text-muted">{subline}</p>}
                         {contactsAccess && (

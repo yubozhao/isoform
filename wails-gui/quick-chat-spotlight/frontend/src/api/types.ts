@@ -4,6 +4,8 @@ export interface DetectionContext {
     bundleID: string;
     /** Human-readable app name (e.g. "Figma"). */
     appName: string;
+    /** The app's frontmost window title, when the host could read it. */
+    windowTitle?: string;
 }
 
 /** Suggestion chip returned by /api/spotlight/suggestions. */

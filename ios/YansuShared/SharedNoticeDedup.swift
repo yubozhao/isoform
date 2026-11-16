@@ -15,6 +15,19 @@ enum SharedNoticeDedup {
         contains(hub: hub, device: device, id: verifiedTestID(id), directory: directory)
     }
 
+    /// The computer's brief_ready notice for this brief reached this phone (PROTOCOL.md 9.1): the local "Your brief is
+    /// ready" yields to it, so the brief is one notification, not two.
+    private static func remoteBriefID(_ briefID: String) -> String { "remote-brief:" + briefID }
+
+    @discardableResult
+    static func recordRemoteBrief(hub: String, device: String, briefID: String, directory: URL? = defaultDirectory) -> Bool {
+        record(hub: hub, device: device, id: remoteBriefID(briefID), directory: directory)
+    }
+
+    static func containsRemoteBrief(hub: String, device: String, briefID: String, directory: URL? = defaultDirectory) -> Bool {
+        contains(hub: hub, device: device, id: remoteBriefID(briefID), directory: directory)
+    }
+
     static var defaultDirectory: URL? {
         AppGroup.containerURL?.appendingPathComponent("Isoform/notice-dedup", isDirectory: true)
     }

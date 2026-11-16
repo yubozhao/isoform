@@ -72,7 +72,7 @@ describe("Spotlight app language", () => {
         setupPlatform(platform);
         respondAppearance({ theme: "paper", language: "zh-CN" });
         render(<App />);
-        await waitFor(() => expect(screen.getByTestId("prompt")).toHaveAttribute("placeholder", "给 Isoform 发消息"));
+        await waitFor(() => expect(screen.getByTestId("prompt")).toHaveAttribute("placeholder", "问问你的一天，或纠正 Isoform"));
         // The host preference wins without writing into the helper's separate
         // storage origin or changing its remembered/system-language default.
         expect(localStorage.getItem("i18nextLng")).toBe("en");
@@ -82,10 +82,7 @@ describe("Spotlight app language", () => {
 
         respondAppearance({ theme: "paper", language: "en" });
         await show(platform);
-        await waitFor(() => expect(screen.getByTestId("prompt")).toHaveAttribute("placeholder", "Message Isoform"));
-        await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
-            expect.stringContaining("lang=en"), expect.anything(),
-        ));
+        await waitFor(() => expect(screen.getByTestId("prompt")).toHaveAttribute("placeholder", "Ask about your day, or correct Isoform"));
     });
 
     it("refreshes an already-running helper when it regains focus after Settings", async () => {
@@ -94,7 +91,7 @@ describe("Spotlight app language", () => {
         await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
         respondAppearance({ theme: "onedark", language: "zh-CN" });
         await act(async () => window.dispatchEvent(new Event("focus")));
-        await waitFor(() => expect(screen.getByTestId("prompt")).toHaveAttribute("placeholder", "给 Isoform 发消息"));
+        await waitFor(() => expect(screen.getByTestId("prompt")).toHaveAttribute("placeholder", "问问你的一天，或纠正 Isoform"));
         expect(document.documentElement).toHaveAttribute("data-theme", "onedark");
     });
 
@@ -114,7 +111,7 @@ describe("Spotlight app language", () => {
         expect(document.documentElement).toHaveAttribute("data-theme", "onedark");
     });
 
-    it("waits for a superseding focus refresh before requesting show suggestions", async () => {
+    it("settles on a superseding focus refresh's language", async () => {
         respondAppearance({ theme: "paper", language: "en" });
         render(<App />);
         await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
@@ -130,39 +127,10 @@ describe("Spotlight app language", () => {
         await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
 
         await act(async () => resolveShow(new Response(JSON.stringify({ theme: "paper", language: "en" }))));
-        expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/suggestions"))).toBe(false);
-
         await act(async () => resolveFocus(new Response(JSON.stringify({ theme: "paper", language: "zh-CN" }))));
-        await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
-            expect.stringContaining("lang=zh-CN"), expect.anything(),
-        ));
-        expect(screen.getByTestId("prompt")).toHaveAttribute("placeholder", "给 Isoform 发消息");
-        expect(fetchMock.mock.calls.some(([url]) => String(url).includes("lang=en"))).toBe(false);
-    });
-
-    it.each([false, true])("requests suggestions when appearance never settles (superseding focus: %s)", async (withFocus) => {
-        respondAppearance({ theme: "paper", language: "zh-CN", texture: true });
-        render(<App />);
-        await waitFor(() => expect(i18n.resolvedLanguage).toBe("zh-CN"));
-        vi.useFakeTimers();
-        fetchMock.mockImplementation((input) => String(input).includes("/theme")
-            ? new Promise<Response>(() => {})
-            : Promise.resolve(new Response(JSON.stringify({ suggestions: [] }))));
-
-        await show("native");
-        if (withFocus) {
-            await act(async () => {
-                await vi.advanceTimersByTimeAsync(100);
-                window.dispatchEvent(new Event("focus"));
-            });
-        }
-        await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
-
-        expect(fetchMock).toHaveBeenCalledWith(
-            expect.stringContaining("/suggestions?bundleID=com.example&lang=zh-CN"), expect.anything(),
-        );
-        expect(i18n.resolvedLanguage).toBe("zh-CN");
-        expect(document.documentElement).not.toHaveAttribute("data-texture");
+        await waitFor(() => expect(screen.getByTestId("prompt")).toHaveAttribute("placeholder", "问问你的一天，或纠正 Isoform"));
+        // Quick chat no longer asks for app suggestions (computer-chat v1.0.0).
+        expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/suggestions"))).toBe(false);
     });
 
     it("ignores a stale appearance response after a newer refresh", async () => {

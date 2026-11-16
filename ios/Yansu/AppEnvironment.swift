@@ -641,6 +641,24 @@ final class AppEnvironment: ObservableObject {
     }
 
     /// Read it or Play from the brief ready notice: opens the brief view, and Play also starts the brief from this phone's copy.
+    /// Not needed or Useful from a notification (PROTOCOL.md 9.2): POST /work/{id}/answer with the notice's own key and
+    /// surface "notification". 409 means it was answered elsewhere and 404 that the item is gone; both are done.
+    @discardableResult
+    func answerWorkFromNotice(itemID: String, answer: NoticeWorkAnswer, noticeID: String, now: Date = Date()) async -> Bool {
+        guard let paired = vault.current(), let data = try? JSONSerialization.data(withJSONObject: answer.body(
+            noticeID: noticeID, answeredAt: RelayTime.format(now))),
+              let request = try? JSONDecoder().decode(WorkAnswerRequest.self, from: data) else { return false }
+        do {
+            _ = try await HubRequestScope.$hubID.withValue(paired.hubID) { try await hub.answerWork(id: itemID, request: request) }
+        } catch HubRequestError.conflict {
+        } catch HubRequestError.rejected(let status, _) where status == 404 {
+        } catch {
+            return false
+        }
+        await work.refresh()
+        return true
+    }
+
     func openBriefFromNotice(_ briefID: String, play: Bool) async {
         router.openBrief(briefID, landsOnSpoken: play)
         guard play, let paired = vault.current() else { return }
