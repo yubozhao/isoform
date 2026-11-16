@@ -11,7 +11,6 @@ import { Composer } from '@/components/composer';
 import { MainChatPanel } from '@/components/today/MainChatPanel';
 import { TopicPanel } from '@/components/today/TopicPanel';
 import { TopicComposer } from '@/components/today/TopicComposer';
-import { MainChatScopeControl } from '@/components/main-chat/main-chat-scope-control';
 import { topicPanelWidth, type TodayTopic } from '@/components/today/topics';
 import { MainChatPageColumn, MainChatStreamBody } from '@/components/main-chat/main-chat-stream-body';
 import { useMainChatView } from '@/hooks/useMainChatView';
@@ -111,8 +110,7 @@ function Chat() {
             images={[]} onImagesChange={noop} files={[]} onFilesChange={noop} executorType={crowded ? "codex" : "claude"}
             thinkingLevel={crowded ? "xhigh" : ""} onThinkingLevelChange={noop} thinkingEnabled={false} onToggleThinking={noop}
             planMode={false} onTogglePlanMode={noop} queuedMessages={[]} onRemoveQueuedMessage={noop} onEditQueuedMessage={noop}
-            availableCommands={[]} showSuggestions={false} wideMode onVoiceStart={crowded ? noop : undefined} voiceState="idle"
-            scopeControl={<MainChatScopeControl topics={[{ id: 'halcyon', name: 'Halcyon ERP sync' } as TodayTopic]} onScope={(filter) => setTopicAttached(filter.kind === 'topic')} />} />}
+            availableCommands={[]} showSuggestions={false} wideMode onVoiceStart={crowded ? noop : undefined} voiceState="idle" />}
     </MainChatPageColumn>;
 }
 let panelItems = items;

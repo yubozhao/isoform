@@ -3504,7 +3504,8 @@ One request per part, sent after its upload succeeded:
   without `chat:write`; `404` with `data: {"code":"upload_missing"}` when the relay no longer has
   the upload (the phone uploads the part again under a new upload id); `409` with
   `data: {"code":"observation_paused"}` while observing is paused on the computer (the phone keeps
-  the recording and sends it later; nothing is fetched or stored); `503` when the relay could not
+  the recording and sends it later; nothing is fetched or stored; what was recorded during the
+  pause is then dropped on the computer, 24.6); `503` when the relay could not
   be reached or the store is not ready.
 - When the last part arrives the computer transcribes the recording in the background with its
   after-call speech engine (the larger local model when installed, else the live one). The
@@ -3600,6 +3601,25 @@ id; `403`; `404` unknown or another device's recording; `503`.
 - The phone deletes a recording that never reached the computer on the phone and the watch
   alone; no request is needed.
 
+### 24.8 The computer says when observing is paused (additive, 2026-11-15)
+
+While observing is paused on the computer, `GET /status` carries
+
+```json
+"observingPause": {"since": "2026-11-14T11:04:00Z", "until": "2026-11-14T12:04:00Z"}
+```
+
+`since` is when the pause began and `until` when it ends by itself. Either is left out when the
+computer does not know it: a pause with no end has no `until`, and a pause restored at launch may
+have no `since`. The field is absent when observing is not paused, and on a computer that does not
+know it.
+
+A pause covers all of Isoform. The phone passes it to the watch, which stops recording and
+deletes what it recorded since `since` before it leaves the watch. This is a courtesy to the
+person's intent, not the guarantee: the phone learns of a pause only when it next reads the
+status, so the guarantee stays 24.6, where the computer drops whatever was recorded during the
+pause.
+
 ### 24.9 Marked moments (optional, 2026-11-15)
 
 While the watch records, the wearer can mark a moment. `GET /status` advertises
@@ -3682,6 +3702,31 @@ send `context` to a computer that does not: the request decoder refuses unknown 
 - Use on the computer: only as context for the brief. The speech events of a part carry a line
   such as "at Mission District · heart rate raised (avg 104, peak 131)". Coordinates never
   appear in text; a location without a `place` says nothing about where.
+### 24.6 Audio from a pause is dropped on the computer (2026-11-15)
+
+Nothing recorded on the watch or the phone while observing was paused on the computer is kept
+there. The computer knows when observing was paused from its own pause log, and compares it with
+each part's `startedAt` and `durationSeconds`:
+
+- A part recorded wholly inside a pause is never transcribed. Its audio is deleted as soon as the
+  part is stored.
+- A part a pause only touches is transcribed for the words outside the pause. A stretch of speech
+  that begins or ends inside the pause is dropped whole. Once the recording is transcribed, the
+  paused minutes are cut out of the part's audio, with one more second on each side of the pause;
+  the rest of the audio is kept. If they cannot be cut (no ffmpeg, or a file it cannot read), the
+  whole file is deleted, because it still holds them. The part's heart rate and location are not
+  used.
+- A recording whose every word fell in a pause ends as `transcribed` with `words: 0` and no
+  activity session.
+- If the pause log cannot be read, nothing is transcribed; the recording is `failed` and tried
+  again later, with its audio untouched.
+
+This is the computer's guard. The route and the views do not change, so a phone needs no update:
+it still gets `409 observation_paused` while the pause lasts, sends the part afterwards, and sees
+the usual states. The watch's own guard (stop recording when Isoform is paused, and delete what
+it recorded from the pause's start) is a later addition and will need a way to tell the phone and
+the watch about a pause.
+
 
 ## 26. Your work: one list for the phone and the computer (phone redesign B2, 2026-11-15)
 

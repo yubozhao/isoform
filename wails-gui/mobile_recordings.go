@@ -14,7 +14,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -24,7 +23,6 @@ import (
 	"wails-gui/internal/asr"
 	"wails-gui/internal/platform/activitymon"
 	"wails-gui/internal/platform/cmdutil"
-	"wails-gui/internal/speakerid"
 )
 
 // Recordings from the watch and the phone (PROTOCOL.md section 24). The phone
@@ -162,6 +160,14 @@ type mobileRecordingPart struct {
 	DurationSeconds float64 `json:"durationSeconds"`
 	// Context is removed together with the audio.
 	Context *MobileRecordingPartContext `json:"context,omitempty"`
+	// Paused is set when observing was paused for some or all of the part:
+	// its audio was deleted and nothing from the pause was transcribed
+	// (mobile_recording_pauses.go).
+	Paused bool `json:"paused,omitempty"`
+	// PausedCut is set when a pause touched the part and the paused minutes
+	// were cut out of its audio: the file is shorter than DurationSeconds and
+	// its times no longer line up with the clock.
+	PausedCut bool `json:"pausedCut,omitempty"`
 	// Marks are the moments the wearer marked, seconds from the part's start.
 	// Removed together with the audio.
 	Marks []float64 `json:"marks,omitempty"`
@@ -712,6 +718,10 @@ func (bridge *mobileBridge) serveRecordingPost(w http.ResponseWriter, r *http.Re
 		mobileJSON(w, http.StatusServiceUnavailable, nil, "the computer could not fetch the recording yet")
 		return
 	}
+	if bridge.app != nil {
+		// Recorded while observing was paused here: gone before anything reads it.
+		bridge.app.dropPausedMobileRecordingOnReceipt(store, req.RecordingID)
+	}
 	if complete && bridge.app != nil {
 		bridge.app.startMobileRecordingTranscription()
 	}
@@ -1021,10 +1031,23 @@ func (a *App) transcribeMobileRecording(store *mobileRecordingStore, rec mobileR
 	if rec.Source == "phone" {
 		appName, bundleID = mobileRecordingPhoneApp, mobileRecordingPhoneID
 	}
+	// What was recorded while observing was paused is never read. Without the
+	// pause log nothing is read at all; the recording is tried again later.
+	pauses, err := mobileRecordingPauses(a)
+	if err != nil {
+		return "", 0, fmt.Errorf("the pause log could not be read: %w", err)
+	}
 	var events []activitymon.ActivityEvent
 	var start, end int64
 	words := 0
 	for i, part := range rec.Received {
+		overlap := mobileRecordingPartPause(part, pauses)
+		if part.Paused || part.PausedCut || overlap == mobileRecordingPauseFull {
+			// Its audio is gone, or goes below without being read; or its
+			// paused minutes were cut out after its words were saved, and its
+			// times no longer line up with the clock.
+			continue
+		}
 		partStart, err := time.Parse(time.RFC3339, part.StartedAt)
 		if err != nil {
 			return "", 0, errMobileRecordingInvalid
@@ -1040,10 +1063,15 @@ func (a *App) transcribeMobileRecording(store *mobileRecordingStore, rec mobileR
 		if err != nil {
 			return "", 0, err
 		}
+		if overlap == mobileRecordingPausePartial {
+			segments = dropPausedMobileRecordingSegments(segments, partStart, pauses)
+		}
 		events = append(events, mobileRecordingSpeechEvents(segments, partStart, appName, bundleID)...)
 	}
-	// One pass over the whole recording, so a voice keeps its number across parts.
-	ownerVoice := labelMobileRecordingSpeakers(events)
+	// One pass over the whole recording, so a voice keeps its number across
+	// parts; and it starts from the voices of the hour before when this
+	// recording begins where that one ended (mobile_recording_voices.go).
+	ownerVoice, voices := labelMobileRecordingSpeakersFrom(events, store.carriedVoices(rec))
 	for _, evt := range events {
 		words += len(strings.Fields(evt.SpeechText))
 	}
@@ -1051,10 +1079,20 @@ func (a *App) transcribeMobileRecording(store *mobileRecordingStore, rec mobileR
 		return "", 0, errors.New("observing was paused during transcription")
 	}
 	if len(events) == 0 {
-		// Nothing was said: the recording is done, with no session.
+		// Nothing was said, or all of it was said during a pause: the
+		// recording is done, with no session.
+		store.dropPausedAudio(rec.ID, pauses, false)
 		return "", 0, nil
 	}
-	applyMobileRecordingContext(events, rec.Received, appName)
+	// Heart rate and place summarize a whole part, so a part a pause touched
+	// lends none: its numbers would include the paused minutes.
+	clear := make([]mobileRecordingPart, 0, len(rec.Received))
+	for _, part := range rec.Received {
+		if !part.Paused && !part.PausedCut && mobileRecordingPartPause(part, pauses) == mobileRecordingPauseNone {
+			clear = append(clear, part)
+		}
+	}
+	applyMobileRecordingContext(events, clear, appName)
 	appNames, _ := json.Marshal([]string{appName})
 	session := ActivitySessionRow{
 		ID:           "rec-" + rec.ID,
@@ -1070,6 +1108,9 @@ func (a *App) transcribeMobileRecording(store *mobileRecordingStore, rec mobileR
 		return "", 0, err
 	}
 	store.setOwnerVoice(rec.ID, ownerVoice)
+	store.saveVoices(rec.ID, voices)
+	// The words outside the pause are saved; the audio a pause touched goes now.
+	store.dropPausedAudio(rec.ID, pauses, false)
 	return session.ID, words, nil
 }
 
@@ -1186,49 +1227,6 @@ const (
 // the Activity page's speaker chips (ListSessionSpeakerClusters). Without an
 // enrollment no stretch is verified, so every voice is a numbered speaker.
 func labelMobileRecordingSpeakers(events []activitymon.ActivityEvent) string {
-	type cluster struct {
-		centroid []float32
-		count    int
-	}
-	var others []*cluster
-	judged, fingerprinted := false, false
-	for i := range events {
-		evt := &events[i]
-		if evt.Kind != activitymon.EventSpeech || len(evt.SpeechSpeakerEmbedding) == 0 {
-			continue
-		}
-		fingerprinted = true
-		if evt.SpeechSpeakerVerified != nil {
-			judged = true
-			if *evt.SpeechSpeakerVerified {
-				evt.SpeechSpeakerLabel = mobileRecordingSpeakerOwner
-				continue
-			}
-		}
-		best, bestSim := -1, -2.0
-		for j, c := range others {
-			if sim := speakerid.CosineSimilarity(evt.SpeechSpeakerEmbedding, c.centroid); sim > bestSim {
-				best, bestSim = j, sim
-			}
-		}
-		if best < 0 || bestSim < speakerClusterMergeThreshold {
-			others = append(others, &cluster{centroid: append([]float32(nil), evt.SpeechSpeakerEmbedding...)})
-			best = len(others) - 1
-		}
-		target := others[best]
-		target.count++
-		n := float32(target.count)
-		for k := range target.centroid {
-			target.centroid[k] = (target.centroid[k]*(n-1) + evt.SpeechSpeakerEmbedding[k]) / n
-		}
-		evt.SpeechSpeakerLabel = mobileRecordingSpeakerPrefix + strconv.Itoa(best+1)
-	}
-	switch {
-	case judged:
-		return mobileOwnerVoiceLabelled
-	case fingerprinted:
-		return mobileOwnerVoiceNotEnrolled
-	default:
-		return mobileOwnerVoiceUnavailable
-	}
+	status, _ := labelMobileRecordingSpeakersFrom(events, nil)
+	return status
 }
