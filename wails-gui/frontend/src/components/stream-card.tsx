@@ -3,10 +3,11 @@ import { displayModelCopy } from "@/lib/model-display";
 import { memo, useState, useCallback, useMemo, useRef, useEffect, useContext } from 'react';
 import { ChatFailureLine } from '@/components/chat-failure-line';
 import { cn } from '@/lib/utils';
-import { MAIN_CHAT_OBSERVATION_PAUSE_TOOL, formatToolInput, getMainChatProactive, getMainChatStatus, getMainChatReport, getSetupRecord, getSideChatOrigin, getTextedReply, getUpcomingConfirm, getChatDraft, getChatHandoff, getChatCorrection, getChatCorrectionUndo, isTodayContextItem } from '@/lib/stream-helpers';
+import { MAIN_CHAT_OBSERVATION_PAUSE_TOOL, formatToolInput, getMainChatProactive, getMainChatStatus, getMainChatReport, getSetupRecord, getSideChatOrigin, getTextedReply, getUpcomingConfirm, getChatDraft, getChatHandoff, getChatCorrection, getChatCorrectionUndo, getChatSources, isTodayContextItem } from '@/lib/stream-helpers';
 import type { MainChatReportTarget } from '@/lib/stream-helpers';
 import { ChatHandoffCard } from './chat-handoff-card';
 import { ChatCorrectionLine, ChatCorrectionUndoReply } from './chat-correction-line';
+import { ChatSourcesLine } from './chat-sources-line';
 import { ChatDraftCard, MainChatReportCard, SideChatOriginCard, TextedReplyCard, UpcomingConfirmCard } from './main-chat-report-card';
 import { MainChatProactiveCard, MainChatStatusRow } from './main-chat-proactive-card';
 import { SetupRecordLine } from './main-chat-setup-card';
@@ -944,6 +945,9 @@ export const StreamCard = memo(function StreamCard({
     }
     if (getChatDraft(item)) {
         return <ChatDraftCard item={item} compact={compact} />;
+    }
+    if (getChatSources(item)) {
+        return <ChatSourcesLine item={item} onOpenTarget={onOpenReportTarget} compact={compact} />;
     }
     if (getChatCorrectionUndo(item)) {
         return <ChatCorrectionUndoReply item={item} compact={compact} />;

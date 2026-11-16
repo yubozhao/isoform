@@ -679,6 +679,12 @@
             "changedUndone": "已更改：{{where}} · 已撤销",
             "undoneReply": "已撤销。{{where}}已恢复原样。",
             "changedBack": "已改回：{{where}}"
+        },
+        "sources": {
+            "memory": "你的笔记",
+            "person": "你认识的人",
+            "from": "来自{{source}} · {{title}} ›",
+            "aria": "来源：{{source}}，{{title}}"
         }
     },
     "setup": {

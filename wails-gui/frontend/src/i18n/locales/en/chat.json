@@ -679,6 +679,12 @@
             "changedUndone": "Changed: {{where}} · Undone",
             "undoneReply": "Undone. {{where}} is as it was.",
             "changedBack": "Changed back: {{where}}"
+        },
+        "sources": {
+            "memory": "your notes",
+            "person": "Who you know",
+            "from": "From {{source}} · {{title}} ›",
+            "aria": "Source: {{source}}, {{title}}"
         }
     },
     "setup": {

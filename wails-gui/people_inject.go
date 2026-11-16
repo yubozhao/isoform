@@ -200,6 +200,8 @@ func (a *App) writePersonBlock(ctx context.Context, sb *strings.Builder, store *
 		sb.WriteString(" (aka " + strings.Join(p.Aliases, ", ") + ")")
 	}
 	sb.WriteString("\n")
+	// The ref is what CiteSources accepts (chat_sources.go).
+	sb.WriteString("- Ref: person:" + p.ID + "\n")
 
 	kindLabel := map[string]string{
 		storage.PrincipalKindSelf:           "the user themselves (self)",

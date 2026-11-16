@@ -626,6 +626,7 @@ func (a *App) executePromptOwned(prompt string, userPrompt string, workDir strin
 		return err
 	}
 	input.ExtraTools = append(append(a.mainChatExtraTools(tag, origin), a.mainChatDraftTools(tag, origin)...), append(a.mainChatHandoffTools(tag, origin), a.mainChatCorrectionTools(tag, origin)...)...)
+	input.ExtraTools = append(input.ExtraTools, a.mainChatSourcesTools(tag, origin)...)
 	if a.quickChatTurnActive(tag) {
 		input.ExtraTools = withoutQuickChatCards(input.ExtraTools)
 	}
@@ -1683,6 +1684,7 @@ func (a *App) composePromptFor(prompt string, personal bool, opts ...string) str
 		{"draft-tool", func() string { return a.injectChatDraftToolContext(tag, origin) }},
 		{"chat-scope", func() string { return a.injectChatNarrowingContext(tag, origin) }},
 		{"corrections", func() string { return a.injectChatCorrectionContext(tag, origin) }},
+		{"sources", func() string { return a.injectChatSourcesContext(tag, origin) }},
 		{"quick-chat", func() string { return a.injectQuickChatContext(tag) }},
 		{"upcoming-tools", func() string { return a.injectUpcomingToolsContext(tag, origin) }},
 		{"goal-tools", func() string { return a.injectGoalToolsContext(tag) }},

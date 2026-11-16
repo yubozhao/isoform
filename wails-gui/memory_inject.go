@@ -434,7 +434,8 @@ func (a *App) injectMemoryContext(ctx context.Context, prompt, query string, val
 				if isUserEditedMemory(r.Snippet) {
 					attribution = "user_edit"
 				}
-				sb.WriteString(fmt.Sprintf("--- Memory %d (from %s, score=%.2f, attribution=%s) ---\n", memIdx, r.Path, r.Score, attribution))
+				// The ref is what CiteSources accepts (chat_sources.go).
+				sb.WriteString(fmt.Sprintf("--- Memory %d (from %s, ref=memory:%s, score=%.2f, attribution=%s) ---\n", memIdx, r.Path, memoryIDFromPath(r.Path), r.Score, attribution))
 				sb.WriteString(snippet)
 				sb.WriteString("\n\n")
 			}

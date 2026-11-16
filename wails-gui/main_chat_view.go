@@ -47,9 +47,9 @@ func mainChatRowClass(row storage.StreamItemRow, now time.Time) MainChatRowClass
 			return MainChatRowOther
 		case mainChatStatusTool:
 			return MainChatRowRoutine
-		case chatDraftCardTool, chatHandoffCardTool, chatCorrectionLineTool, chatCorrectionUndoTool:
-			// A draft, a hand-off card or a correction the person asked for is
-			// part of the conversation.
+		case chatDraftCardTool, chatHandoffCardTool, chatCorrectionLineTool, chatCorrectionUndoTool, chatSourcesLineTool:
+			// A draft, a hand-off card or a correction the person asked for,
+			// and where an answer came from, are part of the conversation.
 			return MainChatRowConversation
 		case mainChatReportTool:
 			var report mainChatReport
