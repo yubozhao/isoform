@@ -124,6 +124,11 @@ func (bridge *mobileBridge) handleAuthorized(w http.ResponseWriter, r *http.Requ
 			return
 		}
 		bridge.serveFirstReadAnswer(w, r, device)
+	case "GET /widget":
+		if !mobileRequireScope(w, device, mobileScopeBriefRead) {
+			return
+		}
+		bridge.serveWidget(w, device)
 	case "GET /today":
 		if !mobileRequireScope(w, device, mobileScopeBriefRead) {
 			return

@@ -1205,6 +1205,28 @@ func (bridge *mobileBridge) sendMobileResponse(deviceID, requestID string, statu
 // publishBrief seals one brief per paired device and sends it. When the relay is
 // not connected, the newest brief per device waits for the next registration.
 func (bridge *mobileBridge) publishBrief(brief MobileBriefV1, notify bool) error {
+	return bridge.publishBriefTo(brief, notify, "")
+}
+
+// sendCurrentBriefTo sends the one current brief (section 8.1) to a phone just
+// paired, without a push, through the outbox like any brief.
+func (bridge *mobileBridge) sendCurrentBriefTo(deviceID string) {
+	svc := bridge.briefSource()
+	if svc == nil {
+		return
+	}
+	current, ok := currentMobileBrief(svc)
+	if !ok {
+		return
+	}
+	if err := bridge.publishBriefTo(current, false, deviceID); err != nil {
+		log.Printf("[mobile-bridge] the latest brief did not reach the new phone yet")
+	}
+}
+
+// publishBriefTo is publishBrief for every paired phone, or only for deviceID
+// when it is set.
+func (bridge *mobileBridge) publishBriefTo(brief MobileBriefV1, notify bool, deviceID string) error {
 	if brief.NarrativeStatus == "quiet" {
 		return nil
 	}
@@ -1238,7 +1260,13 @@ func (bridge *mobileBridge) publishBrief(brief MobileBriefV1, notify bool) error
 	}
 	ids := make([]string, 0, len(bridge.devices))
 	for id := range bridge.devices {
-		ids = append(ids, id)
+		if deviceID == "" || id == deviceID {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		bridge.mu.Unlock()
+		return nil
 	}
 	sort.Strings(ids)
 	deliverAt := mobileBriefDeliverAtText(brief)

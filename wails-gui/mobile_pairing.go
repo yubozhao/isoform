@@ -116,6 +116,9 @@ type mobileApprovalPlaintext struct {
 	Scopes    []string `json:"scopes"`
 	ExpiresAt string   `json:"expiresAt"`
 	HubPub    string   `json:"hubPub"`
+	// BriefStatus tells the new phone which brief comes right after pairing,
+	// or when the first one will (PROTOCOL.md 3.5 and 8.2). Additive.
+	BriefStatus *mobileBriefStatus `json:"briefStatus,omitempty"`
 }
 
 func encodeMobileInvitation(invitation mobileInvitation) (string, error) {

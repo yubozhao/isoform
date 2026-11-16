@@ -422,6 +422,12 @@ func decryptMobileClaim(identity *mobileHubIdentity, pairingID string, secret []
 // confirmPairing approves or declines the held claim. Approval stores the device
 // and sends the sealed approval. The device is rolled back if the relay send fails.
 func (bridge *mobileBridge) confirmPairing(pairingID string, approve bool) error {
+	// Read before taking mu: Today's snapshot holds it, so the Approve
+	// button waits for no brief read.
+	var briefStatus *mobileBriefStatus
+	if approve {
+		briefStatus = bridge.cachedBriefStatus()
+	}
 	bridge.mu.Lock()
 	if pairing := bridge.pairing; pairing != nil && !time.Now().Before(pairing.ExpiresAt) {
 		bridge.pairing = nil
@@ -458,7 +464,8 @@ func (bridge *mobileBridge) confirmPairing(pairingID string, approve bool) error
 	}
 	approval, err := json.Marshal(mobileApprovalPlaintext{
 		DeviceID: record.DeviceID, HubName: mobileHubName(), Scopes: record.Scopes, ExpiresAt: record.ExpiresAt,
-		HubPub: base64.RawURLEncoding.EncodeToString(identity.Public.Bytes()),
+		HubPub:      base64.RawURLEncoding.EncodeToString(identity.Public.Bytes()),
+		BriefStatus: briefStatus,
 	})
 	if err != nil {
 		bridge.mu.Unlock()
@@ -505,8 +512,11 @@ func (bridge *mobileBridge) confirmPairing(pairingID string, approve bool) error
 	bridge.syncKeepAwakePhones()
 	bridge.notify()
 	if bridge.app != nil && bridge.trackBackground() {
+		deviceID := record.DeviceID
 		go func() {
 			defer bridge.background.Done()
+			// The first thing after pairing is the latest brief (phone-setup rule 7).
+			bridge.sendCurrentBriefTo(deviceID)
 			bridge.app.maybePostFirstReads(bridge.ctx)
 		}()
 	}
