@@ -70,13 +70,16 @@ func TestProactiveVoicePhoneWithdrawsPersistedBriefAfterCalendarRevocation(t *te
 	if err != nil || !strings.Contains(receipt, "calendar-local-only") || strings.Contains(receipt, title) {
 		t.Fatalf("missing local provenance or copied text: %s %v", receipt, err)
 	}
-	before, wire := proactiveVoicePhoneRead(t, app, main.LocalID)
-	if len(before.Items) != 1 || !strings.Contains(before.Items[0].Text, title) || before.Items[0].Proactive == nil || before.Items[0].Proactive.VoiceVersion == "" {
-		t.Fatalf("safe copy unavailable: %s", wire)
+	// The brief lives on Today: its card is not a phone chat item
+	// (pass-questions v1.0.0 rule 8), so nothing of it reaches the phone.
+	assertNoPhoneBriefCard := func() {
+		t.Helper()
+		got, wire := proactiveVoicePhoneRead(t, app, main.LocalID)
+		if len(got.Items) != 0 || strings.Contains(wire, title) || strings.Contains(wire, "voiceReceipt") || strings.Contains(wire, "calendar-local-only") {
+			t.Fatalf("the brief card reached the phone's chat: %s", wire)
+		}
 	}
-	if strings.Contains(wire, "voiceReceipt") || strings.Contains(wire, stored[0].VoiceReceipt) || strings.Contains(wire, "calendar-local-only") {
-		t.Fatalf("private receipt escaped delivery: %s", wire)
-	}
+	assertNoPhoneBriefCard()
 	assertDesktopCopy := func(wantMuted bool) {
 		t.Helper()
 		page, err := app.LoadStreamItemsPage(main.LocalID, -1, 50)
@@ -98,10 +101,7 @@ func TestProactiveVoicePhoneWithdrawsPersistedBriefAfterCalendarRevocation(t *te
 	if !engagementReceiptStates(t, app, moment.ID, string(engagement.ChannelDesktop))["muted"] {
 		t.Fatal("mute receipt missing")
 	}
-	muted, wire := proactiveVoicePhoneRead(t, app, main.LocalID)
-	if len(muted.Items) != 1 || muted.Items[0].Proactive == nil || !muted.Items[0].Proactive.KindMuted || muted.Items[0].Proactive.VoiceVersion != stored[0].VoiceVersion || !strings.Contains(muted.Items[0].Text, title) {
-		t.Fatalf("mute invalidated generated copy or lost the preference: %s", wire)
-	}
+	assertNoPhoneBriefCard()
 	assertDesktopCopy(true)
 	if err := app.store.SetUIState(t.Context(), permissionUIStateKey(calendarPermissionKey), "false"); err != nil {
 		t.Fatal(err)
@@ -109,13 +109,7 @@ func TestProactiveVoicePhoneWithdrawsPersistedBriefAfterCalendarRevocation(t *te
 	if _, reason := app.loadProactiveVoiceSource(t.Context(), moment, time.Now(), "en"); reason == "" {
 		t.Fatal("withdrawal still admits calendar source")
 	}
-	after, wire := proactiveVoicePhoneRead(t, app, main.LocalID)
-	if strings.Contains(wire, title) || len(after.Items) != 1 || after.Cursor != before.Cursor || after.Items[0].ID != before.Items[0].ID || after.Items[0].Proactive.VoiceVersion != "" {
-		t.Fatalf("revoked detail survived phone read: %s", wire)
-	}
-	if after.Items[0].Text != "Your brief is ready." || after.Items[0].Proactive.Localized["zh-CN"].Headline != "你的简报已经准备好了。" || after.Items[0].Proactive.Localized["zh-CN"].Body != "你的简报已经准备好了。" {
-		t.Fatalf("text and locales not replaced: %s", wire)
-	}
+	assertNoPhoneBriefCard()
 	page, err := app.LoadStreamItemsPage(main.LocalID, -1, 50)
 	raw, _ := json.Marshal(page)
 	if err != nil || len(page.Items) != 1 || strings.Contains(string(raw), title) || strings.Contains(string(raw), "voiceReceipt") {

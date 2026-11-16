@@ -343,15 +343,10 @@ describe('main chat stream (RC 2 D1)', () => {
         expect(within(handoff).getByText('Halcyon launch memo')).toBeInTheDocument();
     });
 
-    it('places a brief topic before its actions', async () => {
-        bindings.set('GetTodayBriefByID', vi.fn().mockResolvedValue({ brief: {
-            briefId: 'brief-1', slot: 'evening', asOf: '2026-10-22T18:00:00Z', timezone: 'UTC',
-            narrative: [{ text: 'The first line.' }], audio: { bytes: 10 },
-        } }));
-        renderStream([card('brief', 'brief_ready', 'waiting', { briefId: 'brief-1' }, { topicIds: ['topic-halcyon'] })]);
-        const topic = await screen.findByText('Halcyon ERP sync');
-        const button = screen.getByRole('button', { name: en.mainChat.card.button.hearIt });
-        expect(topic.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    it('shows no brief card: the brief lives on Today (pass-questions v1.0.0 rule 8)', () => {
+        const { container } = renderStream([card('brief', 'brief_ready', 'waiting', { briefId: 'brief-1' }, { topicIds: ['topic-halcyon'] })]);
+        expect(container.querySelector('[data-main-chat-proactive="brief_ready"]')).toBeNull();
+        expect(screen.queryByRole('button', { name: en.mainChat.card.button.hearIt })).toBeNull();
     });
 
     it('shows prepared chips under the latest answer; a chip fills the box and sends nothing', () => {
