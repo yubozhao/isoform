@@ -3808,3 +3808,39 @@ the person's note); and chat corrections. It is the most valuable data Isoform h
   object `{"shown","answered","accepted","declined","notMine","useful","notUseful","undone"}`: items put in
   front of the person, answers that stand (an undone one counts as `undone`), Yes and Edit as accepted.
   A brief's items acted on are `bySource.brief.accepted`.
+
+## 27. Your agents (v1, 2026-11-15)
+
+Design: `docs/handoff-2026-11-15/handoff-2026-11-15-1649-phone-agent-v1.1.0.md` §1 and §4 (B4).
+The person picks two agents, one for code (work that touches a repo) and one for everything
+else. The choice is one setting, kept on the computer and read by both devices. The work's kind
+decides which agent gets a Yes; changing the agent for one hand-off doesn't change the setting.
+
+| Route | Scope | Body | Answer |
+|---|---|---|---|
+| `GET /agents` | `brief:read` | none | 200 the agents body below |
+| `POST /agents/choice` | `handoff:create` | `{"idempotencyKey","kind","agentId"}`; `kind` is `code` or `else`; an empty `agentId` clears the choice | 200 the agents body; 400 for an unknown kind or agent, or an agent for the other kind |
+
+The agents body:
+
+```json
+{
+  "choices": {"code": "codex", "else": ""},
+  "agents": [
+    {"id": "codex", "name": "Codex", "kind": "code", "reach": "on_computer", "found": true, "connected": false, "lastWorkedAt": 1763229000000}
+  ]
+}
+```
+
+- A choice is `""` until the person picks one: the first Yes on offered work asks "Who does your
+  work?" once.
+- `agents` lists every agent Isoform knows how to reach, in catalog order: for code Codex, Claude
+  Code, Cursor; for everything else Claude, ChatGPT, Grok, Gemini, Muse, Instinct. New agents
+  may appear; a phone shows an unknown id under its `name`.
+- `reach` is `connected`, `connected_computer` (a connected coding agent), `on_computer` (a
+  coding agent, not connected), `its_app`, or `by_text`. `found` says the agent's app or command
+  is on the computer. `connected` stays false until agents can join (B5). `lastWorkedAt` (ms) is
+  when it last took or finished a hand-off, omitted when never.
+- The computer keeps each hand-off with exactly what went (the task text, the agent, how it went,
+  the source and the time) on the computer only, for 90 days. The person can forget one or all,
+  and a withdrawn source removes its hand-offs. This log is not sent to the phone in v1.

@@ -78,6 +78,33 @@ fi
 ( cd "$TIP/wails-gui" && ISOFORM_TRIAL_SEED_DIR="$DATA" go test -run 'TestTrialSeed$' -count=1 . ) > "$RUN/seed.log" 2>&1 \
   || { { echo "# Daily real-app test $DATE"; echo; echo "FAIL: seeding the test data failed on $SHA. See $RUN/seed.log."; } > "$REPORT"; result FAIL "seed failed on $SHA"; exit 1; }
 
+# The English voice, so the scheduled brief gets a recording. A fresh folder
+# has no voice ("no spoken version: no voice installed"). It is downloaded once
+# into BASE/models, checked against the app's own SHA-256 (bundled_tts.go), and
+# cloned (APFS, no extra disk) into each run's folder.
+VOICE_NAME=$(sed -n 's/^[[:space:]]*kokoroEnDirName[[:space:]]*= "\(.*\)"/\1/p' "$TIP/wails-gui/bundled_tts.go")
+VOICE_SHA=$(sed -n 's/^[[:space:]]*sha256KokoroEnArchive[[:space:]]*= "\(.*\)"/\1/p' "$TIP/wails-gui/bundled_tts.go")
+VOICE_URLS=$(grep -o 'https://[^"]*/kokoro-en[^"]*\.tar\.bz2' "$TIP/wails-gui/bundled_tts.go")
+VOICE_CACHE="$BASE/models/sherpa/tts"
+if [ -n "$VOICE_NAME" ] && [ ! -f "$VOICE_CACHE/$VOICE_NAME/model.onnx" ]; then
+  mkdir -p "$VOICE_CACHE"
+  got=0
+  for url in $VOICE_URLS; do
+    curl -fsSL --retry 2 -o "$VOICE_CACHE/voice.tar.bz2" "$url" \
+      && [ "$(shasum -a 256 "$VOICE_CACHE/voice.tar.bz2" | cut -d' ' -f1)" = "$VOICE_SHA" ] && { got=1; break; }
+  done
+  if [ "$got" = 1 ]; then
+    tar -xjf "$VOICE_CACHE/voice.tar.bz2" -C "$VOICE_CACHE" || rm -rf "${VOICE_CACHE:?}/$VOICE_NAME"
+  else
+    echo "voice download failed or did not match its checksum" >> "$RUN/seed.log"
+  fi
+  rm -f "$VOICE_CACHE/voice.tar.bz2"
+fi
+if [ -n "$VOICE_NAME" ] && [ -f "$VOICE_CACHE/$VOICE_NAME/model.onnx" ]; then
+  mkdir -p "$DATA/models/sherpa/tts"
+  cp -cR "$VOICE_CACHE/$VOICE_NAME" "$DATA/models/sherpa/tts/" 2>/dev/null || cp -R "$VOICE_CACHE/$VOICE_NAME" "$DATA/models/sherpa/tts/"
+fi
+
 # 3. Launch on the test folder with the bridge on. This app is ours alone: its own data folder.
 LAUNCH_AT=$(date +%s)
 env YANSU_APP_FLAVOR=isoform YANSU_AGENT_HOME="$DATA" YANSU_BROWSER_BRIDGE=1 \
@@ -134,6 +161,18 @@ else
   PHONE_FAIL="[$(grep -m1 -E -- '--- FAIL|_test.go:[0-9]+:' "$RUN/phone-relay.log" | head -c 200 | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.stringify(s.trim()||"see phone-relay.log")))')]"
 fi
 echo "{\"page\":\"phone-relay\",\"ok\":$PHONE_OK,\"paintMs\":$(( ($(date +%s) - PHONE_AT) * 1000 )),\"budgetMs\":600000,\"checks\":[\"paired through the relay\",\"brief delivered\"],\"failures\":$PHONE_FAIL,\"screenshot\":\"skipped\"}" >> "$RUN/pages.jsonl"
+
+# Every model a new install can download answers at its default source (one
+# byte of each file; models/sources_test.go). Isoform's mirror went to 403 for
+# every file on 2026-11-15 and no one noticed until the voice was missing.
+SOURCES_AT=$(date +%s)
+if ( cd "$TIP/wails-gui" && ISOFORM_MODEL_SOURCES_CHECK=1 go test ./models/ -run 'TestCatalogDefaultSourcesAnswer$' -count=1 ) > "$RUN/model-sources.log" 2>&1; then
+  SOURCES_OK=true; SOURCES_FAIL='[]'
+else
+  SOURCES_OK=false
+  SOURCES_FAIL="[$(grep -m1 -E 'sources_test.go:[0-9]+:' "$RUN/model-sources.log" | head -c 200 | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.stringify(s.trim()||"see model-sources.log")))')]"
+fi
+echo "{\"page\":\"model-sources\",\"ok\":$SOURCES_OK,\"paintMs\":$(( ($(date +%s) - SOURCES_AT) * 1000 )),\"budgetMs\":120000,\"checks\":[\"every model file answers its default source\"],\"failures\":$SOURCES_FAIL,\"screenshot\":\"skipped\"}" >> "$RUN/pages.jsonl"
 
 # 6. Report.
 node "$TIP/wails-gui/scripts/daily-trial/report.mjs" "$RUN" "$DATE" "$SHA" "$BUILD_SECS" "$STARTUP_SECS" "$ERRORS" "$BRANCH" > "$REPORT"

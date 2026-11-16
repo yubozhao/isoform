@@ -76,7 +76,7 @@ func TestRankWeighsUsedResultsOverPrompts(t *testing.T) {
 	for _, r := range ranked {
 		ids = append(ids, r.Agent.ID)
 	}
-	if got := strings.Join(ids, ","); got != "claude,chatgpt,grok,muse" {
+	if got := strings.Join(ids, ","); got != "claude,chatgpt,grok,gemini,muse" {
 		t.Fatalf("rank = %s", got)
 	}
 }
@@ -96,5 +96,32 @@ func TestDueToAskOnceAfterADay(t *testing.T) {
 	}
 	if (Record{SentAt: sent.UnixMilli(), Status: StatusDone}).DueToAsk(sent.Add(48 * time.Hour)) {
 		t.Fatal("asked about a done task")
+	}
+}
+
+// TestEveryAgentHasAKind: the two choices (phone-agent v1.1.0 rule 1) cover
+// the whole catalog, with the design's nine in it.
+func TestEveryAgentHasAKind(t *testing.T) {
+	want := map[string]string{
+		"codex": KindCode, "claude-code": KindCode, "cursor": KindCode,
+		"claude": KindElse, "chatgpt": KindElse, "grok": KindElse, "gemini": KindElse, "muse": KindElse, "instinct": KindElse,
+	}
+	for _, a := range Catalog() {
+		if !ValidKind(a.Kind) {
+			t.Errorf("%s has no kind", a.ID)
+		}
+		if k, ok := want[a.ID]; ok && k != a.Kind {
+			t.Errorf("%s kind = %s, want %s", a.ID, a.Kind, k)
+		}
+		delete(want, a.ID)
+	}
+	if len(want) != 0 {
+		t.Errorf("missing from the catalog: %v", want)
+	}
+}
+
+func TestKindOfIsCodeOnlyWhenSaid(t *testing.T) {
+	if KindOf(Input{}) != KindElse || KindOf(Input{Kind: "bogus"}) != KindElse || KindOf(Input{Kind: KindCode}) != KindCode {
+		t.Fatal("kind of work")
 	}
 }

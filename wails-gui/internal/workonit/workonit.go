@@ -57,10 +57,26 @@ const (
 	MethodShare = "share"
 )
 
+// Kinds of work, and so of agent: one agent is chosen for each
+// (phone-agent v1.1.0 rule 1).
+const (
+	// KindCode is work that touches a repo.
+	KindCode = "code"
+	// KindElse is everything else: research, drafts, comparisons, plans.
+	KindElse = "else"
+)
+
+// ValidKind reports a known kind of work.
+func ValidKind(kind string) bool { return kind == KindCode || kind == KindElse }
+
 // Agent is one personal agent Isoform can hand work to.
 type Agent struct {
 	ID   string
 	Name string
+	// Kind is the work the agent is for: code or everything else.
+	Kind string
+	// CLIs find a command-line agent on this computer (Claude Code).
+	CLIs []string
 	// BundleIDs and AppNames find the agent's Mac app in capture.
 	BundleIDs []string
 	AppNames  []string
@@ -104,7 +120,7 @@ func Catalog() []Agent {
 		{
 			// Claude Desktop documents claude://claude.ai/new?q= (the
 			// composer is prefilled for review, about 14,000 characters).
-			ID: "claude", Name: "Claude",
+			ID: "claude", Name: "Claude", Kind: KindElse,
 			BundleIDs:  []string{"com.anthropic.claudefordesktop", "com.anthropic.claude"},
 			AppNames:   []string{"Claude"},
 			TitleWords: []string{"Claude"},
@@ -112,25 +128,42 @@ func Catalog() []Agent {
 			OpenURL:    "https://claude.ai/new", PhoneSchemes: []string{"claude"},
 		},
 		{
-			ID: "chatgpt", Name: "ChatGPT",
+			ID: "chatgpt", Name: "ChatGPT", Kind: KindElse,
 			BundleIDs:  []string{"com.openai.chat"},
 			AppNames:   []string{"ChatGPT"},
 			TitleWords: []string{"ChatGPT"},
 			OpenURL:    "https://chatgpt.com/", PhoneSchemes: []string{"chatgpt"},
 		},
 		{
-			ID: "codex", Name: "Codex",
+			ID: "codex", Name: "Codex", Kind: KindCode,
 			BundleIDs: []string{"com.openai.codex"},
 			AppNames:  []string{"Codex"},
+			CLIs:      []string{"codex"},
 		},
 		{
-			ID: "grok", Name: "Grok",
+			// Claude Code is a command-line agent; nothing opens it with a
+			// task, so it is reached once connected (phone-agent v1.1.0 §2).
+			ID: "claude-code", Name: "Claude Code", Kind: KindCode,
+			CLIs: []string{"claude"},
+		},
+		{
+			ID: "cursor", Name: "Cursor", Kind: KindCode,
+			BundleIDs: []string{"com.todesktop.230313mzl4w4u92"},
+			AppNames:  []string{"Cursor"},
+		},
+		{
+			ID: "grok", Name: "Grok", Kind: KindElse,
 			AppNames:   []string{"Grok", "Grok Bot"},
 			TitleWords: []string{"Grok"},
 			OpenURL:    "https://grok.com/bot", PhoneSchemes: []string{"grok"},
 		},
 		{
-			ID: "muse", Name: "Muse",
+			ID: "gemini", Name: "Gemini", Kind: KindElse,
+			TitleWords: []string{"Gemini"},
+			OpenURL:    "https://gemini.google.com/app", PhoneSchemes: []string{"googlegemini"},
+		},
+		{
+			ID: "muse", Name: "Muse", Kind: KindElse,
 			AppNames:   []string{"Muse"},
 			TitleWords: []string{"Muse"},
 			OpenURL:    "https://muse.ai/", PhoneSchemes: []string{"muse"},
@@ -138,7 +171,7 @@ func Catalog() []Agent {
 		{
 			// Instinct is reached by a text. Its terms allow training on
 			// what it receives, so the sheet says so first.
-			ID: "instinct", Name: "Instinct",
+			ID: "instinct", Name: "Instinct", Kind: KindElse,
 			Message: true, TermsNote: "workOnIt.terms.instinct",
 		},
 	}
@@ -191,6 +224,16 @@ type Input struct {
 	Detail     string `json:"detail"`
 	// Done is what done looks like, when the item says.
 	Done string `json:"done"`
+	// Kind is the kind of work, code or else; empty is else.
+	Kind string `json:"kind,omitempty"`
+}
+
+// KindOf is the input's kind of work: code only when the surface says so.
+func KindOf(in Input) string {
+	if in.Kind == KindCode {
+		return KindCode
+	}
+	return KindElse
 }
 
 // Task is a prepared task, held in memory until it is sent or dropped.
@@ -198,6 +241,7 @@ type Task struct {
 	ID         string    `json:"id"`
 	SourceKind string    `json:"sourceKind"`
 	SourceID   string    `json:"sourceId"`
+	Kind       string    `json:"kind"`
 	Text       string    `json:"text"`
 	PreparedAt time.Time `json:"preparedAt"`
 }
@@ -326,4 +370,25 @@ func (r Record) DueToAsk(now time.Time) bool {
 		return false
 	}
 	return now.UnixMilli()-r.SentAt >= AskAfter.Milliseconds()
+}
+
+// Handoff is one hand-off kept with exactly what went, when and to whom
+// (phone-map B4), for Your data. It stays on the computer; the person can
+// forget it, and a withdrawn source takes its hand-offs with it.
+type Handoff struct {
+	ID         string `json:"id"` // the Record's id
+	SourceKind string `json:"sourceKind"`
+	SourceID   string `json:"sourceId,omitempty"`
+	Kind       string `json:"kind"`
+	AgentID    string `json:"agentId"`
+	Method     string `json:"method"`
+	Via        string `json:"via,omitempty"`
+	// Text is the task as the person saw it before Send.
+	Text string `json:"text"`
+	// Sent is what left, when it differs from Text: the one line of a task
+	// link, whose page carries Text.
+	Sent   string `json:"sent,omitempty"`
+	SentAt int64  `json:"sentAt"`
+	// Surface is where the Yes was given: computer or phone.
+	Surface string `json:"surface"`
 }

@@ -300,7 +300,7 @@ func (m *Manager) BuildPlanSkipping(choices map[string]string, overrides map[str
 				return Plan{}, fmt.Errorf("%s has unverified metadata", e.ID)
 			}
 		}
-		source := e.Sources[0]
+		source := defaultSource(e)
 		if override := overrides[e.ID]; override != "" {
 			found := false
 			for _, s := range e.Sources {
@@ -574,6 +574,22 @@ func (m *Manager) Remove(id string) error {
 	m.order = order
 	m.changedLocked()
 	return m.saveLocked()
+}
+
+// defaultSource is where a download goes unless the person picks another:
+// the first upstream source (Hugging Face, GitHub). Isoform's own mirror
+// (model-assets.yansu.app) stays listed first in the catalog, as the layout a
+// custom mirror copies, and can still be picked by name, but it answers 403
+// to every request (2026-11-15), so a new install could download no speech,
+// voice or speaker model at all. The daily trial checks every default source
+// answers (TestCatalogDefaultSourcesAnswer).
+func defaultSource(e Entry) Source {
+	for _, s := range e.Sources {
+		if s.Kind != "mirror" {
+			return s
+		}
+	}
+	return e.Sources[0]
 }
 
 func planHosts(e Entry, source Source) string {

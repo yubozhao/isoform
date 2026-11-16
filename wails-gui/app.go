@@ -687,6 +687,7 @@ func (a *App) startupServices(ctx context.Context) {
 	a.deferLaunchTask("storage_repair", func() { repairStartupStorage(a.store) })
 	a.deferLaunchTask("unanswered_turns", func() { a.markUnansweredTurns(ctx) })
 	a.deferLaunchTask("task_links", a.startTaskLinksIfEnabled)
+	a.deferLaunchTask("work_on_it", a.startWorkOnIt)
 	a.deferLaunchTask("front", a.startFrontIfEnabled)
 	a.deferLaunchTask("ocr_prewarm", ocr.PrewarmHelper)
 	a.deferLaunchTask("assistant_history", a.scheduleAssistantHistory)

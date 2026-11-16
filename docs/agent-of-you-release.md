@@ -93,12 +93,12 @@ Run these on the Machine with `fly ssh console -C "sh -c 'ISOFORM_SERVER_DATA=/d
 
 Each step is one line; run commands from `server/` in your own terminal. None of these is done by an agent.
 
-1. Fly: `fly auth login`, then `fly apps create isoform-aoy-server --org <your org>`.
-2. Fly volume: `fly volumes create isoform_data --region sjc --size 40 --app isoform-aoy-server`.
-3. Server secret: `read -rs 'v?Value: '; printf 'ISOFORM_SERVER_SECRET=%s\n' "$v" | fly secrets import --stage; unset v` (paste the output of `openssl rand -hex 32`).
-4. Anthropic key (a new key just for this server, with a monthly limit set in the Anthropic console): `read -rs 'v?Value: '; printf 'ANTHROPIC_API_KEY=%s\n' "$v" | fly secrets import --stage; unset v`.
-5. Resend: verify the sending domain in the Resend dashboard, then `read -rs 'v?Value: '; printf 'RESEND_API_KEY=%s\n' "$v" | fly secrets import --stage; unset v`.
-6. Stripe test mode: create webhook endpoints `https://isoform-aoy-server.fly.dev/v1/stripe/webhook` and `.../v1/stripe/connect-webhook` in the dashboard, then import `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and `STRIPE_CONNECT_WEBHOOK_SECRET` the same way as step 3 (`sk_test_` key).
+1. Fly: `fly auth login`.
+2. Anthropic: create a new key just for this server, with a monthly limit set in the Anthropic console.
+3. Resend: verify the sending domain in the Resend dashboard and create a key.
+4. Stripe test mode: create webhook endpoints `https://isoform-aoy-server.fly.dev/v1/stripe/webhook` and `.../v1/stripe/connect-webhook` in the dashboard; keep the `sk_test_` key and both signing secrets at hand.
+5. Run `scripts/fly-setup.sh --org <your org>` (add `--owner-status` for step 14). It creates the app and the 40 GB volume, generates the server secret, then asks for the Anthropic key, the Resend key, the Stripe key and the two signing secrets one at a time and stages each with `fly secrets import --stage`. Typed values are not shown and never go on a command line; a live Stripe key is refused; nothing is deployed. Running it again skips every step already done.
+6. Check: `fly secrets list --app isoform-aoy-server` lists ISOFORM_SERVER_SECRET, ANTHROPIC_API_KEY, RESEND_API_KEY, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET and STRIPE_CONNECT_WEBHOOK_SECRET (names only; values are never shown).
 7. Tell the hub "deploy AoY"; the hub runs `ISOFORM_DEPLOY_APPROVED=yes server/scripts/deploy.sh`. The first boot builds the sandbox image (a few minutes). Then the hub runs `server/scripts/check-live.sh`: it reads health, the Machine and volume, the invite gate, the cost cap, gVisor, the private model proxy and the persona label, and changes nothing (add `--probe` once to see an uninvited address refused).
 8. Website: in Cloudflare Pages settings, set `AOY_API_ORIGIN=https://isoform-aoy-server.fly.dev` and `AOY_CHAT=1`.
 9. Optional custom domain: `fly certs add api.isoform.ai --app isoform-aoy-server`, add the CNAME it prints in Cloudflare DNS, then change `ISOFORM_SERVER_PUBLIC_URL` in `server/fly.toml`.
@@ -106,4 +106,4 @@ Each step is one line; run commands from `server/` in your own terminal. None of
 11. Invites: export the waitlist emails from Cloudflare D1 to `waitlist.txt` on your computer (one email per line, or the CSV export as is). Upload it with `fly ssh sftp shell` then `put waitlist.txt /data/server/waitlist.txt`, run `fly ssh console -C "sh -c 'ISOFORM_SERVER_DATA=/data/server setpriv --reuid 65532 --regid 65532 --init-groups isoform-server admin invite import /data/server/waitlist.txt && rm /data/server/waitlist.txt'"`, and check `... admin invite count` prints 75. This emails no one, and the server keeps only digests.
 12. Run one real job with a Stripe test card; then switch to live keys (`sk_live_`, plus `ISOFORM_STRIPE_LIVE=1`).
 13. Decide who sends the invite emails and when; nothing in the server sends them.
-14. Optional owner status page: `read -rs 'v?Value: '; printf 'ISOFORM_OWNER_STATUS_TOKEN=%s\n' "$v" | fly secrets import --stage; unset v` (paste the output of `openssl rand -hex 32`), then set `AOY_OWNER_STATUS=1` in Cloudflare Pages. Open `isoform.ai/owner/status` and paste the same token; it stays in that browser tab only.
+14. Optional owner status page: `scripts/fly-setup.sh --owner-status` generates and stages `ISOFORM_OWNER_STATUS_TOKEN` and shows it once; then set `AOY_OWNER_STATUS=1` in Cloudflare Pages. Open `isoform.ai/owner/status` and paste the same token; it stays in that browser tab only.
