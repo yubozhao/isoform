@@ -76,7 +76,7 @@ on(['portrait:updated'], ['GetAboutYouPortrait', 'GetPortraitTodayCard']);
 // Scheduled snapshot builds that changed a page (Go derived_views.go). The
 // re-read returns the new snapshot; it never builds one.
 on(['about-you:updated'], ['GetAboutYou']);
-on(['people:overview-updated'], ['ListPeopleOverview', 'ListPrincipalsWithStats']);
+on(['people:overview-updated'], ['ListPeopleOverview', 'ListPrincipalsWithStats', 'GetPersonDetail']);
 on(['today-before-you-talk:updated'], ['GetTodayBeforeYouTalk']);
 
 // These transitions change what the backend permits a reader to see. Never
@@ -113,9 +113,11 @@ export function PageEventsOn(event: string, handler: (...args: any[]) => void) {
     handlers.set(event, set);
     return () => { set.delete(handler); };
 }
-// Bursts of one event (noticed:updated for several days at once) invalidate
-// their readers once per window, not once per event.
-const COALESCED_EVENTS = new Set(['noticed:updated']);
+// Bursts of one event (noticed:updated for several days at once; mobile:updated,
+// which a brief build, its audio and a phone sync each send) invalidate their
+// readers once per window, not once per event. A burst of mobile:updated read
+// the week summary and the brief health three times within 40 ms on 2026-11-15.
+const COALESCED_EVENTS = new Set(['noticed:updated', 'mobile:updated']);
 export const COALESCE_EVENT_MS = 250;
 function coalesceEvent(event: string, names: string[]): () => void {
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -127,6 +129,14 @@ function coalesceEvent(event: string, names: string[]): () => void {
     };
     const off = RuntimeEventsOn(event, (data?: unknown) => {
         last = data;
+        // A locked or hidden window reads nothing until it is looked at, so
+        // the event applies at once and its readers wait for the unlock: a
+        // flush after the unlock would read a second time.
+        if (!appActive()) {
+            if (timer !== undefined) clearTimeout(timer);
+            flush();
+            return;
+        }
         if (timer === undefined) timer = setTimeout(flush, COALESCE_EVENT_MS);
     });
     return () => {

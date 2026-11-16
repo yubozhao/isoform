@@ -255,6 +255,8 @@ func (a *App) failPersonResearch(principalID, reason string) {
 // emitPersonResearch notifies the Who you know page that a dossier's state changed
 // so it can re-fetch (or flip its spinner) without polling.
 func (a *App) emitPersonResearch(principalID, status, errMsg string) {
+	// The dossier's summary is on the person's page snapshot.
+	a.touchDerivedViews(derivedPersonDetail)
 	if a.ctx == nil {
 		return
 	}

@@ -221,18 +221,27 @@ func (a *App) GetLatestBrief() (perfValue TodayBriefView, perfErr error) {
 	var quietAt time.Time
 	nothingNew, seenRequest := false, false
 	if service, isService := svc.(*mobileBriefService); isService && service != nil {
-		for _, candidate := range service.store.briefs() {
+		// Headers, not decoded briefs: only the quiet brief Today may show is read.
+		quietID := ""
+		for _, candidate := range service.store.headers() {
 			everMade = true
-			ready := mobileBriefAsOfTime(candidate)
+			ready := candidate.asOf
 			if ready.IsZero() || ready.After(now) {
 				continue
 			}
 			if candidate.NarrativeStatus == "quiet" && (quietAt.IsZero() || ready.After(quietAt)) {
-				quiet, quietAt = candidate, ready
+				quietID, quietAt = candidate.BriefID, ready
 			}
 			if ok && !seenRequest && candidate.Slot == mobileBriefSlotOnRequest && ready.After(latestReady) {
 				seenRequest = true
-				nothingNew = candidate.NarrativeStatus == "quiet" || (candidate.NarrativeStatus == "skipped" && mobileBriefIsEmpty(candidate))
+				nothingNew = candidate.NarrativeStatus == "quiet" || (candidate.NarrativeStatus == "skipped" && candidate.empty)
+			}
+		}
+		if quietID != "" {
+			if loaded, found := service.store.load(quietID); found {
+				quiet = loaded
+			} else {
+				quietAt = time.Time{}
 			}
 		}
 		if ok {
@@ -318,9 +327,9 @@ func (a *App) GetLatestBrief() (perfValue TodayBriefView, perfErr error) {
 		start := mobileBriefParseTime(shown.WindowStart)
 		view.QuietSince = ""
 		if service, isService := svc.(*mobileBriefService); isService {
-			for _, previous := range service.store.briefs() {
-				if previous.NarrativeStatus != "quiet" && mobileBriefAsOfTime(previous).Before(mobileBriefAsOfTime(shown)) {
-					start = mobileBriefAsOfTime(previous)
+			for _, previous := range service.store.headers() {
+				if previous.NarrativeStatus != "quiet" && previous.asOf.Before(mobileBriefAsOfTime(shown)) {
+					start = previous.asOf
 					view.QuietSince = previous.AsOf
 					break
 				}
