@@ -139,6 +139,9 @@ func (a *App) mobileBriefForProjectionWithholding(ctx context.Context, brief Mob
 		}
 	}
 	brief, withheld := a.mobileBriefDeliveryContext(ctx, brief)
+	// Tokenized paragraphs are put in words for the reader's day here, after
+	// the gates (which check the stored words) and before every display pass.
+	brief = mobileBriefRenderTokens(brief, a.mobileBriefReadNow(), uiLanguageDisplayName(a.modelDisplayLanguage()))
 	if quiet {
 		brief.NarrativeStatus = "quiet"
 	}

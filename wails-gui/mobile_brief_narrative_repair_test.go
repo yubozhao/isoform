@@ -88,7 +88,9 @@ func TestMobileBriefWrittenBriefKeepsTheModelsClosing(t *testing.T) {
 	if len(paragraphs) != 3 || paragraphs[2].Text != "Want me to draft the note to Sam?" || strings.Join(paragraphs[2].Refs, ",") != "e7" {
 		t.Fatalf("paragraphs = %+v", paragraphs)
 	}
-	if len(words) != 1 || logged.Len() != 0 {
+	// Only this brief's own lines count: other goroutines (topics, activity)
+	// may log while the test runs.
+	if len(words) != 1 || strings.Contains(logged.String(), "[mobile-brief]") {
 		t.Fatalf("card words %d, log %q", len(words), logged.String())
 	}
 	brief.Narrative, brief.NarrativeStatus = paragraphs, "ok"

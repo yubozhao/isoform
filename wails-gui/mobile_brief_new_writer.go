@@ -369,7 +369,7 @@ func newBriefParagraphsTracked(brief *MobileBriefV1, draft briefcore.Draft, sour
 				codes = append(codes, "paragraph_unbacked")
 				continue
 			}
-			out = append(out, MobileBriefPara{Text: p.Text, Refs: refs, Part: part})
+			out = append(out, MobileBriefPara{Text: p.Text, Refs: refs, Part: part, Template: newBriefTemplateRefs(p.Template, refIDs)})
 		}
 	}
 	mapPart(briefPartDone, draft.Done)
@@ -550,6 +550,7 @@ func (s *mobileBriefService) composeNewBrief(ctx context.Context, input mobileBr
 		conversations[c.SourceID] = true
 	}
 	material.Lang = lang
+	material.Tokens = mobileBriefTokensEnabled()
 	original := brief
 	var codes []string
 	for attempt := 0; attempt < 2; attempt++ {
@@ -602,6 +603,9 @@ func (s *mobileBriefService) composeNewBrief(ctx context.Context, input mobileBr
 		}
 		if len(paragraphs) > 0 && newBriefHasBothParts(paragraphs) || len(paragraphs) > 0 && attempt == 1 {
 			logLine("ok", codes, len(paragraphs))
+			if material.Tokens {
+				s.startTokensShadow(material, lang, draft, draftCodes, ask)
+			}
 			brief.writerItems = len(material.Items)
 			return brief, paragraphs, binding, nil
 		}
