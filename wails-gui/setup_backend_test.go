@@ -262,3 +262,34 @@ func TestPermissionSequenceRecordsMailUnavailableWithoutAsking(t *testing.T) {
 		}
 	}
 }
+
+// One Allow per row asks only that row's prompts, in setup's order, and keeps
+// what the other rows answered (computer setup v1.0.0 rule 4).
+func TestPermissionSequenceAsksOnlyTheRowsKeys(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "permissions.json")
+	always := func(string) bool { return true }
+	if err := sequenceSetupPermissionKeys(path, []string{"microphone"}, always, always, func(SetupPermissions) {}, true); err != nil {
+		t.Fatal(err)
+	}
+	var order []string
+	err := sequenceSetupPermissionKeys(path, []string{mailPermissionKey, calendarPermissionKey}, func(key string) bool {
+		order = append(order, key)
+		return true
+	}, always, func(SetupPermissions) {}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(order, []string{calendarPermissionKey, mailPermissionKey}) {
+		t.Fatalf("asked %v, want calendar then mail only", order)
+	}
+	states := map[string]string{}
+	for _, a := range loadSetupPermissions(path).Answers {
+		states[a.Key] = a.State
+	}
+	if states["microphone"] != "on" || states[calendarPermissionKey] != "on" || states[mailPermissionKey] != "on" || states["screen_recording"] != "off" {
+		t.Fatalf("answers %v", states)
+	}
+	if got := setupPermissionKeysKnown([]string{"microphone", "nope", "microphone"}); !reflect.DeepEqual(got, []string{"microphone"}) {
+		t.Fatalf("known keys %v", got)
+	}
+}

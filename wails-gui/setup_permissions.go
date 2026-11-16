@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 )
 
@@ -98,12 +99,21 @@ func sequencePermissions(path string, request func(string) bool, emit func(Setup
 // sequencePermissionsWith asks each key in order. askable reports whether
 // macOS can show that prompt now; a key it can't is recorded unavailable.
 func sequencePermissionsWith(path string, request func(string) bool, askable func(string) bool, emit func(SetupPermissions), screenAtLaunch bool) error {
+	return sequenceSetupPermissionKeys(path, setupPermissionOrder, request, askable, emit, screenAtLaunch)
+}
+
+// sequenceSetupPermissionKeys asks the given keys, in setup's order, one
+// prompt at a time; the answers for every other key are kept as saved.
+func sequenceSetupPermissionKeys(path string, keys []string, request func(string) bool, askable func(string) bool, emit func(SetupPermissions), screenAtLaunch bool) error {
 	p := loadSetupPermissions(path)
 	p.Running = true
 	p.ResumeStep = setupPermissionStep
 	// A process that exited inside an OS dialog repeats that key only when
 	// the user explicitly presses Turn on all again; launch never prompts.
 	for i, key := range setupPermissionOrder {
+		if !slices.Contains(keys, key) {
+			continue
+		}
 		p.Next = i
 		if err := saveSetupJSON(path, p); err != nil {
 			return err
@@ -223,6 +233,55 @@ func (a *App) RequestAllPermissions() error {
 	}()
 	return nil
 }
+// RequestSetupPermissions asks only the given keys, one macOS prompt at a
+// time, for setup's one Allow per row (computer setup v1.0.0 rule 4). The
+// answers already saved for other keys stay. Answers arrive via
+// setup:permissions, as for RequestAllPermissions.
+func (a *App) RequestSetupPermissions(keys []string) error {
+	keys = setupPermissionKeysKnown(keys)
+	if len(keys) == 0 {
+		return errors.New("no setup permission to ask")
+	}
+	a.setupPermissions.mu.Lock()
+	defer a.setupPermissions.mu.Unlock()
+	if a.setupPermissions.running {
+		return errors.New("permission sequence already running")
+	}
+	if a.store == nil {
+		return errors.New("setup storage is not ready")
+	}
+	if err := a.store.SetUIState(context.Background(), "yansu.onboarding.step", setupPermissionStep); err != nil {
+		return err
+	}
+	a.setupPermissions.running = true
+	go func() {
+		defer func() {
+			a.setupPermissions.mu.Lock()
+			a.setupPermissions.running = false
+			a.setupPermissions.mu.Unlock()
+		}()
+		var err error
+		runPermissionRequest(func() {
+			err = sequenceSetupPermissionKeys(setupPermissionsPath(), keys, a.requestSetupPermission, setupPermissionAskable, func(p SetupPermissions) { a.emitBrowserEvent("setup:permissions", p) }, setupScreenWasOnAtLaunch())
+		})
+		if err != nil {
+			a.emitBrowserEvent("setup:permissions-error", err.Error())
+		}
+	}()
+	return nil
+}
+
+// setupPermissionKeysKnown keeps the keys setup asks about, once each.
+func setupPermissionKeysKnown(keys []string) []string {
+	var out []string
+	for _, key := range keys {
+		if slices.Contains(setupPermissionOrder, key) && !slices.Contains(out, key) {
+			out = append(out, key)
+		}
+	}
+	return out
+}
+
 func (a *App) requestSetupPermission(key string) bool {
 	var granted bool
 	switch key {
