@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"wails-gui/internal/pii"
+	"wails-gui/internal/privacy"
 )
 
 func TestTodayTopicsFirstRunFlag(t *testing.T) {
@@ -211,7 +212,7 @@ func TestTopicWithdrawalAcrossTodayChatAndSearch(t *testing.T) {
 	}
 
 	withdrawnAt := time.Now()
-	svc.applyPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalApp, ID: "com.example.private"})
+	svc.applyPrivacyWithdrawal(privacy.Scope{Kind: privacy.App, ID: "com.example.private"})
 	view, err := app.GetTodayTopics()
 	if err != nil || view.Clear || len(view.Topics) != 1 || view.Topics[0].ID != "topic-b" {
 		t.Fatalf("withdrawn Today/chat/search topics=%+v err=%v", view, err)

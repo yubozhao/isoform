@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"wails-gui/internal/platform/activitymon"
+	"wails-gui/internal/privacy"
 )
 
 func TestTopicRegistryEmptyInterestsDoNotCollectHistoricalNames(t *testing.T) {
@@ -256,7 +257,7 @@ func TestTopicSnapshotReadsSkipSourceRevisionsAndHonorWithdrawal(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(before, after) {
 		t.Fatalf("source revision changed snapshot read: %d %v", len(after), err)
 	}
-	svc.applyPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalSource, SourceKind: "activity", ID: "work"})
+	svc.applyPrivacyWithdrawal(privacy.Scope{Kind: privacy.Source, SourceKind: "activity", ID: "work"})
 	after, err = a.todayTopicViews()
 	if err != nil {
 		t.Fatal(err)

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"wails-gui/internal/pii"
+	"wails-gui/internal/privacy"
 )
 
 func newTopicsReadPathTestApp(t *testing.T) (*App, *topicsService) {
@@ -115,22 +116,22 @@ func TestTopicWithdrawalScopes(t *testing.T) {
 	tests := []struct {
 		name  string
 		refs  []topicSourceReference
-		scope privacyWithdrawalScope
+		scope privacy.Scope
 		want  bool
 	}{
-		{"app exact and prefix", []topicSourceReference{{Kind: topicRefApp, Value: "COM.EXAMPLE.private.bundle"}}, privacyWithdrawalScope{Kind: privacyWithdrawalApp, ID: "com.example.private"}, true},
-		{"window", []topicSourceReference{{Kind: topicRefWindow, Value: "private window"}}, privacyWithdrawalScope{Kind: privacyWithdrawalWindow, ID: "private window"}, true},
-		{"session", []topicSourceReference{{Kind: topicRefSession, Value: "session-1"}}, privacyWithdrawalScope{Kind: privacyWithdrawalSession, ID: "session-1"}, true},
-		{"closed time overlap", []topicSourceReference{{Kind: topicRefTimeRange, Start: 100, End: 200}}, privacyWithdrawalScope{Kind: privacyWithdrawalTimeRange, StartMs: 150, EndMs: 250}, true},
-		{"open time overlap", []topicSourceReference{{Kind: topicRefTimeRange, Start: 100, End: 200}}, privacyWithdrawalScope{Kind: privacyWithdrawalTimeRange, StartMs: 150}, true},
-		{"half-open edge", []topicSourceReference{{Kind: topicRefTimeRange, Start: 100, End: 200}}, privacyWithdrawalScope{Kind: privacyWithdrawalTimeRange, StartMs: 200, EndMs: 250}, false},
-		{"account exact", []topicSourceReference{{Kind: topicRefAccount, Value: "discord"}}, privacyWithdrawalScope{Kind: privacyWithdrawalAccount, ID: "discord"}, true},
-		{"account prefix", []topicSourceReference{{Kind: topicRefAccount, Value: "discord:guild:123"}}, privacyWithdrawalScope{Kind: privacyWithdrawalAccount, ID: "discord"}, true},
-		{"account child only", []topicSourceReference{{Kind: topicRefAccount, Value: "discord:guild:123"}}, privacyWithdrawalScope{Kind: privacyWithdrawalAccount, ID: "discord:guild"}, true},
-		{"activity source", []topicSourceReference{{Kind: topicRefSource, Value: "activity:work"}}, privacyWithdrawalScope{Kind: privacyWithdrawalSource, SourceKind: "activity", ID: "work"}, true},
-		{"memory source", []topicSourceReference{{Kind: topicRefSource, Value: "memory:note:version"}}, privacyWithdrawalScope{Kind: privacyWithdrawalSource, SourceKind: "memory", ID: "note"}, true},
-		{"file source", []topicSourceReference{{Kind: topicRefSource, Value: "file:123"}}, privacyWithdrawalScope{Kind: privacyWithdrawalSource, SourceKind: "file", ID: "123"}, true},
-		{"policy change", []topicSourceReference{{Kind: topicRefApp, Value: "anything"}}, privacyWithdrawalScope{Kind: privacyWithdrawalPolicyChange}, false},
+		{"app exact and prefix", []topicSourceReference{{Kind: topicRefApp, Value: "COM.EXAMPLE.private.bundle"}}, privacy.Scope{Kind: privacy.App, ID: "com.example.private"}, true},
+		{"window", []topicSourceReference{{Kind: topicRefWindow, Value: "private window"}}, privacy.Scope{Kind: privacy.Window, ID: "private window"}, true},
+		{"session", []topicSourceReference{{Kind: topicRefSession, Value: "session-1"}}, privacy.Scope{Kind: privacy.Session, ID: "session-1"}, true},
+		{"closed time overlap", []topicSourceReference{{Kind: topicRefTimeRange, Start: 100, End: 200}}, privacy.Scope{Kind: privacy.TimeRange, StartMs: 150, EndMs: 250}, true},
+		{"open time overlap", []topicSourceReference{{Kind: topicRefTimeRange, Start: 100, End: 200}}, privacy.Scope{Kind: privacy.TimeRange, StartMs: 150}, true},
+		{"half-open edge", []topicSourceReference{{Kind: topicRefTimeRange, Start: 100, End: 200}}, privacy.Scope{Kind: privacy.TimeRange, StartMs: 200, EndMs: 250}, false},
+		{"account exact", []topicSourceReference{{Kind: topicRefAccount, Value: "discord"}}, privacy.Scope{Kind: privacy.Account, ID: "discord"}, true},
+		{"account prefix", []topicSourceReference{{Kind: topicRefAccount, Value: "discord:guild:123"}}, privacy.Scope{Kind: privacy.Account, ID: "discord"}, true},
+		{"account child only", []topicSourceReference{{Kind: topicRefAccount, Value: "discord:guild:123"}}, privacy.Scope{Kind: privacy.Account, ID: "discord:guild"}, true},
+		{"activity source", []topicSourceReference{{Kind: topicRefSource, Value: "activity:work"}}, privacy.Scope{Kind: privacy.Source, SourceKind: "activity", ID: "work"}, true},
+		{"memory source", []topicSourceReference{{Kind: topicRefSource, Value: "memory:note:version"}}, privacy.Scope{Kind: privacy.Source, SourceKind: "memory", ID: "note"}, true},
+		{"file source", []topicSourceReference{{Kind: topicRefSource, Value: "file:123"}}, privacy.Scope{Kind: privacy.Source, SourceKind: "file", ID: "123"}, true},
+		{"policy change", []topicSourceReference{{Kind: topicRefApp, Value: "anything"}}, privacy.Scope{Kind: privacy.PolicyChange}, false},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -153,7 +154,7 @@ func TestTopicWithdrawalScopes(t *testing.T) {
 	svc.registryRefresh = make(chan struct{}, 1)
 	svc.registryFullBuilding = true
 	svc.registryWorkerMu.Unlock()
-	svc.applyPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalSource, SourceKind: "activity", ID: "deleted"})
+	svc.applyPrivacyWithdrawal(privacy.Scope{Kind: privacy.Source, SourceKind: "activity", ID: "deleted"})
 	view, err := app.GetTodayTopics()
 	if err != nil || len(view.Topics) != 1 || view.Topics[0].ID != "survivor" || view.Clear {
 		t.Fatalf("withdrawal getter=%+v err=%v", view, err)
@@ -203,7 +204,7 @@ func TestTopicWithdrawalRebuildWithinOneSecond(t *testing.T) {
 		cancel()
 		svc.stopRegistryWorker()
 	}()
-	svc.applyPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalSource, SourceKind: "activity", ID: "gone"})
+	svc.applyPrivacyWithdrawal(privacy.Scope{Kind: privacy.Source, SourceKind: "activity", ID: "gone"})
 	timer <- time.Now()
 	select {
 	case <-entered:
@@ -255,7 +256,7 @@ func TestTopicRefreshIntervalPreservesWithdrawalDeadline(t *testing.T) {
 		t.Fatalf("initial background delay=%s", delay)
 	}
 
-	svc.applyPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalSource, SourceKind: "activity", ID: "gone"})
+	svc.applyPrivacyWithdrawal(privacy.Scope{Kind: privacy.Source, SourceKind: "activity", ID: "gone"})
 	for i := 0; i < 2; i++ {
 		if delay := readDelay(); delay > topicWithdrawalRebuildDelay {
 			t.Fatalf("withdrawal delay %d=%s", i, delay)
@@ -315,7 +316,7 @@ func TestTopicWithdrawalDuringBuildDropsRefLessCandidate(t *testing.T) {
 		t.Fatal("build did not reach registryBeforeSnapshot")
 	}
 
-	svc.applyPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalApp, ID: "com.example.private"})
+	svc.applyPrivacyWithdrawal(privacy.Scope{Kind: privacy.App, ID: "com.example.private"})
 	candidate := &topicSnapshot{
 		Version:    topicSnapshotSchemaVersion,
 		PolicyHash: policyHash,
