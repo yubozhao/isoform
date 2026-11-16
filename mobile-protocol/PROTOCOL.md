@@ -3958,9 +3958,11 @@ older phones.
   changes the agent for this one hand-off. Exactly the work (or `after`) and the kept `gets` go; both
   fields are kept in the ledger (26.2). Removing a fixed or unknown item, naming an unknown agent, or
   sending either field on another answer is `400`. `yes.kind` (`code` or `else`) says which of the
-  person's agents takes the work, so the sheet names it before Send: `code` for a topic seen in a code
-  tool (an editor or a terminal), else `else`. Known agents are the person's agents (section 27) and
-  the agents that joined.
+  person's agents takes the work, so the sheet names it before Send (section 27). Every offered item
+  whose `yes.does` is `agent` carries it: a topic seen in an editor or a terminal (Xcode, VS Code,
+  Cursor, Terminal, iTerm, Ghostty, Warp, a JetBrains IDE, Zed, Sublime, Nova) is `code`; everything
+  else, the brief's offers included, is `else`.
+  Known agents are the person's agents (section 27) and the agents that joined.
 - **Yes, then Send** (phone-map §2, item 3; `GET /status` says `"workSend":true`). On work for an agent,
   `"send":false` with a Yes or Edit records the Yes and sends nothing: the item is `answered` with
   `answer.notSent:true` ("Yes · not sent") and the Yes counts as the judgment. The action `send`
