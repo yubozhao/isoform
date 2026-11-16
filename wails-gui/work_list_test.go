@@ -9,6 +9,7 @@ import (
 
 	"wails-gui/internal/handoff"
 	"wails-gui/internal/topicday"
+	"wails-gui/internal/workonit"
 )
 
 // workTestBriefSource is a brief source with a current brief and its package.
@@ -221,5 +222,49 @@ func TestWorkListTopicWithItsAgentSaysSince(t *testing.T) {
 	}
 	if _, err := time.Parse(time.RFC3339, item.Agent.Since); err != nil {
 		t.Fatalf("since = %q", item.Agent.Since)
+	}
+}
+
+// Code work goes to the code agent (phone-agent v1.1.0 §4): a topic seen in an
+// editor or a terminal offers its Yes as code, the rest as else, and the
+// brief's offers are else.
+func TestWorkListOfferedItemsSayTheirKind(t *testing.T) {
+	app, _, _ := dailyTopicsTestApp(t)
+	previous := topicsDailyCandidatesHook
+	topicsDailyCandidatesHook = func(*App) []topicday.Candidate {
+		return []topicday.Candidate{
+			{ID: "t1", Kind: topicday.KindProject, Name: "Harbor launch", LastSeenAt: "2026-11-14T05:00:00Z", Next: "Ship the checklist", Apps: []string{"Visual Studio Code", "Safari"}},
+			{ID: "t2", Kind: topicday.KindSubject, Name: "Tide tables", LastSeenAt: "2026-11-13T05:00:00Z", Apps: []string{"Safari"}},
+		}
+	}
+	t.Cleanup(func() { topicsDailyCandidatesHook = previous })
+	ctx := context.Background()
+	if err := app.store.SetUIState(ctx, topicsDailyEnabledKey, "true"); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.buildDailyTopics(ctx); err != nil {
+		t.Fatal(err)
+	}
+	app.mobileBriefSvc = &workTestBriefSource{mobileTestBriefSource{brief: workTestBrief()}}
+	list, err := app.GetWorkList()
+	if err != nil {
+		t.Fatal(err)
+	}
+	kinds := map[string]string{}
+	for _, item := range list.Items {
+		if item.Yes.Does != "agent" {
+			continue
+		}
+		switch item.Source {
+		case workSourceTopic:
+			kinds[item.Ref.TopicID] = item.Yes.Kind
+		case workSourceBrief:
+			if item.Yes.Kind != workonit.KindElse {
+				t.Fatalf("a brief offer's kind = %q, want else", item.Yes.Kind)
+			}
+		}
+	}
+	if kinds["t1"] != workonit.KindCode || kinds["t2"] != workonit.KindElse {
+		t.Fatalf("topic kinds = %v, want t1 code and t2 else", kinds)
 	}
 }
