@@ -70,11 +70,12 @@ struct SettingsView: View {
                 if watchRecordings.worthShowing {
                     settingsGroup("Watch", identifier: "settings.group.watch") {
                         NavigationLink {
-                            WatchRecordingsView(model: watchRecordings)
+                            WatchTabView(recordings: watchRecordings)
+                                .navigationBarTitleDisplayMode(.inline)
                         } label: {
                             YansuCard {
                                 HStack(spacing: 8) {
-                                    Text("Recordings and sync").font(.body).foregroundStyle(YansuTheme.ink)
+                                    Text("What your watch heard").font(.body).foregroundStyle(YansuTheme.ink)
                                     Spacer(minLength: 4)
                                     Text(WatchRecordingsCopy.summary(watchRecordings.rows)).font(.footnote)
                                         .foregroundStyle(YansuTheme.secondary).lineLimit(1)

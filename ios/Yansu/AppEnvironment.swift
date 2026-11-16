@@ -779,6 +779,8 @@ final class AppEnvironment: ObservableObject {
         work.clear()
         let yourAgentCleared = yourAgent.clearAfterUnpair()
         topics.clearAfterUnpair()
+        // What the watch heard is kept in memory only; it must not outlive the pairing it came from.
+        WatchTabModel.shared.clear()
         let widgetCleared = widget.clear()
         let playCleared: Bool
         do { try briefPlayQueue.clear(); pendingBriefPlay = nil; playCleared = true }

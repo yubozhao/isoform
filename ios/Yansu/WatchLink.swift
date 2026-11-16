@@ -82,6 +82,29 @@ final class WatchLink: NSObject, WCSessionDelegate, @unchecked Sendable {
         WatchRecordingsModel.shared.show(await forwarder.recordings(), outcome: outcome)
     }
 
+    /// What the watch heard as conversations; nil when the computer does not serve them.
+    func conversations() async throws -> WatchConversationsAnswer? {
+        guard let forwarder else { return nil }
+        return try await forwarder.conversations()
+    }
+
+    func conversation(_ id: String) async throws -> WatchConversationDetail? {
+        guard let forwarder else { return nil }
+        return try await forwarder.conversation(id)
+    }
+
+    func notesSetting() async throws -> Bool? {
+        guard let forwarder else { return nil }
+        return try await forwarder.notesSetting()
+    }
+
+    func setNotes(_ on: Bool) async throws -> Bool {
+        guard let forwarder else { throw HubRequestError.invalidIdentifier }
+        return try await forwarder.setNotes(on)
+    }
+
+    func pauseUntil() async -> Date? { await forwarder?.pauseUntil() }
+
     func transcript(_ id: String) async throws -> RecordingTranscript? {
         guard let forwarder else { return WatchRecordingsModel.isSeeded ? WatchRecordingsModel.seededTranscript : nil }
         return try await forwarder.transcript(id)

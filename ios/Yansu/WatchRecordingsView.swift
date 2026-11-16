@@ -780,7 +780,8 @@ struct WatchRecordingsTodayLine: View {
             .accessibilityIdentifier("today.watchRecordings")
             .sheet(isPresented: $open) {
                 NavigationStack {
-                    WatchRecordingsView(model: model)
+                    WatchTabView(recordings: model)
+                        .navigationBarTitleDisplayMode(.inline)
                         .toolbar {
                             ToolbarItem(placement: .confirmationAction) {
                                 Button(String(localized: "Done")) { open = false }
