@@ -106,3 +106,27 @@ func TestMadeAheadBriefDayWordsAreAboutItsOwnDay(t *testing.T) {
 		t.Fatalf("read the next morning: %q, want %q", got, "yesterday today")
 	}
 }
+
+// Bo's 6 PM evening brief is made at 02:00 UTC of the next day. Read that
+// evening, between midnight UTC and midnight local time, its day words stay
+// as written: nothing re-words it, so nothing drops its recording as stale.
+// (A synthesis test failed every evening in that window; its fixture stamped
+// the brief's date in UTC and read it in local time, which the app never does.)
+func TestEveningBriefDayWordsHoldBetweenUTCAndLocalMidnight(t *testing.T) {
+	loc, err := time.LoadLocation("America/Los_Angeles")
+	if err != nil {
+		t.Fatal(err)
+	}
+	built := time.Date(2026, 11, 15, 18, 0, 0, 0, loc)
+	brief := MobileBriefV1{
+		BriefID: "2026-11-15-evening", Slot: mobileBriefSlotEvening, LocalDate: "2026-11-15",
+		AsOf: built.UTC().Format(time.RFC3339), Timezone: "America/Los_Angeles", NarrativeStatus: "ok",
+		Narrative: []MobileBriefPara{{Text: "You finished the memo today; the review is tomorrow."}},
+	}
+	for _, read := range []time.Time{built.Add(30 * time.Minute), time.Date(2026, 11, 15, 23, 50, 0, 0, loc)} {
+		got := mobileBriefRelativeDaysAtRead(brief, read, briefWordsDay(brief), loc, "English")
+		if got.Narrative[0].Text != brief.Narrative[0].Text {
+			t.Fatalf("read at %s (%s UTC): %q", read.Format("15:04"), read.UTC().Format("Jan 2 15:04"), got.Narrative[0].Text)
+		}
+	}
+}
