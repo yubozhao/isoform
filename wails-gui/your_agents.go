@@ -36,6 +36,9 @@ const (
 	agentReachOnComputer        = "on_computer"
 	agentReachItsApp            = "its_app"
 	agentReachByText            = "by_text"
+	// agentReachDisconnected is a joined agent, not one Isoform knows, that
+	// was disconnected in the last 30 days: Connect again starts a new join.
+	agentReachDisconnected = "disconnected"
 )
 
 var (
@@ -58,6 +61,9 @@ type YourAgentView struct {
 	ConnectedHere bool `json:"connectedHere,omitempty"`
 	// LastWorkedAt is when it last took or finished a hand-off.
 	LastWorkedAt int64 `json:"lastWorkedAt,omitempty"`
+	// DisconnectedAt is set for 30 days after a joined agent was
+	// disconnected and while it isn't connected again.
+	DisconnectedAt int64 `json:"disconnectedAt,omitempty"`
 }
 
 // YourAgents is the two choices and every agent Isoform knows how to reach.
@@ -121,6 +127,16 @@ func (a *App) yourAgents() YourAgents {
 		Choices: map[string]string{workonit.KindCode: a.yourAgentChoice(workonit.KindCode), workonit.KindElse: a.yourAgentChoice(workonit.KindElse)},
 		Agents:  []YourAgentView{},
 	}
+	left := map[string]int64{}
+	for _, d := range a.disconnectedAgents() {
+		key := d.CatalogID
+		if key == "" {
+			key = d.ID
+		}
+		if d.DisconnectedAt > left[key] {
+			left[key] = d.DisconnectedAt
+		}
+	}
 	for _, agent := range workonit.Catalog() {
 		found := s.agentFound(agent)
 		seen, isConnected := connected[agent.ID]
@@ -130,6 +146,9 @@ func (a *App) yourAgents() YourAgents {
 		here := a.agentConnectedHere(agent.ID)
 		isConnected = isConnected || here
 		view := YourAgentView{ID: agent.ID, Name: agent.Name, Kind: agent.Kind, Found: found, Connected: isConnected, ConnectedHere: here, LastWorkedAt: lastWorked[agent.ID]}
+		if !isConnected {
+			view.DisconnectedAt = left[agent.ID]
+		}
 		switch {
 		case isConnected && agent.Kind == workonit.KindCode:
 			view.Reach = agentReachConnectedComputer
@@ -146,9 +165,17 @@ func (a *App) yourAgents() YourAgents {
 	}
 	// Any other agent that joined is listed under the name it gave itself
 	// (phone-agent v1.1.0 rule 3).
+	names := map[string]bool{}
 	for _, c := range a.GetConnectedAgents() {
 		if c.CatalogID == "" {
+			names[c.Name] = true
 			out.Agents = append(out.Agents, YourAgentView{ID: c.ID, Name: c.Name, Kind: workonit.KindElse, Reach: agentReachConnected, Connected: true, LastWorkedAt: c.LastSeenAt})
+		}
+	}
+	for _, d := range a.disconnectedAgents() {
+		if d.CatalogID == "" && d.Name != "" && !names[d.Name] {
+			names[d.Name] = true
+			out.Agents = append(out.Agents, YourAgentView{ID: d.ID, Name: d.Name, Kind: workonit.KindElse, Reach: agentReachDisconnected, DisconnectedAt: d.DisconnectedAt})
 		}
 	}
 	return out
@@ -265,6 +292,9 @@ func (a *App) rewriteWorkOnItHandoffs(change func([]workonit.Handoff) []workonit
 }
 
 func (a *App) keepWorkOnItHandoff(h workonit.Handoff) {
+	if h.AgentName == "" {
+		h.AgentName = a.handoffAgentName(h.AgentID, "")
+	}
 	if err := a.rewriteWorkOnItHandoffs(func(list []workonit.Handoff) []workonit.Handoff { return append(list, h) }); err != nil {
 		log.Printf("[work-on-it] hand-off not kept: %v", err)
 	}

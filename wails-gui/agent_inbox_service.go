@@ -368,35 +368,46 @@ func agentFileOpenArgs(path string) []string {
 	return []string{"-R", path}
 }
 
-// OpenAgentFile opens a file a connected agent made, on this computer, with
-// the app the person uses for it. Only a file named in a kept result opens.
-func (a *App) OpenAgentFile(linkID, name string) error {
+// agentResultFilePath is where a file a connected agent made is kept, and
+// only for a file named in a kept result: the one check every reader (Open
+// here, the phone's file read) goes through.
+func (a *App) agentResultFilePath(linkID, name string) (string, error) {
 	results, err := a.GetTaskLinkResults()
 	if err != nil {
-		return err
+		return "", err
 	}
 	for _, r := range results {
 		if r.LinkID != linkID {
 			continue
 		}
 		for _, f := range r.Files {
-			if f != name {
+			if f != name || filepath.Base(name) != name {
 				continue
 			}
 			dir, err := a.agentFilesDir(linkID)
 			if err != nil {
-				return err
+				return "", err
 			}
-			path := filepath.Join(dir, filepath.Base(name))
-			if _, err := os.Stat(path); err != nil {
-				return errAgentFileUnknown
+			path := filepath.Join(dir, name)
+			if info, err := os.Lstat(path); err != nil || !info.Mode().IsRegular() {
+				return "", errAgentFileUnknown
 			}
-			args := agentFileOpenArgs(path)
-			if open := a.agentInbox.openFile; open != nil {
-				return open(args)
-			}
-			return exec.Command("/usr/bin/open", args...).Run()
+			return path, nil
 		}
 	}
-	return errAgentFileUnknown
+	return "", errAgentFileUnknown
+}
+
+// OpenAgentFile opens a file a connected agent made, on this computer, with
+// the app the person uses for it. Only a file named in a kept result opens.
+func (a *App) OpenAgentFile(linkID, name string) error {
+	path, err := a.agentResultFilePath(linkID, name)
+	if err != nil {
+		return err
+	}
+	args := agentFileOpenArgs(path)
+	if open := a.agentInbox.openFile; open != nil {
+		return open(args)
+	}
+	return exec.Command("/usr/bin/open", args...).Run()
 }

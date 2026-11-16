@@ -4123,6 +4123,12 @@ export const DisconnectAgent = appBinding<[string], void>("DisconnectAgent");
 export interface TaskLinkResult { linkId: string; agentId: string; sourceKind?: string; sourceId?: string; status: "done" | "blocked" | "declined"; summary: string; links?: string[]; files?: string[]; takenAt?: number; resultAt: number; via?: "inbox" }
 export const GetTaskLinkResults = appBinding<[], TaskLinkResult[]>("GetTaskLinkResults");
 export const OpenAgentFile = appBinding<[string, string], void>("OpenAgentFile");
+// Each hand-off's state, only from what Isoform knows (handoff_status.go, agents-join §7).
+export type HandoffState = "sent" | "opened" | "has_it" | "working" | "back" | "no_word" | "couldnt_start" | "taken_back";
+export interface HandoffStatus { id: string; agentId: string; agentName: string; title: string; sentAt: number; state: HandoffState; line?: string; since?: number }
+export const GetHandoffStatuses = appBinding<[], HandoffStatus[]>("GetHandoffStatuses");
+export const AskAgentAgain = appBinding<[string], HandoffStatus>("AskAgentAgain");
+export const TakeHandoffBack = appBinding<[string], HandoffStatus>("TakeHandoffBack");
 export const ConfirmActivityThreadLink = appBinding<[string], void>("ConfirmActivityThreadLink");
 export const MoveActivityToThread = appBinding<[string, string], string>("MoveActivityToThread");
 export const RenameActivityThread = appBinding<[string, string], void>("RenameActivityThread");
