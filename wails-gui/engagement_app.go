@@ -112,7 +112,11 @@ func (a *App) engagementPresence(now time.Time) engagement.Presence {
 	if bridge == nil {
 		return p
 	}
+	readers := bridge.workReaders()
 	for _, record := range bridge.devicesWithScope(mobileScopePush) {
+		if readers[record.DeviceID] {
+			p.PhoneReadsWork = true
+		}
 		p.PhoneRegistered = true
 		if seen, err := time.Parse(time.RFC3339, record.LastSeenAt); err == nil && seen.After(p.PhoneLastSeen) {
 			p.PhoneLastSeen = seen

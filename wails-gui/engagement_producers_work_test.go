@@ -256,3 +256,33 @@ func TestEngagementBriefReadyManualRequestCarriesTheSilentMarker(t *testing.T) {
 		t.Fatalf("scheduled brief carries the manual marker: %+v", scheduled)
 	}
 }
+
+// A written brief's notice waits for its recording, at most two minutes, and
+// goes as soon as the recording step ends; never before the brief's slot. The
+// moment is stored at once, so the first read still waits on it.
+func TestEngagementBriefReadyWaitsForTheRecording(t *testing.T) {
+	rig := newEngagementTestRig(t)
+	store := rig.store
+	app := &App{engagement: rig.svc, store: store}
+	written := MobileBriefV1{BriefID: "brief-9", Slot: mobileBriefSlotMorning, NarrativeStatus: "ok"}
+	app.produceBriefReady(written, true, false)
+	row, err := store.GetOpenEngagementMomentByKey(context.Background(), "brief_ready:brief-9")
+	if err != nil || row == nil {
+		t.Fatalf("the brief's moment was not stored: %v", err)
+	}
+	if row.State != storage.EngagementStateScheduled || row.HoldUntil != rig.clock.Add(mobileBriefNotifyHoldMax).UnixMilli() {
+		t.Fatalf("a brief without its recording did not wait for it: %+v", row)
+	}
+	app.releaseBriefReady(written)
+	row, _ = store.GetOpenEngagementMomentByKey(context.Background(), "brief_ready:brief-9")
+	if row == nil || row.HoldUntil > rig.clock.UnixMilli() {
+		t.Fatalf("the recording step ended but the notice still waits: %+v", row)
+	}
+
+	spoken := MobileBriefV1{BriefID: "brief-10", Slot: mobileBriefSlotMorning, NarrativeStatus: "ok",
+		Audio: &MobileBriefAudio{Status: mobileBriefAudioStatusOK, Attachment: &MobileBriefAudioAttachment{}}}
+	app.produceBriefReady(spoken, true, false)
+	if row := engagementMomentFor(t, engagementPendingMoments(t, rig), "brief_ready:brief-10"); row.HoldUntil != 0 {
+		t.Fatalf("a brief that already plays waited: %+v", row)
+	}
+}

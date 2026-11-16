@@ -948,8 +948,12 @@ rule 7. Ranked goal 1: the latest brief shows up. Additive in protocol v1.
 - `next` is the next scheduled slot in the coming 24 hours (`briefSchedule[0]`); absent when the schedule is off. The
   kind of a scheduled slot is its slot name; a Friday evening's `week` kind is known only once it is made.
 
-**The push waits for the recording.** A written brief's first package (text and cards, no recording) is sent to every
-phone at once with `notify:false`. Its push goes with the package that carries `audio.attachment`, sent when the
+**The push waits for the recording.** Two pushes carry a brief: the computer's `brief_ready` notice (section 14,
+category `YANSU_BRIEF`), which is the brief's notification on the phone and the computer, and, for a brief made ahead
+of its slot only, the relay's own brief push. Both wait for the recording. The `brief_ready` moment is stored when the
+words are written, held at most 2 minutes (`NotBefore`), and released as soon as the recording step ends, never before
+the brief's slot; the first read's ordering still sees it. For the relay's push: a written brief's first package (text
+and cards, no recording) is sent to every phone at once with `notify:false`. Its push goes with the package that carries `audio.attachment`, sent when the
 recording is saved. When the recording step ends without one (no voice, Closed Eyes, a failure) the push goes at that
 moment with the package as stored, and in any case no later than 2 minutes after the first package. Each brief version
 is pushed once; a newer brief's push replaces an older one's, so an older brief is never pushed after a newer one. A
@@ -1005,6 +1009,17 @@ Moment push (section 14.4):
 One push per stored brief with `notify:true` and one per moment for each device that has
 an enabled push token. Retries and leases follow the outbox policy (5 attempts,
 15-minute backoff doubling, 24-hour expiry). A payload over 4096 bytes is never sent.
+
+### 9.1 Three kinds on the redesigned phone (phone redesign B9, 2026-11-15)
+
+Design: phone-map v1.0.0 rules 16 and 17. A phone that reads Your work (`GET /work`, section 26) is
+pushed for three kinds only: the brief (`brief_ready`, and its `first_week` and `weekly_recap` forms),
+meeting prep (`meeting_prep`) and finished work (`work_finished`). Every other kind waits in the app:
+on the computer when the person is near it, on that phone in Your work. Until Your work and Chat carry
+them, blocked agent work (`work_blocked`), reminders the person set one by one (`reminder`) and an
+answer to a chat that waited (`answer_ready`) keep their push. A moment the person routed to the phone
+themselves is not affected. The computer remembers each phone's first read of `GET /work`; a phone
+that never reads it (an older build) keeps every push.
 
 ## 10. Scopes
 

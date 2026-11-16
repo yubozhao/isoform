@@ -1410,8 +1410,12 @@ func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, s
 	go func() {
 		defer s.wg.Done()
 		s.addAudio(ctx, brief, asOf)
-		// A recording step that published nothing still owes the push.
+		// A recording step that published nothing still owes the push, and the
+		// brief's notice waits no longer.
 		s.payPhoneNotify(brief)
+		if s.app != nil {
+			s.app.releaseBriefReady(brief)
+		}
 		s.logBriefReady(brief)
 	}()
 	return brief, nil

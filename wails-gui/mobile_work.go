@@ -1,8 +1,11 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
+	"sync"
 )
 
 // serveWorkList answers GET /work (PROTOCOL.md section 26): Your work as the
@@ -18,7 +21,58 @@ func (bridge *mobileBridge) serveWorkList(w http.ResponseWriter, device mobileDe
 		mobileJSON(w, http.StatusServiceUnavailable, nil, errMobileStoreUnavailable.Error())
 		return
 	}
+	bridge.noteWorkReader(device.DeviceID)
 	mobileJSON(w, http.StatusOK, mobileWorkListForDevice(list, device), "")
+}
+
+// mobileWorkReadersKey keeps the phones that read Your work: the redesigned
+// phone, which is pushed only for the brief, meeting prep and finished work
+// (engagement.PhonePushKind). An older phone never reads it and keeps every
+// push.
+const mobileWorkReadersKey = "mobile.work-readers"
+
+var mobileWorkReadersMu sync.Mutex
+
+// workReaders lists the devices that read Your work.
+func (bridge *mobileBridge) workReaders() map[string]bool {
+	out := map[string]bool{}
+	if bridge == nil || bridge.app == nil || bridge.app.store == nil {
+		return out
+	}
+	raw, err := bridge.app.store.GetUIState(context.Background(), mobileWorkReadersKey)
+	if err != nil || raw == "" {
+		return out
+	}
+	var ids []string
+	if json.Unmarshal([]byte(raw), &ids) != nil {
+		return out
+	}
+	for _, id := range ids {
+		out[id] = true
+	}
+	return out
+}
+
+// noteWorkReader records a device's first read of Your work.
+func (bridge *mobileBridge) noteWorkReader(deviceID string) {
+	if deviceID == "" || bridge.app == nil || bridge.app.store == nil {
+		return
+	}
+	mobileWorkReadersMu.Lock()
+	defer mobileWorkReadersMu.Unlock()
+	readers := bridge.workReaders()
+	if readers[deviceID] {
+		return
+	}
+	ids := []string{deviceID}
+	for id := range readers {
+		ids = append(ids, id)
+	}
+	raw, err := json.Marshal(ids)
+	if err != nil {
+		return
+	}
+	_ = bridge.app.store.SetUIState(context.Background(), mobileWorkReadersKey, string(raw))
 }
 
 // mobileWorkListForDevice drops what the device's scopes don't cover and

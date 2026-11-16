@@ -195,3 +195,22 @@ func TestWorkAnswerFromThePhoneIsReceiptedAndInOrder(t *testing.T) {
 		}
 	}
 }
+
+// A phone that reads Your work is remembered, so the computer pushes it only
+// for its three kinds; a phone that never reads it keeps every push.
+func TestMobileWorkReaderIsRemembered(t *testing.T) {
+	app, _ := workAnswersTestApp(t)
+	bridge := &mobileBridge{app: app}
+	device := mobileDeviceRecord{}
+	device.DeviceID = "11111111-2222-4333-8444-555555555555"
+	device.Scopes = []string{mobileScopeBriefRead}
+	if bridge.workReaders()[device.DeviceID] {
+		t.Fatal("a phone counted as a reader before reading")
+	}
+	bridge.serveWorkList(httptest.NewRecorder(), device)
+	bridge.serveWorkList(httptest.NewRecorder(), device)
+	readers := bridge.workReaders()
+	if !readers[device.DeviceID] || len(readers) != 1 {
+		t.Fatalf("readers = %v", readers)
+	}
+}
