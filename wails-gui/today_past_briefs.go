@@ -13,5 +13,5 @@ func (a *App) ListPastBriefs() ([]MobileBriefSummary, error) {
 	if svc == nil {
 		return []MobileBriefSummary{}, nil
 	}
-	return mobileBriefSummariesWithLeads(svc, todayPastBriefsMax), nil
+	return a.withPastBriefState(mobileBriefSummariesWithLeads(svc, todayPastBriefsMax)), nil
 }

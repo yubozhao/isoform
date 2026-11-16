@@ -947,5 +947,30 @@
         "noneChosen": "Pick an agent for this kind of work with Change agent.",
         "yourAgent": "your agent",
         "foot": "{{agent}} works in its own account. The result comes back to Your work."
+    },
+    "cbrief": {
+        "notPlayed": "not played",
+        "leftToAnswer_one": "{{count}} left to answer",
+        "leftToAnswer_other": "{{count}} left to answer",
+        "allAnswered": "all answered",
+        "back": "Today",
+        "madeHere": "{{day}} · made from today on this computer",
+        "back15": "Back 15 seconds",
+        "on15": "On 15 seconds",
+        "speed": "Speed",
+        "reply": "Reply about this",
+        "notRight": "Not right",
+        "notRightTitle": "Not right?",
+        "whatsWrong": "What's wrong with it? Optional.",
+        "sayRight": "Or say what's right",
+        "follows": "Tomorrow's brief won't say it, and what was made from it is marked for you to check.",
+        "notRightSend": "Not right",
+        "pastFoot": "Every brief stays on this computer; the phone keeps 30 days.",
+        "reason": {
+            "didnt_happen": "Didn't happen",
+            "wrong_person": "Wrong person",
+            "already_done": "Already done",
+            "not_mine": "Not mine"
+        }
     }
 }

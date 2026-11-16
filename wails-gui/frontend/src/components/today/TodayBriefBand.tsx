@@ -30,7 +30,7 @@ export function firstSentences(paragraphs: readonly string[], count = BAND_SENTE
     return out.join(" ");
 }
 
-function splitSentences(text: string, language: string): string[] {
+export function splitSentences(text: string, language: string): string[] {
     try {
         const segmenter = new Intl.Segmenter(language, { granularity: "sentence" });
         return [...segmenter.segment(text)].map((part) => part.segment.trim()).filter(Boolean);
@@ -132,7 +132,7 @@ export function TodayBriefBand({ brief, view, make, onMakeNow, showLead = true, 
                 {showLead && !readAll && lead && (
                     <p className="text-[15px] leading-[1.6] text-ink" data-testid="brief-band-lead">{lead}</p>
                 )}
-                {showLead && onReadAll && <button
+                {onReadAll && <button
                     type="button"
                     aria-expanded={readAll}
                     data-testid="brief-band-read-all"

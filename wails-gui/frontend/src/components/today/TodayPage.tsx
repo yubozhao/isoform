@@ -23,6 +23,8 @@ import { MainChatPanel } from "./MainChatPanel";
 import { TodayLastBriefPanel } from "./TodayLastBriefPanel";
 import { TodayPastBriefsPanel } from "./TodayPastBriefsPanel";
 import { TodayYourWork } from "./TodayYourWork";
+import { TodayBriefFull } from "./TodayBriefFull";
+import { bandBrief } from "./TodayBriefSection";
 import { TodayHandOffSheet } from "./TodayHandOffSheet";
 import { GetYourAgents, type WorkItem, type YourAgents } from "@/lib/wails-shim-app";
 import { useWorkList } from "@/hooks/useWorkList";
@@ -160,6 +162,9 @@ export function TodayPage({
     };
     const briefTimes = useBriefTimes(active);
     const work = useWorkList(true);
+    // The brief in full (computer-brief v1.0.0) in Today's column, from Read all.
+    const [briefFull, setBriefFull] = useState(false);
+    const fullBrief = briefFull ? bandBrief(latest.view) : null;
     // The hand-off sheet (SH4) and the person's agents, read when it opens.
     const [handOff, setHandOff] = useState<{ item: WorkItem; edited?: string; twoStep?: boolean } | null>(null);
     const [yourAgents, setYourAgents] = useState<YourAgents | null>(null);
@@ -817,6 +822,19 @@ export function TodayPage({
                     data-testid="today-column"
                     className={cn("mx-auto w-full px-6 pb-14", knowAside ? "max-w-[1080px]" : "max-w-[760px]")}
                 >
+                    {fullBrief && latest.view ? (
+                        <TodayBriefFull
+                            brief={fullBrief}
+                            view={latest.view}
+                            active={active && !handOff}
+                            items={work.list?.items ?? []}
+                            onAnswer={work.answer}
+                            onNotRight={work.answer}
+                            onReply={pageHandlers.onAskAboutParagraph ? (index, text) => { void pageHandlers.onAskAboutParagraph!(fullBrief.briefId, index, text, ""); } : undefined}
+                            onOpenBrief={(id, title) => { setBriefFull(false); openBrief(id, title); }}
+                            onBack={() => setBriefFull(false)}
+                        />
+                    ) : <>
                     <header className="window-drag mb-[18px] flex flex-col items-start gap-1.5 text-left" data-testid="today-header">
                         <div className="flex w-full flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
                             <h1 className="display text-ink" aria-label={work.list && work.list.toAnswer > 0 ? tr("ctoday.titleCount", { count: work.list.toAnswer }) : undefined}>{tr("ctoday.title")}</h1>
@@ -846,6 +864,7 @@ export function TodayPage({
                         quietFooter={quietLines.length > 0 || pausedText ? <>{quietLines.map((line) => <p key={line.id} data-testid="today-quiet-line">{line.text}</p>)}{pausedText && <TodayPauseLine />}</> : null}
                         band
                         onOpenPastBriefs={openPastBriefs}
+                        onReadAll={() => setBriefFull(true)}
                         afterBand={work.list ? <TodayYourWork list={work.list} active={active && !handOff} onAnswer={work.answer} onUndo={work.undo} onHandOff={openHandOff} noAgents={!!yourAgents && !yourAgents.agents.some((agent) => agent.connected)} /> : null}
                         view={latest.view}
                         loading={latest.loading}
@@ -901,6 +920,7 @@ export function TodayPage({
                     />
                     {knowAside && <aside className="sticky top-4">{knowCard}</aside>}
                     </div>
+                    </>}
                 </div>
             </div>
             {/* At desktop widths the panel is always on screen beside the

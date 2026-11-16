@@ -541,11 +541,14 @@ export function TodayBriefSection({
     quietFooter,
     band = false,
     onOpenPastBriefs,
+    onReadAll,
     afterBand,
 }: {
     /** Your work (SH2): right under the band, or under the brief's card in
      *  any other state. */
     afterBand?: ReactNode;
+    /** Read all: the brief in full in Today's column (computer-brief v1.0.0). */
+    onReadAll?: () => void;
     /** The brief leads as the band (computer-today v1.0.0, SH1), with
      *  today's full card under it. */
     band?: boolean;
@@ -879,6 +882,7 @@ export function TodayBriefSection({
                 make={make}
                 onMakeNow={onMakeNow}
                 showLead={false}
+                onReadAll={onReadAll}
                 onOpenPastBriefs={onOpenPastBriefs}
                 active={active}
                 firstCaption={firstBrief?.caption}
