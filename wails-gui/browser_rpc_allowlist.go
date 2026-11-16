@@ -374,6 +374,9 @@ var browserRPCAllowlist = map[string]bool{
 	"GetSavedCopyStamp":          true,
 	"ListMainChatAnswerChips":    true,
 	"GetSavedPeopleView":         true,
+	"GetActivityFeed":            true,
+	"GetActivityForgetPreview":   true,
+	"GetAnswers":                 true,
 }
 
 // browserUIStateKeys are the ui_state keys SaveUIState may write from the

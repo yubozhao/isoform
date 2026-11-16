@@ -297,6 +297,9 @@ var browserRPCReadOnly = []string{
 	"GetSOPAuthorStatus",
 	"ListDesktopTaskThreads",
 	"GetWatchRecordings",
+	"GetActivityFeed",
+	"GetActivityForgetPreview",
+	"GetAnswers",
 	"GetKnowHowCandidate",
 	"GetSavedCopyStamp",
 	"GetThemePreference",
@@ -499,6 +502,21 @@ var browserRPCReadOnly = []string{
 	"TestDiscordConnection",
 	"TestSlackConnection",
 	"TestTelegramConnection",
+}
+
+// Activity's timeline and Your answers read through the bridge in the daily
+// trial ("bridge refused GetActivityFeed"); their Forgets stay off it.
+func TestActivityTimelineAndAnswersReadThroughTheBridge(t *testing.T) {
+	for _, method := range []string{"GetActivityFeed", "GetActivityForgetPreview", "GetAnswers"} {
+		if !browserRPCAllowlist[method] {
+			t.Errorf("%s is not allowlisted", method)
+		}
+	}
+	for _, method := range []string{"ForgetActivityFeedRow", "ForgetAnswer", "DeleteActivity", "DeleteWatchRecording"} {
+		if browserRPCAllowlist[method] {
+			t.Errorf("%s deletes and must stay off the bridge", method)
+		}
+	}
 }
 
 func TestBrowserRPCAllowlistNamesAppMethods(t *testing.T) {
