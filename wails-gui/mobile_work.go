@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"net/http"
 )
 
@@ -44,4 +45,61 @@ func mobileWorkListForDevice(list WorkList, device mobileDeviceRecord) WorkList 
 	}
 	out.Version = workListVersion(out)
 	return out
+}
+
+// serveWorkAnswer answers POST /work/{id}/answer (section 26.1) through the
+// same function as the computer's AnswerWork. The receipt replays the first
+// outcome of a retried key; a refused answer stores none.
+func (bridge *mobileBridge) serveWorkAnswer(w http.ResponseWriter, r *http.Request, device mobileDeviceRecord, id string) {
+	var input struct {
+		IdempotencyKey string `json:"idempotencyKey"`
+		Action         string `json:"action"`
+		Reason         string `json:"reason,omitempty"`
+		Before         string `json:"before,omitempty"`
+		After          string `json:"after,omitempty"`
+		Surface        string `json:"surface,omitempty"`
+		AnsweredAt     string `json:"answeredAt,omitempty"`
+		QueuedAt       string `json:"queuedAt,omitempty"`
+		Seq            uint64 `json:"seq,omitempty"`
+	}
+	if !mobileDecode(w, r, &input) {
+		return
+	}
+	key, valid := mobileKey(device.DeviceID, input.IdempotencyKey)
+	if !valid {
+		mobileJSON(w, http.StatusBadRequest, nil, "an idempotency key of 1 to 128 bytes is required")
+		return
+	}
+	surface := workSurfacePhone
+	switch input.Surface {
+	case "", workSurfacePhone:
+	case workSurfaceNotification:
+		surface = workSurfaceNotification
+	default:
+		mobileJSON(w, http.StatusBadRequest, nil, "surface must be phone or notification")
+		return
+	}
+	if id == "" || len(id) > 512 {
+		mobileJSON(w, http.StatusNotFound, nil, errWorkItemGone.Error())
+		return
+	}
+	bridge.runReceipted(w, device, key, r.Method+" "+r.URL.Path, func(w http.ResponseWriter) {
+		item, err := bridge.app.answerWork(r.Context(), id,
+			WorkAnswerInput{Action: input.Action, Reason: input.Reason, Before: input.Before, After: input.After},
+			workAnswerMeta{Surface: surface, DeviceID: device.DeviceID, Seq: input.Seq})
+		switch {
+		case err == nil:
+			mobileJSON(w, http.StatusOK, map[string]any{"item": item}, "")
+		case errors.Is(err, errWorkItemGone):
+			mobileJSON(w, http.StatusNotFound, nil, err.Error())
+		case errors.Is(err, errWorkItemChanged):
+			mobileJSON(w, http.StatusConflict, map[string]any{"code": "item_changed", "item": item}, err.Error())
+		case errors.Is(err, errWorkUndoClosed):
+			mobileJSON(w, http.StatusConflict, map[string]any{"code": "undo_closed", "item": item}, err.Error())
+		case errors.Is(err, errWorkAnswerInvalid):
+			mobileJSON(w, http.StatusBadRequest, nil, err.Error())
+		default:
+			mobileJSON(w, http.StatusServiceUnavailable, nil, "the answer could not be saved; try again")
+		}
+	})
 }

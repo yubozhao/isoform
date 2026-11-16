@@ -470,6 +470,11 @@ func (bridge *mobileBridge) handleAuthorized(w http.ResponseWriter, r *http.Requ
 				return
 			}
 			bridge.serveTaskMessage(w, r, device, mobilePathSegments(path)[1])
+		case "POST /work/*/answer":
+			if !mobileRequireScope(w, device, mobileScopeBriefFeedback) {
+				return
+			}
+			bridge.serveWorkAnswer(w, r, device, mobilePathSegments(path)[1])
 		case "POST /tasks/*/actions":
 			if !mobileRequireScope(w, device, mobileScopeHandoff) {
 				return
@@ -584,6 +589,8 @@ func mobileRouteFamily(method, path string) string {
 		return "POST /goals/*/events"
 	case len(parts) == 3 && parts[0] == "offers" && parts[2] == "decline" && method == http.MethodPost:
 		return "POST /offers/*/decline"
+	case len(parts) == 3 && parts[0] == "work" && parts[2] == "answer" && method == http.MethodPost:
+		return "POST /work/*/answer"
 	}
 	return ""
 }
