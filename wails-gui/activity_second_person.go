@@ -14,7 +14,8 @@ const activitySecondPersonRule = `Voice (required for every title, summary, desc
 - Write to the person, in the second person: "You reviewed PR #12", "Your draft is open".
 - Never write "the user", "the person", "this person" or the person's own name for them.
 - Never phrase a guess ("This looks like…", "It seems…", "probably", "likely"): say what happened, or leave it out.
-- In Chinese, write 你 for the person, never 用户 or 该用户.`
+- In Chinese, write 你 for the person, never 用户 or 该用户.
+- Speech marked "said aloud" or "heard" was picked up by the microphone or the computer's audio. It was not typed or sent, and who it was said to is unknown: never write that it was said to, told to, sent to or about the person whose chat, window or contact is on screen. Name who you talked with only when the speech itself names them.`
 
 var (
 	secondPersonGuess = regexp.MustCompile(`(?i)^(?:this|it|that)\s+(?:looks|seems|appears)\s+(?:like|to)\b|^(?:likely|probably|presumably)\b`)

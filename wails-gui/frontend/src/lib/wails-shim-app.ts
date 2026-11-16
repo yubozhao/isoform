@@ -5766,6 +5766,13 @@ export const GetWatchRecordings = appBinding<[], WatchRecording[]>('GetWatchReco
 export const GetWatchRecordingTranscript = appBinding<[string], WatchRecordingLine[]>('GetWatchRecordingTranscript');
 export const DeleteWatchRecording = appBinding<[string], void>('DeleteWatchRecording');
 
+// A person correction ("it was Coral, not Jing"): activity_person_correction.go.
+export interface PersonCorrectionResult {
+    corrected: string[];
+}
+export const CorrectActivityPerson = appBinding<[string, string, string], boolean>('CorrectActivityPerson');
+export const CorrectBriefPerson = appBinding<[string, string, string], PersonCorrectionResult>('CorrectBriefPerson');
+
 // Conversations computed over the watch's hours (watch_conversations.go).
 export interface WatchConversation {
     id: string;

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -231,7 +232,7 @@ func TestTheNamePromptMarksTheOwnersLinesAndIsBounded(t *testing.T) {
 // nothing is asked while observing is paused; and deleting the 9 AM hour
 // drops the name at once, because its words changed.
 func TestConversationsAreNamedOnceAndANameGoesWithItsWords(t *testing.T) {
-	app, _, store, first := watchDeskFixture(t)
+	app, bridge, store, first := watchDeskFixture(t)
 	if _, err := app.deleteWatchRecording(store, first, ""); err != nil {
 		t.Fatal(err)
 	}
@@ -299,6 +300,13 @@ func TestConversationsAreNamedOnceAndANameGoesWithItsWords(t *testing.T) {
 		t.Fatalf("mode %v", info.Mode().Perm())
 	}
 
+	// The phone's view of each hour carries the names of what it heard: the
+	// talk ran across 9 AM and 10 AM, so both carry it; noon carries none.
+	list := watchDeskCall(bridge, http.MethodGet, "/recordings?ids="+nine+","+ten+","+noon, "", mobileScopeChatWrite).Body.String()
+	if strings.Count(list, `"conversations":["Pricing with Sam"]`) != 2 {
+		t.Fatalf("the phone's views: %s", list)
+	}
+
 	// Delete the 9 AM hour: the name was made from words that are gone now.
 	if _, err := app.deleteWatchRecording(store, nine, ""); err != nil {
 		t.Fatal(err)
@@ -311,5 +319,36 @@ func TestConversationsAreNamedOnceAndANameGoesWithItsWords(t *testing.T) {
 		if c.Name != "" {
 			t.Fatalf("a conversation still shows the old name: %+v", c.Name)
 		}
+	}
+	if list := watchDeskCall(bridge, http.MethodGet, "/recordings?ids="+ten, "", mobileScopeChatWrite).Body.String(); strings.Contains(list, "conversations") {
+		t.Fatalf("the phone still gets the old name: %s", list)
+	}
+}
+
+// A transcript that is withdrawn (deleted in Activity, or removed at the end
+// of its keep time) takes the names made from it, without waiting for a read.
+func TestAWithdrawnTranscriptTakesItsNames(t *testing.T) {
+	dir := t.TempDir()
+	store := newMobileRecordingStore(dir)
+	gone, stays := uuid.NewString(), uuid.NewString()
+	// The recordings folder exists once anything was received.
+	if err := os.MkdirAll(store.dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeWatchConversationNames(store.dir, map[string]watchConversationNameEntry{
+		"dev:1": {Hash: "a", Name: "Pricing with Sam", StartAt: 1, RecordingIDs: []string{gone, stays}},
+		"dev:2": {Hash: "b", Name: "Standup", StartAt: 2, RecordingIDs: []string{stays}},
+		"dev:3": {Hash: "c", Name: "", StartAt: 3, RecordingIDs: []string{stays}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	byRecording := watchConversationNamesByRecording(store.dir)
+	if strings.Join(byRecording[stays], ",") != "Pricing with Sam,Standup" || strings.Join(byRecording[gone], ",") != "Pricing with Sam" {
+		t.Fatalf("names by recording %+v", byRecording)
+	}
+	store.onPrivacyWithdrawal(privacyWithdrawal{Scope: privacyWithdrawalScope{Kind: privacyWithdrawalSession, ID: "rec-" + gone}})
+	byRecording = watchConversationNamesByRecording(store.dir)
+	if len(byRecording[gone]) != 0 || strings.Join(byRecording[stays], ",") != "Standup" {
+		t.Fatalf("after the withdrawal %+v", byRecording)
 	}
 }

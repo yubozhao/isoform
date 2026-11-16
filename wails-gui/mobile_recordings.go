@@ -200,8 +200,11 @@ type MobileRecordingView struct {
 	// OwnerVoice is "labelled", "not_enrolled" or "unavailable" once the
 	// recording is transcribed and something was said (24.3).
 	OwnerVoice string `json:"ownerVoice,omitempty"`
-	ReceivedAt string `json:"receivedAt"`
-	UpdatedAt  string `json:"updatedAt"`
+	// Conversations are the short names of the conversations heard in this
+	// recording, in order (24.7); absent until the computer has named any.
+	Conversations []string `json:"conversations,omitempty"`
+	ReceivedAt    string   `json:"receivedAt"`
+	UpdatedAt     string   `json:"updatedAt"`
 }
 
 // complete reports whether the last part and every part before it are stored.
@@ -571,6 +574,10 @@ func (s *mobileRecordingStore) forgetAudioOfSession(sessionID string) {
 func (s *mobileRecordingStore) onPrivacyWithdrawal(withdrawal privacyWithdrawal) {
 	if withdrawal.Scope.Kind == privacyWithdrawalSession {
 		s.forgetAudioOfSession(withdrawal.Scope.ID)
+		// A name made from the withdrawn words goes too.
+		if id, ok := strings.CutPrefix(withdrawal.Scope.ID, "rec-"); ok && mobileValidUUID(id) {
+			dropWatchConversationNamesOf(s.dir, id)
+		}
 	}
 }
 
@@ -737,6 +744,16 @@ func (bridge *mobileBridge) serveRecordingList(w http.ResponseWriter, r *http.Re
 	}
 	if views == nil {
 		views = []MobileRecordingView{}
+	}
+	// The names of what each hour heard (24.7). Like the transcript, they are
+	// not given while observing is paused.
+	if bridge.app != nil && !bridge.app.IsClosedEyesModeEnabled() {
+		names := watchConversationNamesByRecording(store.dir)
+		for i := range views {
+			if views[i].State == mobileRecordingTranscribed {
+				views[i].Conversations = names[views[i].ID]
+			}
+		}
 	}
 	mobileJSON(w, http.StatusOK, map[string]any{"recordings": views}, "")
 }

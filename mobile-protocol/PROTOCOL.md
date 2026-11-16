@@ -3545,6 +3545,25 @@ transcript's word count; 0 means nothing was said) or `failed`. The view carries
 text; the phone reads what was said through chat and the brief like everything else. Unknown
 states must be shown as "On your computer".
 
+### 24.7 The names of what a recording heard (additive, 2026-11-15)
+
+The watch keeps recordings by the clock hour. The computer finds the conversations in them (runs
+of speech with no silence longer than two minutes, across hours) and gives each one longer than
+two minutes a short name. Once it has, a `transcribed` view also carries
+
+```json
+"conversations": ["Pricing with Sam", "Standup"]
+```
+
+the names of the conversations that draw from this recording, in the order they happened, at most
+four, each at most 48 characters. One conversation that runs across two hours is named in both.
+
+- The field is absent until the computer has named something, while observing is paused, and when
+  nothing in the recording was long enough to name. A phone that does not know it ignores it.
+- A name is made from the recording's words, so it goes when they go: deleting the recording (24.5)
+  or withdrawing its transcript removes it, and the next view no longer carries it.
+- The phone shows the names under the hour in place of the state, and passes them to the watch.
+
 ### 24.5 A recording's transcript and its delete (2026-11-14)
 
 `GET /status` advertises `recordingDetail: true` when the computer serves these. A phone asks for

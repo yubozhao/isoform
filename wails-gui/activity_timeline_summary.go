@@ -420,11 +420,19 @@ func renderTimelineSummaryEvent(evt ActivityTimelineEvent) string {
 		fmt.Sprintf("eventId=%s", evt.EventID),
 		fmt.Sprintf("kind=%s", evt.Kind),
 	}
-	if s := strings.TrimSpace(evt.AppName); s != "" {
+	// Speech not dictated into an app was heard around the computer: the
+	// window in front is not who it was said to, so it is not shown with it
+	// (the 2026-11-15 brief said "talked with Jing Jin" because her chat was
+	// open while you spoke with someone else).
+	ambientSpeech := evt.Kind == activitymon.EventSpeech && strings.TrimSpace(evt.SpeechDictationApp) == ""
+	if s := strings.TrimSpace(evt.AppName); s != "" && !ambientSpeech {
 		fields = append(fields, fmt.Sprintf("app=%q", s))
 	}
-	if s := strings.TrimSpace(redactActivityModelText(evt.WindowTitle)); s != "" {
+	if s := strings.TrimSpace(redactActivityModelText(evt.WindowTitle)); s != "" && !ambientSpeech {
 		fields = append(fields, fmt.Sprintf("window=%q", truncateRunes(s, 160)))
+	}
+	if ambientSpeech {
+		fields = append(fields, `listener="unknown"`)
 	}
 	if action, target := timelineEventActionAndTarget(evt.ActivityEvent); action != "" {
 		fields = append(fields, fmt.Sprintf("action=%q", action))
@@ -472,7 +480,14 @@ func timelineEventActionAndTarget(evt activitymon.ActivityEvent) (string, string
 	case activitymon.EventAppSwitch:
 		return "switched app", strings.TrimSpace(evt.AppName)
 	case activitymon.EventSpeech:
-		return "dictated", strings.TrimSpace(evt.SpeechText)
+		switch {
+		case strings.TrimSpace(evt.SpeechDictationApp) != "":
+			return "dictated into " + strings.TrimSpace(evt.SpeechDictationApp), strings.TrimSpace(evt.SpeechText)
+		case evt.SpeechSource == "system_audio":
+			return "heard from the computer's audio", strings.TrimSpace(evt.SpeechText)
+		default:
+			return "said aloud", strings.TrimSpace(evt.SpeechText)
+		}
 	default:
 		return string(evt.Kind), ""
 	}
