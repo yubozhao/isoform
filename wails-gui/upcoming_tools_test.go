@@ -506,7 +506,7 @@ func TestUpcomingToolsAreForTheMacOnly(t *testing.T) {
 		wantText  string
 	}{
 		{promptOriginPhone, 1, "can be changed only on the computer"},
-		{promptOriginMac, 10, "call UpcomingList"}, // with DraftMessage, HandOffWork and CorrectIsoform
+		{promptOriginMac, 11, "call UpcomingList"}, // with DraftMessage, HandOffWork, CorrectIsoform and CiteSources
 	} {
 		if err := rig.app.executePrompt("move my weekly update", "", "m", "", main.LocalID, nil, false, false, "", nil, nil, "", "", tc.origin); err != nil {
 			t.Fatal(err)

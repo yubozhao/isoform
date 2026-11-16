@@ -538,6 +538,37 @@ export function getChatCorrectionUndo(item: Pick<StreamItem, 'kind' | 'toolName'
     return typeof where === 'string' && where.trim() ? where : null;
 }
 
+// Where an answer came from (chat_sources.go): sources read again through
+// their own gates, and the phrases in the answer that lean on each.
+export const CHAT_SOURCES_TOOL = 'main_chat_sources';
+
+export interface ChatSource {
+    kind: 'memory' | 'person';
+    id: string;
+    title: string;
+    target: MainChatReportTarget;
+}
+
+export interface ChatSourcesPayload {
+    sources: ChatSource[];
+    claims: Array<{ text: string; source: number }>;
+}
+
+export function getChatSources(item: Pick<StreamItem, 'kind' | 'toolName' | 'toolInput'>): ChatSourcesPayload | null {
+    if (item.kind !== 'system' || item.toolName !== CHAT_SOURCES_TOOL) return null;
+    let raw: unknown = item.toolInput;
+    if (typeof raw === 'string') {
+        try { raw = JSON.parse(raw); } catch { return null; }
+    }
+    if (!raw || typeof raw !== 'object') return null;
+    const payload = raw as Partial<ChatSourcesPayload>;
+    const sources = (Array.isArray(payload.sources) ? payload.sources : []).filter((source): source is ChatSource =>
+        Boolean(source) && (source.kind === 'memory' || source.kind === 'person') && typeof source.title === 'string' && source.title.trim() !== '' && Boolean(source.target));
+    if (sources.length === 0) return null;
+    const claims = (Array.isArray(payload.claims) ? payload.claims : []).filter((claim) => typeof claim?.text === 'string' && Number.isInteger(claim.source));
+    return { sources, claims };
+}
+
 /** A mailto: link that opens the draft in the person's mail app, unsent. */
 export function chatDraftMailto(draft: ChatDraftPayload): string {
     const to = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.to.trim()) ? encodeURIComponent(draft.to.trim()) : '';
