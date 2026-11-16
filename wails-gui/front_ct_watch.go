@@ -100,7 +100,7 @@ func (w *frontCTWatch) ownKeys() (map[string]bool, error) {
 	}
 	before := len(known)
 	for _, name := range []string{w.hostname, w.hostname + "+rsa"} {
-		data, err := os.ReadFile(filepath.Join(w.dir, "acme", name))
+		data, err := os.ReadFile(filepath.Join(w.dir, frontACMECacheProduction, name))
 		if err != nil {
 			continue
 		}

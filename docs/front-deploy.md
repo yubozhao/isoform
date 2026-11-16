@@ -56,7 +56,11 @@ Note the `v4` and `v6` addresses. Don't use the shared ones.
 fly logs --app isoform-front --no-tail | grep 'front endpoint id'
 ```
 
-Send the 64-character id to the hub. It's public, not a secret. A follow-up PR builds it into the app, so computers accept this front (today it comes from `ISOFORM_FRONT_IDS`). The same PR moves the computer's certificates from Let's Encrypt staging to production.
+Send the 64-character id to the hub. It's public, not a secret. The app accepts only the ids built into `frontDefaultIDs` in `wails-gui/front_service.go`, so a new or replaced front needs its id added there first. `ISOFORM_FRONT_IDS` overrides the list for development.
+
+The front deployed on 2026-11-15 (machine `d895753a1dd968`, sjc) has the id `a41cefc7ad49deeb5b55c5776cb5b5a4af5d901ea5c8e4da69eb07a5a80e8b34`, which is built in.
+
+Computers get their certificates from Let's Encrypt production, cached in `<data>/front/acme-letsencrypt`. For testing, `ISOFORM_FRONT_ACME_DIRECTORY=staging` uses the staging CA and its own cache (`<data>/front/acme`), so a staging certificate is never served in production.
 
 ### 5. DNS in Cloudflare (zone `isoform.ai`)
 
