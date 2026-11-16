@@ -1,6 +1,9 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -91,5 +94,97 @@ func TestPurgingASourceRemovesItsCommitmentsAndNothingElse(t *testing.T) {
 	// Purging nothing is not an error.
 	if n, err := app.purgePurposeOpenLoops(nil); err != nil || n != 0 {
 		t.Fatalf("purging nothing: %d %v", n, err)
+	}
+}
+
+func purposeTestCommitment(t *testing.T, app *App, kind, sourceID, text string) {
+	t.Helper()
+	store, err := app.purposeProductStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256([]byte(sourceID))
+	input := meetingFollowupCommitmentInput(sourceID, "", hex.EncodeToString(sum[:]), 0, meetingFollowup{Text: text, Owner: meetingFollowupOwnerMe}, time.Now().Add(-time.Hour))
+	input.IdempotencyKey = kind + ":" + sourceID + ":" + text
+	input.Evidence[0].SourceKind = kind
+	if _, _, err := store.Create(input); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func purposeTitles(t *testing.T, app *App) string {
+	t.Helper()
+	store, _ := app.purposeProductStore()
+	loops, err := store.ListDetailsAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var titles []string
+	for _, loop := range loops {
+		titles = append(titles, loop.Current.Title)
+	}
+	sort.Strings(titles)
+	return strings.Join(titles, "|")
+}
+
+// A person deletes an activity session. The commitments learned from that
+// session go with it, whatever kind the ledger cited it under; the ones from
+// another session, the ones the person added themselves, and everything when
+// it was retention that removed the session, stay.
+func TestDeletingAnActivitySessionPurgesWhatWasLearnedFromIt(t *testing.T) {
+	app := newMeetingNotesTestApp(t)
+	old := purposePurgeApp.Swap(app)
+	t.Cleanup(func() { purposePurgeApp.Store(old) })
+
+	purposeTestCommitment(t, app, "activity_session", "session-gone", "Reply to the vendor")
+	purposeTestCommitment(t, app, "session", "session-gone", "Renew the certificate")
+	purposeTestCommitment(t, app, meetingFollowupSourceKind, "session-gone", "Send the minutes")
+	purposeTestCommitment(t, app, activityFollowUpSourceKind, "session-gone", "My own note to self")
+	purposeTestCommitment(t, app, "activity_session", "session-kept", "Book the venue")
+	purposeTestCommitment(t, app, "activity", "activity-gone", "File the expense report")
+	purposeTestCommitment(t, app, "activity", "activity-kept", "Water the plants")
+
+	// Retention removing the session is not the person deleting it.
+	publishRetentionRemoval(privacyWithdrawalScope{Kind: privacyWithdrawalSession, ID: "session-gone"})
+	// Withdrawals that name no source the ledger cites change nothing.
+	publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalApp, ID: "session-gone"})
+	publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalSource, SourceKind: "memory", ID: "activity-gone"})
+	if got := purposeTitles(t, app); strings.Count(got, "|") != 6 {
+		t.Fatalf("something was purged that should not be: %s", got)
+	}
+
+	publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalSession, ID: "session-gone"})
+	if got, want := purposeTitles(t, app), "Book the venue|File the expense report|My own note to self|Water the plants"; got != want {
+		t.Fatalf("after deleting the session: %s, want %s", got, want)
+	}
+	publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalSource, SourceKind: "activity", ID: "activity-gone"})
+	if got, want := purposeTitles(t, app), "Book the venue|My own note to self|Water the plants"; got != want {
+		t.Fatalf("after deleting the activity: %s, want %s", got, want)
+	}
+	var left int
+	if err := app.activity.store.db.QueryRow(`SELECT COUNT(*) FROM purpose_open_loop_events_v1 WHERE title IN ('Reply to the vendor','Renew the certificate','Send the minutes','File the expense report')`).Scan(&left); err != nil || left != 0 {
+		t.Fatalf("purged commitments are still stored: %d rows %v", left, err)
+	}
+}
+
+// The real delete: an activity session removed through the store takes the
+// commitment learned from it.
+func TestTheStoresSessionDeletePurgesItsCommitment(t *testing.T) {
+	app := newMeetingNotesTestApp(t)
+	old := purposePurgeApp.Swap(app)
+	t.Cleanup(func() { purposePurgeApp.Store(old) })
+	start := time.Now().Add(-time.Hour)
+	session := ActivitySessionRow{ID: "session-to-delete", StartTime: start.UnixMilli(), EndTime: start.Add(time.Minute).UnixMilli(),
+		TriggerKind: "manual", AppNames: `["Notes"]`, TriageStatus: "pending", CreatedAt: time.Now().UnixMilli()}
+	if err := app.activity.store.SaveSession(session, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	purposeTestCommitment(t, app, "activity_session", session.ID, "Reply to the vendor")
+	purposeTestCommitment(t, app, "activity_session", "another-session", "Book the venue")
+	if err := app.activity.store.DeleteSession(session.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := purposeTitles(t, app); got != "Book the venue" {
+		t.Fatalf("after the delete: %s", got)
 	}
 }

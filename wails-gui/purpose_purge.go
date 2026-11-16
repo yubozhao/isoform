@@ -4,7 +4,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
+	"sync/atomic"
 )
 
 // Deleting what the Purpose Map learned from a source that was deleted.
@@ -30,11 +32,20 @@ import (
 // purposeOpenLoopsDiscoveredFrom returns the open loops whose first event
 // cites one of the given sources of that kind.
 func purposeOpenLoopsDiscoveredFrom(db *sql.DB, sourceKind string, sourceIDs []string) ([]string, error) {
-	if db == nil || len(sourceIDs) == 0 {
+	return purposeOpenLoopsDiscoveredFromKinds(db, []string{sourceKind}, sourceIDs)
+}
+
+// purposeOpenLoopsDiscoveredFromKinds is the same for a source that the
+// ledger knows under more than one kind (an activity session is cited as
+// "activity_session", "session" or "meeting_transcript").
+func purposeOpenLoopsDiscoveredFromKinds(db *sql.DB, sourceKinds, sourceIDs []string) ([]string, error) {
+	if db == nil || len(sourceIDs) == 0 || len(sourceKinds) == 0 {
 		return nil, nil
 	}
-	args := make([]any, 0, len(sourceIDs)+1)
-	args = append(args, sourceKind)
+	args := make([]any, 0, len(sourceIDs)+len(sourceKinds))
+	for _, kind := range sourceKinds {
+		args = append(args, kind)
+	}
 	for _, id := range sourceIDs {
 		args = append(args, id)
 	}
@@ -42,7 +53,8 @@ func purposeOpenLoopsDiscoveredFrom(db *sql.DB, sourceKind string, sourceIDs []s
 		SELECT DISTINCT event.open_loop_id
 		FROM purpose_open_loop_evidence_v1 AS evidence
 		JOIN purpose_open_loop_events_v1 AS event ON event.id = evidence.event_id
-		WHERE event.sequence = 1 AND evidence.source_kind = ?
+		WHERE event.sequence = 1
+		  AND evidence.source_kind IN (`+strings.TrimSuffix(strings.Repeat("?,", len(sourceKinds)), ",")+`)
 		  AND evidence.source_id IN (`+strings.TrimSuffix(strings.Repeat("?,", len(sourceIDs)), ",")+`)
 		ORDER BY event.open_loop_id`, args...)
 	if err != nil {
@@ -109,4 +121,57 @@ func (a *App) purgePurposeLearnedFrom(sourceKind string, sourceIDs []string) (in
 		return 0, err
 	}
 	return a.purgePurposeOpenLoops(ids)
+}
+
+// The kinds under which the Purpose Map cites an activity session and an
+// activity. A commitment the person added to an activity themselves
+// ("activity_followup") is theirs, not something learned, and is not purged.
+var (
+	purposeSessionSourceKinds  = []string{"activity_session", "session", meetingFollowupSourceKind}
+	purposeActivitySourceKinds = []string{"activity"}
+)
+
+// purposePurgeApp is the app whose Purpose Map follows deletions. It is set
+// once the activity store is open; with none, a deletion purges nothing.
+var purposePurgeApp atomic.Pointer[App]
+
+func init() {
+	subscribePrivacyWithdrawals(func(withdrawal privacyWithdrawal) {
+		if app := purposePurgeApp.Load(); app != nil {
+			app.purgePurposeAfterWithdrawal(withdrawal)
+		}
+	})
+}
+
+// purgePurposeAfterWithdrawal deletes the commitments that were learned from
+// an activity session or an activity the person just deleted. Deleted means
+// deleted. Retention removing an old source is not the person deleting
+// anything, and purges nothing. Other withdrawals (an app, an account, a time
+// range, a pause) name no single source the ledger cites, and are left to the
+// readers' own checks.
+func (a *App) purgePurposeAfterWithdrawal(withdrawal privacyWithdrawal) {
+	if withdrawal.Retention || withdrawal.Scope.ID == "" {
+		return
+	}
+	var kinds []string
+	switch {
+	case withdrawal.Scope.Kind == privacyWithdrawalSession:
+		kinds = purposeSessionSourceKinds
+	case withdrawal.Scope.Kind == privacyWithdrawalSource && withdrawal.Scope.SourceKind == "activity":
+		kinds = purposeActivitySourceKinds
+	default:
+		return
+	}
+	if a == nil || a.activity == nil || a.activity.store == nil || a.activity.store.db == nil {
+		return
+	}
+	ids, err := purposeOpenLoopsDiscoveredFromKinds(a.activity.store.db, kinds, []string{withdrawal.Scope.ID})
+	if err != nil || len(ids) == 0 {
+		return
+	}
+	if n, err := a.purgePurposeOpenLoops(ids); err != nil {
+		log.Printf("[purpose] commitments of a deleted source were not purged: %s", activityPrivateLogField("error", err.Error()))
+	} else {
+		log.Printf("[purpose] purged %d commitments learned from a deleted source", n)
+	}
 }
