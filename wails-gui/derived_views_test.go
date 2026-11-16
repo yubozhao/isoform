@@ -253,14 +253,21 @@ func TestDerivedViewPeopleEditRebuildsAtOnce(t *testing.T) {
 	}
 }
 
-// A snapshot read stays under 100 ms while a build of the same view, and a
-// writer to the databases, run in the background.
-func TestDerivedViewReadUnder100msWithBackgroundWriter(t *testing.T) {
+// A snapshot read never waits for a build of the same view or for a writer to
+// the databases: while a scheduled build is held open and a writer runs, every
+// read returns the old snapshot. The check is that the reads finish while the
+// build is still held, not a wall-clock budget, so a busy machine cannot fail it.
+func TestDerivedViewReadDoesNotWaitForBuildOrWriter(t *testing.T) {
 	app, d := derivedTestApp(t)
 	release := make(chan struct{})
+	held := make(chan struct{}, 1)
 	var slow atomic.Bool
 	build := func() (derivedTestValue, error) {
 		if slow.Load() {
+			select {
+			case held <- struct{}{}:
+			default:
+			}
 			<-release
 		}
 		items := make([]string, 500)
@@ -275,10 +282,27 @@ func TestDerivedViewReadUnder100msWithBackgroundWriter(t *testing.T) {
 	c.mu.Lock()
 	c.at = time.Now().Add(-25 * time.Hour)
 	c.mu.Unlock()
-	go func() { _, _, _ = d.ensure(c, derivedDaily, false) }() // a scheduled build holding the view
+	ensureDone := make(chan struct{})
+	go func() { // a scheduled build holding the view
+		defer close(ensureDone)
+		_, _, _ = d.ensure(c, derivedDaily, false)
+	}()
+	released := false
+	defer func() {
+		if !released {
+			close(release)
+		}
+		<-ensureDone
+	}()
+	select {
+	case <-held:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the scheduled build never started")
+	}
 
 	stop := make(chan struct{})
 	writerDone := make(chan struct{})
+	var writes atomic.Int64
 	go func() {
 		defer close(writerDone)
 		dir := filepath.Join(t.TempDir(), "writer")
@@ -291,27 +315,43 @@ func TestDerivedViewReadUnder100msWithBackgroundWriter(t *testing.T) {
 			}
 			_ = app.store.SetUIState(context.Background(), fmt.Sprintf("derived-test-%d", i%8), fmt.Sprint(i))
 			_ = os.WriteFile(filepath.Join(dir, "f"), []byte(fmt.Sprint(i)), 0600)
+			writes.Add(1)
 		}
 	}()
-	time.Sleep(20 * time.Millisecond)
-	var worst time.Duration
-	for range 200 {
-		started := time.Now()
-		value := readDerivedTestValue(t, app, derivedPeopleOverview, build)
-		if took := time.Since(started); took > worst {
-			worst = took
-		}
-		if len(value.Items) != 500 {
-			t.Fatalf("read %d items", len(value.Items))
-		}
+	defer func() { close(stop); <-writerDone }()
+	for writes.Load() == 0 {
+		time.Sleep(time.Millisecond)
 	}
-	close(stop)
+
+	readsDone := make(chan int)
+	go func() {
+		n := 0
+		for range 200 {
+			// derivedRead, not the helper: t.Fatal must not run off the test goroutine.
+			if value, err := derivedRead(app, derivedPeopleOverview, "test", build, nil); err == nil && len(value.Items) == 500 {
+				n++
+			}
+		}
+		readsDone <- n
+	}()
+	select {
+	case n := <-readsDone:
+		if n != 200 {
+			t.Fatalf("%d of 200 reads returned the 500-item snapshot", n)
+		}
+	case <-time.After(30 * time.Second):
+		close(release)
+		released = true
+		<-readsDone
+		t.Fatal("a snapshot read waited for the held build")
+	}
+	select {
+	case <-ensureDone:
+		t.Fatal("the build finished before its release; the reads did not overlap it")
+	default:
+	}
 	close(release)
-	<-writerDone
-	t.Logf("worst snapshot read %v", worst)
-	if worst >= 100*time.Millisecond {
-		t.Fatalf("worst snapshot read %v, want under 100 ms", worst)
-	}
+	released = true
 }
 
 func TestDerivedViewsOffBeforeTheScheduler(t *testing.T) {
