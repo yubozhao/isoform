@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -58,6 +59,58 @@ var watchConversationNamer = func(a *App, prompt string) (string, error) {
 type watchConversationNameEntry struct {
 	Hash string `json:"hash"`
 	Name string `json:"name"`
+	// StartAt and RecordingIDs say when it began and which hours it draws
+	// from, so an hour's view can carry its names without reading any speech.
+	StartAt      int64    `json:"startAt,omitempty"`
+	RecordingIDs []string `json:"recordingIds,omitempty"`
+}
+
+// watchConversationNamesPerHour bounds the names one hour's view carries.
+const watchConversationNamesPerHour = 4
+
+// watchConversationNamesByRecording reads the kept names and returns, for
+// each recording, the names of the conversations that draw from it, in the
+// order they happened.
+func watchConversationNamesByRecording(dir string) map[string][]string {
+	watchConversationNamesMu.Lock()
+	names := readWatchConversationNames(dir)
+	watchConversationNamesMu.Unlock()
+	entries := make([]watchConversationNameEntry, 0, len(names))
+	for _, entry := range names {
+		if entry.Name != "" {
+			entries = append(entries, entry)
+		}
+	}
+	sort.SliceStable(entries, func(i, j int) bool { return entries[i].StartAt < entries[j].StartAt })
+	out := map[string][]string{}
+	for _, entry := range entries {
+		for _, id := range entry.RecordingIDs {
+			if len(out[id]) < watchConversationNamesPerHour {
+				out[id] = append(out[id], entry.Name)
+			}
+		}
+	}
+	return out
+}
+
+// dropWatchConversationNamesOf removes the kept names made from a
+// recording's words: its transcript was withdrawn or deleted.
+func dropWatchConversationNamesOf(dir, recordingID string) {
+	watchConversationNamesMu.Lock()
+	defer watchConversationNamesMu.Unlock()
+	names := readWatchConversationNames(dir)
+	changed := false
+	for key, entry := range names {
+		if containsString(entry.RecordingIDs, recordingID) {
+			delete(names, key)
+			changed = true
+		}
+	}
+	if changed {
+		if err := writeWatchConversationNames(dir, names); err != nil {
+			log.Printf("[recordings] conversation names not dropped: %v", err)
+		}
+	}
 }
 
 var watchConversationNamesMu sync.Mutex
@@ -235,7 +288,7 @@ func (a *App) nameWatchConversations(ctx context.Context, store *mobileRecording
 			// Kept as "no name" for these words, so it is not asked again.
 			name = ""
 		}
-		kept[c.ID] = watchConversationNameEntry{Hash: watchConversationHash(c), Name: name}
+		kept[c.ID] = watchConversationNameEntry{Hash: watchConversationHash(c), Name: name, StartAt: c.StartAt, RecordingIDs: c.RecordingIDs}
 		changed = true
 	}
 	if !changed {

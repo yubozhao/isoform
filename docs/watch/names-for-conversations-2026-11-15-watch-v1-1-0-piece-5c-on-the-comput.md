@@ -15,4 +15,7 @@
 - The meeting-notes pass was not reused: it writes a summary, decisions and follow-ups and turns
   the owner's follow-ups into commitments; a meeting's title there is its calendar event's.
 - "From your watch" titles a named conversation by its name, with the time in the line under it.
-- Not yet: the names on the phone and the watch (a protocol addition).
+- The phone's view of an hour carries the names of the conversations that draw from it
+  (`conversations`, PROTOCOL.md 24.7): read from the names file alone, never while observing is
+  paused, and dropped at once when the hour is deleted or its transcript withdrawn. The phone and
+  the watch showing them is the iOS half.
