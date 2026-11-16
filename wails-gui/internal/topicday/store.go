@@ -211,3 +211,18 @@ func (s *Store) KeepFeedback(keep func(Feedback) (Feedback, bool)) error {
 	}
 	return os.Rename(path+".tmp", path)
 }
+
+// ForgetAll removes everything the daily topics store keeps: the day's
+// topics and proposals and every answer, Not mine included (Your data's
+// Forget everything). A missing folder is nothing to remove.
+func (s *Store) ForgetAll() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.dir == "" {
+		return nil
+	}
+	if err := os.RemoveAll(s.dir); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}

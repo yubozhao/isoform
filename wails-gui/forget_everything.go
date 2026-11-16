@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"wails-gui/internal/privacy"
 	"wails-gui/storage"
 )
 
@@ -72,6 +73,7 @@ var forgetEverythingSteps = []forgetEverythingStep{
 	{"meetings", (*App).forgetAllMeetingNotes},
 	{"files", (*App).forgetAllFileActivity},
 	{"mail", (*App).forgetAllMail},
+	{"calendar", (*App).forgetAllCalendar},
 	{"messages", func(a *App, _ context.Context) error { return a.ForgetMessages() }},
 	{"voices", func(a *App, _ context.Context) error { return a.ForgetVoices() }},
 	{"chats", (*App).forgetAllChatThreads},
@@ -79,8 +81,13 @@ var forgetEverythingSteps = []forgetEverythingStep{
 	{"assistantHistory", func(a *App, _ context.Context) error { return a.forgetAssistantHistory() }},
 	{"memory", (*App).forgetAllMemory},
 	{"knowledge", (*App).forgetAllKnowledge},
+	{"playbooks", (*App).forgetAllPlaybooks},
+	{"knowHowDrafts", (*App).forgetAllKnowHowDrafts},
 	{"people", (*App).forgetAllPeople},
+	{"topics", (*App).forgetAllTopics},
 	{"answers", func(a *App, _ context.Context) error { return a.DeleteAnswers() }},
+	{"workProfile", (*App).forgetWorkProfile},
+	{"agentOfYou", (*App).forgetAgentOfYouProfile},
 }
 
 type forgetEverythingJob struct {
@@ -321,6 +328,9 @@ func (a *App) forgetAllFileActivity(_ context.Context) error {
 	if _, err := a.activity.store.DeleteAllFileActivity(); err != nil {
 		return err
 	}
+	if err := a.activity.store.DeleteAllBrowserActivity(); err != nil {
+		return err
+	}
 	_, err := a.activity.store.ResetAllOCR()
 	return err
 }
@@ -392,4 +402,53 @@ func (a *App) forgetAllPeople(_ context.Context) error {
 		}
 		return ids, err
 	}, a.DeletePrincipal)
+}
+
+// forgetAllCalendar removes the stored calendar copies, and tells every
+// reader (Today, the brief) through the calendar withdrawal.
+func (a *App) forgetAllCalendar(ctx context.Context) error {
+	if a.store == nil {
+		return errForgetNotReady
+	}
+	if err := a.store.DeleteAllCalendarEvents(ctx); err != nil {
+		return err
+	}
+	publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.Account, ID: "calendar"})
+	return nil
+}
+
+// forgetAllPlaybooks removes every playbook through DeleteSOP, which also
+// drops its schedule.
+func (a *App) forgetAllPlaybooks(_ context.Context) error {
+	if a.sopStore == nil {
+		return nil
+	}
+	return forgetEach(func() ([]string, error) {
+		entries, err := a.sopStore.List()
+		ids := make([]string, 0, len(entries))
+		for _, e := range entries {
+			ids = append(ids, e.ID)
+		}
+		return ids, err
+	}, a.DeleteSOP)
+}
+
+// forgetAllKnowHowDrafts removes the proposed know-how drafts from their store.
+func (a *App) forgetAllKnowHowDrafts(_ context.Context) error {
+	if a.knowHowCandidates == nil {
+		return nil
+	}
+	store := a.knowHowCandidates
+	err := forgetEach(func() ([]string, error) {
+		entries, err := store.List()
+		ids := make([]string, 0, len(entries))
+		for _, e := range entries {
+			ids = append(ids, e.ID)
+		}
+		return ids, err
+	}, store.Delete)
+	a.knowHow.candMu.Lock()
+	a.invalidateKnowHowCandidateCacheLocked()
+	a.knowHow.candMu.Unlock()
+	return err
 }
