@@ -43,7 +43,7 @@ final class WatchPhoneLink: NSObject, WCSessionDelegate, @unchecked Sendable {
 
     func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
         guard activationState == .activated else { return }
-        library.apply(states: WatchRecordingWire.states(fromContext: session.receivedApplicationContext))
+        apply(context: session.receivedApplicationContext)
         sendUnsent()
         onChange?()
     }
@@ -67,8 +67,16 @@ final class WatchPhoneLink: NSObject, WCSessionDelegate, @unchecked Sendable {
     }
 
     func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
-        library.apply(states: WatchRecordingWire.states(fromContext: applicationContext))
+        apply(context: applicationContext)
         pushSummaries()
         onChange?()
+    }
+
+    /// What the phone says about the recordings: where each one is, and what the computer named
+    /// the conversations in it.
+    private func apply(context: [String: Any]) {
+        let states = WatchRecordingWire.states(fromContext: context)
+        library.apply(states: states)
+        library.apply(names: WatchRecordingWire.names(fromContext: context), known: Set(states.keys))
     }
 }

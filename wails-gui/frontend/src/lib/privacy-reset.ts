@@ -1,7 +1,7 @@
 import { EventsOn } from '../../wailsjs/runtime/runtime';
 
 // One subscription point for the transitions that change what the computer
-// permits a reader to see: Forget (`memory:updated`), protecting an app
+// permits a reader to see: Forget (`memory:withdrawn`), protecting an app
 // (`sensitive-apps:updated`, the #185 protection-change event), Closed Eyes
 // (`closed-eyes:changed`) and account sign-out. In-memory render-tier stores
 // (chat edit drafts, highlight markers) register here and drop everything
@@ -19,7 +19,7 @@ import { EventsOn } from '../../wailsjs/runtime/runtime';
 // event is a possible withdrawal and resets. A status read that completes
 // after the first event is stale and is discarded — it must never reinstate
 // trust for accounts the event stream already saw removed.
-const PRIVACY_RESET_EVENTS = ['memory:updated', 'sensitive-apps:updated', 'closed-eyes:changed'];
+const PRIVACY_RESET_EVENTS = ['memory:withdrawn', 'sensitive-apps:updated', 'closed-eyes:changed'];
 
 const listeners = new Set<() => void>();
 // The account-identity subset: listeners that care only about sign-out and

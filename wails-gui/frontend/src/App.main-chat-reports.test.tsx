@@ -409,7 +409,7 @@ describe('App main-chat report wiring', () => {
         });
         await waitFor(() => expect(binding('LoadMainChatProactiveItem')).toHaveBeenCalledWith('moment-1'));
         await act(async () => {
-            for (const listener of fixture.persistentListeners.get('memory:updated') ?? []) listener(undefined);
+            for (const listener of fixture.persistentListeners.get('memory:withdrawn') ?? []) listener(undefined);
             finish({ id: 'late', kind: 'system', toolName: 'main_chat_proactive', toolInput: JSON.stringify({ momentId: 'moment-1', kind: 'brief_ready', headline: 'Late', body: '', actionIds: ['open'], actionLabels: { open: 'Open' }, target: { kind: 'today' }, state: 'pending' }) });
         });
         expect(screen.queryByTestId('main-chat-item-panel')).not.toBeInTheDocument();

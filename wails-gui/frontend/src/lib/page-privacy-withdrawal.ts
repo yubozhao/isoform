@@ -1,6 +1,8 @@
 import { EventsOn } from '../../wailsjs/runtime/runtime';
 
-const PRIVACY_SWEEP_EVENTS = ['memory:updated', 'closed-eyes:changed', 'background-listening:changed', 'permissions:changed', 'sensitive-apps:updated'];
+// memory:withdrawn is a forget or the person's own memory change; a plain
+// memory:updated (index pass, background learning) only marks reads stale.
+const PRIVACY_SWEEP_EVENTS = ['memory:withdrawn', 'closed-eyes:changed', 'background-listening:changed', 'permissions:changed', 'sensitive-apps:updated'];
 type WithdrawalListener = (event?: string, payload?: unknown) => void;
 const listeners = new Set<WithdrawalListener>();
 const cacheListeners = new Set<() => void>();

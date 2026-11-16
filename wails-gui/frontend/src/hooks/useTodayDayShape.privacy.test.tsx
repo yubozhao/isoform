@@ -17,7 +17,7 @@ vi.mock('../../wailsjs/runtime/runtime', () => ({ EventsOn: (name: string, handl
     return () => listeners.delete(handler);
 } }));
 const blocked: TodayDayShape = { ...dayShapeFixture, events: [], hold: null, calendarConnected: false };
-const privacyEvents = ['permissions:changed', 'closed-eyes:changed', 'background-listening:changed', 'sensitive-apps:updated', 'memory:updated'];
+const privacyEvents = ['permissions:changed', 'closed-eyes:changed', 'background-listening:changed', 'sensitive-apps:updated', 'memory:withdrawn'];
 function deferred() {
     let resolve: (value: TodayDayShape) => void = () => {};
     const promise = new Promise<TodayDayShape>((done) => { resolve = done; });

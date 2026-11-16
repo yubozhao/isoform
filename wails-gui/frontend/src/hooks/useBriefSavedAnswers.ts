@@ -19,7 +19,7 @@ export function useBriefSavedAnswers(brief: MobileBriefDocument | null | undefin
             })).then((ids) => { if (current && request === generation) setAnswered(new Set(ids.filter((id): id is string => id !== null))); });
         };
         refresh();
-        const offs = ["today:answer-saved", "memory:updated", "sensitive-apps:updated", "closed-eyes:changed", "brief:stored", "handoff:updated", "calendar:synced", "topics:withdrawn"].map((event) => PageEventsOn(event, refresh));
+        const offs = ["today:answer-saved", "memory:withdrawn", "sensitive-apps:updated", "closed-eyes:changed", "brief:stored", "handoff:updated", "calendar:synced", "topics:withdrawn"].map((event) => PageEventsOn(event, refresh));
         return () => { current = false; offs.forEach((off) => off()); };
     }, [brief, active]);
     return answered;

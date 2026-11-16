@@ -42,6 +42,8 @@ struct RecordingView: Decodable, Equatable, Sendable {
     var partsReceived: Int? = nil
     var parts: Int? = nil
     var words: Int? = nil
+    /// The names of the conversations heard in it, once the computer has named any (24.7).
+    var conversations: [String]? = nil
 }
 
 struct RecordingList: Decodable, Equatable, Sendable {
@@ -273,13 +275,16 @@ actor WatchRecordingForwarder {
     private var order: [String]
     private var running = false
     private var again = false
-    private var onStates: (@Sendable ([String: WatchRecordingRemoteState]) -> Void)?
+    private var onStates: (@Sendable ([String: WatchRecordingRemoteState], [String: [String]]) -> Void)?
+    /// What the computer named the conversations in each recording.
+    private var names: [String: [String]] = [:]
 
     private struct Stored: Codable {
         var order: [String]
         var states: [String: WatchRecordingRemoteState]
         var details: [String: Detail]?
         var pendingDeletes: [String]?
+        var names: [String: [String]]?
     }
 
     /// What the phone knows about a recording beyond its state: when it began and the parts seen.
@@ -311,13 +316,14 @@ actor WatchRecordingForwarder {
             order = stored.order
             details = stored.details ?? [:]
             pendingDeletes = stored.pendingDeletes ?? []
+            names = stored.names ?? [:]
         } else {
             states = [:]
             order = []
         }
     }
 
-    func onStatesChanged(_ handler: @escaping @Sendable ([String: WatchRecordingRemoteState]) -> Void) {
+    func onStatesChanged(_ handler: @escaping @Sendable ([String: WatchRecordingRemoteState], [String: [String]]) -> Void) {
         onStates = handler
     }
 
@@ -325,6 +331,9 @@ actor WatchRecordingForwarder {
     func onActivityChanged(_ handler: @escaping @Sendable () -> Void) {
         onActivity = handler
     }
+
+    /// What the computer named the conversations in each recording, for the watch.
+    func currentNames() -> [String: [String]] { names }
 
     func currentStates() -> [String: WatchRecordingRemoteState] { states }
 
@@ -350,7 +359,8 @@ actor WatchRecordingForwarder {
             let audio = inbox.audio(recordingID: id)
             return PhoneRecording(id: id, startedAt: detail.startedAt,
                                   durationSeconds: detail.parts.values.reduce(0, +), state: state,
-                                  partsOnPhone: audio.urls.count, bytesOnPhone: audio.bytes, sending: sending == id)
+                                  partsOnPhone: audio.urls.count, bytesOnPhone: audio.bytes, sending: sending == id,
+                                  names: names[id] ?? [])
         }.sorted { $0.startedAt > $1.startedAt }
     }
 
@@ -511,8 +521,16 @@ actor WatchRecordingForwarder {
             return state == .onComputer || state == .transcribed || (state == .failed && inbox.audio(recordingID: id).urls.isEmpty)
         }
         guard !across.isEmpty, let views = try? await hub.recordingStates(ids: Array(across.prefix(50))) else { return }
+        var namesChanged = false
         for view in views {
             let next = WatchRecordingRemoteState(computerState: view.state)
+            // The computer's word on the names is the whole truth: a name it no longer gives
+            // (the hour's words were withdrawn there) is dropped here too.
+            let named = next == .deleted ? [] : WatchRecordingWire.cleanNames(view.conversations ?? [])
+            if (names[view.id] ?? []) != named {
+                names[view.id] = named.isEmpty ? nil : named
+                namesChanged = true
+            }
             if next == .deleted {
                 inbox.removeAll(recordingID: view.id)
                 pendingDeletes.removeAll { $0 == view.id }
@@ -520,6 +538,10 @@ actor WatchRecordingForwarder {
             } else if states[view.id] == .onComputer {
                 set(view.id, next)
             }
+        }
+        if namesChanged {
+            save()
+            onStates?(states, names)
         }
     }
 
@@ -532,14 +554,16 @@ actor WatchRecordingForwarder {
             let dropped = order.removeFirst()
             states.removeValue(forKey: dropped)
             details.removeValue(forKey: dropped)
+            names.removeValue(forKey: dropped)
         }
+        if state == .deleted { names.removeValue(forKey: id) }
         save()
-        onStates?(states)
+        onStates?(states, names)
     }
 
     private func save() {
         if let data = try? JSONEncoder().encode(Stored(order: order, states: states, details: details,
-                                                       pendingDeletes: pendingDeletes)) {
+                                                       pendingDeletes: pendingDeletes, names: names)) {
             try? data.write(to: statesURL, options: .atomic)
         }
     }
@@ -556,6 +580,8 @@ struct PhoneRecording: Equatable, Identifiable, Sendable {
     var bytesOnPhone: Int = 0
     /// A part is being sent to the computer right now.
     var sending: Bool = false
+    /// What the computer named the conversations heard in it.
+    var names: [String] = []
 }
 
 enum RecordingTime {

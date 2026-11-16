@@ -748,7 +748,7 @@ describe("SearchDialog (search and commands)", () => {
             binding("GetTodayTopics").mockImplementation(() => new Promise(() => {}));
             binding("ListHandoffs").mockImplementation(() => new Promise(() => {}));
             await act(async () => {
-                fixture.listeners.get("memory:updated")?.forEach((handler) => handler(undefined));
+                fixture.listeners.get("memory:withdrawn")?.forEach((handler) => handler(undefined));
             });
             expect(input()).toHaveValue("");
             expect(screen.queryByText("Priya at Halcyon")).toBeNull();

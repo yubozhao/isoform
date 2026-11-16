@@ -420,7 +420,7 @@ export function TodayPage({
     }, [active]);
     useEffect(() => {
         const clear = () => { paragraphRequest.current++; setSavedPanel(null); setMeetingPrep(null); setReplyDraft(null); setMeetingNote(null); };
-        const offs = ["memory:updated", "sensitive-apps:updated", "closed-eyes:changed", "brief:stored", "handoff:updated", "calendar:synced", "topics:withdrawn"].map((event) => PageEventsOn(event, clear));
+        const offs = ["memory:withdrawn", "sensitive-apps:updated", "closed-eyes:changed", "brief:stored", "handoff:updated", "calendar:synced", "topics:withdrawn"].map((event) => PageEventsOn(event, clear));
         return () => offs.forEach((off) => off());
     }, []);
     useEffect(() => {

@@ -2668,7 +2668,7 @@ export default function App() {
         const offPause = EventsOn("closed-eyes:changed", (paused: boolean) => {
             if (paused) stopBriefPlayback();
         });
-        const offForget = EventsOn("memory:updated", stopBriefPlayback);
+        const offForget = EventsOn("memory:withdrawn", stopBriefPlayback);
         const offStored = EventsOn("brief:stored", stopBriefPlayback);
         const offSources = ["permissions:changed", "sensitive-apps:updated", "background-listening:changed"].map(event => EventsOn(event, stopBriefPlayback));
         return () => { offWaiting(); offNeeds(); offBrief(); offMake(); offPause(); offForget(); offStored(); offSources.forEach(off => off()); };

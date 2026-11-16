@@ -30,7 +30,7 @@ beforeEach(async () => {
     vi.clearAllMocks();
     mocks.listeners.clear();
     mocks.save.mockImplementation(async (_brief: string, _id: string, _expected: string, _words: string, correlation: string) => {
-        for (const listener of mocks.listeners) listener("memory:updated", { correlation });
+        for (const listener of mocks.listeners) listener("memory:withdrawn", { correlation });
         return "opaque-token";
     });
     mocks.undo.mockResolvedValue(undefined);

@@ -27,7 +27,7 @@ export function useTodayWeekBelief(active: boolean) {
     useEffect(() => onPagePrivacyWithdrawal((event, payload) => {
         const update = payload as { correlation?: unknown; reason?: unknown } | null;
         const correlation = update?.correlation;
-        if (event === "memory:updated" && typeof correlation === "string" && ownEvents.current.has(correlation)) return;
+        if (event === "memory:withdrawn" && typeof correlation === "string" && ownEvents.current.has(correlation)) return;
         if (event === "memory:updated" && update?.reason === "index") {
             const shown = receiptRef.current;
             if (!shown) return;

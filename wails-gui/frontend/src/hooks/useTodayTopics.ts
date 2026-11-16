@@ -186,7 +186,7 @@ export function useTodayTopics(enabled: boolean) {
             setRefreshing(true);
             void refresh();
         };
-        const off = ['topics:withdrawn', 'memory:updated', 'closed-eyes:changed', 'background-listening:changed', 'permissions:changed', 'sensitive-apps:updated']
+        const off = ['topics:withdrawn', 'memory:withdrawn', 'closed-eyes:changed', 'background-listening:changed', 'permissions:changed', 'sensitive-apps:updated']
             .map((event) => PageEventsOn(event, clear));
         return () => off.forEach((stop) => stop());
     }, [refresh]);

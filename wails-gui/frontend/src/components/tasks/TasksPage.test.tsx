@@ -303,7 +303,7 @@ describe("Tasks board", () => {
         await act(async () => { resolveCancel(null); });
     });
 
-    it.each(["memory:updated", "sensitive-apps:updated", "closed-eyes:changed", "permissions:changed", "background-listening:changed", "model-accounts:updated", "session:deleted"])("clears Running open-answer rows synchronously on %s", async (event) => {
+    it.each(["memory:withdrawn", "sensitive-apps:updated", "closed-eyes:changed", "permissions:changed", "background-listening:changed", "model-accounts:updated", "session:deleted"])("clears Running open-answer rows synchronously on %s", async (event) => {
         const record = openAnswer();
         mocks.answers.mockResolvedValue([record]);
         mount();

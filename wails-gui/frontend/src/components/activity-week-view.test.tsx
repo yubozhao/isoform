@@ -195,7 +195,7 @@ describe('Activity Week view', () => {
     });
 
     it.each([
-        ['page privacy withdrawal', 'memory:updated'],
+        ['page privacy withdrawal', 'memory:withdrawn'],
         ['Closed Eyes', 'closed-eyes:changed'],
         ['sign-out', 'model-accounts:updated'],
     ])('%s clears the expanded week before showing the backend re-read', async (name, event) => {
@@ -248,7 +248,7 @@ describe('Activity Week view', () => {
         render(<ActivityWeekView date={new Date(2026, 9, 20)} onOpenDay={vi.fn()} />);
         await screen.findByText(/Week of Oct 12/);
 
-        await emitRuntimeEvent('memory:updated');
+        await emitRuntimeEvent('memory:withdrawn');
         expect(binding('GetYourWeekForDate')).toHaveBeenCalledTimes(2);
         expect(screen.queryByTestId('activity-your-week')).not.toBeInTheDocument();
         stale.resolve(yourWeekEntry('Stale private week.'));
@@ -317,7 +317,7 @@ describe('Activity Week view', () => {
     });
 
     it.each([
-        ['memory:updated', undefined],
+        ['memory:withdrawn', undefined],
         ['closed-eyes:changed', true],
         ['model-accounts:updated', { accounts: [] }],
     ])('clears weekly and daily summaries synchronously on %s, then rereads', async (eventName, payload) => {
@@ -353,7 +353,7 @@ describe('Activity Week view', () => {
         render(<ActivityWeekView date={WEEK_DAY} onOpenDay={vi.fn()} />);
         await waitFor(() => expect(binding('EnsureWeeklySummary')).toHaveBeenCalledTimes(1));
 
-        await emitRuntimeEvent('memory:updated');
+        await emitRuntimeEvent('memory:withdrawn');
         stale.resolve(weeklyData({ aiSummary: 'Stale weekly summary.' }));
         await act(async () => {
             await Promise.resolve();
@@ -375,7 +375,7 @@ describe('Activity Week view', () => {
         await screen.findByText(/Week of Oct 12/);
         await waitFor(() => expect(dailyCalls).toBe(2));
 
-        await emitRuntimeEvent('memory:updated');
+        await emitRuntimeEvent('memory:withdrawn');
         stale.resolve({ aiSummary: 'Stale daily sentence.' });
         await act(async () => {
             await Promise.resolve();
@@ -396,7 +396,7 @@ describe('Activity Week view', () => {
         expect(binding('GenerateWeeklySummary')).toHaveBeenCalledWith('2026-10-13');
         await waitFor(() => expect(screen.getByRole('button', { name: 'Write it again' })).toBeDisabled());
 
-        await emitRuntimeEvent('memory:updated');
+        await emitRuntimeEvent('memory:withdrawn');
         await waitFor(() => expect(binding('EnsureWeeklySummary')).toHaveBeenCalledTimes(2));
         reread.resolve(currentWeek);
         await screen.findByText(/A steady week of shipping the billing rework/);

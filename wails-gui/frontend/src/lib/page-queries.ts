@@ -83,15 +83,20 @@ on(['today-before-you-talk:updated'], ['GetTodayBeforeYouTalk']);
 
 // These transitions change what the backend permits a reader to see. Never
 // return a pre-transition value, even to an in-flight caller or hidden page.
-const PRIVACY_SWEEP_EVENTS = ['memory:updated', 'closed-eyes:changed', 'background-listening:changed', 'permissions:changed', 'sensitive-apps:updated'];
+const PRIVACY_SWEEP_EVENTS = ['memory:withdrawn', 'closed-eyes:changed', 'background-listening:changed', 'permissions:changed', 'sensitive-apps:updated'];
 // The brief is sealed by the backend for privacy changes (its own privacy class),
-// so only those re-read it. memory:updated and permissions:changed are freshness
-// events for the brief: the index emits memory:updated on every update, and a
-// re-read for each one is the R24 loop (the withdrawal path still clears it).
+// so only those re-read it. memory:withdrawn and permissions:changed are
+// freshness events for the brief: a re-read for each one is the R24 loop (the
+// withdrawal path still clears it).
 const BRIEF_PRIVACY_EVENTS = ['closed-eyes:changed', 'background-listening:changed', 'sensitive-apps:updated'];
 const everyPageButBrief = everyPage.filter((name) => name !== 'GetLatestBrief');
 on(PRIVACY_SWEEP_EVENTS.filter((name) => !BRIEF_PRIVACY_EVENTS.includes(name)), everyPageButBrief);
 on(BRIEF_PRIVACY_EVENTS, everyPage);
+// A plain memory:updated is a content change (an index pass, background
+// learning): the memory reads are marked stale and re-read on their next use,
+// painting the cached value meanwhile. Nothing is cleared and nothing re-reads
+// now. A forget sends memory:withdrawn, which sweeps every page above.
+const MEMORY_CONTENT_READS = ['GetMemoryEntries', 'GetMemoryStatus', 'GetMemoryEvidenceReadable', 'GetEntryUses', 'ListMemoryVersions', 'GetAboutYou', 'GetAboutYouPortrait', 'GetKnowledgeEntries', 'ListKnowHow', 'GetKnowHowMatch'];
 
 export { onPagePrivacyWithdrawal } from './page-privacy-withdrawal';
 
@@ -172,6 +177,7 @@ export function installPageQueryEvents() {
         pageQueryCache.clear();
         clearSavedPeopleView();
     }));
+    cleanups.push(RuntimeEventsOn('memory:updated', () => pageQueryCache.markStale(MEMORY_CONTENT_READS)));
     for (const [event, names] of Object.entries(eventReads)) {
         if (COALESCED_EVENTS.has(event)) {
             cleanups.push(coalesceEvent(event, names));

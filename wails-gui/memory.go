@@ -1467,7 +1467,7 @@ func (a *App) markMemoryDirtyWithCorrelation(reason, correlation string) {
 		if correlation != "" {
 			payload["correlation"] = correlation
 		}
-		a.emitBrowserEvent("memory:updated", payload)
+		a.emitMemoryUpdated(memoryReasonWithdraws(reason), payload)
 	}
 	// Background learning no longer wakes the portrait writer for each
 	// belief: its own tick decides. Only the first portrait, and the

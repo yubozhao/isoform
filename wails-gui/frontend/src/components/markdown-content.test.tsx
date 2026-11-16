@@ -63,7 +63,7 @@ it('clears the highlight markers and pending work on the privacy resets', async 
     expect(highlightCacheProbe.marked()).toBeGreaterThan(0);
     for (const [name, payload] of [
         ['model-accounts:updated', { accounts: [] }],
-        ['memory:updated', null],
+        ['memory:withdrawn', null],
         ['sensitive-apps:updated', null],
         ['closed-eyes:changed', null],
     ] as const) {

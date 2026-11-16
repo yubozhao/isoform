@@ -194,7 +194,7 @@ func (a *App) ForgetMemoryEntry(id, confirmationToken string) (resultErr error) 
 
 	a.markMemoryDirty("forget")
 	if a.ctx != nil {
-		a.emitBrowserEvent("memory:updated")
+		a.emitMemoryUpdated(true)
 	}
 	return nil
 }

@@ -278,7 +278,7 @@ describe("the Goals page privacy withdrawal", () => {
 
         // The sweep's re-read never answers; the withdrawal must not wait on it.
         mocks.listGoals.mockImplementation(() => new Promise(() => undefined));
-        await emitRuntime("memory:updated");
+        await emitRuntime("memory:withdrawn");
         expect(screen.queryByTestId("goal-timeline")).toBeNull();
         expect(screen.queryByText("Renew passport")).toBeNull();
         expect(screen.getByLabelText("Loading your goals")).toBeInTheDocument();
@@ -297,7 +297,7 @@ describe("the Goals page privacy withdrawal", () => {
         await act(async () => { fireEvent.click(await screen.findByText("Waiting on someone")); });
         expect(screen.getByLabelText("Who or what")).toBeInTheDocument();
         mocks.listGoals.mockImplementation(() => new Promise(() => undefined));
-        await emitRuntime("memory:updated");
+        await emitRuntime("memory:withdrawn");
         expect(screen.queryByLabelText("Who or what")).toBeNull();
         expect(screen.getByLabelText("Loading your goals")).toBeInTheDocument();
 
