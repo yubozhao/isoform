@@ -1827,4 +1827,28 @@ func TestLateSpeechOfAnEndedCallIsNotASecondMeeting(t *testing.T) {
 	if got := meetingSessions(t, store); len(got) != 2 {
 		t.Fatalf("in-call speech after the span is still inferred as a meeting: %d meeting sessions", len(got))
 	}
+	waitForMeetingTranscripts(t, app, 1)
+}
+
+// waitForMeetingTranscripts waits until the ended calls' transcripts, saved
+// in the background, are written and no transcript save is still running:
+// that work also touches the call's audio in the store's folder, which the
+// test's cleanup removes.
+func waitForMeetingTranscripts(t *testing.T, app *App, want int) {
+	t.Helper()
+	dir, err := transcriptDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		files, _ := filepath.Glob(filepath.Join(dir, "*.md"))
+		busy := false
+		app.meetingTranscriptActive.Range(func(any, any) bool { busy = true; return false })
+		if len(files) >= want && !busy {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("the ended calls' transcripts were not written (want %d)", want)
 }
