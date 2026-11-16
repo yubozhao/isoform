@@ -67,6 +67,10 @@ function pauseObservingCombo(): KeyCombo | null {
 /** Read-only: shown on Settings > General > Advanced and on Observation. */
 export const PAUSE_OBSERVING_COMBO = pauseObservingCombo();
 
+/** The pages ⌘1 to ⌘5 open, in the sidebar's order. */
+export const PAGE_KEYS = ['today', 'chat', 'agents', 'activity', 'you'] as const;
+export type PageKey = (typeof PAGE_KEYS)[number];
+
 const DEFAULT_KEYBINDINGS: KeybindingAction[] = [
     // Global shortcuts
     {
@@ -109,6 +113,15 @@ const DEFAULT_KEYBINDINGS: KeybindingAction[] = [
         defaultCombo: primaryCombo(false, 't'),
         readonly: false,
     },
+    // The pages, in the sidebar's order (pass-access v1.0.0 rule 1).
+    ...PAGE_KEYS.map((page, i) => ({
+        id: `go-${page}`,
+        label: '',
+        description: '',
+        group: 'global' as const,
+        defaultCombo: primaryCombo(false, String(i + 1)),
+        readonly: false,
+    })),
     {
         id: 'replay-onboarding',
         label: 'Run setup again',

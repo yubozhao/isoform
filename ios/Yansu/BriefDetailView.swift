@@ -240,7 +240,8 @@ struct BriefDetailView: View {
                     }
                     .font(.footnote.monospacedDigit())
                     .foregroundStyle(YansuTheme.secondary)
-                    .accessibilityElement(children: .combine)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(Text(verbatim: BriefSpokenTime.position(elapsed, of: length)))
                     .accessibilityIdentifier("brief.time")
                 }
             }
@@ -547,6 +548,20 @@ struct BriefDetailView: View {
         if let message = environment.briefPlayNotice {
             NoticeBanner(message: message, dismiss: { environment.briefPlayNotice = nil })
         }
+    }
+}
+
+/// "41 seconds of 2 minutes, 14 seconds", for VoiceOver on the player (pass-access rule 9).
+enum BriefSpokenTime {
+    static func spoken(_ seconds: TimeInterval) -> String {
+        let formatter = DateComponentsFormatter()
+        formatter.unitsStyle = .full
+        formatter.allowedUnits = seconds >= 60 ? [.minute, .second] : [.second]
+        return formatter.string(from: max(0, seconds.rounded())) ?? ""
+    }
+
+    static func position(_ elapsed: TimeInterval, of length: TimeInterval) -> String {
+        String.localizedStringWithFormat(String(localized: "brief.positionSpoken"), spoken(elapsed), spoken(length))
     }
 }
 

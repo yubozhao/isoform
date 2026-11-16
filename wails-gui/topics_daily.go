@@ -143,6 +143,8 @@ func (a *App) SetDailyTopicsEnabled(enabled bool) (DailyTopicsView, error) {
 	if enabled {
 		go a.maybeBuildDailyTopics(context.Background(), "enabled")
 	}
+	// Your work shows the topics' proposals only while this is on.
+	a.touchDerivedViews(derivedWorkList)
 	return a.GetDailyTopics()
 }
 

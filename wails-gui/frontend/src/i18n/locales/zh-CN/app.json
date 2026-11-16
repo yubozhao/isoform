@@ -257,6 +257,8 @@
         "mainNavigation": "主导航",
         "show": "显示侧边栏",
         "waitingOverflow": "9+",
+        "rowWaiting": "{{label}}，{{state}}",
+        "rowUnread": "{{label}}，未读",
         "waiting": "{{count}} 项等你处理",
         "newChat": "新聊天",
         "searchShortcutMac": "⌘K",
@@ -407,7 +409,7 @@
     "observingStatus": {
         "label": "后台观察中",
         "title": "后台观察中",
-        "ariaLabel": "后台观察状态",
+        "ariaLabel": "后台观察：{{state}}",
         "description": {
             "screenAndAudio": "Isoform 观察屏幕并聆听语音，从你的工作中学习。所有内容都留在这台电脑上。",
             "screen": "Isoform 观察屏幕，从你的工作中学习。所有内容都留在这台电脑上。",

@@ -685,6 +685,17 @@
         "forgetAll": "全部忘记（{{n}}）",
         "forgetOne": "忘记",
         "staysWith": "已发给 {{agent}} · 留在 {{agent}} 那里",
+        "handedOverYes": "你说「是」后交出",
+        "handedOverPhone": "你在手机上说「是」后交出",
+        "handedOver": "{{given}} · {{time}} 交回",
+        "outcomeLine": "{{given}} · {{outcome}}",
+        "outcome": {
+            "done": "已交回",
+            "taken": "{{agent}} 已读",
+            "notDone": "{{agent}} 没能完成",
+            "noWord": "还没有消息"
+        },
+        "forgetHandoff": "忘记你对「{{title}}」的记录？{{agent}} 做出的内容会留在 {{agent}} 那里。",
         "tabAnswers": "你的回答"
     },
     "feed": {
@@ -722,6 +733,7 @@
             "activity": "活动",
             "watch": "手表"
         },
+        "untitledHandoff": "一次交接",
         "forgetRow": "忘记：{{title}}"
     },
     "ans": {

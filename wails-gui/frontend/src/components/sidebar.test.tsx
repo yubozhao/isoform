@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { ProfilePage } from "./settings/pages/profile-page";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -11,7 +11,8 @@ import sidebarSource from "./sidebar.tsx?raw";
 import footSource from "./sidebar-foot.tsx?raw";
 import { Sidebar } from "./sidebar";
 import { phoneLineState, watchLineState } from "./sidebar-foot";
-import { PAUSE_OBSERVING_COMBO, comboToDisplayString } from "@/hooks/useKeybindings";
+import { PAGE_KEYS, PAUSE_OBSERVING_COMBO, comboToDisplayString, useKeybindings } from "@/hooks/useKeybindings";
+import { axeViolations } from "@/test-utils/axe";
 
 const mocks = vi.hoisted(() => ({
     about: { update: { status: "idle", version: "0.1.302" }, later: false },
@@ -226,7 +227,7 @@ describe("Sidebar: five places (computer-map v1.0.0 §2)", () => {
         mocks.about = { update: { status: "update-downloaded", version: "0.1.302" }, later: false };
         renderSidebar();
         const card = await screen.findByRole("region", { name: "Update ready" });
-        const observing = screen.getByRole("button", { name: "Background observing status" });
+        const observing = screen.getByRole("button", { name: /^Background observing/ });
         expect(card.compareDocumentPosition(observing) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
         fireEvent.click(screen.getByRole("button", { name: "Later" }));
         await waitFor(() => expect(screen.queryByRole("region", { name: "Update ready" })).not.toBeInTheDocument());
@@ -308,5 +309,44 @@ describe("Sidebar foot states", () => {
         expect(watchLineState([{ startedAt: "2026-11-15T17:30:00Z" }] as never, now)).toEqual({ kind: "listening" });
         const old = watchLineState([{ startedAt: "2026-11-15T12:00:00Z" }, { startedAt: "bad" }] as never, now);
         expect(old.kind).toBe("heard");
+    });
+});
+
+// Pass-access v1.0.0 (shell AX1, AX2): the sidebar by keyboard and VoiceOver.
+describe("Sidebar accessibility", () => {
+    beforeEach(async () => { await i18n.changeLanguage("en"); });
+
+    it.each([false, true])("has no axe violations, open or folded (folded: %s)", async (collapsed) => {
+        renderSidebar({ collapsed, waitingCount: 4, chatUnread: true });
+        expect(await axeViolations(document.querySelector("aside")!)).toEqual([]);
+    });
+
+    it.each([false, true])("reads counts and states as words, not just a badge or a dot (folded: %s)", (collapsed) => {
+        renderSidebar({ collapsed, waitingCount: 4, chatUnread: true });
+        expect(screen.getByRole("button", { name: "Today, 4 to answer" })).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Chat, unread" })).toBeInTheDocument();
+    });
+
+    it("names every button", () => {
+        renderSidebar({ waitingCount: 1, chatUnread: true });
+        const unnamed = screen.getAllByRole("button").filter((b) => !(b.getAttribute("aria-label") || b.textContent || "").trim());
+        expect(unnamed.map((b) => b.outerHTML.replace(/ class="[^"]*"/g, "").slice(0, 240))).toEqual([]);
+    });
+
+    it("gives Today, Chat, Agents, Activity and You the keys 1 to 5, in the sidebar's order", () => {
+        const { result } = renderHook(() => useKeybindings());
+        expect(PAGE_KEYS).toEqual(["today", "chat", "agents", "activity", "you"]);
+        renderSidebar();
+        const order = Array.from(document.querySelectorAll("aside [data-sidebar-place]")).map((el) => el.getAttribute("data-sidebar-place"));
+        expect(order.slice(0, 5)).toEqual([...PAGE_KEYS]);
+        PAGE_KEYS.forEach((page, i) => {
+            const combo = result.current.getCombo(`go-${page}`)!;
+            expect(combo.key).toBe(String(i + 1));
+            expect(combo.meta || combo.ctrl).toBe(true);
+            const event = new KeyboardEvent("keydown", { key: String(i + 1), metaKey: combo.meta, ctrlKey: combo.ctrl });
+            expect(result.current.findMatchingAction(event)).toBe(`go-${page}`);
+            const action = result.current.actions.find((a) => a.id === `go-${page}`)!;
+            expect(action.label).not.toMatch(/keybindings\.commands/);
+        });
     });
 });

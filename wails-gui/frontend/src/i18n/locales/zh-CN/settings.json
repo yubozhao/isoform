@@ -2079,6 +2079,26 @@
                 "label": "打开设置",
                 "description": "打开这个设置窗口"
             },
+            "go-today": {
+                "label": "前往今日",
+                "description": "打开今日"
+            },
+            "go-chat": {
+                "label": "前往聊天",
+                "description": "打开聊天"
+            },
+            "go-agents": {
+                "label": "前往智能体",
+                "description": "打开你的智能体和它们手上的工作"
+            },
+            "go-activity": {
+                "label": "前往活动",
+                "description": "打开活动"
+            },
+            "go-you": {
+                "label": "前往关于你",
+                "description": "打开 Isoform 对你的了解"
+            },
             "new-chat": {
                 "label": "新建对话",
                 "description": "开始一段新的对话"

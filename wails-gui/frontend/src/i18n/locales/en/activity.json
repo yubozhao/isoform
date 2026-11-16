@@ -685,6 +685,17 @@
         "forgetAll": "Forget all {{n}}",
         "forgetOne": "Forget",
         "staysWith": "Sent to {{agent}} · stays with {{agent}}",
+        "handedOverYes": "Handed over by your Yes",
+        "handedOverPhone": "Handed over by your Yes on your phone",
+        "handedOver": "{{given}} · back at {{time}}",
+        "outcomeLine": "{{given}} · {{outcome}}",
+        "outcome": {
+            "done": "came back",
+            "taken": "{{agent}} read it",
+            "notDone": "{{agent}} couldn't do it",
+            "noWord": "no word yet"
+        },
+        "forgetHandoff": "Forget your record of \"{{title}}\"? What {{agent}} made stays with {{agent}}.",
         "tabAnswers": "Your answers"
     },
     "feed": {
@@ -722,6 +733,7 @@
             "activity": "Activity",
             "watch": "Watch"
         },
+        "untitledHandoff": "A hand-off",
         "forgetRow": "Forget: {{title}}"
     },
     "ans": {

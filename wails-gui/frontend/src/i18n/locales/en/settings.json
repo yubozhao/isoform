@@ -2079,6 +2079,26 @@
                 "label": "Open settings",
                 "description": "Open this Settings window"
             },
+            "go-today": {
+                "label": "Go to Today",
+                "description": "Open Today"
+            },
+            "go-chat": {
+                "label": "Go to Chat",
+                "description": "Open Chat"
+            },
+            "go-agents": {
+                "label": "Go to Agents",
+                "description": "Open your agents and the work they have"
+            },
+            "go-activity": {
+                "label": "Go to Activity",
+                "description": "Open Activity"
+            },
+            "go-you": {
+                "label": "Go to You",
+                "description": "Open what Isoform knows about you"
+            },
             "new-chat": {
                 "label": "New chat",
                 "description": "Start a new conversation"

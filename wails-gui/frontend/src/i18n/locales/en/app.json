@@ -257,6 +257,8 @@
         "mainNavigation": "Main navigation",
         "show": "Show sidebar",
         "waitingOverflow": "9+",
+        "rowWaiting": "{{label}}, {{state}}",
+        "rowUnread": "{{label}}, unread",
         "waiting": "{{count}} waiting on you",
         "newChat": "New chat",
         "searchShortcutMac": "⌘K",
@@ -407,7 +409,7 @@
     "observingStatus": {
         "label": "Observing in background",
         "title": "Observing in background",
-        "ariaLabel": "Background observing status",
+        "ariaLabel": "Background observing: {{state}}",
         "description": {
             "screenAndAudio": "Isoform watches your screen and listens for speech to learn from your work. Everything stays on this computer.",
             "screen": "Isoform watches your screen to learn from your work. Everything stays on this computer.",

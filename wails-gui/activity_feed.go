@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"wails-gui/internal/workonit"
 )
 
 // The Activity page's one timeline (computer-activity v1.0.0): everything
@@ -17,8 +19,9 @@ import (
 
 // ActivityFeedRow is one thing Isoform saw or did. Kind is "screen" (a
 // moment), "watch" (a conversation the watch or phone heard), "agent" (a
-// coding agent working on this computer) or "closed" (Closed Eyes: nothing
-// was kept, so the row has no id and no Forget).
+// coding agent working on this computer), "handoff" (work your Yes sent to
+// one of your agents) or "closed" (Closed Eyes: nothing was kept, so the row
+// has no id and no Forget).
 type ActivityFeedRow struct {
 	ID      string `json:"id"`
 	Kind    string `json:"kind"`
@@ -35,6 +38,12 @@ type ActivityFeedRow struct {
 	InProgress  bool   `json:"inProgress,omitempty"`
 	Withheld    string `json:"withheld,omitempty"`
 	RecordingID string `json:"recordingId,omitempty"`
+	// Hand-off rows (kind "handoff"): where the Yes was given, and what
+	// Isoform knows the agent did: "sent", "taken" (it read it), "done" (it
+	// came back, at DoneMs), "not_done" (it couldn't do it) or "no_word".
+	Surface string `json:"surface,omitempty"`
+	Outcome string `json:"outcome,omitempty"`
+	DoneMs  int64  `json:"doneMs,omitempty"`
 }
 
 // ActivityForgetItem is one thing that goes when a row is forgotten. Kind is
@@ -55,6 +64,8 @@ type ActivityForgetPreview struct {
 	ID    string               `json:"id"`
 	Title string               `json:"title"`
 	Goes  []ActivityForgetItem `json:"goes"`
+	// Agent names the agent a hand-off went to: what it made stays with it.
+	Agent string `json:"agent,omitempty"`
 }
 
 var errActivityFeedNotReady = errors.New("activity store not ready")
@@ -75,6 +86,9 @@ func (a *App) GetActivityFeed(startMs, endMs int64) (perfValue []ActivityFeedRow
 		if agents, err := a.activityFeedAgentRows(context.Background(), startMs, endMs); err == nil {
 			rows = append(rows, agents...)
 		}
+	}
+	if handoffs, err := a.GetWorkOnItHandoffs(); err == nil {
+		rows = append(rows, activityFeedHandoffRows(handoffs, a.workOnItOutcomes(), startMs, endMs, time.Now().UnixMilli())...)
 	}
 	if recordings, err := a.GetWatchRecordings(); err == nil {
 		rows = append(rows, activityFeedWatchRows(recordings, startMs, endMs)...)
@@ -128,6 +142,55 @@ func activityFeedWatchRows(recordings []WatchRecording, startMs, endMs int64) []
 		}
 		out = append(out, ActivityFeedRow{ID: rec.ID, Kind: "watch", StartMs: at, EndMs: at + int64(rec.DurationSeconds*1000),
 			Words: rec.Words, Device: device, RecordingID: rec.ID})
+	}
+	return out
+}
+
+// workOnItOutcomes reads each sent task's record by id: what Isoform knows
+// the agent did with it. The record keeps counts and times, never text.
+func (a *App) workOnItOutcomes() map[string]workonit.Record {
+	s := a.workOnIt()
+	s.recordsMu.Lock()
+	records, err := workOnItReadLocked()
+	s.recordsMu.Unlock()
+	out := map[string]workonit.Record{}
+	if err != nil {
+		return out
+	}
+	for _, r := range records {
+		out[r.ID] = r
+	}
+	return out
+}
+
+func activityFeedHandoffRows(handoffs []workonit.Handoff, records map[string]workonit.Record, startMs, endMs, nowMs int64) []ActivityFeedRow {
+	out := []ActivityFeedRow{}
+	for _, h := range handoffs {
+		if h.SentAt < startMs || h.SentAt >= endMs {
+			continue
+		}
+		name := h.AgentID
+		if agent, ok := workonit.AgentByID(h.AgentID); ok {
+			name = agent.Name
+		}
+		title := strings.TrimSpace(strings.SplitN(strings.TrimSpace(h.Text), "\n", 2)[0])
+		row := ActivityFeedRow{ID: h.ID, Kind: "handoff", StartMs: h.SentAt, EndMs: h.SentAt, App: name,
+			Title: truncateRunes(title, 140), Surface: h.Surface, Outcome: "sent"}
+		if r, ok := records[h.ID]; ok {
+			switch r.Status {
+			case workonit.StatusDone:
+				row.Outcome, row.DoneMs = "done", r.DoneAt
+			case workonit.StatusNotDone:
+				row.Outcome = "not_done"
+			case workonit.StatusTaken:
+				row.Outcome = "taken"
+			default:
+				if nowMs-r.SentAt >= workonit.AskAfter.Milliseconds() {
+					row.Outcome = "no_word"
+				}
+			}
+		}
+		out = append(out, row)
 	}
 	return out
 }
@@ -218,6 +281,18 @@ func (a *App) GetActivityForgetPreview(kind, id string) (ActivityForgetPreview, 
 			preview.Goes = append(preview.Goes, ActivityForgetItem{Kind: "notes"})
 		}
 		preview.Goes = append(preview.Goes, ActivityForgetItem{Kind: "copies"})
+	case "handoff":
+		handoffs, err := a.GetWorkOnItHandoffs()
+		if err != nil {
+			return preview, err
+		}
+		for _, row := range activityFeedHandoffRows(handoffs, nil, 0, 1<<62, 0) {
+			if row.ID == id {
+				preview.Title, preview.Agent = row.Title, row.App
+				return preview, nil
+			}
+		}
+		return preview, errWorkOnItNoHandoff
 	case "agent":
 		if a.activity == nil || a.activity.store == nil {
 			return preview, errActivityFeedNotReady
@@ -258,6 +333,10 @@ func (a *App) ForgetActivityFeedRow(kind, id string) error {
 		return a.DeleteActivity(id)
 	case "watch":
 		return a.DeleteWatchRecording(id)
+	case "handoff":
+		// Isoform's record of the hand-off goes; what the agent made stays
+		// with the agent (computer-activity v1.2.0 rule 3).
+		return a.ForgetWorkOnItHandoff(id)
 	case "agent":
 		if a.activity == nil || a.activity.store == nil {
 			return errActivityFeedNotReady

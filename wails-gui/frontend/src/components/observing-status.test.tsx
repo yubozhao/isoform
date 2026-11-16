@@ -42,7 +42,7 @@ function emit(name: string, ...args: unknown[]) {
 }
 
 async function openTooltip() {
-    const trigger = await screen.findByRole("button", { name: "Background observing status" });
+    const trigger = await screen.findByRole("button", { name: /^(Background observing|后台观察)/ });
     fireEvent.focus(trigger);
     return screen.findByTestId("observing-doing-now");
 }
@@ -80,7 +80,7 @@ describe("ObservingStatus doing-now line", () => {
         let answer: (view: DoingNow) => void = () => {};
         mocks.getDoingNow.mockReturnValue(new Promise<DoingNow>((resolve) => (answer = resolve)));
         render(<ObservingStatus />);
-        const trigger = await screen.findByRole("button", { name: "Background observing status" });
+        const trigger = await screen.findByRole("button", { name: /^(Background observing|后台观察)/ });
         emit("doing-now:changed", { kind: "paused" });
         await act(async () => answer({ kind: "watching" }));
         fireEvent.focus(trigger);
@@ -90,7 +90,7 @@ describe("ObservingStatus doing-now line", () => {
     it("shows no line when it cannot be read", async () => {
         mocks.getDoingNow.mockRejectedValue(new Error("no app"));
         render(<ObservingStatus />);
-        const trigger = await screen.findByRole("button", { name: "Background observing status" });
+        const trigger = await screen.findByRole("button", { name: /^(Background observing|后台观察)/ });
         fireEvent.focus(trigger);
         expect(await screen.findAllByText("Observing in background")).toHaveLength(2);
         expect(screen.queryByTestId("observing-doing-now")).not.toBeInTheDocument();
@@ -118,7 +118,7 @@ describe("ObservingStatus doing-now line", () => {
         await i18n.changeLanguage("zh-CN");
         mocks.getDoingNow.mockResolvedValue({ kind: "meeting", app: "Zoom" });
         render(<ObservingStatus />);
-        const trigger = await screen.findByRole("button", { name: zh.observingStatus.ariaLabel });
+        const trigger = await screen.findByRole("button", { name: /^后台观察：/ });
         fireEvent.focus(trigger);
         expect(await screen.findByTestId("observing-doing-now")).toHaveTextContent("正在听你的 Zoom 通话");
     });
@@ -136,7 +136,7 @@ describe("Observation controls", () => {
         mocks.pause.mockResolvedValue(undefined);
         const onOpenSettings = vi.fn();
         render(<ObservingStatus onOpenSettings={onOpenSettings} />);
-        fireEvent.focus(await screen.findByRole("button", { name: t("observingStatus.ariaLabel") }));
+        fireEvent.focus(await screen.findByRole("button", { name: /^(Background observing|后台观察)/ }));
         expect(await screen.findByText(t("observingStatus.counts", { screens: 785, minutes: 114 }))).toBeInTheDocument();
         fireEvent.click(screen.getByText(t("observingStatus.pause15")));
         await act(async () => {});

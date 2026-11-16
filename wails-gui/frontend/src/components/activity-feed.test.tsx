@@ -125,4 +125,29 @@ describe('ActivityFeed', () => {
         await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
         await waitFor(() => expect(forget).toHaveFocus());
     });
+
+    // computer-activity v1.2.0, Activity › Agents: a hand-off says what Isoform
+    // knows the agent did, and Forget removes only Isoform's record of it.
+    it('shows a hand-off with what the agent did, and Forget keeps the agent\'s work', async () => {
+        binding('GetActivityFeed').mockResolvedValue([
+            { id: 'h-1', kind: 'handoff', startMs: at(9), endMs: at(9), app: 'Codex', title: 'Write the test plan', surface: 'computer', outcome: 'done', doneMs: at(11) },
+            { id: 'h-2', kind: 'handoff', startMs: at(8), endMs: at(8), app: 'Claude', title: 'Reply to Sam', surface: 'phone', outcome: 'no_word' },
+        ]);
+        binding('GetActivityForgetPreview').mockResolvedValue({ kind: 'handoff', id: 'h-1', title: 'Write the test plan', goes: [], agent: 'Codex' });
+        binding('ForgetActivityFeedRow').mockResolvedValue(undefined);
+        await act(async () => {
+            render(<ActivityFeed date={day} kinds={['handoff', 'agent']} />);
+        });
+        expect(await screen.findByText('Write the test plan')).toBeInTheDocument();
+        expect(screen.getAllByText('Your agents · Codex')).toHaveLength(1);
+        expect(screen.getByText(/^Handed over by your Yes · back at 11:00\s?AM$/)).toBeInTheDocument();
+        expect(screen.getByText('Handed over by your Yes on your phone · no word yet')).toBeInTheDocument();
+        const row = screen.getByText('Write the test plan').closest('li') as HTMLElement;
+        fireEvent.click(within(row).getByRole('button', { name: 'Forget: Write the test plan' }));
+        const dialog = await screen.findByRole('dialog');
+        expect(within(dialog).getByText('Forget your record of "Write the test plan"? What Codex made stays with Codex.')).toBeInTheDocument();
+        expect(within(dialog).queryByRole('listitem')).toBeNull();
+        fireEvent.click(within(dialog).getByRole('button', { name: enActivity.act.forgetOne }));
+        await waitFor(() => expect(binding('ForgetActivityFeedRow')).toHaveBeenCalledWith('handoff', 'h-1'));
+    });
 });

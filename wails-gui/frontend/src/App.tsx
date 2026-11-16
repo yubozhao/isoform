@@ -141,7 +141,7 @@ import {
 } from "../wailsjs/runtime/runtime";
 
 import { useSettings } from "@/hooks/useSettings";
-import { comboToDisplayString, useKeybindings } from "@/hooks/useKeybindings";
+import { comboToDisplayString, useKeybindings, type PageKey } from "@/hooks/useKeybindings";
 import { useChatMessageJump } from "@/hooks/useChatMessageJump";
 import { useMainChatWaitingCount } from "@/hooks/useMainChatWaitingCount";
 import { usePageWindowTitle } from "@/hooks/usePageWindowTitle";
@@ -3193,6 +3193,35 @@ export default function App() {
         projects.activeSession?.streaming,
     ]);
 
+    // ⌘1 to ⌘5 open the sidebar's pages (pass-access v1.0.0 rule 1). Set
+    // each render below, once every page opener exists.
+    const goToPageRef = useRef<(page: PageKey) => void>(() => {});
+    goToPageRef.current = (page: PageKey) => {
+        if (settings.settingsOpen) settings.setSettingsOpen(false);
+        switch (page) {
+            case "today":
+                handleSetAppMode("today");
+                break;
+            case "chat":
+                handleSetAppMode("chat");
+                void Promise.resolve(projects.handleOpenMainChat()).finally(
+                    () => requestAnimationFrame(() => focusComposer()),
+                );
+                break;
+            case "agents":
+                handleSetAppMode("agents");
+                setHandoffOpenId(null);
+                break;
+            case "activity":
+                if (appMode !== "activity") openActivityFresh();
+                break;
+            case "you":
+                // Like the sidebar row: You keeps the tab you were on.
+                if (!isYouMode(appMode)) setMemoryOpen(true);
+                break;
+        }
+    };
+
     // ── Keyboard shortcuts (dynamic via keybindings) ──
     useEffect(() => {
         const onKeyDown = (e: KeyboardEvent) => {
@@ -3228,6 +3257,14 @@ export default function App() {
                     handleSetAppMode("chat");
                     break;
                 }
+                case "go-today":
+                case "go-chat":
+                case "go-agents":
+                case "go-activity":
+                case "go-you":
+                    e.preventDefault();
+                    goToPageRef.current(actionId.slice(3) as PageKey);
+                    break;
                 case "replay-onboarding":
                     // A developer shortcut: bound only while Developer tools
                     // are on. Users rerun setup from About.

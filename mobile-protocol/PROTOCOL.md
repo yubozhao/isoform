@@ -2055,6 +2055,7 @@ A proposal's task instructions never leave the computer.
 | --- | --- | --- | --- |
 | `GET /topics-daily` | `brief:read` | no body | 200 `{"enabled":true,"day":"2026-11-14","builtAt":<unix ms>,"topics":[topic]}` |
 | `POST /topics-daily/answer` | `offers:decide` | `{"topicId","proposalId","verdict":"yes"\|"no"\|"not_mine","idempotencyKey"}` | 200 the answered `topic`; 400 bad verdict or key; 404 the topic or proposal is no longer shown; 409 already answered |
+| `POST /topics-daily/enabled` | `offers:decide` | `{"enabled":true}` | 200 the `GET /topics-daily` body as it is now; 400 when `enabled` is missing (15.9.1) |
 
 `topic` is `{"id","kind","name","why"?,"lastSeenAt"?,"latest"?,"next"?,"proposal"?}`
 and `proposal` is `{"id","title","why"?,"state","taskId"?,"result"?}`. `state` is
@@ -2063,6 +2064,15 @@ and `proposal` is `{"id","title","why"?,"state","taskId"?,"result"?}`. `state` i
 a `proposed` proposal can be answered, and only today's: an answer names the
 proposal's `id`. Yes starts the work as a Task on the computer; no and "not
 mine" are kept as feedback, and a "not mine" topic leaves the next copy.
+
+### 15.9.1 The topics switch from the phone (additive, 2026-11-15)
+
+`GET /status` advertises `topicsDailySwitch: true`. `POST /topics-daily/enabled` is the phone's
+Proposals from your topics switch (phone-settings v1.0.0): the same one setting as the computer's,
+so either device turns it on or off for both. `GET /topics-daily`'s `enabled` is its state. Turning
+it on builds today's copy in the background, so the answer may have no topics yet; they come with
+the next read. Turning it off takes the topics' proposals out of Your work (`GET /work`) at once;
+answers already given stay in the ledger (26.2). Setting the state it already has changes nothing.
 
 ## 16. Notification controls
 
@@ -3661,10 +3671,17 @@ pause.
   left out. It answers `{"observingPause": {...}, "startedHere": true}` with the pause as in 24.8.
   When observing is already paused it changes nothing and answers the pause that holds with
   `"startedHere": false`: a pause made at the computer is never shortened or taken over.
+- `{"untilEnded": true}` instead of `minutes` (additive, 2026-11-15; `GET /status` advertises
+  `observingPauseUntilEnded: true`) pauses with no end, as the computer's own Pause observing switch
+  does: Closed Eyes "until I end it". The answer's pause has no `until`. Sending both is `400`. The
+  person ends it from the phone with the route below, or at the computer.
 - `POST /observing/resume` (scope `chat:write`), body `{}`: ends a pause a phone started with the
   route above and that has not run out, and answers `{"observingPause": null}`. For any other pause
   it answers `409` with `data: {"code":"pause_not_from_phone"}`: a pause made at the computer is
-  ended at the computer. With no pause it answers `200`.
+  ended at the computer. A pause the computer made after the phone's ended (it has another start)
+  is the computer's. The computer remembers which pause a phone started only while it runs: after
+  the app restarts, a phone's pause, with or without an end, is ended at the computer. With no
+  pause it answers `200`.
 
 Pausing only ever protects the person, so it needs no more than `chat:write`. The watch has no
 route of its own: it asks the phone, which calls these.
@@ -4096,8 +4113,8 @@ The agents body:
   is on the computer. `connected` stays false until agents can join (B5). `lastWorkedAt` (ms) is
   when it last took or finished a hand-off, omitted when never.
 - The computer keeps each hand-off with exactly what went (the task text, the agent, how it went,
-  the source and the time) on the computer only, for 90 days. The person can forget one or all,
-  and a withdrawn source removes its hand-offs. This log is not sent to the phone in v1.
+  the source and the time) on the computer, for 90 days. The person can forget one or all, and a
+  withdrawn source removes its hand-offs. The phone reads it with `GET /agents/handoffs` (27.3).
 
 ### 27.1 Hand-offs to a connected agent (B5)
 
@@ -4106,3 +4123,32 @@ directly: `POST /agents/handoffs` writes the task on the computer from the item'
 it in that agent's inbox, and keeps the hand-off with `surface: "phone"`. The phone sends it only on
 the person's Send. The agent's result comes back to Your work as for any hand-off. An agent that
 isn't connected answers 409; the phone then uses its own sheet (copy and open, or Messages).
+
+### 27.3 Sent to your agents (additive, 2026-11-15)
+
+Design: phone-settings v1.0.0 rule 12, Your data, Left your devices. `GET /status` advertises
+`agentHandoffs: true`.
+
+| Route | Scope | Body | Answer |
+|---|---|---|---|
+| `GET /agents/handoffs?limit=50&before=<id>` | `chat:read` | none | 200 the page below; 400 for a `limit` outside 1 to 200 |
+
+```json
+{"handoffs": [
+  {"id": "<record id>", "agentId": "claude-code", "agentName": "Claude Code", "kind": "code|else",
+   "method": "task_link|deep_link|paste|open_copy|message|share|...", "via": "<optional>",
+   "text": "Write the launch checklist.", "sent": "<optional: what left, when it differs from text>",
+   "sentAt": "<RFC 3339>", "surface": "phone|computer",
+   "source": {"kind": "brief_item|topic_proposal|chat_card|...", "id": "<optional>"}}
+ ],
+ "next": "<id of the last hand-off on this page, when there are more>"}
+```
+
+- Newest first. `before` is the `next` of the previous page; an unknown `before` gives an empty page.
+- It is the computer's own log and nothing more: what went (`text`, and `sent` when what left
+  differs, such as the one line of a task link), when (`sentAt`), to whom (`agentId`, with
+  `agentName` from the catalog, else the id), how (`method`, `via`), and where the Yes was given
+  (`surface`). `text` is bounded to 8000 bytes and `sent` to 2000, each ending ` [truncated]` when
+  cut. Attachments are not in the log yet.
+- A hand-off the person forgets on the computer, or whose source is withdrawn, is gone from the
+  next read. The phone keeps no copy beyond the screen it shows.

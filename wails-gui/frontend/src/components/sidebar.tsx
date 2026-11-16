@@ -206,6 +206,7 @@ export function Sidebar({
                         : "text-muted hover:bg-surface-hover"
                 }`}
                 aria-current={place.active ? "page" : undefined}
+                aria-label={count > 0 && place.badgeLabel ? t("sidebar.rowWaiting", { label: place.label, state: place.badgeLabel }) : place.dot ? t("sidebar.rowUnread", { label: place.label }) : undefined}
                 onClick={place.onClick}
                 onMouseEnter={place.warmLazy ? warmLazyPages : undefined}
                 style={{ animationDelay: `${delay}ms` }}
@@ -213,8 +214,8 @@ export function Sidebar({
             >
                 <place.Icon className="size-[15px] shrink-0" />
                 <span className="flex-1 min-w-0 text-left truncate">{place.label}</span>
-                {count > 0 && <span title={place.badgeLabel} aria-label={place.badgeLabel} className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-warning-bg text-warning text-[11px] font-semibold">{count}</span>}
-                {place.dot && <span aria-label={t("sidebar.unread")} data-chat-dot className="size-1.5 shrink-0 rounded-full bg-copper mr-1" />}
+                {count > 0 && <span role="img" title={place.badgeLabel} aria-label={place.badgeLabel} className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-warning-bg text-warning text-[11px] font-semibold">{count}</span>}
+                {place.dot && <span role="img" aria-label={t("sidebar.unread")} data-chat-dot className="size-1.5 shrink-0 rounded-full bg-copper mr-1" />}
             </Button>
         );
     };
@@ -223,6 +224,7 @@ export function Sidebar({
         <Button variant="quiet" size="icon"
             className="sidebar-row-in p-1 rounded-md text-icon-subtle hover:text-ink hover:bg-surface-hover transition-colors duration-[var(--motion-duration-fast)] ease-[var(--motion-ease-out)] cursor-pointer"
             onClick={onToggleCollapse}
+            aria-label={t("sidebar.collapse")}
             title={t("sidebar.collapse")}
             style={
                 {
@@ -267,11 +269,11 @@ export function Sidebar({
                                 <MarkMotion size={19} needsCount={waitingCount} pageKey={markPageKey} />
                             </Button>
                             {places.map((place, index) => (
-                                <Button key={place.key} variant="quiet" size="icon" className={`relative shrink-0 transition-none ${place.active ? "bg-surface-active" : ""}`} aria-label={place.badge ? t("sidebar.railWithCount", { place: place.label, detail: place.badgeLabel }) : place.label} aria-current={place.active ? "page" : undefined} title={place.badge ? place.badgeLabel : place.label} onClick={place.onClick} onMouseEnter={place.warmLazy ? warmLazyPages : undefined} {...warm(place.page)} data-rail-index={index} data-sidebar-place={place.key}>
+                                <Button key={place.key} variant="quiet" size="icon" className={`relative shrink-0 transition-none ${place.active ? "bg-surface-active" : ""}`} aria-label={place.badge ? t("sidebar.railWithCount", { place: place.label, detail: place.badgeLabel }) : place.dot ? t("sidebar.rowUnread", { label: place.label }) : place.label} aria-current={place.active ? "page" : undefined} title={place.badge ? place.badgeLabel : place.label} onClick={place.onClick} onMouseEnter={place.warmLazy ? warmLazyPages : undefined} {...warm(place.page)} data-rail-index={index} data-sidebar-place={place.key}>
                                     <span className="relative inline-flex size-[15px]">
                                         <place.Icon className="size-[15px]" />
-                                        {place.badge ? <span className="absolute -right-2 -top-2 inline-flex items-center justify-center h-4 min-w-4 rounded-full bg-waiting-badge text-waiting-badge-fg px-0.5 text-[9px] leading-none font-medium" aria-label={place.badgeLabel}>{place.badge > 9 ? t("sidebar.waitingOverflow") : place.badge}</span> : null}
-                                        {place.dot ? <span aria-label={t("sidebar.unread")} className="absolute -right-1 -top-1 size-1.5 rounded-full bg-copper" /> : null}
+                                        {place.badge ? <span role="img" className="absolute -right-2 -top-2 inline-flex items-center justify-center h-4 min-w-4 rounded-full bg-waiting-badge text-waiting-badge-fg px-0.5 text-[9px] leading-none font-medium" aria-label={place.badgeLabel}>{place.badge > 9 ? t("sidebar.waitingOverflow") : place.badge}</span> : null}
+                                        {place.dot ? <span role="img" aria-label={t("sidebar.unread")} className="absolute -right-1 -top-1 size-1.5 rounded-full bg-copper" /> : null}
                                     </span>
                                 </Button>
                             ))}

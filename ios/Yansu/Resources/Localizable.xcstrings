@@ -1,6 +1,7 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "brief.positionSpoken" : {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"%1$@ of %2$@"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"%2$@ 中的 %1$@"}}}},
     "brief.notRight.failed" : {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Your computer didn't take this. Update Isoform on your computer, or tell it in Chat."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"你的电脑没有收到这条。请更新电脑上的 Isoform，或在聊天中告诉它。"}}}},
     "ob.skip" : {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Skip"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"跳过"}}}},
     "ob.continue" : {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Continue"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"继续"}}}},
