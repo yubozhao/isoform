@@ -337,13 +337,14 @@ func (a *App) SendWorkOnIt(taskID, agentID, method string) (WorkOnItSent, error)
 	}
 	out := WorkOnItSent{Method: method}
 	recordID := workOnItID()
-	sentLine := ""
+	sentLine, startedTask := "", ""
 	switch method {
 	case workonit.MethodConnected:
-		if err := a.sendWorkOnItConnected(task, agent.ID, recordID); err != nil {
+		started, err := a.sendWorkOnItConnected(task, agent.ID, recordID)
+		if err != nil {
 			return WorkOnItSent{}, err
 		}
-		out.Via = "inbox"
+		startedTask, out.Via = started, connectedVia(started)
 	case workonit.MethodTaskLink:
 		via, line, err := a.sendWorkOnItTaskLink(s, task, agent, handle, recordID)
 		if err != nil {
@@ -391,7 +392,7 @@ func (a *App) SendWorkOnIt(taskID, agentID, method string) (WorkOnItSent, error)
 	a.keepWorkOnItHandoff(workonit.Handoff{
 		ID: recordID, SourceKind: task.SourceKind, SourceID: task.SourceID, Kind: task.Kind,
 		AgentID: agent.ID, Method: method, Via: out.Via, Text: task.Text, Sent: sentLine,
-		SentAt: record.SentAt, Surface: "computer",
+		SentAt: record.SentAt, Surface: "computer", TaskID: startedTask,
 	})
 	s.mu.Lock()
 	delete(s.prepared, taskID)

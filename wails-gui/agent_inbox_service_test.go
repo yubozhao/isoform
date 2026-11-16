@@ -124,6 +124,16 @@ func TestConnectedAgentGetsTheWorkAndReportsBack(t *testing.T) {
 	if len(handoffs) != 1 || handoffs[0].Via != "inbox" || handoffs[0].Method != workonit.MethodConnected {
 		t.Fatalf("hand-offs = %+v", handoffs)
 	}
+	var opened [][]string
+	app.agentInbox.openFile = func(args []string) error { opened = append(opened, args); return nil }
+	if err := app.OpenAgentFile(sent.RecordID, "launch-note.md"); err != nil || len(opened) != 1 || opened[0][0] != "-e" || filepath.Base(opened[0][1]) != "launch-note.md" {
+		t.Fatalf("open: %v %v", err, opened)
+	}
+	for _, bad := range []string{"../connected.json", "other.md", ".source.json"} {
+		if err := app.OpenAgentFile(sent.RecordID, bad); err != errAgentFileUnknown {
+			t.Errorf("opened %q: %v", bad, err)
+		}
+	}
 }
 
 // TestDisconnectAndWithdrawalSpendTheInbox: Disconnect drops the agent's
@@ -243,5 +253,21 @@ func TestAgentInboxSurvivesARestart(t *testing.T) {
 	publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalSource, SourceKind: workonit.SourceBriefItem, ID: "b1"})
 	if n := len(third.agentInboxService().Items()); n != 0 {
 		t.Fatalf("%d waiting after a withdrawal at launch", n)
+	}
+}
+
+// TestAgentFilesNeverRun: a file an agent posts opens only as text, in
+// TextEdit; anything that could run or open something (.terminal, .command,
+// .app, .webloc, .fileloc, .scpt, .workflow, .html) is only shown in Finder.
+func TestAgentFilesNeverRun(t *testing.T) {
+	for _, name := range []string{"notes.md", "plan.TXT", "data.csv", "out.json", "fix.patch"} {
+		if args := agentFileOpenArgs("/x/" + name); args[0] != "-e" {
+			t.Errorf("%s opened with %v", name, args)
+		}
+	}
+	for _, name := range []string{"run.terminal", "go.command", "x.app", "site.webloc", "path.fileloc", "s.scpt", "w.workflow", "page.html", "noext", "x.sh", "x.py"} {
+		if args := agentFileOpenArgs("/x/" + name); args[0] != "-R" {
+			t.Errorf("%s opened with %v, want only Finder", name, args)
+		}
 	}
 }

@@ -158,4 +158,8 @@ type Entry struct {
 	// Thread is the task's conversation and outcome; nil on older records.
 	Thread   *Thread   `json:"thread,omitempty"`
 	ListItem *ListItem `json:"listItem,omitempty"`
+	// Backend pins the task to the coding agent the person connected and
+	// handed it to ("claude-code" or "codex"); empty runs on the app's
+	// provider. It never falls back to another agent.
+	Backend string `json:"backend,omitempty"`
 }

@@ -1,0 +1,97 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import i18n from "@/i18n";
+import en from "@/i18n/locales/en/app.json";
+
+const mocks = vi.hoisted(() => ({ start: vi.fn(), join: vi.fn(), answer: vi.fn(), cancel: vi.fn(), copy: vi.fn(), connectHere: vi.fn() }));
+vi.mock("@/lib/wails-shim-app", () => ({
+    StartAgentJoin: mocks.start, GetAgentJoin: mocks.join, AnswerAgentJoin: mocks.answer, CancelAgentJoin: mocks.cancel, NativeClipboardSetText: mocks.copy,
+    ConnectAgentHere: mocks.connectHere,
+}));
+
+import { ConnectAgentDialog, JOIN_POLL_MS } from "./ConnectAgentDialog";
+
+const message = "Join my Isoform: read https://abc.agents.isoform.ai/j/code and follow the steps there.";
+const agents = {
+    choices: { code: "", else: "" },
+    agents: [
+        { id: "claude-code", name: "Claude Code", kind: "code" as const, reach: "on_computer" as const, found: true, connected: false },
+        { id: "codex", name: "Codex", kind: "code" as const, reach: "connected_computer" as const, found: true, connected: true },
+        { id: "cursor", name: "Cursor", kind: "code" as const, reach: "on_computer" as const, found: true, connected: false },
+        { id: "other", name: "Other", kind: "code" as const, reach: "on_computer" as const, found: false, connected: false },
+    ],
+};
+
+beforeEach(async () => {
+    vi.resetAllMocks();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    await i18n.changeLanguage("en");
+    mocks.start.mockResolvedValue({ message, link: "https://abc.agents.isoform.ai/j/code", expiresAt: 0, local: false });
+    mocks.join.mockResolvedValue({ state: "waiting", expiresAt: 0 });
+    mocks.copy.mockResolvedValue(undefined);
+    mocks.answer.mockResolvedValue(undefined);
+});
+afterEach(() => vi.useRealTimers());
+
+describe("Connect an agent", () => {
+    it("shows the agents found here and the one message, and copies it", async () => {
+        render(<ConnectAgentDialog open onOpenChange={() => undefined} agents={agents} onConnected={() => undefined} />);
+        expect(await screen.findByText(message)).toBeInTheDocument();
+        expect(screen.getByText("Claude Code")).toBeInTheDocument();
+        expect(screen.queryByText("Other")).not.toBeInTheDocument();
+        expect(screen.getByText(en.agents.job.connected)).toBeInTheDocument();
+        // Cursor has no one-click connection: its Connect points the message at it.
+        const cursorRow = document.querySelector('[data-connect-here="cursor"]') as HTMLElement;
+        fireEvent.click(cursorRow.querySelector("button")!);
+        expect(screen.getByText(/Paste this into Cursor/)).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: en.agents.connectSheet.copy }));
+        await waitFor(() => expect(mocks.copy).toHaveBeenCalledWith(message));
+        expect(screen.getByRole("button", { name: en.agents.connectSheet.copied })).toBeInTheDocument();
+        expect(screen.getByText(en.agents.connectSheet.waiting)).toBeInTheDocument();
+    });
+
+    it("asks the person to Allow with the agent's check number, then says it's connected", async () => {
+        const onConnected = vi.fn();
+        render(<ConnectAgentDialog open onOpenChange={() => undefined} agents={agents} onConnected={onConnected} />);
+        await screen.findByText(message);
+        mocks.join.mockResolvedValue({ state: "requested", expiresAt: 0, name: "Grok", device: "the cloud", mayOpen: "the web only", check: "4821" });
+        await act(async () => { vi.advanceTimersByTime(JOIN_POLL_MS + 10); });
+        expect(await screen.findByText("Grok wants to join")).toBeInTheDocument();
+        expect(screen.getByText(/Check number 4821/)).toBeInTheDocument();
+        expect(screen.getByText("May open: the web only")).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: en.agents.connectSheet.allow }));
+        await waitFor(() => expect(mocks.answer).toHaveBeenCalledWith(true));
+        expect(await screen.findByText("Grok is connected")).toBeInTheDocument();
+        // The agent's token read spends the join; the sheet keeps saying it's connected.
+        mocks.join.mockResolvedValue(null);
+        await act(async () => { vi.advanceTimersByTime(JOIN_POLL_MS * 2); });
+        expect(screen.getByText("Grok is connected")).toBeInTheDocument();
+    });
+
+    it("connects Claude Code here with one click after asking once", async () => {
+        const onConnected = vi.fn();
+        mocks.connectHere.mockResolvedValueOnce(agents).mockRejectedValueOnce(new Error("signed out"));
+        render(<ConnectAgentDialog open onOpenChange={() => undefined} agents={agents} onConnected={onConnected} />);
+        await screen.findByText(message);
+        const row = () => document.querySelector('[data-connect-here="claude-code"]') as HTMLElement;
+        fireEvent.click(row().querySelector("button")!);
+        expect(screen.getByText(/Connect Claude Code\? It will receive the work you say yes to/)).toBeInTheDocument();
+        fireEvent.click(row().querySelector("[data-connect-here-yes]")!);
+        await waitFor(() => expect(mocks.connectHere).toHaveBeenCalledWith("claude-code"));
+        expect(onConnected).toHaveBeenCalled();
+        await waitFor(() => expect(row().textContent).toContain(en.agents.job.connected));
+    });
+
+    it("says why when agents can't connect, and closes an open link on close", async () => {
+        mocks.start.mockRejectedValueOnce(new Error("task links are off"));
+        const onOpenChange = vi.fn();
+        const { rerender } = render(<ConnectAgentDialog open onOpenChange={onOpenChange} agents={agents} onConnected={() => undefined} />);
+        expect(await screen.findByText(en.agents.connectSheet.off)).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: en.agents.retry }));
+        expect(await screen.findByText(message)).toBeInTheDocument();
+        fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+        await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+        expect(mocks.cancel).toHaveBeenCalled();
+        rerender(<ConnectAgentDialog open={false} onOpenChange={onOpenChange} agents={agents} onConnected={() => undefined} />);
+    });
+});

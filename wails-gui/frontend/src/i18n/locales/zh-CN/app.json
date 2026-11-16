@@ -1262,5 +1262,77 @@
         "terms": {
             "instinct": "Instinct 的条款允许它用收到的内容训练模型。"
         }
+    },
+    "agents": {
+        "title": "代理",
+        "sub": "你的代理在这里汇合：你交给它们的事、它们彼此的请求，以及它们做出的东西。",
+        "yours": "你的代理",
+        "job": {
+            "forCodeHere": "写代码 · 在这台电脑上",
+            "forCode": "写代码",
+            "forElse": "其他所有事",
+            "connected": "已连接",
+            "foundHere": "在这台电脑上找到",
+            "byText": "通过短信 · 未连接"
+        },
+        "working": "进行中：{{title}}",
+        "workingDot": "进行中",
+        "between": "今天，你和你的代理之间",
+        "youTo": "你 → {{agent}}",
+        "yesOn": "同意了“{{title}}”。",
+        "whatWent": "发出的内容",
+        "isBack": "{{agent}} 回来了",
+        "status": {
+            "blocked": "受阻",
+            "declined": "已拒绝"
+        },
+        "made": "你的代理做出的东西",
+        "thisWeek": "本周",
+        "empty": {
+            "agents": "还没有代理。连接一个就能把工作交给它。",
+            "between": "今天你和代理之间还没有往来。",
+            "made": "本周还没有做出任何东西。"
+        },
+        "connect": "连接代理",
+        "disconnect": "断开连接",
+        "makeCode": "设为你写代码的代理",
+        "makeElse": "设为你处理其他事的代理",
+        "showAll": "所有代理",
+        "failed": "无法读取你的代理。",
+        "actionFailed": "没有成功，请再试一次。",
+        "retry": "再试一次",
+        "connectSheet": {
+            "title": "连接代理",
+            "body": "连接后，你的同意会直接交给它，结果回到“你的工作”。它只能看到每次交接发送的内容。",
+            "onThis": "在这台电脑上",
+            "found": "在这台电脑上找到",
+            "connectThis": "连接",
+            "anyOther": "其他任何代理",
+            "pasteIntoTitle": "连接 {{agent}}",
+            "anyOtherHelp": "把它粘贴到 Claude、ChatGPT、Grok、Gemini、Muse、Devin，或任何能读取链接并运行命令的代理中。它会问你它在哪台设备上工作、可以打开什么，并确认是你；然后它就会加入。链接 10 分钟内有效。",
+            "pasteInto": "把这段粘贴到 {{agent}}。它会读取链接，问你三件事，然后加入。链接 10 分钟内有效。",
+            "localOnly": "只有这台电脑上的代理能读取这个链接。在“设置 › 其他 AI 应用”中打开代理地址，任何地方的代理都能连接。",
+            "copy": "复制",
+            "copied": "已复制",
+            "waiting": "正在等待你的代理加入 · 链接 10 分钟内有效",
+            "asks": "{{name}} 想要加入",
+            "asksDevice": "工作的设备：{{device}}",
+            "asksOpen": "可以打开：{{mayOpen}}",
+            "check": "核对数字 {{check}}。只有 {{name}} 给你看的数字相同时才允许。",
+            "allow": "允许",
+            "deny": "拒绝",
+            "joined": "{{name}} 已连接",
+            "another": "再连接一个",
+            "denied": "未连接。",
+            "expired": "链接已过期。",
+            "newLink": "生成新链接",
+            "off": "任务链接关闭或闭眼模式开启时，代理无法连接。",
+            "connectAsk": "连接 {{agent}}？它会收到你同意的工作，并把结果发回。它只能看到每次交接发送的内容。",
+            "connectFailed": "无法连接 {{agent}}。请确认它已安装并在这台电脑上登录。",
+            "cancel": "取消"
+        },
+        "backFromTask": "{{agent}} 回来了",
+        "notFinished": "{{agent}} 没有完成",
+        "allTasks": "所有任务"
     }
 }

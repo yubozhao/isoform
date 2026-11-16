@@ -31,6 +31,24 @@ func listHandoffBackend(entry *handoff.Entry) string {
 	}
 }
 
+// taskForcedBackend is the backend a task must run on: a checked list task's
+// assistant, or the coding agent a hand-off pinned (Agents C1). The run fails
+// rather than route elsewhere (checkListHandoffRoute).
+func taskForcedBackend(entry *handoff.Entry) string {
+	if backend := listHandoffBackend(entry); backend != "" {
+		return backend
+	}
+	if entry == nil {
+		return ""
+	}
+	switch entry.Backend {
+	case string(agent.BackendClaudeCode), string(agent.BackendCodex):
+		return entry.Backend
+	default:
+		return ""
+	}
+}
+
 func (a *App) validateListHandoffStart(entry *handoff.Entry) error {
 	if entry == nil || entry.ListItem == nil {
 		return nil

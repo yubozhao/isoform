@@ -1262,5 +1262,77 @@
         "terms": {
             "instinct": "Instinct's terms allow it to train on what it receives."
         }
+    },
+    "agents": {
+        "title": "Agents",
+        "sub": "Your agents meet here: what you handed them, what they asked each other, and what they made.",
+        "yours": "Your agents",
+        "job": {
+            "forCodeHere": "For code · on this computer",
+            "forCode": "For code",
+            "forElse": "For everything else",
+            "connected": "Connected",
+            "foundHere": "Found on this computer",
+            "byText": "By text message · not connected"
+        },
+        "working": "Working: {{title}}",
+        "workingDot": "Working",
+        "between": "Today, between you and your agents",
+        "youTo": "You → {{agent}}",
+        "yesOn": "Yes on \"{{title}}\".",
+        "whatWent": "What went",
+        "isBack": "{{agent}} is back",
+        "status": {
+            "blocked": "Blocked",
+            "declined": "Declined"
+        },
+        "made": "Made by your agents",
+        "thisWeek": "this week",
+        "empty": {
+            "agents": "No agents yet. Connect one to hand it work.",
+            "between": "Nothing between you and your agents today.",
+            "made": "Nothing made this week."
+        },
+        "connect": "Connect an agent",
+        "disconnect": "Disconnect",
+        "makeCode": "Make it your agent for code",
+        "makeElse": "Make it your agent for everything else",
+        "showAll": "All agents",
+        "failed": "Couldn't read your agents.",
+        "actionFailed": "That didn't work. Try again.",
+        "retry": "Try again",
+        "connectSheet": {
+            "title": "Connect an agent",
+            "body": "Once connected, a Yes goes straight to it and the result comes back to Your work. It sees only what each hand-off sends.",
+            "onThis": "On this computer",
+            "found": "Found on this computer",
+            "connectThis": "Connect",
+            "anyOther": "Any other agent",
+            "pasteIntoTitle": "Connect {{agent}}",
+            "anyOtherHelp": "Paste it into Claude, ChatGPT, Grok, Gemini, Muse, Devin, or any agent that can read a link and run a command. It asks which device it works on, what it may open, and to confirm you; then it joins. The link works for 10 minutes.",
+            "pasteInto": "Paste this into {{agent}}. It reads the link, asks you three things, then joins. The link works for 10 minutes.",
+            "localOnly": "Only agents on this computer can read this link. Turn on the agent address in Settings › Other AI apps for agents anywhere.",
+            "copy": "Copy",
+            "copied": "Copied",
+            "waiting": "Waiting for your agent to join · the link works for 10 minutes",
+            "asks": "{{name}} wants to join",
+            "asksDevice": "Works on: {{device}}",
+            "asksOpen": "May open: {{mayOpen}}",
+            "check": "Check number {{check}}. Allow it only if {{name}} shows you the same number.",
+            "allow": "Allow",
+            "deny": "Deny",
+            "joined": "{{name}} is connected",
+            "another": "Connect another",
+            "denied": "Not connected.",
+            "expired": "The link expired.",
+            "newLink": "Make a new link",
+            "off": "Agents can't connect while task links are off or Closed Eyes is on.",
+            "connectAsk": "Connect {{agent}}? It will receive the work you say yes to, and post results back. It sees only what each hand-off sends.",
+            "connectFailed": "Couldn't connect {{agent}}. Make sure it's installed and signed in on this computer.",
+            "cancel": "Cancel"
+        },
+        "backFromTask": "{{agent}} is back",
+        "notFinished": "{{agent}} didn't finish",
+        "allTasks": "All tasks"
     }
 }

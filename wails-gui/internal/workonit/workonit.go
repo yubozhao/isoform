@@ -400,4 +400,11 @@ type Handoff struct {
 	SentAt int64  `json:"sentAt"`
 	// Surface is where the Yes was given: computer or phone.
 	Surface string `json:"surface"`
+	// TaskID is the task a hand-off to a coding agent on this computer
+	// started (C1).
+	TaskID string `json:"taskId,omitempty"`
+	// TaskState and TaskResult are read from that task when listed: running,
+	// done or failed, and its summary. They are not stored.
+	TaskState  string `json:"taskState,omitempty"`
+	TaskResult string `json:"taskResult,omitempty"`
 }

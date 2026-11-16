@@ -15,6 +15,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -36,6 +37,8 @@ type agentInboxState struct {
 	box         *agentinbox.Inbox
 	fileMu      sync.Mutex
 	unsubscribe func()
+	// openFile is a test seam for OpenAgentFile: the arguments to open.
+	openFile func(args []string) error
 }
 
 func (a *App) agentInboxService() *agentinbox.Inbox {
@@ -79,6 +82,9 @@ func (a *App) connectedAgentFor(agentID string) (ConnectedAgentView, bool) {
 
 // connectedHandoffReady says a Yes for this agent can go to its inbox now.
 func (a *App) connectedHandoffReady(agentID string) bool {
+	if a.agentConnectedHere(agentID) {
+		return !a.IsClosedEyesModeEnabled()
+	}
 	if a.agentsAllowed() != nil {
 		return false
 	}
@@ -86,20 +92,36 @@ func (a *App) connectedHandoffReady(agentID string) bool {
 	return ok
 }
 
-// sendWorkOnItConnected puts the task in the connected agent's inbox.
-func (a *App) sendWorkOnItConnected(task workonit.Task, agentID, recordID string) error {
+// sendWorkOnItConnected hands the task to a connected agent: a task pinned
+// to a coding agent connected here (its id returned), or the joined agent's
+// inbox.
+func (a *App) sendWorkOnItConnected(task workonit.Task, agentID, recordID string) (string, error) {
+	if a.agentConnectedHere(agentID) {
+		if a.IsClosedEyesModeEnabled() {
+			return "", errWorkOnItClosedEyes
+		}
+		return a.startAgentHereTask(task, agentID)
+	}
 	if err := a.agentsAllowed(); err != nil {
-		return err
+		return "", err
 	}
 	joined, ok := a.connectedAgentFor(agentID)
 	if !ok {
-		return errWorkOnItNoMethod
+		return "", errWorkOnItNoMethod
 	}
 	if err := a.startTaskLinkListener(); err != nil {
-		return err
+		return "", err
 	}
 	a.agentInboxService().Add(agentinbox.Item{ID: recordID, AgentID: joined.ID, SourceKind: task.SourceKind, SourceID: task.SourceID, Text: task.Text})
-	return nil
+	return "", nil
+}
+
+// connectedVia is how a connected hand-off went: a task here, or the inbox.
+func connectedVia(taskID string) string {
+	if taskID != "" {
+		return "task"
+	}
+	return "inbox"
 }
 
 func (a *App) agentInboxTaken(item agentinbox.Item) {
@@ -146,8 +168,15 @@ func (a *App) keepAgentFiles(item agentinbox.Item, files []agentinbox.File) []st
 	for _, f := range files {
 		// Names are checked by agentinbox.ParseResult; Base is a second guard.
 		name := filepath.Base(f.Name)
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(f.Text), 0o600); err != nil {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(f.Text), 0o600); err != nil {
 			log.Printf("[agents] a file was not kept: %v", err)
+			continue
+		}
+		if err := quarantineAgentFile(path); err != nil {
+			// Unflagged, it could run without a prompt: don't keep it.
+			log.Printf("[agents] a file was not kept: quarantine: %v", err)
+			_ = os.Remove(path)
 			continue
 		}
 		names = append(names, name)
@@ -259,7 +288,8 @@ func (a *App) handOffToConnectedAgent(in workonit.Input, agentID, surface string
 	s := a.workOnIt()
 	task := workonit.Task{ID: workOnItID(), SourceKind: in.SourceKind, SourceID: in.SourceID, Kind: kind, Text: workonit.PrepareText(in, workOnItWords(a.currentUILanguage())), PreparedAt: s.clock()}
 	recordID := workOnItID()
-	if err := a.sendWorkOnItConnected(task, agentID, recordID); err != nil {
+	taskID, err := a.sendWorkOnItConnected(task, agentID, recordID)
+	if err != nil {
 		return "", "", err
 	}
 	record := workonit.Record{ID: recordID, SourceKind: task.SourceKind, AgentID: agentID, Method: workonit.MethodConnected, SentAt: s.clock().UnixMilli(), Status: workonit.StatusSent}
@@ -268,7 +298,7 @@ func (a *App) handOffToConnectedAgent(in workonit.Input, agentID, surface string
 	}
 	a.keepWorkOnItHandoff(workonit.Handoff{
 		ID: recordID, SourceKind: task.SourceKind, SourceID: task.SourceID, Kind: kind, AgentID: agentID,
-		Method: workonit.MethodConnected, Via: "inbox", Text: task.Text, SentAt: record.SentAt, Surface: surface,
+		Method: workonit.MethodConnected, Via: connectedVia(taskID), Text: task.Text, SentAt: record.SentAt, Surface: surface, TaskID: taskID,
 	})
 	log.Printf("[work-on-it] sent source=%s agent=%s method=connected surface=%s", task.SourceKind, agentID, surface)
 	return recordID, agentID, nil
@@ -318,4 +348,55 @@ func (bridge *mobileBridge) serveAgentHandoff(w http.ResponseWriter, r *http.Req
 			mobileJSON(w, http.StatusCreated, map[string]string{"recordId": recordID, "agentId": agentID}, "")
 		}
 	})
+}
+
+var errAgentFileUnknown = errors.New("that file isn't one an agent made")
+
+// agentTextExts are the file kinds an agent's text may be opened as. They
+// open in TextEdit (open -e), never in the app the file names, so an
+// agent's file can't run or open anything. Everything else is only shown in
+// Finder (open -R), where macOS's quarantine prompt still applies.
+var agentTextExts = map[string]bool{
+	".md": true, ".markdown": true, ".txt": true, ".text": true, ".csv": true, ".tsv": true,
+	".json": true, ".yaml": true, ".yml": true, ".log": true, ".diff": true, ".patch": true,
+}
+
+func agentFileOpenArgs(path string) []string {
+	if agentTextExts[strings.ToLower(filepath.Ext(path))] {
+		return []string{"-e", path}
+	}
+	return []string{"-R", path}
+}
+
+// OpenAgentFile opens a file a connected agent made, on this computer, with
+// the app the person uses for it. Only a file named in a kept result opens.
+func (a *App) OpenAgentFile(linkID, name string) error {
+	results, err := a.GetTaskLinkResults()
+	if err != nil {
+		return err
+	}
+	for _, r := range results {
+		if r.LinkID != linkID {
+			continue
+		}
+		for _, f := range r.Files {
+			if f != name {
+				continue
+			}
+			dir, err := a.agentFilesDir(linkID)
+			if err != nil {
+				return err
+			}
+			path := filepath.Join(dir, filepath.Base(name))
+			if _, err := os.Stat(path); err != nil {
+				return errAgentFileUnknown
+			}
+			args := agentFileOpenArgs(path)
+			if open := a.agentInbox.openFile; open != nil {
+				return open(args)
+			}
+			return exec.Command("/usr/bin/open", args...).Run()
+		}
+	}
+	return errAgentFileUnknown
 }
