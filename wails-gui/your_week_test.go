@@ -12,6 +12,7 @@ import (
 
 	"wails-gui/internal/engagement"
 	"wails-gui/internal/pii"
+	"wails-gui/internal/privacy"
 	"wails-gui/storage"
 )
 
@@ -649,7 +650,7 @@ func TestYourWeekDropsWithdrawnActivityMinutes(t *testing.T) {
 		t.Fatal(err)
 	}
 	pii.SetUserSensitiveApps(map[string]string{"com.example.finder": "Finder"})
-	publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalApp, ID: "com.example.finder"})
+	publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.App, ID: "com.example.finder"})
 	in := app.yourWeekReadable(ctx, snap, time.Date(2026, 10, 19, 0, 0, 0, 0, time.UTC), now)
 	if in.TotalMinutes != 4*60 || in.SeenDays != 1 || len(in.Topics) != 1 ||
 		in.Topics[0].ID != "t-borealis" || in.Topics[0].Minutes != 4*60 {
@@ -851,7 +852,7 @@ func TestYourWeekLiveCacheInvalidatedByWithdrawal(t *testing.T) {
 	generation := yourWeekLive.generation
 	yourWeekLive.mu.Unlock()
 	pii.SetUserSensitiveApps(map[string]string{"com.example.finder": "Finder"})
-	publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalApp, ID: "com.example.finder"})
+	publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.App, ID: "com.example.finder"})
 	refreshed, ok := app.yourWeekSnapshotFor(ctx, start, end, cutoff, now, workDays)
 	if !ok {
 		t.Fatal("weekly snapshot did not refresh")
@@ -877,7 +878,7 @@ func TestYourWeekLiveCacheInvalidatedByWithdrawal(t *testing.T) {
 	yourWeekLive.weeks = map[yourWeekLiveKey]yourWeekLiveWeek{key: {snap: refreshed, at: now}}
 	generation = yourWeekLive.generation
 	yourWeekLive.mu.Unlock()
-	publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalAccount, ID: "feishu:lark"})
+	publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.Account, ID: "feishu:lark"})
 	yourWeekLive.mu.Lock()
 	accountGeneration, accountEntries := yourWeekLive.generation, len(yourWeekLive.weeks)
 	yourWeekLive.mu.Unlock()

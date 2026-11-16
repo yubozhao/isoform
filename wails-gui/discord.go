@@ -9,6 +9,8 @@ import (
 	"time"
 
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
+
+	"wails-gui/internal/privacy"
 )
 
 // DiscordStatus is the Discord connection state returned to the frontend.
@@ -96,7 +98,7 @@ func (a *App) UnbindDiscordAccount() error {
 	if noYansuAccount() {
 		err := a.disconnectDiscordLocal()
 		if err == nil {
-			publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalAccount, ID: "discord"})
+			publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.Account, ID: "discord"})
 		}
 		return err
 	}
@@ -108,7 +110,7 @@ func (a *App) UnbindDiscordAccount() error {
 	if err := apiDelete(loadAPIBaseURL(), token, "/api/discord/bindings"); err != nil {
 		return fmt.Errorf("failed to delete Discord binding: %w", err)
 	}
-	publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalAccount, ID: "discord"})
+	publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.Account, ID: "discord"})
 
 	a.StopDiscordDaemon()
 
@@ -135,7 +137,7 @@ func (a *App) DisconnectDiscordGuild(guildID string) error {
 	if err := apiDelete(loadAPIBaseURL(), token, "/api/discord/guilds/"+guildID); err != nil {
 		return fmt.Errorf("failed to disconnect guild: %w", err)
 	}
-	publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalAccount, ID: "discord:guild:" + guildID})
+	publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.Account, ID: "discord:guild:" + guildID})
 	return nil
 }
 

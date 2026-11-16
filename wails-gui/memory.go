@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"wails-gui/internal/pii"
+	"wails-gui/internal/privacy"
 )
 
 // memoryHistoryDirName is the per-file version history directory that lives
@@ -905,7 +906,7 @@ func (a *App) DeleteMemoryEntry(id string) error {
 	deleted := false
 	defer func() {
 		if deleted {
-			publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalSource, SourceKind: "memory", ID: id})
+			publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.Source, SourceKind: "memory", ID: id})
 		}
 	}()
 	dir, err := memoryDir()

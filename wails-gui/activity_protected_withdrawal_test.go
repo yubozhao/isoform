@@ -6,6 +6,7 @@ import (
 
 	"wails-gui/internal/activitybuf"
 	"wails-gui/internal/platform/activitymon"
+	"wails-gui/internal/privacy"
 )
 
 func newProtectedWithdrawalTestApp(t *testing.T) (*App, *ActivityStore) {
@@ -55,8 +56,8 @@ func TestExtractSessionSensitiveAppPublishesWithdrawal(t *testing.T) {
 	if session.TriageStatus != "protected" {
 		t.Fatalf("triage status=%q, want protected", session.TriageStatus)
 	}
-	requirePrivacyWithdrawal(t, events(), privacyWithdrawalScope{
-		Kind: privacyWithdrawalSession,
+	requirePrivacyWithdrawal(t, events(), privacy.Scope{
+		Kind: privacy.Session,
 		ID:   session.ID,
 	})
 }
@@ -94,16 +95,16 @@ func TestExtractSessionProtectedMeetingMetadataPublishesWithdrawals(t *testing.T
 		t.Fatalf("triage status=%q, want protected", session.TriageStatus)
 	}
 	got := events()
-	want := []privacyWithdrawalScope{
-		{Kind: privacyWithdrawalSession, ID: session.ID},
-		{Kind: privacyWithdrawalSession, ID: "earlier-rotation"},
-		{Kind: privacyWithdrawalTimeRange, StartMs: startMs, EndMs: session.EndTime},
+	want := []privacy.Scope{
+		{Kind: privacy.Session, ID: session.ID},
+		{Kind: privacy.Session, ID: "earlier-rotation"},
+		{Kind: privacy.TimeRange, StartMs: startMs, EndMs: session.EndTime},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("withdrawal scopes=%+v, want %+v", got, want)
 	}
 	for i := range want {
-		requirePrivacyWithdrawal(t, []privacyWithdrawal{got[i]}, want[i])
+		requirePrivacyWithdrawal(t, []privacy.Withdrawal{got[i]}, want[i])
 	}
 }
 
@@ -156,8 +157,8 @@ func TestExtractSessionWithdrawalRemovesTodayTopic(t *testing.T) {
 	svc := app.topicsSvc()
 	svc.privacyWithdrawalUnsubscribe()
 	var seedErr error
-	svc.privacyWithdrawalUnsubscribe = subscribePrivacyWithdrawals(func(withdrawal privacyWithdrawal) {
-		if withdrawal.Scope.Kind == privacyWithdrawalSession {
+	svc.privacyWithdrawalUnsubscribe = subscribePrivacyWithdrawals(func(withdrawal privacy.Withdrawal) {
+		if withdrawal.Scope.Kind == privacy.Session {
 			policyHash, err := currentTopicPolicyHash()
 			if err != nil {
 				seedErr = err
@@ -191,8 +192,8 @@ func TestExtractSessionWithdrawalRemovesTodayTopic(t *testing.T) {
 		t.Fatalf("seed published snapshot from withdrawal: %v", seedErr)
 	}
 	session := protectedWithdrawalSession(t, app.activity.store)
-	requirePrivacyWithdrawal(t, events(), privacyWithdrawalScope{
-		Kind: privacyWithdrawalSession,
+	requirePrivacyWithdrawal(t, events(), privacy.Scope{
+		Kind: privacy.Session,
 		ID:   session.ID,
 	})
 	today, err := app.GetTodayTopics()

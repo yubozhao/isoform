@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"wails-gui/internal/privacy"
 )
 
 // FeishuStatus is the Feishu connection state returned to the frontend.
@@ -278,7 +280,7 @@ func (a *App) DisconnectFeishu(brand string) error {
 	// future reconnect instead of provisioning a brand-new one.
 	archiveFeishuLocalCredentials(brand)
 	removeFeishuLocalCredentials(brand)
-	publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalAccount, ID: "feishu:" + brand})
+	publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.Account, ID: "feishu:" + brand})
 
 	if err := updateConfig(func(c *yansuConfig) {
 		setFeishuBrandConfig(c, brand, nil)

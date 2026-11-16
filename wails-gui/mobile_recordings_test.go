@@ -20,6 +20,7 @@ import (
 
 	"wails-gui/internal/asr"
 	"wails-gui/internal/platform/activitymon"
+	"wails-gui/internal/privacy"
 )
 
 // mapUploads is a relay stand-in holding sealed uploads by id.
@@ -358,8 +359,8 @@ func TestDeletedTranscriptTakesItsAudio(t *testing.T) {
 		store.setState(id, mobileRecordingTranscribed, "rec-"+id, 3, "")
 	}
 
-	publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalSession, ID: "rec-" + withdrawn})
-	publishRetentionRemoval(privacyWithdrawalScope{Kind: privacyWithdrawalSession, ID: "rec-" + retained})
+	publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.Session, ID: "rec-" + withdrawn})
+	publishRetentionRemoval(privacy.Scope{Kind: privacy.Session, ID: "rec-" + retained})
 
 	for _, id := range []string{withdrawn, retained} {
 		if _, err := os.Stat(filepath.Join(store.dir, id)); !os.IsNotExist(err) {

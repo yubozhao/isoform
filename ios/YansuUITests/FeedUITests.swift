@@ -360,6 +360,7 @@ final class FeedUITests: XCTestCase {
     }
 
     func testIdeasEmptyStateInSeededPairing() throws {
+        throw XCTSkip("Tasks tab removed (phone-today v1.0.0 rule 19); its work is Your work on Today.")
         let app = launchIdeas(state: "ideas-empty")
         XCTAssertTrue(app.descendants(matching: .any)["tasks.subtitle"].firstMatch.waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["tasks.findMore"].waitForExistence(timeout: 10))
@@ -638,6 +639,7 @@ final class FeedUITests: XCTestCase {
     }
 
     func testAPhoneWithoutChatReadSeesTopicsButIsNotAllowedToOpenOne() throws {
+        throw XCTSkip("Tasks tab removed (phone-today v1.0.0 rule 19); its work is Your work on Today.")
         let app = launchTopics(state: "feed-topics-no-chat-read")
         let card = app.buttons.matching(identifier: "feed.topic").firstMatch
         scrollIntoView(card, in: app)

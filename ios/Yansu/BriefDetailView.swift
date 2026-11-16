@@ -368,15 +368,15 @@ struct BriefDetailView: View {
                 }
                 if notRight?.id == BriefItemPlacement.sentenceID(brief: brief.identifier, paragraph: index), let item = notRight {
                     WorkReasonPicker(item: item, pick: { reason in
-                        Task { await work.answer(item, action: .no, reason: reason) }
+                        Task { await sendNotRight(item, reason: reason) }
                         notRight = nil
                     }, undo: { notRight = nil }, skip: {
-                        Task { await work.answer(item, action: .no) }
+                        Task { await sendNotRight(item, reason: nil) }
                         notRight = nil
                     })
                 }
-                // Without Your work on the computer, the chips stay the way to act on a paragraph.
-                if work.supported != true, canTalk, let card = brief.paragraphChip(forParagraph: index) {
+                // The chips stay until every computer lists the brief's items and sentences (review 2026-11-15).
+                if canTalk, let card = brief.paragraphChip(forParagraph: index) {
                     Button { put(card, brief: brief) } label: {
                         HStack(spacing: 5) {
                             Text(verbatim: card.label ?? "")
@@ -471,6 +471,17 @@ struct BriefDetailView: View {
     }
 
     // MARK: Actions
+
+    /// Not right goes at once, not through the queue: a computer that doesn't list the sentence answers 404, and the
+    /// phone says so instead of dropping it silently (review 2026-11-15).
+    private func sendNotRight(_ item: WorkItem, reason: WorkReason?) async {
+        do {
+            try await work.answerNow(item, action: .no, reason: reason)
+            notice = nil
+        } catch {
+            notice = String(localized: "brief.notRight.failed")
+        }
+    }
 
     private func put(_ card: MobileBriefCard, brief: MobileBriefV1) {
         guard var reference = brief.chatReference, brief.sendCards.contains(card) else { return }

@@ -130,8 +130,9 @@ struct WorkAnswer: Codable, Equatable, Hashable, Sendable {
 
 struct WorkAgent: Codable, Equatable, Hashable, Sendable {
     let name: String
-    let since: String
-    var sinceDate: Date? { RelayTime.parse(since) }
+    /// Omitted by the computer for some running work (a topic's proposal): never required (review 2026-11-15).
+    var since: String? = nil
+    var sinceDate: Date? { since.flatMap(RelayTime.parse) }
 }
 
 struct WorkPage: Codable, Equatable, Sendable {
@@ -273,6 +274,16 @@ enum YourWork {
     /// A result back from your agent is judged Useful or Not useful, once (phone-map rule 9).
     static func asksUseful(_ item: WorkItem) -> Bool {
         item.kind == "result" || item.state == "back"
+    }
+
+    /// The rows the computer still sends as waiting on the person (Needs you) that Your work doesn't list: a blocked
+    /// task stays reachable from Today once the Tasks tab is gone (review 2026-11-15).
+    static func waitingOutside(_ needs: [TodayNeed], items: [WorkItem]) -> [TodayNeed] {
+        let listed = Set(items.map(\.id))
+        return needs.filter { need in
+            if let task = need.task { return !listed.contains("task:" + task.id) && !listed.contains(task.id) }
+            return !listed.contains(need.id)
+        }
     }
 
     /// Whether Undo still shows on a done line: until tomorrow's build, which the computer names as `undoUntil`.

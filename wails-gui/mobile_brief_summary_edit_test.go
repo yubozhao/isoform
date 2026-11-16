@@ -6,6 +6,7 @@ import (
 
 	"wails-gui/internal/pii"
 	"wails-gui/internal/platform/activitymon"
+	"wails-gui/internal/privacy"
 )
 
 // Seal v2 rule 2: re-summarizing the runs a brief cites (the hourly batch
@@ -62,7 +63,7 @@ func TestResummarizedSummaryLeavesSealedBriefShown(t *testing.T) {
 // Retention is not a privacy action: it never moves the brief privacy print.
 func TestRetentionRemovalDoesNotMoveBriefPrint(t *testing.T) {
 	before := mobileBriefPrivacyEpoch.Load()
-	publishRetentionRemoval(privacyWithdrawalScope{Kind: privacyWithdrawalSession, ID: "old-session"})
+	publishRetentionRemoval(privacy.Scope{Kind: privacy.Session, ID: "old-session"})
 	if after := mobileBriefPrivacyEpoch.Load(); after != before {
 		t.Fatalf("retention moved the privacy epoch: %d -> %d", before, after)
 	}

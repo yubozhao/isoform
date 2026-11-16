@@ -50,3 +50,16 @@ func TestScopeKindWireValues(t *testing.T) {
 		t.Fatalf("kinds=%q, want %q", got, want)
 	}
 }
+
+func TestPublisherRunsFirstSubscriberBeforeOthers(t *testing.T) {
+	p := NewPublisher()
+	var got []string
+	for i := 0; i < 5; i++ {
+		p.Subscribe(func(Withdrawal) { got = append(got, "other") })
+	}
+	p.SetFirst(func(Withdrawal) { got = append(got, "first") })
+	p.Publish(Withdrawal{})
+	if len(got) != 6 || got[0] != "first" {
+		t.Fatalf("order = %v, want first before the others", got)
+	}
+}

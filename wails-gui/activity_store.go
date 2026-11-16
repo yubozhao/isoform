@@ -19,6 +19,7 @@ import (
 	"golang.org/x/sync/singleflight"
 
 	"wails-gui/internal/platform/activitymon"
+	"wails-gui/internal/privacy"
 
 	_ "modernc.org/sqlite"
 )
@@ -969,7 +970,7 @@ func (s *ActivityStore) UpdateTriageStatus(sessionID, status string) error {
 	}
 	changed, err := result.RowsAffected()
 	if err == nil && changed == 1 && status == "protected" {
-		publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalSession, ID: sessionID})
+		publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.Session, ID: sessionID})
 	}
 	return err
 }
@@ -1153,7 +1154,7 @@ func (s *ActivityStore) deleteSession(sessionID string, retainSummaries bool) er
 		if !deleted {
 			return
 		}
-		scope := privacyWithdrawalScope{Kind: privacyWithdrawalSession, ID: sessionID}
+		scope := privacy.Scope{Kind: privacy.Session, ID: sessionID}
 		if retainSummaries {
 			// Retention is not a privacy action (seal v2 rule 2): readers drop
 			// their raw copies, but no sealed brief is amended.

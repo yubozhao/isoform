@@ -17,14 +17,9 @@ import (
 func derivedDiskTestApp(t *testing.T) (*App, *derivedViews) {
 	t.Helper()
 	app, d := derivedTestApp(t)
-	mobileBriefPrivacyEpochMu.Lock()
-	savedDir := mobileBriefPrivacyEpochSavedDir
-	mobileBriefPrivacyEpochSavedDir = t.TempDir()
-	mobileBriefPrivacyEpochMu.Unlock()
+	savedDir := mobileBriefPrivacyEpoch.SwapSavedDir(t.TempDir())
 	t.Cleanup(func() {
-		mobileBriefPrivacyEpochMu.Lock()
-		mobileBriefPrivacyEpochSavedDir = savedDir
-		mobileBriefPrivacyEpochMu.Unlock()
+		mobileBriefPrivacyEpoch.SwapSavedDir(savedDir)
 	})
 	return app, d
 }

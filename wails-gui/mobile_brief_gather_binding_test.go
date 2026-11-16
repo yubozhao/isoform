@@ -12,6 +12,7 @@ import (
 
 	"wails-gui/internal/handoff"
 	"wails-gui/internal/pii"
+	"wails-gui/internal/privacy"
 	"wails-gui/storage"
 )
 
@@ -231,7 +232,7 @@ func TestMobileBriefGatherFenceCoversSourceAndPolicyRevisions(t *testing.T) {
 			case "deleted session":
 				_, err = app.activity.store.db.ExecContext(t.Context(), `DELETE FROM activity_sessions WHERE id='gather-source'`)
 			case "privacy withdrawal":
-				publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalSource, SourceKind: "memory", ID: "launch"})
+				publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.Source, SourceKind: "memory", ID: "launch"})
 			case "sensitive apps":
 				old := pii.GetUserSensitiveApps()
 				t.Cleanup(func() { pii.SetUserSensitiveApps(old) })
@@ -303,7 +304,7 @@ func TestMobileBriefGenerationIgnoresBackgroundWritesButNotPrivacyChanges(t *tes
 				case "delete":
 					err = app.deleteActivityWithPrivacyWithdrawal(app.activity.store, "earlier")
 				case "withdrawal":
-					publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalSession, ID: "earlier"})
+					publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.Session, ID: "earlier"})
 				}
 				return collected, err
 			}

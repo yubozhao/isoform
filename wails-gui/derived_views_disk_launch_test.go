@@ -22,9 +22,7 @@ func TestDerivedSnapshotPaintsBeforeTheBriefServiceStarts(t *testing.T) {
 		t.Fatal("snapshot was not saved")
 	}
 	// A new process: no brief store has loaded the epoch yet.
-	mobileBriefPrivacyEpochMu.Lock()
-	mobileBriefPrivacyEpochSavedDir = ""
-	mobileBriefPrivacyEpochMu.Unlock()
+	mobileBriefPrivacyEpoch.SwapSavedDir("")
 	savedCopyEpochLoad = sync.Once{}
 	t.Cleanup(func() { savedCopyEpochLoad = sync.Once{} })
 

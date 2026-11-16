@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"wails-gui/internal/platform/activitymon"
+	"wails-gui/internal/privacy"
 )
 
 // migrateFileActivity adds file_activity: the documents the user opened or
@@ -264,7 +265,7 @@ func (s *ActivityStore) DeleteFileActivityUnder(folderHash string) (int64, error
 	deleted, err := res.RowsAffected()
 	if err == nil && deleted > 0 {
 		for _, id := range deletedIDs {
-			publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalSource, SourceKind: "file", ID: "file:" + id})
+			publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.Source, SourceKind: "file", ID: "file:" + id})
 		}
 	}
 	return deleted, err
@@ -304,7 +305,7 @@ func (s *ActivityStore) DeleteFileActivityIDs(ids []string) (int64, error) {
 		total += n
 		if n > 0 {
 			for _, id := range deletedIDs {
-				publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalSource, SourceKind: "file", ID: "file:" + id})
+				publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.Source, SourceKind: "file", ID: "file:" + id})
 			}
 		}
 	}

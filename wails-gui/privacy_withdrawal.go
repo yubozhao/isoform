@@ -23,6 +23,13 @@ const (
 
 var privacyWithdrawals = privacy.NewPublisher()
 
+// The brief runs before every other withdrawal subscriber, so its privacy
+// epoch has moved before any of them reads it. Set in init, not in the var,
+// because the brief's code reaches subscribers that refer to privacyWithdrawals.
+func init() {
+	privacyWithdrawals.SetFirst(briefOnPrivacyWithdrawal)
+}
+
 func subscribePrivacyWithdrawals(subscriber func(privacyWithdrawal)) func() {
 	return privacyWithdrawals.Subscribe(subscriber)
 }
@@ -35,14 +42,5 @@ func publishRetentionRemoval(scope privacyWithdrawalScope) {
 }
 
 func publishPrivacyWithdrawal(scope privacyWithdrawalScope) {
-	// A withdrawn source is named, so the briefs that cite it are amended from
-	// that alone. Other scopes (apps, sessions, accounts, time ranges) are not
-	// named here and are amended with the gates.
-	var keys []briefWithdrawn
-	if scope.Kind == privacyWithdrawalSource && scope.ID != "" {
-		keys = []briefWithdrawn{{Kind: scope.SourceKind, ID: scope.ID}}
-	}
-	briefPrivacyChanged(keys...)
-	briefPrivacyAmendSoon()
 	privacyWithdrawals.Publish(privacyWithdrawal{Scope: scope})
 }

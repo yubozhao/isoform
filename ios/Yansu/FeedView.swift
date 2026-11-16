@@ -485,6 +485,10 @@ struct FeedView: View {
             YourWorkSection(work: work, now: now, onAnswered: foldNewestBrief) {
                 legacyYourWork
             }
+            if work.supported == true {
+                // Tasks waiting on the person that Your work doesn't list stay on Today (review 2026-11-15).
+                todayNeedsYou(YourWork.waitingOutside(tasks.waitingItems, items: work.items), title: String(localized: "Needs you"))
+            }
             if let notice = actions.todayNotice { NoticeBanner(message: notice, dismiss: { actions.todayNotice = nil }) }
             if let notice = feed.todayNotice { NoticeBanner(message: notice, dismiss: { feed.todayNotice = nil }) }
             todayPendingWrites
@@ -709,12 +713,16 @@ struct FeedView: View {
         .accessibilityIdentifier("today.yourWork")
     }
 
-    @ViewBuilder
     private var todayNeedsYou: some View {
-        let rows = Array(tasks.waitingItems.prefix(YourWork.dailyLimit))
+        todayNeedsYou(tasks.waitingItems, title: String(localized: "work.upNext"))
+    }
+
+    @ViewBuilder
+    private func todayNeedsYou(_ needs: [TodayNeed], title: String) -> some View {
+        let rows = Array(needs.prefix(YourWork.dailyLimit))
         if !rows.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
-                SectionLabel(title: String(localized: "work.upNext"))
+                SectionLabel(title: title)
                     .padding(.horizontal, 4)
                 VStack(spacing: 0) {
                     ForEach(Array(rows.enumerated()), id: \.element.id) { index, need in

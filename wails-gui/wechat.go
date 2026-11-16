@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"wails-gui/internal/privacy"
 )
 
 // WeChatStatus is the WeChat connection state returned to the frontend.
@@ -153,7 +155,7 @@ func (a *App) DisconnectWeChat() error {
 	// Remove cursor.
 	_ = os.Remove(filepath.Join(dir, "cursor.json"))
 
-	publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalAccount, ID: "wechat"})
+	publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.Account, ID: "wechat"})
 	return nil
 }
 

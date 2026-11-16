@@ -52,6 +52,48 @@ final class YourWorkTests: XCTestCase {
         XCTAssertNil(WorkPath.answer(""))
     }
 
+    func testAnAgentWithoutSinceStillDecodesSoYourWorkLoads() throws {
+        let json = #"{"toAnswer":0,"items":[{"id":"topic:t1:p1","kind":"offered","state":"with_agent","source":"topic","first":[],"noticed":"n","work":{"title":"t"},"agent":{"name":"Claude"},"createdAt":"2026-11-15T20:00:00Z"}]}"#
+        let page = try JSONDecoder().decode(WorkPage.self, from: Data(json.utf8))
+        XCTAssertEqual(page.items.first?.agent?.name, "Claude")
+        XCTAssertNil(page.items.first?.agent?.sinceDate)
+    }
+
+    func testAReplyThatCantBeReadNeverHoldsLaterAnswersBack() async throws {
+        let hub = FakeHub(page: WorkPage(toAnswer: 2, items: [item("a"), item("b")]))
+        let work = store(hub)
+        await work.refresh()
+        await hub.failNextWithMalformed()
+        await work.answer(work.items[0], action: .yes)
+        await work.answer(work.items[1], action: .no)
+        await work.sendPending()
+        XCTAssertTrue(work.pending.isEmpty, "the unreadable reply is dropped and the next answer goes")
+        let ids = await hub.sentIDs()
+        XCTAssertEqual(ids, ["b"])
+    }
+
+    func testTasksWaitingOnThePersonThatYourWorkDoesntListStayOnToday() {
+        let task = MobileTask(id: "t1", title: "Blocked", status: "blocked", group: "needs_you", blockedReason: "interrupted",
+                              runner: nil, progress: nil, createdAt: "", updatedAt: "")
+        let listed = MobileTask(id: "t2", title: "Listed", status: "active", group: "needs_you", blockedReason: nil,
+                                runner: nil, progress: nil, createdAt: "", updatedAt: "")
+        let needs = [TodayNeed(id: "t1", task: task), TodayNeed(id: "t2", task: listed)]
+        let shown = YourWork.waitingOutside(needs, items: [item("task:t2")])
+        XCTAssertEqual(shown.map(\.id), ["t1"])
+    }
+
+    func testNotRightOnASentenceTheComputerDoesntListIsReportedNotDropped() async throws {
+        let hub = FakeHub(page: WorkPage(toAnswer: 0, items: []))
+        let work = store(hub)
+        await work.refresh()
+        let sentence = BriefItemPlacement.sentence(brief: "b1", paragraph: 2, text: "Two tests still fail.")
+        do {
+            try await work.answerNow(sentence, action: .no, reason: .notAtAll)
+            XCTFail("a computer without the sentence must not look like it took the answer")
+        } catch {}
+        XCTAssertTrue(work.pending.isEmpty, "nothing waits in the queue to be dropped later")
+    }
+
     func testTheComputersOrderWinsWhenItSendsOne() {
         var a = item("a", origin: "brief"); a.order = 1
         var b = item("b"); b.order = 0
@@ -138,6 +180,8 @@ final class YourWorkTests: XCTestCase {
         init(page: WorkPage) { self.page = page }
         func setReachable(_ value: Bool) { reachable = value }
         func setAvailable(_ value: Bool) { available = value }
+        private var malformedNext = false
+        func failNextWithMalformed() { malformedNext = true }
         func workAvailable() async throws -> Bool {
             guard reachable else { throw HubRequestError.noAnswer }
             return available
@@ -148,8 +192,9 @@ final class YourWorkTests: XCTestCase {
         }
         func answerWork(id: String, request: WorkAnswerRequest) async throws -> WorkItem {
             guard reachable else { throw HubRequestError.noAnswer }
+            if malformedNext { malformedNext = false; throw HubRequestError.malformedResponse }
             sent.append((id, request))
-            let item = page.items.first { $0.id == id }!
+            guard let item = page.items.first(where: { $0.id == id }) else { throw HubRequestError.rejected(status: 404, message: "gone") }
             return YourWork.answered(item, action: WorkAction(rawValue: request.action)!, reason: nil, at: Date(), waits: false)
         }
         func sentIDs() -> [String] { sent.map(\.0) }

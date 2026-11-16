@@ -257,9 +257,7 @@ func TestASavedFindsViewSurvivesARestart(t *testing.T) {
 	}
 	mobileBriefPrivacyEpoch.Store(0)
 	mobileBriefReadEpoch.Store(0)
-	mobileBriefPrivacyEpochMu.Lock()
-	mobileBriefPrivacyEpochSavedDir = ""
-	mobileBriefPrivacyEpochMu.Unlock()
+	mobileBriefPrivacyEpoch.SwapSavedDir("")
 	loadSavedCopyEpoch()
 	view := getTopicFinds(t, app)
 	if len(view.Items) != 1 || view.Items[0].ID != "kept" {

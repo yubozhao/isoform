@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"wails-gui/internal/identity"
+	"wails-gui/internal/privacy"
 	"wails-gui/storage"
 )
 
@@ -569,7 +570,7 @@ func removeImportedContacts(ctx context.Context, store *storage.Store) (Contacts
 			continue
 		}
 		// A person removed from the system contacts withdraws what briefs cite about them.
-		publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalSource, SourceKind: "principal", ID: p.ID})
+		publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.Source, SourceKind: "principal", ID: p.ID})
 		res.Removed++
 	}
 	return res, nil

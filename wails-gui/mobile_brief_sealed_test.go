@@ -187,7 +187,7 @@ func TestPrivacyEpochSurvivesRestart(t *testing.T) {
 
 	// A restart: the in-memory epoch is gone and the directory is opened again.
 	mobileBriefPrivacyEpoch.Store(0)
-	mobileBriefPrivacyEpochSavedDir = ""
+	mobileBriefPrivacyEpoch.SwapSavedDir("")
 	adoptMobileBriefPrivacyEpoch(svc.store.dir)
 	if got := mobileBriefPrivacyEpoch.Load(); got != epoch {
 		t.Fatalf("epoch after restart = %d, want %d", got, epoch)

@@ -21,6 +21,7 @@ import (
 
 	"wails-gui/internal/engagement"
 	"wails-gui/internal/pii"
+	"wails-gui/internal/privacy"
 	"wails-gui/models"
 )
 
@@ -352,7 +353,7 @@ func TestMobileBriefServiceStoresModelLeadAndDropsAudioAfterWithdrawal(t *testin
 	}
 
 	pii.SetUserSensitiveApps(map[string]string{"com.example.finder": "Finder"})
-	publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalApp, ID: "com.example.finder"})
+	publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.App, ID: "com.example.finder"})
 	withdrawn := app.mobileBriefForDelivery(stored)
 	if withdrawn.YourWeek == nil || withdrawn.YourWeek.Headline == stored.WeekLead ||
 		reflect.DeepEqual(withdrawn.WeeklyRecap, stored.WeeklyRecap) {

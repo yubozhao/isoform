@@ -16,7 +16,7 @@ final class TabNavigationUITests: XCTestCase {
 
     /// With the keyboard up in Chat the tab bar stays, so every tab is one tap away, and Done puts the keyboard
     /// away. Run with the Simulator's hardware keyboard off, so the on-screen keyboard shows as on a phone.
-    func testKeyboardInChatKeepsTheTabBarAndGoesAwayByDone() {
+    func testKeyboardInChatKeepsTheTabBarAndGoesAwayByDone() throws {
         let app = XCUIApplication()
         app.launchEnvironment["YANSU_UITEST_SETTINGS_STATE"] = "chat-live"
         app.launchEnvironment["YANSU_UITEST_TAB"] = "chat"
@@ -38,7 +38,7 @@ final class TabNavigationUITests: XCTestCase {
         app.buttons["composer.keyboard.done"].tap()
         XCTAssertFalse(keyboard.waitForExistence(timeout: 2), "Done puts the keyboard away")
 
-        for (tab, title) in [("tab.today", "Today"), ("tab.tasks", "Tasks"), ("tab.chat", "Chat")] {
+        for (tab, title) in [("tab.today", "Today"), ("tab.chat", "Chat")] {
             let button = app.buttons[tab]
             XCTAssertTrue(button.waitForExistence(timeout: 5) && button.isHittable, "\(tab) can be tapped")
             button.tap()
@@ -56,7 +56,7 @@ final class TabNavigationUITests: XCTestCase {
         let chat = app.buttons["tab.chat"]
         XCTAssertTrue(chat.waitForExistence(timeout: 15), "the tab bar shows on Chat")
         attachScreenshot(app, named: "chat-\(state)")
-        for (tab, title) in [("tab.today", "Today"), ("tab.tasks", "Tasks"), ("tab.chat", "Chat")] {
+        for (tab, title) in [("tab.today", "Today"), ("tab.chat", "Chat")] {
             let button = app.buttons[tab]
             XCTAssertTrue(button.waitForExistence(timeout: 5), "\(tab) is on screen")
             XCTAssertTrue(button.isHittable, "\(tab) can be tapped")

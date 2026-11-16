@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"time"
+
+	"wails-gui/internal/privacy"
 )
 
 const voiceInputAppsUIStateKey = "voice_input_apps"
@@ -21,7 +23,7 @@ func (a *App) GetVoiceInputApps() (perfValue []VoiceInputAppEntry) {
 // change. Settings UI calls this when the user picks an app from the
 // system app picker.
 func (a *App) AddVoiceInputApp(bundleID, appName string) error {
-	defer publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalApp, ID: bundleID})
+	defer publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.App, ID: bundleID})
 	AddUserVoiceInputApp(bundleID, appName)
 	return a.persistUserVoiceInputApps()
 }
