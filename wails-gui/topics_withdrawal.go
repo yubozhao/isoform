@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"wails-gui/internal/privacy"
 )
 
 type topicWithdrawal struct {
@@ -259,7 +261,7 @@ func (a *App) deleteActivityWithPrivacyWithdrawal(store *ActivityStore, id strin
 	return a.deleteActivityWithTopicScrubPrivacy(store, id, true)
 }
 
-func (a *App) deleteActivityWithTopicScrubPrivacy(store *ActivityStore, id string, privacy bool) error {
+func (a *App) deleteActivityWithTopicScrubPrivacy(store *ActivityStore, id string, withdraw bool) error {
 	if a == nil {
 		return store.DeleteActivity(id)
 	}
@@ -273,8 +275,8 @@ func (a *App) deleteActivityWithTopicScrubPrivacy(store *ActivityStore, id strin
 		deleted = err == nil
 		return err
 	})
-	if privacy && deleted {
-		publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalSource, SourceKind: "activity", ID: id})
+	if withdraw && deleted {
+		publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.Source, SourceKind: "activity", ID: id})
 	}
 	return err
 }

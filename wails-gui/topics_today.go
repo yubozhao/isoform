@@ -4,6 +4,8 @@ import (
 	"context"
 	"log"
 	"time"
+
+	"wails-gui/internal/privacy"
 )
 
 const topicTodayReadBudget = 100 * time.Millisecond
@@ -233,7 +235,7 @@ func (s *topicsService) registryTimerAfter(delay time.Duration) <-chan time.Time
 	return time.After(delay)
 }
 
-func (s *topicsService) applyPrivacyWithdrawal(scope privacyWithdrawalScope) {
+func (s *topicsService) applyPrivacyWithdrawal(scope privacy.Scope) {
 	s.registrySnapshotMu.Lock()
 	removed, err := s.snapshots.RemoveMatching(func(entry topicSnapshotEntry) bool {
 		return entry.Unproven || topicRefsIntersectScope(entry.Refs, scope)

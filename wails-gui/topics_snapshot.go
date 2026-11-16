@@ -15,6 +15,7 @@ import (
 
 	"wails-gui/internal/interests"
 	"wails-gui/internal/pii"
+	"wails-gui/internal/privacy"
 )
 
 // topics-snapshot.json keeps the last verified topic view, each topic with the
@@ -199,7 +200,7 @@ func (s *topicsService) commitBuiltSnapshot(candidate *topicSnapshot, refresh, m
 	s.registrySnapshotMu.Lock()
 	defer s.registrySnapshotMu.Unlock()
 	s.registryWorkerMu.Lock()
-	scopes := append([]privacyWithdrawalScope(nil), s.registryWithdrawalScopes...)
+	scopes := append([]privacy.Scope(nil), s.registryWithdrawalScopes...)
 	s.registryWorkerMu.Unlock()
 	candidate = filterTopicSnapshotWithdrawalScopes(candidate, scopes)
 	published := s.snapshots.Current()
@@ -221,7 +222,7 @@ func (s *topicsService) commitBuiltSnapshot(candidate *topicSnapshot, refresh, m
 	return replace
 }
 
-func filterTopicSnapshotWithdrawalScopes(candidate *topicSnapshot, scopes []privacyWithdrawalScope) *topicSnapshot {
+func filterTopicSnapshotWithdrawalScopes(candidate *topicSnapshot, scopes []privacy.Scope) *topicSnapshot {
 	if candidate == nil || len(scopes) == 0 {
 		return candidate
 	}
@@ -724,42 +725,42 @@ func topicRefTimeRangeExcluded(ref topicSourceReference, ranges []topicTimeRange
 	return false
 }
 
-func topicRefsIntersectScope(refs []topicSourceReference, scope privacyWithdrawalScope) bool {
+func topicRefsIntersectScope(refs []topicSourceReference, scope privacy.Scope) bool {
 	switch scope.Kind {
-	case privacyWithdrawalApp:
+	case privacy.App:
 		for _, ref := range refs {
 			bundlePrefix := strings.Contains(scope.ID, ".") && strings.HasPrefix(strings.ToLower(ref.Value), strings.ToLower(scope.ID))
 			if ref.Kind == topicRefApp && (strings.EqualFold(ref.Value, scope.ID) || bundlePrefix) {
 				return true
 			}
 		}
-	case privacyWithdrawalWindow:
+	case privacy.Window:
 		for _, ref := range refs {
 			if ref.Kind == topicRefWindow && ref.Value == scope.ID {
 				return true
 			}
 		}
-	case privacyWithdrawalSession:
+	case privacy.Session:
 		for _, ref := range refs {
 			if ref.Kind == topicRefSession && ref.Value == scope.ID {
 				return true
 			}
 		}
-	case privacyWithdrawalTimeRange:
+	case privacy.TimeRange:
 		excluded := []topicTimeRange{{Start: scope.StartMs, End: scope.EndMs}}
 		for _, ref := range refs {
 			if ref.Kind == topicRefTimeRange && topicRefTimeRangeExcluded(ref, excluded) {
 				return true
 			}
 		}
-	case privacyWithdrawalAccount:
+	case privacy.Account:
 		for _, ref := range refs {
 			if ref.Kind == topicRefAccount &&
 				(ref.Value == scope.ID || strings.HasPrefix(ref.Value, scope.ID+":")) {
 				return true
 			}
 		}
-	case privacyWithdrawalSource:
+	case privacy.Source:
 		key := scope.SourceKind + ":" + strings.TrimPrefix(scope.ID, scope.SourceKind+":")
 		for _, ref := range refs {
 			if ref.Kind == topicRefSource &&
@@ -767,7 +768,7 @@ func topicRefsIntersectScope(refs []topicSourceReference, scope privacyWithdrawa
 				return true
 			}
 		}
-	case privacyWithdrawalPolicyChange:
+	case privacy.PolicyChange:
 		return false
 	}
 	return false

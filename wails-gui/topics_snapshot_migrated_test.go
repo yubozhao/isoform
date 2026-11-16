@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"wails-gui/internal/pii"
+	"wails-gui/internal/privacy"
 	"wails-gui/storage"
 )
 
@@ -83,7 +84,7 @@ func newMigratedTopicFixture(t *testing.T) migratedTopicFixture {
 func TestTopicSnapshotMigratedEntriesAreRemovedByAppWithdrawal(t *testing.T) {
 	fixture := newMigratedTopicFixture(t)
 	pii.SetUserSensitiveApps(map[string]string{migratedAppID: "Code"})
-	publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalApp, ID: migratedAppID})
+	publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.App, ID: migratedAppID})
 
 	assertMigratedTopicReadPaths(t, fixture.app)
 	assertMigratedSnapshotIDs(t, fixture.dir, false)

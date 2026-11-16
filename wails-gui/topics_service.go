@@ -15,6 +15,7 @@ import (
 	"wails-gui/internal/interests"
 	"wails-gui/internal/platform/activitymon"
 	"wails-gui/internal/platform/browserhistory"
+	"wails-gui/internal/privacy"
 	"wails-gui/internal/topics"
 )
 
@@ -113,7 +114,7 @@ type topicsService struct {
 	registryAfter                func(time.Duration) <-chan time.Time
 	registryLastSnapshotReplaced bool
 	registrySnapshotMu           sync.Mutex
-	registryWithdrawalScopes     []privacyWithdrawalScope
+	registryWithdrawalScopes     []privacy.Scope
 	registryObservedSchema       int64
 	registryObserverGeneration   int64
 	registryRevisionMu           sync.Mutex
@@ -160,7 +161,7 @@ func newTopicsService(app *App) *topicsService {
 	svc.collect = func(now time.Time) topicInput { return collectTopicInput(app, now) }
 	svc.interests = func() []interests.Interest { return app.interestsSvc().list() }
 	svc.following = app.interestsSvc().following
-	svc.privacyWithdrawalUnsubscribe = subscribePrivacyWithdrawals(func(withdrawal privacyWithdrawal) {
+	svc.privacyWithdrawalUnsubscribe = subscribePrivacyWithdrawals(func(withdrawal privacy.Withdrawal) {
 		if svc.app != nil && svc.app.topics == svc {
 			svc.applyPrivacyWithdrawal(withdrawal.Scope)
 		}
