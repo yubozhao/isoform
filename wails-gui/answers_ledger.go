@@ -43,6 +43,8 @@ type AnswerRecord struct {
 	DeviceID  string      `json:"deviceId,omitempty"`
 	Seq       uint64      `json:"seq,omitempty"`
 	TaskID    string      `json:"taskId,omitempty"`
+	Removed   []string    `json:"removed,omitempty"`
+	AgentID   string      `json:"agentId,omitempty"`
 	UndoUntil string      `json:"undoUntil,omitempty"`
 	Undoes    string      `json:"undoes,omitempty"`
 }

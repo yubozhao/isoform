@@ -214,3 +214,43 @@ func TestMobileWorkReaderIsRemembered(t *testing.T) {
 		t.Fatalf("readers = %v", readers)
 	}
 }
+
+// The hand-off sheet's answer: exactly the work and the What it gets items the
+// person kept go, removing a fixed item or naming an unknown agent is refused,
+// and both are kept in the ledger (phone-agent v1.0.0 rule 3).
+func TestWorkAnswerHandOffSheetFields(t *testing.T) {
+	item := WorkItem{Gets: []WorkGets{{ID: "g1", Label: "The Q4 notes", Removable: true}, {ID: "g2", Label: "The meeting", Removable: false}}}
+	text, err := workHandOffText("Plan the outline.", item, []string{"g1"})
+	if err != nil || text != "Plan the outline.\n\nWhat it gets:\n- The meeting" {
+		t.Fatalf("text = %q %v", text, err)
+	}
+	if _, err := workHandOffText("x", item, []string{"g2"}); !errors.Is(err, errWorkAnswerInvalid) {
+		t.Fatalf("removing a fixed item = %v", err)
+	}
+	if _, err := workHandOffText("x", item, []string{"nope"}); !errors.Is(err, errWorkAnswerInvalid) {
+		t.Fatalf("removing an unknown item = %v", err)
+	}
+	app, handoffs := workAnswersTestApp(t)
+	if _, err := app.AnswerWork(workTestPrepID, WorkAnswerInput{Action: workActionYes, AgentID: "someone-else"}); !errors.Is(err, errWorkAnswerInvalid) {
+		t.Fatalf("an unknown agent = %v", err)
+	}
+	if _, err := app.AnswerWork(workTestPrepID, WorkAnswerInput{Action: workActionNo, AgentID: "codex"}); !errors.Is(err, errWorkAnswerInvalid) {
+		t.Fatalf("an agent on a No = %v", err)
+	}
+	got, err := app.AnswerWork(workTestPrepID, WorkAnswerInput{Action: workActionYes, AgentID: "codex"})
+	if err != nil || got.State != workStateWithAgent {
+		t.Fatalf("Yes with an agent = %+v %v", got, err)
+	}
+	if entry, err := handoffs.Get(got.Ref.TaskID); err != nil || entry.Body != "Prepare." {
+		t.Fatalf("what went = %+v %v", entry, err)
+	}
+	if standing := app.answersLedger().current()[workTestPrepID]; standing.AgentID != "codex" {
+		t.Fatalf("the ledger lost the agent: %+v", standing)
+	}
+	list, _ := app.GetWorkList()
+	for _, item := range list.Items {
+		if item.Yes.Does == "agent" && item.Yes.Kind == "" {
+			t.Fatalf("%s: offered work has no kind for the agent choice", item.ID)
+		}
+	}
+}

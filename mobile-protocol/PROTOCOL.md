@@ -3739,8 +3739,17 @@ older phones.
 ```json
 {"idempotencyKey":"<1 to 128 bytes>","action":"yes|no|not_mine|edit|useful|not_useful|undo",
  "reason":"not_now","before":"<text>","after":"<text>","surface":"phone|notification",
- "answeredAt":"<RFC 3339>","queuedAt":"<RFC 3339>","seq":41}
+ "answeredAt":"<RFC 3339>","queuedAt":"<RFC 3339>","seq":41,
+ "removed":["<gets id>"],"agentId":"codex"}
 ```
+
+- **The hand-off sheet** (phone-agent v1.0.0 rule 3). On a Yes or Edit of an item whose `yes.does` is
+  `agent`, `removed` lists the `gets` ids the person took out (only `removable` ones) and `agentId`
+  changes the agent for this one hand-off. Exactly the work (or `after`) and the kept `gets` go; both
+  fields are kept in the ledger (26.2). Removing a fixed or unknown item, naming an unknown agent, or
+  sending either field on another answer is `400`. `yes.kind` (`code` or `else`) says which of the
+  person's agents takes the work, so the sheet names it before Send. Until the agents are a setting
+  (B4), the agents on this computer (`claude-code`, `codex`) are the known ids and every kind is `else`.
 
 - `200 {"item":<the item as GET /work now shows it>}`. `404` when the item is gone, `409
   {"code":"item_changed","item"}` when it was answered elsewhere first or `seq` is not above the last

@@ -23,6 +23,45 @@ type WorkAnswerInput struct {
 	Reason string `json:"reason,omitempty"`
 	Before string `json:"before,omitempty"`
 	After  string `json:"after,omitempty"`
+	// Removed lists the What it gets ids the person took out on the hand-off
+	// sheet; only removable ones (phone-agent v1.0.0 rule 3).
+	Removed []string `json:"removed,omitempty"`
+	// AgentID changes the agent for this one hand-off.
+	AgentID string `json:"agentId,omitempty"`
+}
+
+// workAgentKnown says whether an agent id may take a hand-off. Until the
+// person's agents are a setting (B4), the agents on this computer are.
+var workAgentKnown = func(id string) bool { return id == "claude-code" || id == "codex" }
+
+// workHandOffText is exactly what goes to the agent: the work (or the
+// person's words) and each What it gets item the person kept.
+func workHandOffText(prompt string, item WorkItem, removed []string) (string, error) {
+	out := map[string]bool{}
+	for _, id := range removed {
+		out[id] = true
+	}
+	known := map[string]bool{}
+	kept := []string{}
+	for _, get := range item.Gets {
+		known[get.ID] = true
+		if out[get.ID] {
+			if !get.Removable {
+				return "", errWorkAnswerInvalid
+			}
+			continue
+		}
+		kept = append(kept, "- "+get.Label)
+	}
+	for id := range out {
+		if !known[id] {
+			return "", errWorkAnswerInvalid
+		}
+	}
+	if len(kept) == 0 {
+		return prompt, nil
+	}
+	return strings.TrimSpace(prompt) + "\n\nWhat it gets:\n" + strings.Join(kept, "\n"), nil
 }
 
 const (
@@ -121,6 +160,13 @@ func (a *App) answerWork(ctx context.Context, id string, input WorkAnswerInput, 
 			return item, errWorkAnswerInvalid
 		}
 		record.Reason = input.Reason
+		if len(input.Removed) > 0 || input.AgentID != "" {
+			if (input.Action != workActionYes && input.Action != workActionEdit) || item.Yes.Does != "agent" ||
+				(input.AgentID != "" && !workAgentKnown(input.AgentID)) {
+				return item, errWorkAnswerInvalid
+			}
+			record.Removed, record.AgentID = append([]string(nil), input.Removed...), input.AgentID
+		}
 		if input.Action == workActionEdit {
 			if strings.TrimSpace(input.After) == "" {
 				return item, errWorkAnswerInvalid
@@ -226,7 +272,11 @@ func (a *App) dispatchWorkAnswer(ctx context.Context, item WorkItem, input WorkA
 		if input.Action == workActionEdit {
 			prompt = strings.TrimSpace(input.After)
 		}
-		return a.startWorkTask(item, prompt)
+		text, err := workHandOffText(prompt, item, input.Removed)
+		if err != nil {
+			return "", err
+		}
+		return a.startWorkTask(item, text)
 	}
 	return "", errWorkAnswerInvalid
 }

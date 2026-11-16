@@ -93,7 +93,13 @@ type WorkYes struct {
 	Line  string `json:"line"`
 	At    string `json:"at,omitempty"`
 	Agent string `json:"agent,omitempty"`
+	// Kind is code or else: which of the person's agents takes the work
+	// (phone-agent v1.1.0, B4). Set on work a Yes hands to an agent.
+	Kind string `json:"kind,omitempty"`
 }
+
+// workYesKind classifies offered work for the agent choice; B4 replaces it.
+var workYesKind = func(WorkItem) string { return "else" }
 
 type WorkLink struct {
 	Label string `json:"label"`
@@ -259,6 +265,11 @@ func (a *App) buildWorkList(ctx context.Context, now time.Time) (WorkList, error
 			if slots := mobileBriefSlotTimes(now, time.Local, schedule); len(slots) > 0 {
 				list.UndoUntil = slots[0].At
 			}
+		}
+	}
+	for i := range list.Items {
+		if list.Items[i].Yes.Does == "agent" {
+			list.Items[i].Yes.Kind = workYesKind(list.Items[i])
 		}
 	}
 	list.Version = workListVersion(list)
