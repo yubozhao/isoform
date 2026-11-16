@@ -17,7 +17,9 @@ func TestMobileChatEngagementScopesReceiptsAndMute(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	item, ok := app.proactiveItem(engagement.Moment{ID: "phone-card", Kind: engagement.KindBriefReady, SubjectID: "brief-1"}, engagementText{})
+	// A brief's card is not a phone chat item (pass-questions v1.0.0 rule
+	// 8); any other card carries the same receipts and mute.
+	item, ok := app.proactiveItem(engagement.Moment{ID: "phone-card", Kind: engagement.KindBriefMissed, SubjectID: "brief-1"}, engagementText{})
 	if !ok || app.postProactiveItem(item, item.MomentID) == "" {
 		t.Fatal("card not saved")
 	}

@@ -730,12 +730,20 @@ function ProactiveMessage({ item, message, onOpenTarget, nested = false, topicId
     );
 }
 
+/** A brief's card: the brief ready, the week's recap, or the first week's brief. */
+export function isChatBriefCard(message: { kind: string; briefId?: string }): boolean {
+    return (message.kind === 'brief_ready' || message.kind === 'weekly_recap' || message.kind === 'first_week') && Boolean(message.briefId);
+}
+
 export function MainChatProactiveCard({ item, onOpenTarget, compact = false, panelSurface = 'chat', detailPanel = false, inPanel = false, titleInHeader = false }: MainChatProactiveProps) {
     const panel = useMainChatItemPanel(panelSurface);
     const streamView = useMainChatStreamView();
     const { t, i18n } = useTranslation('chat');
     const message = getMainChatProactive(item);
     if (!message) return null;
+    // The brief lives on Today, and Chat never speaks first (pass-questions
+    // v1.0.0 rule 8): its card leaves Chat, with no row kept for it.
+    if (streamView && isChatBriefCard(message)) return null;
     if (streamView && message.kind === 'capture_paused') {
         const text = pauseLine(t, message.captureSource, message.captureCause, message.captureStartAt, message.captureEndAt, i18n.resolvedLanguage ?? 'en');
         return <div data-main-chat-proactive="capture_paused" data-background-line className={BACKGROUND_LINE_CLASS}>

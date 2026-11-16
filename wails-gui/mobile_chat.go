@@ -806,6 +806,11 @@ func mobileChatItemFromRow(row storage.StreamItemRow) (mobileChatItemView, bool)
 	case "assistant":
 		view.Role, view.Kind, view.Text = "assistant", "text", mobileChatBound(row.Content, mobileChatTextMax)
 	case "system":
+		// The brief lives on Today, and Chat never speaks first
+		// (pass-questions v1.0.0 rule 8): a brief's card is not a chat item.
+		if mainChatRowIsBriefCard(row) {
+			return view, false
+		}
 		view.Role, view.Kind, view.Text = "system", "text", mobileChatBound(row.Content, mobileChatTextMax)
 		mobileChatStructuredItem(&view, row)
 	case "error":
@@ -1973,4 +1978,21 @@ func (bridge *mobileBridge) registerChatListener() {
 	if bridge.app != nil {
 		bridge.chat.detach = bridge.app.onAgentEvent(bridge.observeChatEvent)
 	}
+}
+
+// mainChatRowIsBriefCard is a brief's card in the main chat: the brief ready,
+// the week's recap, or the first week's brief.
+func mainChatRowIsBriefCard(row storage.StreamItemRow) bool {
+	if row.Kind != "system" || row.ToolName != mainChatProactiveTool {
+		return false
+	}
+	var item mainChatProactive
+	if json.Unmarshal([]byte(row.ToolInput), &item) != nil || item.BriefID == "" {
+		return false
+	}
+	switch item.Kind {
+	case string(engagement.KindBriefReady), string(engagement.KindWeeklyRecap), string(engagement.KindFirstWeek):
+		return true
+	}
+	return false
 }
