@@ -16,6 +16,12 @@ ISOFORM_FRONT_LISTEN=0.0.0.0:443 ISOFORM_FRONT_KEY_FILE=/var/lib/isoform-front/f
 
 At start it prints `front endpoint id: ...`. Computers accept connections only from the front ids they are given. `ISOFORM_FRONT_SUFFIX` changes the domain.
 
+Behind a proxy that adds a PROXY protocol v2 header (Fly), set `ISOFORM_FRONT_PROXY_PROTOCOL=v2`. The front then reads the client's address from the header for its per-source limits, and closes any connection that arrives without one.
+
+## Deploy
+
+On Fly, with `fly.toml`, `Dockerfile` and `scripts/deploy.sh`. The steps and the DNS records are in `docs/front-deploy.md`.
+
 ## Toolchain
 
 `rust-toolchain.toml` pins Rust 1.93.1 with clippy and rustfmt. The merge queue runs `cargo clippy --locked --all-targets -- -D warnings` and `cargo test --locked` here whenever a PR touches `front/`.

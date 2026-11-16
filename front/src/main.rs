@@ -6,6 +6,8 @@
 //!   ISOFORM_FRONT_SUFFIX    hostname suffix (default agents.isoform.ai)
 //!   ISOFORM_FRONT_KEY_FILE  the front's iroh secret key; made (0600) when
 //!                           missing. Computers accept only this key's id.
+//!   ISOFORM_FRONT_PROXY_PROTOCOL  "v2" when a proxy (Fly) puts a PROXY v2
+//!                           header before each connection.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -24,6 +26,8 @@ async fn main() -> anyhow::Result<()> {
     if let Ok(suffix) = std::env::var("ISOFORM_FRONT_SUFFIX") {
         cfg.suffix = suffix.trim().trim_matches('.').to_ascii_lowercase();
     }
+    cfg.proxy_protocol =
+        std::env::var("ISOFORM_FRONT_PROXY_PROTOCOL").is_ok_and(|v| v.trim() == "v2");
     let key = load_or_make_key(Path::new(&key_file))?;
     let endpoint = Endpoint::builder(presets::N0)
         .secret_key(key)

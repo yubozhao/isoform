@@ -12,6 +12,7 @@ pub mod keyfile;
 pub mod label;
 pub mod limits;
 pub mod link;
+pub mod proxyproto;
 pub mod sni;
 
 use std::net::{IpAddr, SocketAddr};
@@ -48,6 +49,9 @@ pub struct Config {
     pub idle_timeout: Duration,
     /// Bound on tracked keys per limiter.
     pub max_tracked: usize,
+    /// Each connection starts with a PROXY protocol v2 header naming the
+    /// client (Fly's proxy); limits then count the client, not the proxy.
+    pub proxy_protocol: bool,
 }
 
 impl Default for Config {
@@ -70,6 +74,7 @@ impl Default for Config {
             dial_timeout: Duration::from_secs(10),
             idle_timeout: Duration::from_secs(300),
             max_tracked: 100_000,
+            proxy_protocol: false,
         }
     }
 }
@@ -158,12 +163,26 @@ impl Front {
             self.metrics.over_global.fetch_add(1, Ordering::Relaxed);
             return;
         };
+        let mut source = peer.ip();
+        if self.cfg.proxy_protocol {
+            match tokio::time::timeout(self.cfg.handshake_timeout, proxyproto::read_v2(&mut tcp))
+                .await
+            {
+                Ok(Ok(Some(client))) => source = client,
+                // A LOCAL header is the proxy's own check: nothing to pass on.
+                Ok(Ok(None)) => return,
+                _ => {
+                    self.metrics.bad_hello.fetch_add(1, Ordering::Relaxed);
+                    return;
+                }
+            }
+        }
         if !self
             .state
             .lock()
             .unwrap()
             .per_ip
-            .take(&source_key(peer.ip()), 1.0, Instant::now())
+            .take(&source_key(source), 1.0, Instant::now())
         {
             self.metrics.over_ip.fetch_add(1, Ordering::Relaxed);
             return;

@@ -401,6 +401,17 @@ func (a *App) workTopicItems(ctx context.Context) []WorkItem {
 	if view.BuiltAt > 0 {
 		created = mobileTimestamp(time.UnixMilli(view.BuiltAt))
 	}
+	// When each proposal was answered, for "with your agent since".
+	answeredAt := map[string]int64{}
+	if store, err := a.topicsDailyStore(); err == nil {
+		if saved, ok := store.Load(); ok {
+			for _, topic := range saved.Topics {
+				if topic.Proposal != nil {
+					answeredAt[topic.Proposal.ID] = topic.Proposal.AnsweredAt
+				}
+			}
+		}
+	}
 	items := []WorkItem{}
 	for _, topic := range view.Topics {
 		p := topic.Proposal
@@ -425,8 +436,12 @@ func (a *App) workTopicItems(ctx context.Context) []WorkItem {
 		switch p.State {
 		case "running":
 			item.State = workStateWithAgent
-			item.Answer = &WorkAnswer{Action: "yes", Line: p.Title + ": with your agent"}
-			item.Agent = &WorkAgent{Name: "your agent"}
+			since := created
+			if at := answeredAt[p.ID]; at > 0 {
+				since = mobileTimestamp(time.UnixMilli(at))
+			}
+			item.Answer = &WorkAnswer{Action: "yes", At: since, Line: p.Title + ": with your agent"}
+			item.Agent = &WorkAgent{Name: "your agent", Since: since}
 		case "done", "failed":
 			item.State, item.Kind, item.Row = workStateBack, workKindResult, "result"
 			item.Work.Text = p.Result

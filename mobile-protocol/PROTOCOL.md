@@ -3690,7 +3690,7 @@ when the list changes; the phone reads `GET /work` again then.
    "reasons":["already_done","not_now","not_useful","myself"],
    "answer":{"action":"yes","reason","edited":{"before","after"},"at","surface":"phone|computer|notification",
              "line":"Prep for Lena: with your agent","undoUntil"},
-   "agent":{"name":"your agent","since"},
+   "agent":{"name":"your agent","since":"<RFC 3339, optional>"},
    "createdAt":"<RFC 3339>","order":0}]}
 ```
 
