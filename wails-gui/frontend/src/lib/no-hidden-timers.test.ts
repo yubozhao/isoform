@@ -24,10 +24,11 @@ const sources = import.meta.glob([
     '../components/settings/pages/chat-apps/bot-setups.tsx',
     '../components/mobile-connection-settings.tsx',
     '../components/model-accounts-card.tsx',
+    '../components/agents/ConnectAgentDialog.tsx',
 ], { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
 
 it('keeps every converted screen off raw intervals', () => {
-    expect(Object.keys(sources)).toHaveLength(18);
+    expect(Object.keys(sources)).toHaveLength(19);
     for (const [path, source] of Object.entries(sources)) {
         expect(source.match(/\bsetInterval\(/g) ?? [], path).toEqual([]);
     }

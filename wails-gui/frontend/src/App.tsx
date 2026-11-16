@@ -158,6 +158,7 @@ import { useUpcoming } from "@/hooks/useUpcoming";
 import { recordTasksAction } from "@/lib/tasks-telemetry";
 import { offerShowsNow } from "@/components/playbooks/playbook-lists";
 import { TasksPage, type TasksFocus } from "@/components/tasks/TasksPage";
+import { AgentsPage } from "@/components/agents/AgentsPage";
 // import { usePRInfo } from '@/hooks/usePRInfo'; // TODO: re-enable after PR bug fix
 import { useProjects } from "@/hooks/useProjects";
 import { useAgentStreaming } from "@/hooks/useAgentStreaming";
@@ -1057,6 +1058,12 @@ export default function App() {
     // Tasks scrolls to a section (Scheduled) or opens All done when a link
     // asks for it; the nonce makes a repeat request count.
     const [tasksFocus, setTasksFocus] = useState<TasksFocus | null>(null);
+    // Agents shows the Tasks page when Tasks, a hand-off or a Tasks section
+    // was asked for (every route to Tasks opens the "agents" mode), or the
+    // person chose Tasks from the Agents page (computer-map rule 4: Tasks'
+    // agent side is Agents). Only the sidebar's Agents opens the Agents page.
+    const [agentsShowTasks, setAgentsShowTasks] = useState(() => localStorage.getItem("yansu.appMode") === "handoffs");
+    const agentsOnTasks = agentsShowTasks || !!handoffOpenId || !!tasksFocus;
 
     const todayChatRequestRef = useRef(0);
     const todayBriefGate = useRef(new TodayBriefRequestGate());
@@ -1069,6 +1076,7 @@ export default function App() {
         todayChatRequestRef.current += 1;
         setTodayBriefRequest(null);
         setAppMode(destination);
+        if (destination === "agents") setAgentsShowTasks(true);
         localStorage.setItem("yansu.appMode", destination);
         // Any explicit mode switch ends the "opened from Handoffs" context; the
         // handoff onOpen re-sets it after calling this.
@@ -1334,10 +1342,10 @@ export default function App() {
         else if (tab === "people") setPeopleOpen(true);
         else setMemoryOpen(true);
     };
-    // The Agents place shows the Tasks page until the Agents page replaces it,
-    // and Tasks reports its first paint as "tasks": time the switch under the
-    // same name, so the line is logged and the speed check can read it.
-    const measuredPage = memoryOpen ? 'about-you' : knowledgeOpen ? 'know-how' : peopleOpen ? 'people' : settings.settingsOpen ? 'settings' : appMode === 'agents' ? 'tasks' : appMode;
+    // The Agents place shows the Agents page or, when Tasks was asked for, the
+    // Tasks page, which reports its first paint as "tasks": time the switch
+    // under the name the shown page reports, so the speed check can read it.
+    const measuredPage = memoryOpen ? 'about-you' : knowledgeOpen ? 'know-how' : peopleOpen ? 'people' : settings.settingsOpen ? 'settings' : appMode === 'agents' ? (agentsOnTasks ? 'tasks' : 'agents') : appMode;
     useLayoutEffect(() => beginPageSwitch(measuredPage), [measuredPage]);
     useEffect(() => revalidatePageQueries(appMode), [appMode]);
     useEffect(() => {
@@ -3568,6 +3576,8 @@ export default function App() {
                 onOpenAgents={() => {
                     handleSetAppMode("agents");
                     setHandoffOpenId(null);
+                    setTasksFocus(null);
+                    setAgentsShowTasks(false);
                 }}
                 onOpenActivity={() => {
                     // The sidebar row is pure navigation: already on the page,
@@ -3807,6 +3817,8 @@ export default function App() {
                     />
                     </Suspense>
                     </div>
+                ) : appMode === "agents" && !agentsOnTasks ? (
+                    <AgentsPage onOpenTasks={() => setAgentsShowTasks(true)} />
                 ) : appMode === "agents" ? (
                     <TasksPage
                         openHandoffId={handoffOpenId}

@@ -192,6 +192,10 @@ vi.mock('@/components/tasks/TasksPage', () => ({ TasksPage: (props: any) => {
     fixture.pages.TasksPage = props;
     return <output data-testid="TasksPage" />;
 } }));
+vi.mock('@/components/agents/AgentsPage', () => ({ AgentsPage: (props: any) => {
+    fixture.pages.AgentsPage = props;
+    return <output data-testid="AgentsPage" />;
+} }));
 vi.mock('@/components/deliverables/DeliverablesPage', () => ({ DeliverablesPage: (props: any) => {
     fixture.pages.DeliverablesPage = props;
     return <output data-testid="DeliverablesPage" />;
@@ -354,11 +358,15 @@ describe('App Activity/Library navigation', () => {
     });
 
 
-    it("routes the sidebar and Today entry points to Tasks and Goals", async () => {
+    it("routes the sidebar to Agents and Today's entry points to Tasks and Goals", async () => {
         await mountApp();
         await act(async () => fixture.sidebarProps!.onOpenAgents());
-        expect(screen.getByTestId("TasksPage")).toBeInTheDocument();
+        expect(screen.getByTestId("AgentsPage")).toBeInTheDocument();
+        expect(screen.queryByTestId("TasksPage")).toBeNull();
         expect(localStorage.getItem("yansu.appMode")).toBe("agents");
+        // All tasks, from the Agents page.
+        await act(async () => fixture.pages.AgentsPage.onOpenTasks());
+        expect(screen.getByTestId("TasksPage")).toBeInTheDocument();
         await act(async () => fixture.sidebarProps!.onOpenToday());
         // Goals are a group in About you now (sidebar handoff, section 5).
         await act(async () => fixture.pages.TodayPage.handlers.onOpenGoals());
@@ -381,6 +389,9 @@ describe('App Activity/Library navigation', () => {
         expect(fixture.pages.TasksPage.openHandoffId).toBe("selected-work");
         expect(localStorage.getItem("yansu.appMode")).toBe("agents");
         await act(async () => fixture.sidebarProps!.onOpenAgents());
+        expect(screen.getByTestId("AgentsPage")).toBeInTheDocument();
+        // The selection doesn't come back with All tasks.
+        await act(async () => fixture.pages.AgentsPage.onOpenTasks());
         expect(fixture.pages.TasksPage.openHandoffId).toBeNull();
     });
 
@@ -569,12 +580,13 @@ describe('App Activity/Library navigation', () => {
         expect(fixture.pages.PeoplePage.initialSelection).toBeUndefined();
     });
 
-    it('times the Agents place under the name its page reports (tasks)', async () => {
+    it('times the Agents place under the name its shown page reports', async () => {
         await mountApp();
         pageSwitch.begun.length = 0;
         await act(async () => fixture.sidebarProps!.onOpenAgents());
-        expect(pageSwitch.begun).toContain('tasks');
-        expect(pageSwitch.begun).not.toContain('agents');
+        expect(pageSwitch.begun).toEqual(['agents']);
+        await act(async () => fixture.pages.AgentsPage.onOpenTasks());
+        expect(pageSwitch.begun).toEqual(['agents', 'tasks']);
     });
 
     it('has no Library menu: the library:open event is not listened to, and nothing opens', async () => {

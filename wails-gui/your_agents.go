@@ -51,6 +51,9 @@ type YourAgentView struct {
 	// Found is true when the agent's app or command is on this computer.
 	Found     bool `json:"found"`
 	Connected bool `json:"connected"`
+	// ConnectedHere is a coding agent connected on this computer (C1), not
+	// through a join link; Disconnect is DisconnectAgentHere.
+	ConnectedHere bool `json:"connectedHere,omitempty"`
 	// LastWorkedAt is when it last took or finished a hand-off.
 	LastWorkedAt int64 `json:"lastWorkedAt,omitempty"`
 }
@@ -122,7 +125,9 @@ func (a *App) yourAgents() YourAgents {
 		if seen > lastWorked[agent.ID] {
 			lastWorked[agent.ID] = seen
 		}
-		view := YourAgentView{ID: agent.ID, Name: agent.Name, Kind: agent.Kind, Found: found, Connected: isConnected, LastWorkedAt: lastWorked[agent.ID]}
+		here := a.agentConnectedHere(agent.ID)
+		isConnected = isConnected || here
+		view := YourAgentView{ID: agent.ID, Name: agent.Name, Kind: agent.Kind, Found: found, Connected: isConnected, ConnectedHere: here, LastWorkedAt: lastWorked[agent.ID]}
 		switch {
 		case isConnected && agent.Kind == workonit.KindCode:
 			view.Reach = agentReachConnectedComputer
@@ -274,6 +279,9 @@ func (a *App) GetWorkOnItHandoffs() ([]workonit.Handoff, error) {
 	}
 	if list == nil {
 		list = []workonit.Handoff{}
+	}
+	for i := range list {
+		list[i].TaskState, list[i].TaskResult = a.workOnItTaskState(list[i].TaskID)
 	}
 	sort.SliceStable(list, func(i, j int) bool { return list[i].SentAt > list[j].SentAt })
 	return list, nil

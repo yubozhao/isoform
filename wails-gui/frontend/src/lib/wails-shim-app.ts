@@ -4085,7 +4085,7 @@ export type WorkOnItKind = "code" | "else";
 export interface WorkOnItInput { sourceKind: WorkOnItSourceKind; sourceId: string; title: string; detail: string; done: string; kind?: WorkOnItKind }
 export interface WorkOnItAgentView { id: string; name: string; methods: WorkOnItMethod[]; default: boolean; termsNote?: string; needsHandle?: boolean }
 export interface WorkOnItPrepared { taskId: string; text: string; kind?: WorkOnItKind; agents: WorkOnItAgentView[] }
-export interface WorkOnItSent { recordId: string; method: WorkOnItMethod; copied: boolean; via?: "deep_link" | "message" | "open_copy" | "inbox" }
+export interface WorkOnItSent { recordId: string; method: WorkOnItMethod; copied: boolean; via?: "deep_link" | "message" | "open_copy" | "inbox" | "task" }
 export const GetWorkOnItEnabled = appBinding<[], boolean>("GetWorkOnItEnabled");
 export const SetWorkOnItEnabled = appBinding<[boolean], void>("SetWorkOnItEnabled");
 export const PrepareWorkOnIt = appBinding<[WorkOnItInput], WorkOnItPrepared>("PrepareWorkOnIt");
@@ -4093,11 +4093,14 @@ export const SendWorkOnIt = appBinding<[string, string, string], WorkOnItSent>("
 export const SetWorkOnItHandle = appBinding<[string, string], void>("SetWorkOnItHandle");
 // Your agents: one for code, one for everything else (your_agents.go, phone-map B4).
 export type YourAgentReach = "connected" | "connected_computer" | "on_computer" | "its_app" | "by_text";
-export interface YourAgentView { id: string; name: string; kind: WorkOnItKind; reach: YourAgentReach; found: boolean; connected: boolean; lastWorkedAt?: number }
+export interface YourAgentView { id: string; name: string; kind: WorkOnItKind; reach: YourAgentReach; found: boolean; connected: boolean; connectedHere?: boolean; lastWorkedAt?: number }
 export interface YourAgents { choices: Record<WorkOnItKind, string>; agents: YourAgentView[] }
-export interface WorkOnItHandoff { id: string; sourceKind: WorkOnItSourceKind; sourceId?: string; kind: WorkOnItKind; agentId: string; method: WorkOnItMethod; via?: string; text: string; sent?: string; sentAt: number; surface: "computer" | "phone" }
+export interface WorkOnItHandoff { id: string; sourceKind: WorkOnItSourceKind; sourceId?: string; kind: WorkOnItKind; agentId: string; method: WorkOnItMethod; via?: string; text: string; sent?: string; sentAt: number; surface: "computer" | "phone"; taskId?: string; taskState?: "running" | "done" | "failed"; taskResult?: string }
 export const GetYourAgents = appBinding<[], YourAgents>("GetYourAgents");
 export const SetYourAgent = appBinding<[WorkOnItKind, string], YourAgents>("SetYourAgent");
+// Coding agents on this computer, connected with one click (agents_here.go, C1).
+export const ConnectAgentHere = appBinding<[string], YourAgents>("ConnectAgentHere");
+export const DisconnectAgentHere = appBinding<[string], YourAgents>("DisconnectAgentHere");
 export const GetWorkOnItHandoffs = appBinding<[], WorkOnItHandoff[]>("GetWorkOnItHandoffs");
 export const ForgetWorkOnItHandoff = appBinding<[string], void>("ForgetWorkOnItHandoff");
 // Agents join your Isoform once (agent_join_service.go, phone-agent v1.1.0 B5).
@@ -4114,6 +4117,7 @@ export const DisconnectAgent = appBinding<[string], void>("DisconnectAgent");
 // What came back from agents: task-link and inbox results (task_link_service.go).
 export interface TaskLinkResult { linkId: string; agentId: string; sourceKind?: string; sourceId?: string; status: "done" | "blocked" | "declined"; summary: string; links?: string[]; files?: string[]; takenAt?: number; resultAt: number; via?: "inbox" }
 export const GetTaskLinkResults = appBinding<[], TaskLinkResult[]>("GetTaskLinkResults");
+export const OpenAgentFile = appBinding<[string, string], void>("OpenAgentFile");
 export const ConfirmActivityThreadLink = appBinding<[string], void>("ConfirmActivityThreadLink");
 export const MoveActivityToThread = appBinding<[string, string], string>("MoveActivityToThread");
 export const RenameActivityThread = appBinding<[string, string], void>("RenameActivityThread");

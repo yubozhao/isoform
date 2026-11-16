@@ -603,10 +603,12 @@ func (a *App) executePromptOwned(prompt string, userPrompt string, workDir strin
 		// the loop just doesn't emit a trace_id property.
 		TraceID: traceID,
 	}
-	listBackend := listHandoffBackend(work)
+	if listHandoffBackend(work) != "" {
+		input.DenyExternalWrites = true
+	}
+	listBackend := taskForcedBackend(work)
 	if listBackend != "" {
 		input.ForceBackend = listBackend
-		input.DenyExternalWrites = true
 	}
 	refreshTopicSession := func() error {
 		if a.store == nil {
