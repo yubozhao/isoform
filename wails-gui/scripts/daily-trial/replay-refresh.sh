@@ -27,10 +27,19 @@ refresh() {
   if ! ( cd "$SRC/wails-gui" && GOFLAGS=-p=2 nice -n 10 go build -o "$tmp/brief-replay" ./cmd/brief-replay ); then
     rm -rf "$tmp"; return 1
   fi
-  cp "$SRC/wails-gui/scripts/daily-trial/replay-day.sh" "$SRC/wails-gui/scripts/daily-trial/replay.mjs" "$tmp/" || { rm -rf "$tmp"; return 1; }
-  node --check "$tmp/replay.mjs" && bash -n "$tmp/replay-day.sh" || { rm -rf "$tmp"; return 1; }
+  # Every script and data file of the folder: replay.mjs imports its helpers
+  # (today-budgets.mjs and its JSON), so copying two files broke the run.
+  cp "$SRC"/wails-gui/scripts/daily-trial/*.sh "$SRC"/wails-gui/scripts/daily-trial/*.mjs "$tmp/" 2>/dev/null || { rm -rf "$tmp"; return 1; }
+  cp "$SRC"/wails-gui/scripts/daily-trial/*.json "$tmp/" 2>/dev/null || true
+  for f in "$tmp"/*.mjs; do node --check "$f" || { rm -rf "$tmp"; return 1; }; done
+  bash -n "$tmp/replay-day.sh" || { rm -rf "$tmp"; return 1; }
+  # Every relative import must resolve inside the copied set.
+  for spec in $(grep -ho 'from "\./[^"]*"' "$tmp"/*.mjs | sed 's/from "\.\///; s/"$//'); do
+    [ -f "$tmp/$spec" ] || { log "missing $spec for replay.mjs"; rm -rf "$tmp"; return 1; }
+  done
   mv "$tmp/brief-replay" "$BASE/bin/brief-replay"
-  mv "$tmp/replay-day.sh" "$tmp/replay.mjs" "$BIN/"
+  mv "$tmp"/*.sh "$tmp"/*.mjs "$BIN/"
+  mv "$tmp"/*.json "$BIN/" 2>/dev/null || true
   chmod +x "$BIN/replay-day.sh"
   rm -rf "$tmp"
   echo "$tip" > "$BIN/source-commit"
