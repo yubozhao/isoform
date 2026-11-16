@@ -33,7 +33,6 @@ import (
 	"golang.org/x/crypto/acme/autocert"
 
 	"wails-gui/internal/remoteaccess"
-	"wails-gui/internal/tasklink"
 )
 
 const (
@@ -244,10 +243,8 @@ func (a *App) startFront() error {
 		GetCertificate: certs.GetCertificate,
 		NextProtos:     []string{"h2", "http/1.1", acme.ALPNProto},
 	}
-	mux := http.NewServeMux()
-	mux.Handle(tasklink.PathPrefix, a.taskLinkStore())
 	server := &http.Server{
-		Handler:           frontHostOnly(info.Hostname, mux),
+		Handler:           frontHostOnly(info.Hostname, a.agentMux()),
 		TLSConfig:         tlsConfig,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,

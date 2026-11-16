@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"os"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -140,8 +142,17 @@ func (a *App) streamPageSessionStates(ctx context.Context, ids []string) (map[st
 // still reads as it did when the copy was made. A check that cannot finish in
 // its budget does not hold.
 func (a *App) streamPageSourcesHold(saved map[string]streamPageSessionState) bool {
+	return a.streamPageSourcesCheck(saved) == ""
+}
+
+// streamPageSourcesCheck is "" when every session the copy's cards rest on
+// still looks as it did; otherwise "sources-changed" (one did not, so the
+// copy never paints again) or "sources-unread" (the check did not finish
+// within its budget: the copy is not served this time but stays for the next
+// read). A drop logs which fields moved, by name only.
+func (a *App) streamPageSourcesCheck(saved map[string]streamPageSessionState) string {
 	if len(saved) == 0 {
-		return true
+		return ""
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), streamPageSourceCheckBudget)
 	defer cancel()
@@ -151,12 +162,43 @@ func (a *App) streamPageSourcesHold(saved map[string]streamPageSessionState) boo
 	}
 	now, err := a.streamPageSessionStates(ctx, ids)
 	if err != nil {
-		return false
+		return "sources-unread"
 	}
+	moved := map[string]bool{}
 	for id, was := range saved {
-		if now[id] != was {
-			return false
+		if is := now[id]; is != was {
+			for _, field := range streamPageSessionStateDiff(was, is) {
+				moved[field] = true
+			}
 		}
 	}
-	return true
+	if len(moved) == 0 {
+		return ""
+	}
+	fields := make([]string, 0, len(moved))
+	for field := range moved {
+		fields = append(fields, field)
+	}
+	sort.Strings(fields)
+	log.Printf("[stream-page] sources moved fields=%s", strings.Join(fields, ","))
+	return "sources-changed"
+}
+
+// streamPageSessionStateDiff names the fields that differ, never their values.
+func streamPageSessionStateDiff(was, is streamPageSessionState) []string {
+	var out []string
+	add := func(name string, differs bool) {
+		if differs {
+			out = append(out, name)
+		}
+	}
+	add("missing", was.Missing != is.Missing)
+	add("status", was.Status != is.Status)
+	add("apps", was.Apps != is.Apps)
+	add("meeting", was.Meeting != is.Meeting || was.MeetingApp != is.MeetingApp)
+	add("start", was.Start != is.Start)
+	add("end", was.End != is.End)
+	add("revision", was.Revision != is.Revision)
+	add("notes", was.Notes != is.Notes || was.NotesSize != is.NotesSize || was.NotesMod != is.NotesMod || was.NotesGone != is.NotesGone)
+	return out
 }

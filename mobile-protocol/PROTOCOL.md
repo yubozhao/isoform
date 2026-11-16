@@ -3752,8 +3752,26 @@ older phones.
   changes the agent for this one hand-off. Exactly the work (or `after`) and the kept `gets` go; both
   fields are kept in the ledger (26.2). Removing a fixed or unknown item, naming an unknown agent, or
   sending either field on another answer is `400`. `yes.kind` (`code` or `else`) says which of the
-  person's agents takes the work, so the sheet names it before Send. Until the agents are a setting
-  (B4), the agents on this computer (`claude-code`, `codex`) are the known ids and every kind is `else`.
+  person's agents takes the work, so the sheet names it before Send: `code` for a topic seen in a code
+  tool (an editor or a terminal), else `else`. Known agents are the person's agents (section 27) and
+  the agents that joined.
+- **Yes, then Send** (phone-map §2, item 3; `GET /status` says `"workSend":true`). On work for an agent,
+  `"send":false` with a Yes or Edit records the Yes and sends nothing: the item is `answered` with
+  `answer.notSent:true` ("Yes · not sent") and the Yes counts as the judgment. The action `send`
+  (`{"action":"send","removed","agentId"}`, the sheet's final choices) hands it over; it is `409
+  item_changed` without a Yes waiting. A Yes not sent can be undone; once sent it cannot. Omitting
+  `send` hands a Yes over at once, as before.
+- **Where a Yes goes.** To a connected agent's inbox through Work on it (27.1, source `work_item`,
+  the item's id); otherwise, for the agents on this computer (`claude-code`, `codex`), as a local task.
+  Either way the hand-off is kept with exactly what went (method `connected` or `local_task`), for
+  Your data. An agent elsewhere that has not joined cannot take it from the computer: `409
+  {"code":"agent_not_connected","item"}`, and nothing is sent or recorded. The client then opens its
+  own Work on it sheet (a deep link or a copy into the agent's app, the person's tap), which keeps the
+  hand-off with source `work_item` and the item's id; `{"action":"send","recordId":"<that hand-off>"}`
+  then marks the item sent without sending again (`400` for a hand-off of another item). A topic's
+  proposal follows the same rule: the agents on this computer run the topic's own task; an agent
+  that joined gets it in its inbox, and the topic records the Yes with no task here.
+- **Undo** is closed once the work left: a local task, or an agent's inbox, which keeps it.
 
 - `200 {"item":<the item as GET /work now shows it>}`. `404` when the item is gone, `409
   {"code":"item_changed","item"}` when it was answered elsewhere first or `seq` is not above the last
@@ -3824,6 +3842,7 @@ decides which agent gets a Yes; changing the agent for one hand-off doesn't chan
 |---|---|---|---|
 | `GET /agents` | `brief:read` | none | 200 the agents body below |
 | `POST /agents/choice` | `handoff:create` | `{"idempotencyKey","kind","agentId"}`; `kind` is `code` or `else`; an empty `agentId` clears the choice | 200 the agents body; 400 for an unknown kind or agent, or an agent for the other kind |
+| `POST /agents/handoffs` | `handoff:create` | `{"idempotencyKey","agentId"?,"kind"?,"sourceKind","sourceId","title","detail"?,"done"?}`; the item's own words, as for Work on it; `agentId` empty means the person's agent for `kind` | 201 `{"recordId","agentId"}`; 409 when that agent isn't connected or the computer isn't taking agent work (task links off, Closed Eyes on); 400 bad input |
 
 The agents body:
 
@@ -3848,3 +3867,11 @@ The agents body:
 - The computer keeps each hand-off with exactly what went (the task text, the agent, how it went,
   the source and the time) on the computer only, for 90 days. The person can forget one or all,
   and a withdrawn source removes its hand-offs. This log is not sent to the phone in v1.
+
+### 27.1 Hand-offs to a connected agent (B5)
+
+A connected agent (one that joined with the join link, `docs/design/agent-join.md`) gets the work
+directly: `POST /agents/handoffs` writes the task on the computer from the item's own words, puts
+it in that agent's inbox, and keeps the hand-off with `surface: "phone"`. The phone sends it only on
+the person's Send. The agent's result comes back to Your work as for any hand-off. An agent that
+isn't connected answers 409; the phone then uses its own sheet (copy and open, or Messages).

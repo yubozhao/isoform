@@ -38,20 +38,25 @@ type AnswerRecord struct {
 	// (a result back), about_you or chat.
 	Source string `json:"source,omitempty"`
 	// Title is what the item said when it was answered, for Your answers.
-	Title     string      `json:"title,omitempty"`
-	Action    string      `json:"action"`
-	Reason    string      `json:"reason,omitempty"`
-	Note      string      `json:"note,omitempty"`
-	Edited    *WorkEdited `json:"edited,omitempty"`
-	At        string      `json:"at"`
-	Surface   string      `json:"surface"`
-	DeviceID  string      `json:"deviceId,omitempty"`
-	Seq       uint64      `json:"seq,omitempty"`
-	TaskID    string      `json:"taskId,omitempty"`
-	Removed   []string    `json:"removed,omitempty"`
-	AgentID   string      `json:"agentId,omitempty"`
-	UndoUntil string      `json:"undoUntil,omitempty"`
-	Undoes    string      `json:"undoes,omitempty"`
+	Title    string      `json:"title,omitempty"`
+	Action   string      `json:"action"`
+	Reason   string      `json:"reason,omitempty"`
+	Note     string      `json:"note,omitempty"`
+	Edited   *WorkEdited `json:"edited,omitempty"`
+	At       string      `json:"at"`
+	Surface  string      `json:"surface"`
+	DeviceID string      `json:"deviceId,omitempty"`
+	Seq      uint64      `json:"seq,omitempty"`
+	TaskID   string      `json:"taskId,omitempty"`
+	// HandoffID is the Work on it record of a hand-off to a connected agent.
+	HandoffID string   `json:"handoffId,omitempty"`
+	Removed   []string `json:"removed,omitempty"`
+	AgentID   string   `json:"agentId,omitempty"`
+	UndoUntil string   `json:"undoUntil,omitempty"`
+	Undoes    string   `json:"undoes,omitempty"`
+	// NotSent marks a Yes on work for an agent that nothing went with yet;
+	// a later send entry hands it over.
+	NotSent bool `json:"notSent,omitempty"`
 }
 
 const (
@@ -183,8 +188,17 @@ func answersStanding(entries []AnswerRecord) map[string]AnswerRecord {
 			continue
 		}
 		previous, seen := out[record.ItemID]
+		if record.Action == workActionSend {
+			// A send hands over the Yes before it; the Yes stays the answer.
+			if seen && previous.NotSent {
+				previous.NotSent = false
+				previous.TaskID, previous.HandoffID, previous.AgentID, previous.Removed = record.TaskID, record.HandoffID, record.AgentID, record.Removed
+				out[record.ItemID] = previous
+			}
+			continue
+		}
 		if seen && workResultJudgment(record.Action) && !workResultJudgment(previous.Action) {
-			record.TaskID = previous.TaskID
+			record.TaskID, record.HandoffID = previous.TaskID, previous.HandoffID
 		}
 		out[record.ItemID] = record
 	}
@@ -245,7 +259,7 @@ func (a *App) GetAnswers(limit int, before string) (AnswersPage, error) {
 			started = record.EntryID == before
 			continue
 		}
-		if record.Action == workActionUndo || record.Action == answerActionShown {
+		if record.Action == workActionUndo || record.Action == answerActionShown || record.Action == workActionSend {
 			continue
 		}
 		if len(page.Answers) == limit {
@@ -428,7 +442,7 @@ func judgmentStatsAt(entries []AnswerRecord, days int, now time.Time) JudgmentSt
 		order = append(order, day)
 	}
 	for _, record := range entries {
-		if record.Action == workActionUndo {
+		if record.Action == workActionUndo || record.Action == workActionSend {
 			continue
 		}
 		at, err := time.Parse(time.RFC3339, record.At)

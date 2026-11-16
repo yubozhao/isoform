@@ -374,6 +374,10 @@ type App struct {
 	taskLinks taskLinkState
 	// front is the computer's end of the Isoform front (front_service.go).
 	front frontState
+	// agentJoin lets agents join once (agent_join_service.go).
+	agentJoin agentJoinState
+	// agentInbox is the joined agents' channel (agent_inbox_service.go).
+	agentInbox agentInboxState
 }
 
 type AgentStatus struct {

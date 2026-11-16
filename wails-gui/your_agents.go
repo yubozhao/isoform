@@ -118,7 +118,10 @@ func (a *App) yourAgents() YourAgents {
 	}
 	for _, agent := range workonit.Catalog() {
 		found := s.agentFound(agent)
-		_, isConnected := connected[agent.ID]
+		seen, isConnected := connected[agent.ID]
+		if seen > lastWorked[agent.ID] {
+			lastWorked[agent.ID] = seen
+		}
 		view := YourAgentView{ID: agent.ID, Name: agent.Name, Kind: agent.Kind, Found: found, Connected: isConnected, LastWorkedAt: lastWorked[agent.ID]}
 		switch {
 		case isConnected && agent.Kind == workonit.KindCode:
@@ -134,13 +137,26 @@ func (a *App) yourAgents() YourAgents {
 		}
 		out.Agents = append(out.Agents, view)
 	}
+	// Any other agent that joined is listed under the name it gave itself
+	// (phone-agent v1.1.0 rule 3).
+	for _, c := range a.GetConnectedAgents() {
+		if c.CatalogID == "" {
+			out.Agents = append(out.Agents, YourAgentView{ID: c.ID, Name: c.Name, Kind: workonit.KindElse, Reach: agentReachConnected, Connected: true, LastWorkedAt: c.LastSeenAt})
+		}
+	}
 	return out
 }
 
-// yourAgentConnections are the agents joined to this Isoform (phone-agent
-// v1.1.0 §2), by id. None until agents can join.
-func (a *App) yourAgentConnections() map[string]struct{} {
-	return map[string]struct{}{}
+// yourAgentConnections are the known agents joined to this Isoform
+// (phone-agent v1.1.0 §2): catalog id to when it was last seen.
+func (a *App) yourAgentConnections() map[string]int64 {
+	out := map[string]int64{}
+	for _, c := range a.GetConnectedAgents() {
+		if c.CatalogID != "" && c.LastSeenAt >= out[c.CatalogID] {
+			out[c.CatalogID] = c.LastSeenAt
+		}
+	}
+	return out
 }
 
 // yourAgentLastWorked is, per agent, the latest time it took or finished a

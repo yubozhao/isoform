@@ -116,6 +116,8 @@ func (bridge *mobileBridge) serveWorkAnswer(w http.ResponseWriter, r *http.Reque
 		After          string   `json:"after,omitempty"`
 		Removed        []string `json:"removed,omitempty"`
 		AgentID        string   `json:"agentId,omitempty"`
+		Send           *bool    `json:"send,omitempty"`
+		RecordID       string   `json:"recordId,omitempty"`
 		Surface        string   `json:"surface,omitempty"`
 		AnsweredAt     string   `json:"answeredAt,omitempty"`
 		QueuedAt       string   `json:"queuedAt,omitempty"`
@@ -144,7 +146,7 @@ func (bridge *mobileBridge) serveWorkAnswer(w http.ResponseWriter, r *http.Reque
 	}
 	bridge.runReceipted(w, device, key, r.Method+" "+r.URL.Path, func(w http.ResponseWriter) {
 		item, err := bridge.app.answerWork(r.Context(), id,
-			WorkAnswerInput{Action: input.Action, Reason: input.Reason, Before: input.Before, After: input.After, Removed: input.Removed, AgentID: input.AgentID},
+			WorkAnswerInput{Action: input.Action, Reason: input.Reason, Before: input.Before, After: input.After, Removed: input.Removed, AgentID: input.AgentID, Send: input.Send, RecordID: input.RecordID},
 			workAnswerMeta{Surface: surface, DeviceID: device.DeviceID, Seq: input.Seq})
 		switch {
 		case err == nil:
@@ -153,6 +155,8 @@ func (bridge *mobileBridge) serveWorkAnswer(w http.ResponseWriter, r *http.Reque
 			mobileJSON(w, http.StatusNotFound, nil, err.Error())
 		case errors.Is(err, errWorkItemChanged):
 			mobileJSON(w, http.StatusConflict, map[string]any{"code": "item_changed", "item": item}, err.Error())
+		case errors.Is(err, errWorkAgentAway):
+			mobileJSON(w, http.StatusConflict, map[string]any{"code": "agent_not_connected", "item": item}, err.Error())
 		case errors.Is(err, errWorkUndoClosed):
 			mobileJSON(w, http.StatusConflict, map[string]any{"code": "undo_closed", "item": item}, err.Error())
 		case errors.Is(err, errWorkAnswerInvalid):

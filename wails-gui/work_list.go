@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"wails-gui/internal/topicday"
+	"wails-gui/internal/workonit"
 )
 
 // Your work: the one list of what Isoform puts to the person, the same on the
@@ -98,8 +99,23 @@ type WorkYes struct {
 	Kind string `json:"kind,omitempty"`
 }
 
-// workYesKind classifies offered work for the agent choice; B4 replaces it.
-var workYesKind = func(WorkItem) string { return "else" }
+// workCodeApps are the apps whose work is code: an editor or a terminal.
+var workCodeApps = []string{"xcode", "code", "cursor", "terminal", "iterm", "ghostty", "warp", "goland", "intellij",
+	"pycharm", "webstorm", "android studio", "zed", "sublime", "nova"}
+
+// workTopicIsCode says whether a topic's work is code: it was seen in a code
+// tool (phone-agent v1.1.0 §4: the work's kind decides which agent takes it).
+func workTopicIsCode(apps []string) bool {
+	for _, app := range apps {
+		name := strings.ToLower(app)
+		for _, tool := range workCodeApps {
+			if strings.Contains(name, tool) {
+				return true
+			}
+		}
+	}
+	return false
+}
 
 type WorkLink struct {
 	Label string `json:"label"`
@@ -122,6 +138,8 @@ type WorkAnswer struct {
 	Surface   string      `json:"surface"`
 	Line      string      `json:"line,omitempty"`
 	UndoUntil string      `json:"undoUntil,omitempty"`
+	// NotSent marks a Yes kept for the hand-off sheet: nothing went yet.
+	NotSent bool `json:"notSent,omitempty"`
 }
 
 type WorkEdited struct {
@@ -279,8 +297,8 @@ func (a *App) buildWorkList(ctx context.Context, now time.Time) (WorkList, error
 		}
 	}
 	for i := range list.Items {
-		if list.Items[i].Yes.Does == "agent" {
-			list.Items[i].Yes.Kind = workYesKind(list.Items[i])
+		if list.Items[i].Yes.Does == "agent" && list.Items[i].Yes.Kind == "" {
+			list.Items[i].Yes.Kind = workonit.KindElse
 		}
 	}
 	list.Version = workListVersion(list)
@@ -401,11 +419,14 @@ func (a *App) workTopicItems(ctx context.Context) []WorkItem {
 	if view.BuiltAt > 0 {
 		created = mobileTimestamp(time.UnixMilli(view.BuiltAt))
 	}
-	// When each proposal was answered, for "with your agent since".
+	// Each topic's apps (code or not) and when its proposal was answered,
+	// for "with your agent since".
+	apps := map[string][]string{}
 	answeredAt := map[string]int64{}
 	if store, err := a.topicsDailyStore(); err == nil {
 		if saved, ok := store.Load(); ok {
 			for _, topic := range saved.Topics {
+				apps[topic.ID] = topic.Apps
 				if topic.Proposal != nil {
 					answeredAt[topic.Proposal.ID] = topic.Proposal.AnsweredAt
 				}
@@ -429,6 +450,9 @@ func (a *App) workTopicItems(ctx context.Context) []WorkItem {
 			Noticed: p.Why, Work: WorkBody{Title: p.Title},
 			Yes:     WorkYes{Does: "agent", Line: workYesAgentLine},
 			Reasons: workReasonsOffered, CreatedAt: created,
+		}
+		if workTopicIsCode(apps[topic.ID]) {
+			item.Yes.Kind = workonit.KindCode
 		}
 		if item.Noticed == "" {
 			item.Noticed = p.Title
