@@ -924,6 +924,48 @@ background, and keeps it beside the package. Nothing waits for it except Play. T
 package text for 30 days and audio for 7 days; an older brief's audio is fetched through
 `GET /briefs/{briefId}/audio` (17.4) when the Mac can be reached.
 
+### 8.2 The brief's status and its push (phone redesign B1, 2026-11-15)
+
+Design: `docs/handoff-2026-11-15/handoff-2026-11-15-1402-phone-map-v1.0.0.md` (section 7, B1) and phone-today v1.0.0
+rule 7. Ranked goal 1: the latest brief shows up. Additive in protocol v1.
+
+**`briefStatus`.** `GET /status` and `GET /today` (and so every `today_changed` snapshot) carry:
+
+```json
+"briefStatus": {
+  "current": {"id":"2026-11-15-evening","version":"<hex>","kind":"evening","madeAt":"<RFC 3339>","audio":true},
+  "making":  {"kind":"evening","slot":"evening","startedAt":"<RFC 3339>","readyAt":"<RFC 3339>"},
+  "next":    {"kind":"morning","slot":"morning","dueAt":"<RFC 3339>"}
+}
+```
+
+- `current` is the one current brief (section 8.1) with its package version, its kind, when it was made (`asOf`) and
+  whether its package carries a recording. Absent before the first stored brief.
+- `making` is present while a build that will reach the phone runs: a scheduled slot, a slot made late after the
+  computer woke, or a brief asked for on any device. A brief made ahead of its slot (delivered at the slot) is not
+  reported. `readyAt` is an estimate (`startedAt` plus 90 seconds, or the phone request's own); once it has passed the
+  phone shows no time. `briefRequest` stays for older phones.
+- `next` is the next scheduled slot in the coming 24 hours (`briefSchedule[0]`); absent when the schedule is off. The
+  kind of a scheduled slot is its slot name; a Friday evening's `week` kind is known only once it is made.
+
+**The push waits for the recording.** A written brief's first package (text and cards, no recording) is sent to every
+phone at once with `notify:false`. Its push goes with the package that carries `audio.attachment`, sent when the
+recording is saved. When the recording step ends without one (no voice, Closed Eyes, a failure) the push goes at that
+moment with the package as stored, and in any case no later than 2 minutes after the first package. Each brief version
+is pushed once; a newer brief's push replaces an older one's, so an older brief is never pushed after a newer one. A
+brief without written text, or one whose package already has its recording, is pushed with its first package as before.
+
+**Phone rules** (phone redesign, phone-today rule 7 and phone-brief rule 4):
+
+- A package is shown only after all its parts are verified (section 8.1). For one `briefId`, a version with words or a
+  recording is never replaced by one with fewer; the computer never makes such a version (only the person's own
+  withdrawals remove words), and the phone keeps the guard.
+- "Your {time} brief comes when your computer wakes. It's asleep.": the saved `next.dueAt` has passed, no saved
+  package was made after it, and the relay says the computer is offline (section 5).
+- "Your {kind} brief is being made · ready around {time}": `making` is present; the time only while `readyAt` is ahead.
+- "Your first brief comes at {time}.": no `current`; the time is `next.dueAt`.
+- "The audio comes when your computer wakes.": the shown package has no recording and the computer is offline.
+
 ## 9. Push
 
 A push is an APNs alert with the title `Yansu`. The relay chooses its body from a

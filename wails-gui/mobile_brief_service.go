@@ -97,17 +97,24 @@ type mobileBriefService struct {
 	started bool
 	// startedAt is when this process started the service: a slot scheduled
 	// before it is one Isoform wasn't open for.
-	startedAt     time.Time
-	stopped       bool
-	stopDone      chan struct{}
-	running       bool
-	runningSince  time.Time
+	startedAt    time.Time
+	stopped      bool
+	stopDone     chan struct{}
+	running      bool
+	runningSince time.Time
+	// runningSlot names the slot a build that will reach the phone is making
+	// (morning, evening or on_request); empty for a brief made ahead, which
+	// the phone gets only at its slot (briefStatus.making, PROTOCOL.md 8.2).
+	runningSlot   string
 	runFinished   chan struct{}
 	todayRequests []string
 	phoneRequest  *mobileBriefPendingRequest
-	queueCancel   context.CancelFunc
-	lastOnDemand  map[string]time.Time
-	retryAfter    time.Time
+	// notifyOwed is the brief (id to asOf) whose phone push waits for its
+	// recording (mobile_brief_notify_hold.go). Guarded by mu.
+	notifyOwed   map[string]string
+	queueCancel  context.CancelFunc
+	lastOnDemand map[string]time.Time
+	retryAfter   time.Time
 	// retryFor is the brief id retryAfter holds back: a slot that keeps
 	// failing never delays the next slot.
 	retryFor string
@@ -431,6 +438,7 @@ func (s *mobileBriefService) checkDue(ctx context.Context) {
 	}
 	s.running = true
 	s.runningSince = now
+	s.runningSlot = slot
 	s.runFinished = make(chan struct{})
 	s.coalesceQueuedPhoneRequestLocked(now)
 	s.mu.Unlock()
@@ -468,6 +476,7 @@ func (s *mobileBriefService) checkDue(ctx context.Context) {
 	s.mu.Lock()
 	s.running = false
 	s.runningSince = time.Time{}
+	s.runningSlot = ""
 	todayRequests := s.todayRequests
 	s.todayRequests = nil
 	if s.runFinished != nil {
@@ -1372,7 +1381,7 @@ func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, s
 	firstReadBriefMu.Unlock()
 	if s.app != nil {
 		s.deliverStoredBrief(brief, func(current MobileBriefV1) {
-			if err := s.publish(current, phoneNotify); err != nil {
+			if err := s.publish(current, s.textPhoneNotify(current, phoneNotify)); err != nil {
 				log.Printf("[mobile-brief] paired-device delivery did not complete")
 			}
 		})
@@ -1401,6 +1410,8 @@ func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, s
 	go func() {
 		defer s.wg.Done()
 		s.addAudio(ctx, brief, asOf)
+		// A recording step that published nothing still owes the push.
+		s.payPhoneNotify(brief)
 		s.logBriefReady(brief)
 	}()
 	return brief, nil
@@ -1659,7 +1670,7 @@ func (s *mobileBriefService) addAudioWithLatestGuard(ctx context.Context, brief 
 					return
 				}
 			}
-			if err := s.publish(current, false); err != nil {
+			if err := s.publish(current, s.takePhoneNotify(current)); err != nil {
 				log.Printf("[mobile-brief] paired-device delivery of the spoken brief did not complete")
 			}
 		})
@@ -2021,6 +2032,7 @@ func (s *mobileBriefService) requestMobileBrief(reason, todayToken string) (Mobi
 	}
 	s.running = true
 	s.runningSince = now
+	s.runningSlot = mobileBriefSlotOnRequest
 	s.runFinished = make(chan struct{})
 	if todayToken != "" {
 		s.todayRequests = append(s.todayRequests, todayToken)
@@ -2099,6 +2111,7 @@ func (s *mobileBriefService) runQueuedPhoneBrief(ctx context.Context, delay time
 		now := s.now()
 		s.running = true
 		s.runningSince = now
+		s.runningSlot = mobileBriefSlotOnRequest
 		s.runFinished = make(chan struct{})
 		s.phoneRequest = &mobileBriefPendingRequest{state: "making", startAt: now, readyAt: now.Add(90 * time.Second)}
 		s.wg.Add(1)
@@ -2117,6 +2130,7 @@ func (s *mobileBriefService) runOnDemand(ctx context.Context, reason string) {
 	s.mu.Lock()
 	s.running = false
 	s.runningSince = time.Time{}
+	s.runningSlot = ""
 	todayRequests := s.todayRequests
 	s.todayRequests = nil
 	if s.runFinished != nil {
