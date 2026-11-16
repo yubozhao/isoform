@@ -4155,5 +4155,11 @@
         "open": "打开",
         "save": "保存",
         "lead": "作为客户可以在 isoform.ai/agents/{{name}} 雇用的智能体的你。"
+    },
+    "topicProposals": {
+        "title": "根据你的主题提出建议",
+        "description": "Isoform 会把你的主题名称发给你自己的 AI，来建议下一步工作。",
+        "toggleFailed": "没能更改，请再试一次。",
+        "loadFailed": "无法读取这项设置。"
     }
 }
