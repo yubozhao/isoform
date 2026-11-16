@@ -87,6 +87,8 @@ export function forgetBody(t: TFunction<'activity'>, preview: ActivityForgetPrev
                 return item.title ? t('feed.goes.goal', { goal: item.title }) : t('feed.goes.goalUntitled');
             case 'screen':
                 return t('feed.goes.screen', { start: clock(item.startMs ?? 0, lang), end: clock(item.endMs ?? 0, lang) });
+            case 'moment':
+                return t('feed.goes.moment', { moment: item.title });
             case 'words':
                 return t('feed.goes.words');
             case 'audio':

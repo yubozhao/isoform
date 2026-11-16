@@ -39,8 +39,9 @@ type ActivityFeedRow struct {
 
 // ActivityForgetItem is one thing that goes when a row is forgotten. Kind is
 // "topic" (the row leaves that topic), "goal" (a goal made from it),
-// "screen" (raw screen capture of a stretch), "words" (a transcript),
-// "audio", "copies" (the phone's and the watch's copies) or "notes".
+// "screen" (raw screen capture of a stretch), "moment" (another moment
+// whose capture shares that stretch), "words" (a transcript), "audio",
+// "copies" (the phone's and the watch's copies) or "notes".
 type ActivityForgetItem struct {
 	Kind    string `json:"kind"`
 	Title   string `json:"title,omitempty"`
@@ -187,6 +188,11 @@ func (a *App) GetActivityForgetPreview(kind, id string) (ActivityForgetPreview, 
 			return preview, fmt.Errorf("activity %s not found", id)
 		}
 		preview.Title = strings.TrimSpace(row.Title)
+		capture, err := a.activityForgetCapture(id)
+		if err != nil {
+			return preview, err
+		}
+		preview.Goes = append(preview.Goes, capture...)
 		preview.Goes = append(preview.Goes, a.activityForgetTopics(id)...)
 		goals, err := a.activityForgetGoals(id)
 		if err != nil {
@@ -235,6 +241,20 @@ func (a *App) GetActivityForgetPreview(kind, id string) (ActivityForgetPreview, 
 func (a *App) ForgetActivityFeedRow(kind, id string) error {
 	switch kind {
 	case "screen":
+		// The raw capture goes first: a failure leaves the moment in place to
+		// Forget again, never a moment gone with its screens still kept.
+		if a.activity == nil || a.activity.store == nil {
+			return errActivityFeedNotReady
+		}
+		sessions, err := a.activity.store.momentCaptureSessions(id)
+		if err != nil {
+			return err
+		}
+		for _, session := range sessions {
+			if err := a.activity.store.eraseSessionCapture(session); err != nil {
+				return err
+			}
+		}
 		return a.DeleteActivity(id)
 	case "watch":
 		return a.DeleteWatchRecording(id)
@@ -247,7 +267,7 @@ func (a *App) ForgetActivityFeedRow(kind, id string) error {
 			return err
 		}
 		for _, s := range spans {
-			if err := a.activity.store.DeleteSession(s.ID); err != nil {
+			if err := a.activity.store.eraseSessionCapture(s.ID); err != nil {
 				return err
 			}
 		}
@@ -281,6 +301,32 @@ func (a *App) activityAgentRunSessions(runID string) ([]ActivitySessionRow, erro
 			continue
 		}
 		out = append(out, *session)
+	}
+	return out, nil
+}
+
+// activityForgetCapture names the raw capture a moment's Forget erases: each
+// stretch of screen, and any other moment that shares it.
+func (a *App) activityForgetCapture(id string) ([]ActivityForgetItem, error) {
+	store := a.activity.store
+	sessions, err := store.momentCaptureSessions(id)
+	if err != nil {
+		return nil, err
+	}
+	out := []ActivityForgetItem{}
+	for _, sid := range sessions {
+		session, err := store.GetSessionByID(sid)
+		if err != nil || session == nil {
+			continue
+		}
+		out = append(out, ActivityForgetItem{Kind: "screen", StartMs: session.StartTime, EndMs: session.EndTime})
+	}
+	others, err := store.momentsSharingCapture(id, sessions)
+	if err != nil {
+		return nil, err
+	}
+	for _, title := range others {
+		out = append(out, ActivityForgetItem{Kind: "moment", Title: title})
 	}
 	return out, nil
 }
