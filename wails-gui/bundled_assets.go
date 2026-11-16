@@ -69,6 +69,28 @@ func ensureBundledYansuCLI() (string, error) {
 	return destPath, nil
 }
 
+// expectedYansuCLIPath is where ensureBundledYansuCLI installs the CLI, whether
+// or not it is there yet; "" when the data folder cannot be resolved.
+func expectedYansuCLIPath() string {
+	dataDir, err := flavorDataDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(dataDir, yansuCLIInstallRoot, bundledYansuCLIExecutableName())
+}
+
+// assistantToolShimPath is the CLI path the assistant router hands Claude Code
+// and Codex. The CLI is installed by a launch task that can finish after the
+// router is built (a new data folder, the first launch), so the router keeps
+// the path it will be at; an empty one reported both assistants unavailable
+// until the next restart.
+func assistantToolShimPath() string {
+	if path := installedYansuCLIPath(); path != "" {
+		return path
+	}
+	return expectedYansuCLIPath()
+}
+
 func installedYansuCLIPath() string {
 	dataDir, err := flavorDataDir()
 	if err != nil {

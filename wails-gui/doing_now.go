@@ -280,14 +280,19 @@ func (a *App) nudgeDoingNow() {
 }
 
 // noteUILanguageChanged is called after the UI language is saved: the
-// menu-bar line is read in the new language at once.
-func (a *App) noteUILanguageChanged() {
+// menu-bar line is read in the new language at once. Page snapshots are
+// dropped only when the language changed: the window saves the language it
+// starts in on every launch, and dropping them for that re-save made every
+// first read after a launch a live build (6 to 12 s, 2026-11-15).
+func (a *App) noteUILanguageChanged(changed bool) {
 	if a == nil {
 		return
 	}
-	derivedLanguageGeneration.Add(1)
-	derivedDiskDropAll()
-	a.derivedViews().wake()
+	if changed {
+		derivedLanguageGeneration.Add(1)
+		derivedDiskDropAll()
+		a.derivedViews().wake()
+	}
 	t := &a.doingNow
 	t.mu.Lock()
 	t.lang = ""

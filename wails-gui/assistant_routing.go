@@ -110,7 +110,11 @@ func (a *App) buildAssistantRoutingRunner(native *agent.NativeAgentRunner, allow
 			cfg.ToolServerSupports = native.ToolServerSupports
 			cfg.RespondToPermission = native.RespondToPermission
 			cfg.CancelPermission = native.CancelPermission
-			cfg.ToolShimCommand = installedYansuCLIPath()
+			// The CLI is installed by a launch task that can finish after
+			// this runner is built (a new data folder, the first launch). The
+			// router keeps the path it will be at, so Claude Code and Codex
+			// are not reported unavailable until the next restart.
+			cfg.ToolShimCommand = assistantToolShimPath()
 			agentID := format
 			cfg.Choice = func(input *agent.TaskInput) agent.AgentChoice { return a.runChoice(agentID, input) }
 			configs[format] = cfg

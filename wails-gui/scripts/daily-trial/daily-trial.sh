@@ -102,6 +102,14 @@ SPEC_RC=0
 ( cd "$TIP/wails-gui/frontend" && DAILY_TRIAL_OUT="$RUN" DAILY_TRIAL_BASELINE="$BASE/baseline" DAILY_TRIAL_BRIDGE="$BRIDGE" \
   npx playwright test --config playwright.daily.config.ts --update-snapshots=missing --reporter=json > "$RUN/playwright.json" 2> "$RUN/playwright.stderr" ) || SPEC_RC=$?
 
+# Today's layout at 920 and 1440 px on fixture data with a full day strip
+# (e2e/today-layout.spec.ts): its own Vite server, no app. Adds today-layout-*
+# lines to pages.jsonl; its baselines sit with the others.
+( cd "$TIP/wails-gui/frontend" && npx playwright install webkit ) >> "$RUN/playwright-install.log" 2>&1 || true
+( cd "$TIP/wails-gui/frontend" && DAILY_TRIAL_OUT="$RUN" DAILY_TRIAL_BASELINE="$BASE/baseline" \
+  nice -n 10 npx playwright test --config playwright.today-layout.config.ts --update-snapshots=missing --reporter=json > "$RUN/today-layout.json" 2> "$RUN/today-layout.stderr" ) || true
+grep -q '"page":"today-layout-' "$RUN/pages.jsonl" 2>/dev/null || echo '{"page":"today-layout","ok":false,"paintMs":null,"budgetMs":0,"checks":[],"failures":["the layout check did not run: see today-layout.stderr"],"screenshot":"skipped"}' >> "$RUN/pages.jsonl"
+
 # Quick chat: one prompt through the helper's own route to the app.
 node "$TIP/wails-gui/scripts/daily-trial/quick-chat.mjs" "$APP" "$RUN" > "$RUN/quick-chat.log" 2>&1 || true
 

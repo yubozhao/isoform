@@ -684,12 +684,18 @@ func (a *App) SaveUIState(key, value string) error {
 			return err
 		}
 	}
+	// Read before the write: only a real change drops the page snapshots.
+	languageChanged := false
+	if key == uiLanguageStateKey {
+		prior, err := a.store.GetUIState(context.Background(), key)
+		languageChanged = err != nil || normalizeUILanguage(prior) != normalizeUILanguage(value)
+	}
 	if err := a.store.SetUIState(context.Background(), key, value); err != nil {
 		return err
 	}
 	if key == uiLanguageStateKey {
 		a.telemetry.setLocale(value)
-		a.noteUILanguageChanged()
+		a.noteUILanguageChanged(languageChanged)
 		a.refreshAppMenu()
 	}
 	if key == onboardingStateKey && a.engagement != nil {

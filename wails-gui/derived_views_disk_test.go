@@ -114,7 +114,7 @@ func TestDerivedSnapshotPrivacyActionsDeleteTheSavedFile(t *testing.T) {
 	for name, act := range map[string]func(*App){
 		"withdrawal":      func(*App) { briefPrivacyChanged() },
 		"page clear":      func(a *App) { a.clearPageSnapshots() },
-		"language change": func(a *App) { a.noteUILanguageChanged() },
+		"language change": func(a *App) { a.noteUILanguageChanged(true) },
 	} {
 		t.Run(name, func(t *testing.T) {
 			app, _ := derivedDiskTestApp(t)
