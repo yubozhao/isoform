@@ -375,10 +375,9 @@ func TestMobileTopicSendReceiptsAndPhoneAuthority(t *testing.T) {
 		if !strings.Contains(prompt, "can be changed only on the computer") || !strings.Contains(prompt, "Atlas") || !strings.HasSuffix(prompt, "Review this release") {
 			t.Fatal("topic context or phone origin missing")
 		}
-		// A phone turn gets GoalCreate and the read-only SearchWeb (#925), nothing
-		// that changes the computer.
+		// A phone turn gets GoalCreate only, nothing that changes the computer.
 		for _, tool := range task.ExtraTools {
-			if tool.Name() != goalToolCreate && tool.Name() != chatWebSearchToolName {
+			if tool.Name() != goalToolCreate {
 				t.Fatalf("computer tool exposed: %s", tool.Name())
 			}
 		}

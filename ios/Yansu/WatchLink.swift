@@ -105,6 +105,33 @@ final class WatchLink: NSObject, WCSessionDelegate, @unchecked Sendable {
 
     func pauseUntil() async -> Date? { await forwarder?.pauseUntil() }
 
+    /// Whether listening on the watch is allowed; nil when the computer has no such setting.
+    func listeningAllowed() async -> Bool? {
+        guard let forwarder else { return nil }
+        await forwarder.refreshListening()
+        guard await forwarder.listeningKnown else { return nil }
+        return await forwarder.listenOffSince == nil
+    }
+
+    /// Turns listening off: the computer first (it drops what comes after), then the watch.
+    func turnListeningOff() async -> Bool {
+        guard let forwarder, await forwarder.turnListeningOff() else { return false }
+        pushAll()
+        return true
+    }
+
+    /// The watch says it is recording while the phone's off holds: the wearer started it there,
+    /// so the off ends at the time that recording began.
+    private func endOffIfWearerStarted(status: WatchLiveStatus?, onWatch: [WatchRecordingSummary]) {
+        guard status == .recording, let forwarder, let started = onWatch.map(\.startedAt).max() else { return }
+        Task {
+            if await forwarder.wearerStartedListening(at: started) {
+                await MainActor.run { WatchTabModel.shared.listening = true }
+                pushAll()
+            }
+        }
+    }
+
     func answerSpeaker(conversation: String, speaker: String, answer: String, name: String) async throws -> WatchConversation? {
         guard let forwarder else { return nil }
         return try await forwarder.answerSpeaker(conversation: conversation, speaker: speaker, answer: answer, name: name)
@@ -129,6 +156,7 @@ final class WatchLink: NSObject, WCSessionDelegate, @unchecked Sendable {
             : !session.isWatchAppInstalled ? .appMissing : .ready(reachable: session.isReachable)
         let onWatch = WatchRecordingWire.summaries(fromContext: session.receivedApplicationContext)
         let status = WatchRecordingWire.status(fromContext: session.receivedApplicationContext)
+        endOffIfWearerStarted(status: status, onWatch: onWatch)
         Task { @MainActor in
             WatchRecordingsModel.shared.connection = connection
             WatchRecordingsModel.shared.showOnWatch(onWatch)
@@ -145,9 +173,10 @@ final class WatchLink: NSObject, WCSessionDelegate, @unchecked Sendable {
             let names = await forwarder.currentNames()
             let pause = await forwarder.currentPause()
             let serial = await forwarder.pauseSerial
+            let listenOff = await forwarder.listenOffSince
             let session = WCSession.default
             guard session.activationState == .activated, session.isPaired, session.isWatchAppInstalled else { return }
-            try? session.updateApplicationContext(WatchRecordingWire.context(states, names: names, pause: pause, pauseSerial: serial))
+            try? session.updateApplicationContext(WatchRecordingWire.context(states, names: names, pause: pause, pauseSerial: serial, listenOff: listenOff))
         }
     }
 

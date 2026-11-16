@@ -235,3 +235,14 @@ it('announces completion without a new row or final content change, and acknowle
     view.rerender(draw(false));
     expect(screen.queryByTestId('jump-to-newest')).not.toBeInTheDocument();
 });
+
+describe('StreamBody for screen readers (pass-access v1.0.0, Chat 1)', () => {
+    it('is a polite log, busy only while an answer streams', async () => {
+        const { rerender } = render(<StreamBody items={ITEMS} streaming hasProject />);
+        const log = await screen.findByRole('log', { name: 'Messages' });
+        expect(log).toHaveAttribute('aria-live', 'polite');
+        expect(log).toHaveAttribute('aria-busy', 'true');
+        rerender(<StreamBody items={ITEMS} streaming={false} hasProject />);
+        expect(screen.getByRole('log', { name: 'Messages' })).not.toHaveAttribute('aria-busy');
+    });
+});

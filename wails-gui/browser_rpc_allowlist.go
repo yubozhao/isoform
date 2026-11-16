@@ -325,6 +325,7 @@ var browserRPCAllowlist = map[string]bool{
 	// found by the daily real-app test (scripts/daily-trial). Telemetry,
 	// voice input, the menu bar and the SMS status check stay native-only.
 	"GetThemePreference":         true,
+	"GetInterfaceZoom":           true, // a read; SetInterfaceZoom stays native-only (window zoom)
 	"GetClockFormat":             true,
 	"AIReady":                    true,
 	"GetMainChatWaiting":         true,

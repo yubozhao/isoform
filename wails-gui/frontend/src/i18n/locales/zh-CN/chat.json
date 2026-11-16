@@ -657,6 +657,28 @@
             "openInMail": "在邮件应用中打开",
             "copyFailed": "没能复制。",
             "mailFailed": "没能打开邮件应用。"
+        },
+        "handoff": {
+            "agentFor": "交给你的智能体：会连同{{what}}一起交给 {{agent}}。",
+            "agentForBare": "交给你的智能体：会交给 {{agent}}。",
+            "gets": "会带上：{{what}}。",
+            "done": "完成的样子：{{done}}",
+            "handIt": "交给 {{agent}}",
+            "no": "不用",
+            "handed": "已交给你的智能体。",
+            "handedTo": "已交给 {{agent}}。",
+            "declined": "没有交出去。",
+            "copy": "复制",
+            "copied": "已复制",
+            "failed": "没能保存，请再试一次。"
+        },
+        "correction": {
+            "changed": "已更改：{{where}}",
+            "undo": "撤销",
+            "failed": "没能撤销，请再试一次。",
+            "changedUndone": "已更改：{{where}} · 已撤销",
+            "undoneReply": "已撤销。{{where}}已恢复原样。",
+            "changedBack": "已改回：{{where}}"
         }
     },
     "setup": {
@@ -774,7 +796,8 @@
         "newReplies_one": "{{count}} 条新回复",
         "newReplies_other": "{{count}} 条新回复",
         "newRepliesShort": "{{count}}",
-        "jumpToNewest": "跳转到最新回复"
+        "jumpToNewest": "跳转到最新回复",
+        "messages": "消息"
     },
     "firstRead": {
         "label": "目前我看到的",
@@ -832,5 +855,10 @@
         "check": "没能核对。",
         "confirmSent": "没能确认已发送"
     },
-    "startingUp": "正在启动。Isoform 一准备好就会回复你的消息。"
+    "startingUp": "正在启动。Isoform 一准备好就会回复你的消息。",
+    "couldntAnswer": {
+        "line": "无法回答：{{reason}}",
+        "kept": "你的问题已保留。除了这个问题和它所需的内容，关于你一天的任何信息都没有离开这台电脑。",
+        "askAgain": "再问一次"
+    }
 }

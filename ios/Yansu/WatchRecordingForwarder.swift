@@ -91,6 +91,10 @@ protocol RecordingHubAPI: Sendable {
     func setWatchNotes(_ on: Bool) async throws -> Bool
     /// Says who a speaker is (PROTOCOL.md 24.13); nil from a computer that does not take it.
     func answerSpeaker(conversation: String, speaker: String, answer: String, name: String) async throws -> WatchConversation?
+    /// "Listen on your watch" (PROTOCOL.md 24.14); nil from a computer that has no such setting.
+    func watchListening() async throws -> WatchListeningSetting?
+    func turnWatchListeningOff() async throws -> WatchListeningSetting
+    func watchListeningStarted(at: Date) async throws -> WatchListeningSetting
 }
 
 extension RecordingHubAPI {
@@ -585,6 +589,33 @@ actor WatchRecordingForwarder {
 
     func currentPause() -> WatchPause? { pause }
 
+    /// When "Listen on your watch" was turned off, as the computer last said; nil while it is on.
+    private(set) var listenOffSince: Date?
+    /// False when the computer has no such setting, so the phone shows no switch.
+    private(set) var listeningKnown = false
+
+    func refreshListening() async {
+        guard let setting = try? await hub.watchListening() else { return }
+        listeningKnown = true
+        listenOffSince = setting.offSince
+    }
+
+    /// Turns listening off on the computer. It returns whether the computer took it.
+    func turnListeningOff() async -> Bool {
+        guard let setting = try? await hub.turnWatchListeningOff() else { return false }
+        listeningKnown = true
+        listenOffSince = setting.offSince ?? Date()
+        return true
+    }
+
+    /// The watch is listening again, started there at `date`. Only a start after the off ends it.
+    /// It returns whether the off was ended.
+    func wearerStartedListening(at date: Date) async -> Bool {
+        guard let since = listenOffSince, date > since, let setting = try? await hub.watchListeningStarted(at: date) else { return false }
+        listenOffSince = setting.offSince
+        return listenOffSince == nil
+    }
+
     /// How many pause requests of the watch were carried; sent along so the watch hears each answer.
     private(set) var pauseSerial = 0
 
@@ -614,6 +645,7 @@ actor WatchRecordingForwarder {
 
     func refreshStates() async {
         await refreshPause()
+        await refreshListening()
         let across = order.reversed().filter { id in
             guard let state = states[id] else { return false }
             return state == .onComputer || state == .transcribed || (state == .failed && inbox.audio(recordingID: id).urls.isEmpty)

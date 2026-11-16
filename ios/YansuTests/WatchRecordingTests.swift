@@ -604,6 +604,49 @@ final class WatchTabTests: XCTestCase {
     }
 }
 
+// "Listen on your watch": the phone can turn it off, never on; the watch acts on each off once and
+// stays off until the wearer starts it there.
+final class WatchListenOffTests: XCTestCase {
+    func testTheOffTravelsInThePhonesContext() {
+        let since = Date(timeIntervalSince1970: 1_800_000_000)
+        let context = WatchRecordingWire.context([:], listenOff: since)
+        XCTAssertEqual(WatchRecordingWire.listenOff(fromContext: context), since)
+        XCTAssertNil(WatchRecordingWire.listenOff(fromContext: WatchRecordingWire.context([:])), "no off, no word")
+        var odd = context
+        odd[WatchRecordingWire.listenOffKey] = "now"
+        XCTAssertNil(WatchRecordingWire.listenOff(fromContext: odd))
+    }
+
+    func testTheWatchActsOnEachOffOnceAndHoldsUntilTheWearerStarts() throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "watch-listen-off-\(UUID().uuidString)"))
+        let first = Date(timeIntervalSince1970: 1_800_000_000)
+        XCTAssertFalse(WatchAutoListen.offFromPhone(in: defaults))
+        XCTAssertTrue(WatchAutoListen.takesOff(since: first, in: defaults))
+        WatchAutoListen.setOffFromPhone(true, in: defaults)
+        XCTAssertTrue(WatchAutoListen.offFromPhone(in: defaults), "off holds, across days, until the wearer starts it")
+        // The wearer starts on the watch; the same off, still in the phone's context, must not stop it again.
+        WatchAutoListen.setOffFromPhone(false, in: defaults)
+        XCTAssertFalse(WatchAutoListen.takesOff(since: first, in: defaults), "an off already acted on is not acted on twice")
+        XCTAssertFalse(WatchAutoListen.takesOff(since: first.addingTimeInterval(-60), in: defaults))
+        XCTAssertTrue(WatchAutoListen.takesOff(since: first.addingTimeInterval(60), in: defaults), "a later off is a new one")
+    }
+
+    func testTheComputersSettingIsRead() throws {
+        let off = try JSONDecoder().decode(WatchListeningSetting.self, from: Data(#"{"off":true,"since":"2026-11-15T22:31:00Z"}"#.utf8))
+        XCTAssertEqual(off.offSince, WatchConversationDates.parse("2026-11-15T22:31:00Z"))
+        let on = try JSONDecoder().decode(WatchListeningSetting.self, from: Data(#"{"off":false}"#.utf8))
+        XCTAssertNil(on.offSince)
+    }
+
+    @MainActor
+    func testUnpairingForgetsTheSwitch() {
+        let model = WatchTabModel()
+        model.listening = false
+        model.clear()
+        XCTAssertNil(model.listening, "no switch is shown until a computer says it has the setting")
+    }
+}
+
 // A conversation's page: its words, who spoke, and the guess to judge.
 final class WatchConversationPageTests: XCTestCase {
     private let utc = TimeZone(identifier: "UTC")!

@@ -657,6 +657,28 @@
             "openInMail": "Open in mail app",
             "copyFailed": "Couldn't copy it.",
             "mailFailed": "Couldn't open your mail app."
+        },
+        "handoff": {
+            "agentFor": "For your agent: it goes to {{agent}} with {{what}}.",
+            "agentForBare": "For your agent: it goes to {{agent}}.",
+            "gets": "What it gets: {{what}}.",
+            "done": "Done looks like: {{done}}",
+            "handIt": "Hand it to {{agent}}",
+            "no": "No",
+            "handed": "Handed to your agent.",
+            "handedTo": "Handed to {{agent}}.",
+            "declined": "Not handed over.",
+            "copy": "Copy",
+            "copied": "Copied",
+            "failed": "Couldn't save that. Try again."
+        },
+        "correction": {
+            "changed": "Changed: {{where}}",
+            "undo": "Undo",
+            "failed": "Couldn't undo it. Try again.",
+            "changedUndone": "Changed: {{where}} · Undone",
+            "undoneReply": "Undone. {{where}} is as it was.",
+            "changedBack": "Changed back: {{where}}"
         }
     },
     "setup": {
@@ -774,7 +796,8 @@
         "newReplies_one": "{{count}} new reply",
         "newReplies_other": "{{count}} new replies",
         "newRepliesShort": "{{count}}",
-        "jumpToNewest": "Jump to newest replies"
+        "jumpToNewest": "Jump to newest replies",
+        "messages": "Messages"
     },
     "firstRead": {
         "label": "What I see so far",
@@ -832,5 +855,10 @@
         "check": "Couldn't check this.",
         "confirmSent": "Couldn't confirm it sent"
     },
-    "startingUp": "Starting up. Your message is answered as soon as Isoform is ready."
+    "startingUp": "Starting up. Your message is answered as soon as Isoform is ready.",
+    "couldntAnswer": {
+        "line": "Couldn't answer: {{reason}}",
+        "kept": "Your question is kept. Nothing about your day left this computer except the question and what it needed.",
+        "askAgain": "Ask again"
+    }
 }

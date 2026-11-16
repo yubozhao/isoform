@@ -2099,6 +2099,18 @@
                 "label": "前往关于你",
                 "description": "打开 Isoform 对你的了解"
             },
+            "zoom-in": {
+                "label": "放大",
+                "description": "放大这个窗口里的所有内容，最大 150%"
+            },
+            "zoom-out": {
+                "label": "缩小",
+                "description": "缩小这个窗口里的所有内容，最小 90%"
+            },
+            "zoom-reset": {
+                "label": "实际大小",
+                "description": "把这个窗口恢复到 100%"
+            },
             "new-chat": {
                 "label": "新建对话",
                 "description": "开始一段新的对话"

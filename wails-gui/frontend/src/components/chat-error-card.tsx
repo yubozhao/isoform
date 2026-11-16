@@ -109,6 +109,17 @@ function linkLabel(link: Link, t: TFunction<'chat'>): string {
     }
 }
 
+/** Failures that sending the same question again can fix. */
+export function chatErrorAsksAgain(kind: ChatError['kind']): boolean {
+    return kind === 'signed_out' || kind === 'no_reply' || kind === 'network' || kind === 'server' || kind === 'assistant_error' || kind === 'unknown';
+}
+
+/** Failures the person can't fix from here: the reply becomes "Couldn't
+ *  answer" with the question kept (computer-chat v1.1.0 rule 3). */
+function couldntAnswer(kind: ChatError['kind']): boolean {
+    return kind === 'no_reply' || kind === 'network' || kind === 'server' || kind === 'assistant_error' || kind === 'unknown';
+}
+
 const LINK_CLASS = 'cursor-pointer font-medium underline-offset-2 hover:underline focus-visible:underline';
 
 /** One line where the answer would go: copper when the person can fix it, gray otherwise. Never red. */
@@ -119,6 +130,31 @@ export const ChatErrorCard = memo(function ChatErrorCard({ error, assistant, onR
     const link = (cause.link === 'try_again' || cause.link === 'send_again') && !onRetry ? undefined : cause.link;
     const showDetails = cause.details && Boolean(error.detail);
     const onLink = link === 'try_again' || link === 'send_again' ? onRetry : link === 'sign_in' ? () => openAssistantSignIn(assistant) : openYourAI;
+
+    if (couldntAnswer(error.kind)) {
+        // computer-chat v1.1.0 rules 3 and 4: one bordered line with the
+        // reason, the question kept, what left the computer, and Ask again.
+        // Isoform never retries by itself.
+        return (
+            <div className="animate-rise-in max-w-md rounded-lg border border-border px-3 py-2" data-chat-cause={error.kind} data-chat-couldnt-answer>
+                <p role="status" className="m-0 text-[13px] leading-relaxed text-ink">{t('couldntAnswer.line', { reason: cause.line })}</p>
+                <p className="m-0 mt-0.5 text-xs leading-relaxed text-muted">{t('couldntAnswer.kept')}</p>
+                <p className="m-0 mt-1 flex flex-wrap gap-x-3 text-xs">
+                    {onRetry ? <button type="button" className={cn(LINK_CLASS, 'text-accent')} onClick={onRetry}>{t('couldntAnswer.askAgain')}</button> : null}
+                    {showDetails ? (
+                        <button type="button" className={cn(LINK_CLASS, 'text-subtle')} aria-expanded={detailOpen} onClick={() => setDetailOpen((open) => !open)}>
+                            {detailOpen ? t('errors.actions.hide') : t('errors.actions.details')}
+                        </button>
+                    ) : null}
+                </p>
+                {showDetails && detailOpen && (
+                    <pre className="m-0 mt-1.5 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-panel px-2 py-1.5 font-mono text-[11px] leading-relaxed text-muted">
+                        {error.detail}
+                    </pre>
+                )}
+            </div>
+        );
+    }
 
     return (
         <div className="animate-rise-in max-w-md" data-chat-cause={error.kind}>

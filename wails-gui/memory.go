@@ -759,7 +759,7 @@ func (a *App) saveMemoryEntryWithRewrite(id string, content string, userEdit boo
 
 	isNew := id == ""
 	if isNew {
-		id = fmt.Sprintf("memory-%d", time.Now().UnixMilli())
+		id = newMemoryEntryID(dir, time.Now())
 	}
 
 	filename := id + ".md"
@@ -875,6 +875,31 @@ func (a *App) saveMemoryEntryWithRewrite(id string, content string, userEdit boo
 		HasHistory:         memoryEntryHasHistory(dir, id),
 	}, nil
 }
+
+// newMemoryEntryID names a new note by its millisecond, moving past any name
+// already taken: two notes saved in the same millisecond (two corrections in
+// one turn) must never share a file, or the second would overwrite the first.
+var memoryNewIDMu sync.Mutex
+
+func newMemoryEntryID(dir string, now time.Time) string {
+	memoryNewIDMu.Lock()
+	defer memoryNewIDMu.Unlock()
+	ms := now.UnixMilli()
+	for {
+		id := fmt.Sprintf("memory-%d", ms)
+		if _, err := os.Stat(filepath.Join(dir, id+".md")); os.IsNotExist(err) {
+			if _, reserved := memoryReservedIDs[id]; !reserved {
+				memoryReservedIDs[id] = struct{}{}
+				return id
+			}
+		}
+		ms++
+	}
+}
+
+// memoryReservedIDs holds the names handed out in this run, so two saves
+// racing before either file is written still get different names.
+var memoryReservedIDs = map[string]struct{}{}
 
 // ReadMemoryFileDimension reads a memory file (by path relative to the memory
 // directory, e.g. "memory-1234.md") and returns its dimension header. Returns

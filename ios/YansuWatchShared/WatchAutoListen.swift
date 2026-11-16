@@ -10,6 +10,23 @@ enum WatchAutoListen {
     /// When the wearer stopped it, kept across launches (UserDefaults on the watch, seconds since
     /// 1970; absent when they did not).
     static let stoppedKey = "watch.stoppedByWearerAt"
+    /// The time of the last off from the phone the watch acted on, and whether that off still holds.
+    static let offActedKey = "watch.offFromPhoneActedAt"
+    static let offHeldKey = "watch.offFromPhoneHeld"
+
+    /// The phone turned listening off: it holds until the wearer starts it on the watch, across days.
+    static func offFromPhone(in defaults: UserDefaults = .standard) -> Bool { defaults.bool(forKey: offHeldKey) }
+
+    static func setOffFromPhone(_ held: Bool, in defaults: UserDefaults = .standard) { defaults.set(held, forKey: offHeldKey) }
+
+    /// Whether an off the phone reports is new to this watch. Each off is acted on once, so an
+    /// old one that is still in the phone's context does not stop what the wearer started since.
+    static func takesOff(since: Date, in defaults: UserDefaults = .standard) -> Bool {
+        let acted = defaults.double(forKey: offActedKey)
+        guard since.timeIntervalSince1970 > acted else { return false }
+        defaults.set(since.timeIntervalSince1970, forKey: offActedKey)
+        return true
+    }
 
     /// A stop holds for the rest of the day it was made on.
     static func stopHolds(stoppedAt: Date?, now: Date, calendar: Calendar = .current) -> Bool {

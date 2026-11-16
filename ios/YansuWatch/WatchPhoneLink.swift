@@ -11,6 +11,8 @@ final class WatchPhoneLink: NSObject, WCSessionDelegate, @unchecked Sendable {
     var currentStatus: WatchLiveStatus?
     /// The phone said whether observing is paused on the computer (nil: it is not).
     var onPause: ((WatchPause?) -> Void)?
+    /// The phone says listening was turned off at this time (nil: it was not).
+    var onListenOff: ((Date) -> Void)?
 
     init(library: WatchRecordingLibrary) {
         self.library = library
@@ -95,5 +97,6 @@ final class WatchPhoneLink: NSObject, WCSessionDelegate, @unchecked Sendable {
         library.apply(states: states)
         library.apply(names: WatchRecordingWire.names(fromContext: context), known: Set(states.keys))
         onPause?(WatchRecordingWire.pause(fromContext: context))
+        if let since = WatchRecordingWire.listenOff(fromContext: context) { onListenOff?(since) }
     }
 }

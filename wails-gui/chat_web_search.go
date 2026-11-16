@@ -210,9 +210,9 @@ func (a *App) webSearchPrivateNames(ctx context.Context) []string {
 // for this chat, and how to keep the query free of personal details.
 func (a *App) injectWebSearchToolContext(tag string, origin promptOrigin) string {
 	main := a.isMainChatSession(context.Background(), tag)
-	// The tool is there for main-chat turns typed on the Mac or the phone,
-	// and for other chats typed on the Mac (mainChatExtraTools).
-	if !(main && (origin == promptOriginMac || origin == promptOriginPhone)) && !(!main && origin == promptOriginMac) {
+	// The tool is there only for other chats typed on the Mac
+	// (mainChatExtraTools); the main chat gives no web answers.
+	if main || origin != promptOriginMac {
 		return ""
 	}
 	return `<web-search-tool>

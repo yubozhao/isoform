@@ -154,6 +154,9 @@ extension RecordingHubAPI {
     func watchNotes() async throws -> Bool? { nil }
     func setWatchNotes(_ on: Bool) async throws -> Bool { throw HubRequestError.invalidIdentifier }
     func answerSpeaker(conversation: String, speaker: String, answer: String, name: String) async throws -> WatchConversation? { nil }
+    func watchListening() async throws -> WatchListeningSetting? { nil }
+    func turnWatchListeningOff() async throws -> WatchListeningSetting { throw HubRequestError.invalidIdentifier }
+    func watchListeningStarted(at: Date) async throws -> WatchListeningSetting { throw HubRequestError.invalidIdentifier }
 }
 
 extension HubChannel {
@@ -169,6 +172,19 @@ extension HubChannel {
 
     func watchNotes() async throws -> Bool? { try await status().watchNotes?.on }
 
+    func watchListening() async throws -> WatchListeningSetting? { try await status().watchListening }
+
+    func turnWatchListeningOff() async throws -> WatchListeningSetting {
+        try await perform(.write(path: "/watch/listening", body: "{\"off\":true}")).payload(WatchListeningSetting.self)
+    }
+
+    /// The wearer started listening on the watch at `date`: the off ends then.
+    func watchListeningStarted(at date: Date) async throws -> WatchListeningSetting {
+        let body = try JSONEncoder().encode(WatchListeningStart(off: false, startedAt: ISO8601DateFormatter().string(from: date)))
+        return try await perform(.write(path: "/watch/listening", body: String(decoding: body, as: UTF8.self)))
+            .payload(WatchListeningSetting.self)
+    }
+
     func answerSpeaker(conversation: String, speaker: String, answer: String, name: String) async throws -> WatchConversation? {
         guard try await status().recordingSpeakers == true else { return nil }
         let body = try JSONEncoder().encode(["conversationId": conversation, "speaker": speaker, "answer": answer, "name": name])
@@ -179,6 +195,11 @@ extension HubChannel {
     func setWatchNotes(_ on: Bool) async throws -> Bool {
         try await perform(.write(path: "/settings/watch-notes", body: "{\"on\":\(on)}")).payload(WatchNotesSetting.self).on
     }
+}
+
+private struct WatchListeningStart: Encodable {
+    let off: Bool
+    let startedAt: String
 }
 
 /// One day of earlier conversations, folded.
@@ -352,6 +373,8 @@ final class WatchTabModel: ObservableObject {
     @Published private(set) var loading = false
     /// "Notes for long talks" on the computer; nil when it does not say.
     @Published var notesOn: Bool?
+    /// "Listen on your watch": false while the phone's off holds; nil when the computer has no such setting.
+    @Published var listening: Bool?
 
     /// Shows what the computer answered. No answer (a computer that does not serve conversations)
     /// drops what was shown before: it may have come from another computer.
@@ -367,6 +390,7 @@ final class WatchTabModel: ObservableObject {
         served = true
         failed = false
         notesOn = nil
+        listening = nil
     }
 
     func split(now: Date = Date(), calendar: Calendar = .current) -> (today: [WatchConversation], earlier: [WatchConversationDay]) {
@@ -398,6 +422,14 @@ final class WatchTabModel: ObservableObject {
             failed = true
         }
         if let setting = try? await WatchLink.shared.notesSetting() { notesOn = setting }
+        listening = await WatchLink.shared.listeningAllowed()
+    }
+
+    /// The phone can only turn listening off. It returns false when the computer could not be told.
+    func turnListeningOff() async -> Bool {
+        guard await WatchLink.shared.turnListeningOff() else { return false }
+        listening = false
+        return true
     }
 
     func setNotes(_ on: Bool) async {

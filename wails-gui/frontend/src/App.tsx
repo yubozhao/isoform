@@ -142,6 +142,7 @@ import {
 
 import { useSettings } from "@/hooks/useSettings";
 import { comboToDisplayString, useKeybindings, type PageKey } from "@/hooks/useKeybindings";
+import { useInterfaceZoom } from "@/hooks/useInterfaceZoom";
 import { useChatMessageJump } from "@/hooks/useChatMessageJump";
 import { useMainChatWaitingCount } from "@/hooks/useMainChatWaitingCount";
 import { usePageWindowTitle } from "@/hooks/usePageWindowTitle";
@@ -441,6 +442,7 @@ export default function App() {
     const settings = useSettings();
     const { terminalTheme } = useTheme();
     const keybindings = useKeybindings();
+    const interfaceZoom = useInterfaceZoom();
     const sidebar = useSidebarResize({ layoutRef });
 
     const projects = useProjects({ model, setModel, setError });
@@ -3225,7 +3227,9 @@ export default function App() {
     // ── Keyboard shortcuts (dynamic via keybindings) ──
     useEffect(() => {
         const onKeyDown = (e: KeyboardEvent) => {
-            const actionId = keybindings.findMatchingAction(e);
+            // Cmd+Shift+= types "+": it zooms in like Cmd+= does.
+            const plus = e.key === "+" && (e.metaKey || e.ctrlKey) && !e.altKey;
+            const actionId = plus ? "zoom-in" : keybindings.findMatchingAction(e);
             if (!actionId) return;
 
             switch (actionId) {
@@ -3265,6 +3269,18 @@ export default function App() {
                     e.preventDefault();
                     goToPageRef.current(actionId.slice(3) as PageKey);
                     break;
+                case "zoom-in":
+                    e.preventDefault();
+                    interfaceZoom.zoomIn();
+                    break;
+                case "zoom-out":
+                    e.preventDefault();
+                    interfaceZoom.zoomOut();
+                    break;
+                case "zoom-reset":
+                    e.preventDefault();
+                    interfaceZoom.reset();
+                    break;
                 case "replay-onboarding":
                     // A developer shortcut: bound only while Developer tools
                     // are on. Users rerun setup from About.
@@ -3284,6 +3300,7 @@ export default function App() {
         handleReplayOnboarding,
         handleSetAppMode,
         devToolsUnlocked,
+        interfaceZoom,
     ]);
 
     const hasActiveConversation = !!projects.activeSession;

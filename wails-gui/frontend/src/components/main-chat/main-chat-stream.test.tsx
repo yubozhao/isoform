@@ -258,7 +258,7 @@ describe('main chat stream (RC 2 D1)', () => {
         expect(within(confirm).getByRole('button', { name: en.mainChat.confirm.remove })).toBeInTheDocument();
         expect(within(confirm).getByRole('button', { name: en.mainChat.confirm.keep })).toBeInTheDocument();
         expect(screen.getByText('A generic notice.')).toBeInTheDocument();
-        expect(screen.getAllByText(en.errors.cause.assistantErrorUnknown).length).toBeGreaterThan(0);
+        expect(screen.getAllByText(new RegExp(en.errors.cause.assistantErrorUnknown.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))).length).toBeGreaterThan(0);
         expect(document.querySelector('[data-main-chat-proactive="waiting_on_reply"]')?.closest('[data-testid="stream"]')).not.toBeNull();
     });
 

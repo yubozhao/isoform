@@ -135,6 +135,17 @@ type topicsStateFile struct {
 	Projects    []topicProject           `json:"projects,omitempty"`
 	SidebarPins map[string]bool          `json:"sidebarPins,omitempty"`
 	ChatTopics  []topicChatSnapshot      `json:"chatTopics,omitempty"`
+	// Added are the topics the person named themselves (Topics v1.0.0 rule
+	// 30). They skip the two-day rule and keep their place in every daily
+	// build (rule 32).
+	Added []topicAdded `json:"added,omitempty"`
+}
+
+// topicAdded is one topic the person named.
+type topicAdded struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+	At    string `json:"at"`
 }
 
 func (f topicsStateFile) backgroundRefreshInterval() time.Duration {

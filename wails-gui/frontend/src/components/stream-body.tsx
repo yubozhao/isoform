@@ -440,9 +440,13 @@ export function StreamBody({
     // first, the rest hydrates in a transition; streams longer than the
     // recent section also window their older history. Short streams render
     // whole, exactly as before.
+    // The messages are a log that screen readers follow politely, and busy
+    // while an answer streams, so the finished answer is read once instead of
+    // every token (pass-access v1.0.0, Chat 1).
+    const logProps = { role: 'log', 'aria-live': 'polite', 'aria-busy': streaming ? true : undefined, 'aria-label': t('stream.messages') } as const;
     const list = staged ? (
         viewportEl && (
-            <div className={cn('px-8 pb-6 w-full', !wideMode && 'max-w-3xl mx-auto')}>
+            <div className={cn('px-8 pb-6 w-full', !wideMode && 'max-w-3xl mx-auto')} {...logProps}>
                 {(header || loadingMore) && (
                     <div className="pb-4">
                         {header ? <div className={loadingMore ? 'mb-6' : 'mb-2'}>{header}</div> : null}
@@ -476,7 +480,7 @@ export function StreamBody({
             </div>
         )
     ) : (
-        <div className={`px-8 pb-6 flex flex-col gap-4 w-full${wideMode ? "" : " max-w-3xl mx-auto"}`}>
+        <div className={`px-8 pb-6 flex flex-col gap-4 w-full${wideMode ? "" : " max-w-3xl mx-auto"}`} {...logProps}>
             {header ? <div className="mb-2">{header}</div> : null}
             {/* Loading spinner for older messages */}
             {loadingMore && (

@@ -304,6 +304,7 @@ var browserRPCReadOnly = []string{
 	"GetKnowHowCandidate",
 	"GetSavedCopyStamp",
 	"GetThemePreference",
+	"GetInterfaceZoom",
 	"GetClockFormat",
 	"AIReady",
 	"GetMainChatWaiting",
