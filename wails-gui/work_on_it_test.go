@@ -31,8 +31,8 @@ func newWorkOnItTestApp(t *testing.T, enabled bool) (*App, *workOnItSeams) {
 	s.now = func() time.Time { return seams.now }
 	// No computer-use agent unless a test sets one.
 	s.paste = &pasteDeps{lookPath: pasteLookPath(), frontmost: func() string { return "" }, now: time.Now}
-	if enabled {
-		if err := app.store.SetUIState(context.Background(), workOnItEnabledKey, "true"); err != nil {
+	if !enabled {
+		if err := app.SetWorkOnItEnabled(false); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -43,8 +43,17 @@ func briefInput() workonit.Input {
 	return workonit.Input{SourceKind: workonit.SourceBriefItem, SourceID: "b1", Title: "Draft the launch note", Detail: "For Thursday.", Done: "One page"}
 }
 
-func TestWorkOnItIsOffByDefault(t *testing.T) {
+// TestWorkOnItOnByDefaultUntilTurnedOff: Chat's and Today's hand-offs need
+// it on for a new person; the switch still turns it off.
+func TestWorkOnItOnByDefaultUntilTurnedOff(t *testing.T) {
+	fresh := newThreadTestApp(t)
+	if !fresh.GetWorkOnItEnabled() {
+		t.Fatal("off for a new person")
+	}
 	app, _ := newWorkOnItTestApp(t, false)
+	if app.GetWorkOnItEnabled() {
+		t.Fatal("on after turning it off")
+	}
 	if _, err := app.PrepareWorkOnIt(briefInput()); err != errWorkOnItOff {
 		t.Fatalf("prepare with the switch off: %v", err)
 	}

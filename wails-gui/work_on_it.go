@@ -29,7 +29,8 @@ import (
 // on the person's tap hands it to the agent they pick: a deep link, opening
 // the agent with the task on the clipboard, or a message through Messages.
 // Only counts are kept (which agent, how, sent, taken, done), never the text.
-// Everything is behind work_on_it_enabled, off by default.
+// Everything is behind work_on_it_enabled, on unless the person turned it off
+// (the hub, 2026-11-15: Chat's and Today's hand-offs need it).
 
 const (
 	workOnItEnabledKey     = "work_on_it_enabled"
@@ -121,7 +122,10 @@ func (a *App) workOnItEnabled() bool {
 		return false
 	}
 	value, err := a.store.GetUIState(context.Background(), workOnItEnabledKey)
-	return err == nil && strings.EqualFold(strings.TrimSpace(value), "true")
+	if err != nil {
+		return false
+	}
+	return !strings.EqualFold(strings.TrimSpace(value), "false")
 }
 
 // WorkOnItAgentView is one agent in the menu.
@@ -137,8 +141,11 @@ type WorkOnItAgentView struct {
 
 // WorkOnItPrepared is what the sheet shows before the person taps.
 type WorkOnItPrepared struct {
-	TaskID string              `json:"taskId"`
-	Text   string              `json:"text"`
+	TaskID string `json:"taskId"`
+	Text   string `json:"text"`
+	// Kind is the kind of work: code or else. The default agent is the
+	// person's choice for it when that agent can take the hand-off.
+	Kind   string              `json:"kind"`
 	Agents []WorkOnItAgentView `json:"agents"`
 }
 
@@ -165,6 +172,14 @@ type WorkOnItCounts struct {
 // GetWorkOnItEnabled reports the switch.
 func (a *App) GetWorkOnItEnabled() bool { return a.workOnItEnabled() }
 
+// SetWorkOnItEnabled turns Work on it on or off. Off keeps what was sent.
+func (a *App) SetWorkOnItEnabled(enabled bool) error {
+	if a == nil || a.store == nil {
+		return errors.New("storage is not ready")
+	}
+	return a.store.SetUIState(context.Background(), workOnItEnabledKey, fmt.Sprintf("%t", enabled))
+}
+
 // PrepareWorkOnIt writes the task from the item's own words. Closed Eyes
 // stops it. The text is redacted the way every read model is.
 func (a *App) PrepareWorkOnIt(in workonit.Input) (WorkOnItPrepared, error) {
@@ -185,7 +200,8 @@ func (a *App) PrepareWorkOnIt(in workonit.Input) (WorkOnItPrepared, error) {
 	}
 	text := workonit.PrepareText(in, workOnItWords(a.currentUILanguage()))
 	s := a.workOnIt()
-	task := workonit.Task{ID: workOnItID(), SourceKind: in.SourceKind, SourceID: in.SourceID, Text: text, PreparedAt: s.clock()}
+	kind := workonit.KindOf(in)
+	task := workonit.Task{ID: workOnItID(), SourceKind: in.SourceKind, SourceID: in.SourceID, Kind: kind, Text: text, PreparedAt: s.clock()}
 	s.mu.Lock()
 	for id, old := range s.prepared {
 		if s.clock().Sub(old.PreparedAt) > workOnItPreparedTTL {
@@ -198,7 +214,7 @@ func (a *App) PrepareWorkOnIt(in workonit.Input) (WorkOnItPrepared, error) {
 	if err != nil {
 		return WorkOnItPrepared{}, err
 	}
-	return WorkOnItPrepared{TaskID: task.ID, Text: text, Agents: agents}, nil
+	return WorkOnItPrepared{TaskID: task.ID, Text: text, Kind: kind, Agents: preferYourAgent(agents, a.yourAgentChoice(kind))}, nil
 }
 
 // GetWorkOnItAgents is the ranked menu, the top one the default.
@@ -236,6 +252,24 @@ func (a *App) workOnItAgents() ([]WorkOnItAgentView, error) {
 	return out, nil
 }
 
+// preferYourAgent makes the person's choice the default when it is in the
+// menu; otherwise the ranked top stays the default.
+func preferYourAgent(agents []WorkOnItAgentView, choice string) []WorkOnItAgentView {
+	at := -1
+	for i, view := range agents {
+		if view.ID == choice && len(view.Methods) > 0 {
+			at = i
+		}
+	}
+	if at < 0 {
+		return agents
+	}
+	for i := range agents {
+		agents[i].Default = i == at
+	}
+	return agents
+}
+
 // SendWorkOnIt hands the prepared task over. The call is the person's tap.
 func (a *App) SendWorkOnIt(taskID, agentID, method string) (WorkOnItSent, error) {
 	if !a.workOnItEnabled() {
@@ -270,13 +304,14 @@ func (a *App) SendWorkOnIt(taskID, agentID, method string) (WorkOnItSent, error)
 	}
 	out := WorkOnItSent{Method: method}
 	recordID := workOnItID()
+	sentLine := ""
 	switch method {
 	case workonit.MethodTaskLink:
-		via, err := a.sendWorkOnItTaskLink(s, task, agent, handle, recordID)
+		via, line, err := a.sendWorkOnItTaskLink(s, task, agent, handle, recordID)
 		if err != nil {
 			return WorkOnItSent{}, err
 		}
-		out.Via, out.Copied = via, via == workonit.MethodOpenCopy
+		out.Via, out.Copied, sentLine = via, via == workonit.MethodOpenCopy, line
 	case workonit.MethodDeepLink:
 		link, err := agent.DeepLinkURL(task.Text)
 		if err != nil {
@@ -315,6 +350,11 @@ func (a *App) SendWorkOnIt(taskID, agentID, method string) (WorkOnItSent, error)
 	if err := a.workOnItAppend(record); err != nil {
 		log.Printf("[work-on-it] record not saved: %v", err)
 	}
+	a.keepWorkOnItHandoff(workonit.Handoff{
+		ID: recordID, SourceKind: task.SourceKind, SourceID: task.SourceID, Kind: task.Kind,
+		AgentID: agent.ID, Method: method, Via: out.Via, Text: task.Text, Sent: sentLine,
+		SentAt: record.SentAt, Surface: "computer",
+	})
 	s.mu.Lock()
 	delete(s.prepared, taskID)
 	s.mu.Unlock()
@@ -724,16 +764,17 @@ func (a *App) startPasteIntoAgent(agent workonit.Agent) {
 }
 
 // sendWorkOnItTaskLink makes the task's link and sends the agent the one
-// line that names it, by the agent's best carrier. The task text stays
-// behind the link. If the line can't be delivered the link is withdrawn.
-func (a *App) sendWorkOnItTaskLink(s *workOnItState, task workonit.Task, agent workonit.Agent, handle, recordID string) (string, error) {
+// line that names it, by the agent's best carrier, and returns the carrier
+// and the line. The task text stays behind the link. If the line can't be
+// delivered the link is withdrawn.
+func (a *App) sendWorkOnItTaskLink(s *workOnItState, task workonit.Task, agent workonit.Agent, handle, recordID string) (string, string, error) {
 	carrier := agent.TaskLinkCarrier(s.agentPresent(agent), handle)
 	if carrier == "" {
-		return "", errWorkOnItNoMethod
+		return "", "", errWorkOnItNoMethod
 	}
 	link, err := a.createTaskLink(tasklink.Link{ID: recordID, AgentID: agent.ID, SourceKind: task.SourceKind, SourceID: task.SourceID, Text: task.Text})
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	prompt := tasklink.Prompt(link)
 	withdraw := func() { a.withdrawTaskLinks(func(l tasklink.Link) bool { return l.ID == recordID }) }
@@ -745,9 +786,9 @@ func (a *App) sendWorkOnItTaskLink(s *workOnItState, task workonit.Task, agent w
 		}
 		if err != nil {
 			withdraw()
-			return "", err
+			return "", "", err
 		}
-		return carrier, nil
+		return carrier, prompt, nil
 	case workonit.MethodMessage:
 		ctx := a.ctx
 		if ctx == nil {
@@ -755,19 +796,19 @@ func (a *App) sendWorkOnItTaskLink(s *workOnItState, task workonit.Task, agent w
 		}
 		if err := s.sendText(ctx, handle, prompt); err != nil {
 			withdraw()
-			return "", err
+			return "", "", err
 		}
-		return carrier, nil
+		return carrier, prompt, nil
 	default:
 		if err := s.copyText(a, prompt); err != nil {
 			withdraw()
-			return "", err
+			return "", "", err
 		}
 		if err := s.openTarget(a, workOnItOpenTarget(agent, s.agentPresent(agent))); err != nil {
 			withdraw()
-			return "", err
+			return "", "", err
 		}
-		return carrier, nil
+		return carrier, prompt, nil
 	}
 }
 

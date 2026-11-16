@@ -96,6 +96,11 @@ Counted per agent and per task kind (topic proposal, brief item, chat card), in 
 - **Done:** a `task_result` of done, or the person marked it done; with time from sent to done.
 - Also counted: blocked and declined results, revokes, and proposals answered no or "not mine", which are the judgment signal the thesis values most.
 
+## Your agents and the hand-off log (2026-11-15, phone-agent v1.1.0 B4)
+
+- **Two choices.** The person picks one agent for code (Codex, Claude Code, Cursor) and one for everything else (Claude, ChatGPT, Grok, Gemini, Muse, Instinct). The choice is one setting on the computer, read by the phone (`GET /agents`, PROTOCOL.md section 27). A task's kind is `code` only when its surface says so; the chosen agent for that kind is the sheet's default when it can take the hand-off.
+- **Each hand-off kept.** Besides the counts above, the computer now keeps each hand-off with exactly what went: the task text, the one line a task link sent, the agent, how it went, the source and the time (`work-on-it/handoffs.json`, 0600, 90 days, on the computer only). It is the person's own data for Your data and the Agents page. Forget removes one or all; a withdrawn source removes its hand-offs; Closed Eyes stops new ones. The morning report still reads counts only.
+
 ## Sources
 
 - [C1] CNBC, "Anthropic announces preview of Claude Duet", 2026-10-21: https://www.cnbc.com/2026/10/21/anthropic-preview-of-claude-duet-personal-ai-agent-take-on-muse-dots.html

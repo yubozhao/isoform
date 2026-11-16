@@ -205,6 +205,16 @@ func (bridge *mobileBridge) handleAuthorized(w http.ResponseWriter, r *http.Requ
 			return
 		}
 		bridge.serveHandoffCreate(w, r, device)
+	case "GET /agents":
+		if !mobileRequireScope(w, device, mobileScopeBriefRead) {
+			return
+		}
+		bridge.serveYourAgents(w)
+	case "POST /agents/choice":
+		if !mobileRequireScope(w, device, mobileScopeHandoff) {
+			return
+		}
+		bridge.serveYourAgentChoice(w, r, device)
 	case "GET /notifications":
 		if !mobileRequireScope(w, device, mobileScopePush) {
 			return

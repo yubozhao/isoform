@@ -3986,17 +3986,28 @@ export interface ActivityDayThreads {
 export const GetDayThreads = appBinding<[number, number], ActivityDayThreads>("GetDayThreads");
 
 // Work on it (work_on_it.go): prepare a task from what a surface shows and
-// hand it to the person's agent on their tap. Off unless work_on_it_enabled.
+// hand it to the person's agent on their tap. On unless work_on_it_enabled is "false".
 export type WorkOnItSourceKind = "brief_item" | "topic_proposal" | "chat_card";
 export type WorkOnItMethod = "task_link" | "deep_link" | "paste" | "open_copy" | "message" | "share";
-export interface WorkOnItInput { sourceKind: WorkOnItSourceKind; sourceId: string; title: string; detail: string; done: string }
+export type WorkOnItKind = "code" | "else";
+export interface WorkOnItInput { sourceKind: WorkOnItSourceKind; sourceId: string; title: string; detail: string; done: string; kind?: WorkOnItKind }
 export interface WorkOnItAgentView { id: string; name: string; methods: WorkOnItMethod[]; default: boolean; termsNote?: string; needsHandle?: boolean }
-export interface WorkOnItPrepared { taskId: string; text: string; agents: WorkOnItAgentView[] }
+export interface WorkOnItPrepared { taskId: string; text: string; kind?: WorkOnItKind; agents: WorkOnItAgentView[] }
 export interface WorkOnItSent { recordId: string; method: WorkOnItMethod; copied: boolean; via?: "deep_link" | "message" | "open_copy" }
 export const GetWorkOnItEnabled = appBinding<[], boolean>("GetWorkOnItEnabled");
+export const SetWorkOnItEnabled = appBinding<[boolean], void>("SetWorkOnItEnabled");
 export const PrepareWorkOnIt = appBinding<[WorkOnItInput], WorkOnItPrepared>("PrepareWorkOnIt");
 export const SendWorkOnIt = appBinding<[string, string, string], WorkOnItSent>("SendWorkOnIt");
 export const SetWorkOnItHandle = appBinding<[string, string], void>("SetWorkOnItHandle");
+// Your agents: one for code, one for everything else (your_agents.go, phone-map B4).
+export type YourAgentReach = "connected" | "connected_computer" | "on_computer" | "its_app" | "by_text";
+export interface YourAgentView { id: string; name: string; kind: WorkOnItKind; reach: YourAgentReach; found: boolean; connected: boolean; lastWorkedAt?: number }
+export interface YourAgents { choices: Record<WorkOnItKind, string>; agents: YourAgentView[] }
+export interface WorkOnItHandoff { id: string; sourceKind: WorkOnItSourceKind; sourceId?: string; kind: WorkOnItKind; agentId: string; method: WorkOnItMethod; via?: string; text: string; sent?: string; sentAt: number; surface: "computer" | "phone" }
+export const GetYourAgents = appBinding<[], YourAgents>("GetYourAgents");
+export const SetYourAgent = appBinding<[WorkOnItKind, string], YourAgents>("SetYourAgent");
+export const GetWorkOnItHandoffs = appBinding<[], WorkOnItHandoff[]>("GetWorkOnItHandoffs");
+export const ForgetWorkOnItHandoff = appBinding<[string], void>("ForgetWorkOnItHandoff");
 export const ConfirmActivityThreadLink = appBinding<[string], void>("ConfirmActivityThreadLink");
 export const MoveActivityToThread = appBinding<[string, string], string>("MoveActivityToThread");
 export const RenameActivityThread = appBinding<[string, string], void>("RenameActivityThread");
