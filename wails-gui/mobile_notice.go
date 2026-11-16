@@ -73,11 +73,14 @@ type mobileNotice struct {
 	MomentID        string
 	DestinationKind string
 	DestinationID   string
-	Collapse        string
-	Level           string
-	Actions         []mobileNoticeAction
-	CreatedAt       time.Time
-	ExpiresAt       time.Time
+	// WorkItemID names the Your work item a notice's answer actions land on
+	// (PROTOCOL.md 9.2).
+	WorkItemID string
+	Collapse   string
+	Level      string
+	Actions    []mobileNoticeAction
+	CreatedAt  time.Time
+	ExpiresAt  time.Time
 }
 
 // mobileNoticeAction is one button the notification offers. Auth asks the phone
@@ -102,6 +105,7 @@ type mobileNoticePlaintext struct {
 	MomentID        string               `json:"momentId,omitempty"`
 	DestinationKind string               `json:"destinationKind,omitempty"`
 	DestinationID   string               `json:"destinationId,omitempty"`
+	WorkItemID      string               `json:"workItemId,omitempty"`
 	CreatedAt       string               `json:"createdAt"`
 	ExpiresAt       string               `json:"expiresAt"`
 }
@@ -246,7 +250,7 @@ func mobileNoticeEncode(n mobileNotice) ([]byte, error) {
 	raw, err := json.Marshal(mobileNoticePlaintext{
 		V: mobileNoticeVersion, ID: n.ID, Kind: n.Kind, Title: n.Title, Body: n.Body, Category: n.Category,
 		Actions: actions, SubjectID: n.SubjectID, MomentID: n.MomentID, DestinationKind: n.DestinationKind, DestinationID: n.DestinationID,
-		CreatedAt: mobileTimestamp(n.CreatedAt), ExpiresAt: mobileOptionalTimestamp(n.ExpiresAt),
+		WorkItemID: n.WorkItemID, CreatedAt: mobileTimestamp(n.CreatedAt), ExpiresAt: mobileOptionalTimestamp(n.ExpiresAt),
 	})
 	if err != nil {
 		return nil, err

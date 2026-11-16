@@ -169,7 +169,70 @@ func (a *App) engagementPush(_ context.Context, row storage.EngagementMomentRow,
 		ExpiresAt: m.ExpiresAt,
 	}
 	notice.DestinationKind, notice.DestinationID = mobileNoticeDestination(m.Kind, m.SubjectID, m.ID, m.Params["source_brief_id"], m.DedupeKey)
-	return bridge.publishMobileNotice(notice, bridge.devicesWithScope(mobileScopePush))
+	devices := bridge.devicesWithScope(mobileScopePush)
+	if item, ok := a.workItemForNotice(m); ok {
+		if item.State == workStateAnswered {
+			// Prep answered on a device (Not needed, or kept) needs no notice.
+			return nil
+		}
+		readers := bridge.workReaders()
+		answerable, older := []mobileDeviceRecord{}, []mobileDeviceRecord{}
+		for _, device := range devices {
+			if readers[device.DeviceID] {
+				answerable = append(answerable, device)
+			} else {
+				older = append(older, device)
+			}
+		}
+		if len(older) > 0 {
+			if err := bridge.publishMobileNotice(notice, older); err != nil {
+				return err
+			}
+		}
+		if len(answerable) == 0 {
+			return nil
+		}
+		// A phone that reads Your work answers from the notification
+		// (phone-map rule 16): Not needed on prep, Useful on finished work.
+		notice.WorkItemID = item.ID
+		notice.Actions = append(append([]mobileNoticeAction{}, notice.Actions...), workNoticeAction(m.Kind))
+		return bridge.publishMobileNotice(notice, answerable)
+	}
+	return bridge.publishMobileNotice(notice, devices)
+}
+
+// workNoticeAction is the answer a notice of this kind carries on a phone
+// that reads Your work.
+func workNoticeAction(kind engagement.Kind) mobileNoticeAction {
+	if kind == engagement.KindMeetingPrep {
+		return mobileNoticeAction{ID: "not_needed", Label: "Not needed"}
+	}
+	return mobileNoticeAction{ID: "useful", Label: "Useful"}
+}
+
+// workItemForNotice finds the Your work item a prep or finished-work moment is
+// about: the meeting's prep, or the item whose Yes started the finished task.
+func (a *App) workItemForNotice(m engagement.Moment) (WorkItem, bool) {
+	if m.Kind != engagement.KindMeetingPrep && m.Kind != engagement.KindWorkFinished || m.SubjectID == "" {
+		return WorkItem{}, false
+	}
+	list, err := a.GetWorkList()
+	if err != nil {
+		return WorkItem{}, false
+	}
+	for _, item := range list.Items {
+		switch m.Kind {
+		case engagement.KindMeetingPrep:
+			if item.Source == workSourcePrep && item.Ref.EventID == m.SubjectID {
+				return item, true
+			}
+		case engagement.KindWorkFinished:
+			if item.Ref.TaskID == m.SubjectID || item.Ref.HandoffID == m.SubjectID {
+				return item, true
+			}
+		}
+	}
+	return WorkItem{}, false
 }
 
 func mobileNoticeDestination(kind engagement.Kind, subject, moment, sourceBrief, dedupeKey string) (string, string) {

@@ -286,3 +286,20 @@ func TestEngagementBriefReadyWaitsForTheRecording(t *testing.T) {
 		t.Fatalf("a brief that already plays waited: %+v", row)
 	}
 }
+
+// On a phone that reads Your work, a finished task's notice names its item
+// and carries Useful, so it is answered without opening the app; an older
+// phone gets the notice as before.
+func TestWorkNoticeActionsFollowTheKind(t *testing.T) {
+	if got := workNoticeAction(engagement.KindMeetingPrep); got.ID != "not_needed" || got.Label != "Not needed" || got.Auth {
+		t.Fatalf("prep action = %+v", got)
+	}
+	if got := workNoticeAction(engagement.KindWorkFinished); got.ID != "useful" || got.Label != "Useful" || got.Auth {
+		t.Fatalf("finished-work action = %+v", got)
+	}
+	raw, err := mobileNoticeEncode(mobileNotice{ID: "n", Kind: "work_finished", Title: "Claude finished the test plan", Category: "YANSU_MOMENT",
+		SubjectID: "hf-1", WorkItemID: "result:hf-1", CreatedAt: time.Unix(0, 0)})
+	if err != nil || !strings.Contains(string(raw), `"workItemId":"result:hf-1"`) {
+		t.Fatalf("the sealed notice does not name its item: %s %v", raw, err)
+	}
+}
