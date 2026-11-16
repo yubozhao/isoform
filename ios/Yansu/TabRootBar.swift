@@ -214,6 +214,7 @@ struct FloatingTabBar: View {
     @ObservedObject var router: NotificationRouter
     @ObservedObject var chat: ChatStore
     @ObservedObject var tasks: TasksStore
+    @ObservedObject var watch: WatchRecordingsModel = .shared
     @Environment(\.locale) private var locale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var selectedTabLens
@@ -230,6 +231,9 @@ struct FloatingTabBar: View {
     var body: some View {
         HStack(spacing: 4) {
             tab(.today, title: RootView.tabTitle(.today, locale: locale), symbol: "sun.max")
+            if watch.connection.hasWatch {
+                tab(.watch, title: RootView.tabTitle(.watch, locale: locale), symbol: "applewatch")
+            }
             tab(.chat, title: RootView.tabTitle(.chat, locale: locale), symbol: "bubble.left",
                 showsDot: chatNeedsAttention)
         }
@@ -347,6 +351,7 @@ private extension NotificationRouter.Tab {
     var accessibilityName: String {
         switch self {
         case .today: "today"
+        case .watch: "watch"
         case .chat: "chat"
         case .tasks: "tasks"
         case .settings: "settings"

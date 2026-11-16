@@ -158,9 +158,9 @@ struct FeedView: View {
 
     var body: some View {
         content(now: Date())
-        // "Your watch": shown whenever Isoform is on the watch; it opens the watch's page.
+        // The watch line: only when hours wait for the computer or failed; it opens the Watch tab.
         .safeAreaInset(edge: .top, spacing: 0) {
-            WatchRecordingsTodayLine(model: WatchRecordingsModel.shared)
+            WatchTodayLine(model: WatchRecordingsModel.shared) { router.selectedTab = .watch }
         }
         .overlay(alignment: .top) {
             if let notice = router.linkNotice {
@@ -181,6 +181,11 @@ struct FeedView: View {
         .navigationTitle(String(localized: "Today"))
         .navigationBarTitleDisplayMode(.large)
         .tabRootBar()
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                WatchTodayMark(model: WatchRecordingsModel.shared) { router.selectedTab = .watch }
+            }
+        }
         .environment(\.titleBarScrolled, pageScrolled)
         .navigationDestination(isPresented: $showingPastBriefs) {
             PastBriefsView()

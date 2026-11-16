@@ -739,56 +739,44 @@ struct WatchRecordingDetailView: View {
     }
 }
 
-/// The door to the Watch page on Today: one line, only while a recording has not reached the computer.
-/// "Your watch" on Today: what the watch is doing now and the last hour it kept. Tapping it opens
-/// the watch's page. It shows whenever Isoform is on the watch. A plain card on purpose; design's
-/// "Your watch today" (hours as columns) replaces it.
-struct WatchRecordingsTodayLine: View {
+/// The watch line on Today: only when hours have waited for the computer half an hour or one
+/// could not be sent (phone-watch v1.0.0 rule 5). It opens the Watch tab.
+struct WatchTodayLine: View {
     @ObservedObject var model: WatchRecordingsModel
-    @State private var open = false
+    let open: () -> Void
 
     var body: some View {
-        if model.showsTodayCard {
-            let rows = model.rows
-            Button {
-                open = true
-            } label: {
-                HStack(spacing: 8) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Your watch", comment: "Title of the card on Today that opens the watch's page")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(YansuTheme.tertiary)
-                        Text(WatchRecordingsCopy.status(model.watchStatus))
-                            .font(.body)
-                            .foregroundStyle(YansuTheme.ink)
-                            .accessibilityIdentifier("today.watch.status")
-                        Text(WatchRecordingsCopy.todayLine(rows) ?? WatchRecordingsCopy.lastHour(rows))
-                            .font(.footnote)
-                            .foregroundStyle(YansuTheme.secondary)
-                            .multilineTextAlignment(.leading)
-                    }
+        if model.connection.hasWatch, let line = WatchTabCopy.waitingLine(model.rows) {
+            Button(action: open) {
+                HStack(spacing: 6) {
+                    Text(line).font(.footnote.weight(.medium)).multilineTextAlignment(.leading)
                     Spacer(minLength: 4)
-                    Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(YansuTheme.tertiary)
+                    Image(systemName: "chevron.right").font(.caption2.weight(.semibold))
                 }
+                .foregroundStyle(YansuTheme.warning)
                 .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(YansuTheme.surface, in: RoundedRectangle(cornerRadius: YansuTheme.cornerRadius, style: .continuous))
+                .padding(.vertical, 8)
+                .background(YansuTheme.warningWash, in: RoundedRectangle(cornerRadius: YansuTheme.cornerRadius, style: .continuous))
                 .padding(.horizontal, YansuTheme.gutter)
                 .padding(.bottom, 6)
             }
             .buttonStyle(.plain)
-            .accessibilityIdentifier("today.watchRecordings")
-            .sheet(isPresented: $open) {
-                NavigationStack {
-                    WatchTabView(recordings: model)
-                        .navigationBarTitleDisplayMode(.inline)
-                        .toolbar {
-                            ToolbarItem(placement: .confirmationAction) {
-                                Button(String(localized: "Done")) { open = false }
-                            }
-                        }
-                }
-            }
+            .accessibilityIdentifier("today.watchLine")
+        }
+    }
+}
+
+/// The mark at the top of Today: it opens the Watch tab, and blinks while the watch listens.
+/// Shown only when this phone has a watch paired.
+struct WatchTodayMark: View {
+    @ObservedObject var model: WatchRecordingsModel
+    let open: () -> Void
+
+    var body: some View {
+        if model.connection.hasWatch {
+            IsoformMarkButton(working: model.watchStatus == .recording, action: open)
+                .accessibilityLabel(Text("Watch", comment: "Title of the Watch tab"))
+                .accessibilityIdentifier("today.watchMark")
         }
     }
 }

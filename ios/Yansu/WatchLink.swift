@@ -105,6 +105,11 @@ final class WatchLink: NSObject, WCSessionDelegate, @unchecked Sendable {
 
     func pauseUntil() async -> Date? { await forwarder?.pauseUntil() }
 
+    func answerSpeaker(conversation: String, speaker: String, answer: String, name: String) async throws -> WatchConversation? {
+        guard let forwarder else { return nil }
+        return try await forwarder.answerSpeaker(conversation: conversation, speaker: speaker, answer: answer, name: name)
+    }
+
     func transcript(_ id: String) async throws -> RecordingTranscript? {
         guard let forwarder else { return WatchRecordingsModel.isSeeded ? WatchRecordingsModel.seededTranscript : nil }
         return try await forwarder.transcript(id)
