@@ -14,6 +14,8 @@ import (
 
 	"github.com/google/uuid"
 
+	"wails-gui/internal/handoff"
+
 	"wails-gui/storage"
 )
 
@@ -157,8 +159,12 @@ func TestTrialSeed(t *testing.T) {
 	if err := os.MkdirAll(briefs.dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	builtAt := now.Add(-30 * time.Minute)
-	in := mobileBriefInput{AsOf: builtAt, WindowStart: builtAt.Add(-2 * time.Hour), Slot: mobileBriefSlotOnRequest, Location: time.Local}
+	// Yesterday's evening brief: a brief from today would stand in for the
+	// slot seeded three minutes after launch, and the scheduled brief (the
+	// brief-audio check) would never be made.
+	y := now.AddDate(0, 0, -1)
+	builtAt := time.Date(y.Year(), y.Month(), y.Day(), 18, 0, 0, 0, time.Local)
+	in := mobileBriefInput{AsOf: builtAt, WindowStart: builtAt.Add(-2 * time.Hour), Slot: mobileBriefSlotEvening, Location: time.Local, Timezone: mobileBriefTimezoneName(time.Local)}
 	for i := range 5 {
 		in.Meetings = append(in.Meetings, mobileBriefCandidate{SourceKind: mobileBriefCalendarSource, SourceID: "trial-event-" + strconv.Itoa(i), Title: "Halcyon review", At: builtAt.Add(-time.Duration(i+1) * time.Minute)})
 	}
@@ -187,6 +193,36 @@ func TestTrialSeed(t *testing.T) {
 	stripped := written
 	stripped.Narrative, stripped.NarrativeStatus, stripped.Audio = nil, "unavailable", nil
 	if err := briefs.save(stripped, builtAt); err != nil {
+		t.Fatal(err)
+	}
+
+	// Work the day's scheduled brief can write about: two tasks Isoform
+	// finished today and one waiting for review. Without material the writer
+	// writes a quiet brief with no words and no recording, and the brief-audio
+	// check has nothing to play.
+	work, err := handoff.NewStore(filepath.Join(dir, "handoff"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, entry := range []handoff.Entry{
+		{ID: "trial-done-memo", Title: "Drafted the Halcyon launch memo", Source: handoff.SourceDesktop, Status: handoff.StatusCompleted},
+		{ID: "trial-done-notes", Title: "Summarized the design review notes", Source: handoff.SourceDesktop, Status: handoff.StatusCompleted},
+		{ID: "trial-review-plan", Title: "Launch plan for Priya", Source: handoff.SourceMobile, Status: handoff.StatusNeedsReview},
+	} {
+		at := now.Add(-time.Duration(3-i) * time.Hour).UnixMilli()
+		entry.CreatedAt, entry.UpdatedAt = at-int64(time.Hour/time.Millisecond), at
+		if _, err := work.Save(entry); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// One meeting still ahead today, for the brief's next part.
+	meetingAt := now.Add(2 * time.Hour)
+	if err := store.UpsertCalendarEvents(ctx, []storage.CalendarEventRow{{
+		ID: "trial-meeting", UID: "trial-meeting", CalendarID: "trial", CalendarTitle: "Work", Source: "eventkit",
+		Title: "Design review with Maya", StartAt: meetingAt.UnixMilli(), EndAt: meetingAt.Add(45 * time.Minute).UnixMilli(),
+		TimeZone: now.Location().String(),
+	}}, now.UnixMilli()); err != nil {
 		t.Fatal(err)
 	}
 

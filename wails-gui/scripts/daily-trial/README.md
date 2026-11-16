@@ -13,7 +13,7 @@ Two runs every morning, before the day starts (docs/rework-2026-11.md, step 4).
 | today-layout-920, today-layout-1440 | the same rules on fixture data with a full day strip, plus the strip's own: hour labels never touch, no cut names, free and under-strip labels fit (`e2e/today-layout.spec.ts`, its own Vite server, WebKit) |
 | activity-920, activity-1440 | Activity's timeline in a 920 and a 1440 px window: no sideways scroll, no section or row over another, nothing past the timeline (`e2e/page-layout-checks.ts`) |
 | activity-layout-*, activity-agents-layout-* | the same rules on fixture data, Your day and Agents (`e2e/page-layout.spec.ts`, run with today-layout) |
-| stripped-brief | a seeded brief that a later pass saved without its words and recording (the 2026-11-15 failure) still shows its built words on Today and plays |
+| stripped-brief | yesterday's seeded brief, saved again without its words and recording (the 2026-11-15 failure), still shows its built words: on Today, or through its "Read it" link once today's scheduled brief leads |
 | brief-audio | the scheduled brief arrives on Today, replacing the seeded one, with its recording, and the play button switches to playing |
 | chat | a message is sent and an answer arrives |
 | tasks, activity, about-you, how-you-do-things, who-you-know, settings | the page shows within its budget |
