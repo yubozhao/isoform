@@ -1170,4 +1170,6 @@ export const GetAnswers = makeNoop("GetAnswers");
 export const GetJudgmentStats = makeNoop("GetJudgmentStats");
 export const ForgetAnswer = makeNoop("ForgetAnswer");
 export const DeleteAnswers = makeNoop("DeleteAnswers");
+export const StartForgetEverything = makeNoop("StartForgetEverything");
+export const GetForgetEverything = makeNoop("GetForgetEverything");
 export const RewordMemoryEntry = makeNoop("RewordMemoryEntry");

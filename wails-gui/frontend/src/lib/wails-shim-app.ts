@@ -569,6 +569,10 @@ export const GetYourDataSummary = appBinding<[], YourDataSummary>("GetYourDataSu
 // Saves Your answers to a file the person picks; false when cancelled.
 export const ExportAnswers = appBinding<[], boolean>("ExportAnswers");
 export const DeleteAnswers = appBinding<[], void>("DeleteAnswers");
+export interface ForgetEverythingStep { id: string; state: "waiting" | "done" | "failed"; error?: string }
+export interface ForgetEverythingStatus { state: "idle" | "running" | "pending" | "done"; startedAt?: string; finishedAt?: string; steps: ForgetEverythingStep[] }
+export const StartForgetEverything = appBinding<[], ForgetEverythingStatus>("StartForgetEverything");
+export const GetForgetEverything = appBinding<[], ForgetEverythingStatus>("GetForgetEverything");
 // When a timed Closed Eyes ends (RFC 3339), or "" (Settings › Closed Eyes).
 export const GetClosedEyesResumeAt = appBinding<[], string>("GetClosedEyesResumeAt");
 

@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
     fail: false,
     exportAnswers: vi.fn(async () => true),
     deleteAnswers: vi.fn(async () => {}),
+    startForget: vi.fn(async () => ({ state: "running", steps: [{ id: "memory", state: "waiting" }] })),
+    forgetStatus: { state: "idle", steps: [] } as Record<string, unknown>,
 }));
 vi.mock("@/lib/wails-shim-app", () => ({
     GetYourDataSummary: vi.fn(async () => {
@@ -19,7 +21,10 @@ vi.mock("@/lib/wails-shim-app", () => ({
     ForgetVoices: vi.fn(async () => {}),
     ExportAnswers: mocks.exportAnswers,
     DeleteAnswers: mocks.deleteAnswers,
+    StartForgetEverything: mocks.startForget,
+    GetForgetEverything: vi.fn(async () => mocks.forgetStatus),
 }));
+vi.mock("../../../../wailsjs/runtime/runtime", () => ({ EventsOn: vi.fn(() => () => {}) }));
 
 const row = (key: string) => document.querySelector(`[data-your-data-row=${key}]`) as HTMLElement;
 
@@ -102,5 +107,24 @@ describe("Settings › Your data", () => {
         expect(dialog).toHaveTextContent("12 answers");
         fireEvent.click(within(dialog).getByRole("button", { name: en.yourData.deleteConfirmButton }));
         expect(mocks.deleteAnswers).toHaveBeenCalledTimes(1);
+    });
+
+    it("forgets everything only after the confirmation, last on the page", async () => {
+        mocks.forgetStatus = { state: "idle", steps: [] };
+        render(<YourDataPage />);
+        const rows = () => [...document.querySelectorAll("[data-your-data-row]")].map((el) => el.getAttribute("data-your-data-row"));
+        fireEvent.click(await screen.findByRole("button", { name: en.yourData.forgetButton }));
+        expect(rows().at(-1)).toBe("forget");
+        expect(mocks.startForget).not.toHaveBeenCalled();
+        const dialog = await screen.findByRole("dialog");
+        fireEvent.click(within(dialog).getByRole("button", { name: en.yourData.forgetConfirmButton }));
+        expect(mocks.startForget).toHaveBeenCalledTimes(1);
+    });
+
+    it("says which part waits while forgetting is pending", async () => {
+        mocks.forgetStatus = { state: "pending", steps: [{ id: "memory", state: "done" }, { id: "agentOfYou", state: "failed", error: "server" }] };
+        render(<YourDataPage />);
+        expect(await screen.findByText("Waiting: Agent of You profile")).toBeTruthy();
+        expect(screen.getByRole("button", { name: en.yourData.forgetRetry })).toBeTruthy();
     });
 });
