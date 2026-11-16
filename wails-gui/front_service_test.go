@@ -51,6 +51,14 @@ func TestParseFrontLinkLine(t *testing.T) {
 
 func TestFrontAllowedIDsMustBeEndpointIDs(t *testing.T) {
 	t.Setenv(frontIDsEnv, "")
+	if ids, err := frontAllowedIDs(); err != nil || len(ids) != 1 || ids[0] != frontDefaultIDs[0] {
+		t.Fatalf("default: %v %v", ids, err)
+	}
+	if !frontIDRE.MatchString(frontDefaultIDs[0]) {
+		t.Fatal("the built-in front id is not an endpoint id")
+	}
+	defer func(saved []string) { frontDefaultIDs = saved }(frontDefaultIDs)
+	frontDefaultIDs = nil
 	if _, err := frontAllowedIDs(); !errors.Is(err, errFrontNoIDs) {
 		t.Fatalf("empty: %v", err)
 	}
@@ -228,7 +236,27 @@ func TestFrontStaysOffWithoutTheSwitchOrIDs(t *testing.T) {
 	}
 	a.front.enabled = func() bool { return true }
 	t.Setenv(frontIDsEnv, "")
+	defer func(saved []string) { frontDefaultIDs = saved }(frontDefaultIDs)
+	frontDefaultIDs = nil
 	if err := a.startFront(); !errors.Is(err, errFrontNoIDs) {
 		t.Fatalf("no ids: %v", err)
+	}
+}
+
+// TestFrontUsesLetsEncryptProductionUnlessStagingIsAsked: production by
+// default, staging only on purpose, each with its own certificate cache.
+func TestFrontUsesLetsEncryptProductionUnlessStagingIsAsked(t *testing.T) {
+	for value, want := range map[string][2]string{
+		"":                                  {frontACMEProduction, frontACMECacheProduction},
+		"production":                        {frontACMEProduction, frontACMECacheProduction},
+		"Staging":                           {frontACMEStaging, frontACMECacheStaging},
+		frontACMEStaging:                    {frontACMEStaging, frontACMECacheStaging},
+		frontACMEProduction:                 {frontACMEProduction, frontACMECacheProduction},
+		"https://ca.example.test/directory": {"https://ca.example.test/directory", frontACMECacheCustom},
+	} {
+		t.Setenv(frontACMEDirectoryEnv, value)
+		if dir, cache := frontACMEDirectory(); dir != want[0] || cache != want[1] {
+			t.Errorf("%q = %s %s, want %v", value, dir, cache, want)
+		}
 	}
 }

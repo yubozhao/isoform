@@ -19,11 +19,11 @@ func TestFrontCTWatchAlertsOnlyOnKeysTheComputerNeverHeld(t *testing.T) {
 	dir := t.TempDir()
 	cert, _ := selfSignedFor(t, host)
 	// autocert caches the key and chain in acme/<hostname>.
-	if err := os.MkdirAll(filepath.Join(dir, "acme"), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, frontACMECacheProduction), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	pemData := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Certificate[0]})
-	if err := os.WriteFile(filepath.Join(dir, "acme", host), pemData, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, frontACMECacheProduction, host), pemData, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	sum := sha256.Sum256(cert.Leaf.RawSubjectPublicKeyInfo)
@@ -61,7 +61,7 @@ func TestFrontCTWatchAlertsOnlyOnKeysTheComputerNeverHeld(t *testing.T) {
 		t.Fatalf("second check fresh=%v notified=%d", fresh, len(notified))
 	}
 	// A key the computer once held stays known after its cache file goes.
-	_ = os.Remove(filepath.Join(dir, "acme", host))
+	_ = os.Remove(filepath.Join(dir, frontACMECacheProduction, host))
 	issuances = append(issuances, map[string]any{"id": "4", "pubkey_sha256": ours, "dns_names": []string{host}})
 	if fresh, _ := w.check(context.Background()); len(fresh) != 0 {
 		t.Fatalf("an old own key alerted: %+v", fresh)

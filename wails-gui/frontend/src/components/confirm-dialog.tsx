@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
     Dialog,
@@ -26,6 +27,10 @@ interface ConfirmDialogProps {
     confirmDisabled?: boolean;
     /** Shown above the buttons, e.g. "Didn't delete. Try again". */
     notice?: React.ReactNode;
+    /** Opens with Cancel focused, for a confirm that can't be undone. */
+    focusCancel?: boolean;
+    /** Where focus goes when it closes, such as the row button that opened it. */
+    returnFocusTo?: HTMLElement | null;
 }
 
 export function ConfirmDialog({
@@ -40,12 +45,19 @@ export function ConfirmDialog({
     closeOnConfirm = true,
     confirmDisabled = false,
     notice,
+    focusCancel = false,
+    returnFocusTo,
 }: ConfirmDialogProps) {
+    const cancelRef = useRef<HTMLButtonElement>(null);
     const { t } = useTranslation('common');
     const resolvedConfirmLabel = confirmLabel ?? t('confirm');
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className={widthClass}>
+            <DialogContent
+                className={widthClass}
+                onOpenAutoFocus={focusCancel ? (event) => { event.preventDefault(); cancelRef.current?.focus(); } : undefined}
+                onCloseAutoFocus={returnFocusTo ? (event) => { event.preventDefault(); returnFocusTo.focus(); } : undefined}
+            >
                 <DialogHeader>
                     <DialogTitle className="text-sm">{title}</DialogTitle>
                     <DialogCloseButton />
@@ -60,6 +72,7 @@ export function ConfirmDialog({
                 {notice && <div className="px-6 pb-3">{notice}</div>}
                 <div className="flex items-center justify-end gap-2 px-6 pb-5">
                     <button
+                        ref={cancelRef}
                         className="px-3 py-1.5 rounded-md text-xs font-medium text-ink bg-border/50 hover:bg-border transition-colors"
                         onClick={() => onOpenChange(false)}
                     >

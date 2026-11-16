@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { ConfirmDialog } from '@/components/confirm-dialog';
@@ -76,31 +76,48 @@ export function feedLine(t: TFunction<'activity'>, row: ActivityFeedRow): string
     }
 }
 
-/** The sentence Forget shows before the person confirms. */
-export function forgetBody(t: TFunction<'activity'>, preview: ActivityForgetPreview, row: ActivityFeedRow, lang: string): string {
-    const thing = row.kind === 'screen' ? (preview.title || feedTitle(t, row)) : feedTitle(t, row);
-    const list = preview.goes.map((item) => {
+/** What Forget's one confirmation says (computer-activity v1.1.0, 15e):
+ *  the title, what the row is with its source and time, everything made
+ *  from it with where it lives, and the count on the button. The row's own
+ *  words, audio and copies are the thing itself, said by the closing line. */
+export interface ForgetPlan {
+    title: string;
+    lead: string;
+    items: string[];
+    count: number;
+}
+
+export function forgetPlan(t: TFunction<'activity'>, preview: ActivityForgetPreview, row: ActivityFeedRow, lang: string): ForgetPlan {
+    const what = row.kind === 'screen' ? (preview.title || feedTitle(t, row)) : feedTitle(t, row);
+    const items: string[] = [];
+    for (const item of preview.goes) {
         switch (item.kind) {
             case 'topic':
-                return t('feed.goes.topic', { topic: item.title });
+                items.push(t('act.forgetItem', { what: t('feed.goes.topic', { topic: item.title }), where: t('feed.where.topics') }));
+                break;
             case 'goal':
-                return item.title ? t('feed.goes.goal', { goal: item.title }) : t('feed.goes.goalUntitled');
+                items.push(t('act.forgetItem', { what: item.title || t('feed.goes.goalUntitled'), where: t('feed.where.goals') }));
+                break;
             case 'screen':
-                return t('feed.goes.screen', { start: clock(item.startMs ?? 0, lang), end: clock(item.endMs ?? 0, lang) });
+                items.push(t('act.forgetItem', { what: t('feed.goes.screen', { start: clock(item.startMs ?? 0, lang), end: clock(item.endMs ?? 0, lang) }), where: t('feed.where.screen') }));
+                break;
             case 'moment':
-                return t('feed.goes.moment', { moment: item.title });
-            case 'words':
-                return t('feed.goes.words');
-            case 'audio':
-                return t('feed.goes.audio');
-            case 'copies':
-                return t('feed.goes.copies');
+                items.push(t('act.forgetItem', { what: t('feed.goes.moment', { moment: item.title }), where: t('feed.where.activity') }));
+                break;
+            case 'notes':
+                items.push(t('act.forgetItem', { what: t('feed.goes.notes'), where: t('feed.where.watch') }));
+                break;
             default:
-                return t('feed.goes.notes');
+                break;
         }
-    });
-    if (list.length === 0) return t('feed.forgetBodyNothing', { thing });
-    return t('feed.forgetBody', { thing, count: list.length, list: list.join(t('feed.listSeparator')) });
+    }
+    const kind = t('act.forgetKind', { source: feedSource(t, row), time: clock(row.startMs, lang) });
+    return {
+        title: t('act.forgetTitle', { what }),
+        lead: items.length > 0 ? t('act.forgetLead', { what: kind }) : t('act.forgetLeadOnly', { what: kind }),
+        items,
+        count: items.length + 1,
+    };
 }
 
 export function ActivityFeed({ date, kinds, emptyText }: {
@@ -114,6 +131,8 @@ export function ActivityFeed({ date, kinds, emptyText }: {
     const [failed, setFailed] = useState(false);
     const [forgetting, setForgetting] = useState<{ row: ActivityFeedRow; preview: ActivityForgetPreview } | null>(null);
     const [forgetFailed, setForgetFailed] = useState(false);
+    // The row's Forget that opened the confirm gets focus back when it closes.
+    const forgetOpener = useRef<HTMLButtonElement | null>(null);
     const [start, end] = dayBounds(date);
     const kindsKey = (kinds ?? []).join(',');
 
@@ -156,6 +175,8 @@ export function ActivityFeed({ date, kinds, emptyText }: {
             });
     };
 
+    const plan = forgetting ? forgetPlan(t, forgetting.preview, forgetting.row, i18n.language) : null;
+
     return (
         <section data-testid="activity-feed" aria-label={t('feed.label') as string}>
             {failed && <ActivityInlineNotice notice={{ tone: 'error', text: t('feed.loadFailed'), onAction: load }} />}
@@ -184,12 +205,13 @@ export function ActivityFeed({ date, kinds, emptyText }: {
                             <span aria-hidden className={`mt-[6px] size-[7px] shrink-0 rounded-full ${DOT_CLASS[row.kind]}`} />
                             <div className="min-w-0 flex-1">
                                 <p className="text-[11px] text-muted">{feedSource(t, row)}</p>
-                                <p className="text-[13px] text-ink truncate">{feedTitle(t, row)}</p>
+                                <p className="text-[13px] text-ink line-clamp-2 break-words">{feedTitle(t, row)}</p>
                                 {feedLine(t, row) && <p className="text-[12px] text-muted line-clamp-2">{feedLine(t, row)}</p>}
                             </div>
                             <button
                                 type="button"
-                                onClick={() => askForget(row)}
+                                onClick={(event) => { forgetOpener.current = event.currentTarget; askForget(row); }}
+                                aria-label={t('feed.forgetRow', { title: feedTitle(t, row) })}
                                 className="shrink-0 rounded-md px-2 py-1 text-[12px] text-muted hover:text-ink hover:bg-surface-active focus-visible:ring-2 focus-visible:ring-border-focus transition-colors"
                             >
                                 {t('feed.forget')}
@@ -201,10 +223,22 @@ export function ActivityFeed({ date, kinds, emptyText }: {
             <ConfirmDialog
                 open={forgetting !== null}
                 onOpenChange={(open) => { if (!open) setForgetting(null); }}
-                title={t('feed.forgetTitle')}
-                description={forgetting ? forgetBody(t, forgetting.preview, forgetting.row, i18n.language) : ''}
-                confirmLabel={t('feed.forgetConfirm')}
+                title={plan?.title ?? ''}
+                description={plan ? (
+                    <div className="flex flex-col gap-2" data-testid="forget-plan">
+                        <p className="m-0">{plan.lead}</p>
+                        {plan.items.length > 0 && (
+                            <ul className="m-0 flex list-disc flex-col gap-1 pl-5 text-ink">
+                                {plan.items.map((item) => <li key={item}>{item}</li>)}
+                            </ul>
+                        )}
+                        <p className="m-0">{t('act.forgetGone')}</p>
+                    </div>
+                ) : ''}
+                confirmLabel={plan && plan.count > 1 ? t('act.forgetAll', { n: plan.count }) : t('act.forgetOne')}
                 variant="danger"
+                focusCancel
+                returnFocusTo={forgetOpener.current}
                 onConfirm={confirmForget}
                 closeOnConfirm={false}
             />

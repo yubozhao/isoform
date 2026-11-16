@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import '@/i18n';
 import enActivity from '@/i18n/locales/en/activity.json';
@@ -47,6 +47,8 @@ describe('ActivityFeed', () => {
         expect(gap.textContent).toMatch(/nothing was kept$/);
         expect(gap.querySelector('button')).toBeNull();
         expect(document.querySelectorAll('[data-feed-kind] button')).toHaveLength(3);
+        // pass-access v1.0.0: each Forget says which row it forgets.
+        expect(screen.getByRole('button', { name: 'Forget: Pricing page copy' })).toBeInTheDocument();
         // No coloured bar at a row's left edge: the source is the dot and its name.
         for (const row of document.querySelectorAll('[data-feed-kind]')) {
             expect(row.className).not.toMatch(/border-l|before:|after:/);
@@ -66,40 +68,61 @@ describe('ActivityFeed', () => {
         expect(binding('GetActivityFeed')).toHaveBeenCalledWith(at(0), new Date(2026, 10, 16).getTime());
     });
 
-    // Rule 2 of the ranked goals: Forget says what goes with it, then goes.
-    it('names what goes with a row before forgetting it, and drops the row after', async () => {
+    // computer-activity v1.1.0, 15e: one confirmation names everything that
+    // goes and where it lives, says it can't be undone, and counts it on the
+    // button, the row itself included.
+    it('names everything that goes and where it lives, counts it on the button, then goes', async () => {
         binding('GetActivityFeed').mockResolvedValueOnce([
             { id: 'm-1', kind: 'screen', startMs: at(9), endMs: at(9, 30), title: 'Call with Lena', app: 'Zoom' },
         ]).mockResolvedValue([]);
         binding('GetActivityForgetPreview').mockResolvedValue({
             kind: 'screen', id: 'm-1', title: 'Call with Lena',
-            goes: [{ kind: 'topic', title: 'Halcyon import' }, { kind: 'goal', title: 'Reply to Lena, with the slides' }],
+            goes: [{ kind: 'screen', startMs: at(9), endMs: at(9, 30) }, { kind: 'topic', title: 'Halcyon import' }, { kind: 'goal', title: 'Reply to Lena, with the slides' }],
         });
         binding('ForgetActivityFeedRow').mockResolvedValue(undefined);
         await act(async () => {
             render(<ActivityFeed date={day} />);
         });
-        fireEvent.click(await screen.findByRole('button', { name: enActivity.feed.forget }));
-        expect(await screen.findByText(
-            'Forget Call with Lena, and 2 things made from it: its place in Halcyon import; the goal Reply to Lena, with the slides.',
-        )).toBeInTheDocument();
+        const forget = await screen.findByRole('button', { name: 'Forget: Call with Lena' });
+        forget.focus();
+        fireEvent.click(forget);
+        const dialog = await screen.findByRole('dialog');
+        expect(within(dialog).getByText('Forget "Call with Lena"?')).toBeInTheDocument();
+        // pass-access v1.0.0: a confirm that can't be undone opens on Cancel.
+        await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Cancel' })).toHaveFocus());
+        const plan = within(dialog).getByTestId('forget-plan');
+        expect(plan).toHaveTextContent(/^Screen · Zoom, 9:00\s?AM, and what was made from it:/);
+        expect([...plan.querySelectorAll('li')].map((li) => li.textContent)).toEqual([
+            expect.stringMatching(/^the screen from 9:00\s?AM to 9:30\s?AM · Screen$/),
+            'its place in Halcyon import · Your topics',
+            'Reply to Lena, with the slides · Goals',
+        ]);
+        expect(plan).toHaveTextContent(enActivity.act.forgetGone);
         expect(binding('ForgetActivityFeedRow')).not.toHaveBeenCalled();
-        const dialog = screen.getByRole('dialog');
-        fireEvent.click([...dialog.querySelectorAll('button')].find((b) => b.textContent === enActivity.feed.forgetConfirm)!);
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Forget all 4' }));
         await waitFor(() => expect(binding('ForgetActivityFeedRow')).toHaveBeenCalledWith('screen', 'm-1'));
         await waitFor(() => expect(screen.queryByText('Call with Lena')).toBeNull());
     });
 
-    it('says when nothing else was made from a row', async () => {
+    it('reads Forget, with no list, when nothing was made from a row', async () => {
         binding('GetActivityFeed').mockResolvedValue([
             { id: 'rec-1', kind: 'watch', startMs: at(10), endMs: at(10, 36), words: 0, device: 'phone' },
         ]);
-        binding('GetActivityForgetPreview').mockResolvedValue({ kind: 'watch', id: 'rec-1', title: '', goes: [] });
+        binding('GetActivityForgetPreview').mockResolvedValue({ kind: 'watch', id: 'rec-1', title: '', goes: [{ kind: 'words' }, { kind: 'audio' }, { kind: 'copies' }] });
         await act(async () => {
             render(<ActivityFeed date={day} />);
         });
         expect(await screen.findByText('Your phone')).toBeInTheDocument();
-        fireEvent.click(screen.getByRole('button', { name: enActivity.feed.forget }));
-        expect(await screen.findByText(/Nothing else was made from it\.$/)).toBeInTheDocument();
+        const forget = screen.getByRole('button', { name: /^Forget: Conversation/ });
+        forget.focus();
+        fireEvent.click(forget);
+        const dialog = await screen.findByRole('dialog');
+        expect(within(dialog).queryByRole('listitem')).toBeNull();
+        expect(within(dialog).getByTestId('forget-plan')).toHaveTextContent(enActivity.act.forgetGone);
+        expect(within(dialog).getByRole('button', { name: enActivity.act.forgetOne })).toBeInTheDocument();
+        // Esc closes it and gives focus back to that row's Forget.
+        fireEvent.keyDown(dialog, { key: 'Escape' });
+        await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+        await waitFor(() => expect(forget).toHaveFocus());
     });
 });

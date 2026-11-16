@@ -619,23 +619,6 @@
         "nav": "来自你的手表",
         "title": "来自你的手表",
         "subtitle": "手表上的录音，与你的其他录音一起保存在这台电脑上。",
-        "lane": {
-            "title": "今天的手表",
-            "now": "现在",
-            "hourTalk_one": "{{hour}}：{{count}} 分钟的谈话",
-            "hourTalk_other": "{{hour}}：{{count}} 分钟的谈话",
-            "hourTalkPaused": "{{hour}}：{{talk}} 分钟的谈话。暂停了 {{paused}} 分钟。",
-            "hourPaused_one": "{{hour}}：暂停了 {{count}} 分钟",
-            "hourPaused_other": "{{hour}}：暂停了 {{count}} 分钟",
-            "hourQuiet": "{{hour}}：安静"
-        },
-        "conversations": "对话",
-        "hours": "按小时",
-        "conversationRange": "{{start}} 至 {{end}}",
-        "conversationWords_one": "{{count}} 个词",
-        "conversationWords_other": "{{count}} 个词",
-        "conversationAcross_one": "在 {{count}} 个小时内",
-        "conversationAcross_other": "跨 {{count}} 个小时",
         "empty": "手机把手表录音发送过来后，会显示在这里。",
         "loadFailed": "无法加载录音。",
         "untimed": "录音",
@@ -668,7 +651,24 @@
         "deleteTitle": "全部删除？",
         "deleteBody": "这段录音以及 Isoform 仅从中了解到的内容，会从你的手表、手机和电脑上删除。",
         "deleteConfirm": "删除",
-        "deleteFailed": "未能删除，请重试。"
+        "deleteFailed": "未能删除，请重试。",
+        "lane": {
+            "title": "今天的手表",
+            "now": "现在",
+            "hourTalk_one": "{{hour}}：{{count}} 分钟的谈话",
+            "hourTalk_other": "{{hour}}：{{count}} 分钟的谈话",
+            "hourTalkPaused": "{{hour}}：{{talk}} 分钟的谈话。暂停了 {{paused}} 分钟。",
+            "hourPaused_one": "{{hour}}：暂停了 {{count}} 分钟",
+            "hourPaused_other": "{{hour}}：暂停了 {{count}} 分钟",
+            "hourQuiet": "{{hour}}：安静"
+        },
+        "conversations": "对话",
+        "hours": "按小时",
+        "conversationRange": "{{start}} 至 {{end}}",
+        "conversationWords_one": "{{count}} 个词",
+        "conversationWords_other": "{{count}} 个词",
+        "conversationAcross_one": "在 {{count}} 个小时内",
+        "conversationAcross_other": "跨 {{count}} 个小时"
     },
     "act": {
         "sub": "Isoform 今天看到的一切，按时间和来源排列。任何一条都可以忘记，由它生成的内容也会一并删除。",
@@ -676,6 +676,15 @@
         "tabWatch": "手表",
         "tabAgents": "Agents",
         "closedGap": "{{start}}–{{end}} · 什么都没有保留",
+        "forgetTitle": "忘记「{{what}}」？",
+        "forgetKind": "{{source}}，{{time}}",
+        "forgetLead": "{{what}}，以及由它生成的内容：",
+        "forgetLeadOnly": "{{what}}。",
+        "forgetItem": "{{what}} · {{where}}",
+        "forgetGone": "会从这台电脑、你的手机和手表上删除，无法撤销。",
+        "forgetAll": "全部忘记（{{n}}）",
+        "forgetOne": "忘记",
+        "staysWith": "已发给 {{agent}} · 留在 {{agent}} 那里",
         "tabAnswers": "你的回答"
     },
     "feed": {
@@ -684,13 +693,7 @@
         "emptyAgents": "这一天你的 agents 没有在这台电脑上工作。",
         "loadFailed": "无法加载时间线。",
         "forget": "忘记",
-        "forgetTitle": "要忘记这一条吗？",
-        "forgetConfirm": "忘记",
         "forgetFailed": "没有忘记成功，请再试一次。",
-        "forgetBody_one": "忘记{{thing}}，以及由它生成的 {{count}} 项内容：{{list}}。",
-        "forgetBody_other": "忘记{{thing}}，以及由它生成的 {{count}} 项内容：{{list}}。",
-        "forgetBodyNothing": "忘记{{thing}}。没有由它生成的其他内容。",
-        "listSeparator": "；",
         "sourceScreen": "屏幕",
         "sourceScreenApp": "屏幕 · {{app}}",
         "sourceWatch": "你的手表",
@@ -710,11 +713,16 @@
             "goalUntitled": "由它生成的一个目标",
             "screen": "{{start}} 到 {{end}} 的屏幕记录",
             "moment": "共用这段屏幕记录的「{{moment}}」",
-            "words": "听到的内容",
-            "audio": "音频",
-            "copies": "手机和手表上的副本",
             "notes": "由它生成的笔记"
-        }
+        },
+        "where": {
+            "topics": "你的主题",
+            "goals": "目标",
+            "screen": "屏幕",
+            "activity": "活动",
+            "watch": "手表"
+        },
+        "forgetRow": "忘记：{{title}}"
     },
     "ans": {
         "title": "你的回答",

@@ -33,12 +33,14 @@ Why not the others for v1:
 | Item | Monthly |
 | --- | --- |
 | shared-cpu-4x, 8 GB, always on | about $51 |
-| 40 GB volume | about $6 |
+| 10 GB volume | about $1.50 |
 | Volume snapshots, outbound traffic | a few dollars |
-| **Hosting total** | **about $60** |
+| **Hosting total** | **about $55** |
 | Model cost | paid per job by the client's hold; capped for Isoform at $50 per 24 hours |
 
 Capacity: each chat sandbox gets 2 CPUs and 2 GB; four jobs run at once. That is enough for 75 invited people. Grow by raising the Machine size (one line in `server/fly.toml`).
+
+Disk: the volume starts at 10 GB (Bo, 2026-11-15: start small). About 1 GB is the sandbox image; the build cache and images left untagged by rebuilds are pruned at every boot; 2 GB is held back by the disk guard; the rest, about 6 GB, holds the database, uploads (20 MB a file at most), results (64 MB checked per pass) and chat workspaces, which go 30 days after a chat closes. Container logs are capped at 30 MB each. `check-live.sh` and `admin status` show free space; when it nears the guard, grow it with `fly volumes extend <id> --size 20 --app isoform-aoy-server` (a volume can grow but never shrink).
 
 Sources: [Fly.io pricing](https://fly.io/docs/about/pricing/), [Fly 2026 pricing update](https://fly.io/pricing-update/).
 
@@ -97,7 +99,7 @@ Each step is one line; run commands from `server/` in your own terminal. None of
 2. Anthropic: create a new key just for this server, with a monthly limit set in the Anthropic console.
 3. Resend: verify the sending domain in the Resend dashboard and create a key.
 4. Stripe test mode: create webhook endpoints `https://isoform-aoy-server.fly.dev/v1/stripe/webhook` and `.../v1/stripe/connect-webhook` in the dashboard; keep the `sk_test_` key and both signing secrets at hand.
-5. Run `scripts/fly-setup.sh --org <your org>` (add `--owner-status` for step 14). It creates the app and the 40 GB volume, generates the server secret, then asks for the Anthropic key, the Resend key, the Stripe key and the two signing secrets one at a time and stages each with `fly secrets import --stage`. Typed values are not shown and never go on a command line; a live Stripe key is refused; nothing is deployed. Running it again skips every step already done.
+5. Run `scripts/fly-setup.sh --org <your org>` (add `--owner-status` for step 14). It creates the app and the 10 GB volume (`--size` to change it; Fly's trial caps volumes at 20 GB), generates the server secret, then asks for the Anthropic key, the Resend key, the Stripe key and the two signing secrets one at a time and stages each with `fly secrets import --stage`. Typed values are not shown and never go on a command line; a live Stripe key is refused; nothing is deployed. Running it again skips every step already done.
 6. Check: `fly secrets list --app isoform-aoy-server` lists ISOFORM_SERVER_SECRET, ANTHROPIC_API_KEY, RESEND_API_KEY, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET and STRIPE_CONNECT_WEBHOOK_SECRET (names only; values are never shown).
 7. Deploy and check, one command: `ISOFORM_DEPLOY_APPROVED=yes scripts/deploy.sh`. It first checks, changing nothing, that you are signed in, the app and volume exist and the six secrets from step 6 are set; if anything is missing it stops and names the step. Then it runs `fly deploy` on Fly's builder, waits for `/healthz` (the first boot builds the sandbox image, a few minutes; up to 15), and runs `scripts/check-live.sh`: health, the Machine and volume, the invite gate, the cost cap, gVisor, the private model proxy and the persona label, read-only. Every line should read `ok`; `warn` for steps 10 and 11 is expected before they are done. Run `scripts/check-live.sh --probe` once later to see an uninvited address refused.
 8. Website: in Cloudflare Pages settings, set `AOY_API_ORIGIN=https://isoform-aoy-server.fly.dev` and `AOY_CHAT=1`.

@@ -8,8 +8,10 @@ package main
 // by TLS-ALPN-01, which travels through the same passthrough, and its key
 // never leaves the computer. Behind TLS: task links (/t/), later MCP.
 //
-// Off unless front_enabled is true and the front ids are known. ACME
-// defaults to Let's Encrypt staging until production is chosen on purpose.
+// Off unless front_enabled is true. The computer accepts only Isoform's
+// front (frontDefaultIDs; ISOFORM_FRONT_IDS overrides it for development)
+// and gets its certificate from Let's Encrypt (ISOFORM_FRONT_ACME_DIRECTORY
+// set to "staging" picks the staging CA for testing).
 
 import (
 	"bufio"
@@ -40,13 +42,21 @@ const (
 	frontDirName    = "front"
 	// frontLinkBinEnv overrides the bundled isoform-front-link.
 	frontLinkBinEnv = "ISOFORM_FRONT_LINK_BIN"
-	// frontIDsEnv lists the front endpoint ids the link accepts.
+	// frontIDsEnv replaces the front endpoint ids the link accepts.
 	frontIDsEnv = "ISOFORM_FRONT_IDS"
-	// frontACMEDirectoryEnv picks the CA; staging unless set.
+	// frontACMEDirectoryEnv picks the CA: empty or "production" is Let's
+	// Encrypt, "staging" its staging CA, else an https directory URL.
 	frontACMEDirectoryEnv = "ISOFORM_FRONT_ACME_DIRECTORY"
 	frontSuffixEnv        = "ISOFORM_FRONT_SUFFIX"
 	frontDefaultSuffix    = "agents.isoform.ai"
+	frontACMEProduction   = "https://acme-v02.api.letsencrypt.org/directory"
 	frontACMEStaging      = "https://acme-staging-v02.api.letsencrypt.org/directory"
+	// Each CA keeps its own certificate cache, so a staging certificate from
+	// testing is never served once production is on. The CT watch reads the
+	// production one.
+	frontACMECacheProduction = "acme-letsencrypt"
+	frontACMECacheStaging    = "acme"
+	frontACMECacheCustom     = "acme-custom"
 	// frontCertBackoff: after a failed issuance, no new attempt for this
 	// long. Let's Encrypt allows 5 failed validations an hour and 5
 	// certificates per name a week, so the computer must never loop.
@@ -170,9 +180,21 @@ func frontSuffix() string {
 	return frontDefaultSuffix
 }
 
+// frontDefaultIDs are the endpoint ids of Isoform's front (Fly app
+// isoform-front, docs/front-deploy.md). They are public: an id is what a
+// computer checks before it accepts a connection. Add a machine's id here
+// before it serves.
+var frontDefaultIDs = []string{"a41cefc7ad49deeb5b55c5776cb5b5a4af5d901ea5c8e4da69eb07a5a80e8b34"}
+
+// frontAllowedIDs are the fronts the link accepts: ISOFORM_FRONT_IDS when
+// set, else Isoform's own.
 func frontAllowedIDs() ([]string, error) {
+	raw := strings.TrimSpace(os.Getenv(frontIDsEnv))
+	if raw == "" {
+		raw = strings.Join(frontDefaultIDs, ",")
+	}
 	var ids []string
-	for _, id := range strings.Split(os.Getenv(frontIDsEnv), ",") {
+	for _, id := range strings.Split(raw, ",") {
 		id = strings.ToLower(strings.TrimSpace(id))
 		if id == "" {
 			continue
@@ -236,7 +258,8 @@ func (a *App) startFront() error {
 		_ = ln.Close()
 		return err
 	}
-	get := a.frontCertGetter(info.Hostname, filepath.Join(dir, "acme"))
+	_, cacheName := frontACMEDirectory()
+	get := a.frontCertGetter(info.Hostname, filepath.Join(dir, cacheName))
 	certs := &frontCertSource{get: get}
 	tlsConfig := &tls.Config{
 		MinVersion:     tls.VersionTLS12,
@@ -282,14 +305,30 @@ func frontHostOnly(hostname string, next http.Handler) http.Handler {
 	})
 }
 
+// frontACMEDirectory is the CA to ask and the cache folder its certificates
+// live in.
+func frontACMEDirectory() (string, string) {
+	switch value := strings.TrimSpace(os.Getenv(frontACMEDirectoryEnv)); strings.ToLower(value) {
+	case "", "production":
+		return frontACMEProduction, frontACMECacheProduction
+	case "staging":
+		return frontACMEStaging, frontACMECacheStaging
+	default:
+		if value == frontACMEStaging {
+			return frontACMEStaging, frontACMECacheStaging
+		}
+		if value == frontACMEProduction {
+			return frontACMEProduction, frontACMECacheProduction
+		}
+		return value, frontACMECacheCustom
+	}
+}
+
 func (a *App) frontCertGetter(hostname, cacheDir string) func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
 	if a.front.certFunc != nil {
 		return a.front.certFunc(hostname, cacheDir)
 	}
-	directory := strings.TrimSpace(os.Getenv(frontACMEDirectoryEnv))
-	if directory == "" {
-		directory = frontACMEStaging
-	}
+	directory, _ := frontACMEDirectory()
 	m := &autocert.Manager{
 		// Turning the front on is the person's choice to get a certificate
 		// for their hostname under the CA's subscriber terms.

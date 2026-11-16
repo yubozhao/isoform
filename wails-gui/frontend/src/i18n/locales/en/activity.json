@@ -619,23 +619,6 @@
         "nav": "From your watch",
         "title": "From your watch",
         "subtitle": "Recordings from your watch, kept on this computer with your other recordings.",
-        "lane": {
-            "title": "Your watch today",
-            "now": "Now",
-            "hourTalk_one": "{{hour}}: {{count}} min of talk",
-            "hourTalk_other": "{{hour}}: {{count}} min of talk",
-            "hourTalkPaused": "{{hour}}: {{talk}} min of talk. Paused for {{paused}} min.",
-            "hourPaused_one": "{{hour}}: paused for {{count}} min",
-            "hourPaused_other": "{{hour}}: paused for {{count}} min",
-            "hourQuiet": "{{hour}}: quiet"
-        },
-        "conversations": "Conversations",
-        "hours": "Hours",
-        "conversationRange": "{{start}} to {{end}}",
-        "conversationWords_one": "{{count}} word",
-        "conversationWords_other": "{{count}} words",
-        "conversationAcross_one": "in {{count}} hour",
-        "conversationAcross_other": "across {{count}} hours",
         "empty": "Recordings from your watch show here once your phone has sent them.",
         "loadFailed": "The recordings could not be loaded.",
         "untimed": "Recording",
@@ -668,7 +651,24 @@
         "deleteTitle": "Delete everywhere?",
         "deleteBody": "The recording and what Isoform learned only from it go from your watch, your phone and your computer.",
         "deleteConfirm": "Delete",
-        "deleteFailed": "Didn't delete. Try again."
+        "deleteFailed": "Didn't delete. Try again.",
+        "lane": {
+            "title": "Your watch today",
+            "now": "Now",
+            "hourTalk_one": "{{hour}}: {{count}} min of talk",
+            "hourTalk_other": "{{hour}}: {{count}} min of talk",
+            "hourTalkPaused": "{{hour}}: {{talk}} min of talk. Paused for {{paused}} min.",
+            "hourPaused_one": "{{hour}}: paused for {{count}} min",
+            "hourPaused_other": "{{hour}}: paused for {{count}} min",
+            "hourQuiet": "{{hour}}: quiet"
+        },
+        "conversations": "Conversations",
+        "hours": "Hours",
+        "conversationRange": "{{start}} to {{end}}",
+        "conversationWords_one": "{{count}} word",
+        "conversationWords_other": "{{count}} words",
+        "conversationAcross_one": "in {{count}} hour",
+        "conversationAcross_other": "across {{count}} hours"
     },
     "act": {
         "sub": "What Isoform saw today, by time and source. Forget anything; what was made from it goes too.",
@@ -676,6 +676,15 @@
         "tabWatch": "Watch",
         "tabAgents": "Agents",
         "closedGap": "{{start}}–{{end}} · nothing was kept",
+        "forgetTitle": "Forget \"{{what}}\"?",
+        "forgetKind": "{{source}}, {{time}}",
+        "forgetLead": "{{what}}, and what was made from it:",
+        "forgetLeadOnly": "{{what}}.",
+        "forgetItem": "{{what}} · {{where}}",
+        "forgetGone": "Gone from this computer, your phone and your watch. It can't be undone.",
+        "forgetAll": "Forget all {{n}}",
+        "forgetOne": "Forget",
+        "staysWith": "Sent to {{agent}} · stays with {{agent}}",
         "tabAnswers": "Your answers"
     },
     "feed": {
@@ -684,13 +693,7 @@
         "emptyAgents": "Your agents didn't work on this computer this day.",
         "loadFailed": "The timeline could not be loaded.",
         "forget": "Forget",
-        "forgetTitle": "Forget this?",
-        "forgetConfirm": "Forget",
         "forgetFailed": "Didn't forget it. Try again.",
-        "forgetBody_one": "Forget {{thing}}, and {{count}} thing made from it: {{list}}.",
-        "forgetBody_other": "Forget {{thing}}, and {{count}} things made from it: {{list}}.",
-        "forgetBodyNothing": "Forget {{thing}}. Nothing else was made from it.",
-        "listSeparator": "; ",
         "sourceScreen": "Screen",
         "sourceScreenApp": "Screen · {{app}}",
         "sourceWatch": "Your watch",
@@ -710,11 +713,16 @@
             "goalUntitled": "a goal made from it",
             "screen": "the screen from {{start}} to {{end}}",
             "moment": "the screen of {{moment}}, which shares it",
-            "words": "what it heard",
-            "audio": "the audio",
-            "copies": "the copies on your phone and watch",
             "notes": "the notes made from it"
-        }
+        },
+        "where": {
+            "topics": "Your topics",
+            "goals": "Goals",
+            "screen": "Screen",
+            "activity": "Activity",
+            "watch": "Watch"
+        },
+        "forgetRow": "Forget: {{title}}"
     },
     "ans": {
         "title": "Your answers",
