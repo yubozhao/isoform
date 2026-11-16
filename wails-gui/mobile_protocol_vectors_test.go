@@ -162,6 +162,11 @@ func buildMobileVectors(t *testing.T) mobileVectorsFile {
 		DeviceID: mobileVectorDeviceID, HubName: "Alex's MacBook Pro",
 		Scopes:    []string{mobileScopeBriefRead, mobileScopeBriefRefresh, mobileScopePresenceRead, mobileScopePush},
 		ExpiresAt: mobileVectorExpiresAt, HubPub: mobileVectorText(hubPrivate.PublicKey().Bytes()),
+		// Since B12 the approval names the brief the phone gets right after pairing.
+		BriefStatus: &mobileBriefStatus{
+			Current: &mobileBriefStatusCurrent{ID: "2026-10-09-morning", Version: strings.Repeat("ab", 32), Kind: "morning", MadeAt: "2026-10-09T07:00:12Z", Audio: true},
+			Next:    &mobileBriefStatusNext{Kind: "evening", Slot: "evening", DueAt: "2026-10-09T18:00:00Z"},
+		},
 	})
 	if err != nil {
 		t.Fatal(err)

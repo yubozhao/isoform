@@ -121,8 +121,15 @@ Approval plaintext:
 
 ```json
 {"deviceId":"<uuid>","hubName":"Alex's MacBook Pro","scopes":["brief:read","brief:refresh","presence:read","push"],
- "expiresAt":"2027-01-07T07:00:00Z","hubPub":"<base64url>"}
+ "expiresAt":"2027-01-07T07:00:00Z","hubPub":"<base64url>",
+ "briefStatus":{"current":{"id":"2026-10-09-morning","version":"<hex>","kind":"morning","madeAt":"...","audio":true},
+                "next":{"kind":"evening","slot":"evening","dueAt":"..."}}}
 ```
+
+`briefStatus` (additive, phone redesign B12) is the shape of section 8.2, read from the
+computer's Today snapshot when the person approves. It names the brief that follows the
+approval (`current`), or, with no brief made yet, when the first one comes (`next`). Older
+computers omit it; older phones ignore it.
 
 ### 3.4 Confirmation code
 
@@ -148,6 +155,10 @@ digits = big-endian uint32(code) mod 1000000, zero-padded to 6 characters
    encrypted approval, `bearerHash`, `scopes`, `expiresAt`. Relay creates the device, stores the
    approval, answers the poll with `state: approved`. Device decrypts, checks `deviceId`, stores
    `hubId`, `hubPub`, `relay`, bearer, scopes, `expiresAt`.
+   Right after `pairing_approve` the hub sends the current brief (section 8.1) to the new
+   device only, as a `brief` frame with `notify:false` and recorded in its outbox, so the first
+   thing the phone shows after pairing is the latest brief (phone-setup v1.0.0 rule 7). The
+   relay handles frames in order, so the device exists when the brief arrives.
    Decline: hub sends `pairing_decline`; the relay answers `declined`.
 6. A pairing is consumed by approval, decline, expiry, or three failed decryptions on the hub.
 
@@ -973,6 +984,27 @@ brief without written text, or one whose package already has its recording, is p
 - "Your {kind} brief is being made · ready around {time}": `making` is present; the time only while `readyAt` is ahead.
 - "Your first brief comes at {time}.": no `current`; the time is `next.dueAt`.
 - "The audio comes when your computer wakes.": the shown package has no recording and the computer is offline.
+
+### 8.3 The widget's snapshot (phone redesign B11, 2026-11-15)
+
+Design: phone-map v1.0.0 rules 18 and 19. `GET /widget` (`brief:read`) answers from the computer's
+Today snapshot as this device may see it (section 20.7a scoping), builds nothing, and answers 503 at
+once before the first snapshot:
+
+```json
+{"v":1,"asOf":"<RFC 3339, the snapshot's generatedAt>",
+ "brief":{"id":"2026-11-15-evening","version":"<hex>","kind":"evening","madeAt":"<RFC 3339>",
+          "lead":"<the brief's first line>"},
+ "toAnswer":3}
+```
+
+- `brief` is `briefStatus.current` (section 8.2) with the `lead` of the same brief in `briefs`;
+  absent before the first brief.
+- `toAnswer` is `needsYouCount` until the one list of work (B2) gives its own count.
+- The watch line ("Your watch is listening") is the phone's: the phone knows its watch.
+- The phone derives the same object from every `today_changed` snapshot with this rule and writes it
+  to its app group, so the widget and the lock-screen widget move to a new brief before the app is
+  opened. With the computer asleep the widget keeps the last one, under its own `madeAt`.
 
 ## 9. Push
 
