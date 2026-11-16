@@ -822,6 +822,19 @@
         "undoFailed": "没能撤销。"
     },
     "ctoday": {
+        "firstTitle": "你的第一份简报",
+        "firstAt": "在 {{time}}",
+        "firstBody": "你的第一份简报会在 {{time}} 送到，用这台电脑上今天的内容做成。在那之前，这里是 Isoform 已经能做的事。",
+        "yourAgents": "你的代理",
+        "noAgents": "还没有连接代理。对提议工作说“是”会直接交给你用的代理。",
+        "connectAgent": "连接一个代理 ›",
+        "backFrom": "{{agent}} 交回 · 你在 {{time}} 说了“是”",
+        "useful": "有用吗？",
+        "noWord": "{{agent}} 自 {{time}} 起没有消息",
+        "couldntStart": "{{agent}} 无法启动",
+        "nothingSent": "什么都没有发送；这件事还在你的工作里。",
+        "agentSaid": "{{agent}} 说：",
+        "sendAgain": "再发送一次",
         "titleCount": "今天，{{count}} 件待回答",
         "title": "今天",
         "times": "简报时间：{{morning}} 和 {{evening}}",
@@ -875,6 +888,7 @@
         "undo": "撤销",
         "upNext": "接下来",
         "doneToday": "今天已完成",
+        "send": "发送",
         "handOffSoon": "把工作交给你的代理的功能即将推出。",
         "itemLabel": "{{source}}。{{sentence}}。{{work}}。{{yes}}",
         "quickChat": "快速聊天",
@@ -908,8 +922,30 @@
             "gone": "这件事已不在你的工作里。",
             "changed": "这件事已被回答或已更改。",
             "undoClosed": "这个回答已无法撤销。",
+            "agentAway": "那个代理没有连接。",
             "invalid": "这个回答不适用于这件事。",
             "failed": "无法保存你的回答，请重试。"
         }
+    },
+    "agent": {
+        "sheet": {
+            "title": "交给 {{agent}}"
+        },
+        "subtitle": "你做{{kind}}的代理 · 已在这台电脑上连接",
+        "subtitleKind": "你做{{kind}}的代理",
+        "kind": {
+            "code": "代码",
+            "else": "其他工作"
+        },
+        "change": "更换代理",
+        "noOther": "这类工作还没有别的代理。",
+        "exact": "发送的内容就是这些：",
+        "gets": "它会得到",
+        "remove": "移除 {{label}}",
+        "send": "发送给 {{agent}}",
+        "readFailed": "无法读取你的代理。",
+        "noneChosen": "请用“更换代理”为这类工作选一个代理。",
+        "yourAgent": "你的代理",
+        "foot": "{{agent}} 在它自己的账户里工作。结果会回到你的工作。"
     }
 }

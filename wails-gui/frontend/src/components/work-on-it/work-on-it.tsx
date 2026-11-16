@@ -67,11 +67,13 @@ export function WorkOnItButton({ input, look = 'link' }: { input: WorkOnItInput;
     );
 }
 
-function WorkOnItDialog({ input, onClose }: { input: WorkOnItInput; onClose: () => void }) {
+/** The Work on it sheet; agentId picks the agent to start on, and onSent
+ *  hears the hand-off once it went (Your work records it, SH4). */
+export function WorkOnItDialog({ input, onClose, agentId: startAgent, onSent }: { input: WorkOnItInput; onClose: () => void; agentId?: string; onSent?: (sent: WorkOnItSent) => void }) {
     const { t } = useTranslation('app');
     const [prepared, setPrepared] = useState<WorkOnItPrepared | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [agentId, setAgentId] = useState<string>('');
+    const [agentId, setAgentId] = useState<string>(startAgent ?? '');
     const [busy, setBusy] = useState(false);
     const [sent, setSent] = useState<WorkOnItSent | null>(null);
     const [handle, setHandle] = useState('');
@@ -97,7 +99,7 @@ function WorkOnItDialog({ input, onClose }: { input: WorkOnItInput; onClose: () 
         setBusy(true);
         setError(null);
         SendWorkOnIt(prepared.taskId, agent.id, method)
-            .then(setSent)
+            .then((value) => { setSent(value); onSent?.(value); })
             .catch((err: unknown) => setError(String(err).includes('closed eyes') ? t('workOnIt.closedEyes') : t('workOnIt.failed')))
             .finally(() => setBusy(false));
     };

@@ -51,7 +51,7 @@ import { briefForDisplay } from "@/lib/brief-hygiene";
 import { activeInterval } from "@/lib/app-activity";
 import { pageQueryCache } from "@/lib/query-cache";
 import { BriefAudioPlayer } from "./BriefAudioPlayer";
-import { TodayBriefBand } from "./TodayBriefBand";
+import { TodayBriefBand, TodayFirstBriefBand } from "./TodayBriefBand";
 import { YourWeekCard } from "./YourWeekCard";
 import { TodayWeekBeliefReceipt, useTodayWeekBelief, type TodayWeekBeliefReview } from "./useTodayWeekBelief";
 import { useBriefHoldOffer } from "./useBriefHoldOffer";
@@ -884,6 +884,13 @@ export function TodayBriefSection({
                 firstCaption={firstBrief?.caption}
             />
             {afterBand}
+            {parts.card}
+        </section>
+    ) : band && view && !view.brief && !view.lastBriefId && view.nextAt && !(loading && !view) ? (
+        // Before the first brief the band says when it comes; the card under
+        // it keeps Make my brief now and what Isoform can't see.
+        <section className="flex flex-col gap-[18px]">
+            <TodayFirstBriefBand nextAt={view.nextAt} />
             {parts.card}
         </section>
     ) : parts.card;

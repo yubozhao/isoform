@@ -12,8 +12,9 @@ import { TodayPage } from './TodayPage';
 // privacy sweep has to raise its budget here, on purpose.
 // 16: the header's brief times (GetMobileBriefSchedule, computer-today SH1).
 // 17 and 14: Your work (GetWorkList, SH2), which holds the brief's words, so a
-// privacy sweep reads it again too.
-const MOUNT_READ_BUDGET = 17;
+// privacy sweep reads it again too. 18: whether any agent is connected
+// (GetYourAgents, Your work's day-one card, computer-today v1.1.0).
+const MOUNT_READ_BUDGET = 18;
 const MEMORY_UPDATED_READ_BUDGET = 14;
 const total = (calls: string[]) => calls.filter(isRead).length;
 
