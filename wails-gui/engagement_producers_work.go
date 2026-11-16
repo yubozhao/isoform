@@ -8,6 +8,7 @@ import (
 
 	"wails-gui/internal/engagement"
 	"wails-gui/internal/handoff"
+	"wails-gui/storage"
 )
 
 // Phase 1 moment producers. Each producer turns one app event into an
@@ -126,6 +127,15 @@ func (a *App) produceBriefReady(brief MobileBriefV1, notify, manual bool) bool {
 			notBefore = at
 		}
 	}
+	// A written brief without its recording yet waits for it, at most
+	// mobileBriefNotifyHoldMax, so a tap opens a brief that plays
+	// (PROTOCOL.md 8.2). releaseBriefReady sends it once the recording step
+	// ends. The moment is stored at once, so the first read still waits on it.
+	if brief.NarrativeStatus == "ok" && !mobileBriefHasRecording(brief) {
+		if hold := now.Add(mobileBriefNotifyHoldMax); hold.After(notBefore) {
+			notBefore = hold
+		}
+	}
 	if !a.submitEngagementMoment("brief ready", engagement.Moment{
 		Kind:      engagement.KindBriefReady,
 		SubjectID: brief.BriefID,
@@ -215,4 +225,35 @@ func engagementTitle(title string) string {
 		return strings.TrimSpace(string(runes[:engagementTitleMax])) + "..."
 	}
 	return title
+}
+
+// releaseBriefReady sends a brief_ready moment that waits for its recording
+// now that the recording step ended, but never before the brief's slot. A
+// moment held for another reason (the daily budget, the chat report) keeps
+// its hold.
+func (a *App) releaseBriefReady(brief MobileBriefV1) {
+	if a == nil || a.store == nil || !a.engagementActive() || brief.BriefID == "" {
+		return
+	}
+	ctx := context.Background()
+	row, err := a.store.GetOpenEngagementMomentByKey(ctx, engagement.DedupeKey(engagement.KindBriefReady, brief.BriefID))
+	if err != nil || row == nil || row.State != storage.EngagementStateScheduled || row.Reason != "" {
+		return
+	}
+	now := a.engagement.now()
+	release := now
+	if svc, isService := a.mobileBriefSource().(*mobileBriefService); isService && svc != nil {
+		if at, ok := svc.scheduledTimeFor(brief.Slot, now); ok && at.After(now) {
+			release = at
+		}
+	}
+	if row.HoldUntil <= release.UnixMilli() {
+		return
+	}
+	if err := a.store.SetEngagementMomentState(ctx, row.ID, storage.EngagementStateScheduled, "",
+		storage.EngagementMomentRow{HoldUntil: release.UnixMilli(), UpdatedAt: now.UnixMilli()}); err != nil {
+		log.Printf("[engagement] the brief notice could not be sent early: %v", err)
+		return
+	}
+	a.engagement.nudge()
 }

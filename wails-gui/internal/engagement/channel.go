@@ -54,6 +54,10 @@ type Presence struct {
 	// PushFailed is whether pushes to the phone fail permanently (an invalid
 	// token, permission revoked).
 	PushFailed bool
+	// PhoneReadsWork is whether a paired phone reads Your work (the phone
+	// redesign): that phone is pushed only for PhonePushKind kinds, and the
+	// rest wait in its Your work. An older phone keeps every push.
+	PhoneReadsWork bool
 	// TextAvailable is whether the Messages text channel on this Mac is set
 	// up and allowed.
 	TextAvailable bool
@@ -90,6 +94,23 @@ func NeedsYou(kind Kind) bool {
 	}
 }
 
+// PhonePushKind reports whether a kind may push a phone that reads Your work
+// (phone redesign, phone-map v1.0.0 rules 16 and 17): the brief (and its
+// first-week and weekly forms), meeting prep and finished work. Every other
+// kind waits in the app; on that phone, in Your work. Blocked agent work, reminders the
+// person set one by one and answers to a chat that waited keep their push
+// until Your work and Chat carry them. A moment the person routed to the
+// phone themselves (RequestedChannels) is not affected.
+func PhonePushKind(kind Kind) bool {
+	switch kind {
+	case "", KindBriefReady, KindFirstWeek, KindWeeklyRecap, KindMeetingPrep, KindWorkFinished,
+		KindWorkBlocked, KindReminder, KindAnswerReady:
+		return true
+	default:
+		return false
+	}
+}
+
 // ChannelFor picks the channel for an interrupting verdict of no particular
 // kind; see ChannelForKind.
 func ChannelFor(v Verdict, p Presence, now time.Time) Channel {
@@ -111,7 +132,7 @@ func ChannelForKind(kind Kind, v Verdict, p Presence, now time.Time) Channel {
 	if p.MacForeground && p.MacIdle < macAttentionIdle {
 		return ChannelDesktop
 	}
-	if p.PhoneRegistered && !p.PushFailed {
+	if p.PhoneRegistered && !p.PushFailed && (!p.PhoneReadsWork || PhonePushKind(kind)) {
 		return ChannelPush
 	}
 	phoneOffline := p.PhoneLastSeen.IsZero() || now.Sub(p.PhoneLastSeen) >= phoneOfflineAfter
