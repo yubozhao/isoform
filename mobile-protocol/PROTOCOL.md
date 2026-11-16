@@ -3685,3 +3685,36 @@ when the list changes; the phone reads `GET /work` again then.
 
 The phone's older feeds (`needsYou` on `/today`, `/tasks`, `/topics-daily`, brief card asks) stay for
 older phones.
+
+### 26.1 Answers (phone redesign B3)
+
+`POST /work/{id}/answer` (`brief:feedback`) and the desktop bindings `AnswerWork(id, input)` and
+`UndoWork(id)` run the same function. The id is percent-encoded in the path.
+
+```json
+{"idempotencyKey":"<1 to 128 bytes>","action":"yes|no|not_mine|edit|useful|not_useful|undo",
+ "reason":"not_now","before":"<text>","after":"<text>","surface":"phone|notification",
+ "answeredAt":"<RFC 3339>","queuedAt":"<RFC 3339>","seq":41}
+```
+
+- `200 {"item":<the item as GET /work now shows it>}`. `404` when the item is gone, `409
+  {"code":"item_changed","item"}` when it was answered elsewhere first or `seq` is not above the last
+  answer this phone applied to it, `409 {"code":"undo_closed","item"}` when an Undo is past
+  `undoUntil` or the Yes already handed the work to an agent, `400` when the action or reason does
+  not fit the item. Receipted by `idempotencyKey` (section 15.2): a retry replays the first outcome;
+  a refused answer stores no receipt. While the computer is away the request waits in the relay queue
+  (section 23); the phone journals it and shows "waits for your computer".
+- **What each answer does.** On offered work, Yes starts it as a task (the person's agent works on
+  it): the item is `with_agent`, then `back` with the result line, where Useful or Not useful closes
+  it. Edit is a Yes with the person's words as the request (`after`; `before` is what was offered);
+  a topic's proposal starts only as proposed, so Edit there is `400`. No (with an optional reason
+  from the item's `reasons`) and Not mine are recorded; a topic's go to the topic store as well, so
+  Topics and Your work agree. The brief's former Plan next steps and Not now are Yes and No with
+  `not_now`.
+- **Undo** takes back the item's last answer until `undoUntil` (the next brief): a No or Not mine
+  reopens the item (and the topic's proposal), a Useful or Not useful puts the result back. A Yes
+  that started a task is stopped from the task, not undone here. Not mine on a topic's proposal takes
+  the topic out of Your work, as on Topics: the answer returns the item answered, with no Undo.
+- **The log.** Every answer is kept on the computer (`work/answers.json` in the data folder, 0600,
+  the newest 2000) with its item id, action, reason, edit, time, surface and device: one record for
+  Your answers on both devices. Apart from an edit's before and after, no item text is stored there.

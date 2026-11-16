@@ -160,8 +160,8 @@ func (a *App) GetWorkList() (perfValue WorkList, perfErr error) {
 // top of the rest, at most workOpenPerDay open.
 func (a *App) buildWorkList(ctx context.Context, now time.Time) (WorkList, error) {
 	list := WorkList{V: 1, GeneratedAt: mobileTimestamp(now), Items: []WorkItem{}}
-	brief := a.workBriefItems(ctx)
-	rest := a.workTopicItems(ctx)
+	brief := a.applyWorkAnswers(a.workBriefItems(ctx))
+	rest := a.applyWorkAnswers(a.workTopicItems(ctx))
 	sort.SliceStable(rest, func(i, j int) bool {
 		if (rest[i].State == workStateBack) != (rest[j].State == workStateBack) {
 			return rest[i].State == workStateBack
