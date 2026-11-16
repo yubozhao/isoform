@@ -21,7 +21,7 @@ struct StopRecordingIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        WatchRecorderModel.shared.stop()
+        WatchRecorderModel.shared.stopByWearer()
         return .result()
     }
 }

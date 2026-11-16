@@ -3,6 +3,7 @@ import SwiftUI
 struct WatchRootView: View {
     @EnvironmentObject private var model: WatchRecorderModel
     @AppStorage("watch.consentSeen") private var consentSeen = false
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         NavigationStack {
@@ -32,13 +33,32 @@ struct WatchRootView: View {
         .sheet(isPresented: Binding(get: { !consentSeen }, set: { if !$0 { consentSeen = true } })) {
             ConsentSheet { consentSeen = true }
         }
+        // Recording is the standing state: it begins when the app comes to the front, and after
+        // the first-run sheet, unless the wearer stopped it.
+        .onChange(of: scenePhase, initial: true) {
+            if scenePhase == .active { model.cameToFront(consentSeen: consentSeen) }
+        }
+        .onChange(of: consentSeen) {
+            if scenePhase == .active { model.cameToFront(consentSeen: consentSeen) }
+        }
     }
 
     @ViewBuilder private var statusLine: some View {
         switch model.phase {
         case .idle:
-            Text("Tap to record. It keeps going with the screen off.",
-                 comment: "Hint under the record button on the watch")
+            Text("Not recording. Tap to start.",
+                 comment: "Hint under the record button on the watch when it is stopped; recording starts by itself otherwise")
+                .font(.footnote)
+                .foregroundStyle(WatchTheme.secondary)
+                .multilineTextAlignment(.center)
+        case .recording where model.interrupted:
+            // Say so plainly: nothing is recorded while a call or Siri has the microphone.
+            Text("Waiting for the microphone", comment: "Shown on the watch while a call or Siri holds the microphone")
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(WatchTheme.text)
+                .multilineTextAlignment(.center)
+            Text("Recording comes back by itself. Hold to stop.",
+                 comment: "Hint on the watch while a call or Siri holds the microphone")
                 .font(.footnote)
                 .foregroundStyle(WatchTheme.secondary)
                 .multilineTextAlignment(.center)
@@ -118,7 +138,7 @@ private struct RecordButton: View {
         switch WatchRecordControl.action(for: touch, isRecording: model.isRecording) {
         case .none: break
         case .start: model.start()
-        case .stop: model.stop() // plays the stop haptic
+        case .stop: model.stopByWearer() // plays the stop haptic; stays off until started again
         }
     }
 }
