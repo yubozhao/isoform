@@ -414,10 +414,12 @@ func logStreamPage(served, reason string, stampMs, versionMs, computeMs int64, c
 // change, withdrawal included, drops it before the next read.
 func (a *App) streamPageStamp(ctx context.Context) string {
 	// The saved page carries proactive cards, so it also follows the durable
-	// counter that every write to their sources bumps (people, mail, calendar,
-	// reminders and the permission switches): turning a source off in Isoform
-	// must never let its card paint from the copy before the check runs.
-	sources, err := a.store.VoiceSourceVersion(ctx)
+	// counter of writes that can take a card away (a source row removed, a
+	// person edited, a permission switch, a receipt edited or removed): turning
+	// a source off in Isoform must never let its card paint from the copy
+	// before the check runs. A sync adding mail or calendar rows keeps the
+	// copy; its cards are confirmed by the live gates right after the paint.
+	sources, err := a.store.VoiceSourceRevocationVersion(ctx)
 	if err != nil {
 		return ""
 	}

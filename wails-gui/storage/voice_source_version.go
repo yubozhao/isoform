@@ -47,10 +47,50 @@ func (s *Store) ensureVoiceSourceVersion() error {
 	for _, op := range []string{"UPDATE", "DELETE"} {
 		fmt.Fprintf(&sb, "CREATE TRIGGER IF NOT EXISTS ui_state_voice_receipt_%s AFTER %s ON ui_state WHEN OLD.key LIKE 'proactive_voice_provenance:%%' OR OLD.key LIKE 'engagement_journey_provenance:%%' BEGIN %s END;\n", strings.ToLower(op), op, bump)
 	}
+	// voice_source_revocation counts only the writes that can take a shown
+	// card away: a source row removed, a person edited, a permission switch
+	// changed, a receipt edited or removed. A sync adding or updating mail,
+	// calendar or reminder rows does not count. The saved first chat page
+	// follows this counter: it paints at once and its cards are confirmed by
+	// the live gates right after, so a sync must not throw the copy away
+	// (2026-11-15: every launch recomputed it, 1.1 to 4.1 s).
+	sb.WriteString(`
+		CREATE TABLE IF NOT EXISTS voice_source_revocation (
+			id      INTEGER PRIMARY KEY CHECK (id = 1),
+			version INTEGER NOT NULL DEFAULT 0
+		);
+		INSERT OR IGNORE INTO voice_source_revocation(id, version) VALUES (1, 0);
+	`)
+	revoke := `UPDATE voice_source_revocation SET version = version + 1 WHERE id = 1;`
+	for _, table := range voiceSourceTables {
+		fmt.Fprintf(&sb, "CREATE TRIGGER IF NOT EXISTS %s_voice_revocation_delete AFTER DELETE ON %s BEGIN %s END;\n", table, table, revoke)
+	}
+	fmt.Fprintf(&sb, "CREATE TRIGGER IF NOT EXISTS principals_voice_revocation_update AFTER UPDATE ON principals BEGIN %s END;\n", revoke)
+	for _, op := range []string{"INSERT", "UPDATE", "DELETE"} {
+		row := "NEW"
+		if op == "DELETE" {
+			row = "OLD"
+		}
+		fmt.Fprintf(&sb, "CREATE TRIGGER IF NOT EXISTS ui_state_voice_revocation_%s AFTER %s ON ui_state WHEN %s.key LIKE 'permission_enabled:%%' BEGIN %s END;\n", strings.ToLower(op), op, row, revoke)
+	}
+	for _, op := range []string{"UPDATE", "DELETE"} {
+		fmt.Fprintf(&sb, "CREATE TRIGGER IF NOT EXISTS ui_state_voice_receipt_revocation_%s AFTER %s ON ui_state WHEN OLD.key LIKE 'proactive_voice_provenance:%%' OR OLD.key LIKE 'engagement_journey_provenance:%%' BEGIN %s END;\n", strings.ToLower(op), op, revoke)
+	}
 	if _, err := s.db.Exec(sb.String()); err != nil {
 		return fmt.Errorf("voice source version: %w", err)
 	}
 	return nil
+}
+
+// VoiceSourceRevocationVersion returns the revocation counter: one
+// primary-key lookup.
+func (s *Store) VoiceSourceRevocationVersion(ctx context.Context) (int64, error) {
+	var version int64
+	err := s.streamReader().QueryRowContext(ctx, `SELECT version FROM voice_source_revocation WHERE id = 1`).Scan(&version)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil
+	}
+	return version, err
 }
 
 // VoiceSourceVersion returns the counter: one primary-key lookup.
