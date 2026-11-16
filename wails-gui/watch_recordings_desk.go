@@ -170,6 +170,15 @@ func (a *App) deleteWatchRecording(store *mobileRecordingStore, id, deviceID str
 		return MobileRecordingView{}, err
 	}
 	a.deleteMobileRecordingSession(sessionID)
+	// Parts that arrived after the recording was closed are the same
+	// recording to the person: they go with it.
+	for _, more := range store.continuationIDs(id) {
+		if moreSession, _, err := store.markDeleted(more, deviceID); err != nil {
+			log.Printf("[recordings] the later parts of %s not deleted: %v", id, err)
+		} else {
+			a.deleteMobileRecordingSession(moreSession)
+		}
+	}
 	// The names made from this hour's words go with it, now.
 	if _, err := a.watchConversationsOf(store); err != nil {
 		log.Printf("[recordings] conversation names not pruned after a delete: %v", err)

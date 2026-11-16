@@ -193,6 +193,12 @@ type mobileRecording struct {
 	AudioRemoved bool   `json:"audioRemoved,omitempty"`
 	ReceivedAt   string `json:"receivedAt"`
 	UpdatedAt    string `json:"updatedAt"`
+	// ContinuationOf and FirstPart are set on a row that holds the parts that
+	// arrived after the recording they belong to was closed: the recording's
+	// id as the phone knows it, and the number its part 0 has there
+	// (mobile_recording_late_parts.go).
+	ContinuationOf string `json:"continuationOf,omitempty"`
+	FirstPart      int    `json:"firstPart,omitempty"`
 }
 
 // MobileRecordingView is what the phone reads about a recording.
@@ -306,6 +312,14 @@ func (s *mobileRecordingStore) has(deviceID, recordingID string, part int) (Mobi
 		// A part of a deleted recording is never fetched or stored again.
 		return rec.view(), true, nil
 	}
+	// A part past the end of a closed recording lives in its continuation.
+	rec, part = s.rowForPartLocked(rec, part, false, "")
+	if rec == nil {
+		return MobileRecordingView{}, false, nil
+	}
+	if rec.State == mobileRecordingDeleted {
+		return rec.view(), true, nil
+	}
 	for _, got := range rec.Received {
 		if got.Part == part {
 			return rec.view(), true, nil
@@ -326,6 +340,13 @@ func (s *mobileRecordingStore) addPart(deviceID string, req MobileRecordingReque
 	rec := s.recordings[req.RecordingID]
 	if rec != nil && rec.DeviceID != deviceID {
 		return MobileRecordingView{}, false, errMobileRecordingInvalid
+	}
+	if rec != nil && rec.State != mobileRecordingDeleted {
+		// A part past the end of a recording that was closed without it (the
+		// phone could not send for hours) goes to the recording's
+		// continuation, under its number there.
+		rec, req.Part = s.rowForPartLocked(rec, req.Part, true, now)
+		req.RecordingID = rec.ID
 	}
 	if rec == nil {
 		rec = &mobileRecording{ID: req.RecordingID, DeviceID: deviceID, Source: req.Source, Title: req.Title,
@@ -660,17 +681,27 @@ func receiveMobileRecordingPart(ctx context.Context, store *mobileRecordingStore
 	if err != nil {
 		return MobileRecordingView{}, false, err
 	}
+	// A part refused from here on is refused for good, so its copy on the
+	// relay is of no use: left there, refused copies fill the phone's quota
+	// and nothing else gets through. The phone keeps the audio.
+	refused := func(err error) (MobileRecordingView, bool, error) {
+		log.Printf("[recordings] part %d of %s refused: %v", req.Part, req.RecordingID, err)
+		if errors.Is(err, errMobileRecordingSHA) || errors.Is(err, errMobileAttachmentRejected) || errors.Is(err, errMobileRecordingInvalid) {
+			_ = fetcher.deleteUpload(ctx, req.Upload.ID)
+		}
+		return MobileRecordingView{}, false, err
+	}
 	plaintext, err := openMobileUpload(key, nonce, hubID, deviceID, req.Upload.ID, sealed)
 	if err != nil {
-		return MobileRecordingView{}, false, err
+		return refused(err)
 	}
 	sum := sha256.Sum256(plaintext)
 	if int64(len(plaintext)) != req.Bytes || hex.EncodeToString(sum[:]) != req.SHA256 {
-		return MobileRecordingView{}, false, errMobileRecordingSHA
+		return refused(errMobileRecordingSHA)
 	}
 	view, complete, err := store.addPart(deviceID, req, plaintext)
 	if err != nil {
-		return MobileRecordingView{}, false, err
+		return refused(err)
 	}
 	if err := fetcher.deleteUpload(ctx, req.Upload.ID); err != nil {
 		log.Printf("[recordings] relay copy of %s not removed yet: %v", req.Upload.ID, err)
@@ -720,9 +751,14 @@ func (bridge *mobileBridge) serveRecordingPost(w http.ResponseWriter, r *http.Re
 		mobileJSON(w, http.StatusServiceUnavailable, nil, "the computer could not fetch the recording yet")
 		return
 	}
+	// The row that took the part is the recording itself, or its continuation
+	// for a part that came after the recording was closed. The phone reads the
+	// id it sent.
+	stored := view.ID
+	view.ID = req.RecordingID
 	if bridge.app != nil {
 		// Recorded while observing was paused here: gone before anything reads it.
-		bridge.app.dropPausedMobileRecordingOnReceipt(store, req.RecordingID)
+		bridge.app.dropPausedMobileRecordingOnReceipt(store, stored)
 	}
 	if complete && bridge.app != nil {
 		bridge.app.startMobileRecordingTranscription()
@@ -805,7 +841,9 @@ func (c *mobileRelayClient) downloadUpload(ctx context.Context, uploadID string)
 	case http.StatusNotFound:
 		return nil, errMobileRecordingGone
 	default:
-		return nil, fmt.Errorf("%w (status %d)", errMobileAttachmentRejected, resp.StatusCode)
+		// Not the part's fault: the phone tries again later (503), it does not
+		// count a refusal.
+		return nil, fmt.Errorf("the relay answered %d for the upload", resp.StatusCode)
 	}
 	sealed, err := io.ReadAll(io.LimitReader(resp.Body, mobileAttachmentMaxBytes+1))
 	if err != nil {

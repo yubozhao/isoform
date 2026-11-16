@@ -19,6 +19,8 @@ enum BackgroundTodayRefresh {
                 let operation = Task { @MainActor in
                     let app = AppEnvironment.shared
                     let result = await app.backgroundTodayRefresh()
+                    // Watch recordings still on this phone go with every wake, tapped or not.
+                    await WatchLink.shared.drainInBackground()
                     schedule(app.keepAwake.briefSchedule, paired: app.pairing.isPaired)
                     task.setTaskCompleted(success: result)
                 }

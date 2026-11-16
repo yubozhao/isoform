@@ -1017,10 +1017,22 @@ final class WatchRecordingForwarderTests: XCTestCase {
                        keys: RelayCrypto.SessionKeys(d2h: RelayCrypto.randomBytes(32), h2d: RelayCrypto.randomBytes(32)))
     }
 
+    /// The forwarder's clock in these tests; a test moves it to let a refused part's wait pass.
+    private let clock = TestClock()
+
     private func make(_ hub: StubRecordingHub, _ uploads: StubUploads) -> (WatchRecordingInbox, WatchRecordingForwarder) {
         let inbox = WatchRecordingInbox(directory: directory.appendingPathComponent("inbox"))
         let context = context()
-        return (inbox, WatchRecordingForwarder(inbox: inbox, hub: hub, relay: uploads, session: { context }))
+        let clock = clock
+        return (inbox, WatchRecordingForwarder(inbox: inbox, hub: hub, relay: uploads, now: { clock.now }, session: { context }))
+    }
+
+    /// Passes until the part was refused `times` times, letting each wait pass.
+    private func refuse(_ forwarder: WatchRecordingForwarder, times: Int) async {
+        for _ in 0..<times {
+            _ = await forwarder.drain()
+            clock.advance(WatchRecordingInbox.retryDelay(refusals: .max) + 1)
+        }
     }
 
     private func deliver(_ inbox: WatchRecordingInbox, _ forwarder: WatchRecordingForwarder, id: String, part: Int,
@@ -1418,7 +1430,7 @@ final class WatchRecordingForwarderTests: XCTestCase {
         let (inbox, forwarder) = make(hub, StubUploads())
         let id = WatchRecordingWire.newRecordingID()
         _ = try await deliver(inbox, forwarder, id: id, part: 0, last: true, audio: "one")
-        for _ in 0..<WatchRecordingInbox.maxRefusals { _ = await forwarder.drain() }
+        await refuse(forwarder, times: WatchRecordingInbox.maxRefusals)
         var listed = await forwarder.recordings()
         XCTAssertEqual(listed.first?.state, .failed)
         XCTAssertEqual(listed.first?.partsOnPhone, 1)
@@ -1475,19 +1487,72 @@ final class WatchRecordingForwarderTests: XCTestCase {
         XCTAssertTrue(inbox.pending().isEmpty)
     }
 
-    func testAPartTheComputerCallsInvalidStopsBeingRetriedButKeepsItsAudio() async throws {
+    /// 2026-11-16: parts the computer refused were given up after five tries and waited for a
+    /// tap that never came. A refused part now waits, longer each time, and is sent again by
+    /// itself for as long as it is on the phone.
+    func testARefusedPartKeepsItsAudioAndIsSentAgainByItselfUntilTheComputerTakesIt() async throws {
         let hub = StubRecordingHub()
         let uploads = StubUploads()
         let (inbox, forwarder) = make(hub, uploads)
         let id = WatchRecordingWire.newRecordingID()
         let info = try await deliver(inbox, forwarder, id: id, part: 0, last: true, audio: "audio")
         await hub.set(postError: HubRequestError.rejected(status: 400, message: "the recording is not valid"))
-        for _ in 0..<WatchRecordingInbox.maxRefusals { _ = await forwarder.drain() }
+
+        _ = await forwarder.drain()
         let before = uploads.count
         _ = await forwarder.drain()
-        XCTAssertEqual(uploads.count, before, "a refused part is not uploaded for ever")
+        XCTAssertEqual(uploads.count, before, "a refused part waits its turn; it is not sent in a loop")
+        let due = await forwarder.nextRetry()
+        XCTAssertEqual(due, clock.now.addingTimeInterval(WatchRecordingInbox.retryDelay(refusals: 1)))
+
+        // Well past the old limit of five, it is still tried, and its audio is still here.
+        clock.advance(WatchRecordingInbox.retryDelay(refusals: 1) + 1)
+        await refuse(forwarder, times: WatchRecordingInbox.maxRefusals + 3)
+        XCTAssertGreaterThan(uploads.count, WatchRecordingInbox.maxRefusals + 1)
         XCTAssertTrue(FileManager.default.fileExists(atPath: inbox.audioURL(info).path))
-        let states = await forwarder.currentStates()
+        var states = await forwarder.currentStates()
         XCTAssertEqual(states[id], .failed)
+        XCTAssertLessThanOrEqual(WatchRecordingInbox.retryDelay(refusals: 99), 6 * 60 * 60)
+
+        // The computer was updated: the next pass by itself delivers it. Nobody tapped anything.
+        await hub.set(postError: nil)
+        let outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .drained)
+        XCTAssertTrue(inbox.pending().isEmpty)
+        states = await forwarder.currentStates()
+        XCTAssertEqual(states[id], .onComputer)
+        let nothing = await forwarder.nextRetry()
+        XCTAssertNil(nothing)
     }
+
+    /// The relay keeps no more of this phone's recordings (48 refused copies did that on
+    /// 2026-11-16): the phone says so, keeps the audio, and tries again by itself.
+    func testAFullRelayIsSaidAndTriedAgain() async throws {
+        let hub = StubRecordingHub()
+        let uploads = StubUploads()
+        let (inbox, forwarder) = make(hub, uploads)
+        let id = WatchRecordingWire.newRecordingID()
+        let info = try await deliver(inbox, forwarder, id: id, part: 0, last: true, audio: "audio")
+        uploads.error = RelayClientError.rateLimited(retryAfter: 600)
+        var outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .relayFull)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: inbox.audioURL(info).path))
+        XCTAssertEqual(inbox.pending().first?.refusals, 0, "a full relay is not a refusal of the part")
+        let due = await forwarder.nextRetry()
+        XCTAssertEqual(due, clock.now.addingTimeInterval(WatchRecordingForwarder.waitingRetrySeconds))
+        XCTAssertNotNil(WatchRecordingsCopy.waiting(.relayFull, anyOnPhone: true))
+
+        uploads.error = nil
+        outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .drained)
+        XCTAssertTrue(inbox.pending().isEmpty)
+    }
+}
+
+/// A clock a test moves by hand.
+private final class TestClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = Date(timeIntervalSince1970: 1_800_100_000)
+    var now: Date { lock.withLock { value } }
+    func advance(_ seconds: TimeInterval) { lock.withLock { value = value.addingTimeInterval(seconds) } }
 }

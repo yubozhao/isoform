@@ -211,7 +211,7 @@ enum WatchRecordingsCopy {
         case .onPhone, .sending: return String(localized: "It goes to your computer when this phone can reach it.", comment: "Detail of a recording waiting on the phone")
         case .onComputer: return String(localized: "Your computer is transcribing it.", comment: "Detail of a recording on the computer")
         case .transcribed: return String(localized: "On your computer and in your brief.", comment: "Detail of a transcribed recording")
-        case .failedToSend: return String(localized: "The audio is still on this phone. Try again.", comment: "Detail of a recording the computer refused")
+        case .failedToSend: return String(localized: "The audio is still on this phone. Isoform keeps trying.", comment: "Detail of a recording the computer refused; it is sent again by itself")
         case .failedOnComputer: return String(localized: "Your computer tries again the next time Isoform starts.", comment: "Detail of a recording the computer could not transcribe")
         }
     }
@@ -227,6 +227,9 @@ enum WatchRecordingsCopy {
         case .unsupported:
             return String(localized: "Update Isoform on your computer to receive recordings.",
                           comment: "Shown above the watch recordings list when the computer is too old")
+        case .relayFull:
+            return String(localized: "Too many recordings are waiting for your computer. They stay on this phone and go as it takes them.",
+                          comment: "Shown above the watch recordings list when the relay keeps no more of this phone's recordings")
         }
     }
 
