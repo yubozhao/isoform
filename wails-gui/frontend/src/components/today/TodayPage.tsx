@@ -17,17 +17,20 @@ import { TodayStatus } from "./TodayStatus";
 import { briefSlotKey, TodayBriefSection } from "./TodayBriefSection";
 import { YourTopicsDialog } from "./YourTopicsDialog";
 import { TopicPanel } from "./TopicPanel";
-import { briefClockTime, clockContextKey, clockTime, computerClock, todayHeaderSlot } from "@/lib/brief-time";
+import { briefClockTime, clockContextKey, clockTime, computerClock } from "@/lib/brief-time";
 import { meetingStarter, projectWithProblem } from "@/lib/first-day-starters";
 import { MainChatPanel } from "./MainChatPanel";
 import { TodayLastBriefPanel } from "./TodayLastBriefPanel";
+import { TodayPastBriefsPanel } from "./TodayPastBriefsPanel";
+import { TodayYourWork } from "./TodayYourWork";
+import { useWorkList } from "@/hooks/useWorkList";
 import { TodayReplyDraftPanel, type TodayReplyDraftRequest } from "./TodayReplyDraftPanel";
 import { TodayMeetingNotePanel, type TodayMeetingNoteRequest } from "./TodayMeetingNotePanel";
 import { firstTopic, SIDEBAR_TOPICS_CHANGED, TOPIC_PANEL_PINNED_MIN_WIDTH, topicPanelWidth, type TodayTopic } from "./topics";
 import { TodayTopicsGrid } from "./TodayTopicsGrid";
 import { GetTodayPanelAnswer, PinTopicToSidebar, PrepareTodayBriefParagraph, type TodayPanelAnswer } from "@/lib/wails-shim-app";
 import { useBriefSavedAnswers } from "@/hooks/useBriefSavedAnswers";
-import { PageEventsOn } from "@/lib/page-queries";
+import { GetMobileBriefSchedule, PageEventsOn } from "@/lib/page-queries";
 import type { UseTopicFindsResult } from "@/hooks/useTopicFinds";
 import { useTodayTopics } from "@/hooks/useTodayTopics";
 import { useTodayQuietLines } from "@/hooks/useTodayQuietLines";
@@ -56,6 +59,28 @@ import type { TodayBriefFocus } from "@/lib/main-chat-navigation";
 import { historyFound, historyName, useFirstDay } from "@/hooks/useFirstDay";
 import { GettingToKnowYou, useWatchedToday, YourProjects } from "./TodayFirstDay";
 import { AIMemoryImportDialog } from "@/components/ai-memory-import-dialog";
+
+/** "07:00" from the brief schedule as this computer's clock time. */
+function scheduleClock(value: string | undefined, language: string, tr: (key: string, options?: Record<string, unknown>) => string): string | null {
+    const match = /^(\d{1,2}):(\d{2})$/.exec(value?.trim() ?? "");
+    if (!match) return null;
+    const at = new Date();
+    at.setHours(Number(match[1]), Number(match[2]), 0, 0);
+    return clockTime(at, language, tr);
+}
+
+/** The brief schedule for Today's header, read once while Today is in front;
+ *  a failed read shows no times rather than wrong ones. */
+function useBriefTimes(active: boolean): { morning: string; evening: string } | null {
+    const [schedule, setSchedule] = useState<{ enabled: boolean; morning: string; evening: string } | null>(null);
+    useEffect(() => {
+        if (!active || schedule) return;
+        let live = true;
+        Promise.resolve().then(() => GetMobileBriefSchedule()).then((next) => { if (live && next) setSchedule(next); }).catch(() => {});
+        return () => { live = false; };
+    }, [active, schedule]);
+    return schedule?.enabled ? schedule : null;
+}
 
 function todayLabel(language: string): string {
     return new Date().toLocaleDateString(language, {
@@ -125,8 +150,18 @@ export function TodayPage({
     // day, never on Today as the brief (today-review v1.1.5 #1).
     const [lastBriefPanel, setLastBriefPanel] = useState<string | null>(null);
     const [lastBriefTitle, setLastBriefTitle] = useState("");
+    // Past briefs (SH1) opens beside Today; a row opens its brief there.
+    const [pastBriefsOpen, setPastBriefsOpen] = useState(false);
+    const openPastBriefs = () => {
+        setLastBriefPanel(null);
+        setPastBriefsOpen(true);
+        setPanel({ topicId: null, sheetOpen: !wide });
+    };
+    const briefTimes = useBriefTimes(active);
+    const work = useWorkList(true);
     const openBrief = (briefId?: string, title?: string) => {
         if (!briefId) return;
+        setPastBriefsOpen(false);
         setLastBriefTitle(title ?? "");
         setLastBriefPanel(briefId);
         setPanel({ topicId: null, sheetOpen: !wide });
@@ -751,11 +786,14 @@ export function TodayPage({
                     className={cn("mx-auto w-full px-6 pb-14", knowAside ? "max-w-[1080px]" : "max-w-[760px]")}
                 >
                     <header className="window-drag mb-[18px] flex flex-col items-start gap-1.5 text-left" data-testid="today-header">
-                        <h1 className="display text-ink">
-                            {/* A brief still on its way names the page, not an
-                                older brief shown below it. */}
-                            {tr(`todayBrief.slot.${todayHeaderSlot(latest.view?.pendingSlot, latest.view?.brief, new Date(), latest.view?.pendingAt)}`)}
-                        </h1>
+                        <div className="flex w-full flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                            <h1 className="display text-ink" aria-label={work.list && work.list.toAnswer > 0 ? tr("ctoday.titleCount", { count: work.list.toAnswer }) : undefined}>{tr("ctoday.title")}</h1>
+                            {briefTimes && (() => {
+                                const morning = scheduleClock(briefTimes.morning, i18n.language, tr);
+                                const evening = scheduleClock(briefTimes.evening, i18n.language, tr);
+                                return morning && evening ? <span className="text-[12.5px] text-muted" data-testid="today-brief-times">{tr("ctoday.times", { morning, evening })}</span> : null;
+                            })()}
+                        </div>
                         <TodayStatus
                             date={todayLabel(i18n.language)}
                             brief={status.brief && latest.view ? { ...status.brief, pendingSlot: latest.view.pendingSlot, pendingAt: latest.view.pendingAt, retryAt: latest.view.retryAt, pendingAttempts: latest.view.pendingAttempts, pendingCause: latest.view.pendingCause } : status.brief}
@@ -774,6 +812,9 @@ export function TodayPage({
                         dayShapeDate={dayShapeDate}
                         dayShapeFailure={dayShapeFailed ? { lastUpdatedAt: dayShapeUpdatedAt, retry: retryDayShape } : null}
                         quietFooter={quietLines.length > 0 || pausedText ? <>{quietLines.map((line) => <p key={line.id} data-testid="today-quiet-line">{line.text}</p>)}{pausedText && <TodayPauseLine />}</> : null}
+                        band
+                        onOpenPastBriefs={openPastBriefs}
+                        afterBand={work.list ? <TodayYourWork list={work.list} active={active} onAnswer={work.answer} onUndo={work.undo} /> : null}
                         view={latest.view}
                         loading={latest.loading}
                         loadFailed={latest.loadFailed}
@@ -855,6 +896,8 @@ export function TodayPage({
                         <TodayMeetingNotePanel key={meetingNote.id} request={meetingNote} onClose={() => setMeetingNote(null)} />
                     ) : replyDraft ? (
                         <TodayReplyDraftPanel request={replyDraft} onClose={() => setReplyDraft(null)} />
+                    ) : pastBriefsOpen ? (
+                        <TodayPastBriefsPanel currentBriefId={latest.view?.brief?.briefId} onOpen={openBrief} onClose={() => setPastBriefsOpen(false)} />
                     ) : lastBriefPanel ? (
                         <TodayLastBriefPanel key={lastBriefPanel} briefId={lastBriefPanel} title={lastBriefTitle} onClose={() => setLastBriefPanel(null)} />
                     ) : (
@@ -879,6 +922,7 @@ export function TodayPage({
                         : needTaskId ? <TaskThreadPane id={needTaskId} telemetryAction={doneTaskId ? "T80" : "D01"} onClose={() => { setNeedTaskId(null); setDoneTaskId(null); }} onOpened={doneTaskId ? () => markDoneOpened(doneTaskId) : undefined} />
                         : meetingNote ? <TodayMeetingNotePanel key={meetingNote.id} request={meetingNote} sheet onClose={() => setMeetingNote(null)} />
                         : replyDraft ? <TodayReplyDraftPanel request={replyDraft} sheet onClose={() => { setReplyDraft(null); setMeetingNote(null); }} />
+                        : pastBriefsOpen ? <TodayPastBriefsPanel currentBriefId={latest.view?.brief?.briefId} onOpen={openBrief} onClose={() => setPastBriefsOpen(false)} />
                         : lastBriefPanel ? <TodayLastBriefPanel key={lastBriefPanel} briefId={lastBriefPanel} title={lastBriefTitle} onClose={() => setLastBriefPanel(null)} />
                         : <MainChatPanel {...mainChatPanelProps} variant="sheet" />)}
                     {needOpenRetry && <button type="button" role="alert" className="px-4 py-2 text-xs text-error" onClick={() => measureToday("D01", "open", "opened", () => { setNeedOpenRetry(null); needOpenRetry(); })}>{tr("actions.chatOpenFailed")}</button>}

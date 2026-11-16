@@ -98,7 +98,16 @@ const nav = (name: string) => async () => {
 };
 
 test("Today", async () => {
-    await visit("today", 3000, async () => { await page.goto("/"); }, () => page.locator("main h1").filter({ visible: true }));
+    await visit("today", 3000, async () => { await page.goto("/"); }, () => page.locator("main h1").filter({ visible: true }), async (r) => {
+        // Your work (computer-today SH2) under the brief, once the list is read.
+        const work = page.getByTestId("today-your-work").filter({ visible: true }).first();
+        if (await work.waitFor({ state: "visible", timeout: 5000 }).then(() => true, () => false)) {
+            const open = await page.getByTestId("your-work-open").count();
+            r.checks.push(open > 0 ? "your work: open item shown" : "your work: shown, nothing to answer");
+        } else {
+            r.checks.push("your work: no list read, not checked");
+        }
+    });
 });
 
 // Today's layout in a narrow and a wide window (group H of
