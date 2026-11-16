@@ -46,10 +46,10 @@
         "noneBody": "在终端里登录 Claude Code 或 Codex，然后重新检查。Isoform 会自动识别它们。",
         "noneHintClaude": "claude  — 登录 Claude Code",
         "noneHintCodex": "codex  — 登录 Codex",
-        "ownKey": "你也可以稍后在「设置 > 助手 > 高级」中添加自己的密钥。",
+        "ownKey": "你也可以稍后在「设置 > 你的 Agents > 高级」中添加自己的密钥。",
         "checkAgain": "重新检查",
         "setUpLater": "稍后设置",
-        "laterHint": "在选择助手之前，Isoform 无法思考。你随时可以在「设置 > 助手」中选择。",
+        "laterHint": "在选择助手之前，Isoform 无法思考。你随时可以在「设置 > 你的 Agents」中选择。",
         "userMagpieHeading": "Isoform 在你的 magpie 里有自己的分组",
         "userMagpieBody": "Isoform 找到了你自己的 magpie，并在里面添加了自己的分组。你的其他分组和助手设置保持不变；随时可以在 magpie 里修改 Isoform 的分组。",
         "userMagpieGroup": "分组：{{group}}",
@@ -117,7 +117,7 @@
                 "prompt": "给我今天的早间简报：昨天以来有什么进展、今天有什么需要我处理、以及我的会议。"
             }
         },
-        "noAssistant": "Isoform 还没有可用的助手，暂时没法开始。先选一个助手，或者先跳过，之后在「设置 > 助手」中设置。",
+        "noAssistant": "Isoform 还没有可用的助手，暂时没法开始。先选一个助手，或者先跳过，之后在「设置 > 你的 Agents」中设置。",
         "chooseAssistant": "选择助手",
         "start": "开始",
         "skip": "跳过，直接打开 Isoform"
@@ -142,7 +142,7 @@
         "heading": "权限",
         "intro": "Isoform 需要少量权限来跟上你的工作。可选的权限可以稍后再开启。",
         "localProcessing": "屏幕和音频录制<h>存储在这台电脑上</h>，由这里的模型读取。你的 AI 只会拿到任务需要的内容：文字，或者微信的裁剪截图。",
-        "webCalendarsNote": "如果你在浏览器中使用 Google 日历或 Outlook，Isoform 也可以在电脑空闲时读取它们。你随时可以在「设置 > 观察」中关闭。",
+        "webCalendarsNote": "如果你在浏览器中使用 Google 日历或 Outlook，Isoform 也可以在电脑空闲时读取它们。你随时可以在「设置 > Isoform 看到的」中关闭。",
         "checking": "正在检查 Isoform 在这台电脑上需要的权限……",
         "couldNotDetermine": "Isoform 暂时无法检查权限。你可以先继续，之后在「设置 > 隐私」中开启。",
         "noneRequired": "在 {{platform}} 上无需额外权限，一切就绪。",
@@ -197,11 +197,11 @@
             },
             "clipboard": {
                 "label": "剪贴板",
-                "description": "默认开启，无需授权。Isoform 会记录你复制的内容类型和所在位置；在 macOS 允许读取时，还会保留一段去除了个人信息、验证码和密码的简短预览。来自密码管理器或被标记为密码的内容不会被记录。你可以在 设置 > 观察 中关闭。"
+                "description": "默认开启，无需授权。Isoform 会记录你复制的内容类型和所在位置；在 macOS 允许读取时，还会保留一段去除了个人信息、验证码和密码的简短预览。来自密码管理器或被标记为密码的内容不会被记录。你可以在 设置 > Isoform 看到的 中关闭。"
             },
             "files": {
                 "label": "最近文件",
-                "description": "目前默认关闭，无需授权。Isoform 可以通过聚焦搜索记录你在“文稿”“桌面”“下载”和 iCloud 云盘中打开和编辑的文稿名称，从不读取文件内容。你可以在 设置 > 观察 中开启，并将文件夹设为私密。"
+                "description": "目前默认关闭，无需授权。Isoform 可以通过聚焦搜索记录你在“文稿”“桌面”“下载”和 iCloud 云盘中打开和编辑的文稿名称，从不读取文件内容。你可以在 设置 > Isoform 看到的 中开启，并将文件夹设为私密。"
             },
             "automation_mail": {
                 "label": "邮件",
@@ -249,7 +249,7 @@
     },
     "notifications": {
         "heading": "希望 Isoform 多主动提醒你？",
-        "subheading": "当有事需要你、工作完成或简报送达时，Isoform 会通过这台电脑、已配对的手机或短信联系你。选择你想听到的频率，之后可以随时在「设置 > 通知」中更改。",
+        "subheading": "当有事需要你、工作完成或简报送达时，Isoform 会通过这台电脑、已配对的手机或短信联系你。选择你想听到的频率，之后可以随时在「设置 > 简报和通知」中更改。",
         "options": {
             "off": {
                 "label": "关闭",
@@ -269,7 +269,7 @@
             }
         },
         "quietHint": "每个档位都有安静时段，夜间不打扰。需要你处理且有截止时间的事，在该类提醒开启时仍会送达。",
-        "saveFailed": "暂时无法保存。你可以稍后在「设置 > 通知」中设置。"
+        "saveFailed": "暂时无法保存。你可以稍后在「设置 > 简报和通知」中设置。"
     },
     "setupWelcome": {
         "description": "Isoform 在这台电脑上了解你的工作，学习你的工作方式，并每天早晨为你简报。它通过这里已登录的助手思考，使用你自己的订阅。",

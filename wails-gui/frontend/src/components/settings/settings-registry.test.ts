@@ -5,6 +5,7 @@ import zhSettings from "@/i18n/locales/zh-CN/settings.json";
 import { DEV_TOOLS_TOPIC_IDS } from "@/components/dev-tools-navigation";
 import {
     CHAT_APP_IDS,
+    DEFAULT_SETTINGS_PAGE,
     LEGACY_SETTINGS_TOPIC_IDS,
     SETTINGS_PAGES,
     SETTINGS_PAGE_IDS,
@@ -113,9 +114,9 @@ describe("settings registry", () => {
             expect(resolveSettingsTopic(id)).toEqual({ page });
         }
         // The Using apps page went with the bundled computer-use driver; its
-        // old links open Overview.
+        // old links open What Isoform sees, where Settings opens.
         for (const id of ["app-access", "cursor-overlay", "google", "slackbot", "notion", "github", "linear", "feishu-agent"]) {
-            expect(resolveSettingsTopic(id)).toEqual({ page: "overview" });
+            expect(resolveSettingsTopic(id)).toEqual({ page: "activity" });
         }
         // Keyboard shortcuts and Read aloud now sit under General > Advanced.
         expect(resolveSettingsTopic("keybindings")).toEqual({ page: "general", revealAdvanced: true });
@@ -176,9 +177,9 @@ describe("settings registry", () => {
         }
     });
 
-    it("falls back to Overview for unknown or missing ids", () => {
+    it("falls back to What Isoform sees for unknown or missing ids", () => {
         for (const id of ["editor", "teams", "ringcentral", "wsl", "ssh", "onboarding", "debug", "nope", "", null, undefined]) {
-            expect(resolveSettingsTopic(id)).toEqual({ page: "overview" });
+            expect(resolveSettingsTopic(id)).toEqual({ page: "activity" });
         }
     });
 
@@ -201,17 +202,20 @@ describe("settings registry", () => {
 
     it("lays out the sidebar in the agreed order", () => {
         expect(SETTINGS_SECTIONS.map((section) => [section.id, pagesInSection(section.id).map((p) => p.id)])).toEqual([
-            ["basics", ["overview", "general", "profile", "appearance", "notifications", "your-agent"]],
-            ["personal-ai", ["ai-provider", "activity", "memory", "security", "storage"]],
-            ["devices", ["iphone"]],
+            // computer-settings v1.0.0 rule 1: What Isoform sees, Closed Eyes, Your data,
+            // Your agents, Your phone, Briefs and notifications.
+            ["basics", ["activity", "closed-eyes", "your-data", "ai-provider", "your-agent", "iphone", "notifications"]],
+            ["personal-ai", ["memory", "security", "storage"]],
+            ["app", ["overview", "general", "profile", "appearance"]],
             ["extensions", ["plugins", "skills", "mcp", "chat-apps", "use-yansu-anywhere"]],
             ["help", ["about"]],
         ]);
         const extensions = SETTINGS_SECTIONS.find((section) => section.id === "extensions");
         expect(extensions?.collapsible).toBe(true);
         expect(SETTINGS_SECTIONS.find((section) => section.id === "help")?.dividerBefore).toBe(true);
-        // Overview is the first page of all (RC 1).
-        expect(SETTINGS_PAGES[0].id).toBe("overview");
+        // Settings opens on What Isoform sees, its first page.
+        expect(SETTINGS_PAGES[0].id).toBe("activity");
+        expect(DEFAULT_SETTINGS_PAGE).toBe("activity");
     });
 
     it.each(LOCALES)("gives Overview a page title of its own beside its sidebar label in %s", (_name, locale) => {
@@ -221,7 +225,7 @@ describe("settings registry", () => {
         expect(typeof title).toBe("string");
         expect(title).not.toBe(lookup(locale, overview.labelKey));
         // Overview and Agent of You read differently from their sidebar rows (v2.0.0 copies Overview's pattern).
-        expect(SETTINGS_PAGES.filter((entry) => entry.titleKey).map((entry) => entry.id)).toEqual(["overview", "your-agent"]);
+        expect(SETTINGS_PAGES.filter((entry) => entry.titleKey).map((entry) => entry.id)).toEqual(["your-agent", "overview"]);
     });
 
     it.each(LOCALES)("has a label, one-sentence subtitle and keywords for every page in %s", (_name, locale) => {

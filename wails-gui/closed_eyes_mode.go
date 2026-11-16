@@ -61,6 +61,20 @@ func (a *App) IsClosedEyesModeEnabled() bool {
 	return a.observationPauseSnapshot().Enabled
 }
 
+// GetClosedEyesResumeAt reports when a timed Closed Eyes ends (RFC 3339, UTC),
+// or "" when eyes are open or closed until the person opens them. Settings ›
+// Closed Eyes reads it for "Closed Eyes until {time}".
+func (a *App) GetClosedEyesResumeAt() string {
+	if a == nil {
+		return ""
+	}
+	snapshot := a.observationPauseSnapshot()
+	if !snapshot.Enabled || snapshot.ResumeAt.IsZero() {
+		return ""
+	}
+	return snapshot.ResumeAt.UTC().Format(time.RFC3339)
+}
+
 // Unknown persisted policy is a read hold, separate from a manual pause.
 // Keep status and delivery reads atomic even while restoration owns mu.
 func (a *App) observationPauseSnapshot() observationPauseSnapshot {

@@ -90,7 +90,9 @@ final class NotificationSettingsStore: ObservableObject {
             if revision == mutationRevision {
                 confirmed = loaded
                 publish()
-                try persist()
+                // The computer answered: a copy this phone can't save is not a computer it can't reach, so the page
+                // keeps its choices (P132) and a later change says what failed.
+                try? persist()
             }
             loadState = .loaded
         } catch {
@@ -106,7 +108,7 @@ final class NotificationSettingsStore: ObservableObject {
                              sent: 0, opened: 0, acted: 0, dismissed: 0, muted: 0)
         }
         settings = NotificationSettings(available: true,
-                                        kinds: [kind("work_blocked"), kind("brief_ready"), kind("work_finished")],
+                                        kinds: [kind("work_blocked"), kind("brief_ready"), kind("meeting_prep"), kind("work_finished")],
                                         quietStart: "22:00", quietEnd: "08:00", dailyInterruptBudget: 6,
                                         digestTimes: [], statsDays: 30)
         loadState = .loaded

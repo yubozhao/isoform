@@ -47,6 +47,7 @@ function makeNoop(name: string): (...args: unknown[]) => Promise<unknown> {
     };
 }
 
+export const ExportAnswers = makeNoop("ExportAnswers");
 export const ParseBrainDump = makeNoop("ParseBrainDump");
 export const GetAssistantSignOut = makeNoop("GetAssistantSignOut");
 export const AddBrainDump = makeNoop("AddBrainDump");
@@ -290,6 +291,7 @@ export const GetBackgroundAudioStatus = makeNoop("GetBackgroundAudioStatus");
 export const GetBackgroundListening = makeNoop("GetBackgroundListening");
 export const GetBrowserBridgeEnabled = makeNoop("GetBrowserBridgeEnabled");
 export const GetBunPath = makeNoop("GetBunPath");
+export const GetClosedEyesResumeAt = makeNoop("GetClosedEyesResumeAt");
 export const GetComposerSuggestions = makeNoop("GetComposerSuggestions");
 export const GetCronJob = makeNoop("GetCronJob");
 export const GetCronRuns = makeNoop("GetCronRuns");
@@ -658,6 +660,7 @@ export const GetLarkAccountStatus = makeNoop("GetLarkAccountStatus");
 export const GetLarkCliStatus = makeNoop("GetLarkCliStatus");
 export const GetLatestBrief = makeNoop("GetLatestBrief");
 export const GetTodayBriefByID = makeNoop("GetTodayBriefByID");
+export const GetYourDataSummary = makeNoop("GetYourDataSummary");
 export const ListPastBriefs = makeNoop("ListPastBriefs");
 export const FindAnything = makeNoop("FindAnything");
 export const NoteFindSearch = makeNoop("NoteFindSearch");

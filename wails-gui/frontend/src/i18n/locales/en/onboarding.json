@@ -46,10 +46,10 @@
         "noneBody": "Sign in to Claude Code or Codex in a terminal, then check again. Isoform picks them up by itself.",
         "noneHintClaude": "claude  — sign in to Claude Code",
         "noneHintCodex": "codex  — sign in to Codex",
-        "ownKey": "You can also add your own key later under Settings > Assistant > Advanced.",
+        "ownKey": "You can also add your own key later under Settings > Your agents > Advanced.",
         "checkAgain": "Check again",
         "setUpLater": "Set up later",
-        "laterHint": "Isoform cannot think until an assistant is chosen. You can choose one any time in Settings > Assistant.",
+        "laterHint": "Isoform cannot think until an assistant is chosen. You can choose one any time in Settings > Your agents.",
         "userMagpieHeading": "Isoform has its own group in your magpie",
         "userMagpieBody": "Isoform found your own magpie and added its own group there. Your other groups and assistant settings stay as they are; you can edit Isoform's group in magpie any time.",
         "userMagpieGroup": "Group: {{group}}",
@@ -117,7 +117,7 @@
                 "prompt": "Give me my morning brief: what moved since yesterday, what needs me today, and my meetings."
             }
         },
-        "noAssistant": "Isoform has no assistant yet, so it cannot start on this. Choose one first, or skip for now and set one up later in Settings > Assistant.",
+        "noAssistant": "Isoform has no assistant yet, so it cannot start on this. Choose one first, or skip for now and set one up later in Settings > Your agents.",
         "chooseAssistant": "Choose an assistant",
         "start": "Start",
         "skip": "Skip and open Isoform"
@@ -142,7 +142,7 @@
         "heading": "Permissions",
         "intro": "Isoform needs a few permissions to follow your work. You can turn on the optional ones any time later.",
         "localProcessing": "Screen and audio recordings are <h>stored on this computer</h>, and models here read them. Your AI gets only what a task needs: the text, or for WeChat, a cropped screenshot.",
-        "webCalendarsNote": "If you use Google Calendar or Outlook in your browser, Isoform can also read them while your computer is idle. You can turn that off any time in Settings > Observation.",
+        "webCalendarsNote": "If you use Google Calendar or Outlook in your browser, Isoform can also read them while your computer is idle. You can turn that off any time in Settings > What Isoform sees.",
         "checking": "Checking what Isoform needs on this computer…",
         "couldNotDetermine": "Isoform could not check its permissions right now. You can continue and turn them on later in Settings > Privacy.",
         "noneRequired": "No additional permissions required on {{platform}}. You're all set.",
@@ -197,11 +197,11 @@
             },
             "clipboard": {
                 "label": "Clipboard",
-                "description": "On by default and needs no permission. Isoform notes what kind of thing you copy and where and, where macOS allows it, a short preview with personal details, codes and passwords removed. Nothing is noted from password managers or copies marked as passwords. You can turn it off in Settings > Observation."
+                "description": "On by default and needs no permission. Isoform notes what kind of thing you copy and where and, where macOS allows it, a short preview with personal details, codes and passwords removed. Nothing is noted from password managers or copies marked as passwords. You can turn it off in Settings > What Isoform sees."
             },
             "files": {
                 "label": "Recent files",
-                "description": "Off for now and needs no permission. Isoform can note the names of the documents you open and edit in Documents, Desktop, Downloads and iCloud Drive, from Spotlight, never what is in them. You can turn it on and keep folders private in Settings > Observation."
+                "description": "Off for now and needs no permission. Isoform can note the names of the documents you open and edit in Documents, Desktop, Downloads and iCloud Drive, from Spotlight, never what is in them. You can turn it on and keep folders private in Settings > What Isoform sees."
             },
             "automation_mail": {
                 "label": "Mail",
@@ -249,7 +249,7 @@
     },
     "notifications": {
         "heading": "How much should Isoform speak up?",
-        "subheading": "Isoform reaches you on this computer, on a paired phone, or by text when something needs you, finishes, or arrives. Pick how much you want to hear. You can change it any time in Settings > Notifications.",
+        "subheading": "Isoform reaches you on this computer, on a paired phone, or by text when something needs you, finishes, or arrives. Pick how much you want to hear. You can change it any time in Settings > Briefs and notifications.",
         "options": {
             "off": {
                 "label": "Off",
@@ -269,7 +269,7 @@
             }
         },
         "quietHint": "Quiet hours keep the night free at every level. Work that needs you and has a deadline still gets through when that kind is on.",
-        "saveFailed": "Could not save this yet. You can set it later in Settings > Notifications."
+        "saveFailed": "Could not save this yet. You can set it later in Settings > Briefs and notifications."
     },
     "setupWelcome": {
         "description": "Isoform sees and hears your work on this computer, learns how you work, and briefs you each morning. It thinks through the assistants already signed in here, on your own subscriptions.",

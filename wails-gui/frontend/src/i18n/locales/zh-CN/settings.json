@@ -77,7 +77,7 @@
         "stopConfirmBody": "Isoform 会再次显示关于各服务商条款的说明。如果要让 Isoform 不再使用这些订阅，请打开「使用你自己的 API 密钥或模型」，或退出 Claude Code 或 Codex 的登录。",
         "stopConfirm": "撤回",
         "signedInTitle": "已登录的订阅",
-        "thinksWithTitle": "由谁来思考",
+        "thinksWithTitle": "你的 Agents",
         "thinksWithDescription": "Isoform 按这个顺序询问助手。一个助手的用量用完时，Isoform 会换到下一个。",
         "searchClaudeCode": "「今天」页面的网页搜索使用这台电脑上已登录的 Claude Code 的网页搜索。",
         "searchOpencli": "「今天」页面的网页搜索通过上面的助手进行，使用你在 Chrome 中登录的 Grok、Gemini 或豆包。在这台电脑上登录 Claude Code 后，会改用它来搜索。",
@@ -809,18 +809,18 @@
             "keywords": "登录时启动, 登录时打开, 开机启动, 启动, 外观, 主题, 深色模式, 浅色模式, 跟随系统, 颜色, 语言, 系统默认, 英文, 中文, 快速对话, 朗读, 语音, 声音, 键盘快捷键, 快捷键, vim, 发送消息, 工具步骤, 工具调用"
         },
         "notifications": {
-            "label": "通知",
+            "label": "简报和通知",
             "subtitle": "选择 Isoform 提醒你哪些事情，以及什么时候保持安静。",
             "keywords": "提醒, 通知, 免打扰时段, 安静时段, 免打扰, 打扰次数, 每日上限, 摘要, 卡住的工作, 工作卡住, 工作完成, 简报就绪, 已暂停, 观察已暂停, 电脑通知, 权限, 手机, 短信, 提醒发到哪里, 过去 30 天, 本周, 主动提醒, 太频繁, 被忽略, 改为在「今天」显示, 安静提示, 询问"
         },
         "ai-provider": {
-            "label": "助手",
-            "subtitle": "选择由哪个 AI 为 Isoform 思考，并查看你还剩多少用量。",
+            "label": "你的 Agents",
+            "subtitle": "替你做事的 Agents：Claude、ChatGPT、Codex，以及你连接的其他 Agents。",
             "keywords": "AI 模型, 模型, 由谁来思考, Claude, Claude Code, Codex, ChatGPT, OpenAI, Anthropic, API 密钥, 自己的 API 密钥, 服务商, 本地模型, Ollama, 用量, 剩余用量, 额度, 限额, 套餐, 订阅, 已登录的订阅, magpie, 网关, 路由, 分组, 任务分工, 后台工作, 快速任务, 沙箱, curl, CLI 命令, 状态详情, 这台电脑上的工具, 安装 Claude Code, 安装 Codex, 登录"
         },
         "activity": {
-            "label": "观察",
-            "subtitle": "选择 Isoform 在这台电脑上能看到和听到什么，或让它暂停一会儿。",
+            "label": "Isoform 看到的",
+            "subtitle": "所有来源都在这一页，关闭即不保留它的任何内容。",
             "keywords": "暂停, 暂停观察, 屏幕, 查看我的屏幕, 屏幕录制, 采集, 活动, 聆听, 后台监听, 麦克风, 系统音频, 电脑音频, 会议, 记录会议, 会议录制, 采集状态, 快捷键, 日历, 提醒事项, 剪贴板, 复制"
         },
         "memory": {
@@ -839,7 +839,7 @@
             "keywords": "存储, 存储空间, 磁盘空间, 已用空间, 存储上限, 截图, 通话录音, 音频, 数据库, 释放空间, 清理, 压缩, 缩小, 删除旧截图, 保留截图, 模型, 模型下载, 语音识别, 语音模型, 下载来源"
         },
         "iphone": {
-            "label": "手机",
+            "label": "你的手机",
             "subtitle": "配对手机，离开时也能与这台电脑保持联系。",
             "keywords": "手机, 移动端, 配对, 配对手机, 二维码, 连接, 断开连接, 你的手机, 每日简报, 早间简报, 晚间简报, 服务器地址, 中继, 每部手机可以做什么, 访问权限, 文字摘要"
         },
@@ -885,9 +885,19 @@
         },
         "your-agent": {
             "label": "出租智能体",
-            "subtitle": "很快，任何人都能雇用一个按你的方式做事的智能体。",
+            "subtitle": "你自己，作为客户可以在 isoform.ai/agents 雇用的 Agent。",
             "keywords": "出租智能体, 智能体, 申请, 主页, 名称, 擅长, 方法, 你的工作方式, 即将推出",
             "title": "出租像你一样工作的智能体"
+        },
+        "closed-eyes": {
+            "label": "Closed Eyes",
+            "subtitle": "在所有设备上停止观察：你的电脑、手机和手表。",
+            "keywords": "暂停, 隐私, 停止观察, 私密"
+        },
+        "your-data": {
+            "label": "你的数据",
+            "subtitle": "Isoform 保留的一切都在这台电脑上。",
+            "keywords": "保留, 删除, 隐私, 导出, 声音"
         }
     },
     "overview": {
@@ -898,8 +908,8 @@
         "sentences": "{{first}}<second/>",
         "labels": {
             "sees": "观察",
-            "speaksUp": "提醒",
-            "thinksWith": "思考",
+            "speaksUp": "通知",
+            "thinksWith": "你的 Agents",
             "remembers": "记忆",
             "keeps": "保留",
             "briefs": "简报",
@@ -2378,7 +2388,7 @@
         "suspension": {
             "desktop_locked": "桌面锁定期间音频采集会暂停。只有在 macOS 解锁后才会恢复。",
             "privacy_pause": "观察暂停时，音频采集也会暂停。",
-            "disabled": "「聆听」已在「设置 > 观察」中关闭。",
+            "disabled": "「聆听」已在「设置 > Isoform 看到的」中关闭。",
             "not_running": "音频采集未运行。请查看下方的录制器事件。"
         },
         "eventLogTitle": "最近变化",
@@ -3457,8 +3467,8 @@
         "errors": {
             "phoneNumber": "短信设置即将推出。已验证号码的短信收发不受影响。",
             "textConsent": "短信设置即将推出。已验证号码的短信收发不受影响。",
-            "relay": "请先在“设置 > 手机”中添加中继地址，再开启手机连接。",
-            "observation": "请先在“设置 > 观察”中恢复观察并开启屏幕观察，再开启活动监测。",
+            "relay": "请先在“设置 > 你的手机”中添加中继地址，再开启手机连接。",
+            "observation": "请先在“设置 > Isoform 看到的”中恢复观察并开启屏幕观察，再开启活动监测。",
             "unreadable": "此功能或其依赖功能的设置无法读取。请检查状态不可用的功能及其设置页面，然后重试。"
         },
         "version": "版本 {{version}}",
@@ -3958,6 +3968,63 @@
             "item": "签发者：{{issuer}} {{date}}",
             "unknownIssuer": "未知签发者"
         }
+    },
+    "closedEyes": {
+        "title": "Closed Eyes",
+        "description": "在所有设备上停止观察：你的电脑、手机和手表。回答、提问和阅读仍然可用。",
+        "howLong": "持续多久？",
+        "forMinutes_one": "{{count}} 分钟",
+        "forMinutes_other": "{{count}} 分钟",
+        "untilIEnd": "直到我结束",
+        "until": "Closed Eyes 到 {{time}}",
+        "untilEnded": "Closed Eyes，直到你睁眼",
+        "shortcutTitle": "键盘快捷键",
+        "shortcutDescription": "在这台电脑上的任何应用中让 Isoform 闭眼或睁眼。",
+        "loadFailed": "无法读取此设置。",
+        "toggleFailed": "无法更改。"
+    },
+    "yourData": {
+        "screen": "屏幕",
+        "screenSub_one": "你用的应用 · {{count}} 个应用从不查看",
+        "screenSub_other": "你用的应用 · {{count}} 个应用从不查看",
+        "screenSubPlain": "你用的应用",
+        "calls": "通话和会议",
+        "callsSub": "这台电脑上录下的通话，你和对方",
+        "watch": "你的手表",
+        "watchSub": "全天，可按小时暂停",
+        "mail": "邮件和日历",
+        "keptDays_one": "保留 {{count}} 天",
+        "keptDays_other": "保留 {{count}} 天",
+        "keptUntilDeleted": "保留到你删除为止",
+        "change": "更改",
+        "leaves": "离开这台电脑的内容",
+        "agents": "你的 Agents",
+        "agentsSub_one": "只有每个任务的“它得到什么”所列内容 · 本周 {{count}} 个任务",
+        "agentsSub_other": "只有每个任务的“它得到什么”所列内容 · 本周 {{count}} 个任务",
+        "agentsSubPlain": "只有每个任务的“它得到什么”所列内容",
+        "devices": "你的手机和手表",
+        "devicesSub": "今天的事项、简报和结果，经中继加密传送，中继无法读取",
+        "devicesNone": "没有配对手机，所以不会发到手机",
+        "loadFailed": "无法读取 Isoform 保留的内容。",
+        "answers": "你的回答",
+        "answersSince_one": "自 {{date}} 起 {{count}} 个回答",
+        "answersSince_other": "自 {{date}} 起 {{count}} 个回答",
+        "answersNone": "还没有回答",
+        "answersKept": "每个“是”、“否”、“不是我的”和修改，保留到你删除为止",
+        "mailSub": "在原处读取，不复制",
+        "keeps": "它保留什么",
+        "messages": "信息",
+        "messagesSub": "记下谁问了什么、你答应了什么，不保留信息本身 · 最多两周",
+        "agentsHistory": "你的 Agents 的记录",
+        "agentsHistorySub": "每个 Agent 默认关闭，直到你打开",
+        "noSize": "—",
+        "total": "已用 {{used}}，上限 {{cap}}。满了时，最旧的先删除。",
+        "yours": "你的",
+        "notifications": "通知",
+        "notificationsSub": "同样加密。Apple 的推送服务只能看到一句固定的话，例如“会议马上开始。”",
+        "export": "导出",
+        "exportLabel": "导出你的回答",
+        "exportFailed": "无法导出你的回答。"
     },
     "aoy": {
         "aoy": "Agent of You",

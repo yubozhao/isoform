@@ -449,7 +449,7 @@
         "none": "Nothing new on your topics today.",
         "watching": "Isoform is watching: {{topics}}",
         "noTopics": "Your topics show up after about an hour of work on this computer. Nothing to set up.",
-        "unconfigured": "Choose an assistant in Settings > Assistant to find new things on your topics.",
+        "unconfigured": "Choose an assistant in Settings > Your agents to find new things on your topics.",
         "error": "Could not look for new things on your topics.",
         "retry": "Try again",
         "off": "New on your topics is off.",

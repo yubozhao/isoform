@@ -1,6 +1,8 @@
 import type { ComponentType } from "react";
 import {
-    Activity,
+    Database,
+    Eye,
+    EyeOff,
     Palette,
     Bell,
     Blocks,
@@ -39,7 +41,7 @@ import {
 export const SETTINGS_SECTION_IDS = [
     "basics",
     "personal-ai",
-    "devices",
+    "app",
     "extensions",
     "help",
 ] as const;
@@ -47,18 +49,20 @@ export const SETTINGS_SECTION_IDS = [
 export type SettingsSectionId = (typeof SETTINGS_SECTION_IDS)[number];
 
 export const SETTINGS_PAGE_IDS = [
+    "activity",
+    "closed-eyes",
+    "your-data",
+    "ai-provider",
+    "your-agent",
+    "iphone",
+    "notifications",
+    "memory",
+    "security",
+    "storage",
     "overview",
     "general",
     "profile",
     "appearance",
-    "notifications",
-    "your-agent",
-    "ai-provider",
-    "activity",
-    "memory",
-    "security",
-    "storage",
-    "iphone",
     "plugins",
     "skills",
     "mcp",
@@ -156,6 +160,11 @@ export interface SettingsPageEntry {
     comingSoon?: boolean;
 }
 
+// The first section is computer-settings v1.0.0 rule 1's order: What Isoform
+// sees (page id "activity"), Closed Eyes, Your data, Your agents ("ai-provider"),
+// Agent of You ("your-agent", computer-settings v1.1.0 rule 1), Your
+// phone ("iphone") and Briefs and notifications ("notifications"). The pages
+// that rule doesn't name keep their place under it.
 export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     { id: "basics" },
     {
@@ -163,7 +172,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         headingKey: "nav.sections.personalAi.heading",
         explanationKey: "nav.sections.personalAi.explanation",
     },
-    { id: "devices" },
+    { id: "app", dividerBefore: true },
     {
         id: "extensions",
         headingKey: "nav.sections.extensions.heading",
@@ -191,23 +200,25 @@ function page(
 }
 
 export const SETTINGS_PAGES: readonly SettingsPageEntry[] = [
-    { ...page("overview", "basics", Info, ["text-messages", "phone-calls"]), titleKey: "pages.overview.title" },
-    page("general", "basics", Settings, [
+    page("activity", "basics", Eye),
+    page("closed-eyes", "basics", EyeOff),
+    page("your-data", "basics", Database),
+    page("ai-provider", "basics", Cpu, ["subscription"]),
+    { ...page("your-agent", "basics", Sparkles), titleKey: "pages.your-agent.title", comingSoon: true },
+    page("iphone", "basics", Smartphone),
+    page("notifications", "basics", Bell),
+    page("memory", "personal-ai", Brain),
+    page("security", "personal-ai", ShieldCheck),
+    page("storage", "personal-ai", HardDrive),
+    { ...page("overview", "app", Info, ["text-messages", "phone-calls"]), titleKey: "pages.overview.title" },
+    page("general", "app", Settings, [
         "language",
         "read-aloud",
         "keybindings",
         "account",
     ]),
-    page("profile", "basics", User),
-    page("appearance", "basics", Palette),
-    page("notifications", "basics", Bell),
-    { ...page("your-agent", "basics", Sparkles), titleKey: "pages.your-agent.title", comingSoon: true },
-    page("ai-provider", "personal-ai", Cpu, ["subscription"]),
-    page("activity", "personal-ai", Activity),
-    page("memory", "personal-ai", Brain),
-    page("security", "personal-ai", ShieldCheck),
-    page("storage", "personal-ai", HardDrive),
-    page("iphone", "devices", Smartphone),
+    page("profile", "app", User),
+    page("appearance", "app", Palette),
     page("plugins", "extensions", Puzzle),
     page("skills", "extensions", Package),
     page("mcp", "extensions", Server),
@@ -216,7 +227,8 @@ export const SETTINGS_PAGES: readonly SettingsPageEntry[] = [
     page("about", "help", LifeBuoy, ["support"]),
 ];
 
-export const DEFAULT_SETTINGS_PAGE: SettingsPageId = "overview";
+/** Settings opens on What Isoform sees (computer-settings v1.0.0 rule 1). */
+export const DEFAULT_SETTINGS_PAGE: SettingsPageId = "activity";
 
 export function isSettingsPageId(id: string): id is SettingsPageId {
     return (SETTINGS_PAGE_IDS as readonly string[]).includes(id);
@@ -275,7 +287,7 @@ function resolvePage(id: string | null | undefined): ResolvedSettingsTopic {
  * Registered pages and Developer tools pages map to themselves, legacy ids map
  * to the page that absorbed them (a chat app keeps its id as the drill-in,
  * and Keyboard shortcuts and Read aloud open General with Advanced
- * expanded), and anything unknown falls back to Overview. `options` can ask
+ * expanded), and anything unknown falls back to What Isoform sees. `options` can ask
  * for Advanced expanded and an anchor to scroll to.
  */
 export function resolveSettingsTopic(
@@ -302,7 +314,7 @@ function readOpenOptions(raw: unknown): SettingsOpenOptions {
  * optionally, the options after it:
  * `EventsEmit("settings:open", "ai-provider", { advanced: true })`. One object
  * `{ topic, advanced, anchor }` works too. Anything else is ignored, and a
- * missing topic opens Overview.
+ * missing topic opens What Isoform sees.
  */
 export function readSettingsOpenEvent(
     payload: unknown,

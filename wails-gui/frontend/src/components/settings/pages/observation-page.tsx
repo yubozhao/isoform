@@ -57,7 +57,6 @@ import { EventsOn } from "../../../../wailsjs/runtime/runtime";
 import { GetAutomaticMeetingRecordingEnabled } from "@/lib/page-queries";
 import type { main } from "../../../../wailsjs/go/models";
 import { usePermissions } from "@/hooks/usePermissions";
-import { PAUSE_OBSERVING_COMBO, comboToDisplayString, type KeyCombo } from "@/hooks/useKeybindings";
 import { isWailsEnvironment } from "@/lib/browser-bridge";
 import type { PermissionItem, PlatformPermissions } from "@/types";
 import { SettingsCard, SettingsRow } from "@/components/settings/settings-primitives";
@@ -184,43 +183,7 @@ function useObservationPause(): ObservationPauseState {
     return { paused, loadFailed, saving, setPaused, changeFailure, reload };
 }
 
-function KeyChord({ combo }: { combo: KeyCombo }) {
-    return (
-        <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-mono bg-ink/5 text-muted">
-            {comboToDisplayString(combo)}
-        </span>
-    );
-}
 
-function PauseObservingCard({ pause }: { pause: ObservationPauseState }) {
-    const { t } = useTranslation("settings");
-    const title = t("observation.pause.title");
-    return (
-        <SettingsControlCard
-            title={title}
-            description={t("observation.pause.description")}
-            control={
-                <Switch
-                    aria-label={title}
-                    checked={pause.paused === true}
-                    disabled={pause.paused === null || pause.saving}
-                    onCheckedChange={(next) => void pause.setPaused(next)}
-                />
-            }
-        >
-            {pause.loadFailed && <SettingsFailureLine failure={{ text: t("observation.pause.loadFailed"), retry: pause.reload }} />}
-            <SettingsFailureLine failure={pause.changeFailure} />
-            {pause.paused === true && <SettingsReason>{t("observation.pause.paused")}</SettingsReason>}
-            {PAUSE_OBSERVING_COMBO && (
-                <SettingsRow
-                    title={t("observation.pause.shortcutTitle")}
-                    description={t("observation.pause.shortcutDescription")}
-                    control={<KeyChord combo={PAUSE_OBSERVING_COMBO} />}
-                />
-            )}
-        </SettingsControlCard>
-    );
-}
 
 // ── Watch my screen ──
 
@@ -1818,7 +1781,7 @@ function PrivacyLinksCard({ onOpenPage }: { onOpenPage?: OpenSettingsPage }) {
 
 // ── Page ──
 
-/** Observation (page id "activity"): what Isoform sees and hears. */
+/** What Isoform sees (page id "activity"): every source, on one page. */
 export function ObservationPage({ onOpenPage }: { onOpenPage?: OpenSettingsPage } = {}) {
     const { t } = useTranslation("settings");
     const { permissions, refresh, requestPermission } = usePermissions();
@@ -1832,7 +1795,10 @@ export function ObservationPage({ onOpenPage }: { onOpenPage?: OpenSettingsPage 
 
     return (
         <>
-            <PauseObservingCard pause={pause} />
+            {/* computer-settings v1.0.0 rule 2's order: Screen, Calls and
+                meetings, Mail and calendar, Messages; then the sources that
+                rule doesn't name. Closed Eyes is its own page now. */}
+            {paused && <SettingsReason>{t("observation.pause.paused")}</SettingsReason>}
             <div {...settingsAnchor("sees-screen")}><WatchScreenCard
                 permissions={permissions}
                 paused={paused}
@@ -1847,21 +1813,13 @@ export function ObservationPage({ onOpenPage }: { onOpenPage?: OpenSettingsPage 
                 onChanged={refresh}
                 showMeetings={isWailsEnvironment()}
             /></div>
-            <ClipboardCard permissions={permissions} paused={paused} onChanged={refresh} />
-            <FilesCard permissions={permissions} paused={paused} onChanged={refresh} />
-            <div {...settingsAnchor("sees-calendar")}><CalendarsCard
+            <div {...settingsAnchor("sees-mail")}><MailCard
                 permissions={permissions}
                 paused={paused}
                 onGrant={(item) => void requestPermission(item)}
                 onChanged={refresh}
             /></div>
-            <RemindersCard
-                permissions={permissions}
-                paused={paused}
-                onGrant={(item) => void requestPermission(item)}
-                onChanged={refresh}
-            />
-            <div {...settingsAnchor("sees-mail")}><MailCard
+            <div {...settingsAnchor("sees-calendar")}><CalendarsCard
                 permissions={permissions}
                 paused={paused}
                 onGrant={(item) => void requestPermission(item)}
@@ -1874,6 +1832,14 @@ export function ObservationPage({ onOpenPage }: { onOpenPage?: OpenSettingsPage 
                 onChanged={refresh}
             /></div>
             <TopicProposalsCard />
+            <ClipboardCard permissions={permissions} paused={paused} onChanged={refresh} />
+            <FilesCard permissions={permissions} paused={paused} onChanged={refresh} />
+            <RemindersCard
+                permissions={permissions}
+                paused={paused}
+                onGrant={(item) => void requestPermission(item)}
+                onChanged={refresh}
+            />
             <CapturedCountsCard />
             <SettingsAdvanced pageId="activity" hint={t("observation.advanced.hint")}>
                 <CaptureStatusCard

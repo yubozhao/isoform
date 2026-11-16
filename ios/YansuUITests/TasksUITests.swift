@@ -23,7 +23,7 @@ final class TasksUITests: XCTestCase {
 
         app.buttons["root.settings"].tap()
         XCTAssertTrue(app.buttons["settings.done"].waitForExistence(timeout: 5))
-        for group in ["you", "mac", "notifications", "privacy"] {
+        for group in ["mac", "isoform", "privacy"] {
             XCTAssertTrue(app.descendants(matching: .any)["settings.group.\(group)"].exists, group)
         }
         XCTAssertTrue(app.switches["settings.notification.work_blocked"].exists)

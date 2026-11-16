@@ -1198,6 +1198,7 @@ extension AppEnvironment {
             if WorkUITestSeed.isOn {
                 WorkUITestSeed.briefID = environment.today.newestBrief()?.identifier ?? environment.brief.current?.identifier
                 environment.work.seedForUITest(WorkUITestSeed.page())
+                environment.work.seedSendsSeparatelyForUITest()
             }
             if demoBrief != nil, ProcessInfo.processInfo.environment["YANSU_UITEST_TOUCHES"] != "0" { LaunchDemoTouches.install() }
             if isFirstLaunch && state == "library" {

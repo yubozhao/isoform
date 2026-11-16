@@ -226,10 +226,10 @@ describe("OverviewPage", () => {
         );
         expect(within(row("Sees")).getByRole("button", { name: "Pause for 1 hour" })).toBeInTheDocument();
         expect(screen.getByRole("combobox", { name: "How much Isoform speaks up" })).toHaveValue("normal");
-        expect(row("Speaks up")).toHaveTextContent(
-            /^Speaks upIt speaks up.*— up to 6 times a day, quiet 10:00 PM to 8:00 AM, and can reach you on this computer and your phone\.Notifications$/,
+        expect(row("Notifications")).toHaveTextContent(
+            /^NotificationsIt speaks up.*— up to 6 times a day, quiet 10:00 PM to 8:00 AM, and can reach you on this computer and your phone\.Notifications$/,
         );
-        expect(row("Thinks with")).toHaveTextContent(
+        expect(row("Your agents")).toHaveTextContent(
             "Claude Code answers first, then Codex. Claude Code has 95% of its 5-hour limit left.",
         );
         expect(row("Remembers")).toHaveTextContent(
@@ -301,7 +301,7 @@ describe("OverviewPage", () => {
         expect(row("Sees")).toHaveTextContent("Isoform is not watching or listening: Watch my screen and Listen are off.");
         fireEvent.click(within(row("Sees")).getByRole("button", { name: "Observation" }));
         expect(onOpenPage).toHaveBeenCalledWith("activity");
-        expect(row("Speaks up")).toHaveTextContent("— with no daily limit, with no quiet hours, and can reach you on this computer.");
+        expect(row("Notifications")).toHaveTextContent("— with no daily limit, with no quiet hours, and can reach you on this computer.");
         expect(screen.getByRole("combobox", { name: "How much Isoform speaks up" })).toHaveValue("custom");
         expect(row("Briefs")).toHaveTextContent("Your brief is turned off.");
     });
@@ -331,7 +331,7 @@ describe("OverviewPage", () => {
         );
         fireEvent.change(screen.getByRole("combobox", { name: "How much Isoform speaks up" }), { target: { value: "more" } });
         await waitFor(() => expect(mocks.setLevel).toHaveBeenCalledWith("more"));
-        await waitFor(() => expect(row("Speaks up")).toHaveTextContent("up to 10 times a day, quiet 11:00 PM to 7:00 AM"));
+        await waitFor(() => expect(row("Notifications")).toHaveTextContent("up to 10 times a day, quiet 11:00 PM to 7:00 AM"));
         expect(mocks.overview.mock.calls.length).toBeGreaterThan(reads);
     });
 
@@ -521,11 +521,11 @@ describe("OverviewPage", () => {
         render(<OverviewPage />);
         await screen.findByText("Sees");
         await act(async () => {});
-        expect(screen.queryByText("Thinks with", { selector: "span" })).toBeNull();
+        expect(screen.queryByText("Your agents", { selector: "span" })).toBeNull();
         expect(screen.queryByText("Briefs", { selector: "span" })).toBeNull();
         expect(screen.queryByText("Couldn't read this setting.")).toBeNull();
         expect(row("Sees")).toHaveTextContent("Isoform is watching your screen");
-        expect(row("Speaks up")).toHaveTextContent("up to 6 times a day");
+        expect(row("Notifications")).toHaveTextContent("up to 6 times a day");
         expect(row("Remembers")).toHaveTextContent("3 things it learned");
         expect(row("Keeps")).toHaveTextContent("2.4 GB used");
     });
@@ -536,7 +536,7 @@ describe("OverviewPage", () => {
         await act(async () => {});
         await waitFor(() => expect(mocks.overview).toHaveBeenCalled());
         expect(screen.queryByText("Couldn't read this setting.")).toBeNull();
-        for (const label of ["Speaks up", "Thinks with", "Remembers", "Keeps", "Briefs", "Ignores"]) {
+        for (const label of ["Notifications", "Your agents", "Remembers", "Keeps", "Briefs", "Ignores"]) {
             expect(screen.queryByText(label, { selector: "span" })).toBeNull();
         }
         expect(screen.queryByText(/Worth a look/)).toBeNull();
@@ -545,14 +545,14 @@ describe("OverviewPage", () => {
     it("keeps the last known Thinks with line when a later read cannot read it", async () => {
         mocks.overview.mockResolvedValueOnce(makeOverview());
         const { unmount } = await renderPage();
-        expect(row("Thinks with")).toHaveTextContent("Assistant");
+        expect(row("Your agents")).toHaveTextContent("Assistant");
         mocks.overview.mockResolvedValue(makeOverview({ unavailable: ["thinksWith"] }));
         const before = mocks.overview.mock.calls.length;
         pageQueryCache.invalidate(["GetSettingsOverview"]);
         fireEvent(window, new Event("focus"));
         await waitFor(() => expect(mocks.overview.mock.calls.length).toBeGreaterThan(before));
         await act(async () => {});
-        expect(row("Thinks with")).toHaveTextContent("Assistant");
+        expect(row("Your agents")).toHaveTextContent("Assistant");
         expect(screen.queryByText("Couldn't read this setting.")).toBeNull();
         unmount();
     });
@@ -575,8 +575,8 @@ describe("OverviewPage", () => {
             thinksWith: { order: [{ assistant: "claude", percentLeft: 98, windowLabel: "7 days · Fable", resetsAt: "" }] },
         }));
         await renderPage();
-        expect(row("Thinks with")).toHaveTextContent("Claude Code has 98% of its weekly limit left.");
-        expect(row("Thinks with")).not.toHaveTextContent(/Fable|7 days/);
+        expect(row("Your agents")).toHaveTextContent("Claude Code has 98% of its weekly limit left.");
+        expect(row("Your agents")).not.toHaveTextContent(/Fable|7 days/);
         cleanup();
         resetPageQueries();
         await i18n.changeLanguage("zh-CN");
@@ -586,9 +586,9 @@ describe("OverviewPage", () => {
             }));
             render(<OverviewPage />);
             await screen.findByText("观察");
-            await waitFor(() => expect(row("思考")).toHaveTextContent("98%"));
-            expect(row("思考")).toHaveTextContent("Claude Code 的每日额度还剩 98%。");
-            expect(row("思考")).not.toHaveTextContent(/Fable/);
+            await waitFor(() => expect(row("你的 Agents")).toHaveTextContent("98%"));
+            expect(row("你的 Agents")).toHaveTextContent("Claude Code 的每日额度还剩 98%。");
+            expect(row("你的 Agents")).not.toHaveTextContent(/Fable/);
         } finally {
             await i18n.changeLanguage("en");
         }
@@ -607,7 +607,7 @@ describe("OverviewPage", () => {
         }));
         render(<OverviewPage />);
         // Synchronous, before the revalidating reads settle.
-        expect(screen.getByText("Thinks with")).toBeInTheDocument();
+        expect(screen.getByText("Your agents")).toBeInTheDocument();
         expect(document.querySelector('[aria-busy="true"]')).toBeNull();
         expect(screen.queryByText("Checking your setup...")).toBeNull();
         await act(async () => {});
@@ -669,10 +669,10 @@ describe("OverviewPage", () => {
         await screen.findByText("观察");
         await waitFor(() => expect(row("简报")).toHaveTextContent("你的简报大约在"));
         expect(row("观察")).toHaveTextContent("Isoform 正在观察你的屏幕、你的麦克风和你的通话。");
-        expect(row("提醒")).toHaveTextContent("——每天最多 6 次，22:00 至 8:00 保持安静，目前可以发到这台电脑和你的手机。");
+        expect(row("通知")).toHaveTextContent("——每天最多 6 次，22:00 至 8:00 保持安静，目前可以发到这台电脑和你的手机。");
         expect(row("保留")).toHaveTextContent("录制内容存储在这台电脑上，保留");
         expect(row("保留")).toHaveTextContent("，总共最多 10 GB，已使用 2.4 GB。");
-        expect(row("思考")).toHaveTextContent("先由 Claude Code 回答，然后是 Codex。Claude Code 的5 小时额度还剩 95%。");
+        expect(row("你的 Agents")).toHaveTextContent("先由 Claude Code 回答，然后是 Codex。Claude Code 的5 小时额度还剩 95%。");
     });
 });
 

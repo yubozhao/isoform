@@ -43,6 +43,7 @@ vi.mock("@/components/settings/pages/iphone-page", () => ({
 }));
 vi.mock("@/components/settings/pages/notifications-page", () => ({ NotificationsPage: pages.marker("notifications") }));
 vi.mock("@/components/settings/pages/observation-page", () => ({ ObservationPage: pages.marker("observation") }));
+vi.mock("@/components/settings/pages/closed-eyes-page", () => ({ ClosedEyesPage: pages.marker("closed-eyes") }));
 vi.mock("@/components/settings/pages/privacy-page", () => ({ PrivacyPage: pages.marker("privacy") }));
 vi.mock("@/components/settings/pages/skills-page", () => ({ SkillsPage: pages.marker("skills") }));
 vi.mock("@/components/settings/pages/tool-servers-page", () => ({ ToolServersPage: pages.marker("tool-servers") }));
@@ -119,7 +120,7 @@ describe("SettingsPage Advanced deep links", () => {
     it("opens a deep link with Advanced expanded, again after the person collapsed it", () => {
         const first = { advanced: true };
         const { rerender } = render(<SettingsPage {...props()} initialTopic="ai-provider" initialOptions={first} />);
-        expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Assistant");
+        expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Your agents");
         expect(advancedToggle()).toHaveAttribute("aria-expanded", "true");
         expect(screen.getByText("Own API key")).toBeInTheDocument();
         expect(scrolled).toEqual(["advanced"]);
@@ -146,7 +147,7 @@ describe("SettingsPage Advanced deep links", () => {
         expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Privacy");
 
         rerender(<SettingsPage {...props()} initialTopic="iphone" initialOptions={{}} />);
-        expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Phone");
+        expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Your phone");
         expect(advancedToggle()).toHaveAttribute("aria-expanded", "false");
     });
 
