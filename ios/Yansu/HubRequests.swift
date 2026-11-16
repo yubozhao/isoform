@@ -43,12 +43,17 @@ enum HubRoute: Equatable, Sendable {
     case recordings(ids: [String])
     /// What one recording heard, once the computer transcribed it (PROTOCOL.md 24.5).
     case recordingTranscript(id: String)
+    /// What the watch heard as conversations, and today's hours (PROTOCOL.md 24.11).
+    case recordingConversations
+    case recordingConversation(id: String)
+    /// "Notes for long talks" on the computer (PROTOCOL.md 24.12).
+    case watchNotes
     /// The owner's enrolled voice samples on the computer (PROTOCOL.md 25.1).
     case voice
 
     var method: String {
         switch self {
-        case .yourAgent, .recordings, .recordingTranscript, .voice: return "GET"
+        case .yourAgent, .recordings, .recordingTranscript, .recordingConversations, .recordingConversation, .watchNotes, .voice: return "GET"
         case .refreshBrief, .write, .briefReceived: return "POST"
         case .status, .today, .todayMeetingPrep, .findTime, .findTimeLegacy, .holdProposal, .holdStatus, .todayPart, .latestBrief, .briefList, .brief, .briefPackage, .briefPart, .briefAudio, .briefAskAnswer, .briefCardAskAnswer, .briefWeekDecline, .briefWeekAskAnswer, .chats, .chat, .notifications, .keepAwake, .tasks, .task, .work, .goals, .goal, .offers, .offersWithHolds,
              .topics, .topic, .privacy: return "GET"
@@ -60,6 +65,9 @@ enum HubRoute: Equatable, Sendable {
         case .yourAgent: return "/your-agent"
         case .recordings: return "/recordings"
         case .recordingTranscript: return "/recordings/transcript"
+        case .recordingConversations: return "/recordings/conversations"
+        case .recordingConversation: return "/recordings/conversation"
+        case .watchNotes: return "/settings/watch-notes"
         case .voice: return "/voice"
         case .status: return "/status"
         case .today, .todayPart: return "/today"
@@ -98,7 +106,11 @@ enum HubRoute: Equatable, Sendable {
 
     var query: String {
         switch self {
-        case .yourAgent, .voice: return ""
+        case .yourAgent, .voice, .recordingConversations, .watchNotes: return ""
+        case .recordingConversation(let id):
+            var allowed = CharacterSet.alphanumerics
+            allowed.insert(charactersIn: "-._")
+            return "id=" + (id.addingPercentEncoding(withAllowedCharacters: allowed) ?? "")
         // deleted=1 asks for recordings deleted on the computer too (24.5); an older computer ignores it.
         case .recordings(let ids): return ids.isEmpty ? "deleted=1" : "deleted=1&ids=" + ids.joined(separator: ",")
         case .recordingTranscript(let id): return "id=" + id
@@ -165,7 +177,7 @@ enum HubRoute: Equatable, Sendable {
 
     var body: String {
         switch self {
-        case .yourAgent, .recordings, .recordingTranscript, .voice: return ""
+        case .yourAgent, .recordings, .recordingTranscript, .recordingConversations, .recordingConversation, .watchNotes, .voice: return ""
         case .refreshBrief: return "{}"
         case .write(_, let body): return body
         case .briefReceived(_, let version): return "{\"version\":\"\(version)\"}"
@@ -179,6 +191,9 @@ enum HubRoute: Equatable, Sendable {
         case .yourAgent: return "your-agent"
         case .recordings: return "recordings.list"
         case .recordingTranscript: return "recordings.transcript"
+        case .recordingConversations: return "recordings.conversations"
+        case .recordingConversation: return "recordings.conversation"
+        case .watchNotes: return "settings.watch-notes"
         case .voice: return "voice.list"
         case .status: return "status"
         case .today, .todayPart: return "today"
@@ -326,6 +341,10 @@ struct HubStatus: Decodable, Equatable, Sendable {
     var recordingDetail: Bool? = nil
     /// The computer takes the moments the wearer marked in a part (PROTOCOL.md 24.9).
     var recordingMarks: Bool? = nil
+    /// The computer serves the conversations it found in the recordings (PROTOCOL.md 24.11).
+    var recordingConversations: Bool? = nil
+    /// "Notes for long talks" on the computer (PROTOCOL.md 24.12); absent on a computer that has no such setting.
+    var watchNotes: WatchNotesSetting? = nil
     /// The phone may pause observing on the computer and end a pause it started (PROTOCOL.md 24.10).
     var observingPauseControl: Bool? = nil
     /// Set while observing is paused on the computer (PROTOCOL.md 24.8).
@@ -990,6 +1009,11 @@ extension HubChannel {
 
 /// The computer's word that observing is paused there (PROTOCOL.md 24.8). Both times are
 /// optional: a pause with no end has no `until`.
+struct WatchNotesSetting: Decodable, Equatable, Sendable {
+    var on: Bool = false
+    var chosen: Bool? = nil
+}
+
 struct ObservingPauseView: Decodable, Equatable, Sendable {
     var since: String? = nil
     var until: String? = nil

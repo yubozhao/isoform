@@ -454,6 +454,143 @@ final class WatchTodayCardTests: XCTestCase {
     }
 }
 
+// The Watch tab (design's phone-watch v1.0.0): whether the watch listens, and what it heard as
+// conversations.
+final class WatchTabTests: XCTestCase {
+    private let utc = TimeZone(identifier: "UTC")!
+    private let english = Locale(identifier: "en_US")
+
+    private func decode(_ json: String) throws -> WatchConversationsAnswer {
+        try JSONDecoder().decode(WatchConversationsAnswer.self, from: Data(json.utf8))
+    }
+
+    private let answer = """
+    {"dayStart":"2026-11-15T08:00:00Z",
+     "hours":[{"start":"2026-11-15T17:00:00Z","recordedSeconds":3600,"talkSeconds":1800,"pausedSeconds":0},
+              {"start":"2026-11-15T18:00:00Z","recordedSeconds":0,"talkSeconds":0,"pausedSeconds":3600},
+              {"start":"2026-11-15T19:00:00Z","recordedSeconds":600,"talkSeconds":120,"pausedSeconds":0,"current":true}],
+     "closed":[{"startAt":"2026-11-15T18:00:00Z","endAt":"2026-11-15T19:00:00Z"}],
+     "conversations":[
+       {"id":"dev:2","name":"Pricing with Sam","startAt":"2026-11-15T22:05:00Z","endAt":"2026-11-15T22:41:00Z","talkSeconds":1310,
+        "speakers":["you","speaker_1"],"marks":["2026-11-15T22:31:04Z"],"recordingIds":["a"],"summary":"Sam wants 15%.",
+        "decisions":["Annual discount at 15%"],"followups":[{"text":"Send the pricing page","owner":"me","person":"","due":"tonight"},
+        {"text":"Check with legal","owner":"other","person":"Sam","due":""}],"place":"Mission District","heartRate":"calm"},
+       {"id":"dev:1","startAt":"2026-11-14T17:00:00Z","endAt":"2026-11-14T17:01:00Z","talkSeconds":40,
+        "speakers":[],"marks":[],"recordingIds":["b"],"decisions":[],"followups":[]}]}
+    """
+
+    func testTheComputersAnswerIsRead() throws {
+        let got = try decode(answer)
+        XCTAssertEqual(got.hours.count, 3)
+        XCTAssertEqual(got.conversations.count, 2)
+        let pricing = got.conversations[0]
+        XCTAssertEqual(pricing.name, "Pricing with Sam")
+        XCTAssertTrue(pricing.hasNote)
+        XCTAssertEqual(pricing.mine.map(\.text), ["Send the pricing page"], "only what the wearer said they would do is theirs to answer")
+        XCTAssertEqual(pricing.unknownSpeakers, ["speaker_1"])
+        XCTAssertFalse(got.conversations[1].hasNote)
+        // An older computer's shorter answer still reads.
+        XCTAssertEqual(try decode("{}").conversations, [])
+    }
+
+    func testARowsWords() throws {
+        let got = try decode(answer)
+        let meta = WatchTabCopy.meta(got.conversations[0], locale: english, timeZone: utc)
+        XCTAssertTrue(meta.contains("36 min"), meta)
+        XCTAssertTrue(meta.contains("You, Speaker 1"), meta)
+        XCTAssertTrue(meta.hasSuffix("1 mark"), meta)
+        XCTAssertTrue(meta.contains("10:05") && meta.contains("10:41"), meta)
+        XCTAssertEqual(WatchTabCopy.title(got.conversations[0]), "Pricing with Sam")
+        XCTAssertEqual(WatchTabCopy.title(got.conversations[1]), String(localized: "Talk · \(WatchTabCopy.duration(60))"), "no name under two minutes")
+        XCTAssertEqual(WatchTabCopy.duration(8220), String(localized: "\(2) h \(17) min"))
+        XCTAssertEqual(WatchTabCopy.duration(20), String(localized: "\(1) min"))
+        XCTAssertNil(WatchTabCopy.marks(0))
+        XCTAssertEqual(WatchTabCopy.speaker("Sam"), "Sam")
+    }
+
+    func testTodayAndEarlierDays() throws {
+        let got = try decode(answer)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = utc
+        let now = try XCTUnwrap(WatchConversationDates.parse("2026-11-15T23:00:00Z"))
+        let split = WatchTabModel.split(got.conversations, now: now, calendar: calendar)
+        XCTAssertEqual(split.today.map(\.id), ["dev:2"])
+        XCTAssertEqual(split.earlier.count, 1)
+        XCTAssertEqual(split.earlier[0].conversations.map(\.id), ["dev:1"])
+        XCTAssertEqual(WatchTabCopy.earlierRow(split.earlier[0]), String(localized: "1 conversation") + " · " + WatchTabCopy.duration(40))
+        let summary = WatchTabCopy.todaySummary(got, today: split.today)
+        XCTAssertTrue(summary.contains("32 min") && summary.hasSuffix("1 mark"), summary)
+    }
+
+    func testTheHoursStrip() throws {
+        let columns = WatchHourColumn.columns(try decode(answer).hours)
+        XCTAssertEqual(columns.map(\.kind), [.talk, .closed, .current])
+        XCTAssertEqual(columns[0].height, 0.5, accuracy: 0.001)
+        XCTAssertEqual(columns[1].height, 0)
+    }
+
+    func testNowSaysWhatTheWatchIsDoing() {
+        let until = Date(timeIntervalSince1970: 1_800_000_000)
+        func now(_ connection: WatchConnection, _ status: WatchLiveStatus?, until: Date? = nil) -> WatchNow {
+            WatchTabCopy.now(connection: connection, status: status, pauseUntil: until, lastHeard: nil, locale: english)
+        }
+        XCTAssertEqual(now(.ready(reachable: true), .recording).kind, .listening)
+        XCTAssertEqual(now(.ready(reachable: false), .recording).kind, .notNear, "out of reach, it keeps listening")
+        XCTAssertEqual(now(.ready(reachable: false), .stoppedToday).kind, .offToday, "what it last said still stands when it is away")
+        let closed = now(.ready(reachable: true), .pausedOnComputer, until: until)
+        XCTAssertEqual(closed.kind, .closedEyes)
+        XCTAssertTrue(closed.word.hasPrefix("Closed Eyes until"), closed.word)
+        XCTAssertTrue(closed.line.contains(String(localized: "Closed Eyes on your computer")), closed.line)
+        XCTAssertFalse(now(.ready(reachable: true), .pausedOnWatch).line.contains(String(localized: "Closed Eyes on your computer")))
+        XCTAssertEqual(now(.ready(reachable: true), .stoppedToday).word, String(localized: "Off for today"))
+        XCTAssertEqual(now(.ready(reachable: true), .notRecording).kind, .notListening)
+        XCTAssertEqual(now(.appMissing, nil).kind, .setUp)
+        XCTAssertEqual(now(.ready(reachable: true), nil).kind, .unknown)
+    }
+
+    func testTheAmberLineOnlyWhenItMatters() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        func row(_ stage: WatchRecordingStage, endedAgo minutes: Double) -> WatchRecordingRow {
+            WatchRecordingRow(id: WatchRecordingWire.newRecordingID(), startedAt: now.addingTimeInterval(-minutes * 60 - 600),
+                              durationSeconds: 600, stage: stage)
+        }
+        XCTAssertNil(WatchTabCopy.waitingLine([row(.onPhone, endedAgo: 10), row(.transcribed, endedAgo: 300)], now: now),
+                     "an hour that has waited ten minutes is not worth a line")
+        XCTAssertEqual(WatchTabCopy.waitingLine([row(.onPhone, endedAgo: 45), row(.onWatch, endedAgo: 100)], now: now),
+                       String(localized: "\(2) hours are waiting for your computer."))
+        XCTAssertEqual(WatchTabCopy.waitingLine([row(.failedToSend, endedAgo: 1), row(.onPhone, endedAgo: 45)], now: now),
+                       String(localized: "1 hour couldn't be sent."), "a failure comes first")
+    }
+
+    // Names, notes and follow-ups are kept in memory only, and never outlive the computer they came from.
+    @MainActor
+    func testWhatWasHeardGoesWithThePairing() throws {
+        let model = WatchTabModel()
+        model.show(try decode(answer))
+        model.notesOn = true
+        XCTAssertEqual(model.answer?.conversations.count, 2)
+        // A computer that does not serve conversations answers nothing: the old list is dropped.
+        model.show(nil)
+        XCTAssertNil(model.answer)
+        XCTAssertFalse(model.served)
+        XCTAssertTrue(model.split().earlier.isEmpty)
+        model.show(try decode(answer))
+        model.clear()
+        XCTAssertNil(model.answer, "unpairing forgets what was heard")
+        XCTAssertNil(model.notesOn)
+        XCTAssertTrue(model.served)
+    }
+
+    func testTheConversationRequestsAreWellFormed() {
+        XCTAssertEqual(HubRoute.recordingConversations.path, "/recordings/conversations")
+        XCTAssertEqual(HubRoute.recordingConversations.method, "GET")
+        let one = HubRoute.recordingConversation(id: "0b9d6e2c-3f4a:1800000000000 x")
+        XCTAssertEqual(one.path, "/recordings/conversation")
+        XCTAssertEqual(one.query, "id=0b9d6e2c-3f4a%3A1800000000000%20x", "the id is escaped, never pasted")
+        XCTAssertEqual(HubRoute.watchNotes.path, "/settings/watch-notes")
+    }
+}
+
 // The phone lists the watch's hours under their day (watch v1.1.0): a day, then "10 AM · 48 min".
 final class WatchRecordingDayTests: XCTestCase {
     private var calendar: Calendar = {

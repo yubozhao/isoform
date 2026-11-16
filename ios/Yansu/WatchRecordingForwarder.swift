@@ -83,6 +83,12 @@ protocol RecordingHubAPI: Sendable {
     func observingPauseControlAvailable() async throws -> Bool
     func pauseObserving(minutes: Int) async throws
     func resumeObserving() async throws
+    /// What the watch heard as conversations (PROTOCOL.md 24.11); nil from a computer that does not serve them.
+    func recordingConversations() async throws -> WatchConversationsAnswer?
+    func recordingConversation(id: String) async throws -> WatchConversationDetail?
+    /// "Notes for long talks" on the computer (PROTOCOL.md 24.12); nil when it has no such setting.
+    func watchNotes() async throws -> Bool?
+    func setWatchNotes(_ on: Bool) async throws -> Bool
 }
 
 extension RecordingHubAPI {
@@ -434,6 +440,14 @@ actor WatchRecordingForwarder {
         if states[id] == .failed, !inbox.audio(recordingID: id).urls.isEmpty { set(id, .onPhone) }
         return await drain()
     }
+
+    /// What the watch heard as conversations; nil when the computer does not serve them.
+    func conversations() async throws -> WatchConversationsAnswer? { try await hub.recordingConversations() }
+    func conversation(_ id: String) async throws -> WatchConversationDetail? { try await hub.recordingConversation(id: id) }
+    func notesSetting() async throws -> Bool? { try await hub.watchNotes() }
+    func setNotes(_ on: Bool) async throws -> Bool { try await hub.setWatchNotes(on) }
+    /// When the pause on the computer ends by itself; nil with no pause or no end.
+    func pauseUntil() async -> Date? { (try? await hub.observingPause())?.until }
 
     /// What the recording heard, from the computer. Nil when the computer does not serve it.
     func transcript(_ id: String) async throws -> RecordingTranscript? {
