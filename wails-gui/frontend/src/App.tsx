@@ -1056,7 +1056,7 @@ export default function App() {
     // Handoffs page (consumed on mount). Null when the page is opened via the
     // sidebar nav, which shows the list.
     const [handoffOpenId, setHandoffOpenId] = useState<string | null>(null);
-    const [handoffReaderBackTarget, setHandoffReaderBackTarget] = useState<
+    const [, setHandoffReaderBackTarget] = useState<
         "list" | "chat"
     >("list");
     const [handoffReaderOpen, setHandoffReaderOpen] = useState(false);

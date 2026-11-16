@@ -43,14 +43,14 @@ describe("TodayYourWork", () => {
     afterEach(cleanup);
 
     it("shows the open item with the computer's words, its keys and where it is in the list", () => {
-        setup([item("a", 0), item("b", 1), item("c", 2, { state: "with_agent", agent: { name: "Codex", since: new Date(2026, 10, 15, 16, 10).toISOString() } })]);
+        setup([item("a", 0), item("b", 1), item("c", 2, { state: "with_agent", agent: { name: "Codex", since: new Date(2026, 10, 15, 17, 10).toISOString() } })]);
         const open = screen.getByTestId("your-work-open");
         expect(open).toHaveTextContent("For your 10:00 with Lena · from the brief");
         expect(open).toHaveTextContent("Noticed a");
         expect(screen.getByTestId("your-work-yes-line")).toHaveTextContent("Yes puts it in your Mail drafts. You send it.");
         expect(screen.getByTestId("your-work-move")).toHaveTextContent("1 of 2 · ↑↓ to move");
         expect(screen.getByTestId("your-work-up-next")).toHaveTextContent("Work b");
-        expect(screen.getByTestId("your-work-with-agents")).toHaveTextContent(/Work c · Codex · since 4:10/);
+        expect(screen.getByTestId("your-work-with-agents")).toHaveTextContent(/Work c · Codex · since 5:10/);
     });
 
     it("moves with the arrows and answers with Y and M", async () => {
@@ -130,9 +130,65 @@ describe("TodayYourWork", () => {
         expect(onAnswer).toHaveBeenCalledWith("a", { action: "not_mine" });
     });
 
+    it("opens the hand-off sheet for a Yes on agent work, with the edit when there is one", async () => {
+        const onAnswer = vi.fn();
+        const onHandOff = vi.fn();
+        const agentItem = item("a", 0, { yes: { does: "agent", line: "Yes hands it to Codex, your agent.", agent: "codex" } });
+        render(<TodayYourWork list={list([agentItem])} active onAnswer={onAnswer} onUndo={vi.fn()} onHandOff={onHandOff} now={NOW} />);
+        expect(screen.queryByTestId("your-work-handoff-soon")).toBeNull();
+        await key("y");
+        expect(onHandOff).toHaveBeenCalledWith(expect.objectContaining({ id: "a" }));
+        await key("e");
+        fireEvent.change(screen.getByTestId("your-work-edit"), { target: { value: "Mine" } });
+        await act(async () => { fireEvent.keyDown(screen.getByTestId("your-work-edit"), { key: "Enter", metaKey: true }); });
+        expect(onHandOff).toHaveBeenLastCalledWith(expect.objectContaining({ id: "a" }), "Mine");
+        expect(onAnswer).not.toHaveBeenCalled();
+    });
+
+    it("offers Send on a Yes not sent", () => {
+        const onHandOff = vi.fn();
+        const notSent = item("s", 1, { state: "answered", yes: { does: "agent", line: "", agent: "codex" }, answer: { action: "yes", at: NOW.toISOString(), surface: "computer", line: "Test plan: Yes · not sent", notSent: true } });
+        render(<TodayYourWork list={list([notSent])} active onAnswer={vi.fn()} onUndo={vi.fn()} onHandOff={onHandOff} now={NOW} />);
+        expect(screen.getByTestId("your-work-done")).toHaveTextContent("Test plan: Yes · not sent");
+        fireEvent.click(screen.getByTestId("your-work-send"));
+        expect(onHandOff).toHaveBeenCalledWith(expect.objectContaining({ id: "s" }));
+    });
+
     it("words a first-line part from its time when it has one", () => {
         setup([item("a", 0, { first: [{ text: "For your meeting" }, { text: "tomorrow", at: new Date(2026, 10, 16, 10).toISOString() }] })]);
         expect(screen.getByTestId("your-work-first")).toHaveTextContent(/For your meeting · tomorrow 10:00/);
+    });
+
+    it("heads a result back with who made it and asks if it was useful", () => {
+        setup([item("r", 0, { state: "back", kind: "result", row: "result", agent: { name: "Codex" }, answer: { action: "yes", at: new Date(2026, 10, 15, 16, 10).toISOString(), surface: "computer" } })]);
+        expect(screen.getByTestId("your-work-back-from")).toHaveTextContent(/Back from Codex · you said yes at 4:10/);
+        expect(screen.getByText("Was it useful?")).toBeInTheDocument();
+    });
+
+    it("says when there has been no word from an agent for two hours", () => {
+        setup([item("a", 0, { state: "with_agent", agent: { name: "Codex", since: new Date(2026, 10, 15, 16, 0).toISOString() } })]);
+        expect(screen.getByTestId("your-work-no-word")).toHaveTextContent(/No word from Codex since 4:00/);
+    });
+
+    it("shows the answer as one line with Undo for five seconds", async () => {
+        vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+        try {
+            const answered = { ...item("a", 0), state: "answered", answer: { action: "yes", at: NOW.toISOString(), surface: "computer", line: "Prep for Lena: kept for 10:00" } };
+            const onAnswer = vi.fn().mockResolvedValue(null);
+            const view = render(<TodayYourWork list={list([item("a", 0)])} active onAnswer={onAnswer} onUndo={vi.fn()} now={NOW} />);
+            await key("y");
+            view.rerender(<TodayYourWork list={list([answered])} active onAnswer={onAnswer} onUndo={vi.fn()} now={NOW} />);
+            expect(screen.getByTestId("your-work-undo-line")).toHaveTextContent("Prep for Lena: kept for 10:00");
+            act(() => { vi.advanceTimersByTime(5_000); });
+            expect(screen.queryByTestId("your-work-undo-line")).toBeNull();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it("says no agent is connected yet, once", () => {
+        render(<TodayYourWork list={list([item("a", 0)])} active onAnswer={vi.fn()} onUndo={vi.fn()} noAgents now={NOW} />);
+        expect(screen.getByTestId("your-work-no-agents")).toHaveTextContent("None connected yet.");
     });
 
     it("answers only the focused item, never with a modifier or while composing", async () => {

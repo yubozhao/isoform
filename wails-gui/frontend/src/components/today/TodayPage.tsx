@@ -23,6 +23,8 @@ import { MainChatPanel } from "./MainChatPanel";
 import { TodayLastBriefPanel } from "./TodayLastBriefPanel";
 import { TodayPastBriefsPanel } from "./TodayPastBriefsPanel";
 import { TodayYourWork } from "./TodayYourWork";
+import { TodayHandOffSheet } from "./TodayHandOffSheet";
+import { GetYourAgents, type WorkItem, type YourAgents } from "@/lib/wails-shim-app";
 import { useWorkList } from "@/hooks/useWorkList";
 import { TodayReplyDraftPanel, type TodayReplyDraftRequest } from "./TodayReplyDraftPanel";
 import { TodayMeetingNotePanel, type TodayMeetingNoteRequest } from "./TodayMeetingNotePanel";
@@ -31,7 +33,6 @@ import { TodayTopicsGrid } from "./TodayTopicsGrid";
 import { GetTodayPanelAnswer, PinTopicToSidebar, PrepareTodayBriefParagraph, type TodayPanelAnswer } from "@/lib/wails-shim-app";
 import { useBriefSavedAnswers } from "@/hooks/useBriefSavedAnswers";
 import { GetMobileBriefSchedule, PageEventsOn } from "@/lib/page-queries";
-import type { UseTopicFindsResult } from "@/hooks/useTopicFinds";
 import { useTodayTopics } from "@/hooks/useTodayTopics";
 import { useTodayQuietLines } from "@/hooks/useTodayQuietLines";
 import { describeQuietLines } from "./quietLines";
@@ -159,6 +160,37 @@ export function TodayPage({
     };
     const briefTimes = useBriefTimes(active);
     const work = useWorkList(true);
+    // The hand-off sheet (SH4) and the person's agents, read when it opens.
+    const [handOff, setHandOff] = useState<{ item: WorkItem; edited?: string; twoStep?: boolean } | null>(null);
+    const [yourAgents, setYourAgents] = useState<YourAgents | null>(null);
+    const [agentsFailed, setAgentsFailed] = useState(false);
+    const readYourAgents = () => {
+        setAgentsFailed(false);
+        Promise.resolve().then(() => GetYourAgents()).then((next) => {
+            if (next?.agents?.length) setYourAgents(next);
+            else setAgentsFailed(true);
+        }).catch(() => setAgentsFailed(true));
+    };
+    // The first Yes is the judgment and is recorded at once (Yes · not sent);
+    // Send on the sheet is the action (phone-agent v1.0.0 rule 3). A Yes
+    // already recorded, from Done today's Send, only sends.
+    // Whether any agent is connected, for Your work's day-one card (v1.1.0
+    // rule 3): read once while Today is in front.
+    useEffect(() => {
+        if (!active || yourAgents) return;
+        let live = true;
+        Promise.resolve().then(() => GetYourAgents()).then((next) => { if (live && next?.agents) setYourAgents(next); }).catch(() => {});
+        return () => { live = false; };
+    }, [active, yourAgents]);
+    const openHandOff = (item: WorkItem, edited?: string) => {
+        readYourAgents();
+        if (item.answer?.notSent) { setHandOff({ item, twoStep: true }); return; }
+        if (edited !== undefined || item.state !== "open") { setHandOff({ item, edited }); return; }
+        setHandOff({ item });
+        void work.answer(item.id, { action: "yes", send: false }).then((failed) => {
+            setHandOff((current) => current?.item.id === item.id ? { ...current, twoStep: !failed } : current);
+        });
+    };
     const openBrief = (briefId?: string, title?: string) => {
         if (!briefId) return;
         setPastBriefsOpen(false);
@@ -814,7 +846,7 @@ export function TodayPage({
                         quietFooter={quietLines.length > 0 || pausedText ? <>{quietLines.map((line) => <p key={line.id} data-testid="today-quiet-line">{line.text}</p>)}{pausedText && <TodayPauseLine />}</> : null}
                         band
                         onOpenPastBriefs={openPastBriefs}
-                        afterBand={work.list ? <TodayYourWork list={work.list} active={active} onAnswer={work.answer} onUndo={work.undo} /> : null}
+                        afterBand={work.list ? <TodayYourWork list={work.list} active={active && !handOff} onAnswer={work.answer} onUndo={work.undo} onHandOff={openHandOff} noAgents={!!yourAgents && !yourAgents.agents.some((agent) => agent.connected)} /> : null}
                         view={latest.view}
                         loading={latest.loading}
                         loadFailed={latest.loadFailed}
@@ -930,6 +962,7 @@ export function TodayPage({
                     {doneMarkFailed && <button type="button" className="px-4 py-2 text-sm text-muted" onClick={() => measureToday("T21", "do", "done", () => markDoneOpened(doneMarkFailed))}>{tr("doneForYou.saveFailed")}</button>}
                 </SheetContent>
             </Sheet>
+            {active && handOff && <TodayHandOffSheet key={handOff.item.id} item={handOff.item} edited={handOff.edited} twoStep={handOff.twoStep} failedText={work.failedText} agents={yourAgents} agentsFailed={agentsFailed} onRetryAgents={readYourAgents} onSend={(input) => work.answer(handOff.item.id, input)} onClose={() => setHandOff(null)} />}
             <AIMemoryImportDialog open={active && importOpen} onOpenChange={setImportOpen} onImported={() => setImported(true)} />
             <YourTopicsDialog open={active && topicsOpen} onOpenChange={(open) => { if (open) setTopicsOpen(true); else measureToday("T59", "open", "opened", () => setTopicsOpen(false)); }} onChanged={finds.refresh} />
         </div>

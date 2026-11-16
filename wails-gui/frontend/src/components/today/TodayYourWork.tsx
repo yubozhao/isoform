@@ -33,10 +33,11 @@ export function workWhen(at: string | undefined, now: Date, language: string, tr
 function keyAction(item: WorkItem, key: string): WorkAnswerInput["action"] | "edit-open" | null {
     const back = item.state === "back";
     switch (key) {
-    case "y": return back ? "useful" : handsOff(item) ? null : "yes";
+    case "y": return back ? "useful" : "yes";
     case "n": return back ? "not_useful" : "no";
     case "m": return back ? null : "not_mine";
-    case "e": return back ? null : "edit-open";
+    // A topic's proposal starts as it was proposed: it has no Edit.
+    case "e": return back || (handsOff(item) && item.source === "topic") ? null : "edit-open";
     default: return null;
     }
 }
@@ -61,7 +62,18 @@ function keysAreFree(event: KeyboardEvent): boolean {
  * the computer as composed for both devices (B2); only day and time words and
  * the fixed UI words are this page's.
  */
-export function TodayYourWork({ list, active, onAnswer, onUndo, now = new Date() }: {
+/** Two hours with nothing from an agent (computer-today v1.1.0 rule 12). */
+export const NO_WORD_MS = 2 * 60 * 60_000;
+/** How long the one-line Undo stays after an answer (rule 13). */
+export const UNDO_LINE_MS = 5_000;
+
+export function TodayYourWork({ list, active, onAnswer, onUndo, onHandOff, noAgents = false, onConnectAgent, now = new Date() }: {
+    /** No agent connected yet: the right column says so once (rule 3). */
+    noAgents?: boolean;
+    onConnectAgent?: () => void;
+    /** Opens the hand-off sheet for agent work (SH4); without it, Yes on
+     *  agent work stays off. */
+    onHandOff?: (item: WorkItem, edited?: string) => void;
     list: WorkList | null;
     /** Today is the page in front: only then do the keys answer. */
     active: boolean;
@@ -102,17 +114,37 @@ export function TodayYourWork({ list, active, onAnswer, onUndo, now = new Date()
         if (failed) { setError(failed); return; }
         setNoFor(null);
         setEditFor(null);
+        showUndoLine(item.id);
         // The answered item leaves the open list; the next one takes its place.
         if (item.id === open?.id) {
             const next = judge[index + 1] ?? judge[index - 1] ?? null;
             setFocusId(next?.id ?? null);
         }
     };
+    // The one-line Undo for five seconds after an answer; Done today keeps
+    // Undo until tomorrow's build.
+    const [undoLine, setUndoLine] = useState<string | null>(null);
+    const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const showUndoLine = (id: string) => {
+        if (undoTimer.current) clearTimeout(undoTimer.current);
+        setUndoLine(id);
+        undoTimer.current = setTimeout(() => setUndoLine(null), UNDO_LINE_MS);
+    };
+    useEffect(() => () => { if (undoTimer.current) clearTimeout(undoTimer.current); }, []);
+    const lineItem = undoLine ? (list?.items ?? []).find((item) => item.id === undoLine && item.answer) ?? null : null;
     const undo = async (item: WorkItem) => {
+        setUndoLine(null);
         setError(null);
         const failed = await measureToday("W02", "do", "done", () => onUndo(item.id));
         if (failed) setError(failed);
         else setFocusId(item.id);
+    };
+    // Use it, or for agent work Hand it over, which opens the sheet with the
+    // person's version.
+    const applyEdit = (item: WorkItem) => {
+        if (!draft.trim()) return;
+        if (handsOff(item)) { if (onHandOff) { setEditFor(null); onHandOff(item, draft); } return; }
+        void submit(item, { action: "edit", before: item.work.text ?? item.work.title, after: draft });
     };
     const act = (item: WorkItem, action: ReturnType<typeof keyAction>) => {
         if (!action) return;
@@ -122,6 +154,7 @@ export function TodayYourWork({ list, active, onAnswer, onUndo, now = new Date()
             return;
         }
         if (action === "no" && item.reasons.length > 0) { setNoFor(item.id); return; }
+        if (action === "yes" && handsOff(item)) { if (onHandOff) onHandOff(item); return; }
         void submit(item, { action });
     };
 
@@ -206,7 +239,11 @@ export function TodayYourWork({ list, active, onAnswer, onUndo, now = new Date()
                         aria-label={tr("work.itemLabel", { source: open.first.map((part) => part.text).filter(Boolean).join(" · "), sentence: open.noticed, work: open.work.title, yes: open.yes.line })}
                         className="flex flex-col gap-3 rounded-xl border border-border bg-panel px-[22px] py-5 shadow-card outline-none"
                     >
-                        {open.first.length > 0 && <p className="text-[12px] text-muted" data-testid="your-work-first">{firstLine(open)}</p>}
+                        {back ? (
+                            <p className="text-[12px] text-muted" data-testid="your-work-back-from">
+                                {tr("ctoday.backFrom", { agent: open.agent?.name ?? tr("agent.yourAgent"), time: workWhen(open.answer?.at ?? open.agent?.since, now, language, tr) })}
+                            </p>
+                        ) : open.first.length > 0 && <p className="text-[12px] text-muted" data-testid="your-work-first">{firstLine(open)}</p>}
                         {open.noticed && <p className="text-[14px] font-semibold leading-snug text-ink">{open.noticed}</p>}
                         {editFor === open.id ? (
                             <div className="flex flex-col gap-2">
@@ -217,7 +254,7 @@ export function TodayYourWork({ list, active, onAnswer, onUndo, now = new Date()
                                     value={draft}
                                     onChange={(event) => setDraft(event.target.value)}
                                     onKeyDown={(event) => {
-                                        if (event.key === "Enter" && event.metaKey && !handsOff(open)) { event.preventDefault(); void submit(open, { action: "edit", before: open.work.text ?? open.work.title, after: draft }); }
+                                        if (event.key === "Enter" && event.metaKey) { event.preventDefault(); applyEdit(open); }
                                         if (event.key === "Escape") { event.preventDefault(); setEditFor(null); }
                                     }}
                                     className="min-h-[110px] text-[14px]"
@@ -228,7 +265,7 @@ export function TodayYourWork({ list, active, onAnswer, onUndo, now = new Date()
                                     </div>
                                 )}
                                 <div className="flex items-center gap-2">
-                                    <Button size="sm" disabled={busy || !draft.trim() || handsOff(open)} onClick={() => void submit(open, { action: "edit", before: open.work.text ?? open.work.title, after: draft })}>
+                                    <Button size="sm" disabled={busy || !draft.trim() || (handsOff(open) && !onHandOff)} onClick={() => applyEdit(open)}>
                                         {tr(open.yes.does === "agent" ? "work.handOver" : "work.useIt")} <kbd className="ml-1 text-[11px] opacity-70">⌘↩</kbd>
                                     </Button>
                                     <Button size="sm" variant="quiet" onClick={() => setEditFor(null)}>{tr("work.cancel")}</Button>
@@ -240,6 +277,7 @@ export function TodayYourWork({ list, active, onAnswer, onUndo, now = new Date()
                                 {open.work.text && <p className="whitespace-pre-wrap text-[13.5px] leading-[1.55] text-ink">{open.work.text}</p>}
                             </div>
                         )}
+                        {back && <p className="text-[13px] font-medium text-ink">{tr("ctoday.useful")}</p>}
                         {open.yes.line && !back && <p className="text-[12.5px] text-muted" data-testid="your-work-yes-line">{open.yes.line}{yesWhen ? ` · ${yesWhen}` : ""}</p>}
                         {noFor === open.id ? (
                             <div className="flex flex-wrap items-center gap-1.5" data-testid="your-work-reasons">
@@ -250,13 +288,13 @@ export function TodayYourWork({ list, active, onAnswer, onUndo, now = new Date()
                             </div>
                         ) : editFor !== open.id && (
                             <div className="flex flex-wrap items-center gap-2" data-testid="your-work-actions">
-                                <AnswerButton label={tr(back ? "work.useful" : "work.yes")} keyName="Y" primary disabled={busy || (!back && handsOff(open))} onClick={() => act(open, keyAction(open, "y"))} />
+                                <AnswerButton label={tr(back ? "work.useful" : "work.yes")} keyName="Y" primary disabled={busy || (!back && handsOff(open) && !onHandOff)} onClick={() => act(open, keyAction(open, "y"))} />
                                 <AnswerButton label={tr(back ? "work.notUseful" : "work.no")} keyName="N" disabled={busy} onClick={() => act(open, keyAction(open, "n"))} />
                                 {!back && <AnswerButton label={tr("work.notMine")} keyName="M" disabled={busy} onClick={() => act(open, "not_mine")} />}
-                                {!back && <AnswerButton label={tr("work.edit")} keyName="E" disabled={busy} onClick={() => act(open, "edit-open")} />}
+                                {!back && !(handsOff(open) && open.source === "topic") && <AnswerButton label={tr("work.edit")} keyName="E" disabled={busy} onClick={() => act(open, "edit-open")} />}
                             </div>
                         )}
-                        {!back && handsOff(open) && <p className="text-[12.5px] text-muted" data-testid="your-work-handoff-soon">{tr("work.handOffSoon")}</p>}
+                        {!back && handsOff(open) && !onHandOff && <p className="text-[12.5px] text-muted" data-testid="your-work-handoff-soon">{tr("work.handOffSoon")}</p>}
                         {error && <p role="alert" className="text-[12.5px] text-copper" data-testid="your-work-error">{tr(`work.error.${error}`)}</p>}
                         <p className="text-[12px] text-muted" data-testid="your-work-move">{tr("ctoday.move", { i: index + 1, n: judge.length })}</p>
                     </div>
@@ -288,11 +326,19 @@ export function TodayYourWork({ list, active, onAnswer, onUndo, now = new Date()
                     )}
                     {withAgents.length > 0 && (
                         <WorkGroup title={tr("ctoday.withAgents")} testId="your-work-with-agents">
-                            {withAgents.map((item) => (
-                                <p key={item.id} data-work-item data-item-id={item.id} tabIndex={0} role="article" className="rounded-lg px-2 py-1 text-[13px] text-ink">
-                                    {[item.work.title, item.agent?.name, item.agent?.since ? tr("work.since", { time: workWhen(item.agent.since, now, language, tr) }) : ""].filter(Boolean).join(" · ")}
-                                </p>
-                            ))}
+                            {withAgents.map((item) => {
+                                const since = Date.parse(item.agent?.since ?? "");
+                                const quiet = Number.isFinite(since) && now.getTime() - since >= NO_WORD_MS;
+                                return quiet ? (
+                                    <p key={item.id} data-work-item data-item-id={item.id} tabIndex={0} role="article" className="rounded-lg px-2 py-1 text-[13px] text-copper" data-testid="your-work-no-word">
+                                        {item.work.title} · {tr("ctoday.noWord", { agent: item.agent?.name ?? tr("agent.yourAgent"), time: workWhen(item.agent!.since, now, language, tr) })}
+                                    </p>
+                                ) : (
+                                    <p key={item.id} data-work-item data-item-id={item.id} tabIndex={0} role="article" className="rounded-lg px-2 py-1 text-[13px] text-ink">
+                                        {[item.work.title, item.agent?.name, item.agent?.since ? tr("work.since", { time: workWhen(item.agent.since, now, language, tr) }) : ""].filter(Boolean).join(" · ")}
+                                    </p>
+                                );
+                            })}
                         </WorkGroup>
                     )}
                     {done.length > 0 && (
@@ -300,13 +346,29 @@ export function TodayYourWork({ list, active, onAnswer, onUndo, now = new Date()
                             {done.map((item) => (
                                 <div key={item.id} data-work-item data-item-id={item.id} tabIndex={0} role="article" className="flex items-baseline justify-between gap-2 rounded-lg px-2 py-1">
                                     <span className="min-w-0 text-[13px] text-ink">{item.answer!.line || item.work.title}</span>
-                                    {undoable(item) && <button type="button" className="shrink-0 text-[12px] font-medium text-accent" onClick={() => void undo(item)}>{tr("work.undo")}</button>}
+                                    <span className="flex shrink-0 items-baseline gap-2">
+                                        {item.answer!.notSent && onHandOff && <button type="button" className="text-[12px] font-medium text-accent" data-testid="your-work-send" onClick={() => onHandOff(item)}>{tr("work.send")}</button>}
+                                        {undoable(item) && <button type="button" className="text-[12px] font-medium text-accent" onClick={() => void undo(item)}>{tr("work.undo")}</button>}
+                                    </span>
                                 </div>
                             ))}
                         </WorkGroup>
                     )}
+                    {noAgents && (
+                        <div className="flex flex-col gap-1 rounded-xl border border-border bg-panel px-3 py-2.5" data-testid="your-work-no-agents">
+                            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted">{tr("ctoday.yourAgents")}</h3>
+                            <p className="text-[12.5px] leading-snug text-ink">{tr("ctoday.noAgents")}</p>
+                            {onConnectAgent && <button type="button" className="self-start text-[12.5px] font-medium text-accent" onClick={onConnectAgent}>{tr("ctoday.connectAgent")}</button>}
+                        </div>
+                    )}
                 </div>
             </div>
+            {lineItem && (
+                <div role="status" className="flex items-center justify-between gap-3 rounded-lg border border-border bg-panel px-3 py-2 text-[13px] text-ink shadow-card" data-testid="your-work-undo-line">
+                    <span className="min-w-0 truncate">{lineItem.answer!.line || lineItem.work.title}</span>
+                    <button type="button" className="shrink-0 font-medium text-accent" onClick={() => void undo(lineItem)}>{tr("work.undo")} <kbd className="ml-1 text-[11px] opacity-60">⌘Z</kbd></button>
+                </div>
+            )}
             <footer className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-[12px] text-muted" data-testid="your-work-keys">
                 <span className="flex flex-wrap items-center gap-x-1.5">
                     <kbd className="rounded border border-border px-1">↑</kbd><kbd className="rounded border border-border px-1">↓</kbd>

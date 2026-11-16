@@ -1258,11 +1258,12 @@ export interface WorkItem {
     first: WorkTextPart[];
     noticed: string;
     work: { title: string; text?: string; minutes?: number };
-    yes: { does: string; line: string; at?: string; agent?: string };
+    /** kind: the kind of work, from B4 (code goes to the code agent). */
+    yes: { does: string; line: string; at?: string; agent?: string; kind?: "code" | "else" };
     why?: { label: string; ref?: string }[];
     gets?: { id: string; label: string; ref?: string; removable: boolean }[];
     reasons: string[];
-    answer?: { action: string; reason?: string; edited?: { before: string; after: string }; at: string; surface: string; line?: string; undoUntil?: string };
+    answer?: { action: string; reason?: string; edited?: { before: string; after: string }; at: string; surface: string; line?: string; undoUntil?: string; notSent?: boolean };
     agent?: { name: string; since?: string };
     createdAt: string;
     order: number;
@@ -1276,7 +1277,11 @@ export interface WorkList {
     undoUntil?: string;
     items: WorkItem[];
 }
-export interface WorkAnswerInput { action: string; reason?: string; before?: string; after?: string }
+/** removed: ids from the item's gets[] taken out on the hand-off sheet;
+ *  agentId: the agent picked for this one hand-off (SH4). */
+/** send: false records a Yes on agent work without sending (then action
+ *  "send" hands it over, #1150). */
+export interface WorkAnswerInput { action: string; reason?: string; before?: string; after?: string; removed?: string[]; agentId?: string; send?: boolean; recordId?: string }
 export const GetWorkList = appBinding<[], WorkList>("GetWorkList");
 export const AnswerWork = appBinding<[id: string, input: WorkAnswerInput], WorkItem>("AnswerWork");
 export const UndoWork = appBinding<[id: string], WorkItem>("UndoWork");
@@ -4063,7 +4068,7 @@ export const GetDayThreads = appBinding<[number, number], ActivityDayThreads>("G
 
 // Work on it (work_on_it.go): prepare a task from what a surface shows and
 // hand it to the person's agent on their tap. On unless work_on_it_enabled is "false".
-export type WorkOnItSourceKind = "brief_item" | "topic_proposal" | "chat_card";
+export type WorkOnItSourceKind = "brief_item" | "topic_proposal" | "chat_card" | "work_item";
 export type WorkOnItMethod = "connected" | "task_link" | "deep_link" | "paste" | "open_copy" | "message" | "share";
 export type WorkOnItKind = "code" | "else";
 export interface WorkOnItInput { sourceKind: WorkOnItSourceKind; sourceId: string; title: string; detail: string; done: string; kind?: WorkOnItKind }

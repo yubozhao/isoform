@@ -822,6 +822,19 @@
         "undoFailed": "Couldn't undo it."
     },
     "ctoday": {
+        "firstTitle": "Your first brief",
+        "firstAt": "at {{time}}",
+        "firstBody": "Your first brief comes at {{time}}, made from today on this computer. Until then, here's what Isoform can already do.",
+        "yourAgents": "Your agents",
+        "noAgents": "None connected yet. A yes on offered work goes straight to the agent you use.",
+        "connectAgent": "Connect an agent ›",
+        "backFrom": "Back from {{agent}} · you said yes at {{time}}",
+        "useful": "Was it useful?",
+        "noWord": "No word from {{agent}} since {{time}}",
+        "couldntStart": "{{agent}} couldn't start",
+        "nothingSent": "Nothing was sent; the work is still in Your work.",
+        "agentSaid": "{{agent}} said:",
+        "sendAgain": "Send again",
         "titleCount": "Today, {{count}} to answer",
         "title": "Today",
         "times": "Briefs at {{morning}} and {{evening}}",
@@ -875,6 +888,7 @@
         "undo": "Undo",
         "upNext": "Up next",
         "doneToday": "Done today",
+        "send": "Send",
         "handOffSoon": "Handing work to your agent comes next.",
         "itemLabel": "{{source}}. {{sentence}}. {{work}}. {{yes}}",
         "quickChat": "Quick chat",
@@ -908,8 +922,30 @@
             "gone": "This item is no longer in Your work.",
             "changed": "This item was answered or changed.",
             "undoClosed": "This answer can no longer be undone.",
+            "agentAway": "That agent isn't connected.",
             "invalid": "That answer doesn't fit this item.",
             "failed": "Couldn't save your answer. Try again."
         }
+    },
+    "agent": {
+        "sheet": {
+            "title": "Hand it to {{agent}}"
+        },
+        "subtitle": "Your agent for {{kind}} · connected on this computer",
+        "subtitleKind": "Your agent for {{kind}}",
+        "kind": {
+            "code": "code",
+            "else": "everything else"
+        },
+        "change": "Change agent",
+        "noOther": "No other agent for this kind of work yet.",
+        "exact": "This is exactly what goes:",
+        "gets": "What it gets",
+        "remove": "Remove {{label}}",
+        "send": "Send to {{agent}}",
+        "readFailed": "Couldn't read your agents.",
+        "noneChosen": "Pick an agent for this kind of work with Change agent.",
+        "yourAgent": "your agent",
+        "foot": "{{agent}} works in its own account. The result comes back to Your work."
     }
 }

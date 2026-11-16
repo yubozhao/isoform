@@ -1,11 +1,11 @@
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Clock } from "lucide-react";
 import type { MakeBriefState } from "@/hooks/useLatestBrief";
 import { assistantLabel } from "@/lib/brief-assistant";
 import { toggleBriefPlayback } from "@/lib/brief-audio";
 import { briefForDisplay } from "@/lib/brief-hygiene";
-import { briefSlotKey } from "@/lib/brief-time";
+import { briefClockTime, briefSlotKey } from "@/lib/brief-time";
 import { briefHasWords, briefTitle } from "@/lib/brief-title";
 import { measureToday } from "@/lib/today-telemetry";
 import type { MobileBriefDocument, TodayBriefView } from "@/lib/wails-shim-app";
@@ -158,6 +158,30 @@ export function TodayBriefBand({ brief, view, make, onMakeNow, showLead = true, 
                         <ChevronRight aria-hidden className="size-3.5" />
                     </button>
                 )}
+            </div>
+        </section>
+    );
+}
+
+/**
+ * The band before the first brief (computer-today v1.1.0, 12a): a clock in
+ * place of play, "Your first brief" at its time, and what comes meanwhile.
+ * The brief takes its place when it is made (B1), so the band never goes
+ * empty.
+ */
+export function TodayFirstBriefBand({ nextAt, timeZone }: { nextAt: string; timeZone?: string }) {
+    const { t, i18n } = useTranslation("today");
+    const tr: Translate = (key, options) => t(key as never, options as never) as unknown as string;
+    const time = briefClockTime(nextAt, i18n.language, tr, timeZone);
+    if (!time) return null;
+    return (
+        <section data-testid="today-first-brief-band" className="flex items-start gap-3.5 rounded-xl border border-border bg-panel px-[26px] py-6 shadow-card">
+            <span aria-hidden className="flex size-9 shrink-0 items-center justify-center rounded-full bg-surface-active text-muted">
+                <Clock className="size-4" />
+            </span>
+            <div className="flex min-w-0 flex-col gap-1">
+                <p className="text-[13px] font-semibold text-ink">{tr("ctoday.firstTitle")} <span className="font-normal text-muted">{tr("ctoday.firstAt", { time })}</span></p>
+                <p className="text-[14px] leading-[1.55] text-ink">{tr("ctoday.firstBody", { time })}</p>
             </div>
         </section>
     );

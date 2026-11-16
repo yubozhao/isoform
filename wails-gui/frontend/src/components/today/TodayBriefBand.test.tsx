@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "@/i18n";
 import type { MobileBriefDocument, TodayBriefView } from "@/lib/wails-shim-app";
-import { TodayBriefBand, firstSentences } from "./TodayBriefBand";
+import { TodayBriefBand, TodayFirstBriefBand, firstSentences } from "./TodayBriefBand";
 
 const mocks = vi.hoisted(() => ({ toggle: vi.fn() }));
 
@@ -119,5 +119,12 @@ describe("TodayBriefBand", () => {
         band({ readAll: true });
         expect(screen.queryByTestId("brief-band-lead")).toBeNull();
         expect(screen.getByTestId("brief-band-read-all")).toHaveAttribute("aria-expanded", "true");
+    });
+
+    it("says when the first brief comes, before there is one", () => {
+        render(<TodayFirstBriefBand nextAt={new Date(2026, 10, 15, 18, 0).toISOString()} />);
+        const first = screen.getByTestId("today-first-brief-band");
+        expect(first).toHaveTextContent("Your first brief");
+        expect(first).toHaveTextContent(/Your first brief comes at 6:00\sPM, made from today on this computer\./);
     });
 });
