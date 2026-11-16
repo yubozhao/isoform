@@ -42,6 +42,8 @@ interface StreamBodyProps {
     streamingStartedAt?: number;
     hasProject: boolean;
     executorType?: ExecutorType;
+    /** The agent is still starting; a sent turn waits for it. */
+    agentStarting?: boolean;
     vimMode?: boolean;
     onVimInsert?: () => void;
     hasMore?: boolean;
@@ -114,6 +116,7 @@ export function StreamBody({
     streamingStartedAt = 0,
     hasProject,
     executorType = 'claude',
+    agentStarting = false,
     vimMode = false,
     onVimInsert,
     hasMore = false,
@@ -423,7 +426,7 @@ export function StreamBody({
             {showWelcome && (
                 <WelcomeSuggestions onFillComposer={onFillComposer} />
             )}
-            {showTypingIndicator && <TypingIndicator executorType={executorType} />}
+            {showTypingIndicator && <TypingIndicator executorType={executorType} startingUp={agentStarting} />}
             <div ref={bottomRef} className="h-px" />
         </>
     );

@@ -829,5 +829,6 @@
         "systemSettingsPath": "系统设置 › 隐私与安全性 › {{name}}",
         "check": "没能核对。",
         "confirmSent": "没能确认已发送"
-    }
+    },
+    "startingUp": "正在启动。Isoform 一准备好就会回复你的消息。"
 }

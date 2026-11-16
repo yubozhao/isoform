@@ -841,8 +841,11 @@ func (a *App) executePromptOwned(prompt string, userPrompt string, workDir strin
 			schedulePendingTraceIDCleanup(a, tag, traceID)
 		}()
 
-		// Wait for agent to become ready if currently starting/restarting.
+		// A turn sent while the agent is still starting (the first half
+		// minute after launch) waits for it and is answered once it is
+		// ready; it never gives up while startup is still under way.
 		if runner == nil {
+			a.kickAgentStartForTurn()
 			select {
 			case <-readyCh:
 				a.mu.Lock()
@@ -852,7 +855,7 @@ func (a *App) executePromptOwned(prompt string, userPrompt string, workDir strin
 					a.emitAgentEvent(AgentEvent{Type: "error", Tag: tag, Error: "agent failed to initialize"})
 					return
 				}
-			case <-time.After(15 * time.Second):
+			case <-agentReadyTurnAfter(agentReadyTurnWait):
 				a.emitAgentEvent(AgentEvent{Type: "error", Tag: tag, Error: "agent is not ready, please try again"})
 				return
 			case <-ctx.Done():
@@ -2207,4 +2210,32 @@ func formatConversationHistory(items []storage.StreamItemRow) string {
 		}
 	}
 	return strings.TrimSpace(sb.String())
+}
+
+// agentReadyTurnWait bounds how long a turn sent before the agent is ready
+// waits for it. Startup takes up to about a minute on a cold launch (the
+// daily trial's runner was ready 32 s after its first message), so the old
+// 15 s left launch-time messages unanswered.
+var agentReadyTurnWait = 3 * time.Minute
+
+// agentReadyTurnAfter is time.After; tests stand in a clock.
+var agentReadyTurnAfter = time.After
+
+// kickAgentStartForTurn starts the agent for a waiting turn when nothing else
+// is starting it, so a turn never waits on a start that will not come. A
+// launch whose environment is not ready yet starts the agent itself once it
+// is (StartAgent returns at once until then).
+func (a *App) kickAgentStartForTurn() {
+	a.mu.Lock()
+	idle := a.runner == nil && !a.starting && !a.ready
+	a.mu.Unlock()
+	// Only a launched app starts its agent; test rigs install their own.
+	if !idle || a.ctx == nil || a.launch == nil {
+		return
+	}
+	go func() {
+		if _, err := a.StartAgent(); err != nil {
+			log.Printf("[agent-start] start for a waiting turn failed: %v", err)
+		}
+	}()
 }
