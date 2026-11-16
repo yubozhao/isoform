@@ -972,5 +972,13 @@
             "already_done": "已经做了",
             "not_mine": "不是我的"
         }
+    },
+    "topic": {
+        "kindProject": "项目",
+        "kindFollowing": "关注",
+        "seen": "过去 7 天里出现了 {{n}} 天",
+        "next": "接下来",
+        "saw": "Isoform 看到的",
+        "ask": "问问 {{topic}} ›"
     }
 }

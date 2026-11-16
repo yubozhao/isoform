@@ -67,7 +67,9 @@ export const NO_WORD_MS = 2 * 60 * 60_000;
 /** How long the one-line Undo stays after an answer (rule 13). */
 export const UNDO_LINE_MS = 5_000;
 
-export function TodayYourWork({ list, active, onAnswer, onUndo, onHandOff, noAgents = false, onConnectAgent, onOpenRef, now = new Date() }: {
+export function TodayYourWork({ list, active, onAnswer, onUndo, onHandOff, noAgents = false, onConnectAgent, onOpenRef, title, now = new Date() }: {
+    /** The heading in place of "Your work" (a topic's "Next"). */
+    title?: string;
     /** Opens what a source-line part names: a topic, a brief (computer-find v1.0.0 rule 1). */
     onOpenRef?: (ref: string) => boolean;
     /** No agent connected yet: the right column says so once (rule 3). */
@@ -222,7 +224,7 @@ export function TodayYourWork({ list, active, onAnswer, onUndo, onHandOff, noAge
     return (
         <section ref={sectionRef} aria-labelledby="today-your-work-title" data-testid="today-your-work" className="@container flex flex-col gap-3" onKeyDown={onItemKey}>
             <header className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                <h2 id="today-your-work-title" className="text-[15px] font-semibold text-ink">{tr("work.title")}</h2>
+                <h2 id="today-your-work-title" className="text-[15px] font-semibold text-ink">{title ?? tr("work.title")}</h2>
                 <span className="text-[12.5px] text-muted" data-testid="your-work-counts">
                     {list.backFromAgents > 0 ? tr("ctoday.workSub", { n: list.toAnswer, m: list.backFromAgents }) : tr("work.toAnswer", { count: list.toAnswer })}
                 </span>

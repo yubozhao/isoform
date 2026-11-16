@@ -972,5 +972,13 @@
             "already_done": "Already done",
             "not_mine": "Not mine"
         }
+    },
+    "topic": {
+        "kindProject": "Project",
+        "kindFollowing": "Following",
+        "seen": "Seen {{n}} of the last 7 days",
+        "next": "Next",
+        "saw": "What Isoform saw",
+        "ask": "Ask about {{topic}} ›"
     }
 }
