@@ -296,7 +296,11 @@ func (s *mobileRecordingStore) dropPausedAudio(id string, pauses []observationPa
 // cannot be read leaves the audio where it is: the worker reads the log again
 // before it transcribes anything, and does not transcribe without it.
 func (a *App) dropPausedMobileRecordingOnReceipt(store *mobileRecordingStore, id string) {
-	pauses, err := mobileRecordingPauses(a)
+	source := ""
+	if rec, ok := store.get(id, ""); ok {
+		source = rec.Source
+	}
+	pauses, err := a.mobileRecordingDropSpans(source)
 	if err != nil {
 		log.Printf("[recordings] pause log not read for %s: %v", id, err)
 		return

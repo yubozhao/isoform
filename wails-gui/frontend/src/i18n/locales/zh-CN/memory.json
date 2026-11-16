@@ -482,8 +482,7 @@
             "confirmed_one": "你已确认 {{count}} 条。",
             "confirmed_other": "你已确认 {{count}} 条。",
             "noneConfirmed": "你还没有确认任何一条。",
-            "local": "存储在你的电脑上。你可以更正或忘记其中任何一条。",
-            "empty": "Isoform 会把对你的了解写在这里。第一批今晚就有。"
+            "local": "存储在你的电脑上。你可以更正或忘记其中任何一条。"
         },
         "span": {
             "days_one": "{{count}} 天",
@@ -772,6 +771,10 @@
         "tabAgent": "Agent of You",
         "soon": "即将推出",
         "agentSoon": "即将推出：Agent of You 会根据你在这里确认过的内容回答客户。",
-        "aoySetupLink": "设置和记录在 设置 › Agent of You ›"
+        "aoySetupLink": "设置和记录在 设置 › Agent of You ›",
+        "nothingNew": "本周没有需要确认的新内容。",
+        "allJudged_one": "Isoform 对你的 {{count}} 条看法你都已判断过。随着它看到更多你的工作，新的会先显示在这里。",
+        "allJudged_other": "Isoform 对你的 {{count}} 条看法你都已判断过。随着它看到更多你的工作，新的会先显示在这里。",
+        "tooEarly": "Isoform 还没看到足够的内容来说说你。随着它看到你的工作，看法会出现在这里，通常需要一天左右。"
     }
 }

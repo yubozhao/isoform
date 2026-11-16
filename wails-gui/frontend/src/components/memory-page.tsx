@@ -887,7 +887,7 @@ export function MemoryPage({
                                     {historyBeliefs.length > 0 && totals.confirmed === 0 && firstDay.history
                                         ? t('aboutYou.firstDay.lineWithLocal', { line: t('aboutYou.firstDay.line', { count: historyBeliefs.length, history: historyName(firstDay.history.assistants, tCommon) }), local: t('aboutYou.summary.local') })
                                         : entries.length === 0
-                                        ? t('aboutYou.summary.empty')
+                                        ? t('you.tooEarly')
                                         : t('aboutYou.summary.line', {
                                             beliefs: beliefSummary(t, ideaCount || entries.length, earliest),
                                             confirmed: !about
@@ -921,6 +921,14 @@ export function MemoryPage({
                     {/* New claims first, so this week's learning is checked while
                         it's fresh (computer-you v1.0.0 rule 4). */}
                     <NewThisWeek items={reviewItems} review={review} />
+                    {/* Every claim judged (computer-activity v1.1.0, 15f): say so
+                        once, with the count, then Confirmed below. */}
+                    {entriesState === 'ready' && entries.length > 0 && reviewItems.length === 0 && checkFirstItems.length === 0 && (
+                        <section data-testid="you-nothing-new" className="flex flex-col gap-1">
+                            <h2 className="m-0 text-lg font-semibold text-ink">{t('you.nothingNew')}</h2>
+                            <p className="m-0 text-sm text-muted">{t('you.allJudged', { count: ideaCount || entries.length })}</p>
+                        </section>
+                    )}
 
                     {entriesState === 'ready' && entries.length > 0 && (
                         <AboutYouPortraitCard describe={describePortraitBelief} onShowBelief={handleSelect} onNotQuiteBelief={handleNotQuite} />

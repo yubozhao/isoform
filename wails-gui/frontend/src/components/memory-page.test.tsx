@@ -2010,14 +2010,25 @@ describe('About you design review v1.0.0', () => {
 
     // Y1: with no beliefs, only the header line.
     it.each([
-        ['en', 'Isoform writes what it learns about you here. The first notes come tonight.'],
-        ['zh-CN', 'Isoform 会把对你的了解写在这里。第一批今晚就有。'],
-    ])('reads one line on an empty page in %s', async (language, line) => {
+        ['en', "Isoform hasn't seen enough to say anything about you yet. Claims show here as it sees your work, usually after a day."],
+        ['zh-CN', 'Isoform 还没看到足够的内容来说说你。随着它看到你的工作，看法会出现在这里，通常需要一天左右。'],
+    ])('reads one line on an empty page in %s, with no sample claims', async (language, line) => {
         await i18n.changeLanguage(language);
         resetDefaults([]);
         render(<MemoryPage />);
         expect(await screen.findByText(line)).toBeInTheDocument();
         expect(screen.queryByTestId('memory-empty-state')).not.toBeInTheDocument();
+        expect(document.querySelector('[data-claim-row]')).toBeNull();
+        expect(screen.queryByTestId('you-nothing-new')).toBeNull();
+    });
+
+    // computer-activity v1.1.0, 15f: every claim judged says so, once, with the count.
+    it('says nothing is new when every claim is judged', async () => {
+        render(<MemoryPage />);
+        const nothing = await screen.findByTestId('you-nothing-new');
+        expect(nothing).toHaveTextContent('Nothing new to check this week.');
+        expect(nothing).toHaveTextContent("You've judged the 1 thing Isoform thinks about you.");
+        expect(document.querySelector('[data-claim-row]')).toBeNull();
     });
 
     // Y8: plain words for everyone; the itemized internals only with developer tools.

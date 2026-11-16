@@ -3870,6 +3870,29 @@ it recorded from the pause's start) is a later addition and will need a way to t
 the watch about a pause.
 
 
+### 24.14 Listening on the watch, turned off from the phone (2026-11-15)
+
+The phone can turn listening on the watch off, never on: listening starts with the wearer's own
+tap on the watch. `GET /status` carries
+
+```json
+"watchListening": {"off": true, "since": "2026-11-15T22:31:00Z"}
+```
+
+(`{"off": false}` while listening is allowed; the field is absent on a computer that does not know
+the setting, and a phone shows no switch then).
+
+- `GET /watch/listening` (scope `chat:write`) answers the same object.
+- `POST /watch/listening` (scope `chat:write`), body `{"off": true}`: off from now. It takes effect
+  on the computer at once: whatever the watch recorded after that moment is dropped here, as
+  audio from a pause is (24.6), whether or not the watch has heard yet. The phone tells the
+  watch, which stops at its next sync.
+- `POST /watch/listening`, body `{"off": false, "startedAt": "2026-11-15T23:02:10Z"}`: the wearer
+  started listening on the watch at that time. The off ends then (never before it began, never
+  after now). Without `startedAt` it is `400`: the phone cannot turn listening on by itself.
+
+A recording made on the phone is not affected.
+
 ## 26. Your work: one list for the phone and the computer (phone redesign B2, 2026-11-15)
 
 Design: `docs/handoff-2026-11-15/` phone-map v1.0.0 (section 7, B2), phone-today v1.0.0 rules 8 to 16,
