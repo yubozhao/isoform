@@ -67,7 +67,11 @@ func TestMobileBriefTodayRefreshWithdrawsSynthesisBeforeDiscardingSources(t *tes
 					base.NarrativeStatus = "ok"
 					base.Offers = []MobileBriefOffer{{ID: "offer-1", Action: "draft_plan", Label: "Draft a plan", Text: "UNRETAINED_OFFER_FROM_P", Prompt: "UNRETAINED_OFFER_FROM_P", Refs: []string{q}}}
 					base.Audio = &MobileBriefAudio{Status: mobileBriefAudioStatusOK, Bytes: 4, Mime: mobileBriefAudioMimeWAV}
-					base.Audio.binding = mobileBriefAudioBinding(base, "en")
+					// The voice reads the brief as the read shows it, which on a
+					// Monday morning asks what the week is about: bind to that.
+					spoken := base
+					spoken.WeekQuestion = app.morningBriefWeekQuestion(base, time.Now())
+					base.Audio.binding = mobileBriefAudioBinding(spoken, "en")
 					base.DayShape = &MobileBriefDay{ActiveMinutes: 73, TopApps: []MobileBriefAppTime{{Name: "Editor", ActiveMinutes: 73}}}
 					base.Counts = MobileBriefCounts{OpenLoopsByKind: map[string]int{"old_synthesis": 37}, LearningItems: 29}
 					svc := newMobileBriefService(app)
