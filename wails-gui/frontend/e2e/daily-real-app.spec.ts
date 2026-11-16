@@ -1,5 +1,6 @@
 import { test, expect, type Page, type Locator } from "@playwright/test";
 import { appendFileSync, mkdirSync } from "node:fs";
+import { TODAY_LAYOUT_WIDTHS, todayLayoutFailures } from "./today-layout-checks";
 
 // The daily real-app test (docs/rework-2026-11.md, step 4): the built app on
 // a seeded test data folder, driven through its browser bridge. Each page must
@@ -90,6 +91,26 @@ const nav = (name: string) => async () => {
 test("Today", async () => {
     await visit("today", 3000, async () => { await page.goto("/"); }, () => page.locator("main h1").filter({ visible: true }));
 });
+
+// Today's layout in a narrow and a wide window (group H of
+// docs/today-failure-history.md); today-layout.spec.ts checks the same rules
+// on fixture data with a full day strip.
+for (const width of TODAY_LAYOUT_WIDTHS) {
+    test(`Today at ${width} px`, async () => {
+        try {
+            await visit(`today-${width}`, 3000, async () => {
+                await page.setViewportSize({ width, height: 900 });
+                await page.goto("/");
+            }, () => page.locator("main h1").filter({ visible: true }), async (result) => {
+                await page.waitForTimeout(800);
+                result.checks.push("no sideways overflow", "sections never overlap", "strip labels fit");
+                result.failures.push(...await todayLayoutFailures(page));
+            });
+        } finally {
+            await page.setViewportSize({ width: 1280, height: 820 });
+        }
+    });
+}
 
 // trialSeedBriefWords in wails-gui/trial_seed_test.go.
 const SEEDED_BRIEF_WORDS = "Daily test brief: the Halcyon review is the first thing today.";
