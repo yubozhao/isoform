@@ -305,6 +305,16 @@ func (a *App) dispatchWorkAnswer(ctx context.Context, item WorkItem, input WorkA
 			return view.Proposal.TaskID, nil
 		}
 		return "", nil
+	case workSourcePrep:
+		// Prep is work Isoform did: a Yes keeps it with the meeting and a No
+		// says it isn't needed; both are recorded. It can't be rewritten here.
+		if input.Action == workActionEdit {
+			return "", errWorkAnswerInvalid
+		}
+		return "", nil
+	case workSourceAgent:
+		// A result is judged Useful or Not useful, not answered Yes or No.
+		return "", errWorkAnswerInvalid
 	case workSourceBrief:
 		if input.Action != workActionYes && input.Action != workActionEdit {
 			return "", nil
@@ -458,6 +468,11 @@ func (a *App) applyWorkAnswers(items []WorkItem) []WorkItem {
 				answer.Line = item.Answer.Line
 				item.Answer = answer
 			}
+		case workSourcePrep:
+			item.Answer, item.State = answer, workStateAnswered
+			if record.Action == workActionYes {
+				answer.Line = item.Work.Title + ": kept with the meeting"
+			}
 		case workSourceBrief:
 			item.Answer = answer
 			item.State = workStateAnswered
@@ -489,6 +504,8 @@ func (a *App) applyWorkAnswers(items []WorkItem) []WorkItem {
 // workAnswerLine is Done today's line for an answer (phone-today rule 15).
 func workAnswerLine(title, action, reason, state string) string {
 	switch {
+	case action == workActionNo && reason == "not_needed":
+		return title + ": not needed"
 	case state == workStateWithAgent:
 		return title + ": with your agent"
 	case state == workStateBack:

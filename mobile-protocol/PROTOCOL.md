@@ -1021,6 +1021,24 @@ answer to a chat that waited (`answer_ready`) keep their push. A moment the pers
 themselves is not affected. The computer remembers each phone's first read of `GET /work`; a phone
 that never reads it (an older build) keeps every push.
 
+### 9.2 Answers from the notification (phone redesign B9)
+
+On a phone that reads Your work, a `meeting_prep` notice and a `work_finished` notice carry the item
+they are about and one answer action (phone-map rule 16), in addition to their usual actions:
+
+- the sealed notice (14.2) gains `workItemId` after `destinationId` (additive; older phones ignore it):
+  `prep:<eventId>` for prep, and for finished work the item whose Yes started the task (a brief's offer,
+  a topic's proposal) or `result:<handoffId>`;
+- prep adds `{"id":"not_needed","label":"Not needed","auth":false}`, finished work
+  `{"id":"useful","label":"Useful","auth":false}`.
+
+The phone answers without opening the app through `POST /work/{workItemId}/answer` (26.1) with
+`surface:"notification"`: Not needed is `{"action":"no","reason":"not_needed"}`, Useful is
+`{"action":"useful"}`. It waits in the relay queue while the computer sleeps, like any answer. The
+phone also posts the `acted` receipt (14.6) for measurement; a receipt is never taken as an answer.
+Prep the person already answered on a device sends no notice. An older phone gets the notices as
+before, without `workItemId` or the answer action.
+
 ## 10. Scopes
 
 | Scope | Grants |
@@ -3663,7 +3681,7 @@ when the list changes; the phone reads `GET /work` again then.
    "state":"open|answered|with_agent|back", "source":"brief|topic|watch|prep|agent_of_you|agent",
    "ref":{"briefId","itemKey","offerId","topicId","proposalId","conversationId","saidAt","eventId",
           "handoffId","jobId","passId","taskId"},
-   "first":[{"text":"Prep for Lena"},{"text":"from the brief","ref":"brief:2026-11-15-evening"}],
+   "first":[{"text":"Prep for Lena"},{"text":"from the brief","ref":"brief:2026-11-15-evening","key":"from_brief"}],
    "noticed":"Lena asked two questions.",
    "work":{"title":"Prep for Lena","text":"...","minutes":10},
    "yes":{"does":"keep|mail_draft|agent|right|open","line":"Yes starts it with your agent. What it makes comes back here.",
@@ -3684,7 +3702,17 @@ when the list changes; the phone reads `GET /work` again then.
   brief) leaves the list; that is never an error.
 - **Words** (`first[].text`, `yes.line`, `answer.line`) are composed on the computer once, so both
   devices say the same thing (phone-map rule 10). Content Isoform wrote (`noticed`, `work`) is in the
-  person's language. The phone joins `first` with " · ".
+  person's language. The phone joins `first` with " · ". Each part may carry `key`, the fixed phrase's
+  id (`for_meeting`, `from_brief`, `from_topics`, `kind_project`, `kind_subject`, `back_from_agent`), so a
+  client can word it in its own language, and `at` for a time. **No stored text holds a day or a
+  clock**: a part with `key` `when` (the day) or `clock` (the time) gets its `text` when the list is
+  read (`GET /work`, `GetWorkList`), for the reader's now ("today", "tomorrow", "yesterday", the weekday
+  within a week, else the date; the time as `3:04 PM`), so a list built yesterday never says
+  "tomorrow" about today. A client may instead word `at` itself, as the brief's tokens are. `version`
+  changes when the local day does, at the next rebuild. `yes.at` is the time a Yes acts (prep opens),
+  never written into `yes.line`.
+- `ref.paragraph` (zero-based, optional) is the brief paragraph an item from the brief sits under: the
+  first one that cites one of its sources.
 - **Order** is `order`: the current brief's items in the brief's order, then the rest newest first,
   a result back from an agent on top of the rest; at most 10 open items. Clients group by `state`.
 - **States.** `open` waits for an answer; `answered` has one (Done today); `with_agent` was handed to
@@ -3693,10 +3721,12 @@ when the list changes; the phone reads `GET /work` again then.
 - **Reasons** a No may carry, by kind: offered `already_done`, `not_now`, `not_useful`, `myself`; done
   `not_needed`, `wrong_facts`, `not_how_id_say`, `myself`; claim `was_true_once`, `only_sometimes`,
   `not_at_all`.
-- **Sources in this version:** the current brief's offers (from its phone package) and the daily
-  topics' proposals (section 15.9, while they are on). A topic proposal's Yes starts a task: it is then
-  `with_agent`, and `back` with the task's result line when it finishes. Watch follow-ups, meeting prep,
-  Agent of You's questions and results from other hand-offs join with the same shape.
+- **Sources in this version:** the current brief's offers (from its phone package), the daily
+  topics' proposals (section 15.9, while they are on), the next meeting's prep (Today's Before you talk:
+  `prep:<eventId>`, kind `done`, Yes keeps it with the meeting, No with `not_needed`), and tasks that
+  finished today without an item of their own (`result:<handoffId>`, `back`, at most 3). A topic
+  proposal's Yes starts a task: it is then `with_agent`, and `back` with the task's result line when it
+  finishes. Watch follow-ups and Agent of You's questions join with the same shape.
 
 The phone's older feeds (`needsYou` on `/today`, `/tasks`, `/topics-daily`, brief card asks) stay for
 older phones.

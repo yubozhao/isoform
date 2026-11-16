@@ -6,7 +6,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"sort"
+	"strings"
 	"time"
+
+	"wails-gui/internal/topicday"
 )
 
 // Your work: the one list of what Isoform puts to the person, the same on the
@@ -48,7 +51,10 @@ type WorkItem struct {
 
 // WorkRef names the item's source records.
 type WorkRef struct {
-	BriefID        string `json:"briefId,omitempty"`
+	BriefID string `json:"briefId,omitempty"`
+	// Paragraph is the brief paragraph the item sits under (zero-based), when
+	// the brief cites what the item is about.
+	Paragraph      *int   `json:"paragraph,omitempty"`
 	ItemKey        string `json:"itemKey,omitempty"`
 	OfferID        string `json:"offerId,omitempty"`
 	TopicID        string `json:"topicId,omitempty"`
@@ -63,10 +69,15 @@ type WorkRef struct {
 }
 
 // WorkTextPart is one part of the item's first line; ref, when set, names
-// what the part opens.
+// what the part opens. Key names the fixed phrase, so a client can word it
+// in its own language; at is a time. The snapshot never holds day or clock
+// words: a part with key "when" or "clock" gets its text at read time for the
+// reader's now (workListWordedAt), and a client may word its at instead.
 type WorkTextPart struct {
 	Text string `json:"text"`
 	Ref  string `json:"ref,omitempty"`
+	Key  string `json:"key,omitempty"`
+	At   string `json:"at,omitempty"`
 }
 
 type WorkBody struct {
@@ -131,6 +142,12 @@ const (
 
 	workSourceBrief = "brief"
 	workSourceTopic = "topic"
+	workSourcePrep  = "prep"
+	workSourceAgent = "agent"
+
+	// workResultsPerDay bounds the finished tasks Your work shows that no
+	// item of its own started.
+	workResultsPerDay = 3
 
 	// workOpenPerDay is the most open items the list holds (redesign v1.0.0
 	// rule 15).
@@ -152,7 +169,56 @@ var (
 // GetWorkList returns Your work from its snapshot.
 func (a *App) GetWorkList() (perfValue WorkList, perfErr error) {
 	defer logPageBinding("GetWorkList", time.Now(), &perfValue)
-	return derivedRead(a, derivedWorkList, "", func() (WorkList, error) { return a.buildWorkList(context.Background(), time.Now()) }, nil)
+	list, err := derivedRead(a, derivedWorkList, "", func() (WorkList, error) { return a.buildWorkList(context.Background(), time.Now()) }, nil)
+	if err != nil {
+		return list, err
+	}
+	return workListWordedAt(list, time.Now()), nil
+}
+
+// workListWordedAt fills the text of each day and clock part for the
+// reader's now, at read time, so a snapshot built yesterday never says
+// "tomorrow" about today (the 11-15 day drift). The snapshot itself holds no
+// day words; a client may word the part from its at instead.
+func workListWordedAt(list WorkList, now time.Time) WorkList {
+	items := make([]WorkItem, len(list.Items))
+	for i, item := range list.Items {
+		parts := make([]WorkTextPart, len(item.First))
+		for j, part := range item.First {
+			if at, err := time.Parse(time.RFC3339, part.At); err == nil {
+				switch part.Key {
+				case "when":
+					part.Text = workDayWord(at, now)
+				case "clock":
+					part.Text = at.In(time.Local).Format("3:04 PM")
+				}
+			}
+			parts[j] = part
+		}
+		item.First = parts
+		items[i] = item
+	}
+	list.Items = items
+	return list
+}
+
+// workDayWord says when a time falls for the reader: today, tomorrow,
+// yesterday, else the weekday or the date.
+func workDayWord(at, now time.Time) string {
+	local, today := at.In(time.Local), now.In(time.Local)
+	day := func(t time.Time) time.Time { return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.Local) }
+	switch int(day(local).Sub(day(today)).Hours() / 24) {
+	case 0:
+		return "today"
+	case 1:
+		return "tomorrow"
+	case -1:
+		return "yesterday"
+	}
+	if diff := day(local).Sub(day(today)); diff > 0 && diff < 7*24*time.Hour {
+		return local.Format("Monday")
+	}
+	return local.Format("Jan 2")
 }
 
 // buildWorkList reads every source once and orders the list: the brief's
@@ -161,7 +227,7 @@ func (a *App) GetWorkList() (perfValue WorkList, perfErr error) {
 func (a *App) buildWorkList(ctx context.Context, now time.Time) (WorkList, error) {
 	list := WorkList{V: 1, GeneratedAt: mobileTimestamp(now), Items: []WorkItem{}}
 	brief := a.applyWorkAnswers(a.workBriefItems(ctx))
-	rest := a.applyWorkAnswers(a.workTopicItems(ctx))
+	rest := a.applyWorkAnswers(append(append(a.workTopicItems(ctx), a.workPrepItems(now)...), a.workResultItems(now, brief)...))
 	sort.SliceStable(rest, func(i, j int) bool {
 		if (rest[i].State == workStateBack) != (rest[j].State == workStateBack) {
 			return rest[i].State == workStateBack
@@ -202,10 +268,15 @@ func (a *App) buildWorkList(ctx context.Context, now time.Time) (WorkList, error
 // workListVersion changes exactly when what the list shows changes; the time
 // it was built is left out.
 func workListVersion(list WorkList) string {
+	day := ""
+	if at, err := time.Parse(time.RFC3339, list.GeneratedAt); err == nil {
+		day = at.In(time.Local).Format("2006-01-02")
+	}
 	raw, _ := json.Marshal(struct {
 		Items     []WorkItem `json:"items"`
 		UndoUntil string     `json:"undoUntil"`
-	}{list.Items, list.UndoUntil})
+		Day       string     `json:"day"`
+	}{list.Items, list.UndoUntil, day})
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:8])
 }
@@ -230,9 +301,10 @@ func (a *App) workBriefItems(ctx context.Context) []WorkItem {
 		return nil
 	}
 	var phone struct {
-		BriefID string             `json:"briefId"`
-		AsOf    string             `json:"asOf"`
-		Offers  []MobileBriefOffer `json:"offers"`
+		BriefID   string             `json:"briefId"`
+		AsOf      string             `json:"asOf"`
+		Offers    []MobileBriefOffer `json:"offers"`
+		Narrative []MobileBriefPara  `json:"narrative"`
 	}
 	if json.Unmarshal(pkg.Bytes, &phone) != nil || phone.BriefID != current.BriefID {
 		return nil
@@ -255,14 +327,32 @@ func (a *App) workBriefItems(ctx context.Context) []WorkItem {
 		}
 		items = append(items, WorkItem{
 			ID: workBriefOfferID(phone.BriefID, offer.ID), Kind: workKindOffered, Row: row, State: workStateOpen,
-			Source: workSourceBrief, Ref: WorkRef{BriefID: phone.BriefID, OfferID: offer.ID},
-			First:   []WorkTextPart{{Text: offer.Label}, {Text: "from the brief", Ref: "brief:" + phone.BriefID}},
+			Source: workSourceBrief, Ref: WorkRef{BriefID: phone.BriefID, OfferID: offer.ID, Paragraph: workOfferParagraph(phone.Narrative, offer.Refs)},
+			First:   []WorkTextPart{{Text: offer.Label}, {Text: "from the brief", Ref: "brief:" + phone.BriefID, Key: "from_brief"}},
 			Noticed: noticed, Work: WorkBody{Title: offer.Label},
 			Yes:     WorkYes{Does: "agent", Line: workYesAgentLine},
 			Reasons: workReasonsOffered, CreatedAt: phone.AsOf,
 		})
 	}
 	return items
+}
+
+// workOfferParagraph is the first paragraph that cites one of the offer's
+// sources, or nil.
+func workOfferParagraph(narrative []MobileBriefPara, refs []string) *int {
+	cited := map[string]bool{}
+	for _, ref := range refs {
+		cited[ref] = true
+	}
+	for i, para := range narrative {
+		for _, ref := range para.Refs {
+			if cited[ref] {
+				index := i
+				return &index
+			}
+		}
+	}
+	return nil
 }
 
 // workYesAgentLine is the Yes line of offered work until the person's agent
@@ -295,14 +385,14 @@ func (a *App) workTopicItems(ctx context.Context) []WorkItem {
 		if p == nil || p.ID == "" || p.Title == "" {
 			continue
 		}
-		kind := "a subject"
+		kind, kindKey := "a subject", "kind_subject"
 		if topic.Kind == "project" {
-			kind = "a project"
+			kind, kindKey = "a project", "kind_project"
 		}
 		item := WorkItem{
 			ID: workTopicProposalID(topic.ID, p.ID), Kind: workKindOffered, Row: "offered", State: workStateOpen,
 			Source: workSourceTopic, Ref: WorkRef{TopicID: topic.ID, ProposalID: p.ID, TaskID: p.TaskID},
-			First:   []WorkTextPart{{Text: topic.Name, Ref: "topic:" + topic.ID}, {Text: kind}, {Text: "from your topics"}},
+			First:   []WorkTextPart{{Text: topic.Name, Ref: "topic:" + topic.ID}, {Text: kind, Key: kindKey}, {Text: "from your topics", Key: "from_topics"}},
 			Noticed: p.Why, Work: WorkBody{Title: p.Title},
 			Yes:     WorkYes{Does: "agent", Line: workYesAgentLine},
 			Reasons: workReasonsOffered, CreatedAt: created,
@@ -330,3 +420,94 @@ func (a *App) workTopicItems(ctx context.Context) []WorkItem {
 	}
 	return items
 }
+
+// workPrepItems is the next meeting's prep, as Today's Before you talk has it
+// (phone-today rule 8): kept with the meeting on a Yes, Not needed on a No.
+func (a *App) workPrepItems(now time.Time) []WorkItem {
+	prep, err := a.GetTodayBeforeYouTalk()
+	if err != nil || prep == nil || prep.MeetingID == "" || strings.TrimSpace(prep.PersonName) == "" {
+		return nil
+	}
+	name := strings.TrimSpace(prep.PersonName)
+	lines := []string{}
+	if asked := strings.TrimSpace(prep.TheyAsked); asked != "" {
+		lines = append(lines, name+" asked: "+asked)
+	}
+	if owe := strings.TrimSpace(prep.YouOwe); owe != "" {
+		lines = append(lines, "You owe "+name+": "+owe)
+	}
+	if last := strings.TrimSpace(prep.LastTime); last != "" {
+		lines = append(lines, "Last time: "+last)
+	}
+	if len(lines) == 0 {
+		return nil
+	}
+	start := time.UnixMilli(prep.StartAt).In(time.Local)
+	opens := start.Add(-5 * time.Minute)
+	return []WorkItem{{
+		ID: workPrepID(prep.MeetingID), Kind: workKindDone, Row: "prep", State: workStateOpen, Source: workSourcePrep,
+		Ref: WorkRef{EventID: prep.MeetingID},
+		First: []WorkTextPart{{Text: "For your meeting with " + name, Key: "for_meeting", At: mobileTimestamp(start)},
+			{Key: "when", At: mobileTimestamp(start)}},
+		Noticed: lines[0], Work: WorkBody{Title: "Prep for " + name, Text: strings.Join(lines, "\n")},
+		Yes:     WorkYes{Does: "keep", At: mobileTimestamp(opens), Line: "Yes keeps it with the meeting."},
+		Reasons: workReasonsDone, CreatedAt: mobileTimestamp(start.Add(-time.Hour)),
+	}}
+}
+
+func workPrepID(meetingID string) string { return "prep:" + meetingID }
+
+// workResultItems are tasks that finished today without an item of their own
+// (a brief's offer or a topic's proposal holds its own result): the result
+// back from the agent, to be judged Useful or Not useful.
+func (a *App) workResultItems(now time.Time, held []WorkItem) []WorkItem {
+	if a.handoffStore == nil {
+		return nil
+	}
+	owned := map[string]bool{}
+	for _, item := range held {
+		if item.Ref.TaskID != "" {
+			owned[item.Ref.TaskID] = true
+		}
+	}
+	for _, record := range a.workAnswers().current() {
+		if record.TaskID != "" {
+			owned[record.TaskID] = true
+		}
+	}
+	entries, err := a.handoffStore.List()
+	if err != nil {
+		return nil
+	}
+	day := now.In(time.Local).Format("2006-01-02")
+	items := []WorkItem{}
+	for _, entry := range entries {
+		if owned[entry.ID] || entry.Thread != nil && entry.Thread.Origin != nil && (entry.Thread.Origin.Kind == topicsDailyTaskOrigin || entry.Thread.Origin.Kind == workBriefTaskOrigin) {
+			continue
+		}
+		state, result := dailyTopicTaskState(entry)
+		if state != topicday.StateDone {
+			continue
+		}
+		finished := time.UnixMilli(entry.UpdatedAt).In(time.Local)
+		title := strings.TrimSpace(entry.Title)
+		if finished.Format("2006-01-02") != day || title == "" {
+			continue
+		}
+		items = append(items, WorkItem{
+			ID: workResultID(entry.ID), Kind: workKindResult, Row: "result", State: workStateBack, Source: workSourceAgent,
+			Ref:     WorkRef{HandoffID: entry.ID, TaskID: entry.ID},
+			First:   []WorkTextPart{{Text: "Back from your agent", Key: "back_from_agent"}, {Key: "clock", At: mobileTimestamp(finished)}},
+			Noticed: title + " is ready.", Work: WorkBody{Title: title, Text: result},
+			Yes:     WorkYes{Does: "open", Line: "Was it useful?"},
+			Reasons: []string{}, CreatedAt: mobileTimestamp(finished),
+		})
+	}
+	sort.SliceStable(items, func(i, j int) bool { return items[i].CreatedAt > items[j].CreatedAt })
+	if len(items) > workResultsPerDay {
+		items = items[:workResultsPerDay]
+	}
+	return items
+}
+
+func workResultID(handoffID string) string { return "result:" + handoffID }
