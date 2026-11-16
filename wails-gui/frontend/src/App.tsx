@@ -4085,6 +4085,7 @@ export default function App() {
                                                     hasProject={
                                                         hasActiveConversation
                                                     }
+                                                    agentStarting={!streaming.status.ready}
                                                     executorType={getExecutorType(
                                                         effectiveModel,
                                                     )}

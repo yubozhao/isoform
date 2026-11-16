@@ -829,5 +829,6 @@
         "systemSettingsPath": "System Settings › Privacy & Security › {{name}}",
         "check": "Couldn't check this.",
         "confirmSent": "Couldn't confirm it sent"
-    }
+    },
+    "startingUp": "Starting up. Your message is answered as soon as Isoform is ready."
 }
