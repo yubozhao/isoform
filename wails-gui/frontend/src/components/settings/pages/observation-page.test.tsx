@@ -67,6 +67,8 @@ function speechModel(over: Record<string, unknown> = {}) {
 }
 
 vi.mock("@/lib/wails-shim-app", () => ({
+    GetDailyTopics: vi.fn(async () => ({ enabled: false, topics: [] })),
+    SetDailyTopicsEnabled: vi.fn(async (enabled: boolean) => ({ enabled, topics: [] })),
     IsClosedEyesModeEnabled: mocks.isPaused,
     SetClosedEyesModeEnabled: mocks.setPaused,
     GetPlatformPermissions: mocks.getPermissions,

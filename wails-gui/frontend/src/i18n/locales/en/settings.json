@@ -4155,5 +4155,11 @@
         "open": "Open",
         "save": "Save",
         "lead": "You, as an agent clients can hire at isoform.ai/agents/{{name}}."
+    },
+    "topicProposals": {
+        "title": "Proposals from your topics",
+        "description": "Isoform sends your topic names to your own AI to suggest the next piece of work.",
+        "toggleFailed": "Couldn't change this. Try again.",
+        "loadFailed": "Couldn't read this setting."
     }
 }

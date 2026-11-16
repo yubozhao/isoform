@@ -73,6 +73,7 @@ import {
     type OpenSettingsPage,
 } from "./capture-shared";
 import { CapturedCountsCard } from "./captured-counts-card";
+import { TopicProposalsCard } from "./topic-proposals-card";
 
 // ── Observation page (page id "activity") ──
 //
@@ -1872,6 +1873,7 @@ export function ObservationPage({ onOpenPage }: { onOpenPage?: OpenSettingsPage 
                 onGrant={(item) => void requestPermission(item)}
                 onChanged={refresh}
             /></div>
+            <TopicProposalsCard />
             <CapturedCountsCard />
             <SettingsAdvanced pageId="activity" hint={t("observation.advanced.hint")}>
                 <CaptureStatusCard
