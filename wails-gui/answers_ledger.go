@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,6 +34,9 @@ type AnswerRecord struct {
 	ItemID string `json:"item"`
 	// Kind is work, belief, portrait or correction.
 	Kind string `json:"kind"`
+	// Source is where the item came from: brief, topic, watch, prep, agent
+	// (a result back), about_you or chat.
+	Source string `json:"source,omitempty"`
 	// Title is what the item said when it was answered, for Your answers.
 	Title     string      `json:"title,omitempty"`
 	Action    string      `json:"action"`
@@ -59,11 +64,22 @@ const (
 	answersLedgerFileName = "ledger.jsonl"
 	answersTitleMaxRunes  = 160
 	answersPageMax        = 200
+
+	// answerActionShown marks the first time an item was put in front of the
+	// person, on its surface. It is a measure, never an answer.
+	answerActionShown = "shown"
+
+	answerSourceAboutYou = "about_you"
+	answerSourceChat     = "chat"
+	answerSourceOther    = "other"
 )
 
 type answersLedgerStore struct {
 	mu   sync.Mutex
 	path string
+	// shown holds the items already recorded as shown, read from the ledger
+	// once; guarded by mu.
+	shown map[string]bool
 }
 
 var answersLedgers sync.Map // *App -> *answersLedgerStore
@@ -124,8 +140,13 @@ func (s *answersLedgerStore) entries() []AnswerRecord {
 		return nil
 	}
 	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.entriesLocked()
+}
+
+// entriesLocked reads the ledger; the caller holds mu.
+func (s *answersLedgerStore) entriesLocked() []AnswerRecord {
 	raw, err := os.ReadFile(s.path)
-	s.mu.Unlock()
 	if err != nil {
 		return nil
 	}
@@ -158,7 +179,7 @@ func answersStanding(entries []AnswerRecord) map[string]AnswerRecord {
 	undone := answersUndone(entries)
 	out := map[string]AnswerRecord{}
 	for _, record := range entries {
-		if record.Action == workActionUndo || undone[record.EntryID] {
+		if record.Action == workActionUndo || record.Action == answerActionShown || undone[record.EntryID] {
 			continue
 		}
 		previous, seen := out[record.ItemID]
@@ -224,7 +245,7 @@ func (a *App) GetAnswers(limit int, before string) (AnswersPage, error) {
 			started = record.EntryID == before
 			continue
 		}
-		if record.Action == workActionUndo {
+		if record.Action == workActionUndo || record.Action == answerActionShown {
 			continue
 		}
 		if len(page.Answers) == limit {
@@ -243,4 +264,216 @@ func answersBound(text string) string {
 		return string(runes[:answersTitleMaxRunes])
 	}
 	return text
+}
+
+// noteWorkShown records each item of a list the first time it is put in front
+// of the person, with its source and the surface it appeared on.
+func (a *App) noteWorkShown(list WorkList, surface string) {
+	ledger := a.answersLedger()
+	if ledger.path == "" {
+		return
+	}
+	ledger.mu.Lock()
+	if ledger.shown == nil {
+		ledger.mu.Unlock()
+		shown := map[string]bool{}
+		for _, record := range ledger.entries() {
+			if record.Action == answerActionShown {
+				shown[record.ItemID] = true
+			}
+		}
+		ledger.mu.Lock()
+		if ledger.shown == nil {
+			ledger.shown = shown
+		}
+	}
+	fresh := []WorkItem{}
+	for _, item := range list.Items {
+		if !ledger.shown[item.ID] {
+			ledger.shown[item.ID] = true
+			fresh = append(fresh, item)
+		}
+	}
+	ledger.mu.Unlock()
+	for _, item := range fresh {
+		if _, err := ledger.append(AnswerRecord{ItemID: item.ID, Kind: answerKindWork, Source: item.Source, Title: item.Work.Title,
+			Action: answerActionShown, Surface: surface}); err != nil {
+			log.Printf("[answers] an item shown was not kept: %v", err)
+			return
+		}
+	}
+}
+
+var errAnswerNotFound = errors.New("this answer is no longer kept")
+
+// ForgetAnswer deletes one answer for good, the person's choice from Your
+// data: the entry and any Undo of it leave the ledger, which is written
+// again whole and synced. An item it answered can be answered again.
+func (a *App) ForgetAnswer(entryID string) error {
+	if err := a.answersLedger().forget(entryID); err != nil {
+		return err
+	}
+	a.emitBrowserEvent(workAnsweredEvent, "")
+	return nil
+}
+
+// forget rewrites the ledger without the entry and its Undo, under one lock
+// over the read and the rewrite, so no answer given meanwhile is lost.
+func (ledger *answersLedgerStore) forget(entryID string) error {
+	if ledger.path == "" {
+		return errMobileStoreUnavailable
+	}
+	ledger.mu.Lock()
+	defer ledger.mu.Unlock()
+	entries := ledger.entriesLocked()
+	kept := make([]AnswerRecord, 0, len(entries))
+	found := false
+	for _, record := range entries {
+		if record.EntryID == entryID && record.Action != workActionUndo && record.Action != answerActionShown {
+			found = true
+			continue
+		}
+		if record.Action == workActionUndo && record.Undoes == entryID {
+			continue
+		}
+		kept = append(kept, record)
+	}
+	if !found {
+		return errAnswerNotFound
+	}
+	var buf bytes.Buffer
+	for _, record := range kept {
+		line, err := json.Marshal(record)
+		if err != nil {
+			return err
+		}
+		buf.Write(append(line, '\n'))
+	}
+	tmp := ledger.path + ".tmp"
+	file, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := file.Write(buf.Bytes()); err != nil {
+		_ = file.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		_ = file.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := file.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, ledger.path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	if dir, err := os.Open(filepath.Dir(ledger.path)); err == nil {
+		_ = dir.Sync()
+		_ = dir.Close()
+	}
+	return nil
+}
+
+// JudgmentCounts are one day's measures for one source (or all of them).
+type JudgmentCounts struct {
+	// Shown counts items first put in front of the person.
+	Shown int `json:"shown"`
+	// Answered counts answers that stand; an undone answer counts as Undone.
+	Answered  int `json:"answered"`
+	Accepted  int `json:"accepted"`
+	Declined  int `json:"declined"`
+	NotMine   int `json:"notMine"`
+	Useful    int `json:"useful"`
+	NotUseful int `json:"notUseful"`
+	Undone    int `json:"undone"`
+}
+
+// JudgmentDay is one local day's measures, all sources and by source.
+type JudgmentDay struct {
+	Day      string                    `json:"day"`
+	Total    JudgmentCounts            `json:"total"`
+	BySource map[string]JudgmentCounts `json:"bySource"`
+}
+
+// JudgmentStats are the daily measures of the thesis, newest day first:
+// proposals made (shown), answered and accepted, per source. A brief's items
+// acted on are BySource["brief"].Accepted.
+type JudgmentStats struct {
+	Days []JudgmentDay `json:"days"`
+}
+
+// GetJudgmentStats reads the ledger into daily counts for the last days
+// local days (1 to 90, default 7), today first.
+func (a *App) GetJudgmentStats(days int) (JudgmentStats, error) {
+	return judgmentStatsAt(a.answersLedger().entries(), days, time.Now()), nil
+}
+
+func judgmentStatsAt(entries []AnswerRecord, days int, now time.Time) JudgmentStats {
+	if days <= 0 || days > 90 {
+		days = 7
+	}
+	undone := answersUndone(entries)
+	byDay := map[string]*JudgmentDay{}
+	stats := JudgmentStats{Days: []JudgmentDay{}}
+	order := []string{}
+	today := now.In(time.Local)
+	for i := 0; i < days; i++ {
+		day := today.AddDate(0, 0, -i).Format("2006-01-02")
+		byDay[day] = &JudgmentDay{Day: day, BySource: map[string]JudgmentCounts{}}
+		order = append(order, day)
+	}
+	for _, record := range entries {
+		if record.Action == workActionUndo {
+			continue
+		}
+		at, err := time.Parse(time.RFC3339, record.At)
+		if err != nil {
+			continue
+		}
+		day := byDay[at.In(time.Local).Format("2006-01-02")]
+		if day == nil {
+			continue
+		}
+		source := record.Source
+		if source == "" {
+			source = answerSourceOther
+		}
+		counts := day.BySource[source]
+		judgmentCount(&counts, record, undone[record.EntryID])
+		day.BySource[source] = counts
+		judgmentCount(&day.Total, record, undone[record.EntryID])
+	}
+	for _, day := range order {
+		stats.Days = append(stats.Days, *byDay[day])
+	}
+	return stats
+}
+
+func judgmentCount(c *JudgmentCounts, record AnswerRecord, undone bool) {
+	if record.Action == answerActionShown {
+		c.Shown++
+		return
+	}
+	if undone {
+		c.Undone++
+		return
+	}
+	c.Answered++
+	switch record.Action {
+	case workActionYes, workActionEdit:
+		c.Accepted++
+	case workActionNo:
+		c.Declined++
+	case workActionNotMine:
+		c.NotMine++
+	case workActionUseful:
+		c.Useful++
+	case workActionNotUseful:
+		c.NotUseful++
+	}
 }

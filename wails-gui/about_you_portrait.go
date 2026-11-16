@@ -1978,7 +1978,7 @@ func (a *App) ConfirmAboutYouPortrait() ([]string, error) {
 			}
 		}
 	}
-	if _, err := a.recordAnswer(AnswerRecord{ItemID: "portrait", Kind: answerKindPortrait, Title: "Your portrait", Action: workActionYes,
+	if _, err := a.recordAnswer(AnswerRecord{ItemID: "portrait", Kind: answerKindPortrait, Source: answerSourceAboutYou, Title: "Your portrait", Action: workActionYes,
 		Surface: workSurfaceComputer}); err != nil {
 		log.Printf("[answers] the portrait's That's me was not kept: %v", err)
 	}
@@ -2142,7 +2142,7 @@ func (a *App) NotQuiteAboutYouPortrait(note string) error {
 	if err := a.queuePortraitCorrection(note, noteID); err != nil {
 		return err
 	}
-	if _, err := a.recordAnswer(AnswerRecord{ItemID: "portrait", Kind: answerKindPortrait, Title: "Your portrait", Action: workActionNo,
+	if _, err := a.recordAnswer(AnswerRecord{ItemID: "portrait", Kind: answerKindPortrait, Source: answerSourceAboutYou, Title: "Your portrait", Action: workActionNo,
 		Note: note, Surface: workSurfaceComputer}); err != nil {
 		log.Printf("[answers] the portrait's Not quite was not kept: %v", err)
 	}

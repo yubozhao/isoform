@@ -502,7 +502,7 @@ func (bridge *mobileBridge) buildToday() (MobileTodayV1, error) {
 		sort.Strings(parts)
 		sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
 		view.TasksVersion = hex.EncodeToString(sum[:])
-		if work, err := app.GetWorkList(); err == nil {
+		if work, err := app.workListNow(); err == nil {
 			view.WorkVersion = work.Version
 		}
 		subjects, err := mobileGoalSubjects(app)
