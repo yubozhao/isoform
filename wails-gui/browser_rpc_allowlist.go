@@ -149,6 +149,8 @@ var browserRPCAllowlist = map[string]bool{
 	"GetCronRuns":     true,
 	"LoadCronRunLogs": true,
 	"GetUpcoming":     true,
+	// Which optional features are on: four booleans, no personal data.
+	"GetFeatureSwitches": true,
 	// Today: the brief, a read. The topic list and the finds stay in the app
 	// window: ranking them records the browser journal in topics.json, and
 	// finding, feedback and topic changes rewrite what Isoform learned.

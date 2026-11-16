@@ -444,6 +444,7 @@ var browserRPCReadOnly = []string{
 	"GetTelemetryTier",
 	"GetTriageLogs",
 	"GetUpcoming",
+	"GetFeatureSwitches",
 	"GetUpcomingCalendarEvents",
 	"GetUpdateStatus",
 	"GetUseYansuGateway",
