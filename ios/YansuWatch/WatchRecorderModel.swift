@@ -41,7 +41,8 @@ final class WatchRecorderModel: NSObject, ObservableObject {
     private var partClosesHour = false
     /// When the open recording is closed and the next one begins.
     private var hourCut: Date?
-    private var interrupted = false
+    /// A call or Siri holds the microphone: nothing is being recorded until it is given back.
+    @Published private(set) var interrupted = false
     private let heartRate = WatchHeartRateSampler()
     private let location = WatchLocationSampler()
 
@@ -73,10 +74,40 @@ final class WatchRecorderModel: NSObject, ObservableObject {
     }
 
     func toggle() {
-        if isRecording { stop() } else { start() }
+        if isRecording { stopByWearer() } else { start() }
     }
 
+    /// The wearer stopped it (the hold, or the Stop shortcut): it stays off for the rest of the
+    /// day, or until they start it.
+    func stopByWearer() {
+        WatchAutoListen.setStopped(Date())
+        stop()
+    }
+
+    /// The app came to the front: record by itself unless the wearer stopped it, and take the
+    /// microphone back if a call ended while the app was away.
+    func cameToFront(consentSeen: Bool) {
+        let microphone: WatchAutoListen.Microphone
+        switch AVAudioApplication.shared.recordPermission {
+        case .granted: microphone = .allowed
+        case .denied: microphone = .denied
+        default: microphone = .notAsked
+        }
+        let step = WatchAutoListen.step(
+            consentSeen: consentSeen, microphone: microphone,
+            stoppedByWearer: WatchAutoListen.stopHolds(stoppedAt: WatchAutoListen.stoppedAt(), now: Date()),
+            isRecording: isRecording, heldByInterruption: interrupted && recorder == nil)
+        switch step {
+        case .nothing: break
+        case .start: start()
+        case .resume: resumeAfterInterruption()
+        case .showDenied: phase = .denied
+        }
+    }
+
+    /// The wearer, the complication or a shortcut asked to record. Clears an earlier stop.
     func start() {
+        WatchAutoListen.setStopped(nil)
         guard !isRecording else { return }
         AVAudioApplication.requestRecordPermission { [weak self] granted in
             Task { @MainActor in
@@ -115,6 +146,7 @@ final class WatchRecorderModel: NSObject, ObservableObject {
         finishPart(last: true)
         recordingID = nil
         hourCut = nil
+        interrupted = false
         phase = .idle
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         WKInterfaceDevice.current().play(.stop)
@@ -223,26 +255,32 @@ final class WatchRecorderModel: NSObject, ObservableObject {
                 self.interrupted = true
                 self.finishPart(last: false)
             case .ended:
-                guard self.interrupted, self.isRecording else { return }
-                self.interrupted = false
-                do {
-                    try AVAudioSession.sharedInstance().setActive(true)
-                    let now = Date()
-                    if let cut = self.hourCut, WatchHourClock.isPast(cut, at: now) {
-                        // The call ran across the hour: what came before it is one recording,
-                        // what comes now is the next.
-                        if let open = self.recordingID { self.library.close(recordingID: open) }
-                        self.openHour(at: now)
-                        self.link.sendUnsent()
-                    }
-                    try self.startPart(at: now)
-                    self.reload()
-                } catch {
-                    self.stop()
-                }
+                self.resumeAfterInterruption()
             @unknown default:
                 break
             }
+        }
+    }
+
+    /// Opens the microphone again after a call or Siri. watchOS does not always say when one
+    /// ended while the app was in the background, so this also runs when the app comes to the front.
+    private func resumeAfterInterruption() {
+        guard interrupted, isRecording, recorder == nil else { return }
+        do {
+            try AVAudioSession.sharedInstance().setActive(true)
+            let now = Date()
+            if let cut = hourCut, WatchHourClock.isPast(cut, at: now) {
+                // The call ran across the hour: what came before it is one recording, what comes
+                // now is the next.
+                if let open = recordingID { library.close(recordingID: open) }
+                openHour(at: now)
+                link.sendUnsent()
+            }
+            try startPart(at: now)
+            interrupted = false
+            reload()
+        } catch {
+            // The microphone is still held (the call goes on): try again at the next chance.
         }
     }
 
