@@ -1,11 +1,12 @@
 import { defineConfig } from '@playwright/test';
 
-// Today's layout at 920 and 1440 px on fixture data (e2e/today-layout.spec.ts).
+// Today's layout at 920 and 1440 px on fixture data (e2e/today-layout.spec.ts),
+// and the other pages' (e2e/page-layout.spec.ts).
 // WebKit, as the app's WebView. The daily trial points the baselines at
 // $DAILY_TRIAL_BASELINE; by hand they go to test-results/today-layout-baseline.
 export default defineConfig({
     testDir: './e2e',
-    testMatch: ['today-layout.spec.ts'],
+    testMatch: ['today-layout.spec.ts', 'page-layout.spec.ts'],
     timeout: 60_000,
     workers: 1,
     outputDir: `${process.env.DAILY_TRIAL_OUT ?? 'test-results/today-layout'}/today-layout`,

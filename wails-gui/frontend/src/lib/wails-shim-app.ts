@@ -5646,6 +5646,39 @@ export const GetWatchRecordings = appBinding<[], WatchRecording[]>('GetWatchReco
 export const GetWatchRecordingTranscript = appBinding<[string], WatchRecordingLine[]>('GetWatchRecordingTranscript');
 export const DeleteWatchRecording = appBinding<[string], void>('DeleteWatchRecording');
 
+// The Activity page's one timeline (activity_feed.go).
+export type ActivityFeedKind = 'screen' | 'watch' | 'agent' | 'closed';
+export interface ActivityFeedRow {
+    id: string;
+    kind: ActivityFeedKind;
+    startMs: number;
+    endMs: number;
+    app?: string;
+    title?: string;
+    detail?: string;
+    activeMs?: number;
+    words?: number;
+    device?: 'watch' | 'phone';
+    inProgress?: boolean;
+    withheld?: string;
+    recordingId?: string;
+}
+export interface ActivityForgetItem {
+    kind: 'topic' | 'goal' | 'screen' | 'words' | 'audio' | 'copies' | 'notes';
+    title?: string;
+    startMs?: number;
+    endMs?: number;
+}
+export interface ActivityForgetPreview {
+    kind: ActivityFeedKind;
+    id: string;
+    title: string;
+    goes: ActivityForgetItem[];
+}
+export const GetActivityFeed = appBinding<[number, number], ActivityFeedRow[]>('GetActivityFeed');
+export const GetActivityForgetPreview = appBinding<[ActivityFeedKind, string], ActivityForgetPreview>('GetActivityForgetPreview');
+export const ForgetActivityFeedRow = appBinding<[ActivityFeedKind, string], void>('ForgetActivityFeedRow');
+
 export interface MeetingCallTurn {
     speakerId: string;
     name: string;

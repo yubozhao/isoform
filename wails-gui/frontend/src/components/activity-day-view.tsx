@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { useFirstDay } from '@/hooks/useFirstDay';
 import { useDoingNow } from '@/hooks/useDoingNow';
-import { ChevronDown, ChevronRight, Trash2, Zap } from 'lucide-react';
+import { ChevronDown, ChevronRight, Film, Trash2, Zap } from 'lucide-react';
 import { EventsOn } from '../../wailsjs/runtime/runtime';
 import { GenerateDailySummary } from '../../wailsjs/go/main/App';
 import {
@@ -51,6 +51,7 @@ import type { TodayChatContextRef } from '@/lib/today-chat-navigation';
 import { warmTodayChatDrafts } from '@/lib/today-chat-prepared';
 import { MeetingNotesCard } from './activity-meeting-notes';
 import { ActivityCaptureLine } from './activity-capture-line';
+import { ActivityFeed } from './activity-feed';
 import { cn } from '../lib/utils';
 import { ACTION_LINK } from './activity-inline-notice';
 import {
@@ -195,6 +196,8 @@ export interface ActivityDayViewProps {
      *  page keeps the pick; without it the view keeps its own, Stitched first. */
     workedOnView?: WorkedOnView;
     onWorkedOnViewChange?: (view: WorkedOnView) => void;
+    /** The Screen tab's other view: scrub the day in the Screen timeline. */
+    onOpenTimeline?: () => void;
 }
 
 export function ActivityDayView({
@@ -224,6 +227,7 @@ export function ActivityDayView({
     onCountsChange,
     workedOnView,
     onWorkedOnViewChange,
+    onOpenTimeline,
 }: ActivityDayViewProps) {
     const { t, i18n } = useTranslation('activity');
     const dateStr = formatDateStr(date);
@@ -663,6 +667,11 @@ export function ActivityDayView({
                 </AISummaryCard>
                 {summaryErrorDate === dateStr && <p role="alert" className="mt-2 text-[12px] text-copper">{t('summary.card.writeFailed')}</p>}
             </section>
+            <section>
+                <h3 className={sectionLabelClass}>{t('feed.label')}</h3>
+                <p className="mb-2 px-1 text-[12.5px] text-muted">{t('act.sub')}</p>
+                <ActivityFeed date={date} />
+            </section>
             <ActivityNoticed
                 key={dateStr}
                 dateStr={dateStr}
@@ -740,6 +749,17 @@ export function ActivityDayView({
                             </button>
                         ))}
                     </div>
+                    )}
+                    {withSwitch && onOpenTimeline && (
+                        <button
+                            type="button"
+                            data-testid="activity-open-timeline"
+                            onClick={onOpenTimeline}
+                            className="flex h-[36px] shrink-0 items-center gap-1.5 rounded-[10px] border border-border px-3 text-[13px] font-medium text-ink hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus transition-colors duration-[120ms]"
+                        >
+                            <Film className="size-3.5 shrink-0" />
+                            {t('viewMode.timeline')}
+                        </button>
                     )}
                 </div>
                 <div

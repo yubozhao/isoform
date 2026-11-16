@@ -11,6 +11,8 @@ Two runs every morning, before the day starts (docs/rework-2026-11.md, step 4).
 | today | Today shows within its paint budget |
 | today-920, today-1440 | Today in a 920 and a 1440 px window: no sideways scroll, no section over another, nothing past the column (`e2e/today-layout-checks.ts`) |
 | today-layout-920, today-layout-1440 | the same rules on fixture data with a full day strip, plus the strip's own: hour labels never touch, no cut names, free and under-strip labels fit (`e2e/today-layout.spec.ts`, its own Vite server, WebKit) |
+| activity-920, activity-1440 | Activity's timeline in a 920 and a 1440 px window: no sideways scroll, no section or row over another, nothing past the timeline (`e2e/page-layout-checks.ts`) |
+| activity-layout-*, activity-agents-layout-* | the same rules on fixture data, Your day and Agents (`e2e/page-layout.spec.ts`, run with today-layout) |
 | stripped-brief | a seeded brief that a later pass saved without its words and recording (the 2026-11-15 failure) still shows its built words on Today and plays |
 | brief-audio | the scheduled brief arrives on Today, replacing the seeded one, with its recording, and the play button switches to playing |
 | chat | a message is sent and an answer arrives |

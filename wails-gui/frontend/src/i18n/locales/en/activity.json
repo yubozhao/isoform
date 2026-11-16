@@ -652,5 +652,49 @@
         "deleteBody": "The recording and what Isoform learned only from it go from your watch, your phone and your computer.",
         "deleteConfirm": "Delete",
         "deleteFailed": "Didn't delete. Try again."
+    },
+    "act": {
+        "sub": "What Isoform saw today, by time and source. Forget anything; what was made from it goes too.",
+        "tabScreen": "Screen",
+        "tabWatch": "Watch",
+        "tabAgents": "Agents",
+        "closedGap": "{{start}}–{{end}} · nothing was kept"
+    },
+    "feed": {
+        "label": "Timeline",
+        "empty": "Nothing was seen on this day.",
+        "emptyAgents": "Your agents didn't work on this computer this day.",
+        "loadFailed": "The timeline could not be loaded.",
+        "forget": "Forget",
+        "forgetTitle": "Forget this?",
+        "forgetConfirm": "Forget",
+        "forgetFailed": "Didn't forget it. Try again.",
+        "forgetBody_one": "Forget {{thing}}, and {{count}} thing made from it: {{list}}.",
+        "forgetBody_other": "Forget {{thing}}, and {{count}} things made from it: {{list}}.",
+        "forgetBodyNothing": "Forget {{thing}}. Nothing else was made from it.",
+        "listSeparator": "; ",
+        "sourceScreen": "Screen",
+        "sourceScreenApp": "Screen · {{app}}",
+        "sourceWatch": "Your watch",
+        "sourcePhone": "Your phone",
+        "sourceAgent": "Your agents",
+        "sourceAgentApp": "Your agents · {{app}}",
+        "untitledMoment": "Untitled moment",
+        "watchTitle": "Conversation · {{length}}",
+        "watchWords_one": "{{count}} word heard",
+        "watchWords_other": "{{count}} words heard",
+        "watchNoWords": "Nothing was said",
+        "agentTitle": "Worked for {{length}}",
+        "agentLine": "Your agent's work, not counted as yours.",
+        "goes": {
+            "topic": "its place in {{topic}}",
+            "goal": "the goal {{goal}}",
+            "goalUntitled": "a goal made from it",
+            "screen": "the screen from {{start}} to {{end}}",
+            "words": "what it heard",
+            "audio": "the audio",
+            "copies": "the copies on your phone and watch",
+            "notes": "the notes made from it"
+        }
     }
 }

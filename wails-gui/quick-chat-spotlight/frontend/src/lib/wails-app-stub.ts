@@ -1124,3 +1124,6 @@ export const SetWorkOnItHandle = makeNoop("SetWorkOnItHandle");
 export const GetWatchRecordings = makeNoop("GetWatchRecordings");
 export const GetWatchRecordingTranscript = makeNoop("GetWatchRecordingTranscript");
 export const DeleteWatchRecording = makeNoop("DeleteWatchRecording");
+export const GetActivityFeed = makeNoop("GetActivityFeed");
+export const GetActivityForgetPreview = makeNoop("GetActivityForgetPreview");
+export const ForgetActivityFeedRow = makeNoop("ForgetActivityFeedRow");
