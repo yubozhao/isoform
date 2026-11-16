@@ -19,7 +19,7 @@ vi.mock('../../wailsjs/runtime/runtime', () => ({ EventsOn: (name: string, handl
 } }));
 
 const PAGES = ['today', 'chat', 'activity', 'goals', 'about-you', 'know-how', 'people', 'settings', 'search'] as const;
-const PRIVACY_EVENTS = ['memory:updated', 'closed-eyes:changed', 'background-listening:changed', 'permissions:changed', 'sensitive-apps:updated'];
+const PRIVACY_EVENTS = ['memory:withdrawn', 'closed-eyes:changed', 'background-listening:changed', 'permissions:changed', 'sensitive-apps:updated'];
 
 /** The argument shapes each read is cached under (pages pass real args). */
 const ARG_VARIANTS: Record<string, unknown[][]> = {
@@ -64,6 +64,29 @@ beforeEach(() => {
 afterEach(() => resetPageQueries());
 
 describe('privacy sweeps clear every page', () => {
+    it('a plain memory:updated (index pass, background learning) clears nothing and reads nothing', async () => {
+        const entries = everyEntry();
+        for (const [name, args] of entries) pageQueryCache.set(name, args, { seeded: true });
+        const withdrawn = vi.fn();
+        const off = onPagePrivacyWithdrawal(withdrawn);
+        await emit('memory:updated', { reason: 'index' });
+        off();
+        expect(withdrawn).not.toHaveBeenCalled();
+        for (const [name, args] of entries) expect(pageQueryCache.peek(name, args), `${name} kept after an index pass`).toBeDefined();
+        // The memory reads are only marked stale: their next read revalidates.
+        expect(pageQueryCache.state('GetMemoryEntries')?.at).toBe(0);
+        expect(pageQueryCache.state('GetTodayTopics')?.at).not.toBe(0);
+    });
+
+    it('a forget (memory:withdrawn, then memory:updated) still clears every page at once', async () => {
+        const entries = everyEntry();
+        for (const [name, args] of entries) pageQueryCache.set(name, args, { seeded: true });
+        await emit('memory:withdrawn');
+        for (const [name, args] of entries) expect(pageQueryCache.peek(name, args), `${name} cleared by a forget`).toBeUndefined();
+        await emit('memory:updated');
+        for (const [name, args] of entries) expect(pageQueryCache.peek(name, args), `${name} stays cleared`).toBeUndefined();
+    });
+
     it.each(PRIVACY_EVENTS)('%s withdraws every page\'s cached reads', async (event) => {
         const entries = everyEntry();
         expect(entries.length).toBeGreaterThan(35);

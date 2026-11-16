@@ -32,7 +32,7 @@ beforeEach(async () => {
     mocks.start.mockResolvedValue({});
 });
 it.each([
-    "memory:updated", "closed-eyes:changed", "background-listening:changed", "permissions:changed",
+    "memory:withdrawn", "closed-eyes:changed", "background-listening:changed", "permissions:changed",
     "sensitive-apps:updated", "model-accounts:updated", "topics:withdrawn",
 ])("withdraws every rendered offer immediately on %s", async (event) => {
     render(<TaskSuggestionDeck />);
@@ -48,7 +48,7 @@ it("fences a read begun before withdrawal and restores only surviving offers", a
     mocks.list.mockReset().mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }))
         .mockResolvedValue([{ ...offer, id: "B", title: "Surviving B", why: "Still readable" }]);
     render(<TaskSuggestionDeck />);
-    emit("memory:updated");
+    emit("memory:withdrawn");
     await screen.findByText("Surviving B");
     await act(async () => finish([offer]));
     expect(screen.queryByText(offer.title)).toBeNull();
@@ -162,7 +162,7 @@ it("fences a background response that arrives after withdrawal", async () => {
     vi.useFakeTimers();
     emit("activity:status");
     await act(async () => vi.advanceTimersByTimeAsync(500));
-    emit("memory:updated");
+    emit("memory:withdrawn");
     expect(screen.queryByText(offer.title)).toBeNull();
     await act(async () => {});
     expect(screen.getByText("Surviving B")).toBeInTheDocument();

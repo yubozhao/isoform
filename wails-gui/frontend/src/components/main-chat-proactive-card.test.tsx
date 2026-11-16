@@ -281,7 +281,7 @@ describe('main chat proactive messages', () => {
     });
 
     const privacyEvents = [
-        ['Forget', 'memory:updated'],
+        ['Forget', 'memory:withdrawn'],
         ['protected-app change', 'sensitive-apps:updated'],
         ['Closed Eyes', 'closed-eyes:changed'],
         ['model-account sign-out', 'model-accounts:updated'],
@@ -449,7 +449,7 @@ describe('main chat proactive messages', () => {
             if (reset === 'close') {
                 fireEvent.click(screen.getByRole('button', { name: en.mainChat.proactive.closePanel }));
             } else {
-                act(() => emitRuntimeEvent('memory:updated', undefined));
+                act(() => emitRuntimeEvent('memory:withdrawn', undefined));
             }
             await act(async () => finish({
                 id: 'late-refresh-row',

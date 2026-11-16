@@ -84,6 +84,17 @@ export class QueryCache {
         for (const name of changed) this.notify(name);
     }
 
+    /**
+     * A content change that is not a privacy action: the named entries keep
+     * painting, and their next read revalidates them. Nobody is told to read
+     * now, so a burst of index passes costs no reads.
+     */
+    markStale(names: readonly string[]) {
+        for (const entry of this.entries.values()) {
+            if (names.includes(entry.name) && entry.ready) entry.at = 0;
+        }
+    }
+
     state(name: string, args: readonly unknown[] = []) { return this.entries.get(this.key(name, args)); }
 
     retain(name: string, args: readonly unknown[]) {

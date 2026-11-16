@@ -337,7 +337,7 @@ describe('message editing', () => {
         firePrivacyEventWith('model-accounts:updated', { accounts: [] });
         expect(document.querySelector('textarea')).toBeNull();
         // Forget, protect-app and Closed Eyes clear as before.
-        for (const name of ['memory:updated', 'sensitive-apps:updated', 'closed-eyes:changed']) {
+        for (const name of ['memory:withdrawn', 'sensitive-apps:updated', 'closed-eyes:changed']) {
             openDraft();
             firePrivacyEvent(name);
             expect(document.querySelector('textarea')).toBeNull();

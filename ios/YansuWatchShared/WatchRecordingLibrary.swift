@@ -24,6 +24,9 @@ struct WatchRecordingEntry: Codable, Equatable, Identifiable, Sendable {
     /// The recording was stopped (its last part is written).
     var finished: Bool
     var remote: WatchRecordingRemoteState?
+    /// The names of the conversations the computer heard in this hour ("Pricing with Sam"),
+    /// shown in place of the state once there are any.
+    var names: [String]?
 
     var durationSeconds: Double { parts.reduce(0) { $0 + $1.durationSeconds } }
     var allSent: Bool { finished && !parts.isEmpty && parts.allSatisfy(\.sent) }
@@ -200,6 +203,22 @@ final class WatchRecordingLibrary: @unchecked Sendable {
                 if let current = entries[index].remote, current >= state { continue }
                 entries[index].remote = state
                 changed = true
+            }
+            if changed { saveLocked() }
+        }
+    }
+
+    /// Names from the phone, for the recordings it names. A recording the phone names no longer
+    /// (its names were withdrawn on the computer) loses them.
+    func apply(names: [String: [String]], known: Set<String>) {
+        lock.withLock {
+            var changed = false
+            for index in entries.indices where known.contains(entries[index].id) {
+                let next = names[entries[index].id].flatMap { $0.isEmpty ? nil : $0 }
+                if entries[index].names != next {
+                    entries[index].names = next
+                    changed = true
+                }
             }
             if changed { saveLocked() }
         }

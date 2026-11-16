@@ -20,7 +20,7 @@ final class WatchLink: NSObject, WCSessionDelegate, @unchecked Sendable {
         self.inbox = inbox
         self.forwarder = forwarder
         Task { [weak self] in
-            await forwarder.onStatesChanged { states in self?.push(states) }
+            await forwarder.onStatesChanged { states, names in self?.push(states, names) }
             await forwarder.onActivityChanged { self?.refreshModel() }
             let recordings = await forwarder.recordings()
             let outcome = await forwarder.lastOutcome
@@ -106,10 +106,10 @@ final class WatchLink: NSObject, WCSessionDelegate, @unchecked Sendable {
         }
     }
 
-    private func push(_ states: [String: WatchRecordingRemoteState]) {
+    private func push(_ states: [String: WatchRecordingRemoteState], _ names: [String: [String]] = [:]) {
         let session = WCSession.default
         guard session.activationState == .activated, session.isPaired, session.isWatchAppInstalled else { return }
-        try? session.updateApplicationContext(WatchRecordingWire.context(states))
+        try? session.updateApplicationContext(WatchRecordingWire.context(states, names: names))
     }
 
     // MARK: WCSessionDelegate
@@ -117,7 +117,7 @@ final class WatchLink: NSObject, WCSessionDelegate, @unchecked Sendable {
     func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
         guard activationState == .activated, let forwarder else { return }
         publishConnection(session)
-        Task { push(await forwarder.currentStates()) }
+        Task { push(await forwarder.currentStates(), await forwarder.currentNames()) }
         drain()
     }
 

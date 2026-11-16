@@ -1404,7 +1404,7 @@ describe("Privacy withdrawal", () => {
         mocks.overview.mockImplementation(() => new Promise(() => {}));
         mocks.principals.mockImplementation(() => new Promise(() => {}));
         mocks.access.mockImplementation(() => new Promise(() => {}));
-        await emitEvent("memory:updated");
+        await emitEvent("memory:withdrawn");
         expect(screen.queryByRole("button", { name: /Priya Nair/ })).not.toBeInTheDocument();
 
         // Reopening while the reads are still held shows the skeleton, never

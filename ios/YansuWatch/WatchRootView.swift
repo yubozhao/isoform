@@ -159,7 +159,8 @@ private struct RecordingRow: View {
                     .font(.footnote.monospacedDigit())
                     .foregroundStyle(WatchTheme.secondary)
             }
-            Text(WatchRecordingCopy.state(entry.display))
+            // Once the computer has named what it heard, the names stand in for the state.
+            Text(entry.names.flatMap { $0.isEmpty ? nil : $0.joined(separator: ", ") } ?? WatchRecordingCopy.state(entry.display))
                 .font(.caption2)
                 .foregroundStyle(WatchTheme.tertiary)
         }

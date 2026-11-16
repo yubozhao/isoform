@@ -187,6 +187,103 @@ final class WatchRecordingWireTests: XCTestCase {
     }
 }
 
+// The names the computer gives the conversations in an hour (PROTOCOL.md 24.7) travel from the
+// computer's view to the phone's row and on to the watch's row.
+final class WatchRecordingNamesTests: XCTestCase {
+    func testTheComputersViewDecodesWithAndWithoutNames() throws {
+        let named = try JSONDecoder().decode(RecordingView.self, from: Data(#"{"id":"a","state":"transcribed","conversations":["Pricing with Sam","Standup"]}"#.utf8))
+        XCTAssertEqual(named.conversations, ["Pricing with Sam", "Standup"])
+        let plain = try JSONDecoder().decode(RecordingView.self, from: Data(#"{"id":"a","state":"transcribed"}"#.utf8))
+        XCTAssertNil(plain.conversations)
+    }
+
+    func testNamesTravelToTheWatchWithTheStatesAndAreCleaned() {
+        let hour = WatchRecordingWire.newRecordingID(), gone = WatchRecordingWire.newRecordingID(), unknown = WatchRecordingWire.newRecordingID()
+        let long = String(repeating: "x", count: 80)
+        let context = WatchRecordingWire.context([hour: .transcribed, gone: .deleted],
+                                                 names: [hour: [" Pricing with Sam ", "", "Standup", long, "Four", "Five"], gone: ["Old"], unknown: ["Stray"]])
+        let names = WatchRecordingWire.names(fromContext: context)
+        XCTAssertEqual(names.keys.sorted(), [hour])
+        XCTAssertEqual(names[hour], ["Pricing with Sam", "Standup", String(long.prefix(WatchRecordingWire.maxNameLength)), "Four"])
+        XCTAssertEqual(WatchRecordingWire.states(fromContext: context)[hour], .transcribed)
+        // No names: the context is what it always was.
+        XCTAssertNil(WatchRecordingWire.context([hour: .transcribed])[WatchRecordingWire.namesKey])
+        XCTAssertTrue(WatchRecordingWire.names(fromContext: [WatchRecordingWire.namesKey: ["not-a-uuid": ["x"]], WatchRecordingWire.contextVersionKey: WatchRecordingWire.version]).isEmpty)
+    }
+
+    func testTheWatchKeepsAnHoursNamesAndDropsThemWhenThePhoneNoLongerGivesThem() {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let library = WatchRecordingLibrary(directory: directory)
+        let hour = WatchRecordingWire.newRecordingID(), other = WatchRecordingWire.newRecordingID()
+        for id in [hour, other] {
+            library.begin(id: id, at: Date(timeIntervalSince1970: 1_800_000_000))
+            library.addPart(recordingID: id, startedAt: Date(timeIntervalSince1970: 1_800_000_000), durationSeconds: 60, last: true)
+        }
+        library.apply(names: [hour: ["Pricing with Sam"]], known: [hour])
+        XCTAssertEqual(library.all().first { $0.id == hour }?.names, ["Pricing with Sam"])
+        XCTAssertNil(library.all().first { $0.id == other }?.names)
+        // They survive a relaunch of the watch app.
+        XCTAssertEqual(WatchRecordingLibrary(directory: directory).all().first { $0.id == hour }?.names, ["Pricing with Sam"])
+        // A context that does not mention the hour leaves it alone; one that knows it without names clears them.
+        library.apply(names: [:], known: [other])
+        XCTAssertEqual(library.all().first { $0.id == hour }?.names, ["Pricing with Sam"])
+        library.apply(names: [:], known: [hour])
+        XCTAssertNil(library.all().first { $0.id == hour }?.names)
+    }
+
+    func testAnHoursRowShowsItsNamesInPlaceOfItsState() {
+        let id = WatchRecordingWire.newRecordingID()
+        let at = Date(timeIntervalSince1970: 1_800_000_000)
+        let rows = WatchRecordingRow.rows(phone: [
+            PhoneRecording(id: id, startedAt: at, durationSeconds: 3600, state: .transcribed, names: ["Pricing with Sam", "Standup"]),
+            PhoneRecording(id: WatchRecordingWire.newRecordingID(), startedAt: at.addingTimeInterval(3600), durationSeconds: 60, state: .onComputer),
+        ], watch: [])
+        XCTAssertEqual(rows.first { $0.id == id }?.namesLine, "Pricing with Sam, Standup")
+        XCTAssertNil(rows.first { $0.id != id }?.namesLine)
+    }
+}
+
+// The phone lists the watch's hours under their day (watch v1.1.0): a day, then "10 AM · 48 min".
+final class WatchRecordingDayTests: XCTestCase {
+    private var calendar: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+        return calendar
+    }()
+
+    private func at(_ day: Int, _ hour: Int, _ minute: Int = 0) -> Date {
+        calendar.date(from: DateComponents(year: 2026, month: 11, day: day, hour: hour, minute: minute))!
+    }
+
+    private func row(_ date: Date, seconds: Double = 3600) -> WatchRecordingRow {
+        WatchRecordingRow(id: WatchRecordingWire.newRecordingID(), startedAt: date, durationSeconds: seconds, stage: .transcribed)
+    }
+
+    func testHoursAreListedUnderTheirDayNewestFirst() {
+        let rows = [row(at(14, 9, 40), seconds: 1200), row(at(15, 8)), row(at(14, 23)), row(at(15, 10)), row(at(13, 17))]
+        let days = WatchRecordingDay.days(rows, calendar: calendar)
+        XCTAssertEqual(days.map(\.day), [at(15, 0), at(14, 0), at(13, 0)])
+        XCTAssertEqual(days.map { $0.rows.map(\.startedAt) }, [[at(15, 10), at(15, 8)], [at(14, 23), at(14, 9, 40)], [at(13, 17)]])
+        XCTAssertTrue(WatchRecordingDay.days([], calendar: calendar).isEmpty)
+    }
+
+    func testADayIsNamedTodayYesterdayOrByItsDate() {
+        let now = at(15, 11)
+        XCTAssertEqual(WatchRecordingsCopy.dayTitle(at(15, 0), now: now, calendar: calendar), String(localized: "Today"))
+        XCTAssertEqual(WatchRecordingsCopy.dayTitle(at(14, 0), now: now, calendar: calendar), String(localized: "Yesterday"))
+        let earlier = WatchRecordingsCopy.dayTitle(at(12, 0), now: now, calendar: calendar)
+        XCTAssertTrue(earlier.contains("12"), earlier)
+        XCTAssertNotEqual(earlier, String(localized: "Today"))
+    }
+
+    func testAnHourShowsWholeMinutesNotAClock() {
+        XCTAssertFalse(WatchRecordingsCopy.minutes(48 * 60).contains(":"))
+        XCTAssertTrue(WatchRecordingsCopy.minutes(48 * 60).contains("48"))
+        XCTAssertTrue(WatchRecordingsCopy.minutes(5).contains("1"))
+    }
+}
+
 final class WatchRecordingLibraryTests: XCTestCase {
     private var directory: URL!
 
@@ -335,6 +432,14 @@ final class WatchRecordingLibraryTests: XCTestCase {
         XCTAssertEqual(last?.last, true)
         XCTAssertEqual(library.all().first?.finished, true)
     }
+}
+
+/// What the forwarder last told the watch about names.
+private final class Pushed: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: [String: [String]] = [:]
+    var names: [String: [String]] { lock.withLock { value } }
+    func set(_ names: [String: [String]]) { lock.withLock { value = names } }
 }
 
 private actor StubRecordingHub: RecordingHubAPI {
@@ -563,6 +668,37 @@ final class WatchRecordingForwarderTests: XCTestCase {
         XCTAssertEqual(states[id], .transcribed, "the computer's list moves an arrived recording on")
     }
 
+    /// The computer names an hour's conversations well after it is transcribed. The phone picks
+    /// the names up at a later check, hands them to the watch, and drops them when the computer
+    /// no longer gives them (the hour's words were withdrawn there).
+    func testTheNamesOfAnHourArriveLaterAndGoWhenTheComputerWithdrawsThem() async throws {
+        let hub = StubRecordingHub()
+        let uploads = StubUploads()
+        let (inbox, forwarder) = make(hub, uploads)
+        let id = WatchRecordingWire.newRecordingID()
+        _ = try await deliver(inbox, forwarder, id: id, part: 0, last: true, audio: "hour")
+        await hub.set(listed: [RecordingView(id: id, state: "transcribed")])
+        _ = await forwarder.drain()
+        var rows = await forwarder.recordings()
+        XCTAssertEqual(rows.first?.names, [])
+
+        let pushed = Pushed()
+        await forwarder.onStatesChanged { _, names in pushed.set(names) }
+        await hub.set(listed: [RecordingView(id: id, state: "transcribed", conversations: ["Pricing with Sam", " "])])
+        await forwarder.refreshStates()
+        rows = await forwarder.recordings()
+        XCTAssertEqual(rows.first?.names, ["Pricing with Sam"])
+        XCTAssertEqual(pushed.names[id], ["Pricing with Sam"], "the watch is told")
+        let kept = await forwarder.currentNames()
+        XCTAssertEqual(kept[id], ["Pricing with Sam"])
+
+        await hub.set(listed: [RecordingView(id: id, state: "transcribed")])
+        await forwarder.refreshStates()
+        rows = await forwarder.recordings()
+        XCTAssertEqual(rows.first?.names, [])
+        XCTAssertNil(pushed.names[id], "the watch is told they are gone")
+    }
+
     func testThePhoneListShowsEachRecordingOnceWithItsWholeLengthAndState() async throws {
         let hub = StubRecordingHub()
         await hub.set(available: false)
@@ -594,8 +730,9 @@ final class WatchRecordingForwarderTests: XCTestCase {
         let reopened = WatchRecordingForwarder(inbox: inbox, hub: hub, relay: uploads, session: { context })
         let again = await reopened.recordings()
         XCTAssertEqual(again, list)
-        XCTAssertEqual(WatchRecordingsCopy.length(1800), "30:00")
-        XCTAssertEqual(WatchRecordingsCopy.length(3725), "1:02:05")
+        // Lengths are whole minutes now, never a clock (watch v1.1.0).
+        XCTAssertTrue(WatchRecordingsCopy.minutes(1800).contains("30"))
+        XCTAssertFalse(WatchRecordingsCopy.minutes(3725).contains(":"))
     }
 
     func testDeletingARecordingThatNeverLeftThePhoneAsksTheComputerNothing() async throws {

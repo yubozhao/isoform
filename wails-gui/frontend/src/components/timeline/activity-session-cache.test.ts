@@ -76,7 +76,7 @@ describe('remembered Activity page state', () => {
 describe('privacy sweep events and the remembered UI state', () => {
     // The facade's clearing list: every privacy transition drops the
     // remembered scope, filters and scroll with the data.
-    const CLEARING_EVENTS = ['closed-eyes:changed', 'memory:updated', 'knowledge:updated', 'background-listening:changed', 'permissions:changed', 'sensitive-apps:updated'];
+    const CLEARING_EVENTS = ['closed-eyes:changed', 'memory:withdrawn', 'knowledge:updated', 'background-listening:changed', 'permissions:changed', 'sensitive-apps:updated'];
     const FILTERS = { searchText: 'halcyon', timePreset: 'custom', customStart: '2026-10-01', customEnd: '2026-10-23', selectedApps: ['com.app.Terminal'] };
 
     // Mounting the page's query hook subscribes the facade to the runtime

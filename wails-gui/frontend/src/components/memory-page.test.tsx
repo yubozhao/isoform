@@ -1170,7 +1170,7 @@ describe('About you new this week', () => {
         fireEvent.click(within(article).getByRole('button', { name: 'Forget' }));
         mocks.getEntries.mockResolvedValue([entry]);
         mocks.getAbout.mockImplementation(async () => aboutFor([entry]));
-        // The backend emits memory:updated on a forget; the mocked runtime
+        // The backend emits memory:withdrawn on a forget; the mocked runtime
         // swallows events, so the test performs the invalidation it drives.
         mocks.forgetEntry.mockImplementation(async () => {
             pageQueryCache.invalidate(['GetMemoryEntries', 'GetAboutYou', 'GetMemoryStatus', 'GetAboutYouPortrait']);
@@ -1498,7 +1498,7 @@ describe('About you communication', () => {
         expect(mocks.getExamples).toHaveBeenCalledTimes(2);
     });
 
-    it.each(['memory:updated', 'closed-eyes:changed'])('reloads draft examples after %s and hides a withdrawn example', async (eventName) => {
+    it.each(['memory:withdrawn', 'closed-eyes:changed'])('reloads draft examples after %s and hides a withdrawn example', async (eventName) => {
         mocks.getExamples.mockResolvedValue([example]);
         render(<MemoryPage devToolsUnlocked initialSelectedId="communication" />);
         expect(await screen.findByText(example.text)).toBeInTheDocument();
@@ -1521,7 +1521,7 @@ describe('About you communication', () => {
         render(<MemoryPage devToolsUnlocked initialSelectedId="communication" />);
         await waitFor(() => expect(mocks.getExamples).toHaveBeenCalledTimes(1));
         await act(async () => {
-            for (const listener of [...(mocks.events.get('memory:updated') ?? [])]) listener(undefined);
+            for (const listener of [...(mocks.events.get('memory:withdrawn') ?? [])]) listener(undefined);
         });
         const readsBeforeReopen = mocks.getExamples.mock.calls.length;
         fireEvent.click(await screen.findByRole('button', { name: /Language with Jia.*You write to Jia/ }));
@@ -1787,7 +1787,7 @@ describe('MemoryPage with the page query cache', () => {
         mocks.getAbout.mockImplementation(() => new Promise(() => {}));
         mocks.getStatus.mockImplementation(() => new Promise(() => {}));
         mocks.getPortrait.mockImplementation(() => new Promise(() => {}));
-        await emitEvent('memory:updated');
+        await emitEvent('memory:withdrawn');
         expect(screen.queryByRole('button', { name: /You prefer detailed replies/ })).not.toBeInTheDocument();
         expect(screen.queryByText('You want detailed replies')).not.toBeInTheDocument();
         expect(screen.queryByRole('textbox', { name: 'Search what Isoform believes' })).not.toBeInTheDocument();
@@ -1799,7 +1799,7 @@ describe('MemoryPage with the page query cache', () => {
 
         // A later ordinary change re-reads: what is still permitted returns.
         resetDefaults([entry]);
-        await emitEvent('memory:updated');
+        await emitEvent('memory:withdrawn');
         expect(await screen.findByRole('button', { name: /You prefer detailed replies/ })).toBeInTheDocument();
     });
 

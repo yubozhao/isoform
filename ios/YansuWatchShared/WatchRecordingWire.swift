@@ -110,9 +110,38 @@ enum WatchRecordingRemoteState: String, Codable, Sendable, Comparable {
 }
 
 extension WatchRecordingWire {
-    /// The application context the phone sends: recording id to state.
-    static func context(_ states: [String: WatchRecordingRemoteState]) -> [String: Any] {
-        [contextVersionKey: version, contextKey: states.mapValues(\.rawValue)]
+    /// The names of what a recording heard, as the computer gave them (PROTOCOL.md 24.7).
+    static let namesKey = "recordingNames"
+    static let maxNames = 4
+    static let maxNameLength = 48
+
+    /// Keeps a few short, non-empty names.
+    static func cleanNames(_ names: [String]) -> [String] {
+        names.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .prefix(maxNames)
+            .map { String($0.prefix(maxNameLength)) }
+    }
+
+    /// The application context the phone sends: recording id to state, and recording id to the
+    /// names of the conversations heard in it, once the computer has named any.
+    static func context(_ states: [String: WatchRecordingRemoteState], names: [String: [String]] = [:]) -> [String: Any] {
+        var context: [String: Any] = [contextVersionKey: version, contextKey: states.mapValues(\.rawValue)]
+        let kept = names.filter { states[$0.key] != nil && states[$0.key] != .deleted }
+            .mapValues(cleanNames).filter { !$0.value.isEmpty }
+        if !kept.isEmpty { context[namesKey] = kept }
+        return context
+    }
+
+    static func names(fromContext context: [String: Any]) -> [String: [String]] {
+        guard context[contextVersionKey] as? Int == version,
+              let raw = context[namesKey] as? [String: [String]] else { return [:] }
+        var out: [String: [String]] = [:]
+        for (id, names) in raw where isRecordingID(id) {
+            let clean = cleanNames(names)
+            if !clean.isEmpty { out[id] = clean }
+        }
+        return out
     }
 
     static func states(fromContext context: [String: Any]) -> [String: WatchRecordingRemoteState] {

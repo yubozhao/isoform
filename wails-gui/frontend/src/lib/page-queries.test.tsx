@@ -252,7 +252,7 @@ describe('cached page hooks through shim spies', () => {
             const value = name === 'GetTodayTopics' ? [] : name === 'GetGoalCheckIn' ? null : name === 'GetTodaySuggestion' ? { available: false } : name === 'GetTodayNews' ? { status: 'ready', items: [] } : { status: 'off', items: [] };
             binding(name).mockClear().mockImplementation(async () => { await held; return value; });
         }
-        await emit('memory:updated');
+        await emit('memory:withdrawn');
         for (const name of derivatives) {
             expect(pageQueryCache.peek(name), name).toBeUndefined();
             expect(binding(name), name).toHaveBeenCalledTimes(1);

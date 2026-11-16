@@ -7,7 +7,7 @@ import type { TodayBeforeYouTalk } from "@/lib/wails-shim-app";
 import { useTodayBeforeYouTalk } from "./useTodayBeforeYouTalk";
 
 // Guards for the privacy blocker in desk-out/review-pr227-b1532902.md: Forget
-// (`memory:updated`), app protection (`sensitive-apps:updated`), Closed Eyes
+// (`memory:withdrawn`), app protection (`sensitive-apps:updated`), Closed Eyes
 // (`closed-eyes:changed`) and identity withdrawal (`model-accounts:updated`)
 // must withdraw the rendered card in the event's own turn, retire in-flight
 // reads and dismiss completions, and leave recovery to the gated reread. An
@@ -34,7 +34,7 @@ const meeting: TodayBeforeYouTalk = {
 };
 const ACCOUNT_A = { provider: "claude", kind: "subscription", name: "Bo", on: true, windows: [{ used: 10 }] };
 const ACCOUNT_B = { provider: "kimi", kind: "api", name: "Work", on: true };
-const privacyEvents = ["permissions:changed", "closed-eyes:changed", "background-listening:changed", "sensitive-apps:updated", "memory:updated"];
+const privacyEvents = ["permissions:changed", "closed-eyes:changed", "background-listening:changed", "sensitive-apps:updated", "memory:withdrawn"];
 
 function deferred<T>() {
     let resolve: (value: T) => void = () => {};

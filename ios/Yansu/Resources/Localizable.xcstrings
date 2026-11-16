@@ -573,6 +573,7 @@
     "Stopped: Isoform restarted": {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Stopped: Isoform restarted"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"已停止：Isoform 已重新启动"}}}},
     "Stopped: no activity": {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Stopped: no activity"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"已停止：无活动"}}}},
     "Waiting to start on your computer": {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Waiting to start on your computer"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"等待在电脑上开始"}}}},
+    "%lld min": {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"%lld min"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"%lld 分钟"}}}},
     "Yesterday": {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Yesterday"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"昨天"}}}},
     "Open in Chat": {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Open in Chat"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"在对话中打开"}}}},
     "Finding more tasks…": {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Finding more tasks…"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"正在寻找更多任务…"}}}},

@@ -166,7 +166,7 @@ describe('How you do things page (cache)', () => {
         mocks.listKnowHow.mockImplementation(() => new Promise(() => {}));
         mocks.getEntries.mockImplementation(() => new Promise(() => {}));
         mocks.getMatch.mockImplementation(() => new Promise(() => {}));
-        await emit('memory:updated');
+        await emit('memory:withdrawn');
         expect(screen.queryByText('Fixture know-how')).not.toBeInTheDocument();
 
         // Reopening while the reads are still held shows the skeleton, never

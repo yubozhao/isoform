@@ -236,7 +236,7 @@ describe("open-answer promise line", () => {
         expect(onSend).not.toHaveBeenCalled();
     });
 
-    it.each(["memory:updated", "sensitive-apps:updated", "closed-eyes:changed", "permissions:changed", "background-listening:changed", "model-accounts:updated", "session:deleted"])("clears the promise line synchronously on %s", async (event) => {
+    it.each(["memory:withdrawn", "sensitive-apps:updated", "closed-eyes:changed", "permissions:changed", "background-listening:changed", "model-accounts:updated", "session:deleted"])("clears the promise line synchronously on %s", async (event) => {
         const record = answer();
         bindings.list.mockResolvedValue([record]);
         await act(async () => { await refreshOpenAnswers(); });
@@ -256,7 +256,7 @@ describe("open-answer promise line", () => {
         const send = deferred<void>();
         const onSend = vi.fn(() => send.promise);
         const { rerender } = renderPromise(before, onSend);
-        await emit("memory:updated");
+        await emit("memory:withdrawn");
         rerender(<OpenAnswerPromiseLine answer={after} onSend={onSend} />);
         expect(screen.queryByTestId("open-answer-ask")).toBeNull();
         await deliverThroughStream(after);
@@ -276,7 +276,7 @@ describe("open-answer promise line", () => {
     it("registers topic-page stream records only when delivered after withdrawal", async () => {
         const record = answer({ settles: "reply", watchedEvent: { who: "Mina", label: "reply" } });
         const { rerender } = renderPromise(answer());
-        await emit("memory:updated");
+        await emit("memory:withdrawn");
         rerender(<OpenAnswerPromiseLine answer={record} />);
         expect(screen.queryByTestId("open-answer-promise")).toBeNull();
         bindings.topicLoad.mockResolvedValue({ items: [{ message: { openAnswer: record } }] });
@@ -291,7 +291,7 @@ describe("open-answer promise line", () => {
         const before = answer();
         const after = answer({ id: "answer-2", messageId: "message-2" });
         const { rerender } = renderPromise(before);
-        await emit("memory:updated");
+        await emit("memory:withdrawn");
         rerender(<OpenAnswerPromiseLine answer={after} />);
         expect(screen.queryByTestId("open-answer-promise")).toBeNull();
         await deliverThroughStream(after);
@@ -308,7 +308,7 @@ describe("open-answer promise line", () => {
         const record = answer({ settles: "reply", watchedEvent: { who: "Mina", label: "reply" } });
         const { unmount } = renderPromise(record);
         expect(screen.getByTestId("open-answer-promise")).toBeInTheDocument();
-        await emit("memory:updated");
+        await emit("memory:withdrawn");
         unmount();
         render(<OpenAnswerPromiseLine answer={record} />);
         expect(screen.queryByTestId("open-answer-promise")).toBeNull();
@@ -318,7 +318,7 @@ describe("open-answer promise line", () => {
     it("does not authorize reparsed stale message data after withdrawal", async () => {
         const record = answer({ settles: "reply", watchedEvent: { who: "Mina", label: "reply" } });
         const { unmount } = renderPromise(record);
-        await emit("memory:updated");
+        await emit("memory:withdrawn");
         unmount();
         const reparsed = { ...record, watchedEvent: { ...record.watchedEvent! } };
         render(<OpenAnswerPromiseLine answer={reparsed} />);
@@ -332,7 +332,7 @@ describe("open-answer promise line", () => {
         bindings.streamLoad.mockReturnValue(response.promise);
         const pending = loadStreamItemsPageWithOpenAnswerDelivery(record.sessionId, -1, 100);
         await waitFor(() => expect(bindings.streamLoad).toHaveBeenCalledTimes(1));
-        await emit("memory:updated");
+        await emit("memory:withdrawn");
         await act(async () => {
             response.resolve({ items: [{ openAnswer: record }] });
             await pending;
@@ -349,7 +349,7 @@ describe("open-answer promise line", () => {
         [answer({ state: "cancelled" }), "cancelled"],
     ])("renders a fresh message-backed %s state after withdrawal", async (record, expected) => {
         const { rerender } = renderPromise(answer());
-        await emit("memory:updated");
+        await emit("memory:withdrawn");
         await deliverThroughStream(record);
         rerender(<OpenAnswerPromiseLine answer={record} onSend={vi.fn(async () => {})} />);
         if (expected === "ask") expect(screen.getByTestId("open-answer-ask")).toBeInTheDocument();
@@ -367,7 +367,7 @@ describe("open-answer promise line", () => {
         renderPromise(answer());
         await waitFor(() => expect(bindings.list).toHaveBeenCalled());
         bindings.list.mockResolvedValue([record]);
-        await emit("memory:updated");
+        await emit("memory:withdrawn");
         if (expected === "ask") expect(await screen.findByTestId("open-answer-ask")).toBeInTheDocument();
         else if (expected === "cancelled") await waitFor(() => expect(screen.queryByTestId("open-answer-promise")).toBeNull());
         else expect(await screen.findByText(expected)).toBeInTheDocument();
@@ -385,7 +385,7 @@ describe("open-answer promise line", () => {
         bindings.list.mockReset().mockReturnValueOnce(stale.promise).mockReturnValueOnce(fresh.promise);
         const pending = refreshOpenAnswers();
         await waitFor(() => expect(bindings.list).toHaveBeenCalledTimes(1));
-        await emit("memory:updated");
+        await emit("memory:withdrawn");
         await waitFor(() => expect(bindings.list).toHaveBeenCalledTimes(2));
         await act(async () => { stale.resolve([record]); await pending; });
         expect(screen.queryByTestId("open-answer-promise")).toBeNull();
@@ -405,7 +405,7 @@ describe("open-answer promise line", () => {
         await user.click(await screen.findByRole("menuitem", { name: "In tomorrow's brief" }));
         const reread = deferred<OpenAnswer[]>();
         bindings.list.mockReset().mockReturnValueOnce(reread.promise);
-        await emit("memory:updated");
+        await emit("memory:withdrawn");
         expect(screen.queryByTestId("open-answer-promise")).toBeNull();
         await act(async () => { resolveChange(updated); });
         expect(screen.queryByTestId("open-answer-promise")).toBeNull();
@@ -424,7 +424,7 @@ describe("open-answer promise line", () => {
         await user.click(await screen.findByRole("menuitem", { name: "In tomorrow's brief" }));
         const reread = deferred<OpenAnswer[]>();
         bindings.list.mockReset().mockReturnValueOnce(reread.promise);
-        await emit("memory:updated");
+        await emit("memory:withdrawn");
         await act(async () => { resolveChange(null); });
         expect(bindings.list).toHaveBeenCalledTimes(1);
         expect(screen.queryByTestId("open-answer-promise")).toBeNull();

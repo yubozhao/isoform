@@ -51,6 +51,12 @@ struct WatchRecordingRow: Equatable, Identifiable, Sendable {
     var partsOnWatch: Int = 0
     var partsOnPhone: Int = 0
     var bytesOnPhone: Int = 0
+    /// What the computer named the conversations heard in this hour ("Pricing with Sam").
+    var names: [String] = []
+
+    /// The line under the hour: the names of what it heard once the computer has them, else nil
+    /// and the row says where the recording is.
+    var namesLine: String? { names.isEmpty ? nil : names.joined(separator: ", ") }
 
     /// Joins what the phone holds with what the watch says it still holds, newest first.
     static func rows(phone: [PhoneRecording], watch: [WatchRecordingSummary]) -> [WatchRecordingRow] {
@@ -68,7 +74,8 @@ struct WatchRecordingRow: Equatable, Identifiable, Sendable {
             return WatchRecordingRow(id: recording.id, startedAt: recording.startedAt,
                                      durationSeconds: max(recording.durationSeconds, held?.durationSeconds ?? 0),
                                      stage: stage, partsOnWatch: held?.unsentParts ?? 0,
-                                     partsOnPhone: recording.partsOnPhone, bytesOnPhone: recording.bytesOnPhone)
+                                     partsOnPhone: recording.partsOnPhone, bytesOnPhone: recording.bytesOnPhone,
+                                     names: recording.names)
         }
         let known = Set(phone.map(\.id))
         rows += watch.filter { !known.contains($0.id) }.map {
@@ -76,6 +83,23 @@ struct WatchRecordingRow: Equatable, Identifiable, Sendable {
                               stage: $0.finished ? .onWatch : .recording, partsOnWatch: $0.unsentParts)
         }
         return rows.sorted { $0.startedAt > $1.startedAt }
+    }
+}
+
+/// One day of the watch's hours on the phone's list. The watch keeps recordings by the clock hour
+/// (WatchHourClock), so the list is a day and then its hours, not a run of long recordings.
+struct WatchRecordingDay: Equatable, Identifiable, Sendable {
+    /// The start of the day.
+    let day: Date
+    /// Newest hour first.
+    let rows: [WatchRecordingRow]
+    var id: Date { day }
+
+    /// Rows grouped by the day they began on, newest day first.
+    static func days(_ rows: [WatchRecordingRow], calendar: Calendar = .current) -> [WatchRecordingDay] {
+        Dictionary(grouping: rows) { calendar.startOfDay(for: $0.startedAt) }
+            .map { WatchRecordingDay(day: $0.key, rows: $0.value.sorted { $0.startedAt > $1.startedAt }) }
+            .sorted { $0.day > $1.day }
     }
 }
 
@@ -250,15 +274,28 @@ enum WatchRecordingsCopy {
         return String(localized: "Speaker \(number)", comment: "Speaker label for another voice in a transcript")
     }
 
-    static func size(_ bytes: Int) -> String {
-        ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
+    /// "Today", "Yesterday", or the date, over a day's hours.
+    static func dayTitle(_ day: Date, now: Date = Date(), calendar: Calendar = .current) -> String {
+        if calendar.isDate(day, inSameDayAs: now) {
+            return String(localized: "Today", comment: "Section title over today's hours from the watch")
+        }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now), calendar.isDate(day, inSameDayAs: yesterday) {
+            return String(localized: "Yesterday", comment: "Section title over yesterday's hours from the watch")
+        }
+        var style = Date.FormatStyle.dateTime.weekday(.wide).month().day()
+        style.calendar = calendar
+        style.timeZone = calendar.timeZone
+        return day.formatted(style)
     }
 
-    static func length(_ seconds: Double) -> String {
-        let total = Int(seconds.rounded())
-        return total >= 3600
-            ? String(format: "%d:%02d:%02d", total / 3600, (total % 3600) / 60, total % 60)
-            : String(format: "%d:%02d", total / 60, total % 60)
+    /// How much of an hour was recorded, in whole minutes: "48 min". Never a running clock.
+    static func minutes(_ seconds: Double) -> String {
+        let minutes = WatchHourClock.minutes(seconds)
+        return String(localized: "\(minutes) min", comment: "How much of an hour the watch recorded, in whole minutes")
+    }
+
+    static func size(_ bytes: Int) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
     }
 }
 
@@ -276,18 +313,21 @@ struct WatchRecordingsView: View {
                         .font(.body)
                         .foregroundStyle(YansuTheme.secondary)
                 } else {
-                    VStack(alignment: .leading, spacing: 10) {
-                        SectionLabel(title: String(localized: "Recordings", comment: "Section title of the watch recordings list"))
-                        YansuCard {
-                            VStack(alignment: .leading, spacing: 14) {
-                                ForEach(rows) { row in
-                                    NavigationLink {
-                                        WatchRecordingDetailView(model: model, id: row.id)
-                                    } label: {
-                                        rowLabel(row)
+                    // A day, then its hours: the watch keeps recordings by the clock hour.
+                    ForEach(WatchRecordingDay.days(rows)) { day in
+                        VStack(alignment: .leading, spacing: 10) {
+                            SectionLabel(title: WatchRecordingsCopy.dayTitle(day.day))
+                            YansuCard {
+                                VStack(alignment: .leading, spacing: 14) {
+                                    ForEach(day.rows) { row in
+                                        NavigationLink {
+                                            WatchRecordingDetailView(model: model, id: row.id)
+                                        } label: {
+                                            rowLabel(row)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .accessibilityIdentifier("watchRecordings.row")
                                     }
-                                    .buttonStyle(.plain)
-                                    .accessibilityIdentifier("watchRecordings.row")
                                 }
                             }
                         }
@@ -352,17 +392,20 @@ struct WatchRecordingsView: View {
         HStack(alignment: .center, spacing: 8) {
             VStack(alignment: .leading, spacing: 3) {
                 HStack {
-                    Text(row.startedAt, format: .dateTime.weekday(.abbreviated).month().day().hour().minute())
+                    // The hour it belongs to ("10 AM"); the day is the section's title.
+                    Text(row.startedAt, format: .dateTime.hour())
                         .font(.body)
                         .foregroundStyle(YansuTheme.ink)
                     Spacer()
-                    Text(WatchRecordingsCopy.length(row.durationSeconds))
+                    Text(WatchRecordingsCopy.minutes(row.durationSeconds))
                         .font(.footnote.monospacedDigit())
                         .foregroundStyle(YansuTheme.secondary)
                 }
-                Text(WatchRecordingsCopy.stage(row.stage))
+                // Once the computer has named what it heard, the names stand in for the state.
+                Text(row.namesLine ?? WatchRecordingsCopy.stage(row.stage))
                     .font(.footnote)
                     .foregroundStyle(row.stage == .failedToSend ? YansuTheme.ink : YansuTheme.tertiary)
+                    .lineLimit(2)
             }
             Image(systemName: "chevron.right").font(.footnote.weight(.semibold))
                 .foregroundStyle(YansuTheme.tertiary)
@@ -488,12 +531,18 @@ struct WatchRecordingDetailView: View {
     private func header(_ row: WatchRecordingRow) -> some View {
         YansuCard {
             VStack(alignment: .leading, spacing: 6) {
-                Text(row.startedAt, format: .dateTime.weekday(.wide).month().day().hour().minute())
+                Text(row.startedAt, format: .dateTime.weekday(.wide).month().day().hour())
                     .font(.body.weight(.semibold))
                     .foregroundStyle(YansuTheme.ink)
-                Text(WatchRecordingsCopy.length(row.durationSeconds))
+                Text(WatchRecordingsCopy.minutes(row.durationSeconds))
                     .font(.footnote.monospacedDigit())
                     .foregroundStyle(YansuTheme.secondary)
+                if let names = row.namesLine {
+                    Text(names)
+                        .font(.body)
+                        .foregroundStyle(YansuTheme.ink)
+                        .accessibilityIdentifier("watchRecording.names")
+                }
                 Text(WatchRecordingsCopy.stage(row.stage))
                     .font(.body)
                     .foregroundStyle(YansuTheme.ink)
