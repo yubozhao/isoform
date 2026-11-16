@@ -9,12 +9,14 @@ const mocks = vi.hoisted(() => ({
     list: vi.fn(),
     transcript: vi.fn(),
     remove: vi.fn(),
+    conversations: vi.fn(),
 }));
 
 vi.mock('@/lib/wails-shim-app', () => ({
     GetWatchRecordings: mocks.list,
     GetWatchRecordingTranscript: mocks.transcript,
     DeleteWatchRecording: mocks.remove,
+    GetWatchConversations: mocks.conversations,
 }));
 
 const started = new Date();
@@ -49,6 +51,43 @@ describe('ActivityWatchRecordings', () => {
             { at: started.getTime() + 9000, speaker: 'speaker_1', text: 'Friday works for me', marked: false },
         ]);
         mocks.remove.mockResolvedValue(undefined);
+        mocks.conversations.mockResolvedValue([]);
+    });
+
+    it('lists the conversations found across the hours, above the hours, with who spoke', async () => {
+        const at = (minutes: number) => started.getTime() + minutes * 60_000;
+        mocks.conversations.mockResolvedValue([
+            {
+                id: 'dev:1',
+                startAt: at(50),
+                endAt: at(80),
+                recordingIds: ['6f1c2a54-0000-4000-8000-000000000001', '6f1c2a54-0000-4000-8000-000000000002'],
+                words: 9,
+                speakers: ['you', 'speaker_1'],
+                lines: [
+                    { at: at(50), speaker: 'you', text: 'Sam, do you have a minute' },
+                    { at: at(61), speaker: 'speaker_1', text: 'Sure, keep going' },
+                ],
+            },
+        ]);
+        render(<ActivityWatchRecordings bridgePort={4000} onOpenSession={vi.fn()} />);
+        expect(await screen.findByText('Conversations')).toBeTruthy();
+        expect(screen.getByText('Hours')).toBeTruthy();
+        const card = screen.getByText('9 words · across 2 hours · You, Speaker 1');
+        expect(card).toBeTruthy();
+        // One conversation over two hours, opened to its words in order.
+        fireEvent.click(card);
+        expect(await screen.findByText('Sam, do you have a minute')).toBeTruthy();
+        expect(screen.getByText('Sure, keep going')).toBeTruthy();
+        // It holds no audio of its own and no delete: the hours below do.
+        expect(screen.queryByText('Delete everywhere')).toBeNull();
+    });
+
+    it('still lists the hours when conversations cannot be read', async () => {
+        mocks.conversations.mockRejectedValue(new Error('no'));
+        render(<ActivityWatchRecordings bridgePort={4000} onOpenSession={vi.fn()} />);
+        expect(await screen.findByText('1:02:05 · Transcribed')).toBeTruthy();
+        expect(screen.queryByText('Conversations')).toBeNull();
     });
 
     it('lists a recording under its day with its length and state', async () => {
