@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	goruntime "runtime"
 	"strings"
+	"sync"
 
 	"wails-gui/internal/platform/shellenv"
 	agenttools "yansu-agent/agent/tools"
@@ -34,7 +35,13 @@ func ensureBundledYansuAssets() {
 	writeInstallDiscovery()
 }
 
+// yansuCLIInstallMu keeps the launch task and the assistant router from
+// copying the CLI at the same time (both write destPath+".tmp").
+var yansuCLIInstallMu sync.Mutex
+
 func ensureBundledYansuCLI() (string, error) {
+	yansuCLIInstallMu.Lock()
+	defer yansuCLIInstallMu.Unlock()
 	srcPath := findBundledYansuCLI()
 	if srcPath == "" {
 		return "", fmt.Errorf("bundled yansu binary not found")
@@ -81,11 +88,17 @@ func expectedYansuCLIPath() string {
 
 // assistantToolShimPath is the CLI path the assistant router hands Claude Code
 // and Codex. The CLI is installed by a launch task that can finish after the
-// router is built (a new data folder, the first launch), so the router keeps
-// the path it will be at; an empty one reported both assistants unavailable
-// until the next restart.
+// router is built (a new data folder, the first launch). An empty path
+// reported both assistants unavailable until the next restart, and a path the
+// CLI was not at yet failed the first run's tool-server check, which paused
+// Claude Code for ten minutes (daily trial, 2026-11-15). So the router
+// installs the CLI itself when it is not there yet, and keeps the path it
+// will be at only when there is no bundle to install from.
 func assistantToolShimPath() string {
 	if path := installedYansuCLIPath(); path != "" {
+		return path
+	}
+	if path, err := ensureBundledYansuCLI(); err == nil && path != "" {
 		return path
 	}
 	return expectedYansuCLIPath()
