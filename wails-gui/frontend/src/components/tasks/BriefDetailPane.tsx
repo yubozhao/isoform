@@ -165,7 +165,7 @@ function BriefRunRow({ run, dayName, clock, onOpenToday }: {
         const shown = readyAt ?? scheduled;
         // A brief made before its slot names the time it was made, not its slot (R64, P157).
         const madeAhead = run.early && readyAt
-            ? briefMadeAheadRunLine(run, (isoDay) => dayName(new Date(`${isoDay}T12:00:00`)), i18n.language, tToday)
+            ? briefMadeAheadRunLine(run, (isoDay) => dayName(new Date(`${isoDay}T12:00:00`)), i18n.language, (key, options) => tToday(key as never, options as never) as unknown as string)
             : null;
         const why = run.reason === "asleep" || run.reason === "closed" ? t(`briefDetail.lateReason.${run.reason}`) : "";
         const line = !came ? ""

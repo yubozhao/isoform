@@ -25,7 +25,7 @@ it("does not submit an offer withdrawn during the availability check", async () 
     let finish!: (value: unknown) => void;
     mocks.propose.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
     const { result, rerender } = renderHook(({ offer }) => useDirectHold(offer), { initialProps: { offer: source as typeof source | null } });
-    let pending!: Promise<void>;
+    let pending!: Promise<boolean>;
     act(() => { pending = result.current.hold(); });
     await waitFor(() => expect(mocks.propose).toHaveBeenCalled());
     rerender({ offer: null });

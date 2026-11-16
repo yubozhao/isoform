@@ -49,7 +49,7 @@ function resetForPrivacyWithdrawal() {
 }
 
 function loadPendingPanelOpen(pending: PendingPanelOpen, request: number) {
-    let loading: Promise<unknown>;
+    let loading: ReturnType<typeof LoadMainChatProactiveItem>;
     try {
         loading = LoadMainChatProactiveItem(pending.momentID);
     } catch {
@@ -87,7 +87,7 @@ function revalidateForActivityUpdate() {
     if (!current) return;
     const request = ++requestID;
     publish({ ...current, item: null, revalidating: true });
-    let loading: Promise<unknown>;
+    let loading: ReturnType<typeof LoadMainChatProactiveItem>;
     try {
         loading = LoadMainChatProactiveItem(current.openId);
     } catch {

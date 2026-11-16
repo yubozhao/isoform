@@ -4,7 +4,7 @@ import {
     UpdateSessionClaudeID,
     PersistStreamItem,
     GrowStreamItemContent,
-} from "../../wailsjs/go/main/App";
+} from "@/lib/wails-shim-app";
 import { loadStreamItemsPageWithOpenAnswerDelivery } from "@/lib/open-answer-delivery";
 import { maybeAutoSpeak } from "../lib/tts-player";
 import type {

@@ -422,7 +422,7 @@ export function YourWeekCard({ week, cards, timeZone, handlers, onCard, onAskCar
             )}
             {!holdDismissal && ask && (askCard || askInTopic) && declineState.week === week.start && !declineState.loading && declineState.failed !== "read" && askAnswered !== "declined" && (
                 <div className="flex flex-col gap-3 border-t border-border-divider pt-4" data-testid="your-week-ask">
-                    {holdAsk && holdShape && !directHold.removed && <TodayDayStrip shape={{ ...holdShape, events: holdShape.events.filter((event) => !directHold.status?.id || event.holdId !== directHold.status.id), hold: { start: holdAsk.start, end: holdAsk.end, label: holdAsk.source.thing.title } }} requestedDate={ask.day} timeZone={timeZone} holdPreview={directHold.held ? "held" : "proposed"} holdTitle={holdAsk.source.thing.title} onOpenHold={() => handlers.onFindTime?.(holdAsk.source)} onRemoveHold={(id) => {
+                    {holdAsk && holdShape && !directHold.removed && <TodayDayStrip shape={{ ...holdShape, events: holdShape.events.filter((event) => !directHold.status?.id || event.holdId !== directHold.status.id), hold: { start: holdAsk.start, end: holdAsk.end, label: holdAsk.source.thing.title } }} requestedDate={ask.day ?? ""} timeZone={timeZone} holdPreview={directHold.held ? "held" : "proposed"} holdTitle={holdAsk.source.thing.title} onOpenHold={() => handlers.onFindTime?.(holdAsk.source)} onRemoveHold={(id) => {
                         if (!id) { void directHold.remove(); return; }
                         setStripHoldError(null);
                         void RemoveHold(id).then(async () => { setRemovedStripHold(id); if (ask.day) setHoldShape(await GetHoldDayShape(ask.day)); }).catch(() => setStripHoldError("remove"));

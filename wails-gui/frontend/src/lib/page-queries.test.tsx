@@ -6,7 +6,6 @@ import { useMainChatAnswerChips, useMainChatView } from '@/hooks/useMainChatView
 import { useOpenAnswers } from '@/hooks/useOpenAnswers';
 import { useTodayNews } from '@/hooks/useTodayNews';
 import { useTodayStatus } from '@/hooks/useTodayStatus';
-import { useTodaySuggestion } from '@/hooks/useTodaySuggestion';
 import { useTodayQuietLines } from '@/hooks/useTodayQuietLines';
 import { BRIEF_RESYNC_MS, useLatestBrief } from '@/hooks/useLatestBrief';
 import { useTopicFinds } from '@/hooks/useTopicFinds';

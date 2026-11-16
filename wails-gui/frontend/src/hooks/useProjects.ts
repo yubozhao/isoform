@@ -36,7 +36,7 @@ import {
     PrewarmSession,
     LoadUIState,
     SaveUIState,
-} from "../../wailsjs/go/main/App";
+} from "@/lib/wails-shim-app";
 import { loadStreamItemsPageWithOpenAnswerDelivery } from "@/lib/open-answer-delivery";
 import type {
     Project,

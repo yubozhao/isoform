@@ -34,7 +34,7 @@ async function mountProjects() {
     const project = {
         id: 'project', name: 'Project', path: '', activeWorkspaceId: 'workspace', activeSessionId: session.localId,
         workspaces: [{ id: 'workspace', isDefault: true, activeSessionId: session.localId, sessions: [session] }],
-    } as Project;
+    } as unknown as Project;
     const renderer = renderHook(() => useProjects({ model: 'model', setModel: vi.fn(), setError: mocks.setError }));
     await act(async () => {
         renderer.result.current.setProjects([project]);

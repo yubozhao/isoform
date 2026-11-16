@@ -6,14 +6,12 @@ import { useEffect } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createInstance } from "i18next";
 import en from "@/i18n/locales/en/today.json";
-import zh from "@/i18n/locales/zh-CN/today.json";
 import enChat from "@/i18n/locales/en/chat.json";
-import zhChat from "@/i18n/locales/zh-CN/chat.json";
 import { TodayPage } from "./TodayPage";
 import { todayNextBrief, dayShapeFixture } from "./today-next.fixture";
 import { useMainChatItemPanel } from "@/hooks/useMainChatItemPanel";
 import { resetMainChatWaitingStore } from "@/lib/main-chat-waiting-store";
-import { MarkTodayDoneOpened } from "@/lib/wails-shim-app";
+import { MarkTodayDoneOpened, type TodayPanelAnswer } from "@/lib/wails-shim-app";
 
 vi.mock("@/hooks/useFirstBriefSeen", () => ({ useFirstBriefSeen: () => ({ current: null }) }));
 const mockUseGoalCheckIn = vi.fn((): { checkIn: unknown; refresh: () => void } => ({ checkIn: null, refresh: () => undefined }));
@@ -97,7 +95,7 @@ const pauseMocks = vi.hoisted(() => ({
     subscriptions: new Map<string, Set<(value: unknown) => void>>(),
     prepareDrafts: vi.fn(async (refs: unknown[]) => refs.map(() => ({ error: "failed" }))),
     paragraph: vi.fn(async () => ({ sourceKind: "brief", sourceId: "current-version", briefId: "b" })),
-    savedAnswer: vi.fn(async (_context: unknown): Promise<null | { question: string; answer: string; userItemId: string; answerItemId: string }> => null),
+    savedAnswer: vi.fn(async (_context: unknown): Promise<null | TodayPanelAnswer> => null),
     topicRender: vi.fn(),
     listTopic: vi.fn(async (topicId: string) => ({ sessionId: "main", topicId, items: [], hasMore: false, nextCursor: "" })),
     sendTopic: vi.fn(),

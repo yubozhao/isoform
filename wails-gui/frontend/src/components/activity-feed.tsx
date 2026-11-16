@@ -11,7 +11,7 @@ import {
     type ActivityFeedKind,
     type ActivityFeedRow,
     type ActivityForgetPreview,
-} from '../../wailsjs/go/main/App';
+} from '@/lib/wails-shim-app';
 
 // Activity's one timeline (computer-activity v1.0.0, rules 3 to 8): what
 // Isoform saw in the day across the screen, the watch and your agents,

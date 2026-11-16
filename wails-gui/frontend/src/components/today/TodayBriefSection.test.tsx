@@ -1,9 +1,8 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "@/i18n";
-import { briefDateTime } from "@/lib/brief-time";
 import type { MobileBriefCard, MobileBriefDocument, MobileBriefItem, TodayBriefView } from "@/lib/wails-shim-app";
-import { MAX_MEETINGS, MAX_SECTION_ITEMS, TodayBriefSection, briefItemLink, narrativeInPartOrder, needsYou, nextMeetings } from "./TodayBriefSection";
+import { TodayBriefSection, briefItemLink, narrativeInPartOrder, needsYou, nextMeetings } from "./TodayBriefSection";
 import { resetTodayChatDrafts } from "@/lib/today-chat-prepared";
 import { todayBriefCardRef, type TodayChatContextRef } from "@/lib/today-chat-navigation";
 import { buttonVariants } from "@/components/ui/button";
@@ -87,12 +86,8 @@ function item(overrides: Partial<MobileBriefItem>): MobileBriefItem {
 }
 
 /** A row's buttons by test id or name; a goal row's "..." is "goal-menu". */
-function rowActions(row: HTMLElement): string[] {
-    return within(row).queryAllByRole("button").map((button) => button.dataset.testid || button.textContent || "");
-}
 
 /** The question card Go writes for a row (mobile_brief_cards.go). */
-const rowCardId = (row: MobileBriefItem) => `item:${row.key || row.id}`;
 
 /** A card click puts the card's words in the message box, unsent, with the
  *  card itself as the context Go checks at Send (backlog item 64). */
@@ -368,7 +363,7 @@ describe("TodayBriefSection with a brief", () => {
                 schedules: [item({ id: "schedules-1", title: "Daily digest ran" })],
             },
         });
-        const { h } = renderSection({ view: view({ brief: doc }) });
+        renderSection({ view: view({ brief: doc }) });
 
         expect(screen.getByTestId("brief-narrative")).toHaveTextContent("You have two meetings and the release is close.");
         expect(screen.queryByText("The shape of today")).not.toBeInTheDocument();
@@ -512,8 +507,6 @@ it.each([["en", "Open About you"], ["zh-CN", "打开「关于你」"]])("links a
 
 describe("TodayBriefSection while today's brief is on its way", () => {
     const lastAt = new Date(2026, 9, 14, 19, 30).toISOString();
-    const snapshot = () => brief({ briefId: "2026-10-15-on_request-061052", slot: "on_request", displaySlot: "morning", narrative: [], narrativeStatus: "unavailable",
-        sections: { moved: [item({ id: "m1", title: "Release notes" })], doing: [], watching: [], meetings: [], people: [], openLoops: [], learned: [], deliverables: [], schedules: [] } });
 
     it("keeps the last written brief visible while the next slot is pending", () => {
         const earlier = brief({ briefId: "2026-10-14-evening", slot: "evening", localDate: "2026-10-14", asOf: lastAt,
@@ -1033,20 +1026,6 @@ describe('noticed Activity navigation cards', () => {
 });
 
 describe("More from today (RC 1)", () => {
-    const rowLabels = () => Array.from(document.querySelectorAll<HTMLElement>("[data-more-row]")).map((row) => row.dataset.moreRow);
-    const fullBrief = () => brief({
-        upcoming: [item({ id: "auto-1", title: "Inbox check", kind: "automation", at: new Date(2026, 9, 15, 11).toISOString() })],
-        sections: {
-            ...brief().sections,
-            openLoops: [item({ id: "loop-1", title: "Approve the launch mail", kind: "one_time_work", status: "needs_review" })],
-            meetings: [item({ id: "meet-1", title: "Design review", kind: "meeting", status: "upcoming", at: new Date(2026, 9, 15, 10).toISOString() })],
-            workingToward: [item({ id: "goal-1", title: "Ship the companion", refs: [] })],
-            commitments: [item({ id: "promise-1", title: "Send the deck", refs: [] })],
-            moved: [item({ id: "moved-1", title: "Launch plan" })],
-            people: [item({ id: "person-1", title: "Mira" })],
-            learned: [item({ id: "learned-1", title: "Prefers mornings", refs: ["e2"] })],
-        },
-    });
 
     it("hides More from today when every section is empty", () => {
         renderSection({ view: view({ brief: brief() }) });

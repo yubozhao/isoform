@@ -4,7 +4,7 @@ import { assistantLabel } from "@/lib/brief-assistant";
 import { useTodaySectionSeen } from "@/hooks/useTodaySectionSeen";
 import { isCommitmentItemKey, isFindTimeLabel } from "./commitment-key";
 import { findTimeRangeFor } from "@/lib/find-time-range";
-import { useCallback, useEffect, useId, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowUpRight, Check, ChevronRight, Loader2, Lock, MessageCircle, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,6 @@ import { DigestMarkdown } from "@/components/digest-markdown";
 import { cn } from "@/lib/utils";
 import { BrowserOpenURL } from "../../../wailsjs/runtime/runtime";
 import {
-    ReopenMainChatSetupSteps,
     GetHoldSettings,
     OpenExternalURL,
     OpenPermissionSettings,
@@ -23,6 +22,7 @@ import {
     GetTodayBriefDraftRoute,
     type MobileBriefDocument,
     type MobileBriefCard,
+    type MobileBriefParagraph,
     type MobileBriefItem,
     type MobileBriefRef,
     type MobileBriefSections,
@@ -687,15 +687,13 @@ export function TodayBriefSection({
             pageQueryCache.invalidate(["GetTodayDayShape"], false);
         } catch { setStripError("restore"); }
     };
-    // "Turn off Your week" from its menu: the brief reads as on other evenings.
-    const [weekOff, setWeekOff] = useState(false);
     const [closingInteraction, setClosingInteraction] = useState("");
 
     const brief = view?.brief ?? null;
     const prepPeople = usePrepPersonMeetings(brief, active && observationPaused === false && !!handlers.onOpenDayMeeting);
     const draftRoutes = useNewMessageRoutes(brief, active && observationPaused === false && !!handlers.onDraftBriefCard);
     const closingInteractionKey = brief ? `${brief.briefId}\n${brief.narrative?.at(-1)?.text ?? ""}` : "";
-    const briefHold = useBriefHoldOffer(brief, active && observationPaused === false && !!handlers.onFindTime && !!dayShape?.calendarConnected && !view?.quiet && !view?.closingAnswer && closingInteraction !== closingInteractionKey && (!brief?.yourWeek || weekOff), dayShapeDate, brief?.timezone);
+    const briefHold = useBriefHoldOffer(brief, active && observationPaused === false && !!handlers.onFindTime && !!dayShape?.calendarConnected && !view?.quiet && !view?.closingAnswer && closingInteraction !== closingInteractionKey && !brief?.yourWeek, dayShapeDate, brief?.timezone);
     const directHold = useDirectHold(briefHold.offer);
     const briefId = brief?.briefId ?? "";
     const holdKey = `${briefId}|${dayShape?.hold?.start ?? ""}|${dayShape?.hold?.end ?? ""}|${dayShape?.hold?.label ?? ""}`;
@@ -745,7 +743,6 @@ export function TodayBriefSection({
         parts = {
             card: (
                 <div className={cn(BRIEF_CARD, "gap-2.5")}>
-                    {!brief && !view?.lastBriefId && <p className="text-[14px] font-medium text-ink">{tr("todayBrief.firstTitle")}</p>}
                     <p role="alert" data-testid="brief-load-failed" className="text-[13.5px] text-copper">{tr("todayBrief.loadFailed")}{onRetry && <> <button type="button" className="text-accent" onClick={() => measureToday("T03", "do", "done", onRetry)}>{tr("todayBrief.retry")}</button></>}</p>
                 </div>
             ),
@@ -1145,20 +1142,6 @@ function LocalDailySummary({ summary, handlers, tr, now, labelHidden = false }: 
     );
 }
 
-/** "More from today" (RC 1): one row per part of the day, each opening its
- *  section in place or leading to its page. Hidden when every row is. */
-function MoreFromToday({ tr, children, footer, showEmpty }: { tr: Translate; children: ReactNode[]; footer?: ReactNode; showEmpty?: boolean }) {
-    const headingId = useId();
-    if (!children.some(Boolean) && !footer && !showEmpty) return null;
-    return (
-        <section aria-labelledby={headingId} data-testid="today-more" className="flex flex-col">
-            <h2 id={headingId} className="mb-1.5 text-[13px] font-semibold text-muted">{tr("todayBrief.more.title")}</h2>
-            {children}
-            {footer && <div className="mt-3 flex flex-col items-start gap-1.5">{footer}</div>}
-        </section>
-    );
-}
-
 /** A row's button: the section's name, a one-line detail and a chevron that
  *  turns when the row is open. */
 function MoreRowButton({ id, label, detail, expanded, controls, onClick, testId }: {
@@ -1532,9 +1515,6 @@ function briefParts({
             finish();
         }
     };
-    const openConversation = () => {
-        if (handlers.onOpenBriefConversation) runOpening(() => handlers.onOpenBriefConversation!(brief.briefId));
-    };
     const askAboutParagraph = (paragraph: number, text: string, question: string) => {
         if (handlers.onAskAboutParagraph) runOpening(() => handlers.onAskAboutParagraph!(brief.briefId, paragraph, text, question));
     };
@@ -1743,7 +1723,7 @@ function briefParts({
                         )}
                         {briefHold.offer && briefHold.shared && !briefHold.dismissal && !directHold.held && <p className="text-[13px] text-muted">{tr("holds.sharedBusy")}</p>}
                         {briefHold.offer && !briefHold.dismissal ? <div className="flex flex-wrap items-center gap-2">{directHold.removed ? <span role="status" className="text-[13px] text-muted">{tr("holds.removed")}{directHold.canRestore && <> · <button type="button" className="text-accent" onClick={() => void directHold.restore()}>{tr("holds.undo")}</button></>}</span> : directHold.checking ? <span role="status" className="text-[13px] text-muted">{tr("holds.checking")}</span> : directHold.held ? <span role="status" className="text-[13px] text-muted">{tr("holds.held")}{directHold.canUndo && <> · <button type="button" className="text-accent" onClick={() => void directHold.undo()}>{tr("holds.undo")}</button></>}</span> : <><Button size="sm" onClick={() => void measureToday("T14", "do", "done", directHold.hold)}>{tr("holds.hold", { when: zonedFormat(new Date(briefHold.offer.preferred!.start), language, { hour: "numeric", minute: "2-digit", ...computerHourOptions() }, brief.timezone) })}</Button><Button size="sm" variant="secondary" onClick={() => measureToday("T14", "do", "done", briefHold.dismiss)}>{tr("holds.notNow")}</Button><Button size="sm" variant="quiet" onClick={() => handlers.onFindTime?.(briefHold.offer!)}>{tr("holds.otherTimes")}</Button></>}{directHold.failed && <span role="alert" className="text-[13px] text-muted">{tr("holds.failed")}{directHold.held && <> <button type="button" className="text-accent" onClick={() => handlers.onFindTime?.(briefHold.offer!)}>{tr("holds.otherTimes")}</button></>}</span>}</div> : !briefHold.dismissal && closing && actionCards.some((card) => !!card.answerTo) ? (
-                            <ClosingAnswerActions key={`${brief.briefId}:${actionCards[0]?.answerTo ?? ""}`} briefID={brief.briefId} cards={actionCards} initialAnswer={closingAnswer} opening={opening} onOpen={openConversation} onDraft={handlers.onDraftBriefCard} onInteract={onClosingInteract} />
+                            <ClosingAnswerActions key={`${brief.briefId}:${actionCards[0]?.answerTo ?? ""}`} briefID={brief.briefId} cards={actionCards} initialAnswer={closingAnswer} onDraft={handlers.onDraftBriefCard} onInteract={onClosingInteract} />
                         ) : !briefHold.dismissal && actionCards.length > 0 && (
                             <div className="flex flex-wrap items-center gap-2" data-testid="brief-conversation-actions">
                                 {actionCards.map((card, index) => card.mode === "open_activity" && card.target && handlers.onOpenActivitySuggestion ? (
@@ -1798,13 +1778,10 @@ function closingLabel(label: string | undefined, tr: Translate): string {
     return CLOSING_DECLINE.test((label ?? "").trim()) ? tr("todayBrief.notNow") : label ?? "";
 }
 
-function ClosingAnswerActions({ briefID, cards, initialAnswer, opener, opening, onOpen, onDraft, onInteract }: {
+function ClosingAnswerActions({ briefID, cards, initialAnswer, onDraft, onInteract }: {
     briefID: string;
     cards: MobileBriefCard[];
     initialAnswer?: NonNullable<TodayBriefView["closingAnswer"]>;
-    opener?: MobileBriefCard;
-    opening: boolean;
-    onOpen: () => void;
     onDraft?: TodayActionHandlers["onDraftBriefCard"];
     onInteract: () => void;
 }) {
@@ -1836,9 +1813,6 @@ function ClosingAnswerActions({ briefID, cards, initialAnswer, opener, opening, 
             <Button size="sm" variant="quiet" onClick={() => measureToday("T12", "open", "opened", () => setEditing(true))}>{t("weekQuestion.change")}</Button>
         </div> : <div className="flex flex-wrap items-center gap-2">
             {cards.map((card, index) => <Button key={card.id} size="sm" variant={answer?.cardId === card.id || !answer && index === 0 ? "default" : "secondary"} disabled={busy} onClick={() => void choose(card)}>{closingLabel(card.label)}</Button>)}
-            {opener && <Button size="sm" variant="quiet" className="ml-auto" data-testid="brief-talk-button" disabled={opening} onClick={onOpen}>
-                {opening && <Loader2 className="size-3.5 animate-spin" />}{t("todayBrief.talkAboutBrief")}
-            </Button>}
         </div>}
         {failed && <p role="alert" className="text-[13px] text-error">{t("weekQuestion.failed")}</p>}
     </div>;

@@ -1029,6 +1029,8 @@ export interface MobileBriefActivityTarget {
  *  them. */
 export interface MobileBriefCard {
     id: string;
+    /** Digest of what the message was written from (Go Facts). */
+    facts?: string;
     /** Present only on answers the computer bound to the closing question. */
     answerTo?: string;
     /** "action": a button; "item": a row's question; "opener": what Isoform
@@ -1137,6 +1139,9 @@ export interface YourWeekEntry {
 export type TodayBriefMissing = "screen_recording" | "accessibility" | "calendars";
 
 export interface TodayBriefView {
+    /** Why a brief read has no words: store_unavailable while a store is
+     *  still opening, or another reason. Empty when the words are there. */
+    wordsWithheld?: string;
     weekAnswer?: { weekStart: string; answer: string };
     closingAnswer?: { cardId: string; label: string; questionDigest: string };
     quiet?: boolean;
@@ -5673,6 +5678,9 @@ export const EnsureWeeklySummary = appBinding<
     main.WeeklySummaryData
 >("EnsureWeeklySummary");
 
+// Persists one chat row from the frontend's own StreamItemData (the generated
+// class type also needs convertValues, which a plain row never has).
+export const PersistStreamItem = appBinding<[string, StreamItemData], number>("PersistStreamItem");
 export * from "@wails-generated-app";
 
 export interface ContactMatchDTO {

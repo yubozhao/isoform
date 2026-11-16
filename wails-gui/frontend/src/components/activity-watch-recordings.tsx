@@ -11,7 +11,7 @@ import {
     type WatchRecording,
     type WatchRecordingLine,
     type WatchRecordingPart,
-} from '../../wailsjs/go/main/App';
+} from '@/lib/wails-shim-app';
 
 // "From your watch": the recordings this computer received from the watch
 // (through the phone), by day. Each one shows its parts with the place and

@@ -349,7 +349,7 @@ it('shows a failed send as one gray line and retries or edits the original messa
     const retry = vi.fn();
     const edit = vi.fn();
     const view = render(
-        <FailedSendContext.Provider value={{ retry, edit, aiReady: true }}>
+        <FailedSendContext.Provider value={{ retry, edit, resendLast: vi.fn(), resendItemId: null, aiReady: true }}>
             <GroupedStreamList items={[{ id: 'failed-user', kind: 'user', content: 'Keep this draft', sendFailed: true }]} streaming={false} />
         </FailedSendContext.Provider>,
     );
@@ -371,7 +371,7 @@ it('keeps a no-AI send dimmed, then shows ordinary failed-send controls once an 
     const edit = vi.fn();
     const items = [{ id: 'kept-user', kind: 'user' as const, content: 'Plan my week', sendFailed: true, sendFailedCode: 'no_assistant' }];
     const view = render(
-        <FailedSendContext.Provider value={{ retry, edit, aiReady: false }}>
+        <FailedSendContext.Provider value={{ retry, edit, resendLast: vi.fn(), resendItemId: null, aiReady: false }}>
             <GroupedStreamList items={items} streaming={false} />
         </FailedSendContext.Provider>,
     );
@@ -379,7 +379,7 @@ it('keeps a no-AI send dimmed, then shows ordinary failed-send controls once an 
     expect(view.getByRole('status')).toHaveTextContent("Didn't send: no AI is signed in. · Set up");
     expect(view.getByRole('status')).toHaveClass('text-warning');
     view.rerender(
-        <FailedSendContext.Provider value={{ retry, edit, aiReady: true }}>
+        <FailedSendContext.Provider value={{ retry, edit, resendLast: vi.fn(), resendItemId: null, aiReady: true }}>
             <GroupedStreamList items={items} streaming={false} />
         </FailedSendContext.Provider>,
     );

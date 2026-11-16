@@ -14,7 +14,7 @@ import {
     EnsureProjectStructure,
     RenameWorkspaceBranch,
     SaveWorkspaceState,
-} from '../../wailsjs/go/main/App';
+} from '@/lib/wails-shim-app';
 import type { AgentStatus, FileAttachment, ImageAttachment, Project, RemoteEnv, Session, StreamItem, StreamItemData, Workspace } from '@/types';
 import { type KeyCombo, eventMatchesCombo } from '@/hooks/useKeybindings';
 import { type TodayChatContextRef, type TodayChatDraft, type TodayChatPreview, type TodayChatStartOptions } from '@/lib/today-chat-navigation';

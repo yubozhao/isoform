@@ -16,7 +16,7 @@ const frontend = ['wails-gui/frontend/src', 'wails-gui/quick-chat-spotlight/fron
     .flatMap((dir) => filesUnder(resolve(root, dir)))
     .filter((path) => /\.(?:[jt]sx?|css|html|svg|json|md)$/.test(path));
 const isTest = (path: string) => /\.(?:test|spec)\.[jt]sx?$/.test(path);
-const values = (source: typeof violet) => source.color.tokens.flatMap((token) => Object.values(token.value));
+const values = (source: { color: { tokens: { value: Record<string, string> }[] } }) => source.color.tokens.flatMap((token) => Object.values(token.value));
 const current = new Set(values(violet).map((value) => value.toLowerCase()));
 const retiredHex = new Set(values(retired).filter((value) => /^#[\da-f]{6}$/i.test(value) && !current.has(value.toLowerCase()))
     .map((value) => value.slice(1).toLowerCase()));

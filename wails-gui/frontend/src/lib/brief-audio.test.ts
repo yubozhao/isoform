@@ -110,7 +110,7 @@ describe("shared brief playback", () => {
     });
     it.each([{ accounts: [] }, { accounts: [{ ...account, on: false }] }])("disposes active audio on account withdrawal $accounts", async ({ accounts }) => {
         await toggleBriefPlayback("latest");
-        const audio = vi.mocked(window.HTMLMediaElement.prototype.play).mock.instances[0] as HTMLAudioElement;
+        const audio = vi.mocked(window.HTMLMediaElement.prototype.play).mock.instances[0] as unknown as HTMLAudioElement;
         expect(audio.src).toContain("base64,AAAA");
         accountsUpdated(accounts);
         expect(window.HTMLMediaElement.prototype.pause).toHaveBeenCalledTimes(1);
@@ -135,7 +135,7 @@ describe("shared brief playback", () => {
         vi.mocked(window.HTMLMediaElement.prototype.play).mockImplementationOnce(() => new Promise<void>(r => { resolve = r; }));
         const pending = toggleBriefPlayback("old");
         await act(async () => {});
-        const audio = vi.mocked(window.HTMLMediaElement.prototype.play).mock.instances[0] as HTMLAudioElement;
+        const audio = vi.mocked(window.HTMLMediaElement.prototype.play).mock.instances[0] as unknown as HTMLAudioElement;
         accountsUpdated([]);
         expect(audio.hasAttribute("src")).toBe(false);
         resolve();
