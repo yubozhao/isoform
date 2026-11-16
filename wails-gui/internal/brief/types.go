@@ -110,6 +110,10 @@ type Counts struct {
 type Paragraph struct {
 	Text string   `json:"text"`
 	Refs []string `json:"refs"`
+	// Template is the paragraph with its day and time tokens ({when:id}),
+	// when the writer wrote them and they passed ValidateTokens; Text then has
+	// each token replaced by its item's day word for the brief's own day.
+	Template string `json:"template,omitempty"`
 }
 
 // Evidence is one source row the brief cites (MobileBriefRef).

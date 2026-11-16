@@ -86,6 +86,10 @@ func mobileBriefRelativeDaysAtRead(brief MobileBriefV1, now, base time.Time, loc
 	}
 	brief.Narrative = append([]MobileBriefPara(nil), brief.Narrative...)
 	for i := range brief.Narrative {
+		if brief.Narrative[i].Template != "" {
+			// Rendered from its tokens for this reader (brief_tokens.go).
+			continue
+		}
 		old := brief.Narrative[i].Text
 		brief.Narrative[i].Text = rewrite(old, itemDate(brief.Narrative[i]))
 		changed = changed || old != brief.Narrative[i].Text

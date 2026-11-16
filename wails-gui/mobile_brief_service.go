@@ -1747,6 +1747,9 @@ func (s *mobileBriefService) clearAudioRendering(briefID string, asOf time.Time)
 // still said exactly the words shown (Nov 14: the phone had no player). A
 // withdrawal that matters changes the words, and so the binding.
 func mobileBriefAudioBinding(brief MobileBriefV1, lang string) string {
+	// A tokenized paragraph is bound by its template, so the recording keeps
+	// its binding when the day words are rendered for another day.
+	brief = mobileBriefTemplateWords(brief)
 	said := func(paragraphs []MobileBriefPara) []string {
 		out := make([]string, 0, len(paragraphs))
 		for _, paragraph := range paragraphs {

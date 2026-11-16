@@ -9,7 +9,18 @@ import { checkTodayBudgets, todayBudgetTable } from "./today-budgets.mjs";
 const [day, out, briefsFile, ...logs] = process.argv.slice(2);
 const stamp = day.replaceAll("-", "/");
 const paints = {}, bindings = {}, errors = {}, turns = {};
+// One [brief-tokens-shadow] line per brief written with tokens while the old
+// writer runs beside it (docs/brief-writer-tokens.md): counts only.
+const shadows = [];
 let lines = 0;
+// A paint that started before the screen was unlocked waited for the unlock
+// (the app reads nothing while the Mac is locked); it is counted apart, not
+// as a slow paint. The lock state comes from [listening-privacy] lines.
+let locked = false, lastUnlock = 0, waitedForUnlock = 0;
+const seconds = (line) => {
+    const m = line.match(/^\S+ (\d+):(\d+):(\d+(?:\.\d+)?)/);
+    return m ? Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]) : 0;
+};
 const perfLines = [];
 const push = (map, key, value) => { (map[key] ??= []).push(value); };
 for (const file of logs) {
@@ -18,8 +29,18 @@ for (const file of logs) {
         lines++;
         if (line.includes("[perf] ")) perfLines.push(line);
         let m;
-        if ((m = line.match(/\[perf\] first_paint page=([\w-]+) ms=(\d+)/))) push(paints, m[1], Number(m[2]));
+        if (/\[listening-privacy\] paused reason=lock/.test(line)) locked = true;
+        if (/\[listening-privacy\] resumed reason=lock/.test(line)) { locked = false; lastUnlock = seconds(line); }
+        if ((m = line.match(/\[perf\] first_paint page=([\w-]+) ms=(\d+)/))) {
+            const ms = Number(m[2]);
+            if (locked || seconds(line) - ms / 1000 < lastUnlock) waitedForUnlock++;
+            else push(paints, m[1], ms);
+        }
         else if ((m = line.match(/\[perf\] binding=(\w+) ms=(\d+)/))) push(bindings, m[1], Number(m[2]));
+        if (line.includes("[brief-tokens-shadow] done=")) {
+            const kv = Object.fromEntries([...line.matchAll(/(\w+)=(\d+)(?:\/(\d+))?/g)].map(([, k, a, b]) => [k, b === undefined ? Number(a) : [Number(a), Number(b)]]));
+            shadows.push(kv);
+        }
         if ((m = line.match(/\[chat-turn\] kind=(\w+) .*outcome=(\w+)/))) turns[`${m[1]}:${m[2]}`] = (turns[`${m[1]}:${m[2]}`] ?? 0) + 1;
         if (/panic|fatal|\berror\b|failed/i.test(line) && !/\[perf\]/.test(line)) {
             const tag = (line.match(/^\S+ \S+ (\[[^\]]+\])/) ?? [])[1] ?? "[untagged]";
@@ -41,7 +62,7 @@ const metrics = {
     day, logLines: lines,
     paints: Object.fromEntries(Object.entries(paints).map(([k, v]) => [k, stat(v)])),
     bindings: Object.fromEntries(Object.entries(bindings).map(([k, v]) => [k, stat(v)])),
-    errors, turns, briefs,
+    errors, turns, briefs, shadows, waitedForUnlock,
 };
 writeFileSync(`${out}/${day}.json`, JSON.stringify(metrics, null, 2));
 
@@ -77,7 +98,23 @@ const comparison = !prev ? `${day} baseline saved (${lines} log lines, ${briefs.
     : worse.length ? `${day} WORSE than ${previousDay.slice(0, 10)}: ${worse.slice(0, 4).join("; ")}`
         : `${day} no worse than ${previousDay.slice(0, 10)} (${lines} log lines, ${briefs.length} briefs)`;
 const line = overBudget + comparison;
-writeFileSync(`${out}/latest.txt`, line + "\n");
+const shadowNote = shadows.length ? `; tokens vs old writer: ${shadows.length} briefs, ${shadows.filter((r) => (r.items_only_old ?? 0) > 0).length} left out an old item, ${shadows.reduce((n, r) => n + (r.fallbacks ?? 0), 0)} fallbacks` : "";
+writeFileSync(`${out}/latest.txt`, line + shadowNote + "\n");
+
+// Side-by-side of the writer's tokens and the old writer, per brief: same
+// paragraph counts, cited items shared or only on one side, templates kept,
+// fallbacks, and the old writer's day repairs. Counts only.
+function tokensShadow(rows) {
+    if (!rows.length) return "- no side-by-side runs logged";
+    const sum = (key) => rows.reduce((n, r) => n + (Array.isArray(r[key]) ? 0 : r[key] ?? 0), 0);
+    const sameParts = rows.filter((r) => r.done?.[0] === r.done?.[1] && r.next?.[0] === r.next?.[1]).length;
+    const lost = rows.filter((r) => (r.items_only_old ?? 0) > 0).length;
+    return [
+        `- briefs compared: ${rows.length}; same paragraph counts: ${sameParts}`,
+        `- cited items shared: ${sum("items_shared")}, only with tokens: ${sum("items_only_tokens")}, only in the old writer: ${sum("items_only_old")} (briefs that left out an old item: ${lost})`,
+        `- token paragraphs kept: ${sum("templates")}, fell back: ${sum("fallbacks")}; old writer day repairs: ${sum("old_day_repairs")}`,
+    ].join("\n");
+}
 
 const table = (map, label) => {
     const rows = Object.entries(map).sort((a, b) => b[1].p95 - a[1].p95).slice(0, 15)
@@ -96,12 +133,16 @@ ${todayBudgetTable(budget)}
 
 ## First paint by page
 ${table(metrics.paints, "paints")}
+${waitedForUnlock ? `\n${waitedForUnlock} paint(s) started while the Mac was locked and waited for the unlock; not counted above.` : ""}
 
 ## Slowest bindings
 ${table(metrics.bindings, "bindings")}
 
 ## Errors by log tag
 ${Object.keys(errors).length ? Object.entries(errors).sort((a, b) => b[1] - a[1]).map(([t, n]) => `- ${t}: ${n}${prev ? ` (day before ${prev.errors[t] ?? 0})` : ""}`).join("\n") : "- none"}
+
+## Brief writer: tokens against the old writer
+${tokensShadow(shadows)}
 
 ## Chat and Task turns
 ${Object.keys(turns).length ? Object.entries(turns).map(([k, n]) => `- ${k}: ${n}`).join("\n") : "- none logged"}

@@ -78,6 +78,9 @@ type Material struct {
 	// Name is the user's first name, or empty.
 	Name  string
 	Items []MaterialItem
+	// Tokens asks the writer for {when:id} tokens instead of day, date and
+	// clock words (tokens.go, docs/brief-writer-tokens.md).
+	Tokens bool
 }
 
 // AddItem appends an item with the next id when its group has room and its
@@ -184,7 +187,10 @@ func WritePrompt(m Material, lang string) string {
 	if m.Now != "" {
 		b.WriteString("It is now " + m.Now + ".\n")
 	}
-	if days := m.dayPrompt(); days != "" {
+	if m.Tokens {
+		b.WriteString("- Never write a day word, weekday, date or clock time yourself (no today, tomorrow, yesterday, Monday, November 5, 3:00 PM). Where you say when an item happens or happened, write {when:ID} with that item's id, as in \"The design review is {when:m4}.\" The app puts in the day and time. Only items with a when value can be named that way, and every item you name in a token goes in refs.\n")
+	}
+	if days := m.dayPrompt(); days != "" && !m.Tokens {
 		b.WriteString(days)
 		b.WriteString("Name a day only as an item's when word gives it. A next step happens today or later: never give it a past date (say today, tomorrow, or a day ahead); a past date may only be a reason, as in \"since November 5\".\n")
 	}
@@ -228,13 +234,20 @@ func RepairDraft(raw string, m Material) (Draft, []string, error) {
 	}
 	clean := func(p Paragraph, done bool) (Paragraph, bool) {
 		text := strings.TrimSpace(p.Text)
+		template := ""
+		if m.Tokens {
+			text, template, p.Refs = m.tokenParagraph(text, p.Refs, &codes)
+		}
 		var cited []MaterialItem
 		for _, r := range p.Refs {
 			if item, ok := byID[strings.TrimSpace(r)]; ok {
 				cited = append(cited, item)
 			}
 		}
-		text = m.checkDays(text, done, cited, &codes)
+		if template == "" {
+			// Without valid tokens the words are checked as before.
+			text = m.checkDays(text, done, cited, &codes)
+		}
 		if listMarkerPattern.MatchString(text) {
 			text = listMarkerPattern.ReplaceAllString(text, "")
 			codes = append(codes, CodeListMarker)
@@ -282,7 +295,10 @@ func RepairDraft(raw string, m Material) (Draft, []string, error) {
 			codes = append(codes, CodeAgentCredited)
 			return Paragraph{}, false
 		}
-		return Paragraph{Text: text, Refs: refs}, true
+		if template != "" && strings.Join(strings.Fields(template), " ") != template {
+			template = strings.Join(strings.Fields(template), " ")
+		}
+		return Paragraph{Text: text, Refs: refs, Template: template}, true
 	}
 	var out Draft
 	for _, p := range reply.Done {

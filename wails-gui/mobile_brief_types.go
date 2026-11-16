@@ -99,6 +99,10 @@ type MobileBriefPara struct {
 	chipWords *mobileBriefCardWords
 	Text      string   `json:"text"`
 	Refs      []string `json:"refs"`
+	// Template is Text with the writer's day and time tokens ({when:eN}),
+	// rendered for each reader's day (brief_tokens.go). Empty for paragraphs
+	// written without tokens.
+	Template string `json:"template,omitempty"`
 }
 
 type MobileBriefSections struct {

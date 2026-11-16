@@ -79,9 +79,11 @@ type copyFile struct {
 // builtBrief mirrors the parts of the built brief (the stored .json) that this
 // tool counts and matches against withdrawn keys. Only counts leave this tool.
 type builtBrief struct {
-	BriefID   string `json:"briefId"`
-	LocalDate string `json:"localDate"`
-	Narrative []struct {
+	BriefID         string `json:"briefId"`
+	LocalDate       string `json:"localDate"`
+	AsOf            string `json:"asOf"`
+	NarrativeStatus string `json:"narrativeStatus"`
+	Narrative       []struct {
 		Refs []string `json:"refs"`
 	} `json:"narrative"`
 	Cards    []json.RawMessage `json:"cards"`
@@ -196,6 +198,32 @@ func replay(dir string) ([]result, error) {
 // decide is the read decision for one stored brief, and what the migration
 // would do to its copy.
 func decide(dir, id string, epoch uint64, withdrawn []withdrawalKey) result {
+	r, written := decideSealed(dir, id, epoch, withdrawn)
+	return showBuilt(dir, id, r, written)
+}
+
+// showBuilt applies the app's rule that a built brief always shows
+// (mobile_brief_show_built.go): when the sealed copy shows no written words,
+// the build's own copy (<id>.built) of the same brief shows, with its words
+// and recording. The counts are then the build's.
+func showBuilt(dir, id string, r result, written bool) result {
+	if written || r.Status == "amend" {
+		return r
+	}
+	stored, storedOK := readBuilt(filepath.Join(dir, id+".json"), id)
+	built, builtOK := readBuilt(filepath.Join(dir, id+".built"), id)
+	if !storedOK || !builtOK || built.AsOf != stored.AsOf || built.NarrativeStatus != "ok" || len(built.Narrative) == 0 {
+		return r
+	}
+	r.Status, r.Reason = "shown", "built"
+	r.Counts = [3]int{len(built.Narrative), len(built.Cards), len(built.Evidence)}
+	r.Audio = len(built.Audio) > 0 && string(built.Audio) != "null"
+	return r
+}
+
+// decideSealed is the sealed copy's own decision, and whether it shows the
+// model's written words.
+func decideSealed(dir, id string, epoch uint64, withdrawn []withdrawalKey) (result, bool) {
 	r := result{ID: id, Migrate: "none"}
 	built, builtOK := readBuilt(filepath.Join(dir, id+".json"), id)
 	r.BuiltOK = builtOK
@@ -205,17 +233,17 @@ func decide(dir, id string, epoch uint64, withdrawn []withdrawalKey) result {
 	data, err := os.ReadFile(filepath.Join(dir, id+finishedReadExt))
 	if err != nil {
 		r.Status, r.Reason = "withheld", "no_copy"
-		return r
+		return r, false
 	}
 	var copied copyFile
 	if err := json.Unmarshal(data, &copied); err != nil || copied.Schema != sealedSchema {
 		r.Status, r.Reason = "withheld", "unreadable_copy"
-		return r
+		return r, false
 	}
 	var shape builtBrief
 	if err := json.Unmarshal(copied.Brief, &shape); err != nil || shape.BriefID != id {
 		r.Status, r.Reason = "withheld", "unreadable_copy"
-		return r
+		return r, false
 	}
 	r.Counts = [3]int{len(shape.Narrative), len(shape.Cards), len(shape.Evidence)}
 	r.Audio = len(shape.Audio) > 0 && string(shape.Audio) != "null"
@@ -223,7 +251,7 @@ func decide(dir, id string, epoch uint64, withdrawn []withdrawalKey) result {
 	r.Migrate = migrateDecision(copied, built, builtOK, withdrawn, time.Now())
 	if !printEpochMatches(copied.Print, epoch) {
 		r.Status, r.Reason = "amend", "privacy_epoch_changed"
-		return r
+		return r, true
 	}
 	if len(shape.Narrative) == 0 {
 		r.Status = "withheld"
@@ -231,13 +259,13 @@ func decide(dir, id string, epoch uint64, withdrawn []withdrawalKey) result {
 		if r.Reason == "" {
 			r.Reason = "no_written_text"
 		}
-		return r
+		return r, false
 	}
 	r.Status, r.Reason = "shown", "none"
 	if copied.WithheldReason != "" {
 		r.Reason = copied.WithheldReason
 	}
-	return r
+	return r, shape.NarrativeStatus == "ok" || shape.NarrativeStatus == "quiet"
 }
 
 // migrateDecision predicts the one-time migration of a copy the old edited-source
