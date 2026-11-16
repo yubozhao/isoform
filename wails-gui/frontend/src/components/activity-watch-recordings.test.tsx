@@ -95,6 +95,38 @@ describe('ActivityWatchRecordings', () => {
         expect(screen.getByText(/ to .* · 9 words · You$/)).toBeTruthy();
     });
 
+    it('shows a longer conversation with its summary, decisions and follow-ups above its words', async () => {
+        const at = (minutes: number) => started.getTime() + minutes * 60_000;
+        mocks.conversations.mockResolvedValue([
+            {
+                id: 'dev:1',
+                name: 'Pricing with Sam',
+                startAt: at(50),
+                endAt: at(80),
+                recordingIds: ['a'],
+                words: 9,
+                speakers: ['you'],
+                lines: [{ at: at(50), speaker: 'you', text: 'I will send it tonight' }],
+                summary: 'Bo and Sam settled the pricing page.',
+                decisions: ['Three tiers'],
+                followups: [
+                    { text: 'Send the pricing page', owner: 'me', person: '', due: 'tonight' },
+                    { text: 'Review it', owner: 'other', person: 'Sam', due: '' },
+                ],
+            },
+        ]);
+        render(<ActivityWatchRecordings bridgePort={4000} onOpenSession={vi.fn()} />);
+        fireEvent.click(await screen.findByText('Pricing with Sam'));
+        expect(await screen.findByText('Bo and Sam settled the pricing page.')).toBeTruthy();
+        expect(screen.getByText('Decisions')).toBeTruthy();
+        expect(screen.getByText('Three tiers')).toBeTruthy();
+        expect(screen.getByText('Follow-ups')).toBeTruthy();
+        expect(screen.getByText('Send the pricing page')).toBeTruthy();
+        expect(screen.getByText('· due tonight')).toBeTruthy();
+        expect(screen.getByText('Sam:')).toBeTruthy();
+        expect(screen.getByText('I will send it tonight')).toBeTruthy();
+    });
+
     it('still lists the hours when conversations cannot be read', async () => {
         mocks.conversations.mockRejectedValue(new Error('no'));
         render(<ActivityWatchRecordings bridgePort={4000} onOpenSession={vi.fn()} />);

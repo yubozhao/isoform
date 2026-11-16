@@ -29,7 +29,7 @@ const (
 
 const featureSwitchesEnv = "YANSU_FEATURES"
 
-var allFeatureSwitches = []featureSwitch{featureAutomations, featurePlaybooks, featureProactiveVoice, featureCalendarHolds}
+var allFeatureSwitches = []featureSwitch{featureAutomations, featurePlaybooks, featureProactiveVoice, featureCalendarHolds, featureWatchNotes}
 
 // featureOn reports whether a turned-off feature has been turned back on.
 func featureOn(feature featureSwitch) bool {

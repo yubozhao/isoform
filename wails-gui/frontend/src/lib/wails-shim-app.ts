@@ -5784,6 +5784,17 @@ export interface WatchConversation {
     words: number;
     speakers: string[];
     lines: WatchRecordingLine[];
+    /** Notes of a longer conversation; empty until it has any (watch_conversation_notes.go). */
+    summary: string;
+    decisions: string[];
+    followups: WatchConversationFollowup[];
+}
+export interface WatchConversationFollowup {
+    text: string;
+    /** "me", "other" or "unknown". */
+    owner: string;
+    person: string;
+    due: string;
 }
 export const GetWatchConversations = appBinding<[], WatchConversation[]>('GetWatchConversations');
 // The Activity page's one timeline (activity_feed.go).

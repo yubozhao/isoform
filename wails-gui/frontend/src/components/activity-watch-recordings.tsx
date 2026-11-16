@@ -211,11 +211,59 @@ function ConversationCard({ conversation }: { conversation: WatchConversation })
                 )}
             </button>
             {open && (
-                <div className="px-4 pb-4 select-text">
+                <div className="px-4 pb-4 space-y-3 select-text">
+                    <ConversationNotes conversation={conversation} />
                     <TranscriptLines lines={conversation.lines} />
                 </div>
             )}
         </section>
+    );
+}
+
+/** What a longer conversation was about, what was decided and what has to happen next. Nothing when it has no notes. */
+function ConversationNotes({ conversation }: { conversation: WatchConversation }) {
+    const { t } = useTranslation('activity');
+    const summary = conversation.summary ?? '';
+    const decisions = conversation.decisions ?? [];
+    const followups = conversation.followups ?? [];
+    if (summary === '' && decisions.length === 0 && followups.length === 0) return null;
+    return (
+        <div className="space-y-2 border-b border-border/60 pb-3" data-testid="watch-conversation-notes">
+            {summary !== '' && <p className="text-[12.5px] leading-relaxed text-ink">{summary}</p>}
+            {decisions.length > 0 && (
+                <div className="space-y-1">
+                    <h6 className="text-[11px] font-medium text-muted">{t('meetingNotes.decisions')}</h6>
+                    <ul className="space-y-0.5 text-[12.5px] leading-relaxed text-ink">
+                        {decisions.map((decision) => (
+                            <li key={decision}>{decision}</li>
+                        ))}
+                    </ul>
+                </div>
+            )}
+            {followups.length > 0 && (
+                <div className="space-y-1">
+                    <h6 className="text-[11px] font-medium text-muted">{t('meetingNotes.followups')}</h6>
+                    <ul className="space-y-0.5 text-[12.5px] leading-relaxed text-ink">
+                        {followups.map((followup) => (
+                            <li key={`${followup.owner}-${followup.text}`}>
+                                <span className="text-muted">
+                                    {followup.owner === 'me'
+                                        ? t('meetingNotes.ownerMe')
+                                        : followup.person !== ''
+                                          ? followup.person
+                                          : t('meetingNotes.ownerSomeone')}
+                                    {': '}
+                                </span>
+                                {followup.text}
+                                {followup.due !== '' && (
+                                    <span className="text-muted"> {t('meetingNotes.dueSuffix', { due: followup.due })}</span>
+                                )}
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            )}
+        </div>
     );
 }
 

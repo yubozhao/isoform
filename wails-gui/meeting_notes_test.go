@@ -387,8 +387,31 @@ func TestDeletingMeetingNotesDeletesTheCallAndWhatItTaught(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// The owner's follow-up from this call became a commitment; one from another call exists too.
+	app.writeMeetingCommitments(session, "Halcyon studio", "transcript", meetingFollowupExtraction{
+		Followups: []meetingFollowup{{Text: "Send the tour notes to the studio", Owner: meetingFollowupOwnerMe}}})
+	other := ActivitySessionRow{ID: "another-call", EndTime: start.UnixMilli()}
+	app.writeMeetingCommitments(other, "Another call", "other transcript", meetingFollowupExtraction{
+		Followups: []meetingFollowup{{Text: "Book the venue", Owner: meetingFollowupOwnerMe}}})
+	purpose, err := app.purposeProductStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loops, err := purpose.ListDetailsAll(); err != nil || len(loops) != 2 {
+		t.Fatalf("commitments before the delete: %d %v", len(loops), err)
+	}
+
 	if err := app.DeleteMeetingNotes(key); err != nil {
 		t.Fatal(err)
+	}
+	// Deleted means deleted: the commitment made from this call is gone from the Purpose Map, the other one stays.
+	loops, err := purpose.ListDetailsAll()
+	if err != nil || len(loops) != 1 || loops[0].Current.Title != "Book the venue" {
+		t.Fatalf("commitments after the delete: %+v %v", loops, err)
+	}
+	var left int
+	if err := store.db.QueryRow(`SELECT COUNT(*) FROM purpose_open_loop_events_v1 WHERE title LIKE '%tour notes%'`).Scan(&left); err != nil || left != 0 {
+		t.Fatalf("the deleted call's commitment text is still stored: %d rows %v", left, err)
 	}
 	if _, ok, _ := store.meetingNotesByKey(key); ok {
 		t.Fatal("notes stayed")

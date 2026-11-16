@@ -352,3 +352,160 @@ func TestAWithdrawnTranscriptTakesItsNames(t *testing.T) {
 		t.Fatalf("after the withdrawal %+v", byRecording)
 	}
 }
+
+// samTalkFixture stores yesterday's Sam talk (9:50 to 10:20, across the 9 AM
+// and 10 AM hours) and a few words in passing at noon, all transcribed.
+func samTalkFixture(t *testing.T) (*App, *mobileBridge, *mobileRecordingStore, string, string) {
+	t.Helper()
+	app, bridge, store, first := watchDeskFixture(t)
+	if _, err := app.deleteWatchRecording(store, first, ""); err != nil {
+		t.Fatal(err)
+	}
+	uploads := &mapUploads{bodies: map[string][]byte{}}
+	day := time.Now().UTC().Add(-24 * time.Hour).Truncate(24 * time.Hour)
+	nine, ten, noon := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	starts := map[string]time.Time{nine: day.Add(9*time.Hour + 40*time.Minute), ten: day.Add(10 * time.Hour), noon: day.Add(12 * time.Hour)}
+	events := map[string][]activitymon.ActivityEvent{}
+	say := func(id string, at time.Time, speaker, text string) {
+		events[id] = append(events[id], activitymon.ActivityEvent{Timestamp: at.UnixMilli(), Kind: activitymon.EventSpeech,
+			AppName: mobileRecordingAppName, SpeechText: text, SpeechSpeakerLabel: speaker})
+	}
+	for at := day.Add(9*time.Hour + 50*time.Minute); !at.After(day.Add(10*time.Hour + 20*time.Minute)); at = at.Add(90 * time.Second) {
+		id := nine
+		if !at.Before(starts[ten]) {
+			id = ten
+		}
+		say(id, at, "you", "I will send the pricing page tonight")
+	}
+	say(noon, day.Add(12*time.Hour+5*time.Minute), "speaker_1", "thanks, see you")
+	for _, id := range []string{nine, ten, noon} {
+		req := sealedRecordingPart(t, uploads, mobileTestDeviceID, id, 0, true, []byte("audio"), starts[id])
+		if _, _, err := receiveMobileRecordingPart(context.Background(), store, uploads, recordingTestHub, mobileTestDeviceID, req); err != nil {
+			t.Fatal(err)
+		}
+		session := ActivitySessionRow{ID: "rec-" + id, StartTime: starts[id].UnixMilli(), EndTime: starts[id].Add(time.Hour).UnixMilli(),
+			TriggerKind: mobileRecordingTrigger, AppNames: `["` + mobileRecordingAppName + `"]`, EventCount: len(events[id]),
+			TriageStatus: "pending", CreatedAt: time.Now().UnixMilli()}
+		if err := app.activity.store.SaveSession(session, events[id], nil); err != nil {
+			t.Fatal(err)
+		}
+		store.setState(id, mobileRecordingTranscribed, session.ID, 10, "")
+	}
+	return app, bridge, store, nine, ten
+}
+
+func TestWatchNotesMakeNoCallWithTheSwitchOff(t *testing.T) {
+	app, _, store, _, _ := samTalkFixture(t)
+	t.Setenv(featureSwitchesEnv, "")
+	old := meetingFollowupModel
+	t.Cleanup(func() { meetingFollowupModel = old })
+	meetingFollowupModel = func(*App, string) (string, error) {
+		t.Fatal("a model call was made with watch-notes off")
+		return "", nil
+	}
+	app.noteWatchConversations(context.Background(), store)
+	if _, err := os.Stat(filepath.Join(store.dir, watchConversationNotesFile)); err == nil {
+		t.Fatal("notes were written with the switch off")
+	}
+}
+
+// With the switch on: the 30-minute Sam talk gets a summary, a decision and a
+// follow-up from one call; the owner's follow-up becomes a commitment whose
+// source is the hour's transcript; the words in passing get no call; nothing
+// is asked twice; and deleting the 9 AM hour drops the notes and purges the
+// commitment.
+func TestWatchNotesTurnALongConversationIntoNotesAndACommitmentThatGoWithTheHour(t *testing.T) {
+	app, _, store, nine, _ := samTalkFixture(t)
+	t.Setenv(featureSwitchesEnv, string(featureWatchNotes))
+	old := meetingFollowupModel
+	t.Cleanup(func() { meetingFollowupModel = old })
+	var prompts []string
+	meetingFollowupModel = func(_ *App, prompt string) (string, error) {
+		prompts = append(prompts, prompt)
+		return `{"summary":"Bo and Sam settled the pricing page.","decisions":["Three tiers"],"followups":[{"text":"Send the pricing page tonight","owner":"me","person":"","due":"tonight"},{"text":"Review it","owner":"other","person":"Sam","due":""}]}`, nil
+	}
+	app.noteWatchConversations(context.Background(), store)
+	if len(prompts) != 1 || !strings.Contains(prompts[0], "Me: I will send the pricing page tonight") || strings.Contains(prompts[0], "see you") {
+		t.Fatalf("%d calls; only the long conversation gets notes, from its own words", len(prompts))
+	}
+	convs, err := app.watchConversationsOf(store)
+	if err != nil || len(convs) != 2 {
+		t.Fatalf("conversations %v %v", len(convs), err)
+	}
+	sam := convs[1]
+	if sam.Summary != "Bo and Sam settled the pricing page." || len(sam.Decisions) != 1 || len(sam.Followups) != 2 || sam.Followups[0].Owner != "me" {
+		t.Fatalf("notes %+v %+v %+v", sam.Summary, sam.Decisions, sam.Followups)
+	}
+	if convs[0].Summary != "" || len(convs[0].Followups) != 0 {
+		t.Fatalf("the words in passing got notes: %+v", convs[0])
+	}
+	purpose, err := app.purposeProductStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	loops, err := purpose.ListDetailsAll()
+	if err != nil || len(loops) != 1 {
+		t.Fatalf("commitments %d %v; only the owner's follow-up becomes one", len(loops), err)
+	}
+	open := func(state string) bool {
+		return state == PurposeStateActive || state == PurposeStateWaiting || state == PurposeStateCandidate
+	}
+	if loops[0].Current.Title != "Send the pricing page tonight" || !open(purposeCurrentLedgerEvent(loops[0]).LifecycleState) {
+		t.Fatalf("commitment %+v", loops[0].Current)
+	}
+	sourced := false
+	for _, evidence := range loops[0].Evidence {
+		if evidence.SourceKind == meetingFollowupSourceKind && evidence.SourceID == "rec-"+nine {
+			sourced = true
+		}
+	}
+	if !sourced {
+		t.Fatalf("the commitment's source is not the hour's transcript: %+v", loops[0].Evidence)
+	}
+	// Nothing is asked twice.
+	app.noteWatchConversations(context.Background(), store)
+	if len(prompts) != 1 {
+		t.Fatalf("%d calls after a second pass", len(prompts))
+	}
+
+	// Delete the 9 AM hour.
+	if _, err := app.deleteWatchRecording(store, nine, ""); err != nil {
+		t.Fatal(err)
+	}
+	if raw, err := os.ReadFile(filepath.Join(store.dir, watchConversationNotesFile)); err == nil && strings.Contains(string(raw), "pricing") {
+		t.Fatalf("the notes outlived the deleted hour: %s", raw)
+	}
+	convs, _ = app.watchConversationsOf(store)
+	for _, c := range convs {
+		if c.Summary != "" || len(c.Decisions) != 0 || len(c.Followups) != 0 {
+			t.Fatalf("a conversation still shows the old notes: %+v", c)
+		}
+	}
+	// Deleted means deleted: the commitment is purged from the Purpose Map, not only closed.
+	loops, err = purpose.ListDetailsAll()
+	if err != nil || len(loops) != 0 {
+		t.Fatalf("commitments after the hour was deleted: %d %v", len(loops), err)
+	}
+	var left int
+	if err := app.activity.store.db.QueryRow(`SELECT COUNT(*) FROM purpose_open_loop_events_v1 WHERE title LIKE '%pricing page%'`).Scan(&left); err != nil || left != 0 {
+		t.Fatalf("the commitment's text is still stored: %d rows %v", left, err)
+	}
+}
+
+func TestWatchNotesAreNotWrittenWhileObservingIsPausedOrForAPrivateTranscript(t *testing.T) {
+	app, _, store, nine, ten := samTalkFixture(t)
+	t.Setenv(featureSwitchesEnv, string(featureWatchNotes))
+	old := meetingFollowupModel
+	t.Cleanup(func() { meetingFollowupModel = old })
+	meetingFollowupModel = func(_ *App, prompt string) (string, error) {
+		t.Fatalf("a private transcript was sent: %.80s", prompt)
+		return "", nil
+	}
+	// Both hours of the talk are marked private: nothing of it can be read, so nothing is sent.
+	for _, id := range []string{nine, ten} {
+		if _, err := app.activity.store.db.Exec(`UPDATE activity_sessions SET triage_status = 'protected' WHERE id = ?`, "rec-"+id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	app.noteWatchConversations(context.Background(), store)
+}

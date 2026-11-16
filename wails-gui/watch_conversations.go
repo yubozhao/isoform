@@ -48,6 +48,11 @@ type WatchConversation struct {
 	// Speakers are the distinct voice labels heard, "you" first.
 	Speakers []string             `json:"speakers"`
 	Lines    []WatchRecordingLine `json:"lines"`
+	// Summary, Decisions and Followups are the notes of a longer conversation
+	// (watch_conversation_notes.go); empty until it has any.
+	Summary   string                      `json:"summary"`
+	Decisions []string                    `json:"decisions"`
+	Followups []WatchConversationFollowup `json:"followups"`
 }
 
 // watchConversationSpeech is one stretch of speech and where it came from.
@@ -166,5 +171,9 @@ func (a *App) watchConversationsOf(store *mobileRecordingStore) ([]WatchConversa
 	convs := buildWatchConversations(a.watchConversationSpeechOf(recordings, since), watchConversationSilence)
 	// Reading also drops the names whose words are gone.
 	applyWatchConversationNames(convs, pruneWatchConversationNames(store.dir, convs))
+	for i := range convs {
+		convs[i].Decisions, convs[i].Followups = []string{}, []WatchConversationFollowup{}
+	}
+	applyWatchConversationNotes(convs, a.pruneWatchConversationNotes(store.dir, convs))
 	return convs, nil
 }

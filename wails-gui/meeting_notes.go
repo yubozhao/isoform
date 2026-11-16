@@ -105,8 +105,9 @@ func (a *App) storedMeetingTitle(sessionID string) string {
 
 // DeleteMeetingNotes deletes a meeting's notes and the call with them: the
 // recording and the transcript of every part, the call's leftover audio,
-// the knowledge and memory entries learned only from these notes, and the
-// revision history of a moved Knowledge entry. A publish marker keeps
+// the knowledge and memory entries learned only from these notes, the
+// commitments made from its transcript, and the revision history of a moved
+// Knowledge entry. A publish marker keeps
 // startup recovery from writing the notes again.
 // What the learning pass merged into other entries stays there.
 func (a *App) DeleteMeetingNotes(meetingKey string) error {
@@ -132,6 +133,13 @@ func (a *App) DeleteMeetingNotes(meetingKey string) error {
 	a.forgetMeetingCall(r.Key, r.SessionIDs())
 	if err := store.deleteMeetingNotes(r.Key); err != nil {
 		return err
+	}
+	// The commitments that were made from this meeting's transcript go with
+	// it: deleted means deleted (purpose_purge.go).
+	if n, err := a.purgePurposeLearnedFrom(meetingFollowupSourceKind, r.SessionIDs()); err != nil {
+		log.Printf("[meeting-notes] commitments of %s were not purged: %s", r.Key, activityPrivateLogField("error", err.Error()))
+	} else if n > 0 {
+		log.Printf("[meeting-notes] purged %d commitments of %s", n, r.Key)
 	}
 	// After the row: a learning pass rechecks the notes after it writes, so
 	// whatever it wrote is gone either way.
