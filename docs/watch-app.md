@@ -180,6 +180,11 @@ Not proven: no brief has been written from a real marked recording yet. Whether 
 with the mark, and whether its paragraph keeps its evidence through binding, is to be read off a
 real brief.
 
+## Pieces in their own files
+
+Each piece built from 2026-11-15 on keeps its notes in its own file under `docs/watch/`, one file
+per piece, so pieces that are in flight at the same time never edit the same lines here.
+
 ## Privacy
 
 - Audio is recorded to the watch's own storage, moved to the phone, and deleted from the watch

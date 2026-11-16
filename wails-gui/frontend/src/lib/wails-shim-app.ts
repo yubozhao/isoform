@@ -5766,6 +5766,17 @@ export const GetWatchRecordings = appBinding<[], WatchRecording[]>('GetWatchReco
 export const GetWatchRecordingTranscript = appBinding<[string], WatchRecordingLine[]>('GetWatchRecordingTranscript');
 export const DeleteWatchRecording = appBinding<[string], void>('DeleteWatchRecording');
 
+// Conversations computed over the watch's hours (watch_conversations.go).
+export interface WatchConversation {
+    id: string;
+    startAt: number;
+    endAt: number;
+    recordingIds: string[];
+    words: number;
+    speakers: string[];
+    lines: WatchRecordingLine[];
+}
+export const GetWatchConversations = appBinding<[], WatchConversation[]>('GetWatchConversations');
 // The Activity page's one timeline (activity_feed.go).
 export type ActivityFeedKind = 'screen' | 'watch' | 'agent' | 'closed';
 export interface ActivityFeedRow {

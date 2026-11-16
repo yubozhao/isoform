@@ -6,8 +6,10 @@ import { ActivityInlineNotice } from '@/components/activity-inline-notice';
 import { hostBridgeMediaURL } from '@/lib/host-bridge-media';
 import {
     DeleteWatchRecording,
+    GetWatchConversations,
     GetWatchRecordings,
     GetWatchRecordingTranscript,
+    type WatchConversation,
     type WatchRecording,
     type WatchRecordingLine,
     type WatchRecordingPart,
@@ -19,6 +21,11 @@ import {
 // heard with who said it, opens the Screen timeline at its time, and deletes
 // everywhere. It is a plain list on purpose (watch handoff v1.0.0, section 8);
 // the designed page replaces it.
+//
+// The watch keeps recordings by the clock hour, so each day also lists its
+// conversations: runs of speech the computer found across those hours (a talk
+// from 9:50 to 10:20 is one conversation over two hours). The hours stay below
+// them; they are what is stored, played and deleted.
 
 const REFRESH_MS = 60_000;
 
@@ -68,8 +75,13 @@ export function ActivityWatchRecordings({
     const { t, i18n } = useTranslation('activity');
     const [recordings, setRecordings] = useState<WatchRecording[] | null>(null);
     const [failed, setFailed] = useState(false);
+    const [conversations, setConversations] = useState<WatchConversation[]>([]);
 
     const load = useCallback(() => {
+        // Conversations are an extra over the hours: when they cannot be read the hours still show.
+        GetWatchConversations()
+            .then((list) => setConversations(list ?? []))
+            .catch(() => setConversations([]));
         GetWatchRecordings()
             .then((list) => {
                 setRecordings(list ?? []);
@@ -101,6 +113,15 @@ export function ActivityWatchRecordings({
         return groups;
     }, [recordings]);
 
+    const conversationsByDay = useMemo(() => {
+        const byDay = new Map<string, WatchConversation[]>();
+        for (const conversation of conversations) {
+            const key = dayKey(conversation.startAt);
+            byDay.set(key, [...(byDay.get(key) ?? []), conversation]);
+        }
+        return byDay;
+    }, [conversations]);
+
     const dayLabel = (at: number, key: string) => {
         const now = Date.now();
         if (key === dayKey(now)) return t('groupHeaders.today');
@@ -126,6 +147,15 @@ export function ActivityWatchRecordings({
                         <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
                             {dayLabel(day.at, day.key)}
                         </h3>
+                        {(conversationsByDay.get(day.key) ?? []).length > 0 && (
+                            <div className="space-y-2" data-testid="watch-conversations">
+                                <h4 className="text-[11px] font-medium text-muted">{t('watch.conversations')}</h4>
+                                {(conversationsByDay.get(day.key) ?? []).map((conversation) => (
+                                    <ConversationCard key={conversation.id} conversation={conversation} />
+                                ))}
+                                <h4 className="pt-2 text-[11px] font-medium text-muted">{t('watch.hours')}</h4>
+                            </div>
+                        )}
                         <div className="space-y-2">
                             {day.items.map((rec) => (
                                 <RecordingCard
@@ -141,6 +171,76 @@ export function ActivityWatchRecordings({
                 ))}
             </div>
         </div>
+    );
+}
+
+/** One conversation: when it ran, who spoke, and what was said. It holds no audio of its own. */
+function ConversationCard({ conversation }: { conversation: WatchConversation }) {
+    const { t, i18n } = useTranslation('activity');
+    const [open, setOpen] = useState(false);
+    const meta = [
+        t('watch.conversationWords', { count: conversation.words }),
+        conversation.recordingIds.length > 1 ? t('watch.conversationAcross', { count: conversation.recordingIds.length }) : '',
+        conversation.speakers.map((speaker) => speakerName(speaker, t)).join(', '),
+    ].filter((piece) => piece !== '');
+    return (
+        <section className="rounded-lg border border-border bg-panel" data-conversation-id={conversation.id}>
+            <button
+                type="button"
+                onClick={() => setOpen((o) => !o)}
+                aria-expanded={open}
+                className="w-full flex items-start gap-3 px-4 py-3 text-left rounded-lg hover:bg-ink/[0.02] transition-colors"
+            >
+                <div className="flex-1 min-w-0">
+                    <h5 className="text-[13px] font-medium text-ink truncate tabular-nums">
+                        {t('watch.conversationRange', {
+                            start: formatClock(conversation.startAt, i18n.language),
+                            end: formatClock(conversation.endAt, i18n.language),
+                        })}
+                    </h5>
+                    <p className="mt-0.5 text-[11px] text-muted">{meta.join(' · ')}</p>
+                </div>
+                {open ? (
+                    <ChevronUp className="h-3.5 w-3.5 mt-1 shrink-0 text-muted" />
+                ) : (
+                    <ChevronDown className="h-3.5 w-3.5 mt-1 shrink-0 text-muted" />
+                )}
+            </button>
+            {open && (
+                <div className="px-4 pb-4 select-text">
+                    <TranscriptLines lines={conversation.lines} />
+                </div>
+            )}
+        </section>
+    );
+}
+
+function TranscriptLines({ lines }: { lines: WatchRecordingLine[] }) {
+    const { t, i18n } = useTranslation('activity');
+    return (
+        <ul className="space-y-1.5">
+            {lines.map((line) => (
+                <li key={`${line.at}-${line.text}`} className="flex items-start gap-2 text-[12.5px] leading-relaxed text-ink">
+                    <span className="mt-[3px] w-[44px] shrink-0 text-[10.5px] text-muted tabular-nums">
+                        {formatClock(line.at, i18n.language)}
+                    </span>
+                    {line.speaker !== '' && (
+                        <span className="mt-[2px] shrink-0 rounded-full bg-panel-warm px-1.5 py-0.5 text-[10.5px] leading-none text-muted dark:bg-panel dark:text-muted">
+                            {speakerName(line.speaker, t)}
+                        </span>
+                    )}
+                    <span className="min-w-0">
+                        {line.text}
+                        {line.marked && (
+                            <span className="ml-2 inline-flex items-center gap-0.5 align-baseline text-[10.5px] text-muted">
+                                <Bookmark className="h-2.5 w-2.5" aria-hidden />
+                                {t('watch.marked')}
+                            </span>
+                        )}
+                    </span>
+                </li>
+            ))}
+        </ul>
     );
 }
 
@@ -235,29 +335,7 @@ function RecordingCard({
                             {lines === null ? null : lines.length === 0 ? (
                                 <p className="text-[12px] text-muted">{t('watch.transcriptEmpty')}</p>
                             ) : (
-                                <ul className="space-y-1.5">
-                                    {lines.map((line) => (
-                                        <li key={`${line.at}-${line.text}`} className="flex items-start gap-2 text-[12.5px] leading-relaxed text-ink">
-                                            <span className="mt-[3px] w-[44px] shrink-0 text-[10.5px] text-muted tabular-nums">
-                                                {formatClock(line.at, i18n.language)}
-                                            </span>
-                                            {line.speaker !== '' && (
-                                                <span className="mt-[2px] shrink-0 rounded-full bg-panel-warm px-1.5 py-0.5 text-[10.5px] leading-none text-muted dark:bg-panel dark:text-muted">
-                                                    {speakerName(line.speaker, t)}
-                                                </span>
-                                            )}
-                                            <span className="min-w-0">
-                                                {line.text}
-                                                {line.marked && (
-                                                    <span className="ml-2 inline-flex items-center gap-0.5 align-baseline text-[10.5px] text-muted">
-                                                        <Bookmark className="h-2.5 w-2.5" aria-hidden />
-                                                        {t('watch.marked')}
-                                                    </span>
-                                                )}
-                                            </span>
-                                        </li>
-                                    ))}
-                                </ul>
+                                <TranscriptLines lines={lines} />
                             )}
                             {rec.ownerVoice === 'not_enrolled' && (
                                 <p className="text-[10.5px] text-muted/80">{t('watch.voiceNotEnrolled')}</p>
