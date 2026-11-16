@@ -183,6 +183,9 @@ func mobileBriefAudioCuts(brief, built MobileBriefV1, lang string) ([]mobileBrie
 			p.Index = position[p.Index]
 		}
 		p.StartSeconds = shift(p.StartSeconds)
+		if p.EndSeconds > 0 {
+			p.EndSeconds = shift(p.EndSeconds)
+		}
 		kept = append(kept, p)
 	}
 	return cuts, kept, true

@@ -37,7 +37,7 @@ func splicedBriefFixture(t *testing.T, dir, mime string) (MobileBriefV1, string)
 	built := MobileBriefV1{BriefID: "2026-11-15-morning", AsOf: "2026-11-15T06:51:21Z", NarrativeStatus: "ok",
 		Narrative: []MobileBriefPara{{Text: "The first paragraph."}, {Text: "The withdrawn paragraph."}, {Text: "The last paragraph."}},
 		Audio: &MobileBriefAudio{Status: mobileBriefAudioStatusOK, Mime: mime, Bytes: len(data), DurationSeconds: 4, SHA256: fmt.Sprintf("%x", sha256.Sum256(data)),
-			Paragraphs: []MobileBriefAudioParagraph{{Source: mobileBriefAudioSourceNarrative, Index: 0, StartSeconds: 0}, {Source: mobileBriefAudioSourceNarrative, Index: 1, StartSeconds: 1}, {Source: mobileBriefAudioSourceNarrative, Index: 2, StartSeconds: 3}}},
+			Paragraphs: []MobileBriefAudioParagraph{{Source: mobileBriefAudioSourceNarrative, Index: 0, StartSeconds: 0, EndSeconds: 0.55}, {Source: mobileBriefAudioSourceNarrative, Index: 1, StartSeconds: 1, EndSeconds: 2.55}, {Source: mobileBriefAudioSourceNarrative, Index: 2, StartSeconds: 3, EndSeconds: 4}}},
 	}
 	return built, ffmpegPath
 }
@@ -59,7 +59,7 @@ func TestSpliceCutsTheRemovedParagraphOutOfTheBuildRecording(t *testing.T) {
 			if math.Abs(cut.Audio.DurationSeconds-2) > 0.01 || cut.Audio.SHA256 == built.Audio.SHA256 || cut.Audio.Bytes == 0 {
 				t.Fatalf("cut recording: %+v", cut.Audio)
 			}
-			want := []MobileBriefAudioParagraph{{Source: mobileBriefAudioSourceNarrative, Index: 0, StartSeconds: 0}, {Source: mobileBriefAudioSourceNarrative, Index: 1, StartSeconds: 1}}
+			want := []MobileBriefAudioParagraph{{Source: mobileBriefAudioSourceNarrative, Index: 0, StartSeconds: 0, EndSeconds: 0.55}, {Source: mobileBriefAudioSourceNarrative, Index: 1, StartSeconds: 1, EndSeconds: 2}}
 			if fmt.Sprint(cut.Audio.Paragraphs) != fmt.Sprint(want) {
 				t.Fatalf("paragraph starts = %v, want %v", cut.Audio.Paragraphs, want)
 			}

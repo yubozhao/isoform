@@ -59,6 +59,9 @@ type MobileBriefAudio struct {
 	// Updating marks a recording being made again for a brief that had one:
 	// the person removed a part, and Today says the recording is updating.
 	Updating bool `json:"updating,omitempty"`
+	// Marks are the shown brief's sentences with when each is read, set only
+	// on the computer's view of the brief (todayBriefView), never stored.
+	Marks []MobileBriefAudioMark `json:"marks,omitempty"`
 	// binding is the text the recording speaks (mobileBriefAudioBinding).
 	// It stays on this computer, beside the stored brief.
 	binding string
@@ -71,6 +74,9 @@ type MobileBriefAudioParagraph struct {
 	Source       string  `json:"source"`
 	Index        int     `json:"index"`
 	StartSeconds float64 `json:"startSeconds"`
+	// EndSeconds is where the voice stops reading the paragraph, before the
+	// pause that follows it, for read-along (computer-brief v1.0.0 rule 3).
+	EndSeconds float64 `json:"endSeconds,omitempty"`
 }
 
 const (
@@ -276,13 +282,13 @@ func renderMobileBriefAudio(ctx context.Context, speaker mobileBriefSpeaker, dir
 		log.Printf("[brief-audio] slot=%s synthesis failed after synth_ms=%d", brief.Slot, synthMs)
 		return mobileBriefAudioFile{}, false, "synthesis failed"
 	}
-	var paragraphs []MobileBriefAudioParagraph
-	if !template && starts != nil {
-		paragraphs = mobileBriefParagraphStarts(brief, lang, mobileBriefSpokenSegments(text), starts)
-	}
 	duration, err := wavDurationSeconds(wav)
 	if err != nil {
 		return mobileBriefAudioFile{}, false, "synthesis produced no audio"
+	}
+	var paragraphs []MobileBriefAudioParagraph
+	if !template && starts != nil {
+		paragraphs = mobileBriefParagraphStarts(brief, lang, mobileBriefSpokenSegments(text), starts, duration)
 	}
 	data, ext, mime := wav, mobileBriefAudioExtWAV, mobileBriefAudioMimeWAV
 	encodeStart := time.Now()

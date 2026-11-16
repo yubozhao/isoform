@@ -137,6 +137,12 @@ func todayBriefView(now time.Time, loc *time.Location, latest MobileBriefV1, has
 	}
 	if hasLatest {
 		brief := latest
+		// Read-along needs where each paragraph ends, older recordings too.
+		if audio := mobileBriefAudioWithParagraphEnds(brief.Audio); audio != nil {
+			shown := *audio
+			shown.Marks = mobileBriefAudioMarks(brief)
+			brief.Audio = &shown
+		}
 		view.Brief = &brief
 		view.Quiet = brief.NarrativeStatus == "quiet"
 		view.QuietSince = brief.WindowStart

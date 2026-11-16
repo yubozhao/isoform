@@ -851,7 +851,35 @@ export interface MobileBriefAudio {
     attachment?: { id: string; key: string; nonce: string };
     /** A recording being made again after the person removed a part of the brief. */
     updating?: boolean;
+    /** Where each written paragraph is read, for read-along; a paragraph
+     *  without an entry is not timed. */
+    paragraphs?: MobileBriefAudioParagraph[];
+    /** The shown brief's sentences with when each is read (computer only). */
+    marks?: MobileBriefAudioMark[];
 }
+
+// One sentence of the shown brief: from and to are UTF-16 offsets into
+// narrative[paragraph].text (or weeklyRecap's), start and end in seconds.
+export interface MobileBriefAudioMark {
+    source: "narrative" | "weeklyRecap";
+    paragraph: number;
+    sentence: number;
+    from: number;
+    to: number;
+    start: number;
+    end: number;
+}
+
+// Where one written paragraph is read in the recording: source is the array
+// (narrative or weeklyRecap), index is zero-based into it, and endSeconds is
+// where the voice stops, before the pause that follows.
+export interface MobileBriefAudioParagraph {
+    source: "narrative" | "weeklyRecap";
+    index: number;
+    startSeconds: number;
+    endSeconds?: number;
+}
+
 
 // Scheduled brief health: last run, next run, missed runs in the last seven
 // days, a slot whose build is failing, and the newest brief with its spoken
