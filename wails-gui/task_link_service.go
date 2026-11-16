@@ -514,5 +514,6 @@ func (a *App) agentMux() *http.ServeMux {
 	mux.Handle(tasklink.PathPrefix, a.taskLinkStore())
 	mux.Handle(agentjoin.PathPrefix, a.agentJoinService())
 	mux.Handle("/a/", a.agentInboxService())
+	mux.Handle("/mcp", a.agentMCPHandler())
 	return mux
 }
