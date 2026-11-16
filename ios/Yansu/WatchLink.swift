@@ -20,7 +20,7 @@ final class WatchLink: NSObject, WCSessionDelegate, @unchecked Sendable {
         self.inbox = inbox
         self.forwarder = forwarder
         Task { [weak self] in
-            await forwarder.onStatesChanged { states, names in self?.push(states, names) }
+            await forwarder.onStatesChanged { _, _ in self?.pushAll() }
             await forwarder.onActivityChanged { self?.refreshModel() }
             let recordings = await forwarder.recordings()
             let outcome = await forwarder.lastOutcome
@@ -100,24 +100,35 @@ final class WatchLink: NSObject, WCSessionDelegate, @unchecked Sendable {
         let connection: WatchConnection = !session.isPaired ? .noWatch
             : !session.isWatchAppInstalled ? .appMissing : .ready(reachable: session.isReachable)
         let onWatch = WatchRecordingWire.summaries(fromContext: session.receivedApplicationContext)
+        let status = WatchRecordingWire.status(fromContext: session.receivedApplicationContext)
         Task { @MainActor in
             WatchRecordingsModel.shared.connection = connection
             WatchRecordingsModel.shared.showOnWatch(onWatch)
+            WatchRecordingsModel.shared.watchStatus = status
         }
     }
 
-    private func push(_ states: [String: WatchRecordingRemoteState], _ names: [String: [String]] = [:]) {
-        let session = WCSession.default
-        guard session.activationState == .activated, session.isPaired, session.isWatchAppInstalled else { return }
-        try? session.updateApplicationContext(WatchRecordingWire.context(states, names: names))
+    /// Sends the watch everything the phone knows for it: where each recording is, what the
+    /// computer named them, and whether observing is paused there.
+    private func pushAll() {
+        guard let forwarder else { return }
+        Task {
+            let states = await forwarder.currentStates()
+            let names = await forwarder.currentNames()
+            let pause = await forwarder.currentPause()
+            let serial = await forwarder.pauseSerial
+            let session = WCSession.default
+            guard session.activationState == .activated, session.isPaired, session.isWatchAppInstalled else { return }
+            try? session.updateApplicationContext(WatchRecordingWire.context(states, names: names, pause: pause, pauseSerial: serial))
+        }
     }
 
     // MARK: WCSessionDelegate
 
     func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
-        guard activationState == .activated, let forwarder else { return }
+        guard activationState == .activated, forwarder != nil else { return }
         publishConnection(session)
-        Task { push(await forwarder.currentStates(), await forwarder.currentNames()) }
+        pushAll()
         drain()
     }
 
@@ -135,6 +146,27 @@ final class WatchLink: NSObject, WCSessionDelegate, @unchecked Sendable {
     func sessionDidDeactivate(_ session: WCSession) {
         // A newly paired watch: activate again so its transfers arrive.
         session.activate()
+    }
+
+    /// The watch asked to pause Isoform or to end its pause. It arrives as user info (also when
+    /// this app was not running) and, when the phone was reachable, as a message too; asking the
+    /// computer twice is harmless.
+    func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
+        carry(userInfo)
+    }
+
+    func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
+        carry(message)
+    }
+
+    private func carry(_ payload: [String: Any]) {
+        guard let forwarder, let request = WatchPauseRequest(userInfo: payload) else { return }
+        Task {
+            let application = await UIApplication.shared
+            let task = await application.beginBackgroundTask(withName: "watch-pause")
+            await forwarder.carry(request)
+            if task != .invalid { await application.endBackgroundTask(task) }
+        }
     }
 
     func session(_ session: WCSession, didReceive file: WCSessionFile) {

@@ -244,6 +244,216 @@ final class WatchRecordingNamesTests: XCTestCase {
     }
 }
 
+// One pause covers all of Isoform (PROTOCOL.md 24.8): a pause on the computer reaches the watch,
+// which stops and deletes what it recorded since the pause began.
+final class WatchPauseTests: XCTestCase {
+    private let base = Date(timeIntervalSince1970: 1_800_000_000)
+
+    func testTheComputersStatusDecodesAPause() throws {
+        let paused = try JSONDecoder().decode(HubStatus.self, from: Data(#"{"observingPause":{"since":"2026-11-14T11:04:00Z","until":"2026-11-14T12:04:00Z"}}"#.utf8))
+        let pause = try XCTUnwrap(paused.observingPause?.pause)
+        XCTAssertEqual(pause.until?.timeIntervalSince(try XCTUnwrap(pause.since)), 3600)
+        let open = try JSONDecoder().decode(HubStatus.self, from: Data(#"{"observingPause":{}}"#.utf8))
+        XCTAssertEqual(open.observingPause?.pause, WatchPause(since: nil, until: nil))
+        let observing = try JSONDecoder().decode(HubStatus.self, from: Data("{}".utf8))
+        XCTAssertNil(observing.observingPause)
+    }
+
+    func testAPauseHoldsUntilItsEndAndAPauseWithNoEndHolds() {
+        XCTAssertTrue(WatchPause(since: base, until: base.addingTimeInterval(60)).isActive(at: base.addingTimeInterval(59)))
+        XCTAssertFalse(WatchPause(since: base, until: base.addingTimeInterval(60)).isActive(at: base.addingTimeInterval(60)))
+        XCTAssertTrue(WatchPause(since: base, until: nil).isActive(at: base.addingTimeInterval(86_400)))
+    }
+
+    func testThePauseTravelsToTheWatchWithTheStates() {
+        let id = WatchRecordingWire.newRecordingID()
+        let pause = WatchPause(since: base, until: base.addingTimeInterval(3600))
+        let context = WatchRecordingWire.context([id: .onComputer], pause: pause)
+        XCTAssertEqual(WatchRecordingWire.pause(fromContext: context), pause)
+        XCTAssertEqual(WatchRecordingWire.pause(fromContext: WatchRecordingWire.context([id: .onComputer], pause: WatchPause())), WatchPause())
+        XCTAssertNil(WatchRecordingWire.pause(fromContext: WatchRecordingWire.context([id: .onComputer])), "no pause is said by saying nothing")
+        XCTAssertEqual(WatchRecordingWire.states(fromContext: context)[id], .onComputer)
+    }
+
+    func testWhileTheComputerIsPausedTheWatchNeitherStartsNorResumes() {
+        XCTAssertEqual(WatchAutoListen.step(consentSeen: true, microphone: .allowed, stoppedByWearer: false,
+                                            isRecording: false, heldByInterruption: false, pausedOnComputer: true), .nothing)
+        XCTAssertEqual(WatchAutoListen.step(consentSeen: true, microphone: .allowed, stoppedByWearer: false,
+                                            isRecording: true, heldByInterruption: true, pausedOnComputer: true), .nothing)
+        XCTAssertEqual(WatchAutoListen.step(consentSeen: true, microphone: .allowed, stoppedByWearer: false,
+                                            isRecording: false, heldByInterruption: false, pausedOnComputer: false), .start)
+    }
+
+    func testTheWatchsAskTravelsToThePhoneAndBadAsksAreRefused() {
+        XCTAssertEqual(WatchPauseRequest(userInfo: WatchPauseRequest.pause(minutes: 60).userInfo), .pause(minutes: 60))
+        XCTAssertEqual(WatchPauseRequest(userInfo: WatchPauseRequest.resume.userInfo), .resume)
+        XCTAssertNil(WatchPauseRequest(userInfo: [WatchPauseRequest.key: ["minutes": 2]]))
+        XCTAssertNil(WatchPauseRequest(userInfo: [WatchPauseRequest.key: ["minutes": 9000]]))
+        XCTAssertNil(WatchPauseRequest(userInfo: [WatchRecordingWire.syncMessageKey: true]))
+    }
+
+    /// A pause started on the wrist holds there at once, before the computer knows; once the
+    /// computer has a pause, its word is the one that counts; and a pause that ran out is none.
+    func testThePauseThatHoldsOnTheWatch() {
+        let onWatch = WatchPause(since: base, until: base.addingTimeInterval(3600))
+        let onComputer = WatchPause(since: base, until: base.addingTimeInterval(900))
+        let soon = base.addingTimeInterval(60)
+        XCTAssertEqual(WatchPause.effective(computer: nil, watch: onWatch, now: soon), onWatch)
+        XCTAssertEqual(WatchPause.effective(computer: onComputer, watch: onWatch, now: soon), onComputer)
+        XCTAssertEqual(WatchPause.effective(computer: onComputer, watch: onWatch, now: base.addingTimeInterval(1800)), onWatch,
+                       "the computer's pause ran out; the watch's own still holds")
+        XCTAssertNil(WatchPause.effective(computer: onComputer, watch: onWatch, now: base.addingTimeInterval(7200)))
+        XCTAssertNil(WatchPause.effective(computer: nil, watch: nil, now: soon))
+    }
+
+    /// The system does not deliver a context equal to the last one, so each carried ask changes it.
+    func testEachCarriedAskMakesTheContextDiffer() {
+        let id = WatchRecordingWire.newRecordingID()
+        let first = WatchRecordingWire.context([id: .onComputer], pause: WatchPause(), pauseSerial: 1)
+        let second = WatchRecordingWire.context([id: .onComputer], pause: WatchPause(), pauseSerial: 2)
+        XCTAssertNotEqual(first[WatchRecordingWire.pauseSerialKey] as? Int, second[WatchRecordingWire.pauseSerialKey] as? Int)
+        XCTAssertNil(WatchRecordingWire.context([id: .onComputer])[WatchRecordingWire.pauseSerialKey])
+        XCTAssertEqual(WatchRecordingWire.pause(fromContext: second), WatchPause())
+    }
+
+    /// The watch recorded 10:00 to 10:45 in three parts; the first already reached the phone. A
+    /// pause began on the computer at 10:20. What the watch still holds from 10:20 on is deleted
+    /// before it leaves the watch; the hour is closed with what is left; an earlier hour and a
+    /// part the phone already has are not touched.
+    func testTheWatchDeletesWhatItRecordedSinceThePauseBegan() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let library = WatchRecordingLibrary(directory: directory)
+        let earlier = WatchRecordingWire.newRecordingID(), hour = WatchRecordingWire.newRecordingID(), after = WatchRecordingWire.newRecordingID()
+        func add(_ id: String, _ offsets: [(Double, Double)], finish: Bool) {
+            library.begin(id: id, at: base.addingTimeInterval(offsets[0].0))
+            for (index, offset) in offsets.enumerated() {
+                library.addPart(recordingID: id, startedAt: base.addingTimeInterval(offset.0), durationSeconds: offset.1,
+                                last: finish && index == offsets.count - 1)
+                try? Data("audio".utf8).write(to: library.fileURL(recordingID: id, part: index))
+            }
+        }
+        add(earlier, [(-3600, 3600)], finish: true)                       // 9:00 to 10:00
+        add(hour, [(0, 900), (900, 900), (1800, 900)], finish: true)      // 10:00, 10:15, 10:30
+        add(after, [(2700, 300)], finish: true)                           // 10:45 to 10:50
+        library.markSent(recordingID: hour, part: 0)
+
+        let dropped = library.dropUnsent(since: base.addingTimeInterval(1200)) // the pause began at 10:20
+        XCTAssertEqual(dropped, 3, "10:15 to 10:30 (it runs past 10:20), 10:30 to 10:45 and 10:45 to 10:50")
+        let entries = library.all()
+        XCTAssertNil(entries.first { $0.id == after }, "a recording made wholly inside the pause is gone")
+        let kept = try XCTUnwrap(entries.first { $0.id == hour })
+        XCTAssertEqual(kept.parts.map(\.part), [0])
+        XCTAssertTrue(kept.finished)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: library.fileURL(recordingID: hour, part: 1).path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: library.fileURL(recordingID: hour, part: 2).path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: library.fileURL(recordingID: after, part: 0).path))
+        XCTAssertEqual(entries.first { $0.id == earlier }?.parts.count, 1, "the hour before the pause is untouched")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: library.fileURL(recordingID: earlier, part: 0).path))
+        XCTAssertEqual(library.unsentParts().map(\.info.recordingID), [earlier])
+        XCTAssertEqual(library.dropUnsent(since: base.addingTimeInterval(1200)), 0, "nothing is left to drop")
+    }
+}
+
+// Marked moments (PROTOCOL.md 24.9): a tap while recording is a time that travels with the part.
+final class WatchMarksTests: XCTestCase {
+    func testMarksAreKeptInsideThePartInOrderWithoutRepeats() {
+        XCTAssertEqual(WatchRecordingWire.cleanMarks([120.04, 5, 5.01, -1, 901, .nan, .infinity, 900], durationSeconds: 900), [5, 120, 900])
+        XCTAssertNil(WatchRecordingWire.cleanMarks([], durationSeconds: 900))
+        XCTAssertNil(WatchRecordingWire.cleanMarks([-3, 9999], durationSeconds: 900))
+        XCTAssertEqual(WatchRecordingWire.cleanMarks((0..<200).map(Double.init), durationSeconds: 900)?.count, WatchRecordingWire.maxMarks)
+    }
+
+    func testMarksSurviveTheTransferToThePhone() throws {
+        let info = WatchRecordingPartInfo(recordingID: WatchRecordingWire.newRecordingID(), part: 0, last: true,
+                                          startedAt: Date(timeIntervalSince1970: 1_800_000_000), durationSeconds: 600,
+                                          marks: [431.5, 12, 9000])
+        XCTAssertEqual(info.marks, [12, 431.5])
+        let read = try XCTUnwrap(WatchRecordingPartInfo(metadata: info.metadata))
+        XCTAssertEqual(read, info)
+        // A part without marks says nothing about them, and an older phone's stored part still reads.
+        let plain = WatchRecordingPartInfo(recordingID: info.recordingID, part: 1, last: true, startedAt: info.startedAt, durationSeconds: 60)
+        XCTAssertNil(plain.metadata["marks"])
+        let stored = try JSONEncoder().encode(plain)
+        XCTAssertNil(try JSONDecoder().decode(WatchRecordingPartInfo.self, from: stored).marks)
+    }
+
+    func testTheWatchKeepsAPartsMarksUntilThePhoneHasThePart() {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let library = WatchRecordingLibrary(directory: directory)
+        let id = WatchRecordingWire.newRecordingID()
+        library.begin(id: id, at: Date(timeIntervalSince1970: 1_800_000_000))
+        library.addPart(recordingID: id, startedAt: Date(timeIntervalSince1970: 1_800_000_000), durationSeconds: 600, last: true, marks: [30, 30, 700])
+        XCTAssertEqual(library.unsentParts().first?.info.marks, [30])
+        XCTAssertEqual(WatchRecordingLibrary(directory: directory).unsentParts().first?.info.marks, [30], "they survive a relaunch")
+        library.markSent(recordingID: id, part: 0)
+        XCTAssertNil(library.all().first?.parts.first?.marks, "gone from the watch with the audio")
+    }
+}
+
+// "Your watch" on the phone's Today: what the watch is doing now and its last hour, one tap from
+// the main screen whenever Isoform is on the watch.
+final class WatchTodayCardTests: XCTestCase {
+    func testTheWatchsStatusInAPersonsWords() {
+        func status(paused: Bool = false, onWatch: Bool = false, recording: Bool = false, waiting: Bool = false,
+                    denied: Bool = false, stopped: Bool = false) -> WatchLiveStatus {
+            WatchLiveStatus.of(paused: paused, pauseStartedOnWatch: onWatch, recording: recording,
+                               waitingForMicrophone: waiting, microphoneDenied: denied, stoppedToday: stopped)
+        }
+        XCTAssertEqual(status(recording: true), .recording)
+        XCTAssertEqual(status(recording: true, waiting: true), .waitingForMicrophone)
+        XCTAssertEqual(status(paused: true), .pausedOnComputer)
+        XCTAssertEqual(status(paused: true, onWatch: true), .pausedOnWatch)
+        XCTAssertEqual(status(paused: true, recording: true, stopped: true), .pausedOnComputer, "a pause comes first")
+        XCTAssertEqual(status(stopped: true), .stoppedToday)
+        XCTAssertEqual(status(denied: true, stopped: true), .microphoneOff)
+        XCTAssertEqual(status(), .notRecording)
+    }
+
+    func testTheStatusTravelsWithWhatTheWatchStillHolds() {
+        let held = [WatchRecordingSummary(id: WatchRecordingWire.newRecordingID(), startedAt: Date(timeIntervalSince1970: 1_800_000_000),
+                                          durationSeconds: 60, unsentParts: 1, finished: true)]
+        let context = WatchRecordingWire.summaryContext(held, status: .stoppedToday)
+        XCTAssertEqual(WatchRecordingWire.status(fromContext: context), .stoppedToday)
+        XCTAssertEqual(WatchRecordingWire.summaries(fromContext: context), held)
+        // An older watch app says nothing; a word this phone does not know reads as nothing.
+        XCTAssertNil(WatchRecordingWire.status(fromContext: WatchRecordingWire.summaryContext(held)))
+        var odd = context
+        odd[WatchRecordingWire.statusKey] = "levitating"
+        XCTAssertNil(WatchRecordingWire.status(fromContext: odd))
+    }
+
+    @MainActor
+    func testTheCardShowsWheneverIsoformIsOnTheWatch() {
+        let model = WatchRecordingsModel()
+        XCTAssertFalse(model.showsTodayCard, "no watch is known yet")
+        model.connection = .noWatch
+        XCTAssertFalse(model.showsTodayCard)
+        model.connection = .appMissing
+        XCTAssertFalse(model.showsTodayCard, "a watch without Isoform has nothing to show")
+        model.connection = .ready(reachable: false)
+        XCTAssertTrue(model.showsTodayCard, "Isoform is on the watch: the card shows before any recording arrives")
+        model.connection = .unknown
+        model.showOnWatch([WatchRecordingSummary(id: WatchRecordingWire.newRecordingID(), startedAt: Date(), durationSeconds: 60,
+                                                 unsentParts: 1, finished: true)])
+        XCTAssertTrue(model.showsTodayCard, "recordings are known, so the card shows even while the watch's state is not")
+    }
+
+    func testTheCardsWords() {
+        XCTAssertEqual(WatchRecordingsCopy.status(.recording), String(localized: "Recording"))
+        XCTAssertEqual(WatchRecordingsCopy.status(.pausedOnComputer), String(localized: "Paused on your computer"))
+        XCTAssertEqual(WatchRecordingsCopy.status(.stoppedToday), String(localized: "Stopped for today"))
+        XCTAssertEqual(WatchRecordingsCopy.status(nil), String(localized: "Open Isoform on your watch to start"))
+        XCTAssertEqual(WatchRecordingsCopy.lastHour([]), String(localized: "Nothing recorded yet."))
+        let row = WatchRecordingRow(id: WatchRecordingWire.newRecordingID(), startedAt: Date(timeIntervalSince1970: 1_800_000_000),
+                                    durationSeconds: 48 * 60, stage: .transcribed, names: ["Pricing with Sam"])
+        let line = WatchRecordingsCopy.lastHour([row])
+        XCTAssertTrue(line.contains("48"), line)
+        XCTAssertTrue(line.hasSuffix("Pricing with Sam"), line)
+    }
+}
+
 // The phone lists the watch's hours under their day (watch v1.1.0): a day, then "10 AM · 48 min".
 final class WatchRecordingDayTests: XCTestCase {
     private var calendar: Calendar = {
@@ -434,6 +644,14 @@ final class WatchRecordingLibraryTests: XCTestCase {
     }
 }
 
+/// Counts how often the forwarder had something new for the watch.
+private final class Told: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+    var count: Int { lock.withLock { value } }
+    func bump() { lock.withLock { value += 1 } }
+}
+
 /// What the forwarder last told the watch about names.
 private final class Pushed: @unchecked Sendable {
     private let lock = NSLock()
@@ -464,6 +682,36 @@ private actor StubRecordingHub: RecordingHubAPI {
         return RecordingView(id: request.recordingId, state: answerState)
     }
     func recordingStates(ids: [String]) async throws -> [RecordingView] { listed.filter { ids.contains($0.id) } }
+
+    var controlsPause = false
+    var pausedMinutes: [Int] = []
+    var resumes = 0
+    var resumeError: Error?
+    func set(controlsPause: Bool) { self.controlsPause = controlsPause }
+    func set(resumeError: Error?) { self.resumeError = resumeError }
+    func observingPauseControlAvailable() async throws -> Bool { controlsPause }
+    func pauseObserving(minutes: Int) async throws {
+        pausedMinutes.append(minutes)
+        pauseSaid = WatchPause(since: Date(timeIntervalSince1970: 1_800_000_000), until: Date(timeIntervalSince1970: 1_800_000_000 + Double(minutes) * 60))
+    }
+    func resumeObserving() async throws {
+        resumes += 1
+        if let resumeError { throw resumeError }
+        pauseSaid = nil
+    }
+
+    var takesMarks = false
+    func set(takesMarks: Bool) { self.takesMarks = takesMarks }
+    func recordingMarksAvailable() async throws -> Bool { takesMarks }
+
+    var pauseSaid: WatchPause?
+    var pauseError: Error?
+    func set(pause: WatchPause?) { pauseSaid = pause }
+    func set(pauseError: Error?) { self.pauseError = pauseError }
+    func observingPause() async throws -> WatchPause? {
+        if let pauseError { throw pauseError }
+        return pauseSaid
+    }
 
     var detail = true
     var deleted: [String] = []
@@ -666,6 +914,101 @@ final class WatchRecordingForwarderTests: XCTestCase {
         XCTAssertEqual(parts, [0, 1])
         let states = await forwarder.currentStates()
         XCTAssertEqual(states[id], .transcribed, "the computer's list moves an arrived recording on")
+    }
+
+    /// The watch asks to pause; the phone asks the computer, reads what holds and tells the
+    /// watch. A computer that does not take the ask is not asked. A resume the computer refuses
+    /// (the pause was made there) leaves the pause, and the watch is still told.
+    func testThePhoneCarriesTheWatchsPauseToTheComputer() async throws {
+        let hub = StubRecordingHub()
+        let uploads = StubUploads()
+        let (_, forwarder) = make(hub, uploads)
+        let told = Told()
+        await forwarder.onStatesChanged { _, _ in told.bump() }
+
+        var asked = await forwarder.carry(.pause(minutes: 60))
+        XCTAssertFalse(asked, "an older computer is not asked")
+        var minutes = await hub.pausedMinutes
+        XCTAssertEqual(minutes, [])
+        XCTAssertEqual(told.count, 1, "the watch still hears that nothing holds on the computer")
+
+        await hub.set(controlsPause: true)
+        asked = await forwarder.carry(.pause(minutes: 60))
+        XCTAssertTrue(asked)
+        minutes = await hub.pausedMinutes
+        XCTAssertEqual(minutes, [60])
+        var pause = await forwarder.currentPause()
+        XCTAssertEqual(pause?.until?.timeIntervalSince(pause?.since ?? Date()), 3600)
+
+        await hub.set(resumeError: HubRequestError.conflict(message: "this pause was made on the computer; resume it there"))
+        let before = told.count
+        await forwarder.carry(.resume)
+        pause = await forwarder.currentPause()
+        XCTAssertNotNil(pause, "a pause the computer keeps is not ended on the phone's say-so")
+        XCTAssertGreaterThan(told.count, before, "the watch is told the pause still holds")
+
+        await hub.set(resumeError: nil)
+        await forwarder.carry(.resume)
+        pause = await forwarder.currentPause()
+        XCTAssertNil(pause)
+        let serial = await forwarder.pauseSerial
+        XCTAssertEqual(serial, 4)
+    }
+
+    /// Marks go to a computer that says it takes them, and are left out for one that does not
+    /// (it would refuse the whole part); the audio goes either way.
+    func testMarksAreSentOnlyToAComputerThatTakesThem() async throws {
+        for takes in [false, true] {
+            let hub = StubRecordingHub()
+            await hub.set(takesMarks: takes)
+            let uploads = StubUploads()
+            let (inbox, forwarder) = make(hub, uploads)
+            let info = WatchRecordingPartInfo(recordingID: WatchRecordingWire.newRecordingID(), part: 0, last: true,
+                                              startedAt: Date(timeIntervalSince1970: 1_800_000_000), durationSeconds: 600, marks: [12, 431.5])
+            let source = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".m4a")
+            try Data("audio".utf8).write(to: source)
+            try inbox.accept(file: source, info: info)
+            await forwarder.received(info)
+            let outcome = await forwarder.drain()
+            XCTAssertEqual(outcome, .drained)
+            let posted = await hub.posted
+            XCTAssertEqual(posted.count, 1)
+            XCTAssertEqual(posted.first?.marks, takes ? [12, 431.5] : nil)
+        }
+    }
+
+    /// The phone learns of a pause on the computer, tells the watch, keeps the last word when the
+    /// computer cannot be reached, and tells the watch again when the pause is over.
+    func testThePhoneTellsTheWatchWhenTheComputerPausesAndWhenItResumes() async throws {
+        let hub = StubRecordingHub()
+        let uploads = StubUploads()
+        let (_, forwarder) = make(hub, uploads)
+        let told = Told()
+        await forwarder.onStatesChanged { _, _ in told.bump() }
+        await forwarder.refreshPause()
+        var pause = await forwarder.currentPause()
+        XCTAssertNil(pause)
+        XCTAssertEqual(told.count, 0, "nothing changed, nothing is sent")
+
+        let said = WatchPause(since: Date(timeIntervalSince1970: 1_800_000_000), until: nil)
+        await hub.set(pause: said)
+        await forwarder.refreshPause()
+        pause = await forwarder.currentPause()
+        XCTAssertEqual(pause, said)
+        XCTAssertEqual(told.count, 1)
+
+        await hub.set(pauseError: HubRequestError.noAnswer)
+        await forwarder.refreshPause()
+        pause = await forwarder.currentPause()
+        XCTAssertEqual(pause, said, "an unreachable computer does not end the pause")
+        XCTAssertEqual(told.count, 1)
+
+        await hub.set(pauseError: nil)
+        await hub.set(pause: nil)
+        await forwarder.refreshPause()
+        pause = await forwarder.currentPause()
+        XCTAssertNil(pause)
+        XCTAssertEqual(told.count, 2, "the watch is told the pause is over")
     }
 
     /// The computer names an hour's conversations well after it is transcribed. The phone picks

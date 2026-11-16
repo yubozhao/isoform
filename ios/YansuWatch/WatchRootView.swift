@@ -23,6 +23,7 @@ struct WatchRootView: View {
                         }
                         .padding(.top, 4)
                     }
+                    PauseControl()
                     WatchContextSection()
                 }
                 .padding(.horizontal, 4)
@@ -41,9 +42,38 @@ struct WatchRootView: View {
         .onChange(of: consentSeen) {
             if scenePhase == .active { model.cameToFront(consentSeen: consentSeen) }
         }
+        // When a pause on the computer ends while the app is in front, recording comes back.
+        .onChange(of: model.pausedOnComputer) {
+            if scenePhase == .active { model.cameToFront(consentSeen: consentSeen) }
+        }
     }
 
     @ViewBuilder private var statusLine: some View {
+        if let pause = model.pausedOnComputer, !model.isRecording {
+            (model.pauseStartedHere
+                ? Text("Paused", comment: "Shown on the watch while the pause the wearer started there holds")
+                : Text("Paused on your computer", comment: "Shown on the watch while observing is paused on the computer: the watch does not record either"))
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(WatchTheme.text)
+                .multilineTextAlignment(.center)
+            if let until = pause.until {
+                Text("Until \(until, format: .dateTime.hour().minute())",
+                     comment: "When the pause on the computer ends; the value is a time of day")
+                    .font(.footnote)
+                    .foregroundStyle(WatchTheme.secondary)
+            } else {
+                Text("Recording comes back when you resume there.",
+                     comment: "Hint on the watch while a pause with no end holds on the computer")
+                    .font(.footnote)
+                    .foregroundStyle(WatchTheme.secondary)
+                    .multilineTextAlignment(.center)
+            }
+        } else {
+            phaseLine
+        }
+    }
+
+    @ViewBuilder private var phaseLine: some View {
         switch model.phase {
         case .idle:
             Text("Not recording. Tap to start.",
@@ -67,11 +97,7 @@ struct WatchRootView: View {
             Text("Recording", comment: "Shown on the watch while it records; there is no timer")
                 .font(.title3.weight(.medium))
                 .foregroundStyle(WatchTheme.text)
-            Text("Kept by the hour. Hold to stop.",
-                 comment: "Hint under the stop button on the watch while it records: each clock hour is its own recording")
-                .font(.footnote)
-                .foregroundStyle(WatchTheme.secondary)
-                .multilineTextAlignment(.center)
+            MarkedLine(at: model.lastMarkAt)
         case .denied:
             Text("Allow the microphone for Isoform in Settings on this watch.",
                  comment: "Shown on the watch when microphone permission is off")
@@ -131,14 +157,92 @@ private struct RecordButton: View {
             ? Text("Stop recording", comment: "Accessibility label of the stop button on the watch")
             : Text("Start recording", comment: "Accessibility label of the record button on the watch"))
         .accessibilityAction { perform(.accessibilityActivate) }
+        .modifier(DoubleTapShortcut { perform(.doubleTap) })
         .padding(.top, 2)
     }
 
     private func perform(_ touch: WatchRecordControl.Touch) {
         switch WatchRecordControl.action(for: touch, isRecording: model.isRecording) {
         case .none: break
+        case .mark: model.mark()
         case .start: model.start()
         case .stop: model.stopByWearer() // plays the stop haptic; stays off until started again
+        }
+    }
+}
+
+/// The system double tap (thumb and finger; watchOS 11 on watches that have the gesture) presses
+/// the screen's primary action. The record control is not a button, so a button too small to
+/// see stands in for it and does what a tap does: mark while recording, start otherwise.
+private struct DoubleTapShortcut: ViewModifier {
+    let action: () -> Void
+
+    init(_ action: @escaping () -> Void) { self.action = action }
+
+    func body(content: Content) -> some View {
+        if #available(watchOS 11.0, *) {
+            content.background(alignment: .center) {
+                Button(action: action) { Color.clear.frame(width: 1, height: 1) }
+                    .buttonStyle(.plain)
+                    .handGestureShortcut(.primaryAction)
+                    .accessibilityHidden(true)
+            }
+        } else {
+            content
+        }
+    }
+}
+
+/// Pausing Isoform from the watch: one pause for the watch and the computer. It is a plain row
+/// under the recordings on purpose; the designed control replaces it.
+private struct PauseControl: View {
+    @EnvironmentObject private var model: WatchRecorderModel
+
+    var body: some View {
+        if model.pauseStartedHere, model.pausedOnComputer != nil {
+            Button {
+                model.resumeFromWatch()
+            } label: {
+                Text("Resume", comment: "Button on the watch that ends the pause the wearer started there")
+                    .frame(maxWidth: .infinity)
+            }
+        } else if model.pausedOnComputer == nil {
+            Button {
+                model.pauseFromWatch()
+            } label: {
+                Text("Pause for an hour", comment: "Button on the watch that pauses Isoform on the watch and the computer for an hour")
+                    .frame(maxWidth: .infinity)
+            }
+        }
+    }
+}
+
+/// Under "Recording": the hint, or for a moment after a tap, when the wearer marked.
+private struct MarkedLine: View {
+    let at: Date?
+    @State private var shown: Date?
+
+    var body: some View {
+        Group {
+            if let shown {
+                Text("Marked \(shown, format: .dateTime.hour().minute())",
+                     comment: "Shown on the watch for a moment after the wearer marked a moment; the value is the time of day")
+            } else {
+                Text("Tap to mark. Hold to stop.",
+                     comment: "Hint under the record control on the watch while it records")
+            }
+        }
+        .font(.footnote)
+        .foregroundStyle(WatchTheme.secondary)
+        .multilineTextAlignment(.center)
+        .task(id: at) {
+            guard let at, Date().timeIntervalSince(at) < 1.5 else {
+                shown = nil
+                return
+            }
+            shown = at
+            try? await Task.sleep(for: .seconds(1.5))
+            if !Task.isCancelled { shown = nil }
         }
     }
 }

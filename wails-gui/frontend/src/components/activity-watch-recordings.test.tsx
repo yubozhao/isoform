@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
     transcript: vi.fn(),
     remove: vi.fn(),
     conversations: vi.fn(),
+    lane: vi.fn(),
 }));
 
 vi.mock('@/lib/wails-shim-app', () => ({
@@ -17,6 +18,7 @@ vi.mock('@/lib/wails-shim-app', () => ({
     GetWatchRecordingTranscript: mocks.transcript,
     DeleteWatchRecording: mocks.remove,
     GetWatchConversations: mocks.conversations,
+    GetWatchLane: mocks.lane,
 }));
 
 const started = new Date();
@@ -52,6 +54,7 @@ describe('ActivityWatchRecordings', () => {
         ]);
         mocks.remove.mockResolvedValue(undefined);
         mocks.conversations.mockResolvedValue([]);
+        mocks.lane.mockResolvedValue({ dayStart: 0, hours: [] });
     });
 
     it('lists the conversations found across the hours, above the hours, with who spoke', async () => {

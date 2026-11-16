@@ -25,9 +25,20 @@ final class WatchRecorderModel: NSObject, ObservableObject {
         didSet {
             guard phase != oldValue else { return }
             publishLiveState()
+            tellPhone()
         }
     }
     @Published private(set) var entries: [WatchRecordingEntry] = []
+    /// Observing is paused on the computer, as the phone last said. The watch does not record
+    /// while it lasts.
+    @Published private(set) var pausedOnComputer: WatchPause?
+    /// The pause the wearer started on this watch. It holds here at once, whether or not the
+    /// phone could tell the computer yet.
+    @Published private(set) var pausedHere: WatchPause?
+    /// What the phone last said about the computer's pause.
+    private var computerPause: WatchPause?
+    /// The pause that holds was started on this watch, so it can be ended here.
+    @Published private(set) var pauseStartedHere = false
 
     let library: WatchRecordingLibrary
     private let link: WatchPhoneLink
@@ -37,12 +48,20 @@ final class WatchRecorderModel: NSObject, ObservableObject {
     /// The number of the part being written, and how long it was asked to run.
     private var partNumber = 0
     private var partPlannedSeconds: TimeInterval = 0
+    /// The moments the wearer marked in the running part, seconds from its start.
+    private var partMarks: [Double] = []
+    /// When the wearer last marked a moment, for the short "Marked" line.
+    @Published private(set) var lastMarkAt: Date?
     /// The running part ends at the hour: the recording closes with it and the next one begins.
     private var partClosesHour = false
     /// When the open recording is closed and the next one begins.
     private var hourCut: Date?
     /// A call or Siri holds the microphone: nothing is being recorded until it is given back.
-    @Published private(set) var interrupted = false
+    @Published private(set) var interrupted = false {
+        didSet {
+            if interrupted != oldValue { tellPhone() }
+        }
+    }
     private let heartRate = WatchHeartRateSampler()
     private let location = WatchLocationSampler()
 
@@ -55,6 +74,9 @@ final class WatchRecorderModel: NSObject, ObservableObject {
         link.onChange = { [weak self] in
             Task { @MainActor in self?.reload() }
         }
+        link.onPause = { [weak self] pause in
+            Task { @MainActor in self?.apply(pause: pause) }
+        }
         // A recording the app was killed in the middle of is closed and sent.
         let recovered = library.recoverInterrupted { url in
             (try? AVAudioPlayer(contentsOf: url))?.duration ?? 0
@@ -62,6 +84,8 @@ final class WatchRecorderModel: NSObject, ObservableObject {
         link.activate()
         // Nothing is recording at launch: clear what a killed app may have left for the complication.
         publishLiveState()
+        // What the watch is doing goes to the phone with the first word it sends.
+        link.currentStatus = liveStatus
         if !recovered.isEmpty { link.sendUnsent() }
         NotificationCenter.default.addObserver(self, selector: #selector(interruption(_:)),
                                                name: AVAudioSession.interruptionNotification, object: nil)
@@ -82,6 +106,23 @@ final class WatchRecorderModel: NSObject, ObservableObject {
     func stopByWearer() {
         WatchAutoListen.setStopped(Date())
         stop()
+        tellPhone()
+    }
+
+    /// Says to the phone what the watch is doing now, with what it still holds.
+    private func tellPhone() {
+        link.currentStatus = liveStatus
+        link.pushSummaries()
+    }
+
+    /// What the watch is doing right now, for the phone's "Your watch" card.
+    var liveStatus: WatchLiveStatus {
+        var denied = false
+        if case .denied = phase { denied = true }
+        return WatchLiveStatus.of(
+            paused: isPausedOnComputer, pauseStartedOnWatch: pauseStartedHere, recording: isRecording,
+            waitingForMicrophone: interrupted, microphoneDenied: denied,
+            stoppedToday: WatchAutoListen.stopHolds(stoppedAt: WatchAutoListen.stoppedAt(), now: Date()))
     }
 
     /// The app came to the front: record by itself unless the wearer stopped it, and take the
@@ -96,7 +137,8 @@ final class WatchRecorderModel: NSObject, ObservableObject {
         let step = WatchAutoListen.step(
             consentSeen: consentSeen, microphone: microphone,
             stoppedByWearer: WatchAutoListen.stopHolds(stoppedAt: WatchAutoListen.stoppedAt(), now: Date()),
-            isRecording: isRecording, heldByInterruption: interrupted && recorder == nil)
+            isRecording: isRecording, heldByInterruption: interrupted && recorder == nil,
+            pausedOnComputer: isPausedOnComputer)
         switch step {
         case .nothing: break
         case .start: start()
@@ -105,10 +147,74 @@ final class WatchRecorderModel: NSObject, ObservableObject {
         }
     }
 
+    /// The wearer marked this moment: "this matters". It is only a time; the computer shows which
+    /// words were being said. Nothing is marked while nothing is being recorded.
+    func mark() {
+        guard isRecording, let recorder, recorder.isRecording else { return }
+        partMarks.append(recorder.currentTime)
+        lastMarkAt = Date()
+        WKInterfaceDevice.current().play(.click)
+    }
+
+    /// Whether the pause the phone last told of still holds (a timed pause ends by itself).
+    var isPausedOnComputer: Bool { pausedOnComputer?.isActive(at: Date()) == true }
+
+    /// The phone said whether observing is paused on the computer. One pause covers all of
+    /// Isoform: the watch stops, and what it recorded since the pause began is deleted before it
+    /// leaves the watch. This is the first guard; the computer drops such audio too.
+    func apply(pause: WatchPause?) {
+        computerPause = pause
+        if pause != nil {
+            // The computer has the pause now: its word replaces the watch's own.
+            pausedHere = nil
+        }
+        applyEffectivePause()
+    }
+
+    /// The wearer paused Isoform from the watch. It takes effect here at once; the phone is asked
+    /// to pause the computer, which then tells every device.
+    func pauseFromWatch(minutes: Int = WatchPauseRequest.defaultMinutes) {
+        let now = Date()
+        pausedHere = WatchPause(since: now, until: now.addingTimeInterval(Double(minutes) * 60))
+        pauseStartedHere = true
+        let wasRecording = isRecording
+        link.ask(.pause(minutes: minutes))
+        applyEffectivePause()
+        // Stopping a recording already gave its haptic.
+        if !wasRecording { WKInterfaceDevice.current().play(.stop) }
+    }
+
+    /// The wearer ended the pause they started on the watch. The phone is asked to end it on the
+    /// computer too; a pause made at the computer stays, and the phone says so.
+    func resumeFromWatch() {
+        pausedHere = nil
+        computerPause = nil
+        pauseStartedHere = false
+        link.ask(.resume)
+        applyEffectivePause()
+    }
+
+    private func applyEffectivePause() {
+        let active = WatchPause.effective(computer: computerPause, watch: pausedHere, now: Date())
+        guard active != pausedOnComputer else { return }
+        pausedOnComputer = active
+        defer { tellPhone() }
+        guard let active else {
+            pauseStartedHere = false
+            return
+        }
+        if isRecording { stop() }
+        if let since = active.since, library.dropUnsent(since: since) > 0 {
+            link.pushSummaries()
+        }
+        reload()
+    }
+
     /// The wearer, the complication or a shortcut asked to record. Clears an earlier stop.
     func start() {
         WatchAutoListen.setStopped(nil)
-        guard !isRecording else { return }
+        // Paused on the computer: the pause is ended there, not here.
+        guard !isRecording, !isPausedOnComputer else { return }
         AVAudioApplication.requestRecordPermission { [weak self] granted in
             Task { @MainActor in
                 guard let self else { return }
@@ -188,6 +294,7 @@ final class WatchRecorderModel: NSObject, ObservableObject {
         partStartedAt = date
         partPlannedSeconds = plan.seconds
         partClosesHour = plan.closesHour
+        partMarks = []
         // Only when the wearer turned it on, and only while a part is being recorded.
         if WatchContextSettings.heartRate { heartRate.begin(at: date) }
         if WatchContextSettings.location { location.begin() } else { location.reset() }
@@ -245,7 +352,8 @@ final class WatchRecorderModel: NSObject, ObservableObject {
             return
         }
         library.addPart(recordingID: recordingID, startedAt: partStartedAt, durationSeconds: seconds, last: last,
-                        model: WKInterfaceDevice.current().model, context: context)
+                        model: WKInterfaceDevice.current().model, context: context, marks: partMarks)
+        partMarks = []
         partNumber += 1
         link.sendUnsent()
     }

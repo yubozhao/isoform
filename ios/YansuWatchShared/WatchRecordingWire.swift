@@ -27,6 +27,8 @@ struct WatchRecordingPartInfo: Codable, Equatable, Sendable {
     var model: String?
     /// The wearer's heart rate and coarse location during this part, when they allowed each.
     var context: WatchRecordingContext?
+    /// The moments the wearer marked during this part, in seconds from its start (PROTOCOL.md 24.9).
+    var marks: [Double]?
 
     /// The metadata dictionary of a WCSession file transfer (property-list values only).
     var metadata: [String: Any] {
@@ -36,11 +38,13 @@ struct WatchRecordingPartInfo: Codable, Equatable, Sendable {
         ]
         if let model { out["model"] = model }
         context?.write(into: &out)
+        if let marks, !marks.isEmpty { out["marks"] = marks }
         return out
     }
 
     init(recordingID: String, part: Int, last: Bool, startedAt: Date, durationSeconds: Double, model: String? = nil,
-         context: WatchRecordingContext? = nil) {
+         context: WatchRecordingContext? = nil, marks: [Double]? = nil) {
+        self.marks = marks.flatMap { WatchRecordingWire.cleanMarks($0, durationSeconds: durationSeconds) }
         self.recordingID = recordingID
         self.part = part
         self.last = last
@@ -63,7 +67,7 @@ struct WatchRecordingPartInfo: Codable, Equatable, Sendable {
         }
         self.init(recordingID: id, part: part, last: last, startedAt: Date(timeIntervalSince1970: started),
                   durationSeconds: duration, model: (metadata["model"] as? String).map { String($0.prefix(40)) },
-                  context: WatchRecordingContext(metadata: metadata))
+                  context: WatchRecordingContext(metadata: metadata), marks: metadata["marks"] as? [Double])
     }
 }
 
@@ -110,6 +114,25 @@ enum WatchRecordingRemoteState: String, Codable, Sendable, Comparable {
 }
 
 extension WatchRecordingWire {
+    /// The most marks one part carries.
+    static let maxMarks = 60
+
+    /// Marks inside the part, in order, without repeats; nil when none is usable.
+    static func cleanMarks(_ marks: [Double], durationSeconds: Double) -> [Double]? {
+        let kept = Set(marks.filter { $0.isFinite && $0 >= 0 && $0 <= durationSeconds }.map { ($0 * 10).rounded() / 10 })
+        let sorted = Array(kept.sorted().prefix(maxMarks))
+        return sorted.isEmpty ? nil : sorted
+    }
+
+    /// Observing is paused on the computer (PROTOCOL.md 24.8): the watch stops too.
+    static let pauseKey = "observingPause"
+
+    static func pause(fromContext context: [String: Any]) -> WatchPause? {
+        guard context[contextVersionKey] as? Int == version, let raw = context[pauseKey] as? [String: Double] else { return nil }
+        return WatchPause(since: raw["since"].map { Date(timeIntervalSince1970: $0) },
+                          until: raw["until"].map { Date(timeIntervalSince1970: $0) })
+    }
+
     /// The names of what a recording heard, as the computer gave them (PROTOCOL.md 24.7).
     static let namesKey = "recordingNames"
     static let maxNames = 4
@@ -125,8 +148,21 @@ extension WatchRecordingWire {
 
     /// The application context the phone sends: recording id to state, and recording id to the
     /// names of the conversations heard in it, once the computer has named any.
-    static func context(_ states: [String: WatchRecordingRemoteState], names: [String: [String]] = [:]) -> [String: Any] {
+    /// A number the phone raises each time it carried a pause request of the watch to the
+    /// computer. The system does not deliver a context equal to the last one, so without it the
+    /// watch would never hear "nothing changed" (a pause made at the computer was not ended).
+    static let pauseSerialKey = "pauseSerial"
+
+    static func context(_ states: [String: WatchRecordingRemoteState], names: [String: [String]] = [:],
+                        pause: WatchPause? = nil, pauseSerial: Int = 0) -> [String: Any] {
         var context: [String: Any] = [contextVersionKey: version, contextKey: states.mapValues(\.rawValue)]
+        if pauseSerial > 0 { context[pauseSerialKey] = pauseSerial }
+        if let pause {
+            var raw: [String: Double] = [:]
+            if let since = pause.since { raw["since"] = since.timeIntervalSince1970 }
+            if let until = pause.until { raw["until"] = until.timeIntervalSince1970 }
+            context[pauseKey] = raw
+        }
         let kept = names.filter { states[$0.key] != nil && states[$0.key] != .deleted }
             .mapValues(cleanNames).filter { !$0.value.isEmpty }
         if !kept.isEmpty { context[namesKey] = kept }
@@ -174,11 +210,22 @@ extension WatchRecordingWire {
     static let syncMessageKey = "syncRecordings"
 
     /// The application context the watch sends: what it still holds, newest first.
-    static func summaryContext(_ summaries: [WatchRecordingSummary]) -> [String: Any] {
-        [contextVersionKey: version, summariesKey: summaries.prefix(maxSummaries).map { item -> [String: Any] in
+    /// What the watch is doing right now, for the phone's "Your watch" card.
+    static let statusKey = "watchStatus"
+
+    static func summaryContext(_ summaries: [WatchRecordingSummary], status: WatchLiveStatus? = nil) -> [String: Any] {
+        var context: [String: Any] = [contextVersionKey: version, summariesKey: summaries.prefix(maxSummaries).map { item -> [String: Any] in
             ["id": item.id, "startedAt": item.startedAt.timeIntervalSince1970, "durationSeconds": item.durationSeconds,
              "unsent": item.unsentParts, "finished": item.finished]
         }]
+        if let status { context[statusKey] = status.rawValue }
+        return context
+    }
+
+    /// Nil when the watch did not say (an older watch app), or said something this phone does not know.
+    static func status(fromContext context: [String: Any]) -> WatchLiveStatus? {
+        guard context[contextVersionKey] as? Int == version, let raw = context[statusKey] as? String else { return nil }
+        return WatchLiveStatus(rawValue: raw)
     }
 
     static func summaries(fromContext context: [String: Any]) -> [WatchRecordingSummary] {
@@ -191,5 +238,86 @@ extension WatchRecordingWire {
             return WatchRecordingSummary(id: id, startedAt: Date(timeIntervalSince1970: started), durationSeconds: duration,
                                          unsentParts: unsent, finished: finished)
         }
+    }
+}
+
+/// Observing is paused on the computer. One pause covers all of Isoform, so the watch stops
+/// recording while it lasts. `since` and `until` are nil when the computer does not know them:
+/// a pause with no end, or a start it cannot vouch for.
+struct WatchPause: Equatable, Sendable {
+    var since: Date?
+    var until: Date?
+
+    /// A pause with no end lasts until the phone says it is over.
+    func isActive(at now: Date) -> Bool { until.map { $0 > now } ?? true }
+}
+
+/// What the watch asks of the phone about the pause. The watch cannot reach the computer, so the
+/// phone asks for it (PROTOCOL.md 24.10).
+enum WatchPauseRequest: Equatable, Sendable {
+    /// Pause Isoform for this many minutes.
+    case pause(minutes: Int)
+    /// End the pause the watch started.
+    case resume
+
+    static let key = "pauseRequest"
+    /// A pause from the wrist lasts an hour unless changed: the length of a meeting or a visit.
+    static let defaultMinutes = 60
+
+    /// The user-info dictionary sent to the phone.
+    var userInfo: [String: Any] {
+        switch self {
+        case .pause(let minutes): return [Self.key: ["minutes": minutes]]
+        case .resume: return [Self.key: ["resume": true]]
+        }
+    }
+
+    init?(userInfo: [String: Any]) {
+        guard let raw = userInfo[Self.key] as? [String: Any] else { return nil }
+        if raw["resume"] as? Bool == true {
+            self = .resume
+        } else if let minutes = raw["minutes"] as? Int, (5...240).contains(minutes) {
+            self = .pause(minutes: minutes)
+        } else {
+            return nil
+        }
+    }
+}
+
+extension WatchPause {
+    /// The pause that holds on the watch: the computer's when it has one, else the one the wearer
+    /// started on the watch while it has not run out. A pause started on the wrist takes effect
+    /// there at once and holds even if the phone cannot reach the computer.
+    static func effective(computer: WatchPause?, watch: WatchPause?, now: Date) -> WatchPause? {
+        if let computer, computer.isActive(at: now) { return computer }
+        if let watch, watch.isActive(at: now) { return watch }
+        return nil
+    }
+}
+
+/// What the watch is doing right now, in the words a person would use. The watch says it to the
+/// phone with what it still holds, so the phone can show it without asking.
+enum WatchLiveStatus: String, Equatable, Sendable {
+    case recording
+    /// A call or Siri has the microphone; recording comes back by itself.
+    case waitingForMicrophone
+    /// Observing is paused on the computer, so the watch does not record either.
+    case pausedOnComputer
+    /// The wearer paused Isoform from the watch.
+    case pausedOnWatch
+    /// The wearer stopped it; it stays off for the rest of the day.
+    case stoppedToday
+    /// The microphone is not allowed for Isoform on the watch.
+    case microphoneOff
+    case notRecording
+
+    /// Works out the status from what the watch knows. A pause comes first: while it holds
+    /// nothing is recorded, whatever else is true.
+    static func of(paused: Bool, pauseStartedOnWatch: Bool, recording: Bool, waitingForMicrophone: Bool,
+                   microphoneDenied: Bool, stoppedToday: Bool) -> WatchLiveStatus {
+        if paused { return pauseStartedOnWatch ? .pausedOnWatch : .pausedOnComputer }
+        if recording { return waitingForMicrophone ? .waitingForMicrophone : .recording }
+        if microphoneDenied { return .microphoneOff }
+        return stoppedToday ? .stoppedToday : .notRecording
     }
 }

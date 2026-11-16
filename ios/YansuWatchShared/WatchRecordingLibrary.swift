@@ -15,6 +15,8 @@ struct WatchRecordingPart: Codable, Equatable, Sendable {
     var sent: Bool
     /// Heart rate and coarse location during the part. Removed from the watch with the audio.
     var context: WatchRecordingContext? = nil
+    /// The moments the wearer marked, seconds from the part's start. Removed with the audio.
+    var marks: [Double]? = nil
 }
 
 struct WatchRecordingEntry: Codable, Equatable, Identifiable, Sendable {
@@ -92,7 +94,7 @@ final class WatchRecordingLibrary: @unchecked Sendable {
     /// what to tell the phone. Nil when the recording is unknown or the part number is out of range.
     @discardableResult
     func addPart(recordingID: String, startedAt: Date, durationSeconds: Double, last: Bool,
-                 model: String? = nil, context: WatchRecordingContext? = nil) -> WatchRecordingPartInfo? {
+                 model: String? = nil, context: WatchRecordingContext? = nil, marks: [Double]? = nil) -> WatchRecordingPartInfo? {
         lock.withLock {
             guard let index = entries.firstIndex(where: { $0.id == recordingID }), !entries[index].finished,
                   durationSeconds > 0 else { return nil }
@@ -102,11 +104,12 @@ final class WatchRecordingLibrary: @unchecked Sendable {
             let closes = last || part == WatchRecordingWire.maxParts - 1
             entries[index].parts.append(WatchRecordingPart(
                 part: part, fileName: Self.fileName(recordingID: recordingID, part: part), startedAt: startedAt,
-                durationSeconds: durationSeconds, last: closes, sent: false, context: context))
+                durationSeconds: durationSeconds, last: closes, sent: false, context: context,
+                marks: marks.flatMap { WatchRecordingWire.cleanMarks($0, durationSeconds: durationSeconds) }))
             if closes { entries[index].finished = true }
             saveLocked()
             return WatchRecordingPartInfo(recordingID: recordingID, part: part, last: closes, startedAt: startedAt,
-                                          durationSeconds: durationSeconds, model: model, context: context)
+                                          durationSeconds: durationSeconds, model: model, context: context, marks: marks)
         }
     }
 
@@ -144,6 +147,7 @@ final class WatchRecordingLibrary: @unchecked Sendable {
                   let partIndex = entries[index].parts.firstIndex(where: { $0.part == part }) else { return }
             entries[index].parts[partIndex].sent = true
             entries[index].parts[partIndex].context = nil
+            entries[index].parts[partIndex].marks = nil
             try? fileManager.removeItem(at: directory.appendingPathComponent(entries[index].parts[partIndex].fileName))
             saveLocked()
         }
@@ -156,7 +160,7 @@ final class WatchRecordingLibrary: @unchecked Sendable {
                 entry.parts.filter { !$0.sent }.map { part in
                     (WatchRecordingPartInfo(recordingID: entry.id, part: part.part, last: part.last,
                                             startedAt: part.startedAt, durationSeconds: part.durationSeconds,
-                                            context: part.context),
+                                            context: part.context, marks: part.marks),
                      directory.appendingPathComponent(part.fileName))
                 }
             }
@@ -205,6 +209,36 @@ final class WatchRecordingLibrary: @unchecked Sendable {
                 changed = true
             }
             if changed { saveLocked() }
+        }
+    }
+
+    /// Deletes, before it leaves the watch, the audio recorded at or after `since` (the start of
+    /// a pause on the computer). Only parts still on the watch can go; a part the phone already
+    /// has is dropped by the computer instead. A recording that loses its newest parts is closed
+    /// with what is left. Returns how many parts were deleted.
+    @discardableResult
+    func dropUnsent(since: Date) -> Int {
+        lock.withLock {
+            var dropped = 0
+            for index in entries.indices.reversed() {
+                let parts = entries[index].parts
+                guard let first = parts.firstIndex(where: { $0.startedAt.addingTimeInterval($0.durationSeconds) > since }),
+                      parts[first...].allSatisfy({ !$0.sent }) else { continue }
+                for part in parts[first...] {
+                    try? fileManager.removeItem(at: directory.appendingPathComponent(part.fileName))
+                    dropped += 1
+                }
+                entries[index].parts.removeSubrange(first...)
+                if entries[index].parts.isEmpty {
+                    entries.remove(at: index)
+                } else {
+                    entries[index].finished = true
+                    let newest = entries[index].parts.count - 1
+                    if !entries[index].parts[newest].sent { entries[index].parts[newest].last = true }
+                }
+            }
+            if dropped > 0 { saveLocked() }
+            return dropped
         }
     }
 

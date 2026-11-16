@@ -7,6 +7,10 @@ import WatchConnectivity
 final class WatchPhoneLink: NSObject, WCSessionDelegate, @unchecked Sendable {
     private let library: WatchRecordingLibrary
     var onChange: (() -> Void)?
+    /// What the watch is doing right now; said to the phone with what the watch still holds.
+    var currentStatus: WatchLiveStatus?
+    /// The phone said whether observing is paused on the computer (nil: it is not).
+    var onPause: ((WatchPause?) -> Void)?
 
     init(library: WatchRecordingLibrary) {
         self.library = library
@@ -22,7 +26,19 @@ final class WatchPhoneLink: NSObject, WCSessionDelegate, @unchecked Sendable {
     func pushSummaries() {
         let session = WCSession.default
         guard session.activationState == .activated else { return }
-        try? session.updateApplicationContext(WatchRecordingWire.summaryContext(library.summaries()))
+        try? session.updateApplicationContext(WatchRecordingWire.summaryContext(library.summaries(), status: currentStatus))
+    }
+
+    /// Asks the phone to pause the computer, or to end the pause the watch started. Sent as
+    /// user info, which the system delivers when the phone is next reachable, also when the phone
+    /// app is not running; and at once as a message when the phone is reachable now.
+    func ask(_ request: WatchPauseRequest) {
+        let session = WCSession.default
+        guard session.activationState == .activated else { return }
+        session.transferUserInfo(request.userInfo)
+        if session.isReachable {
+            session.sendMessage(request.userInfo, replyHandler: nil, errorHandler: nil)
+        }
     }
 
     /// Queues every part still on the watch that is not already on its way.
@@ -78,5 +94,6 @@ final class WatchPhoneLink: NSObject, WCSessionDelegate, @unchecked Sendable {
         let states = WatchRecordingWire.states(fromContext: context)
         library.apply(states: states)
         library.apply(names: WatchRecordingWire.names(fromContext: context), known: Set(states.keys))
+        onPause?(WatchRecordingWire.pause(fromContext: context))
     }
 }

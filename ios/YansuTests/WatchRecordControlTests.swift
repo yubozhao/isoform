@@ -4,7 +4,13 @@ import XCTest
 // Guards Bo's rule of 2026-11-15: a recording on the watch stops on a hold, never on a tap.
 final class WatchRecordControlTests: XCTestCase {
     func testATapNeverStopsARecording() {
-        XCTAssertEqual(WatchRecordControl.action(for: .tap, isRecording: true), .none)
+        XCTAssertNotEqual(WatchRecordControl.action(for: .tap, isRecording: true), .stop)
+    }
+
+    /// While recording, a tap marks the moment (watch v1.1.0): "this matters".
+    func testATapWhileRecordingMarksTheMoment() {
+        XCTAssertEqual(WatchRecordControl.action(for: .tap, isRecording: true), .mark)
+        XCTAssertEqual(WatchRecordControl.action(for: .hold(seconds: 0.3), isRecording: true), .none, "a short hold is not a mark")
     }
 
     func testATapStartsARecording() {
@@ -23,6 +29,14 @@ final class WatchRecordControlTests: XCTestCase {
     func testAHoldWhileIdleStillStarts() {
         XCTAssertEqual(WatchRecordControl.action(for: .hold(seconds: WatchRecordControl.holdSeconds), isRecording: false), .start)
         XCTAssertEqual(WatchRecordControl.action(for: .hold(seconds: 0.2), isRecording: false), .none)
+    }
+
+    /// The double tap and the Action button do what a tap does, and never stop a recording.
+    func testDoubleTapAndTheActionButtonMarkOrStartAndNeverStop() {
+        for touch in [WatchRecordControl.Touch.doubleTap, .actionButton] {
+            XCTAssertEqual(WatchRecordControl.action(for: touch, isRecording: true), .mark)
+            XCTAssertEqual(WatchRecordControl.action(for: touch, isRecording: false), .start)
+        }
     }
 
     func testVoiceOverActivateStartsAndStops() {
