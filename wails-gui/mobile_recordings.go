@@ -1033,9 +1033,10 @@ func (a *App) transcribeMobileRecording(store *mobileRecordingStore, rec mobileR
 	if rec.Source == "phone" {
 		appName, bundleID = mobileRecordingPhoneApp, mobileRecordingPhoneID
 	}
-	// What was recorded while observing was paused is never read. Without the
-	// pause log nothing is read at all; the recording is tried again later.
-	pauses, err := mobileRecordingPauses(a)
+	// What was recorded while observing was paused, or after listening on the
+	// watch was turned off, is never read. Without the pause log nothing is
+	// read at all; the recording is tried again later.
+	pauses, err := a.mobileRecordingDropSpans(rec.Source)
 	if err != nil {
 		return "", 0, fmt.Errorf("the pause log could not be read: %w", err)
 	}
