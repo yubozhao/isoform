@@ -100,7 +100,7 @@ export function busyDayFixture(): { activities: ActivityView[]; threads: Activit
                 end,
                 activeMs: end - start,
                 activityIds: slice.map((a) => a.id),
-                resumePoint: s === 0 ? null : { kind: 'file' as const, label: `file-${tIdx}-${s}.ts` },
+                resumePoint: s === 0 ? null : { kind: 'path' as const, label: `file-${tIdx}-${s}.ts` },
             };
         });
         threads.push({

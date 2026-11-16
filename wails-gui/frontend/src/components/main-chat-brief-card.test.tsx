@@ -2,7 +2,6 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "@/i18n";
 import en from "@/i18n/locales/en/chat.json";
-import enToday from "@/i18n/locales/en/today.json";
 import { MainChatBriefCard } from "./main-chat-brief-card";
 
 const getByID = vi.hoisted(() => vi.fn());

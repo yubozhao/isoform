@@ -72,7 +72,7 @@ describe.each(["en", "zh-CN"])("brief titles in %s", (language) => {
         expect(briefLateLine(late, language, tr, { ...run, late: false })).toBeNull();
         expect(briefLateLine(late, language, tr, { ...run, reason: "closed" }))
             .toBe(en ? "Came at 4:12 PM, not 1:50 PM: Isoform wasn't open." : "16:12才生成，不是13:50：Isoform 没有打开。");
-        expect(briefLateLine(late, language, tr, { ...run, reason: "" }))
+        expect(briefLateLine(late, language, tr, { ...run, reason: undefined }))
             .toBe(en ? "Came at 4:12 PM, not 1:50 PM." : "16:12才生成，不是13:50。");
 
     });

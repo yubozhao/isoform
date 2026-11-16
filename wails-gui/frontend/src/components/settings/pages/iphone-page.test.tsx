@@ -41,6 +41,7 @@ const status: MobileConnectionStatus = {
     connectionCode: "",
     expiresAt: "",
     pendingPairing: null,
+    instantPush: false,
     devices: [
         {
             deviceId: "phone-1",

@@ -50,7 +50,6 @@ export interface TodayActionHandlers {
     /** newMessage: no Mail thread; the person's address was proven from a record. */
     onDraftBriefCard?: (briefId: string, card: import("@/lib/wails-shim-app").MobileBriefCard, newMessage?: boolean) => void;
     onDraftMeetingNote?: (meeting: import("@/lib/wails-shim-app").TodayBeforeYouTalk, prompt: string) => void;
-    onBriefMeeting?: (meeting: import("@/lib/wails-shim-app").TodayBeforeYouTalk, prompt: string) => void;
     answeredBriefCards?: ReadonlySet<string>;
     onRunNow: (jobId: string) => void;
     onOpenMemory: (entryId?: string) => void;

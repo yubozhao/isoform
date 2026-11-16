@@ -75,7 +75,7 @@ export function MainChatItemPanel({
         ? briefTitle(message.briefDisplay as Parameters<typeof briefTitle>[0], i18n.resolvedLanguage ?? i18n.language, (key, options) => String(tToday(key as never, options as never)))
         : (message.kind === 'brief_ready' || message.kind === 'weekly_recap') && retiredBriefCopy(message.headline)
         ? message.briefDisplay
-            ? briefTitle(message.briefDisplay as Parameters<typeof briefTitle>[0], i18n.resolvedLanguage ?? i18n.language, (key, options) => tToday(key as never, options as never) as string)
+            ? briefTitle(message.briefDisplay as Parameters<typeof briefTitle>[0], i18n.resolvedLanguage ?? i18n.language, (key, options) => tToday(key as never, options as never) as unknown as string)
             : tToday(message.kind === 'brief_ready' ? 'todayBrief.slot.on_request' : 'todayBrief.kind.week')
         : message.localized?.[(i18n.resolvedLanguage ?? i18n.language)?.toLowerCase().startsWith("zh") ? "zh-CN" : "en"]?.headline ?? message.headline;
     const openTarget = (target: MainChatReportTarget) => {

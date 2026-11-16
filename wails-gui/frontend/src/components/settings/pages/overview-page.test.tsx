@@ -601,7 +601,7 @@ describe("OverviewPage", () => {
             thinksWith: { order: [{ assistant: "claude", percentLeft: 82, windowLabel: "5 hours", resetsAt: "" }] },
             remembers: { awaitingConfirmCount: 0 },
             keeps: { retention: 30, limitBytes: 0, usedBytes: 123456 },
-            briefs: { morningAt: "08:00", eveningAt: "17:00", adaptive: false, phone: null },
+            briefs: { morningAt: "08:00", eveningAt: "17:00", adaptive: false, phone: null, connection: null },
             ignores: { apps: [] },
             worthALook: [],
         }));

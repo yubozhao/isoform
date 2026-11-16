@@ -16,7 +16,6 @@ export function briefCopySafe(text: string): boolean {
 export function briefForDisplay(brief: MobileBriefDocument): MobileBriefDocument {
     const original = brief;
     brief = displayModelCopy(brief);
-    const redactedCopy = JSON.stringify(original) !== JSON.stringify(brief);
     // Withhold invalid legacy units as a whole; never rewrite delivered prose.
     const safeCopy = (text: string) => text.split("\n").every(briefCopySafe);
     const safeItems = (items: MobileBriefItem[]) => items.filter((item) => [

@@ -44,9 +44,6 @@ const nativeCopyDraft = vi.hoisted(() => vi.fn());
 const openAnswerMocks = vi.hoisted(() => ({ list: vi.fn(), change: vi.fn(), cancel: vi.fn(), notForMe: vi.fn(), undo: vi.fn() }));
 const briefByID = vi.hoisted(() => vi.fn());
 const taskDetail = vi.hoisted(() => vi.fn());
-const emitRuntimeEvent = (event: string, payload: unknown) => {
-    for (const listener of runtimeListeners.get(event) ?? []) listener(payload);
-};
 const taskAction = vi.hoisted(() => vi.fn());
 const draftTaskID = vi.hoisted(() => vi.fn());
 vi.mock('../../wailsjs/go/main/App', () => ({

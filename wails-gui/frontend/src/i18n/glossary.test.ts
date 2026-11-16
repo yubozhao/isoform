@@ -7,8 +7,6 @@ import { UNTRANSLATED_TERMS } from './glossary';
 // these terms, the Simplified Chinese value must keep the same English term
 // (any case) instead of translating it away. See README "Do not translate".
 
-type Tree = Record<string, unknown>;
-
 function collectStrings(tree: unknown, prefix: string, out: Record<string, string>): void {
     if (typeof tree === 'string') {
         out[prefix] = tree;
