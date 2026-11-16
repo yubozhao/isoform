@@ -67,7 +67,9 @@ export const NO_WORD_MS = 2 * 60 * 60_000;
 /** How long the one-line Undo stays after an answer (rule 13). */
 export const UNDO_LINE_MS = 5_000;
 
-export function TodayYourWork({ list, active, onAnswer, onUndo, onHandOff, noAgents = false, onConnectAgent, now = new Date() }: {
+export function TodayYourWork({ list, active, onAnswer, onUndo, onHandOff, noAgents = false, onConnectAgent, onOpenRef, now = new Date() }: {
+    /** Opens what a source-line part names: a topic, a brief (computer-find v1.0.0 rule 1). */
+    onOpenRef?: (ref: string) => boolean;
     /** No agent connected yet: the right column says so once (rule 3). */
     noAgents?: boolean;
     onConnectAgent?: () => void;
@@ -214,7 +216,6 @@ export function TodayYourWork({ list, active, onAnswer, onUndo, onHandOff, noAge
         if (part.key && i18n.exists(`today:work.first.${part.key}`)) return tr(`work.first.${part.key}`);
         return part.text;
     };
-    const firstLine = (item: WorkItem) => item.first.map(partText).filter(Boolean).join(" · ");
     const yesWhen = open?.yes.at ? workWhen(open.yes.at, now, language, tr) : "";
     const back = open?.state === "back";
 
@@ -243,7 +244,18 @@ export function TodayYourWork({ list, active, onAnswer, onUndo, onHandOff, noAge
                             <p className="text-[12px] text-muted" data-testid="your-work-back-from">
                                 {tr("ctoday.backFrom", { agent: open.agent?.name ?? tr("agent.yourAgent"), time: workWhen(open.answer?.at ?? open.agent?.since, now, language, tr) })}
                             </p>
-                        ) : open.first.length > 0 && <p className="text-[12px] text-muted" data-testid="your-work-first">{firstLine(open)}</p>}
+                        ) : open.first.length > 0 && (
+                            <p className="text-[12px] text-muted" data-testid="your-work-first">
+                                {open.first.map((part, index) => {
+                                    const text = partText(part);
+                                    if (!text) return null;
+                                    const sep = index > 0 ? " · " : "";
+                                    return part.ref && onOpenRef ? (
+                                        <span key={index}>{sep}<button type="button" className="underline-offset-2 hover:text-ink hover:underline" data-testid="your-work-source" onClick={() => onOpenRef(part.ref!)}>{text}</button></span>
+                                    ) : <span key={index}>{sep}{text}</span>;
+                                })}
+                            </p>
+                        )}
                         {open.noticed && <p className="text-[14px] font-semibold leading-snug text-ink">{open.noticed}</p>}
                         {editFor === open.id ? (
                             <div className="flex flex-col gap-2">

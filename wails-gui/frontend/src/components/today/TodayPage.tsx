@@ -865,7 +865,17 @@ export function TodayPage({
                         band
                         onOpenPastBriefs={openPastBriefs}
                         onReadAll={() => setBriefFull(true)}
-                        afterBand={work.list ? <TodayYourWork list={work.list} active={active && !handOff} onAnswer={work.answer} onUndo={work.undo} onHandOff={openHandOff} noAgents={!!yourAgents && !yourAgents.agents.some((agent) => agent.connected)} /> : null}
+                        afterBand={work.list ? <TodayYourWork list={work.list} active={active && !handOff} onAnswer={work.answer} onUndo={work.undo} onHandOff={openHandOff} noAgents={!!yourAgents && !yourAgents.agents.some((agent) => agent.connected)} onOpenRef={(ref) => {
+                            // A topic opens beside Today; this brief opens in full; an earlier one in the panel.
+                            if (ref.startsWith("topic:")) return openTopic(ref.slice("topic:".length));
+                            if (ref.startsWith("brief:")) {
+                                const id = ref.slice("brief:".length);
+                                if (id === latest.view?.brief?.briefId && bandBrief(latest.view)) setBriefFull(true);
+                                else openBrief(id);
+                                return true;
+                            }
+                            return false;
+                        }} /> : null}
                         view={latest.view}
                         loading={latest.loading}
                         loadFailed={latest.loadFailed}

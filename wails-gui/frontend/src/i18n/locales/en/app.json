@@ -288,6 +288,7 @@
             "words": "Searches the words, not just titles"
         },
         "groups": {
+            "ready": "Ready",
             "recent": "Recent",
             "actions": "Actions",
             "topics": "Topics",
@@ -324,6 +325,7 @@
             "aboutYou": "Open About you"
         },
         "meta": {
+            "ready": "Ready",
             "today": "Today",
             "chat": "Chat",
             "topic": "Topic",

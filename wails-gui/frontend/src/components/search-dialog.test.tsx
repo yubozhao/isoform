@@ -205,6 +205,20 @@ describe("SearchDialog (search and commands)", () => {
     });
     afterEach(cleanup);
 
+    it("puts ready work from Your work first and opens it on Today", async () => {
+        binding("GetWorkList").mockResolvedValue({ v: 1, version: "1", generatedAt: "", toAnswer: 1, backFromAgents: 0, items: [
+            { id: "prep:e1", kind: "done", row: "prep", state: "open", source: "prep", ref: {}, first: [{ text: "For your 10:00 with Lena" }], noticed: "", work: { title: "Prep for Lena" }, yes: { does: "keep", line: "" }, reasons: [], createdAt: "", order: 0 },
+            { id: "prep:e2", kind: "done", row: "prep", state: "answered", source: "prep", ref: {}, first: [], noticed: "", work: { title: "Prep for Lena's team" }, yes: { does: "keep", line: "" }, reasons: [], createdAt: "", order: 1 },
+        ] });
+        const { actions } = await renderSearch();
+        await type("lena");
+        expect(headings()[0]).toBe("Ready");
+        expect(screen.getByText("Prep for Lena")).toBeInTheDocument();
+        expect(screen.queryByText("Prep for Lena's team")).toBeNull();
+        await act(async () => { fireEvent.click(screen.getByText("Prep for Lena")); });
+        expect(actions.openToday).toHaveBeenCalled();
+    });
+
     it("replaces an empty cold bootstrap after topics are published", async () => {
         binding("GetTodayTopics").mockResolvedValueOnce({ topics: [], refreshing: true });
         await renderSearch();

@@ -65,7 +65,8 @@ import {
     type TodayTopicsView,
 } from "@/lib/wails-shim-app";
 import { pageQueryCache } from "@/lib/query-cache";
-import { GetTodayTopics, ListHandoffs, usePagePrivacyWithdrawal, usePageQueryRefresh } from "@/lib/page-queries";
+import { GetTodayTopics, GetWorkList, ListHandoffs, usePagePrivacyWithdrawal, usePageQueryRefresh } from "@/lib/page-queries";
+import type { WorkList } from "@/lib/wails-shim-app";
 import { EventsOn } from "../../wailsjs/runtime/runtime";
 import type { Project, Session } from "@/types";
 
@@ -96,6 +97,8 @@ export interface SearchDialogActions {
     openGoal: (id: string) => void;
     /** Opens the topic beside Today, as a pinned topic does. */
     openTopic: (topic: TodayTopic) => void;
+    /** Opens Today on this Your work item. */
+    openWorkItem?: (id: string) => void;
 }
 
 interface SearchDialogProps {
@@ -113,6 +116,7 @@ interface SearchDialogProps {
 // had and the artboard does not name (Upcoming, One-time work, Projects,
 // Library pages) sit after the artboard's places.
 type GroupId =
+    | "ready"
     | "recent"
     | "actions"
     | "topics"
@@ -147,7 +151,8 @@ const PLACE_ORDER: readonly GroupId[] = [
  *  the actions sit just before Settings, so a word that merely appears in an
  *  action ("brief", "observ") never puts it on top. */
 function queryOrder(actionsNamed: boolean): readonly GroupId[] {
-    return actionsNamed ? ["actions", ...PLACE_ORDER, "settings"] : [...PLACE_ORDER, "actions", "settings"];
+    // Ready work leads (computer-find v1.0.0 rule 4): prep, drafts, results.
+    return actionsNamed ? ["ready", "actions", ...PLACE_ORDER, "settings"] : ["ready", ...PLACE_ORDER, "actions", "settings"];
 }
 
 const PLACE_GROUP: Record<SearchPlace, GroupId> = {
@@ -349,6 +354,14 @@ function SearchBody({ escapeRef, movedRef, selected, setSelected, close, project
     }, [escapeRef, query]);
 
     // ── Sources read on open ──
+
+    // Your work, from the shared page cache (computer-find v1.0.0: Ready).
+    const [work, setWork] = useState<WorkList | null>(() => pageQueryCache.peek<WorkList>("GetWorkList") ?? null);
+    const loadWork = useCallback(() => {
+        Promise.resolve().then(() => GetWorkList()).then((next) => { if (next) setWork(next); }).catch(() => {});
+    }, []);
+    usePageQueryRefresh(["GetWorkList"], loadWork);
+    useEffect(() => { loadWork(); }, [loadWork]);
 
     // A reopen lists the cached recents at once; the loads revalidate them.
     const [handoffs, setHandoffs] = useState<HandoffEntry[]>(() => pageQueryCache.peek<HandoffEntry[]>("ListHandoffs") ?? []);
@@ -697,6 +710,19 @@ function SearchBody({ escapeRef, movedRef, selected, setSelected, close, project
 
         for (const row of actionRows) push("actions", row);
 
+        // Ready: what Isoform made or offers that waits for the person.
+        for (const item of work?.items ?? []) {
+            if (item.state !== "open" && item.state !== "back") continue;
+            if (!includes(item.work.title, needle) && !includes(item.noticed, needle)) continue;
+            push("ready", {
+                key: `ready:${item.id}`,
+                title: item.work.title,
+                meta: item.first.map((part) => part.text).filter(Boolean).join(" · ") || t(`searchDialog.meta.ready`),
+                Icon: ListChecks,
+                run: run(() => (act().openWorkItem ?? act().openToday)(item.id)),
+            });
+        }
+
         // Topics by name from the registry, then what search found.
         for (const topic of topics) {
             if (includes(topic.name, needle)) push("topics", topicRow(topic));
@@ -786,6 +812,7 @@ function SearchBody({ escapeRef, movedRef, selected, setSelected, close, project
             .map((id) => ({ id, rows: byGroup.get(id) ?? [] }))
             .filter((group) => group.rows.length > 0);
     }, [
+        work,
         needle,
         query,
         topics,
