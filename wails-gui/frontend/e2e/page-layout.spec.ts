@@ -11,6 +11,7 @@ if (out) mkdirSync(out, { recursive: true });
 
 const PAGES = [
     { name: "activity", query: "page=activity&section=yourDay", area: '[data-testid="activity-feed"]', rows: "[data-feed-kind]" },
+    { name: "activity-answers", query: "page=activity&section=answers", area: '[data-testid="activity-answers"]', rows: "[data-answer-row]" },
     { name: "activity-agents", query: "page=activity&section=agents", area: '[data-testid="activity-feed"]', rows: "[data-feed-kind]" },
     { name: "you", query: "page=you", area: '[data-testid="you-page"]', rows: "[data-claim-row]" },
 ] as const;

@@ -675,7 +675,8 @@
         "tabScreen": "屏幕",
         "tabWatch": "手表",
         "tabAgents": "Agents",
-        "closedGap": "{{start}}–{{end}} · 什么都没有保留"
+        "closedGap": "{{start}}–{{end}} · 什么都没有保留",
+        "tabAnswers": "你的回答"
     },
     "feed": {
         "label": "时间线",
@@ -714,5 +715,52 @@
             "copies": "手机和手表上的副本",
             "notes": "由它生成的笔记"
         }
+    },
+    "ans": {
+        "title": "你的回答",
+        "kept": "保留到你删除为止",
+        "loadFailed": "无法加载你的回答。",
+        "answered": "已回答",
+        "yes": "说了是",
+        "every": "每一条回答",
+        "empty": "你在这台电脑或手机上回答之后，回答会显示在这里。",
+        "untitled": "一项内容",
+        "more": "显示更多",
+        "undone": "已撤销",
+        "action": {
+            "yes": "是",
+            "no": "不是",
+            "not_mine": "不是我的",
+            "edit": "编辑",
+            "useful": "有用",
+            "not_useful": "没用"
+        },
+        "surface": {
+            "computer": "在这台电脑上",
+            "phone": "在你的手机上",
+            "notification": "来自通知",
+            "chat": "在聊天中"
+        },
+        "local": "仅在这台电脑上统计",
+        "made": "呈现给你",
+        "brief": "简报中已处理的项",
+        "ofCount": "{{n}} / {{m}}",
+        "sources": "「是」来自哪里",
+        "sourcesMeta": "最近 14 天",
+        "rate": "{{m}} 次中 {{n}} 次说是",
+        "forget": "忘记",
+        "forgetTitle": "要忘记这条回答吗？",
+        "forgetBody": "你对「{{title}}」的回答会从这台电脑上删除。Isoform 之后可能会再问一次。",
+        "forgetFailed": "没有忘记成功，请再试一次。",
+        "source": {
+            "prep": "为你的会议",
+            "brief": "简报",
+            "topic": "你的主题",
+            "agent": "你的 agent",
+            "about_you": "关于你",
+            "chat": "聊天",
+            "other": "其他"
+        },
+        "forgetRow": "忘记：{{title}}"
     }
 }

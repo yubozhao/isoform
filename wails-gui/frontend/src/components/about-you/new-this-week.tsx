@@ -7,12 +7,12 @@ import {
     ForgetMemoryEntry,
     GetMemoryForgetPreview,
     NotQuiteMemoryEntry,
+    RewordMemoryEntry,
     UndoConfirmMemoryEntry,
     UndoMemoryWording,
     UndoNotQuiteMemoryEntry,
     type AboutYouBelief,
 } from '@/lib/wails-shim-app';
-import { SaveMemoryEntry } from '../../../wailsjs/go/main/App';
 import type { main } from '../../../wailsjs/go/models';
 import { memoryPoints } from '@/lib/memory-content';
 import { Button } from '@/components/ui/button';
@@ -128,7 +128,7 @@ export function useBeliefReview({
                 for (const copy of idsOf(id)) {
                     const content = contentOf(copy);
                     if (content === undefined) throw new Error('memory_unavailable');
-                    onConfirmed(await SaveMemoryEntry(copy, rewordFirstPoint(content, wording)));
+                    onConfirmed(await RewordMemoryEntry(copy, rewordFirstPoint(content, wording), wording));
                 }
                 set(id, { kind: 'corrected', wording });
             } else {

@@ -4,6 +4,7 @@
 #   - the stored briefs through cmd/brief-replay (counts only: narrative, cards, evidence, audio)
 #   - yansu-gui.log and its rotated copies: first paints, binding timings, error counts by tag,
 #     [chat-turn] outcomes. Numbers and tags only; no message, title or log text is kept.
+#   - answers/ledger.jsonl: judgments per source per day (counts only, judgments.mjs)
 # It compares the day with the one before (its own saved metrics) and writes
 # ~/isoform-trials/replay/<date>.md, <date>.json and latest.txt (one line).
 set -u
@@ -25,5 +26,6 @@ BRIEFS="$OUT/$DAY.briefs.txt"
 
 LOGS=()
 for f in "$DATA/yansu-gui.log.old.2" "$DATA/yansu-gui.log.old" "$DATA/yansu-gui.log"; do [ -f "$f" ] && LOGS+=("$f"); done
-node "$HERE/replay.mjs" "$DAY" "$OUT" "$BRIEFS" "${LOGS[@]}"
+# The answers ledger: only ids, actions, sources and times are read (judgments.mjs).
+ISOFORM_REPLAY_LEDGER="$DATA/answers/ledger.jsonl" node "$HERE/replay.mjs" "$DAY" "$OUT" "$BRIEFS" "${LOGS[@]}"
 rm -f "$BRIEFS"

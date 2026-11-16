@@ -1152,3 +1152,7 @@ export const GetWatchLane = makeNoop("GetWatchLane");
 export const GetActivityFeed = makeNoop("GetActivityFeed");
 export const GetActivityForgetPreview = makeNoop("GetActivityForgetPreview");
 export const ForgetActivityFeedRow = makeNoop("ForgetActivityFeedRow");
+export const GetAnswers = makeNoop("GetAnswers");
+export const GetJudgmentStats = makeNoop("GetJudgmentStats");
+export const ForgetAnswer = makeNoop("ForgetAnswer");
+export const RewordMemoryEntry = makeNoop("RewordMemoryEntry");

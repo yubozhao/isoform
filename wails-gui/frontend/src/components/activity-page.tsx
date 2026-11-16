@@ -32,6 +32,7 @@ import {
     ClipboardCopy,
     Sun,
     Bot,
+    MessageSquareReply,
 } from 'lucide-react';
 import { ActivityOpenChatContext } from './activity-ask-inline';
 import { ActivityInlineNotice, type ActivityNotice } from './activity-inline-notice';
@@ -97,6 +98,7 @@ import { hostBridgeMediaURL, setHostBridgeMediaToken, snapshotImageURL } from '.
 import { ActivityMeetingNotes } from './activity-meeting-notes';
 import { ActivityWatchRecordings } from './activity-watch-recordings';
 import { ActivityFeed } from './activity-feed';
+import { ActivityAnswers } from './activity-answers';
 import { MarkdownContent } from '@/components/markdown-content';
 import { CopyButton } from '@/components/copy-button';
 import { isWindows } from '@/lib/platform';
@@ -108,7 +110,7 @@ import type { main, activitymon } from '../../wailsjs/go/models';
  *  are the Screen tab's two views. 'learned' has no tab any more (it moved to
  *  You) but still opens for links that name it. 'agents' is the timeline's
  *  agent rows. */
-export type ActivitySectionId = 'yourDay' | 'workedOn' | 'learned' | 'timeline' | 'watch' | 'agents';
+export type ActivitySectionId = 'yourDay' | 'workedOn' | 'learned' | 'timeline' | 'watch' | 'agents' | 'answers';
 
 interface ActivityPageProps {
     /** Optional close handler (Escape ladder's last rung). The page is a main
@@ -2031,7 +2033,8 @@ export function ActivityPage({ onClose, initialSessionId, initialDate, noticedFo
     // as it did.
     const isWatch = section === 'watch';
     const isAgents = section === 'agents';
-    const daySection: ActivityDaySection = isTimeline || isWatch || isAgents ? 'yourDay' : section;
+    const isAnswers = section === 'answers';
+    const daySection: ActivityDaySection = isTimeline || isWatch || isAgents || isAnswers ? 'yourDay' : section;
     // The day the Day and Week views show. The section panel's prev/next
     // buttons and date picker drive it; useCalendarData keeps the month
     // heatmap (day dots) and the day's learned entries and scheduled runs.
@@ -3604,7 +3607,7 @@ export function ActivityPage({ onClose, initialSessionId, initialDate, noticedFo
                     picked section shows on the right; the pick lives in the
                     parent so it is remembered for the app session. ── */}
                 <nav aria-label={t('sections.label') as string} className="w-[220px] shrink-0 flex flex-col border-r border-border px-3 py-3 gap-4">
-                    {!isTimeline && !isWatch && (
+                    {!isTimeline && !isWatch && !isAnswers && (
                         <div className="flex flex-col gap-3">
                             {/* Date navigation — the Screen timeline has its own
                                 time filter in its sidebar, so it hides this. */}
@@ -3710,6 +3713,7 @@ export function ActivityPage({ onClose, initialSessionId, initialDate, noticedFo
                             { id: 'workedOn' as const, labelKey: 'act.tabScreen', Icon: Film, active: (scope === 'day' && section === 'workedOn') || isTimeline, pick: () => { setScope('day'); onSectionChange('workedOn'); } },
                             { id: 'watch' as const, labelKey: 'act.tabWatch', Icon: Watch, active: isWatch, pick: () => onSectionChange('watch') },
                             { id: 'agents' as const, labelKey: 'act.tabAgents', Icon: Bot, active: isAgents, pick: () => onSectionChange('agents') },
+                            { id: 'answers' as const, labelKey: 'act.tabAnswers', Icon: MessageSquareReply, active: isAnswers, pick: () => onSectionChange('answers') },
                         ]).map(({ id, labelKey, Icon, active, pick }) => (
                             <button
                                 key={id}
@@ -3991,6 +3995,8 @@ export function ActivityPage({ onClose, initialSessionId, initialDate, noticedFo
                             bridgePort={bridgePort}
                             onOpenSession={openSessionInTimeline}
                         />
+                    ) : isAnswers ? (
+                        <ActivityAnswers />
                     ) : isAgents ? (
                         <div className="flex-1 overflow-y-auto">
                             <div className="mx-auto max-w-2xl px-6 py-6">
@@ -4038,7 +4044,7 @@ export function ActivityPage({ onClose, initialSessionId, initialDate, noticedFo
                         />
                     ) : null}
                     </ActivityOpenChatContext.Provider>
-                    {isWatch || isAgents || (!isTimeline && (scope === 'day' || scope === 'week')) ? null : (
+                    {isWatch || isAgents || isAnswers || (!isTimeline && (scope === 'day' || scope === 'week')) ? null : (
                     <>
                     {sessionsFailed && (
                         <ActivityInlineNotice notice={{ tone: 'error', text: t('timeline.sessionsFailed'), onAction: () => refreshSessionsRef.current() }} className="px-8 pt-4" />

@@ -9,8 +9,8 @@ import (
 
 // The answers a belief takes on About you, the portrait and New this week
 // (answer feedback v1.0.0 section 11), and the Undo each keeps until the
-// person leaves the page. That's me is ConfirmMemoryEntry and Not quite with
-// words is the Edit wording save; these are the rest.
+// person leaves the page. That's me is ConfirmMemoryEntry; these are the
+// rest.
 
 // UndoConfirmMemoryEntry is Undo after That's me on a belief.
 func (a *App) UndoConfirmMemoryEntry(id string) error {
@@ -76,6 +76,29 @@ func (a *App) UndoNotQuiteMemoryEntry(id string, confirmedAt int64) error {
 	return nil
 }
 
+// RewordMemoryEntry is Not quite with the person's own words (Edit on a
+// claim): it saves the reworded belief as a user edit and keeps the answer in
+// the answers ledger as an Edit, with the words before and after.
+func (a *App) RewordMemoryEntry(id, content, wording string) (MemoryEntry, error) {
+	before, err := a.GetMemoryEntry(id)
+	if err != nil {
+		return MemoryEntry{}, err
+	}
+	saved, err := a.SaveMemoryEntry(id, content)
+	if err != nil {
+		return saved, err
+	}
+	old := ""
+	if points := parseMemoryPoints(before.Content); len(points) > 0 {
+		old = strings.TrimSpace(points[0])
+	}
+	if _, err := a.recordAnswer(AnswerRecord{ItemID: "belief:" + id, Kind: answerKindBelief, Source: answerSourceAboutYou, Title: old, Action: workActionEdit,
+		Edited: &WorkEdited{Before: old, After: strings.TrimSpace(wording)}, Surface: workSurfaceComputer}); err != nil {
+		log.Printf("[answers] a belief's new wording was not kept: %v", err)
+	}
+	return saved, nil
+}
+
 var errMemoryWordingChanged = errors.New("memory_wording_changed")
 
 // UndoMemoryWording is Undo after Not quite with words: it puts back the
@@ -119,6 +142,7 @@ func (a *App) UndoMemoryWording(id, wording string) (MemoryEntry, error) {
 		return MemoryEntry{}, err
 	}
 	a.markMemoryDirty("wording_undo")
+	a.ledgerBeliefUndo(id)
 	return a.GetMemoryEntry(id)
 }
 

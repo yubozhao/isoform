@@ -378,6 +378,7 @@ var browserRPCAllowlist = map[string]bool{
 	"GetActivityFeed":            true,
 	"GetActivityForgetPreview":   true,
 	"GetAnswers":                 true,
+	"GetJudgmentStats":           true,
 }
 
 // browserUIStateKeys are the ui_state keys SaveUIState may write from the

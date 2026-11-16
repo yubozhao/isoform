@@ -5830,6 +5830,49 @@ export const GetActivityFeed = appBinding<[number, number], ActivityFeedRow[]>('
 export const GetActivityForgetPreview = appBinding<[ActivityFeedKind, string], ActivityForgetPreview>('GetActivityForgetPreview');
 export const ForgetActivityFeedRow = appBinding<[ActivityFeedKind, string], void>('ForgetActivityFeedRow');
 
+// The answers ledger (answers_ledger.go; PROTOCOL.md section 26.2).
+export type AnswerAction = 'yes' | 'no' | 'not_mine' | 'edit' | 'useful' | 'not_useful';
+export interface AnswerView {
+    id: string;
+    item: string;
+    kind: 'work' | 'belief' | 'portrait' | 'correction';
+    title?: string;
+    action: AnswerAction;
+    reason?: string;
+    note?: string;
+    edited?: { before: string; after: string };
+    at: string;
+    surface: 'computer' | 'phone' | 'notification' | 'chat';
+    source?: string;
+    deviceId?: string;
+    undone?: boolean;
+}
+export interface AnswersPage {
+    answers: AnswerView[];
+    next?: string;
+}
+export const GetAnswers = appBinding<[number, string], AnswersPage>('GetAnswers');
+export interface JudgmentCounts {
+    shown: number;
+    answered: number;
+    accepted: number;
+    declined: number;
+    notMine: number;
+    useful: number;
+    notUseful: number;
+    undone: number;
+}
+export interface JudgmentDay {
+    day: string;
+    total: JudgmentCounts;
+    bySource: Record<string, JudgmentCounts>;
+}
+export interface JudgmentStats {
+    days: JudgmentDay[];
+}
+export const GetJudgmentStats = appBinding<[number], JudgmentStats>('GetJudgmentStats');
+export const ForgetAnswer = appBinding<[string], void>('ForgetAnswer');
+export const RewordMemoryEntry = appBinding<[string, string, string], main.MemoryEntry>('RewordMemoryEntry');
 // "Your watch today": the day's hours as columns of talk (watch_today_lane.go).
 export interface WatchLaneHour {
     start: number;

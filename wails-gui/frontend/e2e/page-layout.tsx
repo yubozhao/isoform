@@ -13,6 +13,7 @@ import { NewThisWeek, useBeliefReview, type ReviewItem } from '@/components/abou
 const params = new URLSearchParams(location.search);
 const noop = () => {};
 const at = (h: number, m = 0) => new Date(2026, 9, 23, h, m).getTime();
+const ZERO = { shown: 0, answered: 0, accepted: 0, declined: 0, notMine: 0, useful: 0, notUseful: 0, undone: 0 };
 const reads: Record<string, unknown> = {
     GetActivityFeed: [
         { id: 'run-2', kind: 'agent', startMs: at(9, 40), endMs: at(9, 58), activeMs: 1_080_000, app: 'Codex' },
@@ -23,6 +24,12 @@ const reads: Record<string, unknown> = {
         { id: 'run-1', kind: 'agent', startMs: at(6, 0), endMs: at(6, 25), activeMs: 1_500_000, app: 'Claude' },
     ],
     GetActivitiesInRange: [], GetWatchRecordings: [], GetDayThreads: { threads: [], gaps: [], agents: { runs: 0, activeMs: 0 } },
+    GetJudgmentStats: { days: [{ day: '2026-10-23', total: { ...ZERO, shown: 9, answered: 5, accepted: 4 }, bySource: { prep: { ...ZERO, answered: 3, accepted: 3 }, brief: { ...ZERO, shown: 4, answered: 2, accepted: 1 } } }] },
+    GetAnswers: { answers: [
+        { id: 'a3', item: 'w3', kind: 'work', title: 'Reply to Lena about the Halcyon import test plan, with the slides for Thursday and the notes from the call', action: 'edit', edited: { before: 'Hi Lena', after: 'Hi Lena, the plan and the slides are attached; the review moves to Thursday afternoon.' }, at: new Date(2026, 9, 23, 9, 40).toISOString(), surface: 'computer' },
+        { id: 'a2', item: 'w2', kind: 'work', title: 'Book the venue', action: 'no', reason: 'Already done', at: new Date(2026, 9, 23, 9, 10).toISOString(), surface: 'phone', undone: true },
+        { id: 'a1', item: 'belief:x', kind: 'belief', title: 'You keep calls short before 11 AM.', action: 'yes', at: new Date(2026, 9, 22, 17, 0).toISOString(), surface: 'computer' },
+    ] },
     GetDayNoticed: [], EnsureDailySummary: { aiSummary: '', hourlyActive: [], appBreakdown: [] },
 };
 (window as any).go = { main: { App: new Proxy({}, { get: (_, method: string) => async () => reads[method] ?? null }) } };

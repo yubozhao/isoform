@@ -675,7 +675,8 @@
         "tabScreen": "Screen",
         "tabWatch": "Watch",
         "tabAgents": "Agents",
-        "closedGap": "{{start}}–{{end}} · nothing was kept"
+        "closedGap": "{{start}}–{{end}} · nothing was kept",
+        "tabAnswers": "Your answers"
     },
     "feed": {
         "label": "Timeline",
@@ -714,5 +715,52 @@
             "copies": "the copies on your phone and watch",
             "notes": "the notes made from it"
         }
+    },
+    "ans": {
+        "title": "Your answers",
+        "kept": "Kept until you delete them",
+        "loadFailed": "Your answers could not be loaded.",
+        "answered": "answered",
+        "yes": "said yes",
+        "every": "Every answer",
+        "empty": "Your answers show here once you answer something, on this computer or your phone.",
+        "untitled": "An item",
+        "more": "Show more",
+        "undone": "undone",
+        "action": {
+            "yes": "Yes",
+            "no": "No",
+            "not_mine": "Not mine",
+            "edit": "Edit",
+            "useful": "Useful",
+            "not_useful": "Not useful"
+        },
+        "surface": {
+            "computer": "On this computer",
+            "phone": "On your phone",
+            "notification": "From a notification",
+            "chat": "In chat"
+        },
+        "local": "Counted on this computer",
+        "made": "put in front of you",
+        "brief": "brief items acted on",
+        "ofCount": "{{n}} of {{m}}",
+        "sources": "Where yes comes from",
+        "sourcesMeta": "Last 14 days",
+        "rate": "{{n}} of {{m}} yes",
+        "forget": "Forget",
+        "forgetTitle": "Forget this answer?",
+        "forgetBody": "Your answer to \"{{title}}\" is deleted from this computer. Isoform may ask about it again.",
+        "forgetFailed": "Didn't forget it. Try again.",
+        "source": {
+            "prep": "For your meeting",
+            "brief": "The brief",
+            "topic": "Your topics",
+            "agent": "Your agent",
+            "about_you": "About you",
+            "chat": "Chat",
+            "other": "Other"
+        },
+        "forgetRow": "Forget: {{title}}"
     }
 }
