@@ -61,6 +61,7 @@ type mobileStatusView struct {
 	BriefRelevanceFeedback bool                `json:"briefRelevanceFeedback,omitempty"`
 	BriefAsk               bool                `json:"briefAsk,omitempty"`
 	BriefWeekDecline       bool                `json:"briefWeekDecline,omitempty"`
+	HandoffStatus          bool                `json:"handoffStatus,omitempty"`
 	NotificationTest       bool                `json:"notificationTest,omitempty"`
 	HubName                string              `json:"hubName"`
 	AppVersion             string              `json:"appVersion"`
@@ -231,6 +232,11 @@ func (bridge *mobileBridge) handleAuthorized(w http.ResponseWriter, r *http.Requ
 			return
 		}
 		bridge.serveAgentHandoff(w, r, device)
+	case "GET /agents/handoffs/status":
+		if !mobileRequireScope(w, device, mobileScopeBriefRead) {
+			return
+		}
+		bridge.serveHandoffStatuses(w)
 	case "GET /notifications":
 		if !mobileRequireScope(w, device, mobileScopePush) {
 			return
@@ -471,6 +477,12 @@ func (bridge *mobileBridge) handleAuthorized(w http.ResponseWriter, r *http.Requ
 				return
 			}
 			bridge.serveBrief(w, r, strings.TrimPrefix(path, "/briefs/"))
+		case "POST /agents/handoffs/*/ask-again", "POST /agents/handoffs/*/take-back":
+			if !mobileRequireScope(w, device, mobileScopeHandoff) {
+				return
+			}
+			parts := mobilePathSegments(path)
+			bridge.serveHandoffAction(w, r, device, parts[2], parts[3])
 		case "POST /briefs/*/received":
 			if !mobileRequireScope(w, device, mobileScopeBriefRead) {
 				return
@@ -567,6 +579,10 @@ func mobileRouteFamily(method, path string) string {
 		return "POST /topics/*/messages"
 	case len(parts) == 3 && parts[0] == "briefs" && parts[2] == "audio" && method == http.MethodGet:
 		return "GET /briefs/*/audio"
+	case len(parts) == 4 && parts[0] == "agents" && parts[1] == "handoffs" && parts[3] == "ask-again" && method == http.MethodPost:
+		return "POST /agents/handoffs/*/ask-again"
+	case len(parts) == 4 && parts[0] == "agents" && parts[1] == "handoffs" && parts[3] == "take-back" && method == http.MethodPost:
+		return "POST /agents/handoffs/*/take-back"
 	case len(parts) == 3 && parts[0] == "briefs" && parts[2] == "received" && method == http.MethodPost:
 		return "POST /briefs/*/received"
 	case len(parts) == 3 && parts[0] == "briefs" && parts[2] == "conversation" && method == http.MethodPost:
@@ -677,7 +693,7 @@ func mobileRequireScope(w http.ResponseWriter, device mobileDeviceRecord, scope 
 
 func (bridge *mobileBridge) serveStatus(w http.ResponseWriter) {
 	view := mobileStatusView{
-		HubName: mobileHubName(), AppVersion: Version, ProtocolVersion: 1, Topics: true, TopicsDaily: true, TaskThreads: true, BrainDump: true, Recordings: true, OwnerVoice: true, RecordingContext: true, RecordingDetail: true, RecordingMarks: true, Sees: true, FirstRead: true, TodayMeetingPrep: true, ChatMainSend: true, NotificationTest: true, Work: true, WorkSend: true, BriefRelevanceFeedback: true, BriefAsk: true, BriefWeekDecline: true,
+		HubName: mobileHubName(), AppVersion: Version, ProtocolVersion: 1, Topics: true, TopicsDaily: true, TaskThreads: true, BrainDump: true, Recordings: true, OwnerVoice: true, RecordingContext: true, RecordingDetail: true, RecordingMarks: true, Sees: true, FirstRead: true, TodayMeetingPrep: true, ChatMainSend: true, NotificationTest: true, Work: true, WorkSend: true, BriefRelevanceFeedback: true, BriefAsk: true, BriefWeekDecline: true, HandoffStatus: true,
 		KeepAwake: bridge.keepAwakeSetting(), InstantPush: mobileInstantPushConfigured(),
 		BriefSchedule: []mobileBriefSlotTime{},
 	}

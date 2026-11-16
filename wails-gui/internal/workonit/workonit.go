@@ -390,8 +390,11 @@ type Handoff struct {
 	SourceID   string `json:"sourceId,omitempty"`
 	Kind       string `json:"kind"`
 	AgentID    string `json:"agentId"`
-	Method     string `json:"method"`
-	Via        string `json:"via,omitempty"`
+	// AgentName is the agent's name when it went, so a joined agent's
+	// hand-offs stay readable after it disconnects.
+	AgentName string `json:"agentName,omitempty"`
+	Method    string `json:"method"`
+	Via       string `json:"via,omitempty"`
 	// Text is the task as the person saw it before Send.
 	Text string `json:"text"`
 	// Sent is what left, when it differs from Text: the one line of a task
@@ -403,6 +406,10 @@ type Handoff struct {
 	// TaskID is the task a hand-off to a coding agent on this computer
 	// started (C1).
 	TaskID string `json:"taskId,omitempty"`
+	// AskedAgainAt is the person's last Ask again; TakenBackAt their Take it
+	// back (agents-join v1.0.0 rules 22 and 23).
+	AskedAgainAt int64 `json:"askedAgainAt,omitempty"`
+	TakenBackAt  int64 `json:"takenBackAt,omitempty"`
 	// TaskState and TaskResult are read from that task when listed: running,
 	// done or failed, and its summary. They are not stored.
 	TaskState  string `json:"taskState,omitempty"`

@@ -146,9 +146,11 @@ func (a *App) GetConnectedAgents() []ConnectedAgentView {
 
 // DisconnectAgent revokes an agent's token at once.
 func (a *App) DisconnectAgent(id string) error {
+	left, _ := a.connectedAgentFor(id)
 	if err := a.agentJoinService().Revoke(id); err != nil {
 		return err
 	}
+	a.keepDisconnectedAgent(disconnectedAgent{ID: id, Name: left.Name, CatalogID: left.CatalogID, DisconnectedAt: a.agentJoinClock().UnixMilli()})
 	a.agentInboxService().Withdraw(func(item agentinbox.Item) bool { return item.AgentID == id })
 	log.Printf("[agents] %s disconnected", id)
 	return nil

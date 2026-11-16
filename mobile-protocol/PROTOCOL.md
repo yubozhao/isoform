@@ -4124,6 +4124,11 @@ The agents body:
   coding agent, not connected), `its_app`, or `by_text`. `found` says the agent's app or command
   is on the computer. `connected` stays false until agents can join (B5). `lastWorkedAt` (ms) is
   when it last took or finished a hand-off, omitted when never.
+- A joined agent that was disconnected in the last 30 days carries `disconnectedAt` (ms) while it
+  isn't connected again (phone-agent v1.2.0 rule 14): a known agent keeps its own row and `reach`;
+  any other joined agent stays listed under its own name with `reach: "disconnected"`,
+  `connected: false`. Only its name and when it left are kept, never a credential. Connect again
+  is a new join: new link, new code, new key.
 - The computer keeps each hand-off with exactly what went (the task text, the agent, how it went,
   the source and the time) on the computer, for 90 days. The person can forget one or all, and a
   withdrawn source removes its hand-offs. The phone reads it with `GET /agents/handoffs` (27.3).
@@ -4135,6 +4140,34 @@ directly: `POST /agents/handoffs` writes the task on the computer from the item'
 it in that agent's inbox, and keeps the hand-off with `surface: "phone"`. The phone sends it only on
 the person's Send. The agent's result comes back to Your work as for any hand-off. An agent that
 isn't connected answers 409; the phone then uses its own sheet (copy and open, or Messages).
+
+### 27.2 Hand-off status (agents-join v1.0.0 section 7, phone-agent v1.2.1)
+
+`/status` carries `handoffStatus: true` when these routes exist. The phone says only what the
+computer knows, in the same words as the computer's Agents page; it never estimates.
+
+| Route | Scope | Body | Answer |
+|---|---|---|---|
+| `GET /agents/handoffs/status` | `brief:read` | none | 200 `{"handoffs":[status]}`, newest first |
+| `POST /agents/handoffs/{id}/ask-again` | `handoff:create` | `{"idempotencyKey"}` | 200 the status; 404 unknown id; 409 already back or taken back (body is the current status), or Closed Eyes on |
+| `POST /agents/handoffs/{id}/take-back` | `handoff:create` | `{"idempotencyKey"}` | 200 the status (`taken_back`); 404 unknown id; 409 already back or taken back |
+
+A status:
+
+```json
+{"id": "wo_1", "agentId": "codex", "agentName": "Codex", "title": "Draft the launch note", "sentAt": 1763229000000, "state": "working", "line": "Drafting the intro.", "since": 0}
+```
+
+- `state` is one of `sent`, `opened` (opened in its app with the task; never shown as working),
+  `has_it` (the agent read it), `working` (only while Isoform sees its process run, or with the
+  agent's own progress `line`), `back` (`line` is its summary), `no_word` (two hours with no sign
+  of life; `since` is the last one), `couldnt_start` (`line` says why), `taken_back` (`since`
+  is when). New states may appear; a phone shows an unknown one as `sent`.
+- Ask again re-offers the work (an inbox agent sees it as new, an agent on the computer is
+  started again) and starts the two hours over. Take it back withdraws it from the agent's inbox
+  and task link, stops a task running on the computer, and marks the record not done. It doesn't
+  promise the agent stopped; what it already made stays with it.
+- Retries with the same key are answered from the receipt.
 
 ### 27.3 Sent to your agents (additive, 2026-11-15)
 
