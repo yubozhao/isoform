@@ -265,6 +265,19 @@
         "unread": "未读"
     },
     "searchDialog": {
+        "findSource": {
+            "brief": "来自简报",
+            "topic": "来自你的主题",
+            "prep": "会议准备",
+            "agent": "来自你的代理",
+            "activity": "Isoform 看到的",
+            "about_you": "关于你",
+            "watch": "来自你的手表",
+            "chat": "来自聊天"
+        },
+        "forget": "忘掉",
+        "forgetFailed": "没能忘掉，请重试。",
+        "findFoot": "你搜索的内容保存在这台电脑上，可在“动态”里看到。",
         "title": "搜索与命令",
         "description": "搜索你的主题、对话、活动、人物和设置，或运行一条命令。",
         "placeholder": "搜索或运行命令",
@@ -288,6 +301,9 @@
             "words": "搜索内容中的文字，而不只是标题"
         },
         "groups": {
+            "conversations": "对话",
+            "claims": "判断",
+            "answers": "你的回答",
             "ready": "待处理",
             "recent": "最近",
             "actions": "操作",

@@ -265,6 +265,19 @@
         "unread": "Unread"
     },
     "searchDialog": {
+        "findSource": {
+            "brief": "From the brief",
+            "topic": "From your topics",
+            "prep": "Meeting prep",
+            "agent": "From your agents",
+            "activity": "What Isoform saw",
+            "about_you": "About you",
+            "watch": "From your watch",
+            "chat": "From Chat"
+        },
+        "forget": "Forget",
+        "forgetFailed": "Couldn't forget it. Try again.",
+        "findFoot": "What you search for is kept on this computer, in Activity.",
         "title": "Search and commands",
         "description": "Search your topics, chats, activity, people and settings, or run a command.",
         "placeholder": "Search or run a command",
@@ -288,6 +301,9 @@
             "words": "Searches the words, not just titles"
         },
         "groups": {
+            "conversations": "Conversations",
+            "claims": "Claims",
+            "answers": "Your answers",
             "ready": "Ready",
             "recent": "Recent",
             "actions": "Actions",

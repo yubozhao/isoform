@@ -219,6 +219,31 @@ describe("SearchDialog (search and commands)", () => {
         expect(actions.openToday).toHaveBeenCalled();
     });
 
+    it("shows what FindAnything found, in its groups, and keeps the search once a result opens", async () => {
+        binding("FindAnything").mockResolvedValue({ query: "lena", failedGroups: [], groups: [
+            { group: "conversations", results: [{ id: "c1", group: "conversations", title: "Call with Lena", snippet: "the budget", target: { kind: "activity", at: 1000 } }] },
+            { group: "people", results: [{ id: "p1", group: "people", title: "Lena Ortiz", target: { kind: "person", id: "lena" } }] },
+            { group: "claims", results: [{ id: "b1", group: "claims", title: "Lena runs Halcyon", target: { kind: "belief", id: "m1" }, forget: { kind: "belief", id: "m1" } }] },
+        ] });
+        const { actions } = await renderSearch();
+        await type("lena");
+        await act(async () => { await new Promise((resolve) => setTimeout(resolve, 400)); });
+        expect(headings()).toEqual(expect.arrayContaining(["Conversations", "Who you know", "Claims"]));
+        expect(headings()[0]).toBe("Conversations");
+        expect(headings().indexOf("Conversations")).toBeLessThan(headings().indexOf("Claims"));
+        expect(screen.getByTestId("find-foot")).toHaveTextContent("What you search for is kept on this computer, in Activity.");
+        // A belief forgets with its preview's token; a person has no Forget.
+        binding("GetMemoryForgetPreview").mockResolvedValue({ confirmationToken: "tok" });
+        binding("ForgetFound").mockResolvedValue(undefined);
+        expect(screen.getAllByTestId("find-forget")).toHaveLength(1);
+        await act(async () => { fireEvent.click(screen.getByTestId("find-forget")); });
+        expect(binding("ForgetFound")).toHaveBeenCalledWith("belief", "m1", "tok");
+        expect(screen.queryByText("Lena runs Halcyon")).toBeNull();
+        await act(async () => { fireEvent.click(screen.getByText("Lena Ortiz")); });
+        expect(actions.openPerson).toHaveBeenCalledWith("lena");
+        expect(binding("NoteFindSearch")).toHaveBeenCalledWith("lena");
+    });
+
     it("replaces an empty cold bootstrap after topics are published", async () => {
         binding("GetTodayTopics").mockResolvedValueOnce({ topics: [], refreshing: true });
         await renderSearch();
