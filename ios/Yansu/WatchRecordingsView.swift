@@ -111,6 +111,8 @@ final class WatchRecordingsModel: ObservableObject {
     @Published private(set) var outcome: WatchRecordingForwarder.Outcome = .drained
     @Published private(set) var onWatch: [WatchRecordingSummary] = []
     @Published var connection: WatchConnection = .unknown
+    /// What the watch last said it is doing; nil until it has said.
+    @Published var watchStatus: WatchLiveStatus?
     @Published private(set) var lastChecked: Date?
     @Published var syncing = false
     /// Deleted here a moment ago: hidden even if the watch still lists it.
@@ -152,6 +154,13 @@ final class WatchRecordingsModel: ObservableObject {
 
     /// The Watch page has something to show.
     var worthShowing: Bool { connection.hasWatch || !recordings.isEmpty || !onWatch.isEmpty }
+
+    /// The "Your watch" card on Today shows whenever Isoform is on the watch, also before any
+    /// recording has arrived, so the watch's page is one tap from the main screen.
+    var showsTodayCard: Bool {
+        if case .ready = connection { return true }
+        return !recordings.isEmpty || !onWatch.isEmpty
+    }
 
     func show(_ recordings: [PhoneRecording], outcome: WatchRecordingForwarder.Outcome?) {
         self.recordings = recordings
@@ -272,6 +281,33 @@ enum WatchRecordingsCopy {
         if raw == "you" { return String(localized: "You", comment: "Speaker label for the owner in a transcript") }
         let number = raw.hasPrefix("speaker_") ? String(raw.dropFirst("speaker_".count)) : raw
         return String(localized: "Speaker \(number)", comment: "Speaker label for another voice in a transcript")
+    }
+
+    /// What the watch is doing right now, for the card on Today.
+    static func status(_ status: WatchLiveStatus?) -> String {
+        switch status {
+        case .recording?: return String(localized: "Recording", comment: "Watch status on the phone: the watch is recording now")
+        case .waitingForMicrophone?:
+            return String(localized: "Waiting for the microphone", comment: "Watch status on the phone: a call or Siri has the watch's microphone")
+        case .pausedOnComputer?:
+            return String(localized: "Paused on your computer", comment: "Watch status on the phone: observing is paused on the computer, so the watch does not record")
+        case .pausedOnWatch?: return String(localized: "Paused", comment: "Watch status on the phone: the wearer paused Isoform from the watch")
+        case .stoppedToday?: return String(localized: "Stopped for today", comment: "Watch status on the phone: the wearer stopped recording; it starts again tomorrow")
+        case .microphoneOff?:
+            return String(localized: "Allow the microphone on your watch", comment: "Watch status on the phone: the microphone is off for Isoform on the watch")
+        case .notRecording?: return String(localized: "Not recording", comment: "Watch status on the phone: the watch is not recording")
+        case nil:
+            return String(localized: "Open Isoform on your watch to start", comment: "Watch status on the phone before the watch has said what it is doing")
+        }
+    }
+
+    /// The newest hour the watch kept and where it is: "10 AM · 48 min · Transcribed".
+    static func lastHour(_ rows: [WatchRecordingRow]) -> String {
+        guard let row = rows.first else {
+            return String(localized: "Nothing recorded yet.", comment: "Watch page summary with no recordings")
+        }
+        let hour = row.startedAt.formatted(.dateTime.hour())
+        return "\(hour) · \(minutes(row.durationSeconds)) · \(row.namesLine ?? stage(row.stage))"
     }
 
     /// "Today", "Yesterday", or the date, over a day's hours.
@@ -704,17 +740,33 @@ struct WatchRecordingDetailView: View {
 }
 
 /// The door to the Watch page on Today: one line, only while a recording has not reached the computer.
+/// "Your watch" on Today: what the watch is doing now and the last hour it kept. Tapping it opens
+/// the watch's page. It shows whenever Isoform is on the watch. A plain card on purpose; design's
+/// "Your watch today" (hours as columns) replaces it.
 struct WatchRecordingsTodayLine: View {
     @ObservedObject var model: WatchRecordingsModel
     @State private var open = false
 
     var body: some View {
-        if let line = WatchRecordingsCopy.todayLine(model.rows) {
+        if model.showsTodayCard {
+            let rows = model.rows
             Button {
                 open = true
             } label: {
                 HStack(spacing: 8) {
-                    Text(line).font(.footnote).foregroundStyle(YansuTheme.ink).multilineTextAlignment(.leading)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Your watch", comment: "Title of the card on Today that opens the watch's page")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(YansuTheme.tertiary)
+                        Text(WatchRecordingsCopy.status(model.watchStatus))
+                            .font(.body)
+                            .foregroundStyle(YansuTheme.ink)
+                            .accessibilityIdentifier("today.watch.status")
+                        Text(WatchRecordingsCopy.todayLine(rows) ?? WatchRecordingsCopy.lastHour(rows))
+                            .font(.footnote)
+                            .foregroundStyle(YansuTheme.secondary)
+                            .multilineTextAlignment(.leading)
+                    }
                     Spacer(minLength: 4)
                     Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(YansuTheme.tertiary)
                 }

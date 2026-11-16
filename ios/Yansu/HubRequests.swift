@@ -324,6 +324,12 @@ struct HubStatus: Decodable, Equatable, Sendable {
     var recordingContext: Bool? = nil
     /// The computer serves a recording's transcript and its delete (PROTOCOL.md 24.5). Older computers omit it.
     var recordingDetail: Bool? = nil
+    /// The computer takes the moments the wearer marked in a part (PROTOCOL.md 24.9).
+    var recordingMarks: Bool? = nil
+    /// The phone may pause observing on the computer and end a pause it started (PROTOCOL.md 24.10).
+    var observingPauseControl: Bool? = nil
+    /// Set while observing is paused on the computer (PROTOCOL.md 24.8).
+    var observingPause: ObservingPauseView? = nil
     var briefSchedule: [ScheduledPhoneBrief]? = nil
     /// The computer serves Your work, the one list (B2), and its answers (B3). Older computers omit it.
     var work: Bool? = nil
@@ -979,5 +985,16 @@ extension HubChannel {
             throw HubRequestError.malformedResponse
         }
         return try await perform(.write(path: path, body: text)).payload(type)
+    }
+}
+
+/// The computer's word that observing is paused there (PROTOCOL.md 24.8). Both times are
+/// optional: a pause with no end has no `until`.
+struct ObservingPauseView: Decodable, Equatable, Sendable {
+    var since: String? = nil
+    var until: String? = nil
+
+    var pause: WatchPause {
+        WatchPause(since: since.flatMap(RecordingTime.parse), until: until.flatMap(RecordingTime.parse))
     }
 }

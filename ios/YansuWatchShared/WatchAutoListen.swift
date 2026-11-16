@@ -47,9 +47,12 @@ enum WatchAutoListen {
 
     /// What the watch does when its app comes to the front.
     static func step(consentSeen: Bool, microphone: Microphone, stoppedByWearer: Bool,
-                     isRecording: Bool, heldByInterruption: Bool) -> Step {
+                     isRecording: Bool, heldByInterruption: Bool, pausedOnComputer: Bool = false) -> Step {
         // Nothing is recorded before the wearer has read where recordings go.
         guard consentSeen else { return .nothing }
+        // One pause covers all of Isoform: while observing is paused on the computer the watch
+        // neither starts nor takes the microphone back.
+        if pausedOnComputer { return .nothing }
         if isRecording { return heldByInterruption ? .resume : .nothing }
         if stoppedByWearer { return .nothing }
         switch microphone {

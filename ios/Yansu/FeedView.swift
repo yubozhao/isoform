@@ -158,7 +158,7 @@ struct FeedView: View {
 
     var body: some View {
         content(now: Date())
-        // Shown only while a watch recording has not reached the computer.
+        // "Your watch": shown whenever Isoform is on the watch; it opens the watch's page.
         .safeAreaInset(edge: .top, spacing: 0) {
             WatchRecordingsTodayLine(model: WatchRecordingsModel.shared)
         }

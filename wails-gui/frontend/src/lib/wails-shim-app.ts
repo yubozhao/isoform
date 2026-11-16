@@ -5830,6 +5830,20 @@ export const GetActivityFeed = appBinding<[number, number], ActivityFeedRow[]>('
 export const GetActivityForgetPreview = appBinding<[ActivityFeedKind, string], ActivityForgetPreview>('GetActivityForgetPreview');
 export const ForgetActivityFeedRow = appBinding<[ActivityFeedKind, string], void>('ForgetActivityFeedRow');
 
+// "Your watch today": the day's hours as columns of talk (watch_today_lane.go).
+export interface WatchLaneHour {
+    start: number;
+    recordedSeconds: number;
+    talkSeconds: number;
+    pausedSeconds: number;
+    current: boolean;
+}
+export interface WatchLane {
+    dayStart: number;
+    hours: WatchLaneHour[];
+}
+export const GetWatchLane = appBinding<[], WatchLane>('GetWatchLane');
+
 export interface MeetingCallTurn {
     speakerId: string;
     name: string;

@@ -619,6 +619,16 @@
         "nav": "来自你的手表",
         "title": "来自你的手表",
         "subtitle": "手表上的录音，与你的其他录音一起保存在这台电脑上。",
+        "lane": {
+            "title": "今天的手表",
+            "now": "现在",
+            "hourTalk_one": "{{hour}}：{{count}} 分钟的谈话",
+            "hourTalk_other": "{{hour}}：{{count}} 分钟的谈话",
+            "hourTalkPaused": "{{hour}}：{{talk}} 分钟的谈话。暂停了 {{paused}} 分钟。",
+            "hourPaused_one": "{{hour}}：暂停了 {{count}} 分钟",
+            "hourPaused_other": "{{hour}}：暂停了 {{count}} 分钟",
+            "hourQuiet": "{{hour}}：安静"
+        },
         "conversations": "对话",
         "hours": "按小时",
         "conversationRange": "{{start}} 至 {{end}}",

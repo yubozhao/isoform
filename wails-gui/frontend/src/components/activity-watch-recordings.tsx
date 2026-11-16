@@ -4,6 +4,7 @@ import { Bookmark, ChevronDown, ChevronUp, Film, Trash2 } from 'lucide-react';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { ActivityInlineNotice } from '@/components/activity-inline-notice';
 import { hostBridgeMediaURL } from '@/lib/host-bridge-media';
+import { ActivityWatchLane } from '@/components/activity-watch-lane';
 import {
     DeleteWatchRecording,
     GetWatchConversations,
@@ -136,6 +137,7 @@ export function ActivityWatchRecordings({
                     <h2 className="text-[17px] font-semibold text-ink">{t('watch.title')}</h2>
                     <p className="mt-1 text-[12.5px] text-muted">{t('watch.subtitle')}</p>
                 </header>
+                <ActivityWatchLane />
                 {failed && (
                     <ActivityInlineNotice notice={{ tone: 'error', text: t('watch.loadFailed'), onAction: load }} />
                 )}

@@ -33,6 +33,8 @@ struct RecordingPartRequest: Encodable, Equatable, Sendable {
     var device: Device?
     /// Heart rate and coarse location of the part (24.4), only for a computer that takes it.
     var context: WatchRecordingContext?
+    /// The moments the wearer marked in the part (24.9), only for a computer that takes them.
+    var marks: [Double]?
 }
 
 /// The computer's view of a recording (24.3).
@@ -73,9 +75,22 @@ protocol RecordingHubAPI: Sendable {
     func recordingDetailAvailable() async throws -> Bool
     func recordingTranscript(id: String) async throws -> RecordingTranscript
     func deleteRecording(id: String) async throws -> RecordingView
+    /// Whether observing is paused on the computer, and since when (PROTOCOL.md 24.8).
+    func observingPause() async throws -> WatchPause?
+    /// The computer takes the moments the wearer marked in a part (PROTOCOL.md 24.9).
+    func recordingMarksAvailable() async throws -> Bool
+    /// The phone may pause the computer (PROTOCOL.md 24.10).
+    func observingPauseControlAvailable() async throws -> Bool
+    func pauseObserving(minutes: Int) async throws
+    func resumeObserving() async throws
 }
 
 extension RecordingHubAPI {
+    func observingPauseControlAvailable() async throws -> Bool { false }
+    func pauseObserving(minutes: Int) async throws { throw HubRequestError.invalidIdentifier }
+    func resumeObserving() async throws { throw HubRequestError.invalidIdentifier }
+    func recordingMarksAvailable() async throws -> Bool { false }
+    func observingPause() async throws -> WatchPause? { nil }
     func recordingDetailAvailable() async throws -> Bool { false }
     func recordingTranscript(id: String) async throws -> RecordingTranscript { throw HubRequestError.invalidIdentifier }
     func deleteRecording(id: String) async throws -> RecordingView { throw HubRequestError.invalidIdentifier }
@@ -84,6 +99,17 @@ extension RecordingHubAPI {
 extension HubChannel: RecordingHubAPI {
     func recordingsAvailable() async throws -> Bool { try await status().recordings == true }
     func recordingContextAvailable() async throws -> Bool { try await status().recordingContext == true }
+    func observingPause() async throws -> WatchPause? { try await status().observingPause?.pause }
+    func recordingMarksAvailable() async throws -> Bool { try await status().recordingMarks == true }
+    func observingPauseControlAvailable() async throws -> Bool { try await status().observingPauseControl == true }
+
+    func pauseObserving(minutes: Int) async throws {
+        _ = try await perform(.write(path: "/observing/pause", body: "{\"minutes\":\(minutes)}"))
+    }
+
+    func resumeObserving() async throws {
+        _ = try await perform(.write(path: "/observing/resume", body: "{}"))
+    }
 
     func postRecording(_ request: RecordingPartRequest) async throws -> RecordingView {
         let body = try JSONEncoder().encode(request)
@@ -278,6 +304,9 @@ actor WatchRecordingForwarder {
     private var onStates: (@Sendable ([String: WatchRecordingRemoteState], [String: [String]]) -> Void)?
     /// What the computer named the conversations in each recording.
     private var names: [String: [String]] = [:]
+    /// Observing is paused on the computer, as it last said. Not kept across launches: a pause is
+    /// asked about again rather than remembered.
+    private(set) var pause: WatchPause?
 
     private struct Stored: Codable {
         var order: [String]
@@ -446,6 +475,12 @@ actor WatchRecordingForwarder {
         if pending.contains(where: { $0.info.context != nil }) {
             takesContext = (try? await hub.recordingContextAvailable()) ?? false
         }
+        // The same holds for marks. With a computer that does not take them the part goes
+        // without: the words matter more than the marks.
+        var takesMarks = false
+        if pending.contains(where: { $0.info.marks != nil }) {
+            takesMarks = (try? await hub.recordingMarksAvailable()) ?? false
+        }
         for item in pending {
             do {
                 sending = item.info.recordingID
@@ -454,7 +489,7 @@ actor WatchRecordingForwarder {
                     sending = nil
                     onActivity?()
                 }
-                try await send(item, withContext: takesContext)
+                try await send(item, withContext: takesContext, withMarks: takesMarks)
             } catch HubRequestError.rejected(let status, _) where status == 400 {
                 // The computer says this part is not valid. Count it and move on; the audio stays.
                 inbox.refused(item)
@@ -470,7 +505,7 @@ actor WatchRecordingForwarder {
         return .drained
     }
 
-    private func send(_ item: WatchRecordingInbox.Pending, withContext: Bool) async throws {
+    private func send(_ item: WatchRecordingInbox.Pending, withContext: Bool, withMarks: Bool = false) async throws {
         let context = try session()
         let info = item.info
         let plaintext = try Data(contentsOf: inbox.audioURL(info), options: .mappedIfSafe)
@@ -488,7 +523,7 @@ actor WatchRecordingForwarder {
             last: info.last, upload: upload, sha256: RelayCrypto.sha256Hex(plaintext), bytes: plaintext.count,
             mime: WatchRecordingWire.mime, startedAt: RecordingTime.format(info.startedAt),
             durationSeconds: info.durationSeconds, source: "watch", device: info.model.map { .init(model: $0) },
-            context: withContext ? info.context : nil)
+            context: withContext ? info.context : nil, marks: withMarks ? info.marks : nil)
         let view: RecordingView
         do {
             view = try await hub.postRecording(request)
@@ -515,7 +550,51 @@ actor WatchRecordingForwarder {
 
     /// Asks the computer about recordings that are across: whether they are transcribed yet, and
     /// whether one was deleted there (then it is deleted here and on the watch too).
+    /// Asks the computer whether observing is paused there, and tells the watch when that
+    /// changed. A computer that cannot be reached leaves the last word standing.
+    func refreshPause() async {
+        let asked: WatchPause?
+        do {
+            asked = try await hub.observingPause()
+        } catch {
+            return
+        }
+        guard asked != pause else { return }
+        pause = asked
+        onStates?(states, names)
+    }
+
+    func currentPause() -> WatchPause? { pause }
+
+    /// How many pause requests of the watch were carried; sent along so the watch hears each answer.
+    private(set) var pauseSerial = 0
+
+    /// The watch asked to pause Isoform, or to end the pause it started. The phone asks the
+    /// computer, then reads what holds there and tells the watch. A computer that does not take
+    /// this, or cannot be reached, leaves the watch with its own pause. It returns whether the
+    /// computer was asked.
+    @discardableResult
+    func carry(_ request: WatchPauseRequest) async -> Bool {
+        defer {
+            // Tell the watch what holds now, also when nothing changed.
+            pauseSerial += 1
+            onStates?(states, names)
+        }
+        guard (try? await hub.observingPauseControlAvailable()) == true else { return false }
+        do {
+            switch request {
+            case .pause(let minutes): try await hub.pauseObserving(minutes: minutes)
+            case .resume: try await hub.resumeObserving()
+            }
+        } catch {
+            // A pause made at the computer is not the phone's to end (409): what holds is read below.
+        }
+        await refreshPause()
+        return true
+    }
+
     func refreshStates() async {
+        await refreshPause()
         let across = order.reversed().filter { id in
             guard let state = states[id] else { return false }
             return state == .onComputer || state == .transcribed || (state == .failed && inbox.audio(recordingID: id).urls.isEmpty)
@@ -591,5 +670,11 @@ enum RecordingTime {
         formatter.formatOptions = [.withInternetDateTime]
         formatter.timeZone = TimeZone(identifier: "UTC")
         return formatter.string(from: date)
+    }
+
+    static func parse(_ text: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: text)
     }
 }

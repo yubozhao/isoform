@@ -1148,6 +1148,7 @@ export const DeleteWatchRecording = makeNoop("DeleteWatchRecording");
 export const CorrectActivityPerson = makeNoop("CorrectActivityPerson");
 export const CorrectBriefPerson = makeNoop("CorrectBriefPerson");
 export const GetWatchConversations = makeNoop("GetWatchConversations");
+export const GetWatchLane = makeNoop("GetWatchLane");
 export const GetActivityFeed = makeNoop("GetActivityFeed");
 export const GetActivityForgetPreview = makeNoop("GetActivityForgetPreview");
 export const ForgetActivityFeedRow = makeNoop("ForgetActivityFeedRow");

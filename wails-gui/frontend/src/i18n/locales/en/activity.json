@@ -619,6 +619,16 @@
         "nav": "From your watch",
         "title": "From your watch",
         "subtitle": "Recordings from your watch, kept on this computer with your other recordings.",
+        "lane": {
+            "title": "Your watch today",
+            "now": "Now",
+            "hourTalk_one": "{{hour}}: {{count}} min of talk",
+            "hourTalk_other": "{{hour}}: {{count}} min of talk",
+            "hourTalkPaused": "{{hour}}: {{talk}} min of talk. Paused for {{paused}} min.",
+            "hourPaused_one": "{{hour}}: paused for {{count}} min",
+            "hourPaused_other": "{{hour}}: paused for {{count}} min",
+            "hourQuiet": "{{hour}}: quiet"
+        },
         "conversations": "Conversations",
         "hours": "Hours",
         "conversationRange": "{{start}} to {{end}}",
