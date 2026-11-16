@@ -65,6 +65,10 @@ type MobileBriefAudio struct {
 	// binding is the text the recording speaks (mobileBriefAudioBinding).
 	// It stays on this computer, beside the stored brief.
 	binding string
+	// question is the Monday week question the recording asks, when it asks
+	// one, so answering it does not take the recording away
+	// (mobileBriefAudioAcrossWeekAnswer). It stays on this computer.
+	question *MorningBriefWeekQuestion
 }
 
 // MobileBriefAudioParagraph is where one written paragraph starts in the

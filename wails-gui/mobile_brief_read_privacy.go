@@ -178,7 +178,11 @@ func (a *App) mobileBriefForProjectionWithholding(ctx context.Context, brief Mob
 	brief = mobileBriefWithoutHoldOffer(brief)
 	brief.WeekQuestion = a.morningBriefWeekQuestion(brief, time.Now())
 	brief.ConversationKey = mobileBriefConversationKey(brief)
+	recorded := brief.Audio
 	brief.Audio = mobileBriefAudioForRead(brief)
+	if brief.Audio == nil {
+		brief.Audio = mobileBriefAudioAcrossWeekAnswer(brief, recorded, a.mobileBriefExclusions())
+	}
 	if played, ok := a.mobileBriefBuiltRecordingPlayed(brief, stored); ok {
 		brief = played
 	}

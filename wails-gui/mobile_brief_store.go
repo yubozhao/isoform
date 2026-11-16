@@ -87,10 +87,11 @@ type storedMobileBrief struct {
 	OwnVoiceFacts   bool                        `json:"ownVoiceFacts,omitempty"`
 	GenerationDebug *mobileBriefGenerationDebug `json:"generationDebug,omitempty"`
 	MobileBriefV1
-	AttendanceSourceSessions map[string][]string `json:"attendanceSourceSessions,omitempty"`
-	AudioBinding             string              `json:"audioBinding,omitempty"`
-	WeekLead                 string              `json:"weekLead,omitempty"`
-	WeekLeadFacts            string              `json:"weekLeadFacts,omitempty"`
+	AttendanceSourceSessions map[string][]string       `json:"attendanceSourceSessions,omitempty"`
+	AudioBinding             string                    `json:"audioBinding,omitempty"`
+	AudioQuestion            *MorningBriefWeekQuestion `json:"audioQuestion,omitempty"`
+	WeekLead                 string                    `json:"weekLead,omitempty"`
+	WeekLeadFacts            string                    `json:"weekLeadFacts,omitempty"`
 }
 
 func marshalStoredMobileBrief(brief MobileBriefV1) ([]byte, error) {
@@ -98,6 +99,7 @@ func marshalStoredMobileBrief(brief MobileBriefV1) ([]byte, error) {
 		AttendanceSourceSessions: map[string][]string{}, WeekLead: brief.WeekLead, WeekLeadFacts: brief.WeekLeadFacts}
 	if brief.Audio != nil {
 		stored.AudioBinding = brief.Audio.binding
+		stored.AudioQuestion = brief.Audio.question
 	}
 	for _, row := range brief.MeetingAttendance {
 		if row.sourceSessionIDs != nil {
@@ -121,6 +123,7 @@ func unmarshalStoredMobileBrief(data []byte, brief *MobileBriefV1) error {
 	brief.WeekLead, brief.WeekLeadFacts = stored.WeekLead, stored.WeekLeadFacts
 	if brief.Audio != nil {
 		brief.Audio.binding = stored.AudioBinding
+		brief.Audio.question = stored.AudioQuestion
 	}
 	for i := range brief.MeetingAttendance {
 		brief.MeetingAttendance[i].sourceSessionIDs = stored.AttendanceSourceSessions[brief.MeetingAttendance[i].EventID]
@@ -454,7 +457,9 @@ func (s *mobileBriefStore) sweepLocked(now time.Time) {
 		}
 		switch filepath.Ext(id) {
 		case ".json", mobileBriefAudioExtM4A, mobileBriefAudioExtWAV,
-			mobileBriefPackageExt, mobileBriefPackageMetaExt, mobileBriefPackageSrcExt, mobileBriefSealStateExt, mobileBriefBuiltExt:
+			mobileBriefPackageExt, mobileBriefPackageMetaExt, mobileBriefPackageSrcExt, mobileBriefSealStateExt, mobileBriefBuiltExt,
+			// The sealed copy holds the brief's words: it goes with its brief.
+			mobileBriefFinishedReadExt:
 			id = strings.TrimSuffix(id, filepath.Ext(id))
 		default:
 			continue
