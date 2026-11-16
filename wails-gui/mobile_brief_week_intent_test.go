@@ -236,6 +236,9 @@ func TestLegacyMorningWeekAnswerProjection(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc, _ := newTestMobileBriefService(t, &fakeMobileBriefClock{now: now})
+	// The week is the app's local week; the test helper's UTC zone put "this
+	// week" a week ahead every Sunday evening (UTC is already Monday).
+	svc.location = time.Local
 	svc.app.mobileBriefSvc = svc
 	work, err := handoff.NewStore(t.TempDir())
 	if err != nil {

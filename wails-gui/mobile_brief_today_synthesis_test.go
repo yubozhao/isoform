@@ -43,7 +43,7 @@ func TestMobileBriefTodayRefreshWithdrawsSynthesisBeforeDiscardingSources(t *tes
 						pSourceID = detail.OpenLoop.ID
 					}
 					now = time.Now()
-					in := mobileBriefInput{Slot: mobileBriefSlotMorning, AsOf: now, WindowStart: now.Add(-time.Hour), Location: time.UTC}
+					in := mobileBriefInput{Slot: mobileBriefSlotMorning, AsOf: now, WindowStart: now.Add(-time.Hour), Location: time.Local, Timezone: mobileBriefTimezoneName(time.Local)}
 					collectMobileBriefToday(app, &in)
 					collectMobileBriefTodayPurposes(app, &in)
 					base := buildMobileBriefV1(in)
@@ -71,7 +71,7 @@ func TestMobileBriefTodayRefreshWithdrawsSynthesisBeforeDiscardingSources(t *tes
 					base.DayShape = &MobileBriefDay{ActiveMinutes: 73, TopApps: []MobileBriefAppTime{{Name: "Editor", ActiveMinutes: 73}}}
 					base.Counts = MobileBriefCounts{OpenLoopsByKind: map[string]int{"old_synthesis": 37}, LearningItems: 29}
 					svc := newMobileBriefService(app)
-					svc.location = time.UTC
+					svc.location = time.Local
 					svc.now = func() time.Time { return now }
 					app.mobileBriefSvc = svc
 					if err := svc.store.save(base, now); err != nil {

@@ -49,6 +49,12 @@ func TestPhoneTodayReadsEachRecentWrittenBriefOnce(t *testing.T) {
 	app := &App{}
 	app.mobileBriefSvc = src
 	bridge := newMobileBriefPrivacyBridge(t, app)
+	// The bridge warms its own Today in the background through the same
+	// source; hold that build off (or wait out one in flight) so only this
+	// pass's reads are counted. The count raced it before.
+	bridge.today.buildMu.Lock()
+	defer bridge.today.buildMu.Unlock()
+	clear(src.reads)
 	briefs := bridge.todayBriefs(src, now, MobileBriefSchedule{})
 	if len(briefs) != len(recent) {
 		t.Fatalf("listed %d briefs, want %d", len(briefs), len(recent))
