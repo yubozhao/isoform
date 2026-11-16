@@ -6,8 +6,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -248,33 +250,81 @@ func (a *App) derivedDiskSave(view derivedViewName, key string, raw []byte, at t
 // derivedDiskLoad returns a saved snapshot only when its stamp matches the
 // current one. A copy from another stamp is deleted, never served.
 func (a *App) derivedDiskLoad(view derivedViewName, key string) ([]byte, time.Time, bool) {
+	var t derivedDiskLoadTiming
+	raw, at, result := a.derivedDiskLoadTimed(view, key, &t)
+	// Code identifiers and timings only: which view, why it missed, and where
+	// a slow first read after a launch spent its time.
+	log.Printf("[perf] derived_disk view=%s result=%s ms=%d stamp_ms=%d lock_ms=%d read_ms=%d sources_ms=%d",
+		view, result, time.Since(t.start).Milliseconds(), t.stamp.Milliseconds(), t.lock.Milliseconds(), t.read.Milliseconds(), t.sources.Milliseconds())
+	return raw, at, result == "hit"
+}
+
+// derivedDiskCaller names the function that asked for a drop (a code
+// identifier), so a launch that finds no saved copies shows who removed them.
+func derivedDiskCaller() string {
+	names := make([]string, 0, 2)
+	for skip := 2; skip <= 3; skip++ {
+		pc, _, _, ok := runtime.Caller(skip)
+		if !ok {
+			break
+		}
+		name := runtime.FuncForPC(pc).Name()
+		names = append(names, name[strings.LastIndex(name, ".")+1:])
+	}
+	return strings.Join(names, "<")
+}
+
+type derivedDiskLoadTiming struct {
+	start                      time.Time
+	stamp, lock, read, sources time.Duration
+}
+
+func (a *App) derivedDiskLoadTimed(view derivedViewName, key string, t *derivedDiskLoadTiming) ([]byte, time.Time, string) {
+	t.start = time.Now()
 	stamp, ok := a.derivedDiskStamp()
+	t.stamp = time.Since(t.start)
 	if !ok {
-		return nil, time.Time{}, false
+		return nil, time.Time{}, "no_stamp"
 	}
 	path, err := derivedDiskPath(view, key)
 	if err != nil {
-		return nil, time.Time{}, false
+		return nil, time.Time{}, "no_path"
 	}
+	lockStart := time.Now()
 	derivedDiskMu.Lock()
 	defer derivedDiskMu.Unlock()
+	t.lock = time.Since(lockStart)
+	readStart := time.Now()
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, time.Time{}, false
+		t.read = time.Since(readStart)
+		return nil, time.Time{}, "missing"
 	}
 	var file derivedDiskFile
-	if json.Unmarshal(data, &file) != nil || file.Version != derivedDiskVersion ||
-		file.View != string(view) || file.Key != key || file.Stamp != stamp || len(file.Raw) == 0 {
+	decoded := json.Unmarshal(data, &file) == nil
+	t.read = time.Since(readStart)
+	if !decoded || file.Version != derivedDiskVersion || file.View != string(view) || file.Key != key || len(file.Raw) == 0 {
 		_ = os.Remove(path)
-		return nil, time.Time{}, false
+		return nil, time.Time{}, "invalid"
+	}
+	if file.Stamp != stamp {
+		_ = os.Remove(path)
+		return nil, time.Time{}, "stamp_changed"
 	}
 	// A source deleted since the build (in the app, in Finder, by a sync
 	// tool, while the app was closed) means the copy may still show it.
-	if now, ok := a.derivedDiskSourcesNow(); !ok || !derivedDiskSourcesRemain(file.Sources, now) {
+	sourcesStart := time.Now()
+	now, ok := a.derivedDiskSourcesNow()
+	t.sources = time.Since(sourcesStart)
+	if !ok {
 		_ = os.Remove(path)
-		return nil, time.Time{}, false
+		return nil, time.Time{}, "sources_unread"
 	}
-	return file.Raw, time.UnixMilli(file.At), true
+	if !derivedDiskSourcesRemain(file.Sources, now) {
+		_ = os.Remove(path)
+		return nil, time.Time{}, "source_gone"
+	}
+	return file.Raw, time.UnixMilli(file.At), "hit"
 }
 
 // derivedDiskDropViews deletes the saved snapshots of the given views, every
@@ -289,6 +339,7 @@ func derivedDiskDropViews(views ...derivedViewName) {
 	if err != nil {
 		return
 	}
+	log.Printf("[perf] derived_disk drop=%v by=%s", views, derivedDiskCaller())
 	want := map[string]bool{}
 	for _, view := range views {
 		want[string(view)] = true
@@ -323,6 +374,7 @@ func derivedDiskDropViews(views ...derivedViewName) {
 // as every privacy action, whether or not the switch is on, so turning the
 // switch off never leaves old copies behind.
 func derivedDiskDropAll() {
+	log.Printf("[perf] derived_disk drop=all by=%s", derivedDiskCaller())
 	derivedDiskMu.Lock()
 	defer derivedDiskMu.Unlock()
 	derivedDiskGeneration.Add(1)
