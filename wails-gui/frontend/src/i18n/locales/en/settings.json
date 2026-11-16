@@ -2099,6 +2099,18 @@
                 "label": "Go to You",
                 "description": "Open what Isoform knows about you"
             },
+            "zoom-in": {
+                "label": "Zoom in",
+                "description": "Make everything in this window larger, up to 150%"
+            },
+            "zoom-out": {
+                "label": "Zoom out",
+                "description": "Make everything in this window smaller, down to 90%"
+            },
+            "zoom-reset": {
+                "label": "Actual size",
+                "description": "Set this window back to 100%"
+            },
             "new-chat": {
                 "label": "New chat",
                 "description": "Start a new conversation"

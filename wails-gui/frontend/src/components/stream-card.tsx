@@ -3,8 +3,10 @@ import { displayModelCopy } from "@/lib/model-display";
 import { memo, useState, useCallback, useMemo, useRef, useEffect, useContext } from 'react';
 import { ChatFailureLine } from '@/components/chat-failure-line';
 import { cn } from '@/lib/utils';
-import { MAIN_CHAT_OBSERVATION_PAUSE_TOOL, formatToolInput, getMainChatProactive, getMainChatStatus, getMainChatReport, getSetupRecord, getSideChatOrigin, getTextedReply, getUpcomingConfirm, getChatDraft, isTodayContextItem } from '@/lib/stream-helpers';
+import { MAIN_CHAT_OBSERVATION_PAUSE_TOOL, formatToolInput, getMainChatProactive, getMainChatStatus, getMainChatReport, getSetupRecord, getSideChatOrigin, getTextedReply, getUpcomingConfirm, getChatDraft, getChatHandoff, getChatCorrection, getChatCorrectionUndo, isTodayContextItem } from '@/lib/stream-helpers';
 import type { MainChatReportTarget } from '@/lib/stream-helpers';
+import { ChatHandoffCard } from './chat-handoff-card';
+import { ChatCorrectionLine, ChatCorrectionUndoReply } from './chat-correction-line';
 import { ChatDraftCard, MainChatReportCard, SideChatOriginCard, TextedReplyCard, UpcomingConfirmCard } from './main-chat-report-card';
 import { MainChatProactiveCard, MainChatStatusRow } from './main-chat-proactive-card';
 import { SetupRecordLine } from './main-chat-setup-card';
@@ -35,7 +37,7 @@ import {
 import { useShowToolSteps } from '@/hooks/useShowToolSteps';
 import { clearStreamEditDraft, setStreamEditDraft, useStreamEditDraft } from '@/lib/stream-edit-drafts';
 import { ToolDebugPopover } from './tool-debug-popover';
-import { ChatErrorCard, openYourAI } from './chat-error-card';
+import { ChatErrorCard, chatErrorAsksAgain, openYourAI } from './chat-error-card';
 import { parseChatError, isJsonRpcError, chatErrorCauseOf } from '@/lib/chat-error';
 import type { StreamItem } from '@/types';
 import { FileAttachmentList } from './file-attachment-preview';
@@ -913,9 +915,12 @@ export const StreamCard = memo(function StreamCard({
     // streams so users see a typed error card instead of the raw JSON.
     if (item.kind === 'error' || isJsonRpcError(item.content)) {
         const cause = chatErrorCauseOf(item);
-        // R75: only the chat's latest signed-out or no-reply answer offers Send again.
-        const resend = (cause.code === 'signed_out' || cause.code === 'no_reply') && failedSend && failedSend.resendItemId === item.id ? failedSend.resendLast : undefined;
-        return <ChatErrorCard error={parseChatError(item.content, cause.code)} assistant={cause.assistant} compact={compact} onRetry={resend} />;
+        const error = parseChatError(item.content, cause.code);
+        // R75 and computer-chat v1.1.0 rule 4: only the chat's latest failed
+        // answer offers to send it again, and only when sending again can
+        // help (signed out, no answer, a network, service or AI error).
+        const resend = chatErrorAsksAgain(error.kind) && failedSend && failedSend.resendItemId === item.id ? failedSend.resendLast : undefined;
+        return <ChatErrorCard error={error} assistant={cause.assistant} compact={compact} onRetry={resend} />;
     }
 
     // ── Main-chat report line / side-chat origin: quiet cards with one action ──
@@ -939,6 +944,15 @@ export const StreamCard = memo(function StreamCard({
     }
     if (getChatDraft(item)) {
         return <ChatDraftCard item={item} compact={compact} />;
+    }
+    if (getChatCorrectionUndo(item)) {
+        return <ChatCorrectionUndoReply item={item} compact={compact} />;
+    }
+    if (getChatCorrection(item)) {
+        return <ChatCorrectionLine item={item} compact={compact} />;
+    }
+    if (getChatHandoff(item)) {
+        return <ChatHandoffCard item={item} compact={compact} />;
     }
     if (getTextedReply(item)) {
         return <TextedReplyCard item={item} onUse={onUseTextedReply} compact={compact} />;

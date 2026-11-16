@@ -476,6 +476,68 @@ export function getChatDraft(item: Pick<StreamItem, 'kind' | 'toolName' | 'toolI
     return { to: payload.to, channel, subject: typeof payload.subject === 'string' ? payload.subject : '', text: payload.text };
 }
 
+// Work asked for in Chat (chat_handoff_card.go): what would go to the
+// person's agent. Nothing runs from the card; Hand it to opens the sheet.
+export const CHAT_HANDOFF_TOOL = 'main_chat_handoff_card';
+
+export interface ChatHandoffPayload {
+    title: string;
+    detail: string;
+    done: string;
+    gets: string[];
+    kind: 'code' | 'else';
+    status: '' | 'declined' | 'handed';
+}
+
+export function getChatHandoff(item: Pick<StreamItem, 'kind' | 'toolName' | 'toolInput'>): ChatHandoffPayload | null {
+    if (item.kind !== 'system' || item.toolName !== CHAT_HANDOFF_TOOL) return null;
+    let raw: unknown = item.toolInput;
+    if (typeof raw === 'string') {
+        try { raw = JSON.parse(raw); } catch { return null; }
+    }
+    if (!raw || typeof raw !== 'object') return null;
+    const payload = raw as Partial<ChatHandoffPayload>;
+    if (typeof payload.title !== 'string' || !payload.title.trim() || typeof payload.detail !== 'string') return null;
+    const gets = Array.isArray(payload.gets) ? payload.gets.filter((value): value is string => typeof value === 'string' && value.trim() !== '') : [];
+    const status = payload.status === 'declined' || payload.status === 'handed' ? payload.status : '';
+    return { title: payload.title, detail: payload.detail, done: typeof payload.done === 'string' ? payload.done : '', gets, kind: payload.kind === 'code' ? 'code' : 'else', status };
+}
+
+// A correction made in Chat (chat_correction.go): what changed, where,
+// with Undo.
+export const CHAT_CORRECTION_TOOL = 'main_chat_correction';
+
+export interface ChatCorrectionPayload {
+    where: string;
+    status: '' | 'undone';
+}
+
+export function getChatCorrection(item: Pick<StreamItem, 'kind' | 'toolName' | 'toolInput'>): ChatCorrectionPayload | null {
+    if (item.kind !== 'system' || item.toolName !== CHAT_CORRECTION_TOOL) return null;
+    let raw: unknown = item.toolInput;
+    if (typeof raw === 'string') {
+        try { raw = JSON.parse(raw); } catch { return null; }
+    }
+    if (!raw || typeof raw !== 'object') return null;
+    const payload = raw as Partial<ChatCorrectionPayload>;
+    if (typeof payload.where !== 'string' || !payload.where.trim()) return null;
+    return { where: payload.where, status: payload.status === 'undone' ? 'undone' : '' };
+}
+
+// What an Undo of a correction answers in the thread (chat_correction.go).
+export const CHAT_CORRECTION_UNDO_TOOL = 'main_chat_correction_undo';
+
+/** The undone correction's "where", or null. */
+export function getChatCorrectionUndo(item: Pick<StreamItem, 'kind' | 'toolName' | 'toolInput'>): string | null {
+    if (item.kind !== 'system' || item.toolName !== CHAT_CORRECTION_UNDO_TOOL) return null;
+    let raw: unknown = item.toolInput;
+    if (typeof raw === 'string') {
+        try { raw = JSON.parse(raw); } catch { return null; }
+    }
+    const where = raw && typeof raw === 'object' ? (raw as { where?: unknown }).where : undefined;
+    return typeof where === 'string' && where.trim() ? where : null;
+}
+
 /** A mailto: link that opens the draft in the person's mail app, unsent. */
 export function chatDraftMailto(draft: ChatDraftPayload): string {
     const to = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.to.trim()) ? encodeURIComponent(draft.to.trim()) : '';

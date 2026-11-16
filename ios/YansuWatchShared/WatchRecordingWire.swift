@@ -153,9 +153,19 @@ extension WatchRecordingWire {
     /// watch would never hear "nothing changed" (a pause made at the computer was not ended).
     static let pauseSerialKey = "pauseSerial"
 
+    /// "Listen on your watch" was turned off on the phone at this time (PROTOCOL.md 24.14). The
+    /// watch stops, and stays off until the wearer starts it on the watch.
+    static let listenOffKey = "listenOff"
+
+    static func listenOff(fromContext context: [String: Any]) -> Date? {
+        guard context[contextVersionKey] as? Int == version, let since = context[listenOffKey] as? Double, since > 0 else { return nil }
+        return Date(timeIntervalSince1970: since)
+    }
+
     static func context(_ states: [String: WatchRecordingRemoteState], names: [String: [String]] = [:],
-                        pause: WatchPause? = nil, pauseSerial: Int = 0) -> [String: Any] {
+                        pause: WatchPause? = nil, pauseSerial: Int = 0, listenOff: Date? = nil) -> [String: Any] {
         var context: [String: Any] = [contextVersionKey: version, contextKey: states.mapValues(\.rawValue)]
+        if let listenOff { context[listenOffKey] = listenOff.timeIntervalSince1970 }
         if pauseSerial > 0 { context[pauseSerialKey] = pauseSerial }
         if let pause {
             var raw: [String: Double] = [:]

@@ -134,26 +134,22 @@ func TestChatWebSearchSaysPlainlyWhenItCannot(t *testing.T) {
 	})
 }
 
-func TestWebSearchContextIsForTheMainChatOnly(t *testing.T) {
+func TestWebSearchContextIsForOtherChatsOnly(t *testing.T) {
 	rig := newUpcomingToolsRig(t)
 	main, err := rig.app.ensureMainChat(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, origin := range []promptOrigin{promptOriginMac, promptOriginPhone} {
-		got := rig.app.injectWebSearchToolContext(main.LocalID, origin)
-		if !strings.Contains(got, "with SearchWeb, not opencli") || !strings.Contains(got, "The query leaves this computer") {
-			t.Fatalf("origin %q context = %q", origin, got)
-		}
-	}
-	for _, origin := range []promptOrigin{promptOriginPanelAsk, promptOriginPhoneAsk, promptOriginResume} {
+	// The main chat answers about the person's own day, never from the web
+	// (computer-chat v1.0.0 rule 5, phone-chat v1.0.0 rule 13).
+	for _, origin := range []promptOrigin{promptOriginMac, promptOriginPhone, promptOriginPanelAsk, promptOriginPhoneAsk, promptOriginResume} {
 		if got := rig.app.injectWebSearchToolContext(main.LocalID, origin); got != "" {
 			t.Fatalf("origin %q got the search context", origin)
 		}
 	}
 	// Another chat typed on the Mac searches the same way (opencli is no
 	// longer the research path); a resumed or phone turn there does not.
-	if got := rig.app.injectWebSearchToolContext("some-other-chat", promptOriginMac); !strings.Contains(got, "SearchWeb") {
+	if got := rig.app.injectWebSearchToolContext("some-other-chat", promptOriginMac); !strings.Contains(got, "with SearchWeb, not opencli") || !strings.Contains(got, "The query leaves this computer") {
 		t.Fatal("another chat typed on the Mac lost the search context")
 	}
 	if got := rig.app.injectWebSearchToolContext("some-other-chat", promptOriginResume); got != "" {

@@ -53,7 +53,9 @@ describe("ChatErrorCard", () => {
         unmount();
 
         render(<ChatErrorCard error={parseChatError(authWords500, "assistant_error")} assistant="Claude Code" onRetry={() => {}} />);
-        expect(screen.getByRole("status")).toHaveTextContent("Claude Code stopped with an error. · Try again · Details");
+        expect(screen.getByRole("status")).toHaveTextContent("Couldn't answer: Claude Code stopped with an error.");
+        expect(screen.getByRole("button", { name: "Ask again" })).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Details" })).toBeInTheDocument();
         expect(screen.queryByText(/Sign in/)).not.toBeInTheDocument();
     });
 
@@ -70,17 +72,17 @@ describe("ChatErrorCard", () => {
         expect(screen.queryByRole("button", { name: "Send again" })).toBeNull();
     });
 
-    it("says plainly when no answer came back, with Send again", () => {
+    it("says plainly when no answer came back, with Ask again", () => {
         const onRetry = vi.fn();
         const { unmount } = render(<ChatErrorCard error={parseChatError("No answer came back.", "no_reply")} onRetry={onRetry} />);
-        expect(screen.getByRole("status")).toHaveTextContent("No answer came back. · Send again");
-        fireEvent.click(screen.getByRole("button", { name: "Send again" }));
+        expect(screen.getByRole("status")).toHaveTextContent("Couldn't answer: No answer came back.");
+        fireEvent.click(screen.getByRole("button", { name: "Ask again" }));
         expect(onRetry).toHaveBeenCalledTimes(1);
         unmount();
 
         render(<ChatErrorCard error={parseChatError("No answer came back.", "no_reply")} />);
         expect(screen.getByRole("status")).toHaveTextContent("No answer came back.");
-        expect(screen.queryByRole("button", { name: "Send again" })).toBeNull();
+        expect(screen.queryByRole("button", { name: "Ask again" })).toBeNull();
     });
 
     it("never claims sign-in from words when no code proves it", () => {
@@ -108,13 +110,13 @@ describe("ChatErrorCard", () => {
         const onRetry = vi.fn();
         const { container } = render(<ChatErrorCard error={parseChatError("boom: exit status 2")} onRetry={onRetry} />);
         expect(container.innerHTML).not.toMatch(/error-bg|text-error|border-error/);
-        expect(screen.getByRole("status")).toHaveClass("text-subtle");
+        expect(screen.getByRole("status").closest("[data-chat-couldnt-answer]")).toHaveClass("border-border");
         expect(screen.queryByText("boom: exit status 2")).not.toBeInTheDocument();
         fireEvent.click(screen.getByRole("button", { name: "Details" }));
         expect(screen.getByText("boom: exit status 2")).toBeInTheDocument();
         fireEvent.click(screen.getByRole("button", { name: "Hide" }));
         expect(screen.queryByText("boom: exit status 2")).not.toBeInTheDocument();
-        fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+        fireEvent.click(screen.getByRole("button", { name: "Ask again" }));
         expect(onRetry).toHaveBeenCalledTimes(1);
     });
 
@@ -122,11 +124,14 @@ describe("ChatErrorCard", () => {
         ["signed out", parseChatError("x", "signed_out"), "text-warning"],
         ["no AI", parseChatError("", "no_assistant"), "text-warning"],
         ["a weekly limit", quotaPeriod, "text-warning"],
-        ["a server error", parseChatError("x", "server"), "text-subtle"],
-        ["a network error", parseChatError("dial tcp: connection refused"), "text-subtle"],
+        ["a server error", parseChatError("x", "server"), "couldnt"],
+        ["a network error", parseChatError("dial tcp: connection refused"), "couldnt"],
     ])("colors %s copper or gray", (_name, error, tone) => {
         const { container } = render(<ChatErrorCard error={error} assistant="Codex" />);
-        expect(screen.getByRole("status")).toHaveClass(tone);
+        // A failure the person can't fix here is the bordered Couldn't answer
+        // line (computer-chat v1.1.0 rule 3); the rest stay copper.
+        if (tone === "couldnt") expect(screen.getByRole("status").closest("[data-chat-couldnt-answer]")).not.toBeNull();
+        else expect(screen.getByRole("status")).toHaveClass(tone);
         expect(container.innerHTML).not.toMatch(/error-bg|text-error|border-error/);
     });
 
@@ -157,5 +162,18 @@ describe("ChatErrorCard", () => {
         expect(componentSource).not.toMatch(/text-error|bg-error|border-error|toast/);
         expect(en.errors).not.toHaveProperty("auth");
         expect(zh.errors).not.toHaveProperty("auth");
+    });
+});
+
+describe('Couldn\'t answer (computer-chat v1.1.0 rules 3 and 4)', () => {
+    it('keeps the question, says what left the computer, and asks again only on a press', async () => {
+        await i18n.changeLanguage('en');
+        const onRetry = vi.fn();
+        render(<ChatErrorCard error={{ kind: 'no_reply', detail: '' }} onRetry={onRetry} />);
+        expect(screen.getByRole('status')).toHaveTextContent("Couldn't answer: No answer came back.");
+        expect(screen.getByText('Your question is kept. Nothing about your day left this computer except the question and what it needed.')).toBeInTheDocument();
+        expect(onRetry).not.toHaveBeenCalled();
+        fireEvent.click(screen.getByRole('button', { name: 'Ask again' }));
+        expect(onRetry).toHaveBeenCalledTimes(1);
     });
 });

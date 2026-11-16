@@ -471,11 +471,12 @@ func TestUpcomingToolsAreForTheMacOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := rig.app.mainChatExtraTools(main.LocalID, promptOriginMac); len(got) != 8 || got[7].Name() != chatWebSearchToolName {
-		t.Fatalf("the main chat on the Mac got %d tools, want the six Upcoming tools, GoalCreate and SearchWeb", len(got))
+	// No SearchWeb in the main chat: it answers about the person's own day.
+	if got := rig.app.mainChatExtraTools(main.LocalID, promptOriginMac); len(got) != 7 || got[6].Name() != goalToolCreate {
+		t.Fatalf("the main chat on the Mac got %d tools, want the six Upcoming tools and GoalCreate", len(got))
 	}
-	if got := rig.app.mainChatExtraTools(main.LocalID, promptOriginPhone); len(got) != 2 || got[0].Name() != goalToolCreate || got[1].Name() != chatWebSearchToolName {
-		t.Fatalf("a message from the phone got tools other than GoalCreate and SearchWeb: %v", got)
+	if got := rig.app.mainChatExtraTools(main.LocalID, promptOriginPhone); len(got) != 1 || got[0].Name() != goalToolCreate {
+		t.Fatalf("a message from the phone got tools other than GoalCreate: %v", got)
 	}
 	if got := rig.app.mainChatExtraTools("some-other-chat", promptOriginMac); len(got) != 1 || got[0].Name() != chatWebSearchToolName {
 		t.Fatalf("another chat typed on the Mac got %v, want SearchWeb only", got)
@@ -504,8 +505,8 @@ func TestUpcomingToolsAreForTheMacOnly(t *testing.T) {
 		wantTools int
 		wantText  string
 	}{
-		{promptOriginPhone, 2, "can be changed only on the computer"},
-		{promptOriginMac, 9, "call UpcomingList"}, // with SearchWeb and DraftMessage
+		{promptOriginPhone, 1, "can be changed only on the computer"},
+		{promptOriginMac, 10, "call UpcomingList"}, // with DraftMessage, HandOffWork and CorrectIsoform
 	} {
 		if err := rig.app.executePrompt("move my weekly update", "", "m", "", main.LocalID, nil, false, false, "", nil, nil, "", "", tc.origin); err != nil {
 			t.Fatal(err)

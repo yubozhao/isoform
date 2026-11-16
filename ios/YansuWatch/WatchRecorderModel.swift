@@ -77,6 +77,9 @@ final class WatchRecorderModel: NSObject, ObservableObject {
         link.onPause = { [weak self] pause in
             Task { @MainActor in self?.apply(pause: pause) }
         }
+        link.onListenOff = { [weak self] since in
+            Task { @MainActor in self?.turnedOffOnPhone(since: since) }
+        }
         // A recording the app was killed in the middle of is closed and sent.
         let recovered = library.recoverInterrupted { url in
             (try? AVAudioPlayer(contentsOf: url))?.duration ?? 0
@@ -101,6 +104,15 @@ final class WatchRecorderModel: NSObject, ObservableObject {
         if isRecording { stopByWearer() } else { start() }
     }
 
+    /// "Listen on your watch" was turned off on the phone: stop, and stay off until the wearer
+    /// starts it here. Each off is acted on once.
+    func turnedOffOnPhone(since: Date) {
+        guard WatchAutoListen.takesOff(since: since) else { return }
+        WatchAutoListen.setOffFromPhone(true)
+        stop()
+        tellPhone()
+    }
+
     /// The wearer stopped it (the hold, or the Stop shortcut): it stays off for the rest of the
     /// day, or until they start it.
     func stopByWearer() {
@@ -122,7 +134,7 @@ final class WatchRecorderModel: NSObject, ObservableObject {
         return WatchLiveStatus.of(
             paused: isPausedOnComputer, pauseStartedOnWatch: pauseStartedHere, recording: isRecording,
             waitingForMicrophone: interrupted, microphoneDenied: denied,
-            stoppedToday: WatchAutoListen.stopHolds(stoppedAt: WatchAutoListen.stoppedAt(), now: Date()))
+            stoppedToday: WatchAutoListen.offFromPhone() || WatchAutoListen.stopHolds(stoppedAt: WatchAutoListen.stoppedAt(), now: Date()))
     }
 
     /// The app came to the front: record by itself unless the wearer stopped it, and take the
@@ -136,7 +148,7 @@ final class WatchRecorderModel: NSObject, ObservableObject {
         }
         let step = WatchAutoListen.step(
             consentSeen: consentSeen, microphone: microphone,
-            stoppedByWearer: WatchAutoListen.stopHolds(stoppedAt: WatchAutoListen.stoppedAt(), now: Date()),
+            stoppedByWearer: WatchAutoListen.offFromPhone() || WatchAutoListen.stopHolds(stoppedAt: WatchAutoListen.stoppedAt(), now: Date()),
             isRecording: isRecording, heldByInterruption: interrupted && recorder == nil,
             pausedOnComputer: isPausedOnComputer)
         switch step {
@@ -213,6 +225,7 @@ final class WatchRecorderModel: NSObject, ObservableObject {
     /// The wearer, the complication or a shortcut asked to record. Clears an earlier stop.
     func start() {
         WatchAutoListen.setStopped(nil)
+        WatchAutoListen.setOffFromPhone(false)
         // Paused on the computer: the pause is ended there, not here.
         guard !isRecording, !isPausedOnComputer else { return }
         AVAudioApplication.requestRecordPermission { [weak self] granted in

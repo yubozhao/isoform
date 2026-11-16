@@ -11,6 +11,8 @@ struct WatchTabView: View {
     @ObservedObject var model: WatchTabModel
     @State private var pauseUntil: Date?
     @State private var showsWhere = false
+    @State private var showsStartOnWatch = false
+    @State private var offFailed = false
 
     init(recordings: WatchRecordingsModel = .shared, model: WatchTabModel = .shared) {
         self.recordings = recordings
@@ -200,11 +202,42 @@ struct WatchTabView: View {
 
     // MARK: Your watch
 
+    /// "Listen on your watch": the phone can turn it off, never on. Off holds until the wearer
+    /// taps the mark on the watch.
+    private func listenToggle(_ listening: Bool) -> some View {
+        Toggle(isOn: Binding(get: { listening }, set: { on in
+            if on {
+                showsStartOnWatch = true
+            } else {
+                Task { offFailed = !(await model.turnListeningOff()) }
+            }
+        })) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Listen on your watch").font(.body).foregroundStyle(YansuTheme.ink)
+                Text(listening ? String(localized: "The only off. Closed Eyes is for a while.")
+                     : String(localized: "Off. Tap the mark on your watch to start listening."))
+                    .font(.footnote).foregroundStyle(YansuTheme.secondary)
+            }
+        }
+        .tint(YansuTheme.accent)
+        .padding(14)
+        .background(YansuTheme.surface, in: RoundedRectangle(cornerRadius: YansuTheme.cornerRadius, style: .continuous))
+        .accessibilityIdentifier("watch.settings.listen")
+        .alert(String(localized: "Tap the mark on your watch to start listening."), isPresented: $showsStartOnWatch) {
+            Button(String(localized: "OK"), role: .cancel) {}
+        }
+        .alert(String(localized: "Couldn't reach your computer, so listening is still on."), isPresented: $offFailed) {
+            Button(String(localized: "OK"), role: .cancel) {}
+        }
+    }
+
     @ViewBuilder private var settings: some View {
-        if let notesOn = model.notesOn {
+        if model.notesOn != nil || model.listening != nil {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Your watch", comment: "Title of the settings group on the Watch tab")
                     .font(.footnote.weight(.semibold)).foregroundStyle(YansuTheme.tertiary)
+                if let listening = model.listening { listenToggle(listening) }
+                if let notesOn = model.notesOn {
                 Toggle(isOn: Binding(get: { notesOn }, set: { on in Task { await model.setNotes(on) } })) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Notes for long talks").font(.body).foregroundStyle(YansuTheme.ink)
@@ -215,6 +248,7 @@ struct WatchTabView: View {
                 .padding(14)
                 .background(YansuTheme.surface, in: RoundedRectangle(cornerRadius: YansuTheme.cornerRadius, style: .continuous))
                 .accessibilityIdentifier("watch.settings.notes")
+                }
             }
         }
     }

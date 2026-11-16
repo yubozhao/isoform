@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"wails-gui/internal/handoff"
@@ -624,7 +625,7 @@ func (a *App) executePromptOwned(prompt string, userPrompt string, workDir strin
 		a.finishChatPreparation(tag, cancel)
 		return err
 	}
-	input.ExtraTools = append(a.mainChatExtraTools(tag, origin), a.mainChatDraftTools(tag, origin)...)
+	input.ExtraTools = append(append(a.mainChatExtraTools(tag, origin), a.mainChatDraftTools(tag, origin)...), append(a.mainChatHandoffTools(tag, origin), a.mainChatCorrectionTools(tag, origin)...)...)
 	if a.quickChatTurnActive(tag) {
 		input.ExtraTools = withoutQuickChatCards(input.ExtraTools)
 	}
@@ -959,11 +960,30 @@ func (a *App) executePromptOwned(prompt string, userPrompt string, workDir strin
 				return
 			}
 		}
+		// A Chat turn with nothing to show after 30 seconds stops and says it
+		// couldn't answer, with the question kept and Ask again
+		// (computer-chat v1.1.0 rule 3). It never retries by itself.
+		var answering atomic.Bool
+		if origin == promptOriginMac && a.isMainChatSession(ctx, tag) {
+			noAnswer := time.AfterFunc(chatNoAnswerWait, func() {
+				if answering.Load() || ctx.Err() != nil {
+					return
+				}
+				log.Printf("[chat-turn] no answer in %s tag=%s; stopping the turn", chatNoAnswerWait, tag)
+				a.emitAgentEvent(AgentEvent{Type: "error", Tag: tag, Error: "No answer came back.", Code: chatCodeNoReply})
+				a.cancelActiveChatTurn(tag)
+			})
+			defer noAnswer.Stop()
+		}
 		runID, err := runner.ExecuteTask(ctx, input, func(event *agent.StreamEvent) error {
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
 			default:
+			}
+			switch event.Type {
+			case "assistant", "thinking", "tool_use", "tool_result", "permission_request":
+				answering.Store(true)
 			}
 			turnLog.note(event)
 			if err := checkListHandoffRoute(listBackend, event); err != nil {
@@ -1661,6 +1681,8 @@ func (a *App) composePromptFor(prompt string, personal bool, opts ...string) str
 		// After the yansu context, whose cron instructions it narrows for
 		// the main chat.
 		{"draft-tool", func() string { return a.injectChatDraftToolContext(tag, origin) }},
+		{"chat-scope", func() string { return a.injectChatNarrowingContext(tag, origin) }},
+		{"corrections", func() string { return a.injectChatCorrectionContext(tag, origin) }},
 		{"quick-chat", func() string { return a.injectQuickChatContext(tag) }},
 		{"upcoming-tools", func() string { return a.injectUpcomingToolsContext(tag, origin) }},
 		{"goal-tools", func() string { return a.injectGoalToolsContext(tag) }},
@@ -2245,3 +2267,8 @@ func (a *App) kickAgentStartForTurn() {
 		}
 	}()
 }
+
+// chatNoAnswerWait is how long a Chat turn may show nothing before it stops
+// and says it couldn't answer (computer-chat v1.1.0 rule 3). The wait for the
+// agent to start up is not part of it.
+var chatNoAnswerWait = 30 * time.Second

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"github.com/google/uuid"
 	"log"
 	"sort"
 	"strings"
@@ -438,6 +439,9 @@ func userTopicsWithInterests(view UserTopicsView, list []interests.Interest) Use
 func (s *topicsService) update(input UserTopicUpdate) (UserTopicsView, error) {
 	s.registryMu.Lock()
 	defer s.registryMu.Unlock()
+	if input.Action == "add" {
+		return s.add(input.Label)
+	}
 	id := strings.TrimSpace(input.ID)
 	if id == "" {
 		return UserTopicsView{}, errors.New("choose a topic")
@@ -508,6 +512,32 @@ func (s *topicsService) update(input UserTopicUpdate) (UserTopicsView, error) {
 	s.invalidate()
 	return s.view(), nil
 }
+
+// add keeps a topic the person named (Topics v1.0.0 rule 30). The same name
+// twice is one topic.
+func (s *topicsService) add(raw string) (UserTopicsView, error) {
+	label, err := cleanTopicLabel(raw)
+	if err != nil {
+		return UserTopicsView{}, err
+	}
+	now := s.now()
+	_, err = s.store.update(func(st *topicsStateFile) {
+		for _, added := range st.Added {
+			if strings.EqualFold(added.Label, label) {
+				return
+			}
+		}
+		st.Added = append(st.Added, topicAdded{ID: addedTopicPrefix + uuid.NewString(), Label: label, At: now.UTC().Format(time.RFC3339Nano)})
+	})
+	if err != nil {
+		return UserTopicsView{}, err
+	}
+	s.invalidate()
+	return s.view(), nil
+}
+
+// addedTopicPrefix marks the id of a topic the person named.
+const addedTopicPrefix = "added:"
 
 // removeTopicFinds drops the shown finds of a removed topic, and the topic
 // from the search waiting to run, so a run that starts later never searches
@@ -609,12 +639,17 @@ func (a *App) GetUserTopics() (perfValue UserTopicsView, perfErr error) {
 	return displayModelCopy(view, a.modelDisplayLanguage()), nil
 }
 
-// UpdateUserTopic pins, unpins, renames, removes or restores one topic.
+// UpdateUserTopic adds, pins, unpins, renames, removes or restores one
+// topic. An added topic gets its first proposal at once (Topics v1.0.0
+// rule 30), not at the next daily build.
 func (a *App) UpdateUserTopic(input UserTopicUpdate) (UserTopicsView, error) {
 	view, err := a.topicsSvc().update(input)
 	if err == nil {
 		a.afterTopicsChanged(input.Action == "remove")
 		a.emitBrowserEvent("topics:updated")
+		if input.Action == "add" {
+			go a.proposeAddedTopics(context.Background())
+		}
 	}
 	if err != nil {
 		return displayModelCopy(view, a.modelDisplayLanguage()), err

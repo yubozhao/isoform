@@ -716,6 +716,7 @@ func (a *App) startupServices(ctx context.Context) {
 	// the React side has had a chance to call SetThemePreference.
 	loadThemePreferenceFromDisk()
 	loadQuickChatHotkeyFromDisk()
+	loadInterfaceZoomFromDisk()
 
 	// Stamp startup time so the perf-analysis panel can report uptime
 	// without threading an extra field through the App struct.
@@ -788,6 +789,9 @@ func (a *App) startupServices(ctx context.Context) {
 	// Patch WKWebView UIDelegate to grant microphone permission for voice input.
 	// Must run after wails.Run() creates the WailsContext ObjC class.
 	patchWKWebViewMediaCapture()
+
+	// The user's saved interface zoom (pass-access v1.0.0 rule 6).
+	applySavedInterfaceZoom()
 
 	// The title strip drags the window on the first click, even when the
 	// window is not active (macOS).

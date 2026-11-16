@@ -345,6 +345,8 @@ struct HubStatus: Decodable, Equatable, Sendable {
     var recordingConversations: Bool? = nil
     /// The computer takes answers about who a speaker is (PROTOCOL.md 24.13).
     var recordingSpeakers: Bool? = nil
+    /// "Listen on your watch" (PROTOCOL.md 24.14); absent on a computer that has no such setting.
+    var watchListening: WatchListeningSetting? = nil
     /// "Notes for long talks" on the computer (PROTOCOL.md 24.12); absent on a computer that has no such setting.
     var watchNotes: WatchNotesSetting? = nil
     /// The phone may pause observing on the computer and end a pause it started (PROTOCOL.md 24.10).
@@ -1011,6 +1013,14 @@ extension HubChannel {
 
 /// The computer's word that observing is paused there (PROTOCOL.md 24.8). Both times are
 /// optional: a pause with no end has no `until`.
+struct WatchListeningSetting: Decodable, Equatable, Sendable {
+    var off: Bool = false
+    var since: String? = nil
+
+    /// When listening was turned off; nil while it is allowed.
+    var offSince: Date? { off ? (since.flatMap(RecordingTime.parse) ?? Date()) : nil }
+}
+
 struct WatchNotesSetting: Decodable, Equatable, Sendable {
     var on: Bool = false
     var chosen: Bool? = nil

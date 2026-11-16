@@ -28,6 +28,8 @@ export interface WhatIsoformSees {
 
 export const GetWhatIsoformSees = appBinding<[], WhatIsoformSees>("GetWhatIsoformSees");
 export const CancelStream = appBinding<[string], void>("CancelStream");
+export const GetInterfaceZoom = appBinding<[], number>("GetInterfaceZoom");
+export const SetInterfaceZoom = appBinding<[number], number>("SetInterfaceZoom");
 
 // Shared waiting projection for Today and Tasks. Target IDs are routing data,
 // while sentence and source are display-only.
@@ -1388,7 +1390,7 @@ export interface UserTopicsView {
     removed: UserTopic[];
 }
 
-export type UserTopicAction = "pin" | "unpin" | "rename" | "remove" | "restore";
+export type UserTopicAction = "add" | "pin" | "unpin" | "rename" | "remove" | "restore";
 
 export const GetUserTopics = appBinding<[], UserTopicsView>("GetUserTopics");
 export const UpdateUserTopic = appBinding<
@@ -4103,6 +4105,9 @@ export const ConnectAgentHere = appBinding<[string], YourAgents>("ConnectAgentHe
 export const DisconnectAgentHere = appBinding<[string], YourAgents>("DisconnectAgentHere");
 export const GetWorkOnItHandoffs = appBinding<[], WorkOnItHandoff[]>("GetWorkOnItHandoffs");
 export const ForgetWorkOnItHandoff = appBinding<[string], void>("ForgetWorkOnItHandoff");
+export const GetWorkOnItAgents = appBinding<[], WorkOnItAgentView[]>("GetWorkOnItAgents");
+export const UndoChatCorrection = appBinding<[string], string>("UndoChatCorrection");
+export const AnswerChatHandoffCard = appBinding<[string, "declined" | "handed"], string>("AnswerChatHandoffCard");
 // Agents join your Isoform once (agent_join_service.go, phone-agent v1.1.0 B5).
 export interface AgentJoinStart { message: string; link: string; expiresAt: number; local: boolean }
 export type AgentJoinState = "waiting" | "requested" | "allowed" | "denied" | "expired";

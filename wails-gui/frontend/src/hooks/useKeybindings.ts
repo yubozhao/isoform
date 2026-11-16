@@ -122,6 +122,11 @@ const DEFAULT_KEYBINDINGS: KeybindingAction[] = [
         defaultCombo: primaryCombo(false, String(i + 1)),
         readonly: false,
     })),
+    // Interface zoom, 90% to 150% (pass-access v1.0.0 rule 6). Cmd+Shift+=
+    // (the + key) zooms in too; App.tsx maps it to zoom-in.
+    { id: 'zoom-in', label: '', description: '', group: 'global', defaultCombo: primaryCombo(false, '='), readonly: false },
+    { id: 'zoom-out', label: '', description: '', group: 'global', defaultCombo: primaryCombo(false, '-'), readonly: false },
+    { id: 'zoom-reset', label: '', description: '', group: 'global', defaultCombo: primaryCombo(false, '0'), readonly: false },
     {
         id: 'replay-onboarding',
         label: 'Run setup again',

@@ -1305,11 +1305,13 @@ func (a *App) mainChatExtraTools(tag string, origin promptOrigin) []tools.Tool {
 	}
 	switch origin {
 	case promptOriginPhone:
-		return append(a.goalTools(tag), a.chatWebSearchTools()...)
+		// Chat answers about the person's own day: no web answers in the
+		// main chat (computer-chat v1.0.0 rule 5, phone-chat rule 13).
+		return a.goalTools(tag)
 	case promptOriginResume, promptOriginPanelAsk, promptOriginPhoneAsk:
 		return nil
 	default:
-		return append(append(a.upcomingTools(), a.goalTools(tag)...), a.chatWebSearchTools()...)
+		return append(a.upcomingTools(), a.goalTools(tag)...)
 	}
 }
 
