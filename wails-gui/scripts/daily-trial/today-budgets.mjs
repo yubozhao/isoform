@@ -1,4 +1,4 @@
-// today-budgets.mjs: checks Today's window reads in an app log against
+// today-budgets.mjs: checks the window reads of Today, Chat, Activity and You in an app log against
 // today-budgets.json. Reads only timestamps, binding names, timings and
 // origins out of a line; never its text. Used by replay.mjs and report.mjs.
 import { readFileSync } from "node:fs";
@@ -35,7 +35,7 @@ export function checkTodayBudgets(lines, budgets = config) {
         if (!s.length && !l.length) continue;
         const p95 = s.length >= budgets.minSamples ? s[Math.min(s.length - 1, Math.floor(0.95 * s.length))] : s.length ? s[s.length - 1] : null;
         const launchMax = l.length ? Math.max(...l) : null;
-        const row = { name, steadyN: s.length, steadyP95: p95, steadyBudget: budget.steadyP95Ms, launchN: l.length, launchMax, launchBudget: budget.launchMaxMs, ok: true };
+        const row = { name, page: budget.page ?? "today", steadyN: s.length, steadyP95: p95, steadyBudget: budget.steadyP95Ms, launchN: l.length, launchMax, launchBudget: budget.launchMaxMs, ok: true };
         if (p95 !== null && p95 > budget.steadyP95Ms) {
             row.ok = false;
             failures.push(`${name} steady p95 ${p95} ms > ${budget.steadyP95Ms}`);
@@ -50,8 +50,8 @@ export function checkTodayBudgets(lines, budgets = config) {
 }
 
 export function todayBudgetTable({ rows }) {
-    if (!rows.length) return "No Today reads logged.";
+    if (!rows.length) return "No page reads logged.";
     const cell = (v) => (v === null ? "-" : v);
-    return "| Binding | Result | Steady reads | Steady p95 / budget ms | Launch reads | Launch max / budget ms |\n|---|---|---|---|---|---|\n"
-        + rows.map((r) => `| ${r.name} | ${r.ok ? "pass" : "OVER"} | ${r.steadyN} | ${cell(r.steadyP95)} / ${r.steadyBudget} | ${r.launchN} | ${cell(r.launchMax)} / ${r.launchBudget} |`).join("\n");
+    return "| Page | Binding | Result | Steady reads | Steady p95 / budget ms | Launch reads | Launch max / budget ms |\n|---|---|---|---|---|---|---|\n"
+        + rows.map((r) => `| ${r.page} | ${r.name} | ${r.ok ? "pass" : "OVER"} | ${r.steadyN} | ${cell(r.steadyP95)} / ${r.steadyBudget} | ${r.launchN} | ${cell(r.launchMax)} / ${r.launchBudget} |`).join("\n");
 }

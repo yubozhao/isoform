@@ -12,7 +12,7 @@ const paints = read("first-paint.txt").split("\n").filter(Boolean).map((line) =>
 const refused = read("refused-methods.txt").split("\n").filter(Boolean);
 const errors = read("log-errors.txt").split("\n").filter(Boolean);
 const failed = pages.filter((p) => !p.ok);
-// Today's window reads against today-budgets.json (perf.txt: the app's [perf] lines).
+// Today's, Chat's, Activity's and You's window reads against today-budgets.json (perf.txt: the app's [perf] lines).
 const budget = checkTodayBudgets(read("perf.txt").split("\n"));
 const expected = 13;
 const ok = pages.length >= expected && failed.length === 0 && Number(logErrors) === 0 && refused.length === 0 && budget.failures.length === 0;

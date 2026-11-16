@@ -1,27 +1,152 @@
 {
-  "_doc": "Today's read budgets (2026-11-15). Window reads only (origin=window). steadyP95Ms: p95 of reads more than launchWindowMs after start; Today reads saved snapshots, so 100 ms. launchMaxMs: the slowest read in the launch window. minSamples: fewer steady reads than this are judged by their maximum. Checked by today-budgets.mjs in replay.mjs (the person's log) and report.mjs (the trial).",
-  "launchWindowMs": 90000,
-  "minSamples": 5,
-  "default": { "steadyP95Ms": 100, "launchMaxMs": 1500 },
-  "bindings": {
-    "GetTodayDayShape": {},
-    "GetTodayBeforeYouTalk": {},
-    "GetPortraitTodayCard": {},
-    "GetTopicFinds": {},
-    "GetTodaySuggestion": {},
-    "GetTodayQuietLines": {},
-    "GetTodayTopics": {},
-    "GetTodayNews": {},
-    "GetNeedsYou": {},
-    "GetDoneForYou": {},
-    "GetFirstWeekDay": {},
-    "GetGoalCheckIn": {},
-    "GetEngagementWeekSummary": {},
-    "GetMobileBriefHealth": {},
-    "GetLatestBrief": {},
-    "GetMainChatWaiting": {},
-    "ListMainChatWaitingItems": {},
-    "LoadStreamItemsPage": {},
-    "IsClosedEyesModeEnabled": {}
-  }
+    "_doc": "Read budgets for Today, Chat, Activity and You (2026-11-15; Chat, Activity and You added the same evening). Each binding names its page. Window reads only (origin=window). steadyP95Ms: p95 of reads more than launchWindowMs after start; Today reads saved snapshots, so 100 ms. launchMaxMs: the slowest read in the launch window. minSamples: fewer steady reads than this are judged by their maximum. Checked by today-budgets.mjs in replay.mjs (the person's log) and report.mjs (the trial).",
+    "launchWindowMs": 90000,
+    "minSamples": 5,
+    "default": {
+        "steadyP95Ms": 100,
+        "launchMaxMs": 1500
+    },
+    "bindings": {
+        "GetTodayDayShape": {
+            "page": "today"
+        },
+        "GetTodayBeforeYouTalk": {
+            "page": "today"
+        },
+        "GetPortraitTodayCard": {
+            "page": "today"
+        },
+        "GetTopicFinds": {
+            "page": "today"
+        },
+        "GetTodaySuggestion": {
+            "page": "today"
+        },
+        "GetTodayQuietLines": {
+            "page": "today"
+        },
+        "GetTodayTopics": {
+            "page": "today"
+        },
+        "GetTodayNews": {
+            "page": "today"
+        },
+        "GetNeedsYou": {
+            "page": "today"
+        },
+        "GetDoneForYou": {
+            "page": "today"
+        },
+        "GetFirstWeekDay": {
+            "page": "today"
+        },
+        "GetGoalCheckIn": {
+            "page": "today"
+        },
+        "GetEngagementWeekSummary": {
+            "page": "today"
+        },
+        "GetMobileBriefHealth": {
+            "page": "today"
+        },
+        "GetLatestBrief": {
+            "page": "today"
+        },
+        "GetMainChatWaiting": {
+            "page": "chat"
+        },
+        "ListMainChatWaitingItems": {
+            "page": "chat"
+        },
+        "LoadStreamItemsPage": {
+            "page": "chat"
+        },
+        "IsClosedEyesModeEnabled": {
+            "page": "today"
+        },
+        "GetMainChatOverview": {
+            "page": "chat"
+        },
+        "ListMainChatAnswerChips": {
+            "page": "chat"
+        },
+        "GetMainChat": {
+            "page": "chat"
+        },
+        "GetMainChatSetup": {
+            "page": "chat"
+        },
+        "EnsureDailySummary": {
+            "page": "activity"
+        },
+        "GetActivitiesInRange": {
+            "page": "activity"
+        },
+        "GetDayThreads": {
+            "page": "activity"
+        },
+        "GetCronRunsByDateRange": {
+            "page": "activity"
+        },
+        "GetKnowledgeEntries": {
+            "page": "activity"
+        },
+        "GetMemoryEntries": {
+            "page": "activity"
+        },
+        "GetDayNoticed": {
+            "page": "activity"
+        },
+        "GetCaptureCounts": {
+            "page": "activity"
+        },
+        "GetAboutYou": {
+            "page": "you"
+        },
+        "GetAboutYouPortrait": {
+            "page": "you"
+        },
+        "GetMemoryStatus": {
+            "page": "you"
+        },
+        "GetMemoryEvidenceReadable": {
+            "page": "you"
+        },
+        "GetEntryUses": {
+            "page": "you"
+        },
+        "ListMemoryVersions": {
+            "page": "you"
+        },
+        "ListKnowHow": {
+            "page": "you"
+        },
+        "GetKnowHowMatch": {
+            "page": "you"
+        },
+        "ListPeopleOverview": {
+            "page": "you"
+        },
+        "ListPrincipalsWithStats": {
+            "page": "you"
+        },
+        "GetContactsAccessStatus": {
+            "page": "you"
+        },
+        "GetPersonDetail": {
+            "page": "you"
+        },
+        "ListPrincipalActivitySessions": {
+            "page": "you"
+        },
+        "GetPersonResearch": {
+            "page": "you"
+        },
+        "GetVoiceEnrollmentStatus": {
+            "page": "you"
+        },
+        "ListVoiceSamples": {
+            "page": "you"
+        }
+    }
 }
