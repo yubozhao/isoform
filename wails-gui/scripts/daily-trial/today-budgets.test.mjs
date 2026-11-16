@@ -42,3 +42,16 @@ test("every budgeted binding names its page, and the table shows it", async () =
     assert.deepEqual(result.failures, ["GetDayThreads at launch 2000 ms > 1500"]);
     assert.match(todayBudgetTable(result), /\| activity \| GetDayThreads \| OVER \|/);
 });
+
+test("a slow first paint of a budgeted page fails; a hidden-window paint and other pages are ignored", () => {
+    const lines = [
+        `${at("00:00")} [perf] launch stage=logging_ready ms_since_start=6`,
+        `${at("00:01")} [perf] first_paint page=today ms=537 source=network`,
+        `${at("00:10")} [perf] first_paint page=people ms=1848 source=network`,
+        `${at("00:11")} [perf] first_paint page=today ms=549772 source=network`,
+        `${at("00:12")} [perf] first_paint page=settings ms=9000 source=network`,
+    ];
+    const result = checkTodayBudgets(lines);
+    assert.deepEqual(result.failures, ["people first paint 1848 ms > 1500"]);
+    assert.deepEqual(result.firstPaints.map((p) => [p.page, p.max, p.ok]), [["today", 537, true], ["people", 1848, false]]);
+});

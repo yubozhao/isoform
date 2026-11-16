@@ -76,7 +76,10 @@ struct PairingView: View {
             }
         }
         .onChange(of: pairing.phase) { _, phase in
-            if phase == .paired { scanning = false }
+            guard phase == .paired else { return }
+            scanning = false
+            // Paired in one scan: Today opens on the latest brief at once, with "Paired with {computer}" (rules 6, 7).
+            finish()
         }
     }
 
@@ -90,7 +93,7 @@ struct PairingView: View {
     @ViewBuilder
     private var entryContent: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("On your computer, open Isoform, go to Settings > Phone, then under Pair a phone choose Show pairing code. The pairing code expires after 10 minutes.")
+            Text(canScan ? "setup.point" : "setup.pairBody")
                 .font(.subheadline)
                 .foregroundStyle(YansuTheme.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -116,7 +119,7 @@ struct PairingView: View {
                 pairing.acknowledgeOutcome()
             }
         case .expired:
-            NoticeBanner(message: "That pairing code has expired. Choose Create new code on your computer.", systemImage: "clock") {
+            NoticeBanner(message: String(localized: "setup.expired"), systemImage: "clock") {
                 pairing.acknowledgeOutcome()
             }
         case .failed(let message):
@@ -275,6 +278,7 @@ struct PairingView: View {
     /// The Mac sends the newest brief right after approval, so fetch it now instead of waiting for the next
     /// foreground refresh.
     private func finish() {
+        router.pairedToast = pairing.paired?.hubName ?? String(localized: "your computer")
         Self.finish(refreshBrief: { Task { await brief.refresh() } }, dismiss: { dismiss() }, router: router)
     }
 

@@ -377,7 +377,6 @@ struct DuoWideRootView: View {
         VStack(spacing: 2) {
             tabButton(.today, symbol: "sun.max", title: String(localized: "Today"))
             tabButton(.chat, symbol: "bubble.left", title: String(localized: "Chat"))
-            tabButton(.tasks, symbol: "checklist", title: String(localized: "Tasks"))
         }
         .padding(5)
         .background(.ultraThinMaterial, in: Capsule())

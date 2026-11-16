@@ -27,41 +27,32 @@ final class TodayBriefCardTests: XCTestCase {
         BriefClock.text(value, locale: Locale(identifier: "en_US"))
     }
 
-    // MARK: Which brief the card shows
+    // MARK: Replaced in place (phone-today rule 6)
 
-    func testCardShowsTheCurrentBriefWhenNothingIsHeld() throws {
-        let current = brief(id: "new", asOf: "2026-10-28T15:41:00Z")
-        let older = brief(id: "old", asOf: "2026-10-28T06:50:00Z")
-        let choice = TodayBriefCard.choice(current: current, held: nil, library: [current, older], isBusy: { _ in true })
-        XCTAssertEqual(choice, TodayBriefCard.Choice(shown: current, newer: nil))
+    func testCardHasNoNewerBriefRowANewerBriefReplacesItInPlace() throws {
+        // "A newer brief is ready ›" goes: the card has no choice to hold an older brief behind a row.
+        let source = try String(contentsOfFile: #filePath.replacingOccurrences(of: "YansuTests/TodayBriefCardTests.swift",
+                                                                              with: "Yansu/TodayBriefCard.swift"), encoding: .utf8)
+        XCTAssertFalse(source.contains("A newer brief is ready"))
+        XCTAssertFalse(source.contains("feed.brief.newer"))
     }
 
-    func testCardKeepsTheBriefBeingPlayedOrReadWhileANewerOneArrives() throws {
-        let current = brief(id: "new", asOf: "2026-10-28T15:41:00Z")
-        let older = brief(id: "old", asOf: "2026-10-28T06:50:00Z")
-        let choice = TodayBriefCard.choice(current: current, held: "old", library: [current, older],
-                                           isBusy: { $0 == "old" })
-        XCTAssertEqual(choice.shown, older, "the brief being played stays on the card")
-        XCTAssertEqual(choice.newer, current, "the newer brief waits behind the row")
+    // MARK: First sentences and folding (phone-today rules 4 and 5)
+
+    func testFirstSentencesTakeThreeSentencesAcrossParagraphsAndSkipAGreeting() throws {
+        let value = brief(id: "a", asOf: "2026-10-28T15:41:00Z",
+                          paragraphs: ["Good evening.", "Lena moved the review to 10:00. Two tests still fail.",
+                                       "Sam is waiting on the pricing page. Nothing else changed."])
+        XCTAssertEqual(TodayBriefCard.firstSentences(value, locale: Locale(identifier: "en_US")),
+                       "Lena moved the review to 10:00. Two tests still fail. Sam is waiting on the pricing page.")
     }
 
-    func testCardReplacesTheHeldBriefOnceNothingPlaysOrReadsIt() throws {
-        let current = brief(id: "new", asOf: "2026-10-28T15:41:00Z")
-        let older = brief(id: "old", asOf: "2026-10-28T06:50:00Z")
-        let choice = TodayBriefCard.choice(current: current, held: "old", library: [current, older], isBusy: { _ in false })
-        XCTAssertEqual(choice, TodayBriefCard.Choice(shown: current, newer: nil))
-    }
-
-    func testCardDoesNotHoldABriefThatIsNoLongerInTheLibrary() throws {
-        let current = brief(id: "new", asOf: "2026-10-28T15:41:00Z")
-        let choice = TodayBriefCard.choice(current: current, held: "gone", library: [current], isBusy: { _ in true })
-        XCTAssertEqual(choice, TodayBriefCard.Choice(shown: current, newer: nil))
-    }
-
-    func testHeldBriefIsNeverTheCurrentOne() throws {
-        let current = brief(id: "new", asOf: "2026-10-28T15:41:00Z")
-        let choice = TodayBriefCard.choice(current: current, held: "new", library: [current], isBusy: { _ in true })
-        XCTAssertEqual(choice, TodayBriefCard.Choice(shown: current, newer: nil))
+    func testFoldIsKeptPerBriefAndNeverForAnother() throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "fold-\(UUID().uuidString)"))
+        XCTAssertFalse(TodayBriefFold.isFolded("a", defaults: defaults))
+        TodayBriefFold.fold("a", defaults: defaults)
+        XCTAssertTrue(TodayBriefFold.isFolded("a", defaults: defaults))
+        XCTAssertFalse(TodayBriefFold.isFolded("b", defaults: defaults), "a newer brief opens unfolded")
     }
 
     // MARK: The opening paragraph
@@ -178,18 +169,23 @@ final class TodayBriefCardTests: XCTestCase {
     // MARK: Lines
 
     func testMakingLineShowsOnlyWhileTheMacIsMakingABrief() throws {
-        let ready = "2026-10-28T15:43:00Z"
+        let ready = "2026-10-28T18:03:00Z"
         let queued = TodayBriefRequest(state: "queued", readyAt: ready)
-        XCTAssertEqual(TodayBriefCard.makingLine(queued, time: { self.clock($0) }),
-                       "Making a new brief · ready around \(clock(try! date(ready)))")
+        XCTAssertEqual(TodayBriefCard.makingLine(queued, calendar: utc, time: { self.clock($0) }),
+                       "Your evening brief is being made · ready around \(clock(try! date(ready)))")
         XCTAssertNil(TodayBriefCard.makingLine(TodayBriefRequest(state: "failed", readyAt: ready), time: { _ in "" }))
         XCTAssertNil(TodayBriefCard.makingLine(nil, time: { _ in "" }))
     }
 
-    func testNewerLineNamesTheNewerBriefsTime() throws {
-        let newer = brief(id: "new", asOf: "2026-10-28T15:43:00Z")
-        let time = clock(try date("2026-10-28T15:43:00Z"))
-        XCTAssertEqual(TodayBriefCard.newerLine(newer, time: { self.clock($0) }), "A newer brief is ready · \(time) ›")
+    func testMakingLineReadsTheComputersStatusForAnyBuild() throws {
+        let now = try date("2026-10-28T18:00:00Z")
+        let ahead = MobileBriefStatus.Making(kind: "evening", slot: "evening", readyAt: "2026-10-28T18:03:00Z")
+        XCTAssertEqual(TodayBriefCard.makingLine(ahead, now: now, time: { self.clock($0) }),
+                       "Your evening brief is being made · ready around \(clock(try date("2026-10-28T18:03:00Z")))")
+        let passed = MobileBriefStatus.Making(kind: "evening", readyAt: "2026-10-28T17:59:00Z")
+        XCTAssertEqual(TodayBriefCard.makingLine(passed, now: now, time: { self.clock($0) }),
+                       "Your evening brief is being made", "no time once readyAt has passed")
+        XCTAssertNil(TodayBriefCard.makingLine(nil as MobileBriefStatus.Making?, now: now, time: { _ in "" }))
     }
 
     func testWaitingLineShowsWhenAScheduledBriefIsDueWhileTheMacSleeps() throws {
@@ -199,7 +195,7 @@ final class TodayBriefCardTests: XCTestCase {
         let due = TodayBriefCard.dueWhileAsleep(schedule, current: stale, asleep: true, now: now, calendar: utc)
         XCTAssertEqual(due, try date("2026-10-28T06:50:00Z"))
         XCTAssertEqual(TodayBriefCard.waitingLine(try XCTUnwrap(due), time: { self.clock($0) }),
-                       "Your \(clock(try date("2026-10-28T06:50:00Z"))) brief will come when your computer wakes.")
+                       "Your \(clock(try date("2026-10-28T06:50:00Z"))) brief comes when your computer wakes. It's asleep.")
     }
 
     func testWaitingLineStopsOnceTheDueBriefIsMadeOrTheMacIsBack() throws {

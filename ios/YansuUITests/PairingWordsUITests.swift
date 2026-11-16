@@ -27,10 +27,10 @@ final class PairingWordsUITests: XCTestCase {
     func testUnreadablePairingSaysItCouldNotBeReadAndPairAgain() throws {
         for appearance in ["light", "dark"] {
             let app = launch(state: "unreadable", appearance: appearance)
-            XCTAssertTrue(app.descendants(matching: .any)
-                .matching(NSPredicate(format: "label CONTAINS \"couldn't be read. Pair again.\"")).firstMatch
-                .waitForExistence(timeout: 15), "an unreadable pairing says so")
-            XCTAssertTrue(app.buttons["Pair with your computer"].firstMatch.exists, "it keeps the pairing button")
+            // phone-setup rule 11: one amber line with Pair, never a page that blanks Today.
+            XCTAssertTrue(app.descendants(matching: .any)["today.pairingLost"].firstMatch
+                .waitForExistence(timeout: 15), "an unreadable pairing says so in one line")
+            XCTAssertTrue(app.buttons["today.pairAgain"].firstMatch.exists, "it keeps a way to pair")
             XCTAssertFalse(app.descendants(matching: .any)
                 .matching(NSPredicate(format: "label CONTAINS 'Open Settings to retry'")).firstMatch.exists,
                            "the body text is replaced by Try again")
@@ -38,8 +38,7 @@ final class PairingWordsUITests: XCTestCase {
             XCTAssertTrue(retry.waitForExistence(timeout: 5), "an unreadable pairing offers Try again")
             attach(app, named: "L2-unreadable-today-\(appearance)")
             retry.tap()
-            XCTAssertTrue(app.descendants(matching: .any)
-                .matching(NSPredicate(format: "label CONTAINS \"couldn't be read. Pair again.\"")).firstMatch
+            XCTAssertTrue(app.descendants(matching: .any)["today.pairingLost"].firstMatch
                 .waitForExistence(timeout: 10), "Try again re-reads the saved pairing; the file still cannot be read")
             app.terminate()
         }

@@ -2727,11 +2727,11 @@ final class ChatStoreTests: XCTestCase {
     func testUnversionedOrMalformedIdeasCannotBecomeMainChatDrafts() throws {
         let h = try makeHarness()
         let router = NotificationRouter()
-        router.selectedTab = .tasks
+        router.selectedTab = .today
         for version in [nil, "", "old", String(repeating: "A", count: 64)] as [String?] {
             let idea = IdeaOffer(id: "suggestion.notes", kind: "suggestion", title: "Draft", why: "Source", prompt: "Source text", version: version)
             XCTAssertFalse(IdeaHandoff.open(idea, chat: h.store, router: router))
-            XCTAssertEqual(router.selectedTab, .tasks)
+            XCTAssertEqual(router.selectedTab, .today)
             XCTAssertTrue(h.store.returnedDrafts.isEmpty)
             XCTAssertTrue(try XCTUnwrap(h.cache.loadMainDrafts()).isEmpty)
         }

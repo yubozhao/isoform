@@ -29,6 +29,8 @@ enum HubRoute: Equatable, Sendable {
     case keepAwake
     case tasks
     case task(id: String)
+    /// Your work, the one list (backend item B2).
+    case work
     case goals(limit: Int, cursor: String?)
     case goal(id: String)
     case offers
@@ -48,7 +50,7 @@ enum HubRoute: Equatable, Sendable {
         switch self {
         case .yourAgent, .recordings, .recordingTranscript, .voice: return "GET"
         case .refreshBrief, .write, .briefReceived: return "POST"
-        case .status, .today, .todayMeetingPrep, .findTime, .findTimeLegacy, .holdProposal, .holdStatus, .todayPart, .latestBrief, .briefList, .brief, .briefPackage, .briefPart, .briefAudio, .briefAskAnswer, .briefCardAskAnswer, .briefWeekDecline, .briefWeekAskAnswer, .chats, .chat, .notifications, .keepAwake, .tasks, .task, .goals, .goal, .offers, .offersWithHolds,
+        case .status, .today, .todayMeetingPrep, .findTime, .findTimeLegacy, .holdProposal, .holdStatus, .todayPart, .latestBrief, .briefList, .brief, .briefPackage, .briefPart, .briefAudio, .briefAskAnswer, .briefCardAskAnswer, .briefWeekDecline, .briefWeekAskAnswer, .chats, .chat, .notifications, .keepAwake, .tasks, .task, .work, .goals, .goal, .offers, .offersWithHolds,
              .topics, .topic, .privacy: return "GET"
         }
     }
@@ -82,6 +84,7 @@ enum HubRoute: Equatable, Sendable {
         case .notifications: return "/notifications"
         case .keepAwake: return "/settings/keep-awake"
         case .tasks: return "/tasks"
+        case .work: return "/work"
         case .task(let id): return "/tasks/\(id)"
         case .goals: return "/goals"
         case .goal(let id): return "/goals/\(id)"
@@ -156,7 +159,7 @@ enum HubRoute: Equatable, Sendable {
             var items = ["limit=\(min(max(limit, 1), 50))"]
             if let cursor, !cursor.isEmpty { items.insert("cursor=\(cursor)", at: 0) }
             return items.joined(separator: "&")
-        case .status, .today, .findTime, .findTimeLegacy, .latestBrief, .brief, .briefReceived, .refreshBrief, .notifications, .keepAwake, .tasks, .task, .goal, .offers, .topics, .privacy, .write: return ""
+        case .status, .today, .findTime, .findTimeLegacy, .latestBrief, .brief, .briefReceived, .refreshBrief, .notifications, .keepAwake, .tasks, .task, .work, .goal, .offers, .topics, .privacy, .write: return ""
         }
     }
 
@@ -166,7 +169,7 @@ enum HubRoute: Equatable, Sendable {
         case .refreshBrief: return "{}"
         case .write(_, let body): return body
         case .briefReceived(_, let version): return "{\"version\":\"\(version)\"}"
-        case .status, .today, .todayMeetingPrep, .findTime, .findTimeLegacy, .holdProposal, .holdStatus, .todayPart, .latestBrief, .briefList, .brief, .briefPackage, .briefPart, .briefAudio, .briefAskAnswer, .briefCardAskAnswer, .briefWeekDecline, .briefWeekAskAnswer, .chats, .chat, .notifications, .keepAwake, .tasks, .task, .goals, .goal, .offers, .offersWithHolds,
+        case .status, .today, .todayMeetingPrep, .findTime, .findTimeLegacy, .holdProposal, .holdStatus, .todayPart, .latestBrief, .briefList, .brief, .briefPackage, .briefPart, .briefAudio, .briefAskAnswer, .briefCardAskAnswer, .briefWeekDecline, .briefWeekAskAnswer, .chats, .chat, .notifications, .keepAwake, .tasks, .task, .work, .goals, .goal, .offers, .offersWithHolds,
              .topics, .topic, .privacy: return ""
         }
     }
@@ -198,6 +201,7 @@ enum HubRoute: Equatable, Sendable {
         case .keepAwake: return "settings.keepAwake"
         case .tasks: return "tasks.list"
         case .task: return "tasks.detail"
+        case .work: return "work.list"
         case .goals: return "goals.list"
         case .goal: return "goals.detail"
         case .offers, .offersWithHolds: return "offers.list"
@@ -321,6 +325,8 @@ struct HubStatus: Decodable, Equatable, Sendable {
     /// The computer serves a recording's transcript and its delete (PROTOCOL.md 24.5). Older computers omit it.
     var recordingDetail: Bool? = nil
     var briefSchedule: [ScheduledPhoneBrief]? = nil
+    /// The computer serves Your work, the one list (B2), and its answers (B3). Older computers omit it.
+    var work: Bool? = nil
 }
 
 struct ScheduledPhoneBrief: Codable, Equatable, Sendable {

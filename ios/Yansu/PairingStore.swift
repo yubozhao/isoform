@@ -519,12 +519,12 @@ private enum Copy {
     static let codeNotValid = "This pairing code is not valid. Create a new one on your computer."
     static let codeAlreadyUsed = "This pairing code was already used or closed on your computer. Create a new one on your computer."
     static let noLongerWaiting = "Your computer is no longer waiting for this pairing code. Create a new one on your computer."
-    static var offline: String { String(localized: "Your phone could not reach your computer. Make sure Isoform is open and remote access is on, check your internet connection, then try again.") }
+    static var offline: String { String(localized: "setup.unreachable") }
     static let approvalLost = "Your computer's answer did not reach this phone. If your computer approved it, create a new pairing code on your computer and pair again."
     static let approvalRejected = "Your computer's answer does not match this pairing code. Create a new pairing code on your computer and start again."
     static let approvalNotSaved = "Your computer approved this phone, but Isoform could not save the approval. Create a new pairing code on your computer and pair again."
     static let pollRejected = "Isoform could not check this pairing. Create a new pairing code on your computer and try again."
-    static let unknownStatus = "The relay sent a status Isoform does not understand. Try again."
+    static var unknownStatus: String { String(localized: "setup.update") }
     static let generic = "Isoform could not finish pairing. Try again."
 
     static func rateLimited(retryAfter: TimeInterval?) -> String {

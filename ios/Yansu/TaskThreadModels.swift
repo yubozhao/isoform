@@ -394,11 +394,14 @@ extension EnvironmentValues {
 struct TaskThreadDestination: ViewModifier {
     @ObservedObject var tasks: TasksStore
     let source: TaskThreadSource
+    @EnvironmentObject private var router: NotificationRouter
     @State private var task: MobileTask?
 
     func body(content: Content) -> some View {
         content
             .environment(\.openTaskThread) { task = $0 }
+            // A task notice opens its thread on Today, now that the Tasks tab is gone (phone-today rule 19).
+            .task(id: source == .today ? router.pendingTaskID : nil) { await openPendingTask() }
             .navigationDestination(item: $task) { task in
                 TaskThreadView(task: task, tasks: tasks, source: source)
             }
@@ -409,6 +412,22 @@ struct TaskThreadDestination: ViewModifier {
                 Button(String(localized: "Send")) { Task { await tasks.confirmHeldSend(held) } }
                 Button(String(localized: "Not now"), role: .cancel) { Task { await tasks.setHeldSendAside(held) } }
             }
+    }
+}
+
+extension TaskThreadDestination {
+    @MainActor
+    func openPendingTask() async {
+        guard source == .today, let id = router.pendingTaskID else { return }
+        if let found = tasks.page?.tasks.first(where: { $0.id == id }) {
+            task = found
+            router.consumePendingTaskID(id)
+            return
+        }
+        if case .success(let detail)? = await tasks.loadDetail(id: id), router.pendingTaskID == id {
+            task = detail.task
+            router.consumePendingTaskID(id)
+        }
     }
 }
 

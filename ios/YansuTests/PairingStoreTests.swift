@@ -518,7 +518,7 @@ final class PairingStoreTests: XCTestCase {
         guard case .failed(let message) = fixture.store.phase else {
             return XCTFail("expected a failure, got \(fixture.store.phase)")
         }
-        XCTAssertTrue(message.contains("reach your computer"))
+        XCTAssertTrue(message.contains("couldn't be reached"), "phone-setup: one line says why and what to do")
     }
 
     func testExpiredInvitationNeverReachesTheRelay() throws {

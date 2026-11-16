@@ -1,7 +1,7 @@
 // In-memory Wails bindings and runtime events for the launch demo. Nothing
 // here reaches the desktop app, its browser bridge or ~/.isoform-agent.
 import { typedDefaults } from './defaults';
-import { beliefs, portrait, topics, brief, dayShape, DAY, evidence, lenaAnswer, NOW, priyaCard, sentReport } from './content';
+import { beliefs, portrait, topics, brief, dayShape, DAY, evidence, lenaAnswer, nineAnswer, NOW, priyaCard, sentReport } from './content';
 
 const ONBOARDING_KEY = 'yansu.onboarding.state';
 const MAIN = 'main';
@@ -13,7 +13,7 @@ const emit = (name: string, ...data: any[]) => listeners.get(name)?.forEach((cb)
 const now = () => Date.now();
 
 // The main chat: the stream the panel beside Today and the Chat page read.
-let stream: Record<string, unknown>[] = [priyaCard];
+let stream: Record<string, unknown>[] = new URLSearchParams(location.search).has('empty') ? [] : [priyaCard];
 let order = 20;
 const append = (item: Record<string, unknown>) => {
     stream = [...stream, { localDay: DAY, sortOrder: ++order, createdAt: now(), ...item }];
@@ -23,7 +23,7 @@ const page = () => ({ items: stream, hasMore: false, nextCursor: 0 });
 const reply = (text: string) => {
     append({ id: `user-${order}`, kind: 'user', content: text, rowClass: 'conversation' });
     setTimeout(() => {
-        append({ id: `answer-${order}`, kind: 'assistant', content: /lena/i.test(text) ? lenaAnswer : 'Done.', rowClass: 'conversation' });
+        append({ id: `answer-${order}`, kind: 'assistant', content: /lena/i.test(text) ? lenaAnswer : /9:00/.test(text) ? nineAnswer : 'Done.', rowClass: 'conversation' });
         emit('agent:event', { type: 'done', tag: MAIN });
     }, REPLY_DELAY_MS);
     return { sessionId: MAIN, userItemId: `user-${order}`, sortOrder: order };
@@ -31,6 +31,7 @@ const reply = (text: string) => {
 
 export const reads: Record<string, unknown> = {
     GetStorageStartupStatus: { code: '' },
+    AIReady: true,
     LoadUIState: (key: string) => key === ONBOARDING_KEY ? JSON.stringify({ completed: true }) : '',
     GetUserProfile: { name: 'Bo' },
     GetThemePreference: () => localStorage.getItem('yansu.theme') ?? 'onedark',

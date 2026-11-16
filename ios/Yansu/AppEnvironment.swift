@@ -36,6 +36,7 @@ final class AppEnvironment: ObservableObject {
     let goals: GoalStore
     let ideas: IdeasStore
     let tasks: TasksStore
+    let work: WorkStore
     let holds: HoldsStore
     let yourAgent: YourAgentStore
     let topics: TopicStore
@@ -97,6 +98,7 @@ final class AppEnvironment: ObservableObject {
          actionHub: ActionHubAPI? = nil,
          feedHub: FeedHubAPI? = nil,
          tasksHub: TasksHubAPI? = nil,
+         workHub: WorkHubAPI? = nil,
          holdsHub: HoldsHubAPI? = nil,
          topicHub: TopicHubAPI? = nil,
          todayHub: TodayHubAPI? = nil,
@@ -245,6 +247,10 @@ final class AppEnvironment: ObservableObject {
                                     return briefStore.hubOnline != false
                                 },
                                 fileURL: journalURL.deletingLastPathComponent().appendingPathComponent("tasks.json"))
+        self.work = WorkStore(hub: workHub ?? hub, isPaired: { pairing.isPaired },
+                              canRead: { pairing.paired?.scopes.contains("brief:read") == true },
+                              hubID: { vault.current()?.hubID },
+                              fileURL: journalURL.deletingLastPathComponent().appendingPathComponent("work.json"))
         self.holds = HoldsStore(hub: holdsHub ?? hub, journal: journal, pairingID: {
             guard let device = vault.current() else { return nil }
             return "\(device.hubID)/\(device.deviceID)"
@@ -313,6 +319,9 @@ final class AppEnvironment: ObservableObject {
             self?.keepAwake.accept(snapshot)
             if self?.refreshesTasks == true && (snapshot.needsYou != previous?.needsYou || snapshot.tasksVersion != previous?.tasksVersion) {
                 Task { await self?.tasks.refresh() }
+            }
+            if snapshot.workVersion != previous?.workVersion {
+                Task { await self?.work.refresh() }
             }
             if let self, let paired = self.vault.current() {
                 let identity = TodayPairingIdentity(hubID: paired.hubID, deviceID: paired.deviceID)
@@ -469,6 +478,7 @@ final class AppEnvironment: ObservableObject {
             self?.ideas.pairingCommitted()
             self?.tasks.pairingCommitted()
             self?.today.loadCached()
+            self?.work.loadCached()
             if let paired = self?.vault.current() {
                 let identity = TodayPairingIdentity(hubID: paired.hubID, deviceID: paired.deviceID)
                 TodayBriefPlaceholder.reset(hubID: paired.hubID)
@@ -537,6 +547,7 @@ final class AppEnvironment: ObservableObject {
         vault.reconcileNoticeSecrets()
         brief.loadCached()
         today.loadCached()
+        work.loadCached()
         if let paired = vault.current() {
             let identity = TodayPairingIdentity(hubID: paired.hubID, deviceID: paired.deviceID)
             pendingBriefPlay = briefPlayQueue.load(pairing: identity)?.briefID
@@ -765,6 +776,7 @@ final class AppEnvironment: ObservableObject {
         goals.clearAfterUnpair()
         let ideasCleared = ideas.clearAfterUnpair()
         let tasksCleared = tasks.clearAfterUnpair()
+        work.clear()
         let yourAgentCleared = yourAgent.clearAfterUnpair()
         topics.clearAfterUnpair()
         let widgetCleared = widget.clear()
@@ -809,6 +821,8 @@ extension AppEnvironment {
         if state == "feed-no-history", ProcessInfo.processInfo.environment["YANSU_UITEST_KEEP_PLACEHOLDER"] != "1" {
             TodayBriefPlaceholder.reset(hubID: "settings-ui-hub")
         }
+        // Each UI-test launch starts with the brief unfolded (phone-today rule 5 keeps the fold per brief).
+        UserDefaults.standard.removeObject(forKey: "today.briefFolded")
         if ProcessInfo.processInfo.environment["YANSU_UITEST_RESET_AWAKE_OFFER"] == "1" {
             UserDefaults.standard.removeObject(forKey: "today.keepAwakeOfferDismissed")
         }
@@ -972,6 +986,7 @@ extension AppEnvironment {
                 actionHub: tasksTestHub,
                 feedHub: state == "feed" ? FeedFeedbackUITestHub() : nil,
                 tasksHub: holdsTestHub.map { $0 as TasksHubAPI } ?? tasksTestHub.map { $0 as TasksHubAPI } ?? (state.hasPrefix("feed") ? FeedTasksUITestHub(snapshot: todayFixture) : nil),
+                workHub: WorkUITestSeed.isOn ? WorkUITestHub() : nil,
                 holdsHub: holdsTestHub,
                 topicHub: demoHub.map { $0 as TopicHubAPI } ?? (state.hasPrefix("feed-topics") || state == "tasks-seeded" || state == "feed-review"
                     ? TopicUITestHub(now: Date()) : nil),
@@ -1013,7 +1028,7 @@ extension AppEnvironment {
             switch ProcessInfo.processInfo.environment["YANSU_UITEST_TAB"] {
             case "feed", "brief", "desk", "today": environment.router.selectedTab = .today
             case "chat", "chat-not-sent", "chat-away": environment.router.selectedTab = .chat
-            case "ideas", "tasks": environment.router.selectedTab = .tasks
+            case "ideas", "tasks": environment.router.selectedTab = .today
             case "goals": environment.router.selectedTab = .today
             default: break
             }
@@ -1160,6 +1175,10 @@ extension AppEnvironment {
             if let todayFixture { environment.today.accept(todayFixture) }
             if state == "brain-dump" { environment.tasks.seedBrainDumpCapabilityForUITest() }
             if state == "feed-review" { environment.tasks.seedForUITest(TaskUITestSeed.page) }
+            if WorkUITestSeed.isOn {
+                WorkUITestSeed.briefID = environment.today.newestBrief()?.identifier ?? environment.brief.current?.identifier
+                environment.work.seedForUITest(WorkUITestSeed.page())
+            }
             if demoBrief != nil, ProcessInfo.processInfo.environment["YANSU_UITEST_TOUCHES"] != "0" { LaunchDemoTouches.install() }
             if isFirstLaunch && state == "library" {
                 for brief in FeedUITestSeed.libraryBriefs(now: Date()) {

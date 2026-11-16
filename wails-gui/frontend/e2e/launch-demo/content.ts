@@ -32,7 +32,7 @@ export const brief = {
 export const dayShape = {
     rangeStart: at('08:00'), rangeEnd: at('18:00'), now: at('07:02'), calendarConnected: true,
     events: [
-        { id: 'standup', start: at('09:30'), end: at('09:45'), title: 'Team standup', shortName: 'Standup', shortestName: 'Standup', initial: 'S', kind: 'meeting' },
+        { id: 'standup', start: at('09:00'), end: at('09:15'), title: 'Team standup', shortName: 'Standup', shortestName: 'Standup', initial: 'S', kind: 'meeting' },
         { id: 'lena', start: at('14:00'), end: at('14:45'), title: 'Halcyon with Lena', shortName: 'Lena', shortestName: 'Lena', initial: 'L', kind: 'meeting' },
         { id: 'design', start: at('16:00'), end: at('16:30'), title: 'Design review', shortName: 'Design review', shortestName: 'Design', initial: 'D', kind: 'meeting' },
     ],
@@ -134,3 +134,9 @@ export const topics = [
     { id: 'board-deck', kind: 'project', name: 'Board deck', status: 'moving', latest: { text: 'Import timing slide waits on Halcyon', at: new Date(YESTERDAY + 8 * HOUR).toISOString() }, pinnedToSidebar: false },
     { id: 'thursday-review', kind: 'work', name: 'Thursday review', status: 'waiting', latest: { text: 'Priya asked to move it to the afternoon', at: new Date(YESTERDAY + 14.5 * HOUR).toISOString() }, pinnedToSidebar: false },
 ];
+
+export const nineAnswer = [
+    'Your 9:00 is the team standup, 15 minutes with the Halcyon team.',
+    '',
+    'The update to give: the import is close. Two tests still fail, both in the date parser, and the fix you sketched yesterday is on the branch. Lena will ask whether the import can take the full customer file at your 2:00, so it helps to say when the fix lands.',
+].join('\n');

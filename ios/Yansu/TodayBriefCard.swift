@@ -7,23 +7,6 @@ enum TodayBriefCard {
     /// The most chips the card shows (design section 2).
     static let chipLimit = 3
 
-    /// Which brief the card shows. The phone's current brief, unless the person is playing or reading the older brief the
-    /// card held when a newer one arrived. That older brief stays, and the current one waits behind the newer-brief row.
-    struct Choice: Equatable {
-        let shown: MobileBriefV1
-        /// The newer brief the card holds back, for the "A newer brief is ready" row.
-        let newer: MobileBriefV1?
-    }
-
-    static func choice(current: MobileBriefV1, held: String?, library: [MobileBriefV1],
-                       isBusy: (String) -> Bool) -> Choice {
-        guard let held, held != current.identifier, isBusy(held),
-              let kept = library.first(where: { $0.identifier == held }) else {
-            return Choice(shown: current, newer: nil)
-        }
-        return Choice(shown: kept, newer: current)
-    }
-
     /// The opening paragraph: the first paragraph that says something, other than the closing question. A greeting on
     /// its own is passed over for the paragraph after it, so the card never shows a bare greeting. Only a brief whose
     /// words are all greetings, or a brief with a single closing question, falls back to what it has.
@@ -80,16 +63,44 @@ enum TodayBriefCard {
         hasWords && !playShown && audio?.isRecording == true
     }
 
-    /// "Making a new brief · ready around 8:43 AM", while a requested brief is being made. Nil for any other state.
-    static func makingLine(_ request: TodayBriefRequest?, time: (Date) -> String) -> String? {
+    /// "Your evening brief is being made · ready around 6:03 PM", only while the computer says a brief is being made
+    /// (phone-today rule 7). Nil for any other state.
+    static func makingLine(_ request: TodayBriefRequest?, calendar: Calendar = .current, time: (Date) -> String) -> String? {
         guard let request, ["queued", "making"].contains(request.state), let ready = request.readyDate else { return nil }
-        return String(format: String(localized: "Making a new brief · ready around %@"), time(ready))
+        let kind = calendar.component(.hour, from: ready) < 15 ? String(localized: "today.brief.kindMorning")
+            : String(localized: "today.brief.kindEvening")
+        return String.localizedStringWithFormat(String(localized: "today.brief.making"), kind, time(ready))
     }
 
-    /// "A newer brief is ready · 8:43 AM ›", the row for a newer brief the card holds back.
-    static func newerLine(_ newer: MobileBriefV1, time: (Date) -> String) -> String {
-        let shown = BriefTitle.timeText(BriefTitleInput(brief: newer)) ?? time(newer.asOfDate ?? Date())
-        return String(format: String(localized: "A newer brief is ready · %@ ›"), shown)
+    /// The same line from the computer's own status (B1): any build in progress, not only one the phone asked for.
+    /// The time shows only while `readyAt` is ahead.
+    static func makingLine(_ making: MobileBriefStatus.Making?, now: Date, time: (Date) -> String) -> String? {
+        guard let making else { return nil }
+        let kind = making.kind == "morning" ? String(localized: "today.brief.kindMorning")
+            : making.kind == "evening" ? String(localized: "today.brief.kindEvening") : String(localized: "today.brief.kindNew")
+        if let ready = making.readyAt.flatMap(RelayTime.parse), ready > now {
+            return String.localizedStringWithFormat(String(localized: "today.brief.making"), kind, time(ready))
+        }
+        return String.localizedStringWithFormat(String(localized: "today.brief.makingNoTime"), kind)
+    }
+
+    /// The brief's first sentences, at most `limit`, from its words other than the closing question. Greetings alone
+    /// are passed over, as on the old card's opening paragraph.
+    static func firstSentences(_ brief: MobileBriefV1, limit: Int = 3, locale: Locale = .current) -> String? {
+        let paragraphs = brief.narrative.enumerated().compactMap { index, paragraph -> String? in
+            guard index != brief.closingParagraphIndex,
+                  let text = paragraph.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty,
+                  !isGreeting(text) else { return nil }
+            return text
+        }
+        let joined = paragraphs.joined(separator: " ")
+        guard !joined.isEmpty else { return opening(brief)?.text }
+        var sentences: [String] = []
+        joined.enumerateSubstrings(in: joined.startIndex..., options: [.bySentences, .localized]) { sentence, _, _, stop in
+            if let sentence = sentence?.trimmingCharacters(in: .whitespaces), !sentence.isEmpty { sentences.append(sentence) }
+            if sentences.count >= limit { stop = true }
+        }
+        return sentences.isEmpty ? joined : sentences.joined(separator: " ")
     }
 
     /// The scheduled brief that is due while the Mac is asleep and that the current brief does not cover: its time, or
@@ -108,9 +119,9 @@ enum TodayBriefCard {
         return made >= due.addingTimeInterval(-BriefTitle.lateTolerance) ? nil : due
     }
 
-    /// "Your 6:50 AM brief will come when your computer wakes."
+    /// "Your 6:00 PM brief comes when your computer wakes. It's asleep." The last brief stays under its own time.
     static func waitingLine(_ due: Date, time: (Date) -> String) -> String {
-        String(format: String(localized: "Your %@ brief will come when your computer wakes."), time(due))
+        String.localizedStringWithFormat(String(localized: "today.brief.asleep"), time(due))
     }
 
     /// The local time of an "HH:mm" slot on a day, or nil for any other text.
@@ -118,6 +129,23 @@ enum TodayBriefCard {
         let parts = value.split(separator: ":").compactMap { Int($0) }
         guard parts.count == 2, (0..<24).contains(parts[0]), (0..<60).contains(parts[1]) else { return nil }
         return calendar.date(bySettingHour: parts[0], minute: parts[1], second: 0, of: day)
+    }
+}
+
+/// Whether the brief card is folded to its title and two lines (phone-today rule 5): after the first answer in Your
+/// work, or once the brief has been heard or read in full. Kept per brief on this phone; it never leaves the screen.
+enum TodayBriefFold {
+    private static let key = "today.briefFolded"
+
+    static func isFolded(_ briefID: String, defaults: UserDefaults = .standard) -> Bool {
+        (defaults.stringArray(forKey: key) ?? []).contains(briefID)
+    }
+
+    static func fold(_ briefID: String, defaults: UserDefaults = .standard) {
+        var folded = defaults.stringArray(forKey: key) ?? []
+        guard !folded.contains(briefID) else { return }
+        folded.append(briefID)
+        defaults.set(Array(folded.suffix(30)), forKey: key)
     }
 }
 
@@ -139,8 +167,8 @@ enum TodayBriefPlaceholder {
     }
 }
 
-/// The Today card for the phone's current brief. It holds an older brief only while the person plays or reads it
-/// (`held`), so a newer brief replaces the old one in place with a crossfade otherwise.
+/// The Today card for the phone's newest brief (phone-today v1.0.0 section 1). It is always on the first screen, drawn
+/// from what this phone saved, and a newer brief replaces it in place: never a banner asking to be tapped.
 struct TodayBriefCardView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let current: MobileBriefV1
@@ -151,21 +179,21 @@ struct TodayBriefCardView: View {
     let canMakeBrief: Bool
     let now: Date
     var onPastBriefs: () -> Void
+    /// Folded to its title and two lines once the person moved on (rule 5). Tapping unfolds it.
+    var folded = false
 
     @EnvironmentObject private var brief: BriefStore
     @EnvironmentObject private var todayStore: TodayStore
-    @EnvironmentObject private var onScreen: BriefOnScreen
     @Environment(\.locale) private var locale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var held: String?
     /// Whether the shown brief's audio is on the phone. It is read when the brief or the audio changes, not on every
     /// playback tick, which re-renders this card.
     @State private var hasAudio = false
+    @State private var unfolded = false
+    @State private var readingAll = false
 
     var body: some View {
-        let isBusy = busy
-        let choice = TodayBriefCard.choice(current: current, held: held, library: brief.cachedBriefs, isBusy: isBusy)
-        let shown = choice.shown
+        let shown = current
         let holdsBrief = player.started && player.hubID == hubID && player.brief?.identifier == shown.identifier
         let asleep = todayStore.hubUnreachable || brief.hubOnline == false
         let schedule = todayStore.snapshot?.schedule ?? MobileBriefSchedule(morning: nil, evening: nil)
@@ -175,151 +203,150 @@ struct TodayBriefCardView: View {
                                  asOf: shown.asOfDate, narrativeStatus: shown.narrativeStatus, isCached: true,
                                  displaySlot: shown.displaySlot, timezone: shown.timezone,
                                  kind: shown.kind, dueAt: shown.dueAt)
-        VStack(alignment: .leading, spacing: 12) {
-            YansuCard {
-                VStack(alignment: .leading, spacing: 14) {
-                    if weekShown {
-                        // One card for a week brief (P139): Your week's title and ··· menu, its Play or recording line,
-                        // its words and sections, then the links at the bottom.
-                        BriefCardsView(brief: shown, showsAttention: false, showsParagraphs: true, topics: topics,
-                                       onPrepareInTopic: onPrepareInTopic, preview: true, weekEmbedded: true,
-                                       weekBelowTitle: weekPlayLine(shown, holdsBrief: holdsBrief, asleep: asleep),
-                                       weekMakeNow: { Task { await todayStore.requestFresh() } }, weekCanMakeNow: canMakeBrief)
-                    } else {
-                        if let making = TodayBriefCard.makingLine(todayStore.snapshot?.briefRequest, time: time) {
-                            Text(making)
-                                .font(.footnote)
-                                .foregroundStyle(YansuTheme.secondary)
-                                .accessibilityIdentifier("feed.brief.making")
-                        }
-                        HStack(alignment: .top, spacing: 8) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(verbatim: TodayAwaitingBrief.cardTitle(shown, now: now, locale: locale))
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(YansuTheme.secondary)
-                                    .accessibilityIdentifier("feed.brief.title")
-                                if let late = shown.lateLineText {
-                                    Text(late)
-                                        .font(.footnote)
-                                        .foregroundStyle(YansuTheme.secondary)
-                                        .accessibilityIdentifier("feed.brief.late")
-                                }
-                            }
-                            Spacer(minLength: 0)
-                            Menu {
-                                Button("Make my brief now") { Task { await todayStore.requestFresh() } }
-                                    .disabled(!canMakeBrief)
-                            } label: {
-                                // P134: the 44 pt tap target stays, but its height no longer adds a band under the title row.
-                                Image(systemName: "ellipsis").frame(width: 44, height: 44)
-                                    .padding(.vertical, -12)
-                            }
-                            .accessibilityLabel("More options")
-                        }
-                        let playShown = TodayBriefCard.showsPlay(hasWords: shown.hasWords, hasAudio: hasAudio, holdsBrief: holdsBrief,
-                                                                 audioOnComputer: shown.audio?.isFinished == true && !shown.audioIsWithdrawn,
-                                                                 computerOnline: asleep ? false : brief.hubOnline)
-                        if playShown {
-                            HStack(spacing: 10) {
-                                TodayBriefPlayButton(brief: shown, hubID: hubID, player: player, hasAudio: hasAudio)
-                                if let length = shown.audio?.durationLabel {
-                                    Text(verbatim: length)
-                                        .font(.footnote.weight(.medium))
-                                        .foregroundStyle(YansuTheme.secondary)
-                                        .accessibilityIdentifier("feed.brief.length")
-                                }
-                            }
-                        } else if TodayBriefCard.showsRecordingLine(hasWords: shown.hasWords, playShown: playShown, audio: shown.audio) {
-                            Text("Recording on its way")
-                                .font(.footnote)
-                                .foregroundStyle(YansuTheme.secondary)
-                                .accessibilityIdentifier("feed.brief.recording")
-                        }
-                        BriefCardsView(brief: shown, showsAttention: false, showsParagraphs: true, topics: topics,
-                                       onPrepareInTopic: onPrepareInTopic, preview: true)
-                    }
-                    if let due {
-                        Text(TodayBriefCard.waitingLine(due, time: time))
-                            .font(.footnote)
-                            .foregroundStyle(YansuTheme.secondary)
-                            .accessibilityIdentifier("feed.brief.waiting")
-                    }
-                    if todayStore.freshFailed {
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Text("Couldn't make the new brief.")
-                                .font(.footnote)
-                                .foregroundStyle(YansuTheme.secondary)
-                            Spacer(minLength: 0)
-                            Button("Make it now") { Task { await todayStore.requestFresh() } }
-                                .font(.footnote.weight(.semibold))
-                                .foregroundStyle(YansuTheme.accent)
-                                .disabled(!canMakeBrief)
-                                .accessibilityIdentifier("feed.brief.makeNow")
-                        }
-                        .accessibilityIdentifier("feed.brief.failed")
-                    }
-                    if let notice = brief.notice {
-                        NoticeBanner(message: notice, dismiss: brief.dismissNotice)
-                    }
-                    if let newer = choice.newer {
-                        Button {
-                            held = nil
-                        } label: {
-                            HStack {
-                                Text(TodayBriefCard.newerLine(newer, time: time))
-                                Spacer(minLength: 0)
-                            }
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(YansuTheme.accent)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("feed.brief.newer")
-                    }
-                    // Side-by-side links stack at accessibility sizes, so their labels never run into each other.
-                    let readAll = NavigationLink {
-                        BriefDetailView(entry: entry, player: player,
-                                        fallbackLead: todayStore.snapshot?.briefs.first { $0.id == shown.identifier }?.lead)
-                    } label: {
-                        Text("Read all")
-                    }
-                    .accessibilityIdentifier("feed.readAll")
-                    let pastBriefs = Button(action: onPastBriefs) {
-                        HStack(spacing: 4) {
-                            Text("Past briefs")
-                            Image(systemName: "chevron.right").font(.caption.weight(.semibold))
-                        }
-                    }
-                    .accessibilityIdentifier("feed.pastBriefs")
-                    // The two links sit at the card's two ends at the default size, and stack at accessibility sizes (P149).
-                    if dynamicTypeSize.isAccessibilitySize {
-                        VStack(alignment: .leading, spacing: 10) { readAll; pastBriefs }
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(YansuTheme.accent)
-                    } else {
-                        HStack { readAll; Spacer(minLength: 12); pastBriefs }
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(YansuTheme.accent)
-                    }
+        let isFolded = folded && !unfolded
+        VStack(alignment: .leading, spacing: 10) {
+            if weekShown {
+                YansuCard {
+                    // One card for a week brief (P139): Your week's title and ··· menu, its Play or recording line,
+                    // its words and sections, then the links at the bottom.
+                    BriefCardsView(brief: shown, showsAttention: false, showsParagraphs: true, topics: topics,
+                                   onPrepareInTopic: onPrepareInTopic, preview: true, weekEmbedded: true,
+                                   weekBelowTitle: weekPlayLine(shown, holdsBrief: holdsBrief, asleep: asleep),
+                                   weekMakeNow: { Task { await todayStore.requestFresh() } }, weekCanMakeNow: canMakeBrief)
                 }
+            } else {
+                card(shown, entry: entry, holdsBrief: holdsBrief, asleep: asleep, isFolded: isFolded, due: due)
             }
         }
         .id(shown.identifier)
         .transition(.opacity)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: shown.identifier)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: isFolded)
         .briefOnScreen(shown.identifier)
-        .onChange(of: current.identifier) { old, _ in
-            // The brief on the card stays while the person plays or reads it.
-            if isBusy(old) { held = old }
-        }
-        .onChange(of: held.map(isBusy) ?? false) { _, stillBusy in
-            if !stillBusy { held = nil }
+        .navigationDestination(isPresented: $readingAll) {
+            BriefDetailView(entry: entry, player: player,
+                            fallbackLead: todayStore.snapshot?.briefs.first { $0.id == shown.identifier }?.lead)
+                .onAppear { TodayBriefFold.fold(shown.identifier) }
         }
         .onChange(of: AudioCheck(briefID: shown.identifier, revision: player.audioRevision), initial: true) { _, _ in
             hasAudio = player.hasAudioOnPhone(brief: shown, hubID: hubID)
         }
+        .onChange(of: holdsBrief && player.finished) { _, heard in
+            if heard { TodayBriefFold.fold(shown.identifier) }
+        }
+        .onChange(of: folded) { _, value in if value { unfolded = false } }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("feed.brief")
+    }
+
+    private func card(_ shown: MobileBriefV1, entry: HistoryEntry, holdsBrief: Bool, asleep: Bool, isFolded: Bool,
+                      due: Date?) -> some View {
+        let playShown = TodayBriefCard.showsPlay(hasWords: shown.hasWords, hasAudio: hasAudio, holdsBrief: holdsBrief,
+                                                 audioOnComputer: shown.audio?.isFinished == true && !shown.audioIsWithdrawn,
+                                                 computerOnline: asleep ? false : brief.hubOnline)
+        return VStack(alignment: .leading, spacing: 10) {
+            if let due {
+                // A newer brief is made but not here, the computer asleep: one amber line above the title (rule 7).
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: "clock").font(.caption).foregroundStyle(YansuTheme.warning)
+                    Text(TodayBriefCard.waitingLine(due, time: time))
+                        .font(.footnote)
+                        .foregroundStyle(YansuTheme.warning)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("feed.brief.waiting")
+            }
+            if let making = TodayBriefCard.makingLine(todayStore.snapshot?.briefStatus?.making, now: now, time: time)
+                ?? TodayBriefCard.makingLine(todayStore.snapshot?.briefRequest, time: time) {
+                Text(making)
+                    .font(.footnote)
+                    .foregroundStyle(YansuTheme.secondary)
+                    .accessibilityIdentifier("feed.brief.making")
+            }
+            HStack(alignment: .center, spacing: 8) {
+                Text(verbatim: TodayAwaitingBrief.cardTitle(shown, now: now, locale: locale))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(YansuTheme.ink)
+                    .accessibilityIdentifier("feed.brief.title")
+                Spacer(minLength: 0)
+                Menu {
+                    Button(String(localized: "today.brief.menuPast"), action: onPastBriefs)
+                        .accessibilityIdentifier("feed.pastBriefs")
+                    Button(String(localized: "today.brief.menuMake")) { Task { await todayStore.requestFresh() } }
+                        .disabled(!canMakeBrief)
+                } label: {
+                    // P134: the 44 pt tap target stays, but its height no longer adds a band under the title row.
+                    Image(systemName: "ellipsis").foregroundStyle(YansuTheme.secondary)
+                        .frame(width: 44, height: 44)
+                        .padding(.vertical, -12)
+                }
+                .accessibilityLabel("More options")
+                .accessibilityIdentifier("feed.brief.menu")
+            }
+            if !isFolded {
+                if playShown {
+                    HStack(spacing: 10) {
+                        TodayBriefPlayButton(brief: shown, hubID: hubID, player: player, hasAudio: hasAudio)
+                        Text("today.brief.hear")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(YansuTheme.ink)
+                        if let length = shown.audio?.minutesLabel {
+                            Text(verbatim: length)
+                                .font(.subheadline)
+                                .foregroundStyle(YansuTheme.secondary)
+                                .accessibilityIdentifier("feed.brief.length")
+                        }
+                    }
+                } else if TodayBriefCard.showsRecordingLine(hasWords: shown.hasWords, playShown: playShown, audio: shown.audio) {
+                    Text("Recording on its way")
+                        .font(.footnote)
+                        .foregroundStyle(YansuTheme.secondary)
+                        .accessibilityIdentifier("feed.brief.recording")
+                }
+            }
+            if let words = TodayBriefCard.firstSentences(shown, locale: locale) {
+                Text(verbatim: words)
+                    .font(.system(size: 16.5))
+                    .lineSpacing(3)
+                    .foregroundStyle(YansuTheme.ink)
+                    .lineLimit(isFolded ? 2 : nil)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("feed.brief.words")
+            }
+            if !isFolded {
+                if todayStore.freshFailed {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text("Couldn't make the new brief.")
+                            .font(.footnote)
+                            .foregroundStyle(YansuTheme.secondary)
+                        Spacer(minLength: 0)
+                        Button("Make it now") { Task { await todayStore.requestFresh() } }
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(YansuTheme.accent)
+                            .disabled(!canMakeBrief)
+                            .accessibilityIdentifier("feed.brief.makeNow")
+                    }
+                    .accessibilityIdentifier("feed.brief.failed")
+                }
+                if let notice = brief.notice {
+                    NoticeBanner(message: notice, dismiss: brief.dismissNotice)
+                }
+                Button { readingAll = true } label: {
+                    Text("today.brief.readAll")
+                        .font(.subheadline)
+                        .foregroundStyle(YansuTheme.accent)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("feed.readAll")
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(YansuTheme.surface, in: RoundedRectangle(cornerRadius: 18))
+        .contentShape(RoundedRectangle(cornerRadius: 18))
+        .onTapGesture { if isFolded { unfolded = true } }
+        .accessibilityAction(named: Text("today.brief.unfold")) { unfolded = true }
     }
 
     /// A week brief's making line and its Play or "Recording on its way" line, which sit under the week's title (P139).
@@ -357,12 +384,6 @@ struct TodayBriefCardView: View {
         })
     }
 
-    /// The brief is busy while the person plays it (the player holds it and has started it, until it ends) or reads it.
-    private func busy(_ briefID: String) -> Bool {
-        let playing = player.brief?.identifier == briefID && player.hubID == hubID && player.started && !player.finished
-        return playing || onScreen.isReading(briefID)
-    }
-
     private func time(_ date: Date) -> String {
         BriefClock.text(date, locale: locale)
     }
@@ -398,9 +419,10 @@ private struct TodayBriefPlayButton: View {
             Image(systemName: playing ? "pause.fill" : "play.fill")
                 .contentTransition(.symbolEffect(.replace))
                 .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: playing)
-                .foregroundStyle(YansuTheme.accent)
-                .frame(width: 40, height: 40)
-                .background(YansuTheme.accentWash, in: Circle())
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(YansuTheme.onSolid)
+                .frame(width: 38, height: 38)
+                .background(YansuTheme.solid, in: Circle())
                 .overlay {
                     if progress > 0 {
                         Circle()

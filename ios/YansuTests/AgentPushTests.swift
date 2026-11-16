@@ -182,7 +182,7 @@ final class AgentPushTests: XCTestCase {
         router.openDeepLink(try XCTUnwrap(URL(string: "yansu://goals")))
         XCTAssertEqual(router.selectedTab, .today)
         router.openDeepLink(try XCTUnwrap(URL(string: "yansu://ideas")))
-        XCTAssertEqual(router.selectedTab, .tasks)
+        XCTAssertEqual(router.selectedTab, .today, "the Tasks tab went; its work is on Today (phone-today rule 19)")
         router.openDeepLink(try XCTUnwrap(URL(string: "yansu://somewhere-else")))
         XCTAssertEqual(router.selectedTab, .today)
         XCTAssertNotNil(router.linkNotice)
@@ -191,7 +191,7 @@ final class AgentPushTests: XCTestCase {
     func testTodayNoticeTargetsAndBriefLink() throws {
         let router = NotificationRouter()
         router.openTodayNotice(kind: "task", id: "task-1")
-        XCTAssertEqual(router.selectedTab, .tasks)
+        XCTAssertEqual(router.selectedTab, .today, "a task notice opens its thread on Today")
         XCTAssertEqual(router.pendingTaskID, "task-1")
         router.consumePendingTaskID("task-1")
         XCTAssertNil(router.pendingTaskID)
@@ -213,15 +213,22 @@ final class AgentPushTests: XCTestCase {
 
     func testSettingsOpensOverTheTabThatIsShowing() {
         let router = NotificationRouter()
-        router.selectedTab = .tasks
-        // Older callers still select the Settings tab; Settings opens and the Goals tab stays.
+        router.selectedTab = .chat
+        // Older callers still select the Settings tab; Settings opens and the Chat tab stays.
         router.selectedTab = .settings
-        XCTAssertEqual(router.selectedTab, .tasks)
+        XCTAssertEqual(router.selectedTab, .chat)
         XCTAssertEqual(router.sheet, .settings)
         router.sheet = nil
         router.openSettings()
         XCTAssertEqual(router.sheet, .settings)
-        XCTAssertEqual(router.selectedTab, .tasks)
+        XCTAssertEqual(router.selectedTab, .chat)
+    }
+
+    func testTheTasksTabIsGoneAndAnythingNamingItLandsOnToday() {
+        let router = NotificationRouter()
+        router.selectedTab = .chat
+        router.selectedTab = .tasks
+        XCTAssertEqual(router.selectedTab, .today)
     }
 
     func testRoutesFromPushesNoticesAndLinksCloseSettings() throws {
