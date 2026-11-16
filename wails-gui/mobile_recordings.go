@@ -954,6 +954,7 @@ func (a *App) startMobileRecordingTranscription() {
 		if store != nil {
 			a.transcribeMobileRecordings(bridge.ctx, store)
 			a.nameWatchConversations(bridge.ctx, store)
+			a.noteWatchConversations(bridge.ctx, store)
 		}
 	}()
 }
@@ -978,6 +979,7 @@ func (bridge *mobileBridge) resumeRecordingTranscription() {
 		}
 		// Also names what an earlier launch left unnamed, and drops names of deleted hours.
 		bridge.app.nameWatchConversations(bridge.ctx, store)
+		bridge.app.noteWatchConversations(bridge.ctx, store)
 	}()
 }
 
