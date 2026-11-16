@@ -34,6 +34,7 @@ var browserRPCAllowlist = map[string]bool{
 	"LoadStreamItemsPage": true,
 	"GetGitInfo":          true, // runs git; see browserRPCStateChangers
 	"GetVersion":          true,
+	"GetWorkList":         true, // Your work, a snapshot read
 	"GetUpdateStatus":     true,
 	"LoadWindowState":     true,
 	"GetSlackStatus":      true,

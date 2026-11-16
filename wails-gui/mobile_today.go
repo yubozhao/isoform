@@ -43,6 +43,10 @@ type MobileTodayV1 struct {
 	KeepAwake        bool                         `json:"keepAwake"`
 	InstantPush      bool                         `json:"instantPush"`
 	BriefSchedule    []mobileBriefSlotTime        `json:"briefSchedule"`
+
+	// WorkVersion changes when Your work changes (section 26); the phone
+	// reads GET /work again then.
+	WorkVersion string `json:"workVersion,omitempty"`
 }
 
 type mobileTodayNoticePacing struct {
@@ -498,6 +502,9 @@ func (bridge *mobileBridge) buildToday() (MobileTodayV1, error) {
 		sort.Strings(parts)
 		sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
 		view.TasksVersion = hex.EncodeToString(sum[:])
+		if work, err := app.GetWorkList(); err == nil {
+			view.WorkVersion = work.Version
+		}
 		subjects, err := mobileGoalSubjects(app)
 		if err != nil {
 			return MobileTodayV1{}, err

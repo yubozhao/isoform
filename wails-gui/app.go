@@ -466,7 +466,7 @@ func (a *App) emitBrowserEvent(eventName string, data ...interface{}) {
 		if bridge := a.mobileBridgeForUse(); bridge != nil {
 			bridge.invalidateToday()
 		}
-	case "calendar:synced", "brief:stored", "topics:updated", "handoff:updated", mainChatItemsAppendedEvent, mainChatWaitingChangedEvent, assistantHistoryEvent:
+	case "calendar:synced", "brief:stored", "topics:updated", "topics-daily:updated", "handoff:updated", workUpdatedEvent, mainChatItemsAppendedEvent, mainChatWaitingChangedEvent, assistantHistoryEvent:
 		if bridge := a.mobileBridgeForUse(); bridge != nil {
 			bridge.noteTodayChanged()
 		}

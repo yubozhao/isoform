@@ -30,6 +30,8 @@ var (
 )
 
 type mobileStatusView struct {
+	// Work is true when this computer serves Your work (section 26).
+	Work   bool `json:"work,omitempty"`
 	Topics bool `json:"topics,omitempty"`
 	// TopicsDaily is true when this computer serves the daily topics (15.9).
 	TopicsDaily bool `json:"topicsDaily,omitempty"`
@@ -121,6 +123,11 @@ func (bridge *mobileBridge) handleAuthorized(w http.ResponseWriter, r *http.Requ
 			return
 		}
 		bridge.serveToday(w, r, device)
+	case "GET /work":
+		if !mobileRequireScope(w, device, mobileScopeBriefRead) {
+			return
+		}
+		bridge.serveWorkList(w, device)
 	case "GET /today/meeting-prep":
 		if !mobileRequireScope(w, device, mobileScopeBriefRead) {
 			return
@@ -625,7 +632,7 @@ func mobileRequireScope(w http.ResponseWriter, device mobileDeviceRecord, scope 
 
 func (bridge *mobileBridge) serveStatus(w http.ResponseWriter) {
 	view := mobileStatusView{
-		HubName: mobileHubName(), AppVersion: Version, ProtocolVersion: 1, Topics: true, TopicsDaily: true, TaskThreads: true, BrainDump: true, Recordings: true, OwnerVoice: true, RecordingContext: true, RecordingDetail: true, RecordingMarks: true, Sees: true, FirstRead: true, TodayMeetingPrep: true, ChatMainSend: true, NotificationTest: true, BriefRelevanceFeedback: true, BriefAsk: true, BriefWeekDecline: true,
+		HubName: mobileHubName(), AppVersion: Version, ProtocolVersion: 1, Topics: true, TopicsDaily: true, TaskThreads: true, BrainDump: true, Recordings: true, OwnerVoice: true, RecordingContext: true, RecordingDetail: true, RecordingMarks: true, Sees: true, FirstRead: true, TodayMeetingPrep: true, ChatMainSend: true, NotificationTest: true, Work: true, BriefRelevanceFeedback: true, BriefAsk: true, BriefWeekDecline: true,
 		KeepAwake: bridge.keepAwakeSetting(), InstantPush: mobileInstantPushConfigured(),
 		BriefSchedule: []mobileBriefSlotTime{},
 	}

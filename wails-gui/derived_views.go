@@ -49,6 +49,8 @@ const (
 	derivedPeopleStats       derivedViewName = "people-stats"
 	derivedBeforeYouTalk     derivedViewName = "today-before-you-talk"
 	derivedDayNoticed        derivedViewName = "day-noticed"
+	// derivedWorkList is Your work, the one list both devices judge (work_list.go).
+	derivedWorkList derivedViewName = "work-list"
 )
 
 const (
@@ -95,6 +97,7 @@ var derivedViewSpecs = map[derivedViewName]derivedViewSpec{
 	derivedWaitingItems:      {every: derivedHourly, event: mainChatWaitingItemsUpdated},
 	// The scheduled build itself emits noticed:updated when the set changed.
 	derivedDayNoticed: {every: derivedHourly},
+	derivedWorkList:   {every: derivedHourly, event: workUpdatedEvent},
 }
 
 // derivedLanguageGeneration advances when the UI language changes; every
@@ -661,8 +664,12 @@ func (a *App) noteDerivedViewEvent(eventName string) {
 		// holder only emits this when its ids or counts differ.
 		d.touch(derivedWaitingItems)
 	case "brief:stored":
-		// A stored brief can carry the closing question's hold preview.
-		d.touch(derivedTodayDayShape)
+		// A stored brief can carry the closing question's hold preview, and
+		// its offers are the first items of Your work.
+		d.touch(derivedTodayDayShape, derivedWorkList)
+	case "topics-daily:updated", "topics:updated", "topics:withdrawn", "handoff:updated", workAnsweredEvent:
+		// A topic's proposal, its answer, or the task a Yes started.
+		d.touch(derivedWorkList)
 	case "calendar:synced":
 		// Only the first sync after connecting shows the strip at once.
 		if d.dayShapeDisconnected.CompareAndSwap(true, false) {
