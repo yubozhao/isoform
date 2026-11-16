@@ -947,5 +947,30 @@
         "noneChosen": "请用“更换代理”为这类工作选一个代理。",
         "yourAgent": "你的代理",
         "foot": "{{agent}} 在它自己的账户里工作。结果会回到你的工作。"
+    },
+    "cbrief": {
+        "notPlayed": "未播放",
+        "leftToAnswer_one": "还有 {{count}} 件待回答",
+        "leftToAnswer_other": "还有 {{count}} 件待回答",
+        "allAnswered": "都已回答",
+        "back": "今天",
+        "madeHere": "{{day}} · 用这台电脑上今天的内容做成",
+        "back15": "后退 15 秒",
+        "on15": "前进 15 秒",
+        "speed": "速度",
+        "reply": "就这句回复",
+        "notRight": "不对",
+        "notRightTitle": "不对？",
+        "whatsWrong": "哪里不对？可不填。",
+        "sayRight": "或者说说什么是对的",
+        "follows": "明天的简报不会再这么说，由它做出的内容会标出来让你检查。",
+        "notRightSend": "不对",
+        "pastFoot": "每份简报都留在这台电脑上；手机保留 30 天。",
+        "reason": {
+            "didnt_happen": "没发生",
+            "wrong_person": "人不对",
+            "already_done": "已经做了",
+            "not_mine": "不是我的"
+        }
     }
 }

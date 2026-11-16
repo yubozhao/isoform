@@ -34,6 +34,21 @@ function subscribe(listener: () => void) {
     listeners.add(listener);
     return () => { listeners.delete(listener); };
 }
+/** The person's playback speed; it carries to the next brief that plays. */
+let rate = 1;
+/** Moves the brief playing (or paused) by seconds, within its length (the
+ *  brief in full's ← and →, computer-brief v1.0.0 rule 2). */
+export function seekBriefPlayback(briefId: string, seconds: number) {
+    if (snapshot.briefId !== briefId || !element) return;
+    const duration = Number.isFinite(element.duration) ? element.duration : Infinity;
+    element.currentTime = Math.max(0, Math.min(duration, element.currentTime + seconds));
+    notifyProgress();
+}
+export function setBriefPlaybackRate(next: number) {
+    rate = next;
+    if (element) element.playbackRate = next;
+}
+export function briefPlaybackRate() { return rate; }
 export function useBriefPlayback(briefId: string) {
     const current = useSyncExternalStore(subscribe, () => snapshot);
     return current.briefId === briefId ? current.state : "idle";
@@ -114,6 +129,7 @@ export async function toggleBriefPlayback(briefId: string): Promise<void> {
             element = audio;
         }
         const playing = element;
+        playing.playbackRate = rate;
         await playing.play();
         if (request !== generation) { playing.pause(); return; }
         console.info(`[brief-audio] playing brief=${briefId} ms_since_click=${Math.round(performance.now() - clickedAt)}`);

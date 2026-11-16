@@ -1240,6 +1240,12 @@ export interface MobileBriefSummary {
     asOf: string;
     narrativeStatus: string;
     lead?: string;
+    /** Where the person is with it (#1199): heard on this computer, and its
+     *  Your work items left and answered; a missing number is 0. */
+    listened?: "not_played" | "part_heard" | "played";
+    played?: boolean;
+    toAnswer?: number;
+    answered?: number;
 }
 export const ListPastBriefs = appBinding<[], MobileBriefSummary[]>("ListPastBriefs");
 

@@ -108,10 +108,11 @@ describe("TodayBriefBand", () => {
         expect(screen.getByTestId("brief-band-lead")).toBeInTheDocument();
     });
 
-    it("shows no lead or Read all while today's full card is under the band", () => {
-        band({ showLead: false });
+    it("shows no lead while today's full card is under the band; Read all still opens the brief in full", () => {
+        const { onReadAll } = band({ showLead: false });
         expect(screen.queryByTestId("brief-band-lead")).toBeNull();
-        expect(screen.queryByTestId("brief-band-read-all")).toBeNull();
+        fireEvent.click(screen.getByTestId("brief-band-read-all"));
+        expect(onReadAll).toHaveBeenCalled();
         expect(screen.getByTestId("brief-audio-toggle")).toBeInTheDocument();
     });
 

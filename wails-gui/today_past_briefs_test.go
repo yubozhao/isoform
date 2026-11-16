@@ -10,7 +10,7 @@ func TestListPastBriefsReadsThePhoneIndex(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := mobileBriefSummariesWithLeads(svc, todayPastBriefsMax)
+	want := a.withPastBriefState(mobileBriefSummariesWithLeads(svc, todayPastBriefsMax))
 	if len(got) != 1 || got[0].BriefID != brief.BriefID || len(want) != 1 || got[0] != want[0] {
 		t.Fatalf("past briefs = %+v, want %+v", got, want)
 	}
