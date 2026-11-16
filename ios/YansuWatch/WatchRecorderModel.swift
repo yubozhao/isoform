@@ -160,6 +160,12 @@ final class WatchRecorderModel: NSObject, ObservableObject {
         recordingID = id
         partNumber = 0
         hourCut = WatchHourClock.cut(after: date)
+        // Say again that the watch records, so the complication keeps showing it (it trusts the
+        // last word for WatchLiveState.longest only).
+        // (When recording begins, the phase change says it.)
+        guard isRecording else { return }
+        WatchLiveState.write(recordingSince: date)
+        WidgetCenter.shared.reloadTimelines(ofKind: WatchLiveState.complicationKind)
     }
 
     private func startPart(at date: Date) throws {
@@ -288,7 +294,7 @@ final class WatchRecorderModel: NSObject, ObservableObject {
         entries = library.all()
     }
 
-    /// Tells the complication whether a recording is running. Only the start time is shared.
+    /// Tells the complication whether a recording is running. Only one time is shared.
     private func publishLiveState() {
         var since: Date?
         if case .recording(let started) = phase { since = started }
