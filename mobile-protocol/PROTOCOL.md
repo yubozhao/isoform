@@ -3565,6 +3565,16 @@ One request per part, sent after its upload succeeded:
   into the watch are not taken as the owner's. Fingerprints stay on the computer.
 - A recording whose last part never arrives (the watch lost power) is closed after 6 hours when
   its parts run from 0 without a gap. A failed transcription is tried again at the next launch.
+- **Parts after a closed recording.** A part numbered past the end of a recording that is already
+  closed (by its last part, or by the 6-hour rule while the phone could not send) is accepted
+  (`202`), not refused. The computer keeps it in a continuation of the recording: a recording of
+  its own that starts at that part and is transcribed, listed and deleted like any other. The
+  phone keeps sending the recording id and part numbers it knows; the answer names that id.
+  Deleting the recording deletes its continuations, and a part of a deleted recording is never
+  stored. Whenever the computer refuses a part for good (`400` after it fetched the upload), it
+  also removes the upload from the relay, so refused copies never fill the phone's quota there.
+  A relay that answers the computer's fetch with anything but `200` or `404` gives `503`: the
+  phone tries again later and does not count a refusal.
   The computer deletes a recording's audio 14 days after it was transcribed; the transcript and
   the recording's row stay.
 

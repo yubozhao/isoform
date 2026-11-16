@@ -122,10 +122,14 @@ func TestReceiveRecordingPartStoresPrivatelyAndClearsTheRelay(t *testing.T) {
 		t.Fatalf("pending %+v", pending)
 	}
 
-	// A part past the last one is refused.
+	// A part past the last one is kept, as the recording's continuation, and
+	// leaves the recording itself as it was (mobile_recording_late_parts.go).
 	late := sealedRecordingPart(t, uploads, "dev-a", recordingID, 2, false, []byte("late"), time.Now())
-	if _, _, err := receiveMobileRecordingPart(context.Background(), store, uploads, recordingTestHub, "dev-a", late); !errors.Is(err, errMobileRecordingInvalid) {
-		t.Fatalf("part past the last: %v", err)
+	if view, _, err := receiveMobileRecordingPart(context.Background(), store, uploads, recordingTestHub, "dev-a", late); err != nil || view.ID != mobileRecordingContinuationID(recordingID, 2) {
+		t.Fatalf("part past the last: %+v %v", view, err)
+	}
+	if rec, _ := store.get(recordingID, "dev-a"); len(rec.Received) != 2 || rec.Parts != 2 {
+		t.Fatalf("the recording changed: %+v", rec)
 	}
 
 	// Another device cannot add to or read this recording.

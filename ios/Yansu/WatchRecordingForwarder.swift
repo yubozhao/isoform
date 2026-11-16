@@ -181,6 +181,10 @@ final class WatchRecordingInbox: @unchecked Sendable {
         /// no longer has it. Without it every retry (observing paused, the computer asleep, a lost
         /// answer) would put another copy on the relay, each kept 48 hours against the device quota.
         var held: HeldUpload? = nil
+        /// A part the computer refused is sent again by itself, not before this time. The wait
+        /// grows with each refusal and never ends: the audio stays on the phone until the
+        /// computer stores it or the person deletes it.
+        var nextTry: Date? = nil
     }
 
     /// A part's upload on the relay and the pairing it was sealed for.
@@ -190,7 +194,15 @@ final class WatchRecordingInbox: @unchecked Sendable {
         var deviceID: String
     }
 
+    /// After this many refusals the recording reads "could not be sent"; it is still sent again.
     static let maxRefusals = 5
+
+    /// How long a refused part waits before it is sent again: a minute, then longer, six hours
+    /// at most. A computer that was updated meanwhile takes it without anyone tapping anything.
+    static func retryDelay(refusals: Int) -> TimeInterval {
+        let steps: [TimeInterval] = [60, 5 * 60, 15 * 60, 60 * 60, 3 * 60 * 60, 6 * 60 * 60]
+        return steps[min(max(refusals, 1), steps.count) - 1]
+    }
 
     let directory: URL
     private let fileManager: FileManager
@@ -247,12 +259,13 @@ final class WatchRecordingInbox: @unchecked Sendable {
         }
     }
 
-    func refused(_ pending: Pending) {
+    func refused(_ pending: Pending, now: Date = Date()) {
         lock.withLock {
             var next = pending
             next.refusals += 1
             // A refused part is sealed again next time.
             next.held = nil
+            next.nextTry = now.addingTimeInterval(Self.retryDelay(refusals: next.refusals))
             try? write(next)
         }
     }
@@ -268,6 +281,7 @@ final class WatchRecordingInbox: @unchecked Sendable {
             lock.withLock {
                 var next = item
                 next.refusals = 0
+                next.nextTry = nil
                 try? write(next)
             }
         }
@@ -300,7 +314,13 @@ actor WatchRecordingForwarder {
         case waiting
         /// This computer does not take recordings yet.
         case unsupported
+        /// The relay holds as many of this phone's recordings as it keeps and takes no more
+        /// until the computer has fetched some. Parts stay on the phone.
+        case relayFull
     }
+
+    /// How soon a pass that could not finish is tried again while the app runs.
+    static let waitingRetrySeconds: TimeInterval = 5 * 60
 
     static let keptStates = 50
 
@@ -345,8 +365,12 @@ actor WatchRecordingForwarder {
     private var details: [String: Detail] = [:]
     private(set) var lastOutcome: Outcome = .drained
 
+    private let now: @Sendable () -> Date
+
     init(inbox: WatchRecordingInbox, hub: RecordingHubAPI, relay: RecordingUploadTransport = RelayClient.shared,
+         now: @escaping @Sendable () -> Date = { Date() },
          session: @escaping @Sendable () throws -> SessionContext) {
+        self.now = now
         self.inbox = inbox
         self.hub = hub
         self.relay = relay
@@ -464,6 +488,20 @@ actor WatchRecordingForwarder {
         return try await hub.recordingTranscript(id: id)
     }
 
+    /// When the next pass is due by itself: the earliest refused part's turn, or a few minutes
+    /// after a pass that could not finish. Nil when nothing waits.
+    func nextRetry() -> Date? {
+        let waiting = inbox.pending()
+        guard !waiting.isEmpty else { return nil }
+        let moment = now()
+        let soon = moment.addingTimeInterval(Self.waitingRetrySeconds)
+        if waiting.contains(where: { $0.nextTry == nil }) {
+            // Something has not been refused: it waits for the computer or the relay.
+            return lastOutcome == .drained ? nil : soon
+        }
+        return waiting.compactMap(\.nextTry).min().map { max($0, moment) }
+    }
+
     /// Sends what is waiting. A call while one runs asks for one more pass and returns.
     @discardableResult
     func drain() async -> Outcome {
@@ -484,7 +522,10 @@ actor WatchRecordingForwarder {
 
     private func pass() async -> Outcome {
         await flushDeletes()
-        let pending = inbox.pending().filter { $0.refusals < WatchRecordingInbox.maxRefusals }
+        // A refused part waits its turn (WatchRecordingInbox.retryDelay) and is then sent again,
+        // however often it was refused.
+        let moment = now()
+        let pending = inbox.pending().filter { ($0.nextTry ?? .distantPast) <= moment }
         if !pending.isEmpty {
             do {
                 guard try await hub.recordingsAvailable() else { return .unsupported }
@@ -515,10 +556,14 @@ actor WatchRecordingForwarder {
                 try await send(item, withContext: takesContext, withMarks: takesMarks)
             } catch HubRequestError.rejected(let status, _) where status == 400 {
                 // The computer says this part is not valid. Count it and move on; the audio stays.
-                inbox.refused(item)
+                inbox.refused(item, now: now())
                 if item.refusals + 1 >= WatchRecordingInbox.maxRefusals { set(item.info.recordingID, .failed) }
             } catch RelayClientError.payloadTooLarge {
-                inbox.refused(item)
+                inbox.refused(item, now: now())
+            } catch RelayClientError.rateLimited {
+                // The relay keeps no more of this phone's recordings until the computer fetched
+                // some. Said as it is, so a full relay never looks like a sleeping computer.
+                return .relayFull
             } catch {
                 // Offline, asleep, paused, a full quota, an upload the relay lost: try again later.
                 return .waiting

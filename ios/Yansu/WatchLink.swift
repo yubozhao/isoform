@@ -11,6 +11,8 @@ final class WatchLink: NSObject, WCSessionDelegate, @unchecked Sendable {
     private var inbox: WatchRecordingInbox?
     private var forwarder: WatchRecordingForwarder?
     private var observers: [NSObjectProtocol] = []
+    /// The next pass the phone makes by itself, for parts that are still waiting.
+    private var retryTask: Task<Void, Never>?
 
     /// Called once at launch with the pairing vault and the hub channel.
     func start(directory: URL, vault: PairingVault, hub: RecordingHubAPI) {
@@ -48,7 +50,26 @@ final class WatchLink: NSObject, WCSessionDelegate, @unchecked Sendable {
         let outcome = await forwarder.drain()
         WatchRecordingsModel.shared.show(await forwarder.recordings(), outcome: outcome)
         WatchRecordingsModel.shared.checked(at: Date())
+        scheduleRetry(at: await forwarder.nextRetry())
         if task != .invalid { application.endBackgroundTask(task) }
+    }
+
+    /// Sends what is waiting, from a background refresh: waiting parts never depend on a tap.
+    @MainActor
+    func drainInBackground() async { await drainNow() }
+
+    /// While the app runs, what is still waiting is sent again when its turn comes.
+    @MainActor
+    private func scheduleRetry(at date: Date?) {
+        retryTask?.cancel()
+        retryTask = nil
+        guard let date else { return }
+        let wait = max(5, date.timeIntervalSinceNow)
+        retryTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            await self?.drainNow()
+        }
     }
 
     /// The person tapped Sync now: ask the watch to send what it holds, send what is here, and
