@@ -600,6 +600,9 @@ func (a *App) prepareActivityReads() {
 		ocrBoxesSem: make(chan struct{}, ocrHighlightMaxConcurrent),
 		configDir:   baseDir,
 	}
+	// From here on, deleting an activity session or an activity also deletes
+	// the commitments that were learned from it (purpose_purge.go).
+	purposePurgeApp.Store(a)
 }
 
 func (a *App) initActivityMonitor() {
