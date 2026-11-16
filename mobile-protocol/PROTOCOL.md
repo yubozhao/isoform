@@ -3620,6 +3620,23 @@ person's intent, not the guarantee: the phone learns of a pause only when it nex
 status, so the guarantee stays 24.6, where the computer drops whatever was recorded during the
 pause.
 
+### 24.10 The phone pauses the computer (2026-11-15)
+
+`GET /status` advertises `observingPauseControl: true` when the computer takes these.
+
+- `POST /observing/pause` (scope `chat:write`), body `{"minutes": 60}`: pauses observing on the
+  computer for that long, as its own "Pause for..." control does. `minutes` is 5 to 240 and 60 when
+  left out. It answers `{"observingPause": {...}, "startedHere": true}` with the pause as in 24.8.
+  When observing is already paused it changes nothing and answers the pause that holds with
+  `"startedHere": false`: a pause made at the computer is never shortened or taken over.
+- `POST /observing/resume` (scope `chat:write`), body `{}`: ends a pause a phone started with the
+  route above and that has not run out, and answers `{"observingPause": null}`. For any other pause
+  it answers `409` with `data: {"code":"pause_not_from_phone"}`: a pause made at the computer is
+  ended at the computer. With no pause it answers `200`.
+
+Pausing only ever protects the person, so it needs no more than `chat:write`. The watch has no
+route of its own: it asks the phone, which calls these.
+
 ### 24.9 Marked moments (optional, 2026-11-15)
 
 While the watch records, the wearer can mark a moment. `GET /status` advertises
@@ -3639,6 +3656,99 @@ part, or not a number, is dropped; at most 60 are kept; a bad mark never refuses
 - In a transcript (24.5) a line carries `marked: true` when a mark points at it: the line that
   began at most 60 seconds before the mark, else the first line that begins within 30 seconds
   after it. The computer's own page shows the same.
+
+### 24.11 Conversations for the phone (2026-11-15)
+
+`GET /status` advertises `recordingConversations: true` when the computer serves these. Both are
+hub routes with scopes `chat:write` and `brief:read`, and both answer only from the recordings the
+asking phone sent.
+
+`GET /recordings/conversations` answers
+
+```json
+{
+  "dayStart": "2026-11-15T08:00:00Z",
+  "hours": [{"start": "2026-11-15T17:00:00Z", "recordedSeconds": 3600, "talkSeconds": 840, "pausedSeconds": 0}],
+  "closed": [{"startAt": "2026-11-15T19:04:00Z", "endAt": "2026-11-15T20:04:00Z"}],
+  "conversations": [{
+    "id": "<device>:<unix ms it began>", "name": "Pricing with Sam",
+    "startAt": "2026-11-15T22:05:00Z", "endAt": "2026-11-15T22:41:00Z", "talkSeconds": 1310,
+    "speakers": ["you", "speaker_1"], "marks": ["2026-11-15T22:31:04Z"], "recordingIds": ["<uuid>"],
+    "summary": "...", "decisions": ["..."],
+    "followups": [{"text": "Send the pricing page", "owner": "me", "person": "", "due": "tonight"}],
+    "itemIds": ["followup:<commitment id>"],
+    "place": "Mission District", "heartRate": "calm"
+  }]
+}
+```
+
+- `conversations` are the last seven days, newest first, at most 80 (`truncated: true` when cut).
+  `name` is absent until the computer has named it (24.7); `summary`, `decisions` and `followups`
+  are the notes of a conversation over five minutes when notes are on, and empty otherwise.
+  `itemIds` are the owner's own follow-ups (`owner: "me"`) as items of the one list of work, in
+  the order written; an item that is gone from that list is simply not shown.
+  `place` and `heartRate` ("calm", "raised", "high") are there only when the wearer shares them
+  (24.4). `marks` are the marked moments (24.9) from its first word to 30 seconds after its last.
+- `hours` are today's clock hours on the computer's clock, from the first hour recorded to now:
+  how much was recorded, an estimate of the talk in it, and how much of it observing was paused.
+  The hour that is not over carries `current: true`. `closed` are today's pauses; one that has not
+  ended has no `endAt`.
+- While observing is paused the answer has no hours and no conversations.
+
+`GET /recordings/conversation?id=<id>` answers `{"conversation": {...}, "lines": [...]}`: the same
+entry and its words as transcript lines (24.5, with `marked`), cut at 300 lines or 48 KiB with
+`truncated: true`. `404` for an id that is not this phone's, and while observing is paused.
+
+Nothing is stored for these: they are computed from the recordings and their transcripts, so a
+deleted recording (24.5) takes its part of every conversation with it.
+
+### 24.12 Notes for long talks, the person's setting (2026-11-15)
+
+The computer writes a note and follow-ups for a watch conversation over five minutes when "Notes
+for long talks" is on. `GET /status` carries the setting as
+
+```json
+"watchNotes": {"on": true, "chosen": false}
+```
+
+`chosen` is false until the person has set it; until then `on` is what the build decides. The
+field is absent on a computer that does not know the setting, and a phone shows no switch then.
+
+- `GET /settings/watch-notes` (scope `chat:write`) answers the same object.
+- `POST /settings/watch-notes` (scope `chat:write`), body `{"on": false}`, stores the person's
+  choice and answers the setting. Turning it off stops new notes; notes already written stay
+  until their words go.
+
+### 24.13 Who a speaker is (2026-11-15)
+
+A transcript labels the owner `you` and everyone else `speaker_N`. `GET /status` advertises
+`recordingSpeakers: true` when the computer keeps names for them. A conversation (24.11) then
+carries
+
+```json
+"speakerNames": {"speaker_1": "Lena Ortiz"},
+"speakerGuess": {"speaker": "speaker_2", "name": "Priya Shah", "reason": "calendar", "eventStartAt": 1794000000000}
+```
+
+`speakerNames` are the names the person gave. `speakerGuess` is there only when the computer is
+nearly sure: the conversation has one unnamed speaker, exactly one calendar event overlaps it, and
+that event has exactly one other person, who has a name. `reason` is `calendar`; `eventStartAt` is
+when that event began.
+
+`POST /recordings/conversation/speaker` (scopes `chat:write` and `brief:read`), body
+`{"conversationId": "...", "speaker": "speaker_2", "answer": "yes"}`:
+
+- `yes` takes the open guess as the speaker's name; `no` declines it, and that name is not offered
+  for that speaker again.
+- `edit` with `name` (one line, at most 60 bytes) names the speaker by hand; `edit` with an empty
+  `name` takes a given name away.
+
+It answers the conversation's entry as in 24.11. `400` for a speaker that is not in the
+conversation, a `yes` or `no` with no guess open for that speaker, or an unusable name; `404` for
+a conversation that is not this phone's, and while observing is paused.
+
+A name is kept on the computer with the conversation and goes with its words: a deleted or
+withdrawn recording takes it. It is shown with the conversation only.
 
 ## 25. The owner's voice from the phone (v1, 2026-11-14)
 

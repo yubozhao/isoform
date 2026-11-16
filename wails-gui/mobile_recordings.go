@@ -583,6 +583,7 @@ func (s *mobileRecordingStore) onPrivacyWithdrawal(withdrawal privacyWithdrawal)
 		// A name made from the withdrawn words goes too.
 		if id, ok := strings.CutPrefix(withdrawal.Scope.ID, "rec-"); ok && mobileValidUUID(id) {
 			dropWatchConversationNamesOf(s.dir, id)
+			dropWatchSpeakerNamesOf(s.dir, id)
 		}
 	}
 }

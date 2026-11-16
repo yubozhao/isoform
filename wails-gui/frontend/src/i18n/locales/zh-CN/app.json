@@ -262,7 +262,30 @@
         "searchShortcutMac": "⌘K",
         "searchShortcutOther": "Ctrl K",
         "chat": "对话",
-        "unread": "未读"
+        "unread": "未读",
+        "agents": "Agents",
+        "agentsWaiting": "{{count}} 项等你同意",
+        "toAnswer": "{{count}} 项待回答",
+        "phone": {
+            "none": "手机 · 未配对",
+            "connected": "手机 · 已连接",
+            "offline": "手机 · 无法连接"
+        },
+        "watch": {
+            "listening": "手表 · 正在听",
+            "heard": "手表 · 上次听到 {{time}}",
+            "closed": "手表 · 已闭眼"
+        },
+        "closedEyes": "Closed Eyes",
+        "closedEyesOn": "已闭眼 · 点此睁眼",
+        "youTabs": "你的页面",
+        "railWithCount": "{{place}}，{{detail}}",
+        "showWithKey": "显示侧边栏 · {{key}}",
+        "pose": {
+            "listening": "正在听",
+            "notListening": "没在听",
+            "closedEyes": "Closed Eyes"
+        }
     },
     "searchDialog": {
         "findSource": {

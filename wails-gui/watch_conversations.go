@@ -53,6 +53,14 @@ type WatchConversation struct {
 	Summary   string                      `json:"summary"`
 	Decisions []string                    `json:"decisions"`
 	Followups []WatchConversationFollowup `json:"followups"`
+	// SpeakerNames are the names the person gave its speakers, by label
+	// (watch_speaker_names.go); SpeakerGuess is who one of them might be,
+	// still to be judged.
+	// ItemIDs are the follow-ups the owner has to do, as items of the one list
+	// of work ("followup:<commitment id>"), in the order they were written.
+	ItemIDs      []string           `json:"itemIds"`
+	SpeakerNames map[string]string  `json:"speakerNames"`
+	SpeakerGuess *WatchSpeakerGuess `json:"speakerGuess,omitempty"`
 }
 
 // watchConversationSpeech is one stretch of speech and where it came from.
@@ -172,8 +180,9 @@ func (a *App) watchConversationsOf(store *mobileRecordingStore) ([]WatchConversa
 	// Reading also drops the names whose words are gone.
 	applyWatchConversationNames(convs, pruneWatchConversationNames(store.dir, convs))
 	for i := range convs {
-		convs[i].Decisions, convs[i].Followups = []string{}, []WatchConversationFollowup{}
+		convs[i].Decisions, convs[i].Followups, convs[i].ItemIDs = []string{}, []WatchConversationFollowup{}, []string{}
 	}
 	applyWatchConversationNotes(convs, a.pruneWatchConversationNotes(store.dir, convs))
+	a.applyWatchSpeakerNames(convs, pruneWatchSpeakerNames(store.dir, convs))
 	return convs, nil
 }

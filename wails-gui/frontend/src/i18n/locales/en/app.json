@@ -262,7 +262,30 @@
         "searchShortcutMac": "⌘K",
         "searchShortcutOther": "Ctrl K",
         "chat": "Chat",
-        "unread": "Unread"
+        "unread": "Unread",
+        "agents": "Agents",
+        "agentsWaiting": "{{count}} waiting for your Yes",
+        "toAnswer": "{{count}} to answer",
+        "phone": {
+            "none": "Phone · not paired",
+            "connected": "Phone · connected",
+            "offline": "Phone · can't reach it"
+        },
+        "watch": {
+            "listening": "Watch · listening",
+            "heard": "Watch · last heard {{time}}",
+            "closed": "Watch · eyes closed"
+        },
+        "closedEyes": "Closed Eyes",
+        "closedEyesOn": "Eyes closed · open them",
+        "youTabs": "Your pages",
+        "railWithCount": "{{place}}, {{detail}}",
+        "showWithKey": "Show the sidebar · {{key}}",
+        "pose": {
+            "listening": "Listening",
+            "notListening": "Not listening",
+            "closedEyes": "Closed Eyes"
+        }
     },
     "searchDialog": {
         "findSource": {

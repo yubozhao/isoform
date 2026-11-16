@@ -6,8 +6,8 @@ import type { Session } from '@/types';
 import type { AppMode } from '@/components/sidebar';
 
 const pageKeys = {
-    today: 'sidebar.today', chat: 'sidebar.chat', activity: 'sidebar.activity', tasks: 'sidebar.tasks',
-    memory: 'userMenu.memory', knowledge: 'userMenu.knowledge', people: 'userMenu.people',
+    today: 'sidebar.today', chat: 'sidebar.chat', activity: 'sidebar.activity', agents: 'sidebar.agents',
+    you: 'sidebar.you', memory: 'userMenu.memory', knowledge: 'userMenu.knowledge', people: 'userMenu.people',
 } as const satisfies Record<AppMode, string>;
 
 export function usePageWindowTitle(mode: AppMode, session?: Pick<Session, 'kind' | 'label'> | null) {

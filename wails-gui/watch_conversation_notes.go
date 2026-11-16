@@ -45,6 +45,10 @@ const (
 	watchConversationNotesPerRun = 3
 )
 
+// watchFollowupItemPrefix makes a follow-up's item id from its commitment's
+// id, as the one list of work names it (the phone redesign's B2).
+const watchFollowupItemPrefix = "followup:"
+
 // WatchConversationFollowup is one thing someone has to do after a
 // conversation. Owner is "me", "other" or "unknown".
 type WatchConversationFollowup struct {
@@ -129,6 +133,9 @@ func applyWatchConversationNotes(convs []WatchConversation, notes map[string]wat
 		convs[i].Summary = entry.Summary
 		convs[i].Decisions = append([]string{}, entry.Decisions...)
 		convs[i].Followups = append([]WatchConversationFollowup{}, entry.Followups...)
+		for _, id := range entry.LoopIDs {
+			convs[i].ItemIDs = append(convs[i].ItemIDs, watchFollowupItemPrefix+id)
+		}
 	}
 }
 
@@ -254,7 +261,7 @@ func (a *App) writeWatchConversationCommitments(c WatchConversation, title, body
 // enough, is over, and has none that fit its words. It makes at most
 // watchConversationNotesPerRun calls, and none with the switch off.
 func (a *App) noteWatchConversations(ctx context.Context, store *mobileRecordingStore) {
-	if a == nil || store == nil || !featureOn(featureWatchNotes) || a.IsClosedEyesModeEnabled() {
+	if a == nil || store == nil || !a.watchNotesOn() || a.IsClosedEyesModeEnabled() {
 		return
 	}
 	convs, err := a.watchConversationsOf(store) // also prunes notes whose words are gone
