@@ -1609,6 +1609,10 @@ func (s *mobileBriefService) addAudioWithLatestGuard(ctx context.Context, brief 
 	}
 	shaped := audio.Audio
 	shaped.binding = input
+	if brief.WeekQuestion != nil {
+		question := *brief.WeekQuestion
+		shaped.question = &question
+	}
 	if ok && s.app != nil {
 		if attachment, err := s.app.sealMobileBriefAudio(ctx, brief.BriefID, audio.Path); err == nil {
 			shaped.Attachment = attachment
@@ -1704,6 +1708,8 @@ func (s *mobileBriefService) markAudioRendering(briefID, input, lang string, asO
 	if s.speaker.voiceReady == nil || !s.speaker.voiceReady(lang) {
 		return false
 	}
+	// Read before the lock: noting a changed exclusion may amend the brief.
+	exclusions := s.app.mobileBriefExclusions()
 	s.patchMu.Lock()
 	defer s.patchMu.Unlock()
 	stored, found := s.store.load(briefID)
@@ -1725,6 +1731,11 @@ func (s *mobileBriefService) markAudioRendering(briefID, input, lang string, asO
 	// words the brief no longer says cannot play (mobileBriefAudioForRead), so
 	// while it is made again the brief says so instead of showing no player.
 	if stored.Audio != nil && stored.Audio.Status == mobileBriefAudioStatusOK && stored.Audio.binding == input {
+		return false
+	}
+	// Nor is one that differs only by the Monday week question: it plays,
+	// question as recorded, until the new one replaces it.
+	if mobileBriefAudioAcrossWeekAnswer(current, stored.Audio, exclusions) != nil {
 		return false
 	}
 	updating := stored.Audio != nil && stored.Audio.Status == mobileBriefAudioStatusOK

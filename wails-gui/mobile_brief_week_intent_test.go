@@ -2,6 +2,10 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -281,5 +285,91 @@ func TestLegacyMorningWeekAnswerProjection(t *testing.T) {
 	svc.app.projectLegacyWeekAnswer(t.Context(), rows)
 	if rows[0].WeekAnswerBriefID != "" {
 		t.Fatal("ambiguous legacy answer was attributed")
+	}
+}
+
+// Hub ruling, 2026-11-16 (ranked goal 1, the latest brief shows, words and
+// audio): answering the Monday week question never takes the play button
+// away. The recording asked the question and keeps playing, question as
+// recorded, while it is made again without it; it is not marked as being
+// made, so Today keeps the player.
+func TestMorningBriefWeekAnswerKeepsThePlayButton(t *testing.T) {
+	now := time.Now()
+	monday, err := time.ParseInLocation("2006-01-02", morningBriefWeekStart(now, time.Local), time.Local)
+	if err != nil {
+		t.Fatal(err)
+	}
+	asOf := monday.Add(8 * time.Hour)
+	svc, _ := newTestMobileBriefService(t, &fakeMobileBriefClock{now: now})
+	svc.app.mobileBriefSvc = svc
+	svc.speaker.voiceReady = func(string) bool { return true }
+	work, err := handoff.NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc.app.handoffStore = work
+	entry := handoff.Entry{ID: "week-item", Title: "Launch plan", Source: handoff.SourceMobile, Status: handoff.StatusNeedsReview, CreatedAt: asOf.Add(-time.Hour).UnixMilli(), UpdatedAt: asOf.Add(-time.Minute).UnixMilli()}
+	if _, err := work.Save(entry); err != nil {
+		t.Fatal(err)
+	}
+	input := mobileBriefInput{Slot: mobileBriefSlotMorning, AsOf: asOf, WindowStart: asOf.Add(-24 * time.Hour), Location: time.Local, Timezone: time.Local.String()}
+	collectMobileBriefWork(svc.app, &input)
+	brief := buildMobileBriefV1(input)
+	if len(brief.Evidence) == 0 {
+		t.Fatal("fixture has no readable evidence")
+	}
+	brief.NarrativeStatus = "ok"
+	brief.Narrative = []MobileBriefPara{{Text: "Review the launch plan.", Refs: []string{brief.Evidence[0].Ref}}}
+	if err := svc.store.save(brief, now); err != nil {
+		t.Fatal(err)
+	}
+	// The voice reads the brief as the read shows it: with the question.
+	shown, _, err := svc.finishedReadWithholding(brief)
+	if err != nil || shown.WeekQuestion == nil {
+		t.Fatalf("the Monday read asks no week question: %v", err)
+	}
+	question := *shown.WeekQuestion
+	brief, _ = svc.store.load(brief.BriefID)
+	brief.Audio = &MobileBriefAudio{Status: mobileBriefAudioStatusOK, Mime: mobileBriefAudioMimeWAV, Bytes: 4, DurationSeconds: 12, SHA256: fmt.Sprintf("%x", sha256.Sum256([]byte("wave"))),
+		binding: mobileBriefAudioBinding(shown, "en"), question: &question}
+	if err := svc.store.save(brief, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(svc.store.dir, brief.BriefID+".wav"), []byte("wave"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	plays := func(stage string) {
+		t.Helper()
+		stored, _ := svc.store.load(brief.BriefID)
+		read, _, err := svc.finishedReadWithholding(stored)
+		if err != nil || read.Audio == nil || read.Audio.SHA256 != fmt.Sprintf("%x", sha256.Sum256([]byte("wave"))) {
+			t.Fatalf("%s: the read has no recording to play", stage)
+		}
+		if _, ok := svc.Audio(brief.BriefID); !ok {
+			t.Fatalf("%s: the play button has no recording", stage)
+		}
+	}
+	plays("before the answer")
+	if err := svc.app.SaveMorningBriefWeekIntent(brief.BriefID, "release isoform 1.0"); err != nil {
+		t.Fatal(err)
+	}
+	svc.wg.Wait()
+	stored, _ := svc.store.load(brief.BriefID)
+	if read, _, _ := svc.finishedReadWithholding(stored); read.WeekQuestion != nil {
+		t.Fatal("the answered question is still asked")
+	}
+	plays("after the answer")
+	sealed, ok := svc.savedSealedCopy(stored)
+	if !ok {
+		t.Fatal("no sealed copy")
+	}
+	if svc.markAudioRendering(brief.BriefID, mobileBriefAudioBinding(sealed, "en"), "en", now) {
+		t.Fatal("the new recording took the old one's place before it was ready")
+	}
+	plays("while it is made again")
+	// An excluded recommendation is not played from the old recording.
+	recorded := *stored.Audio
+	if question.Recommendation != "" && mobileBriefAudioAcrossWeekAnswer(sealed, &recorded, []string{question.Recommendation}) != nil {
+		t.Fatal("a recording asking about an excluded recommendation still plays")
 	}
 }

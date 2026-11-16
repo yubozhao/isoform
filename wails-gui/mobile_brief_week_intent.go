@@ -296,6 +296,11 @@ func (a *App) SaveMorningBriefWeekIntent(briefID, answer string) error {
 		return err
 	}
 	briefSourceChanged()
+	// The recording asked the question; it keeps playing while it is made
+	// again without it (mobileBriefAudioAcrossWeekAnswer).
+	if svc, ok := a.mobileBriefSource().(*mobileBriefService); ok && svc != nil {
+		svc.remakeAudioSoon()
+	}
 	a.emitBrowserEvent("mobile:updated")
 	a.emitBrowserEvent("brief:stored", briefID)
 	return nil
@@ -385,4 +390,38 @@ func (a *App) storedBriefForWrite(svc mobileBriefSource, briefID string) (Mobile
 		return service.storedSource(briefID)
 	}
 	return svc.GetMobileBrief(briefID)
+}
+
+// mobileBriefAudioAcrossWeekAnswer keeps a recording that differs from the
+// brief as read only by the Monday week question (hub ruling, 2026-11-16: the
+// latest brief shows, words and audio). Answering the question takes it out
+// of the read; the recording still asks it, and keeps playing, question as
+// recorded, until the recording made without it replaces it. A recording made
+// before the read added the question plays without it. A recorded question
+// whose recommendation the person has since excluded is not played, and a
+// read that now asks a different question needs a new recording.
+func mobileBriefAudioAcrossWeekAnswer(brief MobileBriefV1, audio *MobileBriefAudio, exclusions []string) *MobileBriefAudio {
+	if audio == nil || audio.Status != mobileBriefAudioStatusOK || audio.Bytes == 0 || audio.binding == "" || strings.Contains(audio.binding, ":v2:") {
+		return nil
+	}
+	lang, _, _ := strings.Cut(audio.binding, ":")
+	candidate := brief
+	switch {
+	case brief.WeekQuestion != nil:
+		// The read asks the question; a recording made before it was asked
+		// says everything else the read says.
+		candidate.WeekQuestion = nil
+	case audio.question != nil:
+		if audio.question.Recommendation != "" && mobileBriefExcluded(exclusions, audio.question.Recommendation) {
+			return nil
+		}
+		recorded := *audio.question
+		candidate.WeekQuestion = &recorded
+	default:
+		return nil
+	}
+	if mobileBriefAudioBinding(candidate, lang) != audio.binding {
+		return nil
+	}
+	return audio
 }
