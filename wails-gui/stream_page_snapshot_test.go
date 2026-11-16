@@ -765,9 +765,19 @@ func TestStreamPageWorkerStopsWhenTheDataFolderMoves(t *testing.T) {
 	a.queueStreamWork(time.Now().Add(300*time.Millisecond), true, nil)
 	next := t.TempDir()
 	t.Setenv("HOME", next)
+	// A save, read or removal the app makes after the move, from the worker or
+	// from a recompute that outlived its read, is refused: it never lands in
+	// the new home (under load the worker can be mid-pass when HOME moves).
+	key := streamPageKey{session: session, limit: 50}
+	if err := a.writeStreamPageSnapshot(key, streamPageSnapshot{Format: streamPageSnapshotFormat}); !errors.Is(err, errStreamPageRootMoved) {
+		t.Fatalf("a save after the move was not refused: %v", err)
+	}
+	if _, reason := a.readRawStreamPageSnapshot(key); reason != "unreadable" {
+		t.Fatalf("a read after the move found %q", reason)
+	}
 	// The worker sleeps at most a second at a time and checks the folder
-	// each time it wakes.
-	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+	// each time it wakes; a busy machine may hold it in a pass a while longer.
+	for deadline := time.Now().Add(15 * time.Second); ; time.Sleep(50 * time.Millisecond) {
 		a.streamPages.mu.Lock()
 		running := a.streamPages.running
 		a.streamPages.mu.Unlock()

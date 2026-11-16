@@ -170,6 +170,10 @@ func (a *App) deleteWatchRecording(store *mobileRecordingStore, id, deviceID str
 		return MobileRecordingView{}, err
 	}
 	a.deleteMobileRecordingSession(sessionID)
+	// The names made from this hour's words go with it, now.
+	if _, err := a.watchConversationsOf(store); err != nil {
+		log.Printf("[recordings] conversation names not pruned after a delete: %v", err)
+	}
 	return view, nil
 }
 

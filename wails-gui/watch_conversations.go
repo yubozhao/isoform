@@ -36,7 +36,10 @@ const (
 type WatchConversation struct {
 	// ID is stable while the conversation's first words stay: the device, then
 	// when it began.
-	ID      string `json:"id"`
+	ID string `json:"id"`
+	// Name is a short name the computer gave it ("Pricing with Sam"), empty
+	// until it has one (watch_conversation_names.go).
+	Name    string `json:"name"`
 	StartAt int64  `json:"startAt"`
 	EndAt   int64  `json:"endAt"`
 	// RecordingIDs are the hours it draws from, in order.
@@ -148,7 +151,10 @@ func (a *App) watchConversationSpeechOf(recordings []mobileRecording, since time
 // GetWatchConversations lists the conversations heard on the watch and the
 // phone in the last days, newest first, each with what was said.
 func (a *App) GetWatchConversations() ([]WatchConversation, error) {
-	store := a.watchRecordingStore()
+	return a.watchConversationsOf(a.watchRecordingStore())
+}
+
+func (a *App) watchConversationsOf(store *mobileRecordingStore) ([]WatchConversation, error) {
 	if store == nil {
 		return []WatchConversation{}, nil
 	}
@@ -157,5 +163,8 @@ func (a *App) GetWatchConversations() ([]WatchConversation, error) {
 		return nil, err
 	}
 	since := time.Now().AddDate(0, 0, -watchConversationDays)
-	return buildWatchConversations(a.watchConversationSpeechOf(recordings, since), watchConversationSilence), nil
+	convs := buildWatchConversations(a.watchConversationSpeechOf(recordings, since), watchConversationSilence)
+	// Reading also drops the names whose words are gone.
+	applyWatchConversationNames(convs, pruneWatchConversationNames(store.dir, convs))
+	return convs, nil
 }

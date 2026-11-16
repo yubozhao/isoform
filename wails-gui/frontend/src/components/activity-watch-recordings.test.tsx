@@ -59,6 +59,7 @@ describe('ActivityWatchRecordings', () => {
         mocks.conversations.mockResolvedValue([
             {
                 id: 'dev:1',
+                name: '',
                 startAt: at(50),
                 endAt: at(80),
                 recordingIds: ['6f1c2a54-0000-4000-8000-000000000001', '6f1c2a54-0000-4000-8000-000000000002'],
@@ -81,6 +82,17 @@ describe('ActivityWatchRecordings', () => {
         expect(screen.getByText('Sure, keep going')).toBeTruthy();
         // It holds no audio of its own and no delete: the hours below do.
         expect(screen.queryByText('Delete everywhere')).toBeNull();
+    });
+
+    it('titles a conversation by its name once it has one, with the time under it', async () => {
+        const at = (minutes: number) => started.getTime() + minutes * 60_000;
+        mocks.conversations.mockResolvedValue([
+            { id: 'dev:1', name: 'Pricing with Sam', startAt: at(50), endAt: at(80), recordingIds: ['a'], words: 9, speakers: ['you'], lines: [] },
+        ]);
+        render(<ActivityWatchRecordings bridgePort={4000} onOpenSession={vi.fn()} />);
+        const title = await screen.findByText('Pricing with Sam');
+        expect(title.tagName).toBe('H5');
+        expect(screen.getByText(/ to .* · 9 words · You$/)).toBeTruthy();
     });
 
     it('still lists the hours when conversations cannot be read', async () => {

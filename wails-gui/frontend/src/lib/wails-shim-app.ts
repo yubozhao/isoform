@@ -5769,6 +5769,8 @@ export const DeleteWatchRecording = appBinding<[string], void>('DeleteWatchRecor
 // Conversations computed over the watch's hours (watch_conversations.go).
 export interface WatchConversation {
     id: string;
+    /** A short name the computer gave it; empty until it has one. */
+    name: string;
     startAt: number;
     endAt: number;
     recordingIds: string[];
