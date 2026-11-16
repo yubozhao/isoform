@@ -56,6 +56,9 @@ const (
 // touching app state, the clock or the environment, so every bound and privacy
 // rule can be tested from fixtures.
 type mobileBriefInput struct {
+	// NotRight are the sources of sentences the person said weren't right in
+	// the last week (work_brief_sentence.go); the writer leaves them out.
+	NotRight    map[string]bool
 	Slot        string
 	WindowStart time.Time
 	// BriefDay is the day the brief is about (an early brief for the next

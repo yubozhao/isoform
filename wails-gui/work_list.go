@@ -301,6 +301,7 @@ func (a *App) buildWorkList(ctx context.Context, now time.Time) (WorkList, error
 			list.Items[i].Yes.Kind = workonit.KindElse
 		}
 	}
+	a.workMarkNotRight(list.Items)
 	list.Version = workListVersion(list)
 	return list, nil
 }

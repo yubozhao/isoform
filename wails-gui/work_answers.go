@@ -170,8 +170,12 @@ func (a *App) answerWork(ctx context.Context, id string, input WorkAnswerInput, 
 	}
 	item, ok := workFind(list, id)
 	if !ok {
-		return WorkItem{}, errWorkItemGone
+		// A brief's sentence is never in the list, but can be answered Not right.
+		if item, ok = a.workBriefSentenceItem(id); !ok {
+			return WorkItem{}, errWorkItemGone
+		}
 	}
+	sentence := workIsBriefSentence(item)
 	ledger := a.answersLedger()
 	answers := ledger.entries()
 	if meta.Seq > 0 {
@@ -213,6 +217,20 @@ func (a *App) answerWork(ctx context.Context, id string, input WorkAnswerInput, 
 				return item, errWorkAnswerInvalid
 			}
 			record.Edited = &WorkEdited{Before: input.Before, After: input.After}
+		}
+		if sentence {
+			// Not right on a sentence: a No, with a reason or "Or say what's
+			// right" in after. Nothing is started or withdrawn.
+			if input.Action != workActionNo {
+				return item, errWorkAnswerInvalid
+			}
+			if after := strings.TrimSpace(input.After); after != "" {
+				record.Edited = &WorkEdited{Before: item.Noticed, After: after}
+			}
+			if _, err := ledger.append(record); err != nil {
+				return item, err
+			}
+			break
 		}
 		if input.Send != nil && !*input.Send {
 			if (input.Action != workActionYes && input.Action != workActionEdit) || item.Yes.Does != "agent" {
@@ -296,6 +314,11 @@ func (a *App) answerWork(ctx context.Context, id string, input WorkAnswerInput, 
 	}
 	if updated, ok := workFind(after, id); ok {
 		return updated, nil
+	}
+	if sentence {
+		if updated, ok := a.workBriefSentenceItem(id); ok {
+			return updated, nil
+		}
 	}
 	// The answer took the item out of the list (Not mine on a topic hides the
 	// topic): it comes back answered, without an Undo.
