@@ -552,6 +552,24 @@ export const IsClosedEyesModeEnabled = appBinding<[], boolean>(
 export const SetClosedEyesModeEnabled = appBinding<[boolean], void>(
     "SetClosedEyesModeEnabled",
 );
+// Settings › Your data's numbers (your_data_summary.go).
+export interface YourDataSummary {
+    retentionDays: number;
+    ignoredApps: number;
+    handoffsThisWeek: number;
+    pairedDevices: number;
+    answers: number;
+    answersSince?: string;
+    screenBytes: number;
+    audioBytes: number;
+    usedBytes: number;
+    capBytes: number;
+}
+export const GetYourDataSummary = appBinding<[], YourDataSummary>("GetYourDataSummary");
+// Saves Your answers to a file the person picks; false when cancelled.
+export const ExportAnswers = appBinding<[], boolean>("ExportAnswers");
+// When a timed Closed Eyes ends (RFC 3339), or "" (Settings › Closed Eyes).
+export const GetClosedEyesResumeAt = appBinding<[], string>("GetClosedEyesResumeAt");
 
 // Text channel: Isoform texts the user's own number through Messages when it
 // cannot reach their iPhone. Mirrors wails-gui/text_channel.go.

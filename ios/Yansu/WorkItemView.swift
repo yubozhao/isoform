@@ -242,6 +242,8 @@ struct WorkReasonPicker: View {
 struct WorkDoneLine: View {
     let item: WorkItem
     let now: Date
+    /// "Yes · not sent": Send in its row reopens the hand-off (phone-agent v1.0.0 rule 3).
+    var send: (() -> Void)? = nil
     var undo: () -> Void
 
     var body: some View {
@@ -263,6 +265,13 @@ struct WorkDoneLine: View {
             .font(.subheadline)
             .foregroundStyle(YansuTheme.ink)
             .frame(maxWidth: .infinity, alignment: .leading)
+            if let send {
+                Button(String(localized: "work.send"), action: send)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(YansuTheme.accent)
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("work.done.send")
+            }
             if let answer = item.answer, YourWork.canUndo(answer, now: now) || answer.waits == true {
                 Button(String(localized: "Undo"), action: undo)
                     .font(.subheadline)

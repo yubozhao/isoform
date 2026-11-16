@@ -32,6 +32,9 @@ vi.mock("@/components/settings/pages/observation-page", () => ({
         </div>
     ),
 }));
+vi.mock("@/components/settings/pages/closed-eyes-page", () => ({
+    ClosedEyesPage: () => <div data-testid="page">closed-eyes</div>,
+}));
 vi.mock("@/components/settings/pages/learning-memory-page", () => ({
     LearningMemoryPage: ({
         onOpenMemory,
@@ -106,20 +109,23 @@ describe("SettingsPage", () => {
         await i18n.changeLanguage("en");
     });
 
-    it("opens on Overview with its own title, one explanatory subtitle and its sidebar row first", () => {
+    it("opens on What Isoform sees, first in the sidebar, above Closed Eyes", () => {
         renderSettings();
+        expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("What Isoform sees");
+        expect(screen.getAllByText("Every source on one page, and off means nothing from it is kept.")).toHaveLength(1);
+        expect(screen.getByTestId("page")).toHaveTextContent("observation");
+        const sees = screen.getByRole("button", { name: "What Isoform sees" });
+        expect(sees).toHaveAttribute("aria-current", "page");
+        const closedEyes = screen.getByRole("button", { name: "Closed Eyes" });
+        expect(sees.compareDocumentPosition(closedEyes) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        fireEvent.click(closedEyes);
+        expect(screen.getByTestId("page")).toHaveTextContent("closed-eyes");
+    });
+
+    it("keeps Overview as a page with its own title", () => {
+        renderSettings("overview");
         expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("How Isoform works for you");
-        expect(
-            screen.getAllByText(
-                "Your whole setup in a few sentences; change anything right here or open its page for the details.",
-            ),
-        ).toHaveLength(1);
         expect(screen.getByTestId("page")).toHaveTextContent("overview");
-        const overview = screen.getByRole("button", { name: "Overview" });
-        expect(overview).toHaveAttribute("aria-current", "page");
-        // Overview sits above General in the sidebar.
-        const general = screen.getByRole("button", { name: "General" });
-        expect(overview.compareDocumentPosition(general) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     });
 
     it("titles General with its own name and subtitle", () => {
@@ -152,7 +158,7 @@ describe("SettingsPage", () => {
 
     it("resolves legacy deep links to the page that holds their content", () => {
         const { rerender } = renderSettings("subscription");
-        expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Assistant");
+        expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Your agents");
 
         const props = baseProps();
         // A deep link that arrives while Settings is open navigates there.
@@ -163,23 +169,23 @@ describe("SettingsPage", () => {
 
     });
 
-    it("returns to Overview after closing Appearance and reopening without a topic", () => {
+    it("returns to What Isoform sees after closing Appearance and reopening without a topic", () => {
         const props = baseProps();
         const { rerender } = render(<SettingsPage {...props} initialTopic="appearance" initialOptions={{}} />);
         expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Appearance");
 
         rerender(<SettingsPage {...props} active={false} initialTopic="appearance" initialOptions={{}} />);
         rerender(<SettingsPage {...props} active initialOptions={{}} />);
-        expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("How Isoform works for you");
-        expect(screen.getByTestId("page")).toHaveTextContent("overview");
+        expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("What Isoform sees");
+        expect(screen.getByTestId("page")).toHaveTextContent("observation");
     });
 
-    it("returns to Overview for a no-topic open while Settings is already on Appearance", () => {
+    it("returns to What Isoform sees for a no-topic open while Settings is already on Appearance", () => {
         const { rerender } = renderSettings("appearance");
         expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Appearance");
 
         rerender(<SettingsPage {...baseProps()} initialOptions={{}} />);
-        expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("How Isoform works for you");
+        expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("What Isoform sees");
     });
 
     it("passes the knowledge links through to Learning and memory", () => {
@@ -207,12 +213,12 @@ describe("SettingsPage", () => {
         const search = screen.getByRole("searchbox", { name: "Search settings" });
         fireEvent.change(search, { target: { value: "relay" } });
         fireEvent.keyDown(search, { key: "Enter" });
-        expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Phone");
+        expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Your phone");
         expect(screen.getByTestId("page")).toHaveTextContent("iphone:advanced");
 
         // Opening it from the sidebar keeps the remembered state.
         fireEvent.click(screen.getByRole("button", { name: "General" }));
-        fireEvent.click(screen.getByRole("button", { name: "Phone" }));
+        fireEvent.click(screen.getByRole("button", { name: "Your phone" }));
         expect(screen.getByTestId("page")).toHaveTextContent(/^iphone$/);
     });
 
@@ -227,7 +233,7 @@ describe("SettingsPage", () => {
 
     it("does not open a Developer tools page while Developer tools are off", () => {
         renderSettings("notification-tests", { devToolsUnlocked: false });
-        expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("How Isoform works for you");
+        expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("What Isoform sees");
     });
 
     it("warns under the browser preview switch that any local program can use it", () => {
@@ -243,6 +249,6 @@ describe("SettingsPage", () => {
         first.unmount();
 
         renderSettings("iphone");
-        expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Phone");
+        expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Your phone");
     });
 });

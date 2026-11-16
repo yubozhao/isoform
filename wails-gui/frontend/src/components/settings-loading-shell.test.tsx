@@ -16,7 +16,7 @@ describe('SettingsLoadingShell', () => {
         expect(screen.getByTestId('settings-loading-shell')).toBeInTheDocument();
         expect(container.querySelector('.settings-nav')).not.toBeNull();
         expect(container.querySelector('.settings-nav')!.textContent!.length).toBeGreaterThan(0);
-        expect(screen.getByRole('heading', { name: enSettings.pages.overview.title })).toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: enSettings.pages.activity.label })).toBeInTheDocument();
         expect(container.querySelectorAll('.bg-ink\\/\\[0\\.05\\], .bg-ink\\/\\[0\\.06\\]')).toHaveLength(0);
     });
 });

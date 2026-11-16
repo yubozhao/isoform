@@ -16,13 +16,15 @@ struct NotificationKind: Codable, Equatable, Identifiable, Sendable {
 
     var id: String { kind }
 
-    static let phoneKinds = ["work_blocked", "brief_ready", "work_finished"]
+    /// Three kinds, and nothing else (phone-map rule 16, phone-rings v1.0.0 frame 17c).
+    static let phoneKinds = ["brief_ready", "meeting_prep", "work_finished"]
 
     var phoneTitle: String {
         switch kind {
         case "work_blocked": return String(localized: "Something needs you")
-        case "work_finished": return String(localized: "A task is done")
-        case "brief_ready": return String(localized: "Your brief is ready")
+        case "meeting_prep": return String(localized: "set.notif.prep")
+        case "work_finished": return String(localized: "set.notif.done")
+        case "brief_ready": return String(localized: "set.notif.brief")
         default: return title
         }
     }

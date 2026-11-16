@@ -91,6 +91,8 @@ import { GeneralPage, AppearanceSettings } from "@/components/settings/pages/gen
 import { NotificationsPage } from "@/components/settings/pages/notifications-page";
 import { AssistantPage } from "@/components/settings/pages/assistant-page";
 import { ObservationPage } from "@/components/settings/pages/observation-page";
+import { ClosedEyesPage } from "@/components/settings/pages/closed-eyes-page";
+import { YourDataPage } from "@/components/settings/pages/your-data-page";
 import { LearningMemoryPage } from "@/components/settings/pages/learning-memory-page";
 import { PrivacyPage } from "@/components/settings/pages/privacy-page";
 import { StoragePage } from "@/components/settings/pages/storage-page";
@@ -310,6 +312,10 @@ export function SettingsPage({
                 return <AssistantPage />;
             case "activity":
                 return <ObservationPage onOpenPage={selectPage} />;
+            case "closed-eyes":
+                return <ClosedEyesPage />;
+            case "your-data":
+                return <YourDataPage onOpenPage={selectPage} />;
             case "memory":
                 return (
                     <LearningMemoryPage

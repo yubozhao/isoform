@@ -44,7 +44,7 @@ describe("SettingsNav", () => {
     it("groups pages under explained headings with Extensions collapsed", () => {
         renderNav();
 
-        for (const label of ["Overview", "General", "Notifications", "Assistant", "Observation", "Learning and memory", "Privacy", "Phone", "About"]) {
+        for (const label of ["What Isoform sees", "Closed Eyes", "Your agents", "Your phone", "Briefs and notifications", "Overview", "General", "Learning and memory", "Privacy", "About"]) {
             expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
         }
         expect(screen.getByText("Personal AI")).toBeInTheDocument();
@@ -103,9 +103,10 @@ describe("SettingsNav", () => {
         const search = screen.getByRole("searchbox", { name: "Search settings" });
 
         fireEvent.change(search, { target: { value: "phone" } });
-        // Notifications also mentions the phone; the page named Phone wins.
+        // Notifications also mentions the phone; the page named Your phone wins.
         const rows = screen.getAllByRole("button").map((button) => button.textContent);
-        expect(rows.indexOf("Phone")).toBeLessThan(rows.indexOf("Notifications"));
+        expect(rows.indexOf("Your phone")).toBeGreaterThan(-1);
+        expect(rows.indexOf("Your phone")).toBeLessThan(rows.indexOf("Briefs and notifications"));
         fireEvent.keyDown(search, { key: "Enter" });
         expect(onSelect).toHaveBeenCalledWith("iphone");
     });
@@ -115,7 +116,7 @@ describe("SettingsNav", () => {
         const search = screen.getByRole("searchbox", { name: "Search settings" });
 
         fireEvent.change(search, { target: { value: "relay" } });
-        fireEvent.click(screen.getByRole("button", { name: "Phone" }));
+        fireEvent.click(screen.getByRole("button", { name: "Your phone" }));
         expect(onSelect).toHaveBeenCalledWith("iphone", { advanced: true });
     });
 

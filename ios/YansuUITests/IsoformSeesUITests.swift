@@ -33,10 +33,10 @@ final class IsoformSeesUITests: XCTestCase {
     func testSettingsPrivacyOpensTheSamePage() throws {
         let app = launch(language: "en", appearance: "Light", presence: false)
         openSettings(app)
-        // The Privacy card's own identifier covers its rows, so the row is found by its words in that group.
-        let row = app.descendants(matching: .any)["settings.group.privacy"].buttons["What Isoform sees"]
+        // phone-settings rule 4: What Isoform sees is Your data's "Kept on your computer".
+        let row = app.buttons["settings.yourData.open"].firstMatch
         for _ in 0..<6 where !row.isHittable { app.swipeUp() }
-        XCTAssertTrue(row.waitForExistence(timeout: 5), "Settings › Privacy has What Isoform sees")
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "Settings has Your data")
         // A tap while the list still glides after the swipes only stops it, so tap until the page shows.
         tapUntil(row, shows: app.buttons["sees.turnOn.mail"])
         XCTAssertTrue(app.buttons["sees.turnOn.mail"].exists, "the row opens What Isoform sees")

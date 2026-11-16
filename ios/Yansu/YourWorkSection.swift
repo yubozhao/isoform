@@ -15,6 +15,9 @@ struct YourWorkSection<Legacy: View>: View {
     @State private var editing: WorkItem?
     @State private var why: WorkItem?
     @State private var answerHaptics = 0
+    /// Yes on offered work: the hand-off shows exactly what goes (phone-agent v1.0.0 rule 3).
+    @State private var handingOff: WorkItem?
+    @EnvironmentObject private var environment: AppEnvironment
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -91,7 +94,9 @@ struct YourWorkSection<Legacy: View>: View {
             if !groups.doneToday.isEmpty {
                 YourWorkGroup(title: String(localized: "work.doneToday"), identifier: "work.doneToday") {
                     ForEach(groups.doneToday) { item in
-                        WorkDoneLine(item: item, now: now) { Task { await work.undo(item) } }
+                        WorkDoneLine(item: item, now: now, send: item.answer?.notSent == true ? { handingOff = item } : nil) {
+                            Task { await work.undo(item) }
+                        }
                         if item.id != groups.doneToday.last?.id { Divider().overlay(YansuTheme.borderSubtle) }
                     }
                 }
@@ -104,6 +109,14 @@ struct YourWorkSection<Legacy: View>: View {
         .animation(reduceMotion ? .easeOut(duration: 0.18) : .easeOut(duration: 0.25), value: groups.open.map(\.id))
         // A light tap confirms an answer; it never stands in for words (pass-access rule 10).
         .sensoryFeedback(.impact(weight: .light), trigger: answerHaptics)
+        .sheet(item: $handingOff) { item in
+            HandOffSheet(source: HandOffSource.work(item),
+                         hub: agentsHub, alreadyHandedOver: !work.sendsSeparately,
+                         sendThroughWork: work.sendsSeparately ? { agent in
+                             try await work.sendHandOff(item, agentID: agent.id, removed: [])
+                         } : nil)
+                .presentationDetents([.large])
+        }
         .sheet(item: $editing) { item in
             WorkEditSheet(item: item) { text in
                 Task { await work.answer(item, action: .edit, before: item.work.text, after: text) }
@@ -119,13 +132,23 @@ struct YourWorkSection<Legacy: View>: View {
         .accessibilityIdentifier("today.yourWork")
     }
 
+    private var agentsHub: AgentsHubAPI {
+        #if DEBUG && targetEnvironment(simulator)
+        if WorkUITestSeed.isOn { return AgentsUITestHub() }
+        #endif
+        return environment.hub
+    }
+
     private func answer(_ item: WorkItem, _ action: WorkAction) {
         answerHaptics += 1
         onAnswered()
-        Task { await work.answer(item, action: action) }
+        // Yes on offered work: recorded on the first tap, sent from the hand-off when the computer takes that (26.1).
+        let recordOnly = action == .yes && item.kind == "offered" && work.sendsSeparately
+        Task { await work.answer(item, action: action, send: recordOnly ? false : nil) }
         withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) {
             declined = action == .no ? item : nil
         }
+        if action == .yes, item.kind == "offered" { handingOff = item }
     }
 }
 

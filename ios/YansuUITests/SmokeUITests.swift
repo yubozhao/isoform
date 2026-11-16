@@ -16,9 +16,9 @@ final class SmokeUITests: XCTestCase {
 
         openSettings(app)
         XCTAssertTrue(app.buttons["settings.pair"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.descendants(matching: .any)["settings.group.you"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["settings.group.you"].exists, "the phone card goes (phone-settings rule 14)")
         XCTAssertTrue(app.descendants(matching: .any)["settings.group.mac"].exists)
-        XCTAssertTrue(app.descendants(matching: .any)["settings.group.notifications"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["settings.group.isoform"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["settings.group.brief"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["settings.group.privacy"].exists)
         attachScreenshot(app, named: "settings-unpaired")

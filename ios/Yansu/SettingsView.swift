@@ -27,13 +27,82 @@ struct SettingsView: View {
     @State private var faceIDFailure = false
     @State private var status: HubStatus?
     @AppStorage("faceIDToOpen") private var faceIDToOpen = false
-    @AppStorage(WorkOnIt.enabledKey) private var workOnItEnabled = false
 
     var body: some View {
         ScrollView {
+            // Ranked as phone-settings v1.0.0: what everything depends on first, then trust, then the Yes path.
             VStack(alignment: .leading, spacing: 24) {
-                settingsGroup("You", identifier: "settings.group.you") {
-                    youSection
+                settingsGroup("set.computer", identifier: "settings.group.mac") { pairingSection }
+                if pairing.isPaired, status?.observingPauseControl == true {
+                    ClosedEyesRow(status: $status, hub: app.hub)
+                }
+                if let notice = brief.notice {
+                    NoticeBanner(message: notice, dismiss: brief.dismissNotice)
+                        .accessibilityIdentifier("settings.briefNotice")
+                }
+                VStack(spacing: 0) {
+                    if pairing.isPaired {
+                        Button { showsSees = true } label: {
+                            settingsRow(String(localized: "set.data"), sub: String(localized: "set.dataSub"))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("settings.yourData.open")
+                        rowDivider
+                        NavigationLink {
+                            YourAgentsView(hub: agentsHub)
+                        } label: {
+                            settingsRow(String(localized: "set.agent"), sub: String(localized: "set.agentSub"))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("settings.yourAgents.open")
+                    }
+                    // Shown only when the paired computer takes a voice sample from the phone.
+                    if status?.ownerVoice == true, Self.allowsOwnerVoice(pairing.paired?.scopes ?? []) {
+                        rowDivider
+                        NavigationLink {
+                            OwnerVoiceView(hub: app.hub, session: { [vault = app.vault] in try vault.session() })
+                        } label: {
+                            settingsRow(String(localized: "set.voice"), sub: nil)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("settings.ownerVoice.open")
+                    }
+                    // Apple Watch opens the Watch tab (phone-settings v1.0.0 rule 7). Shown only while a watch is
+                    // paired; with none, nothing about a watch shows.
+                    if watchRecordings.connection.hasWatch {
+                        rowDivider
+                        Button {
+                            app.router.selectedTab = .watch
+                            app.router.sheet = nil
+                        } label: {
+                            settingsRow(String(localized: "set.watch"), sub: String(localized: "Opens the Watch tab"))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("settings.watchRecordings.open")
+                    } else if watchRecordings.worthShowing {
+                        // No watch is paired, but recordings are still held (made on this phone, or from a watch
+                        // since unpaired): their list stays reachable here, as it was.
+                        rowDivider
+                        NavigationLink {
+                            WatchRecordingsView(model: watchRecordings)
+                        } label: {
+                            settingsRow(String(localized: "Recordings"), sub: WatchRecordingsCopy.summary(watchRecordings.rows))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("settings.recordings.open")
+                    }
+                    rowDivider
+                    NavigationLink {
+                        NotificationSettingsView(notifications: app.notifications)
+                    } label: {
+                        settingsRow(String(localized: "set.notif"), sub: String(localized: "set.notifSub"))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("settings.notifications.open")
+                }
+                .padding(.horizontal, 16)
+                .background(YansuTheme.surface, in: RoundedRectangle(cornerRadius: YansuTheme.cornerRadius))
+                settingsGroup("Isoform", identifier: "settings.group.isoform") {
                     NavigationLink {
                         YourAgentView(store: app.yourAgent)
                     } label: {
@@ -45,74 +114,13 @@ struct SettingsView: View {
                                     .background(YansuTheme.warningWash, in: Capsule())
                                 Spacer(minLength: 4)
                                 Image(systemName: "chevron.right").font(.footnote.weight(.semibold))
-                                    .foregroundStyle(YansuTheme.tertiary)
+                                    .foregroundStyle(YansuTheme.secondary)
                             }
                         }
                     }.buttonStyle(.plain).accessibilityIdentifier("settings.yourAgent.open")
-                    // Shown only when the paired computer takes a voice sample from the phone.
-                    if status?.ownerVoice == true, Self.allowsOwnerVoice(pairing.paired?.scopes ?? []) {
-                        NavigationLink {
-                            OwnerVoiceView(hub: app.hub, session: { [vault = app.vault] in try vault.session() })
-                        } label: {
-                            YansuCard {
-                                HStack(spacing: 8) {
-                                    Text("Your voice").font(.body).foregroundStyle(YansuTheme.ink)
-                                    Spacer(minLength: 4)
-                                    Image(systemName: "chevron.right").font(.footnote.weight(.semibold))
-                                        .foregroundStyle(YansuTheme.tertiary)
-                                }
-                            }
-                        }.buttonStyle(.plain).accessibilityIdentifier("settings.ownerVoice.open")
-                    }
                 }
-                settingsGroup("Your computer", identifier: "settings.group.mac") { pairingSection }
-                // Apple Watch opens the Watch tab (phone-settings v1.0.0 rule 7). Shown only while a
-                // watch is paired; with none, nothing about a watch shows.
-                if watchRecordings.connection.hasWatch {
-                    settingsGroup("Watch", identifier: "settings.group.watch") {
-                        Button {
-                            app.router.selectedTab = .watch
-                            app.router.sheet = nil
-                        } label: {
-                            YansuCard {
-                                HStack(spacing: 8) {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text("Apple Watch").font(.body).foregroundStyle(YansuTheme.ink)
-                                        Text("Opens the Watch tab").font(.footnote).foregroundStyle(YansuTheme.secondary)
-                                    }
-                                    Spacer(minLength: 4)
-                                    Image(systemName: "chevron.right").font(.footnote.weight(.semibold))
-                                        .foregroundStyle(YansuTheme.tertiary)
-                                }
-                            }
-                        }.buttonStyle(.plain).accessibilityIdentifier("settings.watchRecordings.open")
-                    }
-                } else if watchRecordings.worthShowing {
-                    // No watch is paired, but recordings are still held (made on this phone, or from a
-                    // watch since unpaired): their list stays reachable here, as it was.
-                    settingsGroup("Recordings", identifier: "settings.group.watch") {
-                        NavigationLink {
-                            WatchRecordingsView(model: watchRecordings)
-                        } label: {
-                            YansuCard {
-                                HStack(spacing: 8) {
-                                    Text("Hours and where they are").font(.body).foregroundStyle(YansuTheme.ink)
-                                    Spacer(minLength: 4)
-                                    Text(WatchRecordingsCopy.summary(watchRecordings.rows)).font(.footnote)
-                                        .foregroundStyle(YansuTheme.secondary).lineLimit(1)
-                                    Image(systemName: "chevron.right").font(.footnote.weight(.semibold))
-                                        .foregroundStyle(YansuTheme.tertiary)
-                                }
-                            }
-                        }.buttonStyle(.plain).accessibilityIdentifier("settings.recordings.open")
-                    }
-                }
-                if let notice = brief.notice {
-                    NoticeBanner(message: notice, dismiss: brief.dismissNotice)
-                        .accessibilityIdentifier("settings.briefNotice")
-                }
-                settingsGroup("Notifications", identifier: "settings.group.notifications") { notificationsControls }
-                settingsGroup("Privacy", identifier: "settings.group.privacy") { privacySection }
+                settingsGroup("set.phone", identifier: "settings.group.privacy") { privacySection }
+                aboutSection
             }
             .padding(.horizontal, YansuTheme.gutter)
             .padding(.top, 8)
@@ -207,19 +215,26 @@ struct SettingsView: View {
                     }
                 } else if let paired = pairing.paired {
                     VStack(alignment: .leading, spacing: 16) {
-                        Text("Paired with \(paired.hubName)")
-                            .font(.body)
-                            .foregroundStyle(YansuTheme.ink)
-                        detailRow("Connection", connectionDescription)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(String.localizedStringWithFormat(String(localized: "set.paired"), paired.hubName))
+                                .font(.body)
+                                .foregroundStyle(YansuTheme.ink)
+                            Text(verbatim: computerState)
+                                .font(.footnote)
+                                .foregroundStyle(YansuTheme.secondary)
+                                .accessibilityIdentifier("settings.computerState")
+                        }
                         if let value = keepAwake.on {
                             Toggle(isOn: Binding(get: { keepAwake.on ?? value }, set: { enabled in
                                 Task { await keepAwake.set(enabled) }
-                            })) { Text("Keep your computer awake while it's plugged in") }
+                            })) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("set.awake")
+                                    Text("set.awakeSub").font(.footnote).foregroundStyle(YansuTheme.secondary)
+                                }
+                            }
                                 .tint(YansuTheme.accent)
                                 .accessibilityIdentifier("settings.keepAwake")
-                            Text("So this phone can reach it while it's plugged in. The screen still turns off. A closed laptop still sleeps.")
-                                .font(.footnote)
-                                .foregroundStyle(YansuTheme.secondary)
                             if keepAwake.saveFailed {
                                 Text(String(localized: "Could not save this change. Try again."))
                                     .font(.footnote)
@@ -244,25 +259,15 @@ struct SettingsView: View {
                                 .foregroundStyle(YansuTheme.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
-                        Button("Pair another computer") {
-                            pairing.prepareToPair()
-                            showPairing = true
-                        }
-                        .buttonStyle(YansuSecondaryButtonStyle())
-                        .disabled(unpairing)
-                        .accessibilityIdentifier("settings.pairAgain")
-                        Button {
-                            confirmUnpair = true
-                        } label: {
-                            Text(Self.unpairTitle(unpairing: unpairing))
-                                .font(.body.weight(.semibold))
-                                .foregroundStyle(YansuTheme.error)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .disabled(unpairing)
-                        .accessibilityIdentifier("settings.unpair")
                         DisclosureGroup("Details", isExpanded: $showDetails) {
                             VStack(alignment: .leading, spacing: 16) {
+                                Button("Pair another computer") {
+                                    pairing.prepareToPair()
+                                    showPairing = true
+                                }
+                                .buttonStyle(YansuSecondaryButtonStyle())
+                                .disabled(unpairing)
+                                .accessibilityIdentifier("settings.pairAgain")
                                 detailRow("Relay", Self.relayHost(paired.relayOrigin))
                                     .accessibilityIdentifier("settings.detail.relay")
                                 detailRow("This phone", paired.deviceName)
@@ -315,202 +320,84 @@ struct SettingsView: View {
 
     // MARK: Notifications
 
-    private var notificationsSection: some View {
-        NavigationLink {
-            NotificationSettingsView(notifications: app.notifications)
-        } label: {
-            YansuCard {
-                HStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("notifications.title")
-                            .font(.headline)
-                            .foregroundStyle(YansuTheme.ink)
-                        Text("notifications.settingsSummary")
-                            .font(.subheadline)
-                            .foregroundStyle(YansuTheme.secondary)
-                    }
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(YansuTheme.secondary)
-                }
-            }
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("settings.notifications.open")
-    }
-
-    private var notificationsControls: some View {
-        YansuCard {
-            VStack(alignment: .leading, spacing: 14) {
-                Toggle(isOn: Binding(get: { push.isEnabled }, set: { enabled in
-                    Task { if enabled { await push.enable() } else { await push.disable() } }
-                })) { Text("Phone alerts") }
-                    .tint(YansuTheme.accent)
-                    .accessibilityIdentifier("settings.notifications.toggle")
-                if let status = push.statusMessage {
-                    Text(status).font(.footnote).foregroundStyle(YansuTheme.secondary)
-                }
-                // Declined in iOS: the switch cannot turn alerts on again from here, so the button opens iOS Settings (P145).
-                if push.state == .denied {
-                    Button("Open Settings") {
-                        if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
-                    }
-                    .buttonStyle(YansuSecondaryButtonStyle())
-                    .accessibilityIdentifier("settings.notifications.openSettings")
-                }
-                if notifications.hasPendingChanges {
-                    Text("notifications.pending").font(.footnote).foregroundStyle(YansuTheme.secondary)
-                        .accessibilityIdentifier("settings.notifications.pending")
-                }
-                if let failure = notifications.failure {
-                    Text(failure).font(.footnote).foregroundStyle(YansuTheme.secondary)
-                        .accessibilityIdentifier("settings.notifications.failure")
-                }
-                if let settings = notifications.settings, settings.available {
-                    ForEach(settings.phoneKinds) { kind in
-                        Toggle(isOn: Binding(get: { kind.effectivelyEnabled }, set: { enabled in
-                            Task { await notifications.setEnabled(kind.kind, enabled) }
-                        })) { Text(kind.phoneTitle) }
-                            .tint(YansuTheme.accent)
-                            .accessibilityIdentifier("settings.notification.\(kind.kind)")
-                    }
-                }
-                NavigationLink {
-                    NotificationQuietHoursDestination(notifications: app.notifications)
-                } label: {
-                    HStack {
-                        Text("Quiet hours")
-                            .foregroundStyle(YansuTheme.ink)
-                        Spacer()
-                        Text(quietHoursSummary)
-                            .font(.subheadline)
-                            .foregroundStyle(YansuTheme.secondary)
-                        Image(systemName: "chevron.right")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(YansuTheme.secondary)
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("settings.notifications.open")
-                NavigationLink {
-                    NotificationSettingsView(notifications: app.notifications)
-                } label: {
-                    Text("notifications.title")
-                }
-                .accessibilityIdentifier("settings.notifications.preferences")
-                if !keepAwake.instantPush {
-                    Text("Your phone checks your computer every so often, so a notice can come a little late. While your computer is asleep, most notices wait until it wakes.")
-                        .font(.footnote)
-                        .foregroundStyle(YansuTheme.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("settings.notifications.lateFooter")
-                }
-            }
-        }
-    }
-
-    private var quietHoursSummary: String {
-        guard let settings = notifications.settings, settings.available else {
-            return String(localized: "Set on your computer")
-        }
-        return NotificationSettings.quietHoursRange(start: settings.quietStart, end: settings.quietEnd, locale: locale)
-            ?? String(localized: "Set on your computer")
-    }
-
-    private var youSection: some View {
-        YansuCard {
-            HStack(spacing: 14) {
-                if let initial = ownerName?.first {
-                    Text(String(initial).uppercased())
-                        .font(.headline.weight(.semibold))
-                        .foregroundStyle(YansuTheme.accent)
-                        .frame(width: 44, height: 44)
-                        .background(YansuTheme.accent.opacity(0.12), in: Circle())
-                } else {
-                    Image(systemName: "person.crop.circle")
-                        .font(.largeTitle)
-                        .foregroundStyle(YansuTheme.secondary)
-                        .frame(width: 44, height: 44)
-                }
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(ownerName ?? String(localized: "You"))
-                        .font(.headline)
-                        .foregroundStyle(YansuTheme.ink)
-                    Text(String(localized: "This iPhone"))
-                        .font(.footnote)
-                        .foregroundStyle(YansuTheme.secondary)
-                    Text(UIDevice.current.name)
-                        .font(.subheadline)
-                        .foregroundStyle(YansuTheme.ink)
-                }
-                Spacer(minLength: 0)
-            }
-        }
-        .accessibilityIdentifier("settings.you")
-    }
-
+    /// This phone (phone-settings rule 10): Face ID, Clear this phone, and Unpair this phone in red, last.
     private var privacySection: some View {
         YansuCard {
             VStack(alignment: .leading, spacing: 16) {
-                if pairing.isPaired {
-                    // The same page as the mark in Chat (Phone Threads §5): one page, three doors.
-                    Button { showsSees = true } label: {
-                        HStack {
-                            Text(String(localized: "What Isoform sees"))
-                                .font(.body.weight(.semibold))
-                                .foregroundStyle(YansuTheme.ink)
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.footnote.weight(.semibold))
-                                .foregroundStyle(YansuTheme.tertiary)
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("settings.whatIsoformSees")
-                }
-                Toggle(isOn: $workOnItEnabled) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Work on it")
-                        Text("Hand a brief item to Claude, ChatGPT or Grok. You see exactly what goes.")
-                            .font(.footnote)
-                            .foregroundStyle(YansuTheme.secondary)
-                    }
-                }
-                    .tint(YansuTheme.accent)
-                    .accessibilityIdentifier("settings.workOnIt")
                 Toggle(isOn: Binding(get: { faceIDToOpen }, set: { enabled in
                     if enabled { Task { await enableFaceID() } } else { faceIDToOpen = false }
                 })) { Text("Face ID to open") }
                     .tint(YansuTheme.accent)
                     .accessibilityIdentifier("settings.faceID")
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("Keep on this phone")
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(YansuTheme.ink)
-                    Text("Briefs, chats, tasks and ideas you have opened are saved on this iPhone.")
-                        .font(.footnote)
-                        .foregroundStyle(YansuTheme.secondary)
+                Button { confirmDeleteCache = true } label: {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("set.clear").font(.body).foregroundStyle(YansuTheme.ink)
+                        Text("set.clearSub").font(.footnote).foregroundStyle(YansuTheme.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("settings.clearThisPhone")
                 Link("Privacy Policy", destination: URL(string: "https://www.isoform.ai/privacy")!)
                     .accessibilityIdentifier("settings.privacyPolicy")
-                Button("Remove saved briefs") { confirmDeleteCache = true }
-                    .buttonStyle(YansuSecondaryButtonStyle())
-                    .accessibilityIdentifier("settings.deleteCachedBriefs")
-                Button(role: .destructive) {
-                    if pairing.isPaired { confirmUnpair = true } else { confirmForgetPairing = true }
-                } label: {
-                    Text("Clear this phone")
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(YansuTheme.error)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                if pairing.isPaired || pairing.recoveryMessage != nil {
+                    Button(role: .destructive) {
+                        if pairing.isPaired { confirmUnpair = true } else { confirmForgetPairing = true }
+                    } label: {
+                        Text(Self.unpairTitle(unpairing: unpairing))
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(YansuTheme.error)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .disabled(unpairing)
+                    .accessibilityIdentifier("settings.unpair")
                 }
-                .accessibilityIdentifier("settings.clearThisPhone")
             }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("settings.privacy")
+    }
+
+    /// One row of the middle list: a title, a line under it, and a chevron.
+    private func settingsRow(_ title: String, sub: String?) -> some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: title).font(.body).foregroundStyle(YansuTheme.ink)
+                if let sub, !sub.isEmpty {
+                    Text(verbatim: sub).font(.footnote).foregroundStyle(YansuTheme.secondary).lineLimit(2)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(YansuTheme.secondary)
+        }
+        .padding(.vertical, 12)
+        .contentShape(Rectangle())
+    }
+
+    private var rowDivider: some View { Divider().overlay(YansuTheme.borderSubtle) }
+
+    private var agentsHub: AgentsHubAPI {
+        #if DEBUG && targetEnvironment(simulator)
+        if WorkUITestSeed.isOn { return AgentsUITestHub() }
+        #endif
+        return app.hub
+    }
+
+    /// "Online · heard from it just now", "Asleep since 4:12 PM · answers wait on this phone", "Can't reach it ·
+    /// last heard 2:41 PM" (phone-settings rule 2).
+    private var computerState: String {
+        let time = { (date: Date) in BriefClock.text(date, locale: locale) }
+        if brief.hubOnline != false && !todayStore.hubUnreachable {
+            return String(localized: "set.online")
+        }
+        let heard = todayStore.lastConnected ?? todayStore.snapshot?.generatedDate
+        if todayStore.connectionReason != nil, let heard {
+            return String.localizedStringWithFormat(String(localized: "set.asleep"), time(heard))
+        }
+        if let heard { return String.localizedStringWithFormat(String(localized: "set.cantReach"), time(heard)) }
+        return connectionDescription
     }
 
     private func settingsGroup<Content: View>(_ title: String, identifier: String,
@@ -521,12 +408,6 @@ struct SettingsView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(identifier)
-    }
-
-    private var ownerName: String? {
-        guard let name = pairing.paired?.hubName, let suffix = name.range(of: "'s") else { return nil }
-        let owner = String(name[..<suffix.lowerBound]).trimmingCharacters(in: .whitespaces)
-        return owner.isEmpty ? nil : owner
     }
 
     private var connectionDescription: String {

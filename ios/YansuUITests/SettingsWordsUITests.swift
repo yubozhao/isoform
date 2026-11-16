@@ -17,10 +17,10 @@ final class SettingsWordsUITests: XCTestCase {
             attach(app, named: "S1-settings-top-\(appearance)")
             let privacy = app.descendants(matching: .any)["settings.group.privacy"].firstMatch
             for _ in 0..<10 where !(privacy.exists && privacy.isHittable) { app.swipeUp() }
-            let saved = app.staticTexts["Briefs, chats, tasks and ideas you have opened are saved on this iPhone."].firstMatch
-            XCTAssertTrue(saved.waitForExistence(timeout: 5), "Privacy says the saved copy is saved, not cached")
-            let remove = app.buttons["Remove saved briefs"].firstMatch
-            XCTAssertTrue(remove.exists, "Privacy offers Remove saved briefs")
+            // phone-settings rule 10: This phone says what Clear removes, and that the computer keeps everything.
+            let saved = app.staticTexts["Removes saved briefs and answers here. Your computer keeps everything."].firstMatch
+            XCTAssertTrue(saved.waitForExistence(timeout: 5), "This phone says what Clear this phone removes")
+            XCTAssertTrue(app.buttons["settings.clearThisPhone"].firstMatch.exists, "This phone offers Clear this phone")
             XCTAssertFalse(app.buttons["Delete cached briefs"].firstMatch.exists)
             attach(app, named: "S2-privacy-saved-\(appearance)")
             app.terminate()
@@ -31,6 +31,10 @@ final class SettingsWordsUITests: XCTestCase {
         for appearance in ["light", "dark"] {
             let app = launch(state: "push-denied", appearance: appearance)
             openSettingsPage(app)
+            // Notifications is its own page now (phone-settings rule 8).
+            let row = app.buttons["settings.notifications.open"].firstMatch
+            for _ in 0..<6 where !(row.exists && row.isHittable) { app.swipeUp() }
+            row.tap()
             let open = app.buttons["settings.notifications.openSettings"].firstMatch
             for _ in 0..<10 where !(open.exists && open.isHittable) { app.swipeUp() }
             XCTAssertTrue(open.waitForExistence(timeout: 10), "a declined notification setting needs a way to Settings")

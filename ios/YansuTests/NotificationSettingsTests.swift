@@ -174,6 +174,22 @@ final class NotificationSettingsTests: XCTestCase {
         XCTAssertNotNil(store.settings, "a failed refresh keeps the last view")
     }
 
+    /// A saved copy that can't be written never hides the page: the computer answered, so its choices show.
+    @MainActor
+    func testAnAnswerThePhoneCannotSaveStillLoads() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let blocked = directory.appendingPathComponent("blocked-file")
+        try Data().write(to: blocked)
+        let hub = NotificationHub(answer: Self.settings([Self.kind("brief_ready", enabled: true)]))
+        let store = NotificationSettingsStore(hub: hub, isPaired: { true },
+            fileURL: blocked.appendingPathComponent("notifications.json"))
+        await store.refresh()
+        XCTAssertEqual(store.loadState, .loaded)
+        XCTAssertTrue(NotificationSettingsView.showsChoices(store.loadState))
+        XCTAssertEqual(store.settings?.kinds.map(\.kind), ["brief_ready"])
+    }
+
     @MainActor
     func testStoreDoesNothingWhileUnpaired() async {
         let hub = NotificationHub(answer: Self.settings([]))
@@ -192,10 +208,12 @@ final class NotificationSettingsTests: XCTestCase {
             Self.kind("brief_ready", enabled: false),
             Self.kind("work_finished", enabled: true, paused: true),
             Self.kind("work_blocked", enabled: true),
+            Self.kind("meeting_prep", enabled: true),
             Self.kind("suggestion", enabled: true)
         ])
-        XCTAssertEqual(settings.phoneKinds.map(\.kind), ["work_blocked", "brief_ready", "work_finished"])
-        XCTAssertEqual(settings.enabledPhoneKinds.map(\.kind), ["work_blocked"])
+        // Three kinds, and nothing else: the brief, meeting prep, finished work (phone-rings v1.0.0).
+        XCTAssertEqual(settings.phoneKinds.map(\.kind), ["brief_ready", "meeting_prep", "work_finished"])
+        XCTAssertEqual(settings.enabledPhoneKinds.map(\.kind), ["meeting_prep"])
     }
 
     func testQuietHoursRequestAndClockValidation() throws {

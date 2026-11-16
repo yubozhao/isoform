@@ -82,6 +82,19 @@ final class YourWorkTests: XCTestCase {
         XCTAssertEqual(shown.map(\.id), ["t1"])
     }
 
+    func testAYesOnOfferedWorkIsRecordedWithoutSendingAndSendCarriesTheAgent() async throws {
+        let hub = FakeHub(page: WorkPage(toAnswer: 1, items: [item("o", kind: "offered")]))
+        let work = store(hub)
+        await work.refresh()
+        await work.answer(work.items[0], action: .yes, send: false)
+        try await work.sendHandOff(work.items[0], agentID: "muse", removed: ["g1"])
+        let sent = await hub.sentRequests()
+        XCTAssertEqual(sent.map(\.action), ["yes", "send"])
+        XCTAssertEqual(sent.first?.send, false, "the first tap records the Yes and sends nothing")
+        XCTAssertEqual(sent.last?.agentId, "muse")
+        XCTAssertEqual(sent.last?.removed, ["g1"])
+    }
+
     func testNotRightOnASentenceTheComputerDoesntListIsReportedNotDropped() async throws {
         let hub = FakeHub(page: WorkPage(toAnswer: 0, items: []))
         let work = store(hub)
@@ -182,6 +195,7 @@ final class YourWorkTests: XCTestCase {
         func setAvailable(_ value: Bool) { available = value }
         private var malformedNext = false
         func failNextWithMalformed() { malformedNext = true }
+        func workSendAvailable() async throws -> Bool { false }
         func workAvailable() async throws -> Bool {
             guard reachable else { throw HubRequestError.noAnswer }
             return available
@@ -200,6 +214,7 @@ final class YourWorkTests: XCTestCase {
         func sentIDs() -> [String] { sent.map(\.0) }
         func sentActions() -> [String] { sent.map(\.1.action) }
         func sentKeys() -> [String] { sent.map(\.1.idempotencyKey) }
+        func sentRequests() -> [WorkAnswerRequest] { sent.map(\.1) }
     }
 
     private func store(_ hub: FakeHub) -> WorkStore {

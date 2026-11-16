@@ -347,10 +347,14 @@ describe("ObservationPage", () => {
         localStorage.clear();
     });
 
-    it("opens with three everyday cards and keeps the rest under Advanced", async () => {
+    it("lists the sources in the agreed order, with Closed Eyes on its own page, and keeps the rest under Advanced", async () => {
         render(<ObservationPage />);
 
-        expect(screen.getByText("Pause observing")).toBeInTheDocument();
+        // computer-settings v1.0.0 rule 2: Screen, Calls and meetings, Mail
+        // and calendar, Messages.
+        const anchors = [...document.querySelectorAll("[data-settings-anchor^=sees-]")].map((el) => el.getAttribute("data-settings-anchor"));
+        expect(anchors).toEqual(["sees-screen", "sees-calls", "sees-mail", "sees-calendar", "sees-messages"]);
+        expect(screen.queryByRole("switch", { name: "Pause observing" })).toBeNull();
         expect(screen.getByText("Watch my screen")).toBeInTheDocument();
         expect(screen.getByText("Listen")).toBeInTheDocument();
         expect(
@@ -418,24 +422,18 @@ describe("ObservationPage", () => {
         expect(toggle).toBeChecked();
     });
 
-    it("pauses observing and follows a resume from the menu bar", async () => {
+    it("follows Closed Eyes from any surface: the sources wait while eyes are closed", async () => {
         render(<ObservationPage />);
-        const pause = screen.getByRole("switch", { name: "Pause observing" });
-        await waitFor(() => expect(pause).not.toBeDisabled());
+        await waitFor(() => expect(screen.getByRole("switch", { name: "Watch my screen" })).not.toBeDisabled());
 
-        fireEvent.click(pause);
-        await waitFor(() => expect(mocks.setPaused).toHaveBeenCalledWith(true));
-        expect(pause).toBeChecked();
-
-        // While paused, the persistent switches wait for a resume.
+        emit("closed-eyes:changed", true);
         await waitFor(() =>
             expect(screen.getByRole("switch", { name: "Watch my screen" })).toBeDisabled(),
         );
         expect(screen.getByRole("switch", { name: "Listen" })).toBeDisabled();
-        expect(screen.getAllByText("Observing is paused. Resume it to change this.")).toHaveLength(2);
+        expect(screen.getByText("Paused. Isoform is not watching or listening right now.")).toBeInTheDocument();
 
         emit("closed-eyes:changed", false);
-        expect(pause).not.toBeChecked();
         await waitFor(() =>
             expect(screen.getByRole("switch", { name: "Watch my screen" })).not.toBeDisabled(),
         );

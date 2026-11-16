@@ -16,9 +16,10 @@ final class LocalNotificationUITests: XCTestCase {
         openSettings(app)
         let toggle = app.switches["settings.keepAwake"].firstMatch
         XCTAssertTrue(toggle.waitForExistence(timeout: 10))
-        XCTAssertTrue(app.staticTexts["So your phone can reach it while it's plugged in. The screen still turns off. A closed laptop still sleeps."].exists)
+        XCTAssertTrue(app.staticTexts["So this phone can reach it"].exists)
         XCTAssertTrue(app.staticTexts["Changes apply when your computer is back."].exists)
         attachScreenshot(app, named: "settings-keep-awake-offline")
+        openNotifications(app)
         let footer = app.staticTexts["settings.notifications.lateFooter"]
         reveal(footer, in: app)
         XCTAssertTrue(footer.waitForExistence(timeout: 10))
@@ -28,7 +29,8 @@ final class LocalNotificationUITests: XCTestCase {
     func testInstantPushHidesLateFooter() throws {
         let app = launch(offline: false, instant: true)
         openSettings(app)
-        XCTAssertTrue(app.descendants(matching: .any)["settings.group.notifications"].waitForExistence(timeout: 10))
+        openNotifications(app)
+        XCTAssertTrue(app.buttons["notifications.refresh"].firstMatch.waitForExistence(timeout: 10), "the Notifications page is open")
         XCTAssertFalse(app.staticTexts["settings.notifications.lateFooter"].exists)
     }
 
@@ -51,7 +53,7 @@ final class LocalNotificationUITests: XCTestCase {
         app.terminate()
         app.launchEnvironment.removeValue(forKey: "YANSU_UITEST_RESET_AWAKE_OFFER")
         app.launch()
-        XCTAssertTrue(app.buttons["feed.summary"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.descendants(matching: .any)["feed.summary"].firstMatch.waitForExistence(timeout: 15))
         XCTAssertFalse(offer.exists)
     }
 
@@ -61,17 +63,16 @@ final class LocalNotificationUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.buttons["tab.today"].waitForExistence(timeout: 15))
         openSettings(app)
-        let quiet = app.buttons["settings.notifications.open"].firstMatch
+        openNotifications(app)
+        let quiet = app.buttons["notifications.quietHours"].firstMatch
         reveal(quiet, in: app)
         quiet.tap()
         let save = app.buttons["notifications.quietHours.save"]
         XCTAssertTrue(save.waitForExistence(timeout: 10))
         save.tap()
         XCTAssertTrue(quiet.waitForExistence(timeout: 10))
-        let preferences = app.buttons["settings.notifications.preferences"].firstMatch
-        reveal(preferences, in: app)
-        preferences.tap()
         let badge = app.switches["notifications.iconBadge"]
+        for _ in 0..<8 where !(badge.exists && badge.isHittable) { app.swipeDown() }
         XCTAssertTrue(badge.waitForExistence(timeout: 10))
         badge.tap()
         attachScreenshot(app, named: "notifications-icon-count")
@@ -84,7 +85,8 @@ final class LocalNotificationUITests: XCTestCase {
         app.launchEnvironment["YANSU_UITEST_FAIL_QUIET_SAVE"] = "1"
         app.launch()
         openSettings(app)
-        let quiet = app.buttons["settings.notifications.open"].firstMatch
+        openNotifications(app)
+        let quiet = app.buttons["notifications.quietHours"].firstMatch
         reveal(quiet, in: app)
         quiet.tap()
         let save = app.buttons["notifications.quietHours.save"]
@@ -102,9 +104,7 @@ final class LocalNotificationUITests: XCTestCase {
         app.launchEnvironment["YANSU_UITEST_APPEARANCE"] = "dark"
         app.launch()
         openSettings(app)
-        let preferences = app.buttons["settings.notifications.preferences"].firstMatch
-        reveal(preferences, in: app)
-        preferences.tap()
+        openNotifications(app)
         XCTAssertTrue(app.switches["notifications.iconBadge"].waitForExistence(timeout: 10))
         attachScreenshot(app, named: "notifications-icon-count-zh-Hans-dark")
     }
@@ -132,10 +132,11 @@ final class LocalNotificationUITests: XCTestCase {
         app.launchEnvironment["YANSU_UITEST_FAIL_BRIEF_DELETE"] = "1"
         app.launch()
         openSettings(app)
-        let delete = app.descendants(matching: .any)["settings.group.privacy"].buttons["Remove saved briefs"].firstMatch
+        // Clear this phone removes the saved briefs (phone-settings rule 10).
+        let delete = app.buttons["settings.clearThisPhone"].firstMatch
         reveal(delete, in: app)
         delete.tap()
-        app.sheets.buttons["Remove saved briefs"].firstMatch.tap()
+        app.buttons["Remove saved briefs"].firstMatch.tap()
         let notice = app.descendants(matching: .any)["settings.briefNotice"].firstMatch
         for _ in 0..<8 where !notice.isHittable { app.swipeDown() }
         XCTAssertTrue(notice.waitForExistence(timeout: 10))
@@ -153,11 +154,20 @@ final class LocalNotificationUITests: XCTestCase {
         return app
     }
 
+    /// Notifications is its own page in Settings (phone-settings rule 8).
+    private func openNotifications(_ app: XCUIApplication) {
+        let row = app.buttons["settings.notifications.open"].firstMatch
+        reveal(row, in: app)
+        row.tap()
+    }
+
+    /// Scrolls until the element sits clear of the tab bar and the home indicator, where a tap lands on it.
     private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
-        for _ in 0..<8 {
-            if element.exists && element.isHittable { return }
+        _ = element.waitForExistence(timeout: 10)
+        for _ in 0..<10 {
+            if element.exists && element.isHittable && element.frame.maxY < app.frame.maxY - 120 { return }
             app.swipeUp()
         }
-        XCTAssertTrue(element.isHittable)
+        XCTAssertTrue(element.exists)
     }
 }

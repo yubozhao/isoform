@@ -3,12 +3,15 @@ import Foundation
 /// What the phone needs from the computer for Your work (B2 and B3).
 protocol WorkHubAPI: Sendable {
     func workAvailable() async throws -> Bool
+    /// The computer takes a Yes without sending, then Send (PROTOCOL.md 26.1).
+    func workSendAvailable() async throws -> Bool
     func work() async throws -> WorkPage
     func answerWork(id: String, request: WorkAnswerRequest) async throws -> WorkItem
 }
 
 extension HubChannel: WorkHubAPI {
     func workAvailable() async throws -> Bool { try await status().work == true }
+    func workSendAvailable() async throws -> Bool { try await status().workSend == true }
 
     func work() async throws -> WorkPage {
         try await perform(.work).payload(WorkPage.self)
@@ -46,6 +49,8 @@ final class WorkStore: ObservableObject {
     /// Answers given on the phone that the computer has not taken yet, oldest first, sent in order.
     @Published private(set) var pending: [Pending] = []
     @Published private(set) var failed = false
+    /// Whether a Yes on offered work is recorded first and sent on the hand-off's Send (26.1).
+    @Published private(set) var sendsSeparately = false
 
     struct Pending: Codable, Equatable, Sendable {
         let itemID: String
@@ -111,6 +116,7 @@ final class WorkStore: ObservableObject {
             guard generation == refreshGeneration, self.hubID() == hubID else { return }
             supported = available
             guard available else { return }
+            sendsSeparately = (try? await HubRequestScope.$hubID.withValue(hubID) { try await hub.workSendAvailable() }) == true
             let result = try await HubRequestScope.$hubID.withValue(hubID) { try await hub.work() }
             guard generation == refreshGeneration, self.hubID() == hubID else { return }
             page = result
@@ -125,11 +131,11 @@ final class WorkStore: ObservableObject {
 
     /// One answer: shown at once, kept on the phone, and sent when the computer can be reached.
     func answer(_ item: WorkItem, action: WorkAction, reason: WorkReason? = nil, before: String? = nil,
-                after: String? = nil) async {
+                after: String? = nil, send: Bool? = nil) async {
         guard let hubID = hubID() else { return }
         let request = WorkAnswerRequest(idempotencyKey: UUID().uuidString.lowercased(), action: action.rawValue,
                                         reason: reason?.rawValue, before: before, after: after,
-                                        answeredAt: RelayTime.format(Date()), seq: Self.nextSeq())
+                                        answeredAt: RelayTime.format(Date()), seq: Self.nextSeq(), send: send)
         pending.append(Pending(itemID: item.id, request: request, before: item))
         persist(hubID: hubID)
         await sendPending()
@@ -173,6 +179,25 @@ final class WorkStore: ObservableObject {
         defaults.set(next, forKey: "work.answerSeq")
         return next
     }
+
+    /// The hand-off's Send, at once and not queued: the sheet needs the answer to know whether the agent took it.
+    /// A 409 (`agent_not_connected`, or no Yes waiting) is thrown, so the sheet offers the agent's own way in.
+    func sendHandOff(_ item: WorkItem, agentID: String?, removed: [String]) async throws {
+        guard let hubID = hubID() else { throw HubRequestError.notPaired }
+        let request = WorkAnswerRequest(idempotencyKey: UUID().uuidString.lowercased(), action: WorkAction.send.rawValue,
+                                        answeredAt: RelayTime.format(Date()), seq: Self.nextSeq(),
+                                        removed: removed.isEmpty ? nil : removed, agentId: agentID)
+        let updated = try await HubRequestScope.$hubID.withValue(hubID) { try await hub.answerWork(id: item.id, request: request) }
+        if var page, let index = page.items.firstIndex(where: { $0.id == updated.id }) {
+            page.items[index] = updated
+            self.page = page
+            persist(hubID: hubID)
+        }
+    }
+
+    #if DEBUG
+    func seedSendsSeparatelyForUITest() { sendsSeparately = true }
+    #endif
 
     func sendPending() async {
         guard !sending, supported == true, let hubID = hubID() else { return }

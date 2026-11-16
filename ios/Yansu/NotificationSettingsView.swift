@@ -1,15 +1,39 @@
 import SwiftUI
+import UIKit
 
 struct NotificationSettingsView: View {
     @ObservedObject var notifications: NotificationSettingsStore
     @EnvironmentObject private var app: AppEnvironment
     @EnvironmentObject private var push: PushRegistration
+    @EnvironmentObject private var keepAwake: KeepAwakeStore
+    @EnvironmentObject private var today: TodayStore
     @Environment(\.locale) private var locale
     @State private var deliveryMessage: String?
     @State private var testingDelivery = false
     @AppStorage("phone.tasks.iconBadge") private var iconBadge = false
 
     /// The page shows its choices only once the computer has answered; until then it shows one line and Try again (P132).
+    /// Each kind's one line of why (phone-rings v1.0.0): the brief's times come from the computer's schedule.
+    private func kindWhy(_ kind: String) -> String {
+        switch kind {
+        case "brief_ready":
+            let times = briefTimes
+            return times.isEmpty ? String(localized: "set.notifBriefSubNoTimes")
+                : String.localizedStringWithFormat(String(localized: "set.notifBriefSub"), times)
+        case "meeting_prep": return String(localized: "set.notifPrepSub")
+        case "work_finished": return String(localized: "set.notifDoneSub")
+        default: return ""
+        }
+    }
+
+    private var briefTimes: String {
+        guard let schedule = today.snapshot?.schedule else { return "" }
+        return [schedule.morning, schedule.evening].compactMap { $0 }
+            .compactMap { TodayBriefCard.clockDate($0, on: Date()) }
+            .map { BriefClock.text($0, locale: locale) }
+            .joined(separator: String(localized: "set.notifTimesJoin"))
+    }
+
     static func showsChoices(_ state: NotificationSettingsLoadState) -> Bool { state == .loaded }
 
     var body: some View {
@@ -56,9 +80,6 @@ struct NotificationSettingsView: View {
                             .tint(YansuTheme.accent)
                             .accessibilityIdentifier("notifications.iconBadge")
                     }
-                    Text(String(localized: "The Tasks tab shows what needs you either way."))
-                        .font(.footnote)
-                        .foregroundStyle(YansuTheme.secondary)
                 }
                 if notifications.hasPendingChanges {
                     Text("notifications.pending")
@@ -70,41 +91,54 @@ struct NotificationSettingsView: View {
                     Text(failure).font(.footnote).foregroundStyle(YansuTheme.secondary)
                 }
                 if let settings = notifications.settings, settings.available {
+                    // Where it rings, the three kinds with their why, then quiet hours (phone-rings v1.0.0, 17c).
+                    Text("set.notifWhere")
+                        .font(.footnote)
+                        .foregroundStyle(YansuTheme.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("notifications.where")
                     VStack(alignment: .leading, spacing: 10) {
-                        SectionLabel(title: String(localized: "notifications.computerChoices"))
+                        SectionLabel(title: String(localized: "set.notifKinds"))
                         YansuCard {
                             VStack(alignment: .leading, spacing: 14) {
-                                NavigationLink {
-                                    NotificationQuietHoursView(notifications: notifications, settings: settings)
-                                } label: {
-                                    HStack {
-                                        Text("notifications.quietHours")
-                                        Spacer()
-                                        Text(NotificationSettings.quietHoursRange(start: settings.quietStart,
-                                             end: settings.quietEnd, locale: locale) ?? String(localized: "notifications.off"))
-                                            .foregroundStyle(YansuTheme.secondary)
-                                        Image(systemName: "chevron.right").font(.caption)
-                                    }
-                                }
-                                .accessibilityIdentifier("notifications.quietHours")
-                                Divider()
                                 ForEach(settings.phoneKinds) { kind in
                                     Toggle(isOn: Binding(get: { kind.effectivelyEnabled }, set: { enabled in
                                         Task { await notifications.setEnabled(kind.kind, enabled) }
                                     })) {
-                                        Text(kind.phoneTitle)
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(kind.phoneTitle)
+                                            Text(verbatim: kindWhy(kind.kind)).font(.footnote).foregroundStyle(YansuTheme.secondary)
+                                                .fixedSize(horizontal: false, vertical: true)
+                                        }
                                     }
                                     .tint(YansuTheme.accent)
                                     .accessibilityIdentifier("notifications.kind.\(kind.kind)")
                                 }
                             }
                         }
-                        Text("notifications.quietDetail")
+                        Text("set.prepFocus")
                             .font(.footnote)
                             .foregroundStyle(YansuTheme.secondary)
-                        Text("notifications.computerChoicesDetail")
+                            .fixedSize(horizontal: false, vertical: true)
+                        YansuCard {
+                            NavigationLink {
+                                NotificationQuietHoursView(notifications: notifications, settings: settings)
+                            } label: {
+                                HStack {
+                                    Text("notifications.quietHours")
+                                    Spacer()
+                                    Text(NotificationSettings.quietHoursRange(start: settings.quietStart,
+                                         end: settings.quietEnd, locale: locale) ?? String(localized: "notifications.off"))
+                                        .foregroundStyle(YansuTheme.secondary)
+                                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(YansuTheme.secondary)
+                                }
+                            }
+                            .accessibilityIdentifier("notifications.quietHours")
+                        }
+                        Text("set.quietFoot")
                             .font(.footnote)
                             .foregroundStyle(YansuTheme.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 } else if notifications.loadState == .loading {
                     ProgressView(String(localized: "notifications.loading"))
@@ -139,6 +173,32 @@ struct NotificationSettingsView: View {
                 }
                 .padding(YansuTheme.gutter)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        // Moved here from the Settings sheet with its Notifications row (phone-settings rule 8): a declined setting
+        // needs a way to iOS Settings, and the line on late notices stays.
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if push.state == .denied || !keepAwake.instantPush {
+                VStack(alignment: .leading, spacing: 10) {
+                    if push.state == .denied {
+                        Button("Open Settings") {
+                            if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                        }
+                        .buttonStyle(YansuSecondaryButtonStyle())
+                        .accessibilityIdentifier("settings.notifications.openSettings")
+                    }
+                    if !keepAwake.instantPush {
+                        Text("Your phone checks your computer every so often, so a notice can come a little late. While your computer is asleep, most notices wait until it wakes.")
+                            .font(.footnote)
+                            .foregroundStyle(YansuTheme.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("settings.notifications.lateFooter")
+                    }
+                }
+                .padding(.horizontal, YansuTheme.gutter)
+                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(YansuTheme.background)
             }
         }
         .yansuScreen()

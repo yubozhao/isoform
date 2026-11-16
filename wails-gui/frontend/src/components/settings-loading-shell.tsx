@@ -9,7 +9,8 @@ const noop = () => {};
 // header is the default page's real title. Only the page area waits.
 export function SettingsLoadingShell({ showDevTools = false }: { showDevTools?: boolean }) {
     const { t } = useTranslation('settings');
-    const title = t(getSettingsPage(DEFAULT_SETTINGS_PAGE).titleKey as never) as string;
+    const entry = getSettingsPage(DEFAULT_SETTINGS_PAGE);
+    const title = t((entry.titleKey ?? entry.labelKey) as never) as string;
     return (
         <div className="settings-surface h-full flex flex-col" data-testid="settings-loading-shell">
             <div className="flex-1 min-h-0 flex flex-row">

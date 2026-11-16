@@ -77,7 +77,7 @@
         "stopConfirmBody": "Isoform will show the note about each provider's terms again. To stop Isoform from using these subscriptions, turn on Use your own API key or model, or sign out of Claude Code or Codex.",
         "stopConfirm": "Withdraw",
         "signedInTitle": "Signed-in subscriptions",
-        "thinksWithTitle": "Thinks with",
+        "thinksWithTitle": "Your agents",
         "thinksWithDescription": "The assistants Isoform asks, in this order. When one runs out of usage, Isoform moves to the next one.",
         "searchClaudeCode": "Today's web searches use the web search of your Claude Code, signed in on this computer.",
         "searchOpencli": "Today's web searches go through the assistant above, with Grok, Gemini or Doubao in your signed-in Chrome. Sign in to Claude Code on this computer to search with it instead.",
@@ -809,18 +809,18 @@
             "keywords": "start at login, open at login, launch, startup, appearance, theme, dark mode, light mode, match system, color, language, system default, English, Chinese, Quick Chat, read aloud, voice, voices, speech, keyboard shortcuts, hotkeys, shortcut, vim, send message, tool steps, tool calls"
         },
         "notifications": {
-            "label": "Notifications",
+            "label": "Briefs and notifications",
             "subtitle": "Choose what Isoform tells you about and when it should stay quiet.",
             "keywords": "alerts, reminders, quiet hours, do not disturb, interruptions, daily limit, digest, blocked work, work finished, brief ready, paused, observing paused, computer notifications, permission, phone, text message, SMS, where notifications go, last 30 days, this week, spoke up, noisy, ignored, show on Today, quiet line, check-ins"
         },
         "ai-provider": {
-            "label": "Assistant",
-            "subtitle": "Choose which AI does Isoform's thinking and see how much of your usage is left.",
+            "label": "Your agents",
+            "subtitle": "The agents that do your work: Claude, ChatGPT, Codex and others you connect.",
             "keywords": "AI model, model, thinks with, Claude, Claude Code, Codex, ChatGPT, OpenAI, Anthropic, API key, own API key, provider, local model, Ollama, usage, usage left, quota, limits, plan, subscription, signed-in subscriptions, magpie, gateway, routing, group, who handles what, background work, quick tasks, sandbox, curl, CLI command, status details, tools on this computer, install Claude Code, install Codex, sign in"
         },
         "activity": {
-            "label": "Observation",
-            "subtitle": "Choose what Isoform sees and hears on this computer, or pause it for a while.",
+            "label": "What Isoform sees",
+            "subtitle": "Every source on one page, and off means nothing from it is kept.",
             "keywords": "pause, pause observing, screen, watch my screen, screen recording, capture, activity, listen, listening, background listening, microphone, system audio, computer audio, meetings, record meetings, meeting recording, capture status, shortcut, hotkey, calendars, reminders, clipboard, copy, copied"
         },
         "memory": {
@@ -839,7 +839,7 @@
             "keywords": "storage, disk space, space used, storage limit, screenshots, call recordings, audio, database, free up space, clean up, compress, shrink, delete old screenshots, keep screenshots, models, model downloads, speech recognition, voice models, download sources"
         },
         "iphone": {
-            "label": "Phone",
+            "label": "Your phone",
             "subtitle": "Pair your phone to stay in touch with this computer when you are away.",
             "keywords": "phone, mobile, pair, pairing, QR code, connection, disconnect, your phones, daily brief, morning brief, evening brief, server address, relay, what each phone can do, access, written summary"
         },
@@ -885,9 +885,19 @@
         },
         "your-agent": {
             "label": "Agent of You",
-            "subtitle": "Soon, anyone can hire an agent that does things the way you do.",
+            "subtitle": "You, as an agent clients can hire at isoform.ai/agents.",
             "keywords": "agent of you, agent, rent, request, page, name, specialties, taste, know-how, how you do things, coming soon",
             "title": "Rent out an agent of you"
+        },
+        "closed-eyes": {
+            "label": "Closed Eyes",
+            "subtitle": "Stops seeing on every device: your computer, your phone and your watch.",
+            "keywords": "pause, privacy, stop observing, private, hide"
+        },
+        "your-data": {
+            "label": "Your data",
+            "subtitle": "Everything Isoform keeps is on this computer.",
+            "keywords": "retention, delete, privacy, kept, export, voice"
         }
     },
     "overview": {
@@ -898,8 +908,8 @@
         "sentences": "{{first}} <second/>",
         "labels": {
             "sees": "Sees",
-            "speaksUp": "Speaks up",
-            "thinksWith": "Thinks with",
+            "speaksUp": "Notifications",
+            "thinksWith": "Your agents",
             "remembers": "Remembers",
             "keeps": "Keeps",
             "briefs": "Briefs",
@@ -2378,7 +2388,7 @@
         "suspension": {
             "desktop_locked": "Audio capture is paused while the desktop is locked. It can resume only after macOS is unlocked.",
             "privacy_pause": "Audio capture is paused because observation is paused.",
-            "disabled": "Listening is turned off in Settings > Observation.",
+            "disabled": "Listening is turned off in Settings > What Isoform sees.",
             "not_running": "Audio capture is not running. Check the recorder events below."
         },
         "eventLogTitle": "Recent changes",
@@ -3457,8 +3467,8 @@
         "errors": {
             "phoneNumber": "Text-message setup is coming soon. Messages to existing verified numbers keep working.",
             "textConsent": "Text-message setup is coming soon. Messages to existing verified numbers keep working.",
-            "relay": "Add a relay address in Settings > Phone before turning on the phone connection.",
-            "observation": "Resume observation and turn on screen observation in Settings > Observation before turning on activity monitoring.",
+            "relay": "Add a relay address in Settings > Your phone before turning on the phone connection.",
+            "observation": "Resume observation and turn on screen observation in Settings > What Isoform sees before turning on activity monitoring.",
             "unreadable": "This feature or one it depends on has unreadable settings. Check the unavailable rows and their settings pages, then try again."
         },
         "version": "Version {{version}}",
@@ -3958,6 +3968,63 @@
             "item": "Issued by {{issuer}} {{date}}",
             "unknownIssuer": "an unknown issuer"
         }
+    },
+    "closedEyes": {
+        "title": "Closed Eyes",
+        "description": "Stops seeing on every device: your computer, your phone and your watch. Answering, asking and reading still work.",
+        "howLong": "For how long?",
+        "forMinutes_one": "{{count}} minute",
+        "forMinutes_other": "{{count}} minutes",
+        "untilIEnd": "Until I end it",
+        "until": "Closed Eyes until {{time}}",
+        "untilEnded": "Closed Eyes until you open them",
+        "shortcutTitle": "Keyboard shortcut",
+        "shortcutDescription": "Close or open Isoform's eyes from any app on this computer.",
+        "loadFailed": "Couldn't read this setting.",
+        "toggleFailed": "Couldn't change this."
+    },
+    "yourData": {
+        "screen": "Screen",
+        "screenSub_one": "The apps you use · {{count}} app never seen",
+        "screenSub_other": "The apps you use · {{count}} apps never seen",
+        "screenSubPlain": "The apps you use",
+        "calls": "Calls and meetings",
+        "callsSub": "Recorded calls on this computer, you and the other side",
+        "watch": "Your watch",
+        "watchSub": "All day, in hours you can pause",
+        "mail": "Mail and calendar",
+        "keptDays_one": "kept {{count}} day",
+        "keptDays_other": "kept {{count}} days",
+        "keptUntilDeleted": "kept until you delete it",
+        "change": "Change",
+        "leaves": "What leaves this computer",
+        "agents": "Your agents",
+        "agentsSub_one": "Only what each task's What it gets lists · {{count}} task this week",
+        "agentsSub_other": "Only what each task's What it gets lists · {{count}} tasks this week",
+        "agentsSubPlain": "Only what each task's What it gets lists",
+        "devices": "Your phone and watch",
+        "devicesSub": "Today's items, briefs and results, sealed through the relay, which can't read them",
+        "devicesNone": "No phone paired, so nothing goes to one",
+        "loadFailed": "Couldn't read what Isoform keeps.",
+        "answers": "Your answers",
+        "answersSince_one": "{{count}} answer since {{date}}",
+        "answersSince_other": "{{count}} answers since {{date}}",
+        "answersNone": "No answers yet",
+        "answersKept": "Every Yes, No, Not mine and edit, kept until you delete them",
+        "mailSub": "Read where they are; not copied",
+        "keeps": "What it keeps",
+        "messages": "Messages",
+        "messagesSub": "Notes of who asked what and what you promised, not the messages · two weeks or less",
+        "agentsHistory": "Your agents' history",
+        "agentsHistorySub": "Off for every agent until you turn it on",
+        "noSize": "—",
+        "total": "{{used}} of {{cap}}. When it's full, the oldest goes first.",
+        "yours": "Yours",
+        "notifications": "Notifications",
+        "notificationsSub": "Sealed too. Apple's push service sees only a fixed line, such as \"A meeting is about to start.\"",
+        "export": "Export",
+        "exportLabel": "Export your answers",
+        "exportFailed": "Couldn't export your answers."
     },
     "aoy": {
         "aoy": "Agent of You",

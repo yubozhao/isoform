@@ -86,6 +86,7 @@ actor WorkUITestHub: WorkHubAPI {
     }
 
     func workAvailable() async throws -> Bool { true }
+    func workSendAvailable() async throws -> Bool { true }
     func work() async throws -> WorkPage { await current }
 
     func answerWork(id: String, request: WorkAnswerRequest) async throws -> WorkItem {
@@ -97,6 +98,34 @@ actor WorkUITestHub: WorkHubAPI {
         page.items[index] = updated
         seeded = page
         return updated
+    }
+}
+#endif
+
+#if DEBUG && targetEnvironment(simulator)
+/// The stub of GET /agents and its writes (PROTOCOL.md 27), with the nine agents and no choice for everything else.
+actor AgentsUITestHub: AgentsHubAPI {
+    private var current = PhoneAgents(choices: .init(code: "codex", else: ""), agents: [
+        PhoneAgent(id: "codex", name: "Codex", kind: "code", reach: "connected_computer", connected: true),
+        PhoneAgent(id: "claude-code", name: "Claude Code", kind: "code", reach: "on_computer"),
+        PhoneAgent(id: "cursor", name: "Cursor", kind: "code", reach: "on_computer"),
+        PhoneAgent(id: "claude", name: "Claude", kind: "else", reach: "its_app"),
+        PhoneAgent(id: "chatgpt", name: "ChatGPT", kind: "else", reach: "its_app"),
+        PhoneAgent(id: "grok", name: "Grok", kind: "else", reach: "its_app"),
+        PhoneAgent(id: "gemini", name: "Gemini", kind: "else", reach: "its_app"),
+        PhoneAgent(id: "muse", name: "Muse", kind: "else", reach: "connected", connected: true),
+        PhoneAgent(id: "instinct", name: "Instinct", kind: "else", reach: "by_text"),
+    ])
+
+    func phoneAgents() async throws -> PhoneAgents { current }
+
+    func chooseAgent(_ request: PhoneAgentChoiceRequest) async throws -> PhoneAgents {
+        if request.kind == "code" { current.choices.code = request.agentId } else { current.choices.else = request.agentId }
+        return current
+    }
+
+    func handOff(_ request: PhoneHandOffRequest) async throws -> PhoneHandOffResult {
+        PhoneHandOffResult(recordId: "ui-1", agentId: request.agentId ?? "")
     }
 }
 #endif

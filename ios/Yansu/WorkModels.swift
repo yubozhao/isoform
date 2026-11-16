@@ -99,6 +99,8 @@ struct WorkYes: Codable, Equatable, Hashable, Sendable {
     let line: String
     var at: String? = nil
     var agent: String? = nil
+    /// `code` or `else`: which of the person's two agents gets offered work (B4).
+    var kind: String? = nil
 }
 
 struct WorkLabel: Codable, Equatable, Hashable, Sendable {
@@ -124,6 +126,8 @@ struct WorkAnswer: Codable, Equatable, Hashable, Sendable {
     var undoUntil: String? = nil
     /// Phone-local: kept on the phone until the computer can be reached. Never on the wire from the computer.
     var waits: Bool? = nil
+    /// A Yes recorded without sending: "{title}: yes · not sent", with Send in its row (26.1).
+    var notSent: Bool? = nil
 
     var undoDate: Date? { undoUntil.flatMap(RelayTime.parse) }
 }
@@ -157,6 +161,11 @@ struct WorkAnswerRequest: Codable, Equatable, Sendable {
     var queuedAt: String? = nil
     /// Grows per phone; the computer refuses an answer older than the last it applied to that item.
     var seq: Int? = nil
+    /// False on the first tap of a Yes on offered work: recorded, nothing sent until Send (26.1).
+    var send: Bool? = nil
+    /// What it gets, removed in the hand-off, and the agent picked for this one hand-off.
+    var removed: [String]? = nil
+    var agentId: String? = nil
 }
 
 struct WorkAnswerResult: Decodable, Equatable, Sendable {
@@ -166,6 +175,8 @@ struct WorkAnswerResult: Decodable, Equatable, Sendable {
 /// The actions and reasons of the shared item (phone-map rules 5 and 7).
 enum WorkAction: String, CaseIterable, Sendable {
     case yes, no, notMine = "not_mine", edit, useful, notUseful = "not_useful", undo
+    /// The hand-off's Send, after a Yes recorded with `send: false` (PROTOCOL.md 26.1).
+    case send
 }
 
 enum WorkReason: String, CaseIterable, Sendable {
@@ -305,6 +316,8 @@ enum YourWork {
             return String.localizedStringWithFormat(String(localized: "work.done.notMine"), title)
         case .undo:
             return title
+        case .send:
+            return String.localizedStringWithFormat(String(localized: "work.done.yes"), title)
         }
     }
 

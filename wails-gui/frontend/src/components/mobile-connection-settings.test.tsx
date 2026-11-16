@@ -1044,9 +1044,10 @@ describe("MobileConnectionSettings component", () => {
         expect(componentSource).not.toMatch(/\bt\(\s*["'`]mobileConnection\.[A-Za-z0-9]+["'`]\s*,\s*["'`]/);
     });
 
-    it("names the page Phone in both locales", () => {
-        expect(en.pages.iphone.label).toBe("Phone");
-        expect(zh.pages.iphone.label).toBe("手机");
+    // computer-settings v1.0.0: the page is "Your phone".
+    it("names the page Your phone in both locales", () => {
+        expect(en.pages.iphone.label).toBe("Your phone");
+        expect(zh.pages.iphone.label).toBe("你的手机");
     });
 });
 

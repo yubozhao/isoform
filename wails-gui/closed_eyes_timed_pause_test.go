@@ -391,3 +391,34 @@ func TestTimedPauseRetriesFailedDurableClear(t *testing.T) {
 		t.Fatal("retry did not clear the expired pause")
 	}
 }
+
+func TestGetClosedEyesResumeAtReadsTheTimedDeadlineOnly(t *testing.T) {
+	app := newTimedPauseFixtureAt(t, filepath.Join(t.TempDir(), "resume-at.db"))
+	t.Cleanup(app.stopObservationResumeTimer)
+	if got := app.GetClosedEyesResumeAt(); got != "" {
+		t.Fatalf("open eyes resume at = %q, want empty", got)
+	}
+	if err := app.PauseObservationFor(15); err != nil {
+		t.Fatal(err)
+	}
+	got := app.GetClosedEyesResumeAt()
+	at, err := time.Parse(time.RFC3339, got)
+	if err != nil {
+		t.Fatalf("timed resume at = %q: %v", got, err)
+	}
+	if until := time.Until(at); until < 13*time.Minute || until > 16*time.Minute {
+		t.Fatalf("timed resume at is %v away, want about 15 minutes", until)
+	}
+	if err := app.SetClosedEyesModeEnabled(true); err != nil {
+		t.Fatal(err)
+	}
+	if got := app.GetClosedEyesResumeAt(); got != "" {
+		t.Fatalf("closed until opened resume at = %q, want empty", got)
+	}
+	if err := app.ResumeObservation(); err != nil {
+		t.Fatal(err)
+	}
+	if got := app.GetClosedEyesResumeAt(); got != "" {
+		t.Fatalf("resumed resume at = %q, want empty", got)
+	}
+}

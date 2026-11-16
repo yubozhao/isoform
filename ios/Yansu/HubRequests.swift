@@ -31,6 +31,8 @@ enum HubRoute: Equatable, Sendable {
     case task(id: String)
     /// Your work, the one list (backend item B2).
     case work
+    /// Your agents: the two choices and every agent Isoform can reach (PROTOCOL.md 27).
+    case agents
     case goals(limit: Int, cursor: String?)
     case goal(id: String)
     case offers
@@ -55,7 +57,7 @@ enum HubRoute: Equatable, Sendable {
         switch self {
         case .yourAgent, .recordings, .recordingTranscript, .recordingConversations, .recordingConversation, .watchNotes, .voice: return "GET"
         case .refreshBrief, .write, .briefReceived: return "POST"
-        case .status, .today, .todayMeetingPrep, .findTime, .findTimeLegacy, .holdProposal, .holdStatus, .todayPart, .latestBrief, .briefList, .brief, .briefPackage, .briefPart, .briefAudio, .briefAskAnswer, .briefCardAskAnswer, .briefWeekDecline, .briefWeekAskAnswer, .chats, .chat, .notifications, .keepAwake, .tasks, .task, .work, .goals, .goal, .offers, .offersWithHolds,
+        case .status, .today, .todayMeetingPrep, .findTime, .findTimeLegacy, .holdProposal, .holdStatus, .todayPart, .latestBrief, .briefList, .brief, .briefPackage, .briefPart, .briefAudio, .briefAskAnswer, .briefCardAskAnswer, .briefWeekDecline, .briefWeekAskAnswer, .chats, .chat, .notifications, .keepAwake, .tasks, .task, .work, .agents, .goals, .goal, .offers, .offersWithHolds,
              .topics, .topic, .privacy: return "GET"
         }
     }
@@ -93,6 +95,7 @@ enum HubRoute: Equatable, Sendable {
         case .keepAwake: return "/settings/keep-awake"
         case .tasks: return "/tasks"
         case .work: return "/work"
+        case .agents: return "/agents"
         case .task(let id): return "/tasks/\(id)"
         case .goals: return "/goals"
         case .goal(let id): return "/goals/\(id)"
@@ -171,7 +174,7 @@ enum HubRoute: Equatable, Sendable {
             var items = ["limit=\(min(max(limit, 1), 50))"]
             if let cursor, !cursor.isEmpty { items.insert("cursor=\(cursor)", at: 0) }
             return items.joined(separator: "&")
-        case .status, .today, .findTime, .findTimeLegacy, .latestBrief, .brief, .briefReceived, .refreshBrief, .notifications, .keepAwake, .tasks, .task, .work, .goal, .offers, .topics, .privacy, .write: return ""
+        case .status, .today, .findTime, .findTimeLegacy, .latestBrief, .brief, .briefReceived, .refreshBrief, .notifications, .keepAwake, .tasks, .task, .work, .agents, .goal, .offers, .topics, .privacy, .write: return ""
         }
     }
 
@@ -181,7 +184,7 @@ enum HubRoute: Equatable, Sendable {
         case .refreshBrief: return "{}"
         case .write(_, let body): return body
         case .briefReceived(_, let version): return "{\"version\":\"\(version)\"}"
-        case .status, .today, .todayMeetingPrep, .findTime, .findTimeLegacy, .holdProposal, .holdStatus, .todayPart, .latestBrief, .briefList, .brief, .briefPackage, .briefPart, .briefAudio, .briefAskAnswer, .briefCardAskAnswer, .briefWeekDecline, .briefWeekAskAnswer, .chats, .chat, .notifications, .keepAwake, .tasks, .task, .work, .goals, .goal, .offers, .offersWithHolds,
+        case .status, .today, .todayMeetingPrep, .findTime, .findTimeLegacy, .holdProposal, .holdStatus, .todayPart, .latestBrief, .briefList, .brief, .briefPackage, .briefPart, .briefAudio, .briefAskAnswer, .briefCardAskAnswer, .briefWeekDecline, .briefWeekAskAnswer, .chats, .chat, .notifications, .keepAwake, .tasks, .task, .work, .agents, .goals, .goal, .offers, .offersWithHolds,
              .topics, .topic, .privacy: return ""
         }
     }
@@ -217,6 +220,7 @@ enum HubRoute: Equatable, Sendable {
         case .tasks: return "tasks.list"
         case .task: return "tasks.detail"
         case .work: return "work.list"
+        case .agents: return "agents.list"
         case .goals: return "goals.list"
         case .goal: return "goals.detail"
         case .offers, .offersWithHolds: return "offers.list"
@@ -349,13 +353,21 @@ struct HubStatus: Decodable, Equatable, Sendable {
     var watchListening: WatchListeningSetting? = nil
     /// "Notes for long talks" on the computer (PROTOCOL.md 24.12); absent on a computer that has no such setting.
     var watchNotes: WatchNotesSetting? = nil
-    /// The phone may pause observing on the computer and end a pause it started (PROTOCOL.md 24.10).
-    var observingPauseControl: Bool? = nil
-    /// Set while observing is paused on the computer (PROTOCOL.md 24.8).
-    var observingPause: ObservingPauseView? = nil
     var briefSchedule: [ScheduledPhoneBrief]? = nil
     /// The computer serves Your work, the one list (B2), and its answers (B3). Older computers omit it.
     var work: Bool? = nil
+    /// A Yes on offered work can be recorded without sending, and sent later (PROTOCOL.md 26.1).
+    var workSend: Bool? = nil
+    /// The phone can pause observing on the computer: Closed Eyes (PROTOCOL.md 24.10).
+    var observingPauseControl: Bool? = nil
+    /// Set while observing is paused (24.8).
+    var observingPause: ObservingPause? = nil
+}
+
+struct ObservingPause: Codable, Equatable, Sendable {
+    var since: String? = nil
+    var until: String? = nil
+    var untilDate: Date? { until.flatMap(RelayTime.parse) }
 }
 
 struct ScheduledPhoneBrief: Codable, Equatable, Sendable {
@@ -1026,10 +1038,8 @@ struct WatchNotesSetting: Decodable, Equatable, Sendable {
     var chosen: Bool? = nil
 }
 
-struct ObservingPauseView: Decodable, Equatable, Sendable {
-    var since: String? = nil
-    var until: String? = nil
-
+/// The pause as the watch shows it (PROTOCOL.md 24.8).
+extension ObservingPause {
     var pause: WatchPause {
         WatchPause(since: since.flatMap(RecordingTime.parse), until: until.flatMap(RecordingTime.parse))
     }
