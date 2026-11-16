@@ -45,6 +45,16 @@ func (a *App) todayChatDeliveredBriefFrom(ctx context.Context, briefID string, s
 	return a.mobileBriefWithCardsFrom(ctx, a.mobileBriefForDeliveryContext(ctx, brief), sources), true
 }
 
+// todayChatSealedBrief is the sealed read of a brief, the copy the phone reads.
+func (a *App) todayChatSealedBrief(briefID string) (MobileBriefV1, bool) {
+	svc, ok := a.mobileBriefSource().(*mobileBriefService)
+	if !ok || svc == nil {
+		return MobileBriefV1{}, false
+	}
+	sealed, found, err := svc.finishedBrief(briefID)
+	return sealed, err == nil && found
+}
+
 // resolveTodayChatBriefCard is the item a card's turn attaches: the card's
 // subject read now through its own gates, with the card's exact words.
 func (a *App) resolveTodayChatBriefCard(ctx context.Context, ref TodayChatContextRef, sources todayChatSources, now time.Time) (todayChatItem, error) {
@@ -56,6 +66,16 @@ func (a *App) resolveTodayChatBriefCard(ctx context.Context, ref TodayChatContex
 		return todayChatItem{}, errTodayChatItemUnavailable
 	}
 	card, ok := a.todayChatCardNow(ctx, brief, ref.SourceID, sources)
+	if !ok {
+		// The phone holds the sealed read (seal v2). A Today refresh renumbers
+		// the stored copy's evidence, so a card the phone shows may exist under
+		// its id in the sealed read only. Its subject is still read now, through
+		// its own gates, from that read's evidence.
+		if sealed, found := a.todayChatSealedBrief(ref.BriefID); found {
+			brief = sealed
+			card, ok = a.todayChatCardNow(ctx, brief, ref.SourceID, sources)
+		}
+	}
 	if !ok || card.Mode != mobileBriefCardSend {
 		return todayChatItem{}, errTodayChatItemUnavailable
 	}
