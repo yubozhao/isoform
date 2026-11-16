@@ -24,6 +24,7 @@ import { TodayLastBriefPanel } from "./TodayLastBriefPanel";
 import { TodayPastBriefsPanel } from "./TodayPastBriefsPanel";
 import { TodayYourWork } from "./TodayYourWork";
 import { TodayBriefFull } from "./TodayBriefFull";
+import { TodayTopicPage } from "./TodayTopicPage";
 import { bandBrief } from "./TodayBriefSection";
 import { TodayHandOffSheet } from "./TodayHandOffSheet";
 import { GetYourAgents, type WorkItem, type YourAgents } from "@/lib/wails-shim-app";
@@ -165,6 +166,8 @@ export function TodayPage({
     // The brief in full (computer-brief v1.0.0) in Today's column, from Read all.
     const [briefFull, setBriefFull] = useState(false);
     const fullBrief = briefFull ? bandBrief(latest.view) : null;
+    // A topic opened from its item's source line, in Today's column (computer-find v1.0.0, 18a).
+    const [topicPageId, setTopicPageId] = useState<string | null>(null);
     // The hand-off sheet (SH4) and the person's agents, read when it opens.
     const [handOff, setHandOff] = useState<{ item: WorkItem; edited?: string; twoStep?: boolean } | null>(null);
     const [yourAgents, setYourAgents] = useState<YourAgents | null>(null);
@@ -834,6 +837,17 @@ export function TodayPage({
                             onOpenBrief={(id, title) => { setBriefFull(false); openBrief(id, title); }}
                             onBack={() => setBriefFull(false)}
                         />
+                    ) : topicPageId && todayTopics.topics.some((topic) => topic.id === topicPageId) ? (
+                        <TodayTopicPage
+                            topic={todayTopics.topics.find((topic) => topic.id === topicPageId)!}
+                            list={work.list}
+                            active={active && !handOff}
+                            onAnswer={work.answer}
+                            onUndo={work.undo}
+                            onHandOff={openHandOff}
+                            onAsk={() => { void openTopic(topicPageId); }}
+                            onBack={() => setTopicPageId(null)}
+                        />
                     ) : <>
                     <header className="window-drag mb-[18px] flex flex-col items-start gap-1.5 text-left" data-testid="today-header">
                         <div className="flex w-full flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
@@ -867,7 +881,11 @@ export function TodayPage({
                         onReadAll={() => setBriefFull(true)}
                         afterBand={work.list ? <TodayYourWork list={work.list} active={active && !handOff} onAnswer={work.answer} onUndo={work.undo} onHandOff={openHandOff} noAgents={!!yourAgents && !yourAgents.agents.some((agent) => agent.connected)} onOpenRef={(ref) => {
                             // A topic opens beside Today; this brief opens in full; an earlier one in the panel.
-                            if (ref.startsWith("topic:")) return openTopic(ref.slice("topic:".length));
+                            if (ref.startsWith("topic:")) {
+                                const id = ref.slice("topic:".length);
+                                if (todayTopics.topics.some((topic) => topic.id === id)) { setBriefFull(false); setTopicPageId(id); return true; }
+                                return openTopic(id);
+                            }
                             if (ref.startsWith("brief:")) {
                                 const id = ref.slice("brief:".length);
                                 if (id === latest.view?.brief?.briefId && bandBrief(latest.view)) setBriefFull(true);
