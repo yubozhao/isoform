@@ -226,6 +226,13 @@ type MobileBriefSummary struct {
 	AsOf            string `json:"asOf"`
 	NarrativeStatus string `json:"narrativeStatus"`
 	Lead            string `json:"lead,omitempty"`
+	// Listened, ToAnswer and Answered are where the person is with the brief
+	// (computer-brief v1.0.0 rule 9), set only on the computer's Past briefs
+	// (withPastBriefState). Listened is not_played, part_heard or played.
+	Listened string `json:"listened,omitempty"`
+	Played   bool   `json:"played,omitempty"`
+	ToAnswer int    `json:"toAnswer,omitempty"`
+	Answered int    `json:"answered,omitempty"`
 }
 
 // MobileBriefSchedule is the Wails-facing schedule view (PROTOCOL.md section 12).

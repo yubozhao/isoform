@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"strings"
+	"unicode/utf16"
 	"unicode/utf8"
 )
 
@@ -153,7 +154,7 @@ func joinMobileBriefWAV(parts [][]byte, gapSeconds float64) ([]byte, []float64, 
 // paragraphs they read, in order. A segment that reads no written paragraph
 // (the template, a closing line) has no start; when no segment matches, the
 // recording does not follow the written paragraphs and there are none.
-func mobileBriefParagraphStarts(brief MobileBriefV1, lang string, segments []string, starts []float64) []MobileBriefAudioParagraph {
+func mobileBriefParagraphStarts(brief MobileBriefV1, lang string, segments []string, starts []float64, duration float64) []MobileBriefAudioParagraph {
 	if len(segments) != len(starts) || len(segments) == 0 {
 		return nil
 	}
@@ -181,11 +182,138 @@ func mobileBriefParagraphStarts(brief MobileBriefV1, lang string, segments []str
 			// Highlights may lose trailing lines to the time budget, so a
 			// reading may be the start of its paragraph.
 			if spoken != "" && (spoken == segment || strings.HasPrefix(spoken, segment+"\n")) {
-				out = append(out, MobileBriefAudioParagraph{Source: candidates[j].source, Index: candidates[j].index, StartSeconds: starts[k]})
+				end := duration
+				if k+1 < len(starts) {
+					end = starts[k+1] - mobileBriefParagraphGapSeconds
+				}
+				out = append(out, MobileBriefAudioParagraph{Source: candidates[j].source, Index: candidates[j].index, StartSeconds: starts[k], EndSeconds: max(end, starts[k])})
 				cursor = j + 1
 				break
 			}
 		}
 	}
 	return out
+}
+
+// mobileBriefAudioWithParagraphEnds fills in where each timed paragraph ends
+// for a recording made before ends were stored: at the next timed start less
+// the pause, or at the end of the recording. A stored end is kept.
+func mobileBriefAudioWithParagraphEnds(audio *MobileBriefAudio) *MobileBriefAudio {
+	if audio == nil || len(audio.Paragraphs) == 0 {
+		return audio
+	}
+	missing := false
+	for _, p := range audio.Paragraphs {
+		if p.EndSeconds <= 0 {
+			missing = true
+			break
+		}
+	}
+	if !missing {
+		return audio
+	}
+	out := *audio
+	out.Paragraphs = append([]MobileBriefAudioParagraph(nil), audio.Paragraphs...)
+	for i := range out.Paragraphs {
+		p := &out.Paragraphs[i]
+		if p.EndSeconds > 0 {
+			continue
+		}
+		end := audio.DurationSeconds
+		for _, next := range out.Paragraphs {
+			if next.StartSeconds > p.StartSeconds && next.StartSeconds-mobileBriefParagraphGapSeconds < end {
+				end = next.StartSeconds - mobileBriefParagraphGapSeconds
+			}
+		}
+		p.EndSeconds = max(end, p.StartSeconds)
+	}
+	return &out
+}
+
+// MobileBriefAudioMark is one sentence of the shown brief and when it is read,
+// for read-along (computer-brief v1.0.0 rule 3). Paragraph and Source name
+// the paragraph as audio.paragraphs does; From and To are UTF-16 offsets into
+// that paragraph's text, so the page highlights exactly that span. Times are
+// the paragraph's measured span shared out by sentence length.
+type MobileBriefAudioMark struct {
+	Source    string  `json:"source"`
+	Paragraph int     `json:"paragraph"`
+	Sentence  int     `json:"sentence"`
+	From      int     `json:"from"`
+	To        int     `json:"to"`
+	Start     float64 `json:"start"`
+	End       float64 `json:"end"`
+}
+
+// mobileBriefAudioMarks splits each timed paragraph of the shown brief into
+// sentences and shares its span out by length. A paragraph whose sentences
+// cannot be found in its text is one mark.
+func mobileBriefAudioMarks(brief MobileBriefV1) []MobileBriefAudioMark {
+	audio := mobileBriefAudioWithParagraphEnds(brief.Audio)
+	if audio == nil || len(audio.Paragraphs) == 0 {
+		return nil
+	}
+	var out []MobileBriefAudioMark
+	for _, p := range audio.Paragraphs {
+		var paras []MobileBriefPara
+		switch p.Source {
+		case mobileBriefAudioSourceNarrative:
+			paras = brief.Narrative
+		case mobileBriefAudioSourceWeekly:
+			paras = brief.WeeklyRecap
+		default:
+			continue
+		}
+		if p.Index < 0 || p.Index >= len(paras) || p.EndSeconds <= p.StartSeconds {
+			continue
+		}
+		text := paras[p.Index].Text
+		type span struct{ from, to int }
+		var spans []span
+		cursor := 0
+		for _, sentence := range splitIntoSentences(text) {
+			sentence = strings.TrimSpace(sentence)
+			if sentence == "" {
+				continue
+			}
+			at := strings.Index(text[cursor:], sentence)
+			if at < 0 {
+				spans = nil
+				break
+			}
+			spans = append(spans, span{cursor + at, cursor + at + len(sentence)})
+			cursor += at + len(sentence)
+		}
+		if len(spans) == 0 {
+			spans = []span{{0, len(text)}}
+		}
+		total := 0
+		for _, s := range spans {
+			total += utf8.RuneCountInString(text[s.from:s.to])
+		}
+		if total == 0 {
+			continue
+		}
+		at := p.StartSeconds
+		length := p.EndSeconds - p.StartSeconds
+		for i, s := range spans {
+			end := at + length*float64(utf8.RuneCountInString(text[s.from:s.to]))/float64(total)
+			if i == len(spans)-1 {
+				end = p.EndSeconds
+			}
+			out = append(out, MobileBriefAudioMark{Source: p.Source, Paragraph: p.Index, Sentence: i,
+				From: utf16Len(text[:s.from]), To: utf16Len(text[:s.to]), Start: at, End: end})
+			at = end
+		}
+	}
+	return out
+}
+
+// utf16Len is the length of s in UTF-16 code units, as JavaScript counts it.
+func utf16Len(s string) int {
+	n := 0
+	for _, r := range s {
+		n += len(utf16.Encode([]rune{r}))
+	}
+	return n
 }

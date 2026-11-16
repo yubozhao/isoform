@@ -886,6 +886,10 @@ version the Mac names.
   `startSeconds`, `index` zero-based into that array. It is present only when the reading
   follows the written paragraphs; a reading built from Isoform's template has none, and the
   phone then plays without following along. `audio.durationSeconds` is the length.
+  `endSeconds` (additive, 2026-11-15) is where the voice stops reading that paragraph, before
+  the pause after it; recordings made earlier omit it, and a reader takes the next paragraph's
+  start less 0.45 s, or `durationSeconds` for the last one. Read-along highlights a sentence by
+  spreading the paragraph's span over its sentences by length.
 
 **Routes** (inner hub routes, `brief:read`):
 

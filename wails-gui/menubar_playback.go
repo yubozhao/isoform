@@ -63,6 +63,8 @@ func (a *App) SetMenuBarBriefPlayback(briefID, state string, position, duration 
 		return
 	}
 	logMenuBarPlayOutcome(briefID, state, time.Now())
+	// Past briefs learn how far each brief was heard from the same reports.
+	a.noteBriefHeard(briefID, position, duration, time.Now())
 	data, err := json.Marshal(map[string]any{"briefId": briefID, "state": state, "position": position, "duration": duration})
 	if err != nil {
 		return
