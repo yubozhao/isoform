@@ -748,6 +748,15 @@ func (a *App) peopleDuplicateGroups(ctx context.Context, rows []PrincipalWithSta
 // GetPersonDetail returns stored directory fields and current readable history.
 func (a *App) GetPersonDetail(id string) (perfValue PersonDetail, perfErr error) {
 	defer logPageBinding("GetPersonDetail", time.Now(), &perfValue)
+	// A person's page is a snapshot like the overview it opens from: a live
+	// build took 0.7 to 1.8 s per open on 2026-11-15. Every change to people
+	// (an edit, a merge, a removal, contacts, a dossier) touches it.
+	return derivedRead(a, derivedPersonDetail, id, func() (PersonDetail, error) {
+		return a.personDetailLive(id)
+	}, nil)
+}
+
+func (a *App) personDetailLive(id string) (PersonDetail, error) {
 	ctx := context.Background()
 	stamp, err := a.peopleReadStamp(ctx)
 	if err != nil {
@@ -768,6 +777,10 @@ func (a *App) GetPersonDetail(id string) (perfValue PersonDetail, perfErr error)
 // getPersonDetail reads one person with one shared lineage cache, so the
 // loops, metadata, together and topics paths share each lineage evaluation.
 func (a *App) getPersonDetail(id string, cache *peopleReadGateCache) (PersonDetail, error) {
+	// Stage timings name the slow step of a slow open (2026-11-15: 0.7 to
+	// 1 s per person). Timings only.
+	stages := newPerfStages("GetPersonDetail")
+	defer stages.logIfOver(100 * time.Millisecond)
 	store, err := a.requireStore()
 	if err != nil {
 		return PersonDetail{}, err
@@ -787,7 +800,9 @@ func (a *App) getPersonDetail(id string, cache *peopleReadGateCache) (PersonDeta
 	}
 	detail := PersonDetail{ID: p.ID, Name: p.DisplayName, Relationship: p.Relationship, Notes: p.Notes, ResearchSummary: research.Summary, Loops: []PersonLoop{}, Together: []PersonTogether{}, SharedTopics: []PersonTopic{}, SeenIn: []string{}}
 	rows := []PrincipalWithStatsDTO{{Principal: principalToDTO(p)}}
+	stages.mark("base")
 	loops, err := a.peopleLoops(ctx, rows, time.Now(), cache)
+	stages.mark("loops")
 	if err != nil {
 		return PersonDetail{}, err
 	}
@@ -822,6 +837,7 @@ func (a *App) getPersonDetail(id string, cache *peopleReadGateCache) (PersonDeta
 	for app, at := range latest {
 		detail.Together = append(detail.Together, PersonTogether{Kind: "message", At: at, App: app, Direction: direction})
 	}
+	stages.mark("seen")
 	if err := a.personTogether(ctx, p, stats.RecentMessages, &detail, cache); err != nil {
 		// A partial evidence read must not look complete or hide the rest of the person.
 		detail.Together = []PersonTogether{}
@@ -830,9 +846,11 @@ func (a *App) getPersonDetail(id string, cache *peopleReadGateCache) (PersonDeta
 	// Shared topics enrich the detail. A topics read failure (for example a
 	// registry revision change during capture) leaves them empty instead of
 	// taking the rest of the detail down.
+	stages.mark("together")
 	if topics, topicsErr := a.personSharedTopics(ctx, p, a.peopleTopicsRegistry(), cache); topicsErr == nil {
 		detail.SharedTopics = topics
 	}
+	stages.mark("topics")
 	sort.Slice(detail.Together, func(i, j int) bool {
 		x, y := detail.Together[i], detail.Together[j]
 		if x.At != y.At {

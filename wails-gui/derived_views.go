@@ -47,8 +47,10 @@ const (
 	derivedTodayDayShape     derivedViewName = "today-day-shape"
 	derivedWaitingItems      derivedViewName = "main-chat-waiting-items"
 	derivedPeopleStats       derivedViewName = "people-stats"
-	derivedBeforeYouTalk     derivedViewName = "today-before-you-talk"
-	derivedDayNoticed        derivedViewName = "day-noticed"
+	// derivedPersonDetail is one person's page in Who you know, keyed by id.
+	derivedPersonDetail  derivedViewName = "person-detail"
+	derivedBeforeYouTalk derivedViewName = "today-before-you-talk"
+	derivedDayNoticed    derivedViewName = "day-noticed"
 	// derivedWorkList is Your work, the one list both devices judge (work_list.go).
 	derivedWorkList derivedViewName = "work-list"
 )
@@ -92,6 +94,7 @@ var derivedViewSpecs = map[derivedViewName]derivedViewSpec{
 	derivedKnowHow:           {every: derivedDaily, event: knowledgeUpdatedEvent},
 	derivedPeopleOverview:    {every: derivedDaily, event: peopleOverviewUpdatedEvent},
 	derivedPeopleStats:       {every: derivedDaily, event: peopleOverviewUpdatedEvent},
+	derivedPersonDetail:      {every: derivedDaily, event: peopleOverviewUpdatedEvent},
 	derivedTodayDayShape:     {every: derivedHourly, event: todayDayShapeUpdatedEvent},
 	derivedBeforeYouTalk:     {every: derivedHourly, event: todayBeforeYouTalkUpdatedEvent},
 	derivedWaitingItems:      {every: derivedHourly, event: mainChatWaitingItemsUpdated},
@@ -155,6 +158,13 @@ type derivedCell struct {
 	freshOf   string
 	at        time.Time
 	lastRead  time.Time
+	// waitOnTouch makes the next read after the person's own change wait for
+	// the rebuild instead of serving the snapshot from before it (a person's
+	// page after they edit that person). touches is the view's touch counter
+	// and touchesOf the count the snapshot was built or loaded under.
+	waitOnTouch bool
+	touches     *atomic.Uint64
+	touchesOf   uint64
 }
 
 type derivedViews struct {
@@ -225,9 +235,9 @@ func (d *derivedViews) touch(views ...derivedViewName) {
 	}
 	for _, view := range views {
 		if view == derivedPeopleOverview {
-			// Who you know reads the overview and the stats together;
-			// Before you talk names people too.
-			views = append(views, derivedPeopleStats, derivedBeforeYouTalk)
+			// Who you know reads the overview, the stats and each person's
+			// page together; Before you talk names people too.
+			views = append(views, derivedPeopleStats, derivedPersonDetail, derivedBeforeYouTalk)
 		}
 	}
 	for _, view := range views {
@@ -269,7 +279,7 @@ func (d *derivedViews) cell(view derivedViewName, key string, build func() (any,
 	}
 	spec := derivedViewSpecs[view]
 	touches := d.touches[view]
-	c := &derivedCell{view: view, key: key, every: spec.every, event: spec.event, build: build}
+	c := &derivedCell{view: view, key: key, every: spec.every, event: spec.event, build: build, touches: touches, touchesOf: touches.Load()}
 	c.privacy = d.app.derivedPrivacyStamp
 	c.fresh = func() string {
 		stamp := fmt.Sprint(touches.Load())
@@ -304,6 +314,7 @@ func (d *derivedViews) ensure(c *derivedCell, maxAge time.Duration, servable boo
 	c.buildMu.Lock()
 	defer c.buildMu.Unlock()
 	privacy, fresh := c.privacy(), c.fresh()
+	touchCount := c.touches.Load()
 	c.mu.Lock()
 	if c.has && c.privacyOf == privacy && (servable || (c.freshOf == fresh && time.Since(c.at) < maxAge)) {
 		raw = c.raw
@@ -328,6 +339,7 @@ func (d *derivedViews) ensure(c *derivedCell, maxAge time.Duration, servable boo
 	// build leaves this snapshot unserved, and the next read builds again.
 	builtAt := time.Now()
 	c.has, c.raw, c.privacyOf, c.freshOf, c.at = true, raw, privacy, fresh, builtAt
+	c.touchesOf = touchCount
 	c.mu.Unlock()
 	log.Printf("%s built view=%s ms=%d", derivedViewRefreshedLogLabel, c.view, time.Since(started).Milliseconds())
 	if privacy == d.app.derivedPrivacyStamp() {
@@ -347,7 +359,8 @@ func (d *derivedViews) read(c *derivedCell) ([]byte, error) {
 	privacy := c.privacy()
 	c.mu.Lock()
 	c.lastRead = now
-	if c.has && c.privacyOf == privacy {
+	touched := c.waitOnTouch && c.touchesOf != c.touches.Load()
+	if c.has && c.privacyOf == privacy && !touched {
 		raw, behind := c.raw, now.Sub(c.at) >= c.every || c.freshOf != c.fresh()
 		c.mu.Unlock()
 		if behind {
@@ -356,7 +369,7 @@ func (d *derivedViews) read(c *derivedCell) ([]byte, error) {
 		return raw, nil
 	}
 	c.mu.Unlock()
-	raw, changed, err := d.ensure(c, time.Duration(math.MaxInt64), true)
+	raw, changed, err := d.ensure(c, time.Duration(math.MaxInt64), !touched)
 	if err == nil && changed {
 		d.publish(c)
 	}
@@ -386,6 +399,12 @@ func derivedRead[T any](a *App, view derivedViewName, key string, build func() (
 		return build()
 	}
 	c := d.cell(view, key, func() (any, error) { return build() }, extra)
+	if view == derivedPersonDetail {
+		// The person's page shows their own edit on the next open.
+		c.mu.Lock()
+		c.waitOnTouch = true
+		c.mu.Unlock()
+	}
 	raw, err := d.read(c)
 	var out T
 	if err != nil {
@@ -692,7 +711,7 @@ func (a *App) RefreshDerivedView(name string) error {
 	views := map[string][]derivedViewName{
 		"about-you": {derivedPortrait, derivedPortraitTodayCard, derivedAboutYou},
 		"know-how":  {derivedKnowHow},
-		"people":    {derivedPeopleOverview, derivedPeopleStats},
+		"people":    {derivedPeopleOverview, derivedPeopleStats, derivedPersonDetail},
 		"today":     {derivedTodayDayShape, derivedBeforeYouTalk, derivedDayNoticed},
 		"waiting":   {derivedWaitingItems},
 	}[name]

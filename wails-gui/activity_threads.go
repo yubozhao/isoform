@@ -991,7 +991,10 @@ func activityThreadCacheForget(day int64) {
 
 func (a *App) dayThreadsCached(ctx context.Context, day int64) (ActivityDayThreads, error) {
 	store := a.activity.store
+	stages := newPerfStages("GetDayThreads")
+	defer stages.logIfOver(100 * time.Millisecond)
 	signature, cacheable, signatureErr := a.activityThreadProjectionSignature(ctx, day)
+	stages.mark("signature")
 	key := activityThreadCacheKey{store: store, day: day}
 	activityThreadCacheMu.Lock()
 	entry, ok := activityThreadCache[key]
@@ -1000,6 +1003,7 @@ func (a *App) dayThreadsCached(ctx context.Context, day int64) (ActivityDayThrea
 		return entry.value, nil
 	}
 	value, err := a.buildDayThreads(ctx, day)
+	stages.mark("build")
 	if err != nil {
 		return ActivityDayThreads{}, err
 	}
@@ -1023,6 +1027,7 @@ func (a *App) dayThreadsCached(ctx context.Context, day int64) (ActivityDayThrea
 		}
 	}
 	after, cacheableAfter, err := a.activityThreadProjectionSignature(ctx, day)
+	stages.mark("signature_after")
 	if signatureErr == nil && err == nil && cacheable && cacheableAfter && after == signature {
 		activityThreadCacheMu.Lock()
 		if len(activityThreadCache) >= 64 {
@@ -1108,7 +1113,10 @@ func (a *App) buildActivityThreadDay(ctx context.Context, day int64) (activityTh
 }
 
 func (a *App) buildDayThreads(ctx context.Context, day int64) (ActivityDayThreads, error) {
+	stages := newPerfStages("GetDayThreadsBuild")
+	defer stages.logIfOver(100 * time.Millisecond)
 	base, err := a.buildActivityThreadDay(ctx, day)
+	stages.mark("day")
 	out := base.ActivityDayThreads
 	if err != nil {
 		return out, err
@@ -1116,6 +1124,7 @@ func (a *App) buildDayThreads(ctx context.Context, day int64) (ActivityDayThread
 	if err := a.addActivityThreadStretchDetails(ctx, out.Threads, base.members, base.rows, base.spent, base.threads, day, activityThreadDayEnd(day)); err != nil {
 		return ActivityDayThreads{}, err
 	}
+	stages.mark("stretches")
 	return out, nil
 }
 

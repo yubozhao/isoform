@@ -222,7 +222,15 @@ func (s *mobileBriefService) latestShown() (MobileBriefV1, bool, error) {
 	// A previous record can lag a newer completed seal, for example after a
 	// restart between saving the copy and updating the pointer. Inspect the
 	// stored briefs in time order before repairing the record in pick.
-	for _, source := range s.store.briefs() {
+	// Headers pick the order; only a brief that is visited is decoded.
+	for _, header := range s.store.headers() {
+		if seen[header.BriefID] || header.NarrativeStatus == "quiet" {
+			continue
+		}
+		source, found := s.store.load(header.BriefID)
+		if !found {
+			continue
+		}
 		brief, done, err := visit(source)
 		if err != nil {
 			return MobileBriefV1{}, false, err
