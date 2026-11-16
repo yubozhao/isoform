@@ -141,12 +141,34 @@ describe('ActivityPage section panel', () => {
         expect((document.querySelector('[data-activity-section="workedOn"]') as HTMLElement).getAttribute('aria-current')).toBe('page');
     });
 
-    it('shows From your watch only once a recording has arrived, and opens it in place of the day', async () => {
+    // computer-activity v1.0.0 rule 2: the tabs are Your day, Screen, Watch
+    // and Agents. What it learned moved to You.
+    it('offers the tabs Your day, Screen, Watch and Agents, and no What it learned', async () => {
         binding('GetWatchRecordings').mockResolvedValue([]);
-        const first = await act(async () => render(<Harness initialSection="yourDay" />));
-        expect(document.querySelector('[data-activity-section="watch"]')).toBeNull();
-        first.unmount();
+        await act(async () => {
+            render(<Harness initialSection="yourDay" />);
+        });
+        const tabs = [...document.querySelectorAll('[data-activity-section]')].map((row) => row.textContent);
+        expect(tabs).toEqual([enActivity.day.yourDay, enActivity.act.tabScreen, enActivity.act.tabWatch, enActivity.act.tabAgents]);
+        expect(document.querySelector('[data-activity-section="learned"]')).toBeNull();
+    });
 
+    it('shows the agents tab as the timeline of agent rows only', async () => {
+        const at = new Date().setHours(9, 0, 0, 0);
+        binding('GetActivityFeed').mockResolvedValue([
+            { id: 'run-1', kind: 'agent', startMs: at, endMs: at + 600_000, activeMs: 600_000, app: 'Codex' },
+            { id: 'm-1', kind: 'screen', startMs: at - 60_000, endMs: at, title: 'Pricing page copy', app: 'Safari' },
+        ]);
+        await act(async () => {
+            render(<Harness initialSection="agents" />);
+        });
+        expect(await screen.findByText('Your agents · Codex')).toBeInTheDocument();
+        expect(screen.queryByText('Pricing page copy')).toBeNull();
+        expect(document.querySelector('[data-activity-section="agents"]')).toHaveAttribute('aria-current', 'page');
+        binding('GetActivityFeed').mockResolvedValue([]);
+    });
+
+    it('opens Watch in place of the day', async () => {
         binding('GetWatchRecordings').mockResolvedValue([{
             id: 'r1', source: 'watch', state: 'transcribed', startedAt: new Date().toISOString(), durationSeconds: 75,
             words: 3, ownerVoice: '', sessionId: 'rec-r1', hasAudio: false, parts: [],
@@ -202,8 +224,11 @@ describe('ActivityPage section panel', () => {
         expect(binding('GetActivitySessions')).not.toHaveBeenCalled();
         expect(binding('GetActivityTimelineGroups')).not.toHaveBeenCalled();
 
-        fireEvent.click(document.querySelector('[data-activity-section="timeline"]') as HTMLElement);
+        // The Screen tab holds the timeline beside What you worked on.
+        fireEvent.click(document.querySelector('[data-activity-section="workedOn"]') as HTMLElement);
+        fireEvent.click(await screen.findByTestId('activity-open-timeline'));
         await waitFor(() => {
+            expect(document.querySelector('[data-activity-section="workedOn"]')).toHaveAttribute('aria-current', 'page');
             expect(binding('GetActivitySessions')).toHaveBeenCalled();
             expect(binding('GetActivityTimelineGroups')).toHaveBeenCalled();
         });
@@ -432,11 +457,8 @@ describe('Activity first view and session reuse', () => {
         expect(binding('GetActivityMonthStats')).not.toHaveBeenCalled();
         await act(async () => finishSummary({ aiSummary: 'Fixture digest', hourlyActive: [], appBreakdown: [] }));
         expect(await screen.findByText('Fixture digest')).toBeInTheDocument();
-        fireEvent.click(document.querySelector('[data-activity-section="learned"]')!);
-        expect(screen.queryByRole('heading', { name: enActivity.day.learned })).not.toBeInTheDocument();
-        await act(async () => { finishKnowledge([{ id: 'fixture-knowledge', title: 'Fixture learning', date: '2026-10-15', content: 'Public content' }]); finishMemory([]); });
-        expect(await screen.findByRole('heading', { name: enActivity.day.learned })).toBeInTheDocument();
-        expect(screen.getByText('Fixture learning')).toBeInTheDocument();
+        await act(async () => { finishKnowledge?.([]); finishMemory?.([]); });
+        expect(document.querySelector('[data-activity-section="yourDay"]')).toHaveAttribute('aria-current', 'page');
     });
 
     it('restores the selected day and its rows synchronously while revalidating', async () => {

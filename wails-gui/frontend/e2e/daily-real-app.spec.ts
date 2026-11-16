@@ -1,6 +1,7 @@
 import { test, expect, type Page, type Locator } from "@playwright/test";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { TODAY_LAYOUT_WIDTHS, todayLayoutFailures } from "./today-layout-checks";
+import { PAGE_LAYOUT_WIDTHS, pageLayoutFailures } from "./page-layout-checks";
 
 // The daily real-app test (docs/rework-2026-11.md, step 4): the built app on
 // a seeded test data folder, driven through its browser bridge. Each page must
@@ -163,6 +164,26 @@ test("Tasks", async () => {
 test("Activity", async () => {
     await visit("activity", 2000, nav("Activity"), () => page.locator("main").getByRole("heading").first());
 });
+
+// Activity's one timeline in a narrow and a wide window
+// (computer-activity v1.0.0); page-layout.spec.ts checks the same rules on
+// fixture data.
+for (const width of PAGE_LAYOUT_WIDTHS) {
+    test(`Activity at ${width} px`, async () => {
+        try {
+            await visit(`activity-${width}`, 2000, async () => {
+                await page.setViewportSize({ width, height: 900 });
+                await page.locator('[data-activity-section="yourDay"]').click();
+            }, () => page.getByTestId("activity-feed"), async (result) => {
+                await page.waitForTimeout(800);
+                result.checks.push("no sideways overflow", "sections never overlap", "rows never overlap");
+                result.failures.push(...await pageLayoutFailures(page, '[data-testid="activity-feed"]', "[data-feed-kind]", false));
+            });
+        } finally {
+            await page.setViewportSize({ width: 1280, height: 820 });
+        }
+    });
+}
 
 test("Activity, from your watch", async () => {
     await visit("watch-recordings", 2000, async () => {

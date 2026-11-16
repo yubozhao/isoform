@@ -652,5 +652,49 @@
         "deleteBody": "这段录音以及 Isoform 仅从中了解到的内容，会从你的手表、手机和电脑上删除。",
         "deleteConfirm": "删除",
         "deleteFailed": "未能删除，请重试。"
+    },
+    "act": {
+        "sub": "Isoform 今天看到的一切，按时间和来源排列。任何一条都可以忘记，由它生成的内容也会一并删除。",
+        "tabScreen": "屏幕",
+        "tabWatch": "手表",
+        "tabAgents": "Agents",
+        "closedGap": "{{start}}–{{end}} · 什么都没有保留"
+    },
+    "feed": {
+        "label": "时间线",
+        "empty": "这一天没有看到任何内容。",
+        "emptyAgents": "这一天你的 agents 没有在这台电脑上工作。",
+        "loadFailed": "无法加载时间线。",
+        "forget": "忘记",
+        "forgetTitle": "要忘记这一条吗？",
+        "forgetConfirm": "忘记",
+        "forgetFailed": "没有忘记成功，请再试一次。",
+        "forgetBody_one": "忘记{{thing}}，以及由它生成的 {{count}} 项内容：{{list}}。",
+        "forgetBody_other": "忘记{{thing}}，以及由它生成的 {{count}} 项内容：{{list}}。",
+        "forgetBodyNothing": "忘记{{thing}}。没有由它生成的其他内容。",
+        "listSeparator": "；",
+        "sourceScreen": "屏幕",
+        "sourceScreenApp": "屏幕 · {{app}}",
+        "sourceWatch": "你的手表",
+        "sourcePhone": "你的手机",
+        "sourceAgent": "你的 agents",
+        "sourceAgentApp": "你的 agents · {{app}}",
+        "untitledMoment": "未命名的时刻",
+        "watchTitle": "对话 · {{length}}",
+        "watchWords_one": "听到 {{count}} 个词",
+        "watchWords_other": "听到 {{count}} 个词",
+        "watchNoWords": "没有人说话",
+        "agentTitle": "工作了 {{length}}",
+        "agentLine": "你的 agent 的工作，不算作你的工作。",
+        "goes": {
+            "topic": "它在 {{topic}} 中的位置",
+            "goal": "目标 {{goal}}",
+            "goalUntitled": "由它生成的一个目标",
+            "screen": "{{start}} 到 {{end}} 的屏幕记录",
+            "words": "听到的内容",
+            "audio": "音频",
+            "copies": "手机和手表上的副本",
+            "notes": "由它生成的笔记"
+        }
     }
 }

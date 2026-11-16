@@ -31,8 +31,7 @@ import {
     Info,
     ClipboardCopy,
     Sun,
-    Briefcase,
-    Brain,
+    Bot,
 } from 'lucide-react';
 import { ActivityOpenChatContext } from './activity-ask-inline';
 import { ActivityInlineNotice, type ActivityNotice } from './activity-inline-notice';
@@ -70,7 +69,6 @@ import type { TodayChatContextRef } from '@/lib/today-chat-navigation';
 import {
     GetActivitySessions,
     GetActivitySessionDetail,
-    GetWatchRecordings,
     GetActivityOCRMatches,
     GetSnapshotOCRText,
     GetOCRHighlightBoxes,
@@ -98,15 +96,19 @@ import { cn } from '../lib/utils';
 import { hostBridgeMediaURL, setHostBridgeMediaToken, snapshotImageURL } from '../lib/host-bridge-media';
 import { ActivityMeetingNotes } from './activity-meeting-notes';
 import { ActivityWatchRecordings } from './activity-watch-recordings';
+import { ActivityFeed } from './activity-feed';
 import { MarkdownContent } from '@/components/markdown-content';
 import { CopyButton } from '@/components/copy-button';
 import { isWindows } from '@/lib/platform';
 import { EventsOn } from '../../wailsjs/runtime/runtime';
 import type { main, activitymon } from '../../wailsjs/go/models';
 
-/** The sections the Activity page's left panel offers. The first three are
- *  the Day view's own sections; 'timeline' is the Screen timeline. */
-export type ActivitySectionId = 'yourDay' | 'workedOn' | 'learned' | 'timeline' | 'watch';
+/** The sections the Activity page's left panel offers (computer-activity
+ *  v1.0.0 tabs: Your day, Screen, Watch, Agents). 'workedOn' and 'timeline'
+ *  are the Screen tab's two views. 'learned' has no tab any more (it moved to
+ *  You) but still opens for links that name it. 'agents' is the timeline's
+ *  agent rows. */
+export type ActivitySectionId = 'yourDay' | 'workedOn' | 'learned' | 'timeline' | 'watch' | 'agents';
 
 interface ActivityPageProps {
     /** Optional close handler (Escape ladder's last rung). The page is a main
@@ -2028,11 +2030,8 @@ export function ActivityPage({ onClose, initialSessionId, initialDate, noticedFo
     // shows only once one has arrived, so a computer without a watch looks
     // as it did.
     const isWatch = section === 'watch';
-    const [watchRecordingCount, setWatchRecordingCount] = useState(0);
-    useEffect(() => {
-        GetWatchRecordings().then((list) => setWatchRecordingCount((list ?? []).length)).catch(() => {});
-    }, []);
-    const daySection: ActivityDaySection = isTimeline || isWatch ? 'yourDay' : section;
+    const isAgents = section === 'agents';
+    const daySection: ActivityDaySection = isTimeline || isWatch || isAgents ? 'yourDay' : section;
     // The day the Day and Week views show. The section panel's prev/next
     // buttons and date picker drive it; useCalendarData keeps the month
     // heatmap (day dots) and the day's learned entries and scheduled runs.
@@ -3707,18 +3706,19 @@ export function ActivityPage({ onClose, initialSessionId, initialDate, noticedFo
                         day section while the Week scope shows returns to Day. */}
                     <div className="flex flex-col gap-1">
                         {([
-                            { id: 'yourDay' as const, labelKey: 'day.yourDay', Icon: Sun },
-                            { id: 'workedOn' as const, labelKey: 'day.workedOn', Icon: Briefcase },
-                            { id: 'learned' as const, labelKey: 'day.learned', Icon: Brain },
-                        ]).map(({ id, labelKey, Icon }) => (
+                            { id: 'yourDay' as const, labelKey: 'day.yourDay', Icon: Sun, active: scope === 'day' && section === 'yourDay', pick: () => { setScope('day'); onSectionChange('yourDay'); } },
+                            { id: 'workedOn' as const, labelKey: 'act.tabScreen', Icon: Film, active: (scope === 'day' && section === 'workedOn') || isTimeline, pick: () => { setScope('day'); onSectionChange('workedOn'); } },
+                            { id: 'watch' as const, labelKey: 'act.tabWatch', Icon: Watch, active: isWatch, pick: () => onSectionChange('watch') },
+                            { id: 'agents' as const, labelKey: 'act.tabAgents', Icon: Bot, active: isAgents, pick: () => onSectionChange('agents') },
+                        ]).map(({ id, labelKey, Icon, active, pick }) => (
                             <button
                                 key={id}
                                 type="button"
                                 data-activity-section={id}
-                                aria-current={scope === 'day' && section === id ? 'page' : undefined}
-                                onClick={() => { setScope('day'); onSectionChange(id); }}
+                                aria-current={active ? 'page' : undefined}
+                                onClick={pick}
                                 className={`flex items-center gap-2 w-full px-3 py-[5px] text-[13px] rounded-md transition-colors duration-[var(--motion-duration-fast)] ease-[var(--motion-ease-out)] cursor-pointer ${
-                                    scope === 'day' && section === id
+                                    active
                                         ? 'bg-surface-active text-ink'
                                         : 'text-muted hover:bg-surface-hover'
                                 }`}
@@ -3727,36 +3727,6 @@ export function ActivityPage({ onClose, initialSessionId, initialDate, noticedFo
                                 <span className="flex-1 min-w-0 text-left truncate">{t(labelKey as never) as string}</span>
                             </button>
                         ))}
-                        <button
-                            type="button"
-                            data-activity-section="timeline"
-                            aria-current={isTimeline ? 'page' : undefined}
-                            onClick={() => { setSelectedApps(null); onSectionChange('timeline'); }}
-                            className={`flex items-center gap-2 w-full px-3 py-[5px] text-[13px] rounded-md transition-colors duration-[var(--motion-duration-fast)] ease-[var(--motion-ease-out)] cursor-pointer ${
-                                isTimeline
-                                    ? 'bg-surface-active text-ink'
-                                    : 'text-muted hover:bg-surface-hover'
-                            }`}
-                        >
-                            <Film className="size-3.5 shrink-0" />
-                            <span className="flex-1 min-w-0 text-left truncate">{t('viewMode.timeline')}</span>
-                        </button>
-                        {(watchRecordingCount > 0 || isWatch) && (
-                            <button
-                                type="button"
-                                data-activity-section="watch"
-                                aria-current={isWatch ? 'page' : undefined}
-                                onClick={() => onSectionChange('watch')}
-                                className={`flex items-center gap-2 w-full px-3 py-[5px] text-[13px] rounded-md transition-colors duration-[var(--motion-duration-fast)] ease-[var(--motion-ease-out)] cursor-pointer ${
-                                    isWatch
-                                        ? 'bg-surface-active text-ink'
-                                        : 'text-muted hover:bg-surface-hover'
-                                }`}
-                            >
-                                <Watch className="size-3.5 shrink-0" />
-                                <span className="flex-1 min-w-0 text-left truncate">{t('watch.nav')}</span>
-                            </button>
-                        )}
                     </div>
                 </nav>
 
@@ -4020,8 +3990,13 @@ export function ActivityPage({ onClose, initialSessionId, initialDate, noticedFo
                         <ActivityWatchRecordings
                             bridgePort={bridgePort}
                             onOpenSession={openSessionInTimeline}
-                            onCount={setWatchRecordingCount}
                         />
+                    ) : isAgents ? (
+                        <div className="flex-1 overflow-y-auto">
+                            <div className="mx-auto max-w-2xl px-6 py-6">
+                                <ActivityFeed date={selectedDate} kinds={['agent']} emptyText={t('feed.emptyAgents')} />
+                            </div>
+                        </div>
                     ) : !isTimeline && scope === 'day' ? (
                         <ActivityDayView
                             date={selectedDate}
@@ -4049,6 +4024,7 @@ export function ActivityPage({ onClose, initialSessionId, initialDate, noticedFo
                             onSectionChange={onSectionChange}
                             workedOnView={workedOnView}
                             onWorkedOnViewChange={setWorkedOnView}
+                            onOpenTimeline={() => { setSelectedApps(null); onSectionChange('timeline'); }}
                         />
                     ) : !isTimeline && scope === 'week' ? (
                         <ActivityWeekView
@@ -4062,7 +4038,7 @@ export function ActivityPage({ onClose, initialSessionId, initialDate, noticedFo
                         />
                     ) : null}
                     </ActivityOpenChatContext.Provider>
-                    {isWatch || (!isTimeline && (scope === 'day' || scope === 'week')) ? null : (
+                    {isWatch || isAgents || (!isTimeline && (scope === 'day' || scope === 'week')) ? null : (
                     <>
                     {sessionsFailed && (
                         <ActivityInlineNotice notice={{ tone: 'error', text: t('timeline.sessionsFailed'), onAction: () => refreshSessionsRef.current() }} className="px-8 pt-4" />
