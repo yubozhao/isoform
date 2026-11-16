@@ -121,8 +121,8 @@ func (a *App) confirmProactiveCards(key streamPageKey, saved streamPageSnapshot,
 // removeStreamPageCopy deletes a key's saved copy at once. A copy that holds a
 // card the live gates did not confirm must not wait for the next save: its raw
 // card row would otherwise stay on disk after the card was withdrawn.
-func removeStreamPageCopy(key streamPageKey) {
-	if path, err := streamPageFile(key); err == nil {
+func (a *App) removeStreamPageCopy(key streamPageKey) {
+	if path, err := a.streamPageFile(key); err == nil {
 		_ = os.Remove(path)
 	}
 }
@@ -163,8 +163,8 @@ func (a *App) confirmStreamPageCardsLater(key streamPageKey, saved streamPageSna
 		}
 		// Drop the copy only when it is still the one that was served; a newer
 		// save is the live page already.
-		if current, reason := readRawStreamPageSnapshot(key); reason == "" && current.SavedAt.Equal(saved.SavedAt) {
-			removeStreamPageCopy(key)
+		if current, reason := a.readRawStreamPageSnapshot(key); reason == "" && current.SavedAt.Equal(saved.SavedAt) {
+			a.removeStreamPageCopy(key)
 		}
 		a.emitStreamPageReload(key.session, "card-check")
 	}()

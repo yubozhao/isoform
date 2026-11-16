@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -183,6 +185,131 @@ func TestConversationsFollowTheStoredHoursAndADeletedHour(t *testing.T) {
 	for _, line := range sam.Lines {
 		if strings.Contains(line.Text, "do you have a minute") {
 			t.Fatal("words of the deleted hour are still shown")
+		}
+	}
+}
+
+func TestANameIsAcceptedOnlyWhenItIsShortAndPlain(t *testing.T) {
+	for raw, want := range map[string]string{
+		"Pricing with Sam":           "Pricing with Sam",
+		"  \"Pricing with Sam.\"\n":  "Pricing with Sam",
+		"**Standup**":                "Standup",
+		"Standup\nIt was about work": "Standup",
+		"定价讨论":                       "定价讨论",
+	} {
+		if got, ok := cleanWatchConversationName(raw); !ok || got != want {
+			t.Errorf("%q: got %q %t, want %q", raw, got, ok, want)
+		}
+	}
+	for _, raw := range []string{"", "-", "...", "12:30", strings.Repeat("word ", 9), strings.Repeat("x", 60)} {
+		if got, ok := cleanWatchConversationName(raw); ok {
+			t.Errorf("%q was accepted as %q", raw, got)
+		}
+	}
+}
+
+func TestTheNamePromptMarksTheOwnersLinesAndIsBounded(t *testing.T) {
+	c := WatchConversation{Lines: []WatchRecordingLine{
+		{Speaker: "you", Text: "Sam, do you have a minute"},
+		{Speaker: "speaker_1", Text: "Sure"},
+	}}
+	prompt := buildWatchConversationNamePrompt(c)
+	if !strings.Contains(prompt, "Me: Sam, do you have a minute\nSure\n") {
+		t.Fatalf("prompt %q", prompt)
+	}
+	long := WatchConversation{}
+	for i := 0; i < 2000; i++ {
+		long.Lines = append(long.Lines, WatchRecordingLine{Text: "and another thing was said here"})
+	}
+	if n := len([]rune(buildWatchConversationNamePrompt(long))); n > watchConversationNameTranscriptRunes+1500 {
+		t.Fatalf("prompt is %d runes", n)
+	}
+}
+
+// The stored path: the Sam talk (30 minutes, yesterday) gets a name from one
+// call; a few words in passing get none and no call; nothing is asked twice;
+// nothing is asked while observing is paused; and deleting the 9 AM hour
+// drops the name at once, because its words changed.
+func TestConversationsAreNamedOnceAndANameGoesWithItsWords(t *testing.T) {
+	app, _, store, first := watchDeskFixture(t)
+	if _, err := app.deleteWatchRecording(store, first, ""); err != nil {
+		t.Fatal(err)
+	}
+	uploads := &mapUploads{bodies: map[string][]byte{}}
+	day := time.Now().UTC().Add(-24 * time.Hour).Truncate(24 * time.Hour)
+	nine, ten, noon := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	starts := map[string]time.Time{nine: day.Add(9*time.Hour + 40*time.Minute), ten: day.Add(10 * time.Hour), noon: day.Add(12 * time.Hour)}
+	events := map[string][]activitymon.ActivityEvent{}
+	say := func(id string, at time.Time, speaker, text string) {
+		events[id] = append(events[id], activitymon.ActivityEvent{Timestamp: at.UnixMilli(), Kind: activitymon.EventSpeech,
+			AppName: mobileRecordingAppName, SpeechText: text, SpeechSpeakerLabel: speaker})
+	}
+	// The Sam talk: 9:50 to 10:20, a line every 90 seconds, across the hour.
+	for at := day.Add(9*time.Hour + 50*time.Minute); !at.After(day.Add(10*time.Hour + 20*time.Minute)); at = at.Add(90 * time.Second) {
+		id := nine
+		if !at.Before(starts[ten]) {
+			id = ten
+		}
+		say(id, at, "you", "about the pricing page")
+	}
+	// A few words in passing at noon.
+	say(noon, day.Add(12*time.Hour+5*time.Minute), "speaker_1", "thanks, see you")
+	for _, id := range []string{nine, ten, noon} {
+		req := sealedRecordingPart(t, uploads, mobileTestDeviceID, id, 0, true, []byte("audio"), starts[id])
+		if _, _, err := receiveMobileRecordingPart(context.Background(), store, uploads, recordingTestHub, mobileTestDeviceID, req); err != nil {
+			t.Fatal(err)
+		}
+		session := ActivitySessionRow{ID: "rec-" + id, StartTime: starts[id].UnixMilli(), EndTime: starts[id].Add(time.Hour).UnixMilli(),
+			TriggerKind: mobileRecordingTrigger, AppNames: `["` + mobileRecordingAppName + `"]`, EventCount: len(events[id]),
+			TriageStatus: "pending", CreatedAt: time.Now().UnixMilli()}
+		if err := app.activity.store.SaveSession(session, events[id], nil); err != nil {
+			t.Fatal(err)
+		}
+		store.setState(id, mobileRecordingTranscribed, session.ID, 10, "")
+	}
+	old := watchConversationNamer
+	t.Cleanup(func() { watchConversationNamer = old })
+	var prompts []string
+	watchConversationNamer = func(_ *App, prompt string) (string, error) {
+		prompts = append(prompts, prompt)
+		return "Pricing with Sam\n", nil
+	}
+
+	app.nameWatchConversations(context.Background(), store)
+	if len(prompts) != 1 || !strings.Contains(prompts[0], "Me: about the pricing page") || strings.Contains(prompts[0], "see you") {
+		t.Fatalf("%d calls; only the long conversation is named, from its own words", len(prompts))
+	}
+	convs, err := app.watchConversationsOf(store)
+	if err != nil || len(convs) != 2 {
+		t.Fatalf("conversations %+v %v", convs, err)
+	}
+	if convs[1].Name != "Pricing with Sam" || convs[0].Name != "" {
+		t.Fatalf("names %q and %q", convs[1].Name, convs[0].Name)
+	}
+	// Nothing is asked twice.
+	app.nameWatchConversations(context.Background(), store)
+	if len(prompts) != 1 {
+		t.Fatalf("%d calls after a second pass", len(prompts))
+	}
+	raw, err := os.ReadFile(filepath.Join(store.dir, watchConversationNamesFile))
+	if err != nil || !strings.Contains(string(raw), "Pricing with Sam") {
+		t.Fatalf("names file %q %v", raw, err)
+	}
+	if info, _ := os.Stat(filepath.Join(store.dir, watchConversationNamesFile)); info.Mode().Perm() != 0o600 {
+		t.Fatalf("mode %v", info.Mode().Perm())
+	}
+
+	// Delete the 9 AM hour: the name was made from words that are gone now.
+	if _, err := app.deleteWatchRecording(store, nine, ""); err != nil {
+		t.Fatal(err)
+	}
+	if raw, err := os.ReadFile(filepath.Join(store.dir, watchConversationNamesFile)); err == nil && strings.Contains(string(raw), "Pricing with Sam") {
+		t.Fatalf("the name outlived the deleted hour: %s", raw)
+	}
+	convs, _ = app.watchConversationsOf(store)
+	for _, c := range convs {
+		if c.Name != "" {
+			t.Fatalf("a conversation still shows the old name: %+v", c.Name)
 		}
 	}
 }

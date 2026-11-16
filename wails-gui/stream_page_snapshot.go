@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -150,13 +151,43 @@ func (st *streamPageState) readCall(key streamPageKey) *trailingCall[streamPageR
 	return call
 }
 
+// streamPageFile is a copy's path under the current data folder.
 func streamPageFile(key streamPageKey) (string, error) {
 	root, err := flavorDataDir()
 	if err != nil {
 		return "", err
 	}
+	return streamPageFileIn(root, key), nil
+}
+
+func streamPageFileIn(root string, key streamPageKey) string {
 	sum := sha256.Sum256([]byte(key.session + "\x00" + string(rune(key.limit))))
-	return filepath.Join(root, streamPageDirName, hex.EncodeToString(sum[:16])+".json"), nil
+	return filepath.Join(root, streamPageDirName, hex.EncodeToString(sum[:16])+".json")
+}
+
+var errStreamPageRootMoved = errors.New("the data folder is no longer this app's")
+
+// streamPageFile is a copy's path under this app's own data folder, bound once.
+// Every read, save and removal the app makes goes through it, including the
+// recomputes and checks that outlive a read. When the data folder has moved
+// (only a test moves HOME), the copy is not this app's: it errs, so a goroutine
+// left from an earlier test never reads or writes the next test's home.
+func (a *App) streamPageFile(key streamPageKey) (string, error) {
+	root, err := flavorDataDir()
+	if err != nil {
+		return "", err
+	}
+	st := &a.streamPages
+	st.mu.Lock()
+	if st.root == "" {
+		st.root = root
+	}
+	bound := st.root
+	st.mu.Unlock()
+	if root != bound {
+		return "", errStreamPageRootMoved
+	}
+	return streamPageFileIn(bound, key), nil
 }
 
 // readStreamPageSnapshot returns the saved page when it was made under stamp
@@ -164,14 +195,22 @@ func streamPageFile(key streamPageKey) (string, error) {
 // returns why not: "no-copy", "stamp-changed", "unverified" or "unreadable". A
 // copy whose stamp does not match is deleted, never served.
 func readStreamPageSnapshot(key streamPageKey, stamp string) (streamPageSnapshot, string) {
-	snap, reason := readRawStreamPageSnapshot(key)
+	path, err := streamPageFile(key)
+	return readStreamPageSnapshotAt(path, err, stamp)
+}
+
+func (a *App) readStreamPageSnapshot(key streamPageKey, stamp string) (streamPageSnapshot, string) {
+	path, err := a.streamPageFile(key)
+	return readStreamPageSnapshotAt(path, err, stamp)
+}
+
+func readStreamPageSnapshotAt(path string, pathErr error, stamp string) (streamPageSnapshot, string) {
+	snap, reason := readRawStreamPageSnapshotAt(path, pathErr)
 	if reason != "" {
 		return streamPageSnapshot{}, reason
 	}
 	if stamp == "" || snap.ReadStamp != stamp {
-		if path, err := streamPageFile(key); err == nil {
-			_ = os.Remove(path)
-		}
+		_ = os.Remove(path)
 		return streamPageSnapshot{}, "stamp-changed"
 	}
 	if snap.Deep == "" {
@@ -219,7 +258,14 @@ func dropStaleStreamPageCopies() {
 
 // readRawStreamPageSnapshot reads the saved page without judging it.
 func readRawStreamPageSnapshot(key streamPageKey) (streamPageSnapshot, string) {
-	path, err := streamPageFile(key)
+	return readRawStreamPageSnapshotAt(streamPageFile(key))
+}
+
+func (a *App) readRawStreamPageSnapshot(key streamPageKey) (streamPageSnapshot, string) {
+	return readRawStreamPageSnapshotAt(a.streamPageFile(key))
+}
+
+func readRawStreamPageSnapshotAt(path string, err error) (streamPageSnapshot, string) {
 	if err != nil {
 		return streamPageSnapshot{}, "unreadable"
 	}
@@ -237,6 +283,15 @@ func readRawStreamPageSnapshot(key streamPageKey) (streamPageSnapshot, string) {
 
 func writeStreamPageSnapshot(key streamPageKey, snap streamPageSnapshot) error {
 	path, err := streamPageFile(key)
+	return writeStreamPageSnapshotAt(path, err, snap)
+}
+
+func (a *App) writeStreamPageSnapshot(key streamPageKey, snap streamPageSnapshot) error {
+	path, err := a.streamPageFile(key)
+	return writeStreamPageSnapshotAt(path, err, snap)
+}
+
+func writeStreamPageSnapshotAt(path string, err error, snap streamPageSnapshot) error {
 	if err != nil {
 		return err
 	}
@@ -319,13 +374,13 @@ func (a *App) loadLatestStreamPageNow(key streamPageKey) (StreamItemPageData, er
 	version, verErr := a.streamItemVersionWithin(key.session, versionWait)
 	versionMs := time.Since(versionStart).Milliseconds()
 	log.Printf("[perf] binding=LoadStreamItemsPage stage=version ms=%d", versionMs)
-	saved, reason := readStreamPageSnapshot(key, stamp)
+	saved, reason := a.readStreamPageSnapshot(key, stamp)
 	if reason == "" {
 		switch check := a.streamPageSourcesCheck(saved.Sessions); check {
 		case "sources-changed":
 			// A session a card rests on changed outside the withdrawal path (protected,
 			// removed, its notes deleted on disk): the copy never paints again.
-			removeStreamPageCopy(key)
+			a.removeStreamPageCopy(key)
 			saved, reason = streamPageSnapshot{}, check
 		case "sources-unread":
 			// The check ran out of time (a busy launch): this read recomputes, and
@@ -503,10 +558,10 @@ func (a *App) computeLatestStreamPage(key streamPageKey, stamp string) (StreamIt
 	// verify pass the caller schedules confirms it again (verifyStreamPageCopy
 	// drops the copy and reloads the page when it no longer matches). Without
 	// this every save made the next read "unverified" and recompute.
-	if prev, why := readRawStreamPageSnapshot(key); why == "" && prev.Deep != "" && prev.ReadStamp == stamp {
+	if prev, why := a.readRawStreamPageSnapshot(key); why == "" && prev.Deep != "" && prev.ReadStamp == stamp {
 		next.Deep = prev.Deep
 	}
-	_ = writeStreamPageSnapshot(key, next)
+	_ = a.writeStreamPageSnapshot(key, next)
 	return page, true, nil
 }
 
@@ -633,7 +688,7 @@ func (a *App) runStreamPageRefreshes() {
 // recorded check no longer matches is dropped, and the stream is told to reload.
 func (a *App) verifyStreamPageCopy(key streamPageKey) {
 	ctx := context.Background()
-	snap, reason := readRawStreamPageSnapshot(key)
+	snap, reason := a.readRawStreamPageSnapshot(key)
 	if reason != "" {
 		return
 	}
@@ -644,12 +699,12 @@ func (a *App) verifyStreamPageCopy(key streamPageKey) {
 	if snap.Deep == "" {
 		if snap.ReadStamp == a.streamPageStamp(ctx) {
 			snap.Deep = deep
-			_ = writeStreamPageSnapshot(key, snap)
+			_ = a.writeStreamPageSnapshot(key, snap)
 		}
 		return
 	}
 	if snap.Deep != deep {
-		if path, err := streamPageFile(key); err == nil {
+		if path, err := a.streamPageFile(key); err == nil {
 			_ = os.Remove(path)
 		}
 		a.emitBrowserEvent("session:items-appended", map[string]any{"sessionId": key.session, "source": "privacy-check"})
@@ -674,7 +729,7 @@ func (a *App) refreshStreamPages() {
 		// A copy saved here is unverified until its full check runs. The read
 		// path schedules that check; a refresh must too, or every read that
 		// follows recomputes.
-		prev, prevReason := readRawStreamPageSnapshot(key)
+		prev, prevReason := a.readRawStreamPageSnapshot(key)
 		page, saved, _ := a.computeLatestStreamPage(key, a.streamPageStamp(context.Background()))
 		if saved {
 			a.scheduleStreamVerify(key)

@@ -178,7 +178,14 @@ export function ActivityWatchRecordings({
 function ConversationCard({ conversation }: { conversation: WatchConversation }) {
     const { t, i18n } = useTranslation('activity');
     const [open, setOpen] = useState(false);
+    const range = t('watch.conversationRange', {
+        start: formatClock(conversation.startAt, i18n.language),
+        end: formatClock(conversation.endAt, i18n.language),
+    });
+    // With a name, the name is the title and the time moves into the line under it.
+    const named = (conversation.name ?? '') !== '';
     const meta = [
+        named ? range : '',
         t('watch.conversationWords', { count: conversation.words }),
         conversation.recordingIds.length > 1 ? t('watch.conversationAcross', { count: conversation.recordingIds.length }) : '',
         conversation.speakers.map((speaker) => speakerName(speaker, t)).join(', '),
@@ -193,10 +200,7 @@ function ConversationCard({ conversation }: { conversation: WatchConversation })
             >
                 <div className="flex-1 min-w-0">
                     <h5 className="text-[13px] font-medium text-ink truncate tabular-nums">
-                        {t('watch.conversationRange', {
-                            start: formatClock(conversation.startAt, i18n.language),
-                            end: formatClock(conversation.endAt, i18n.language),
-                        })}
+                        {named ? conversation.name : range}
                     </h5>
                     <p className="mt-0.5 text-[11px] text-muted">{meta.join(' · ')}</p>
                 </div>
