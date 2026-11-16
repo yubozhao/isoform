@@ -3626,3 +3626,62 @@ send `context` to a computer that does not: the request decoder refuses unknown 
 - Use on the computer: only as context for the brief. The speech events of a part carry a line
   such as "at Mission District · heart rate raised (avg 104, peak 131)". Coordinates never
   appear in text; a location without a `place` says nothing about where.
+
+## 26. Your work: one list for the phone and the computer (phone redesign B2, 2026-11-15)
+
+Design: `docs/handoff-2026-11-15/` phone-map v1.0.0 (section 7, B2), phone-today v1.0.0 rules 8 to 16,
+computer-map v1.0.0 (C6). The computer's Today and the phone's read the same list: the same ids,
+states and answers. Additive in protocol v1; `GET /status` says `"work":true` when it is served.
+
+`GET /work` (`brief:read`) answers from the computer's snapshot of Your work (the same one the
+desktop binding `GetWorkList` reads; rebuilt when a brief is stored, a topic or task changes, or an
+answer is given, and at least hourly). A device without `chat:read` gets no topic proposals, as on
+`/today`, with its own counts and `version`. `GET /today` carries `workVersion`, a token that changes
+when the list changes; the phone reads `GET /work` again then.
+
+```json
+{"v":1,"version":"<opaque>","generatedAt":"<RFC 3339>","toAnswer":3,"backFromAgents":1,
+ "undoUntil":"<RFC 3339, the next brief's slot>",
+ "items":[{
+   "id":"brief:2026-11-15-evening:offer:o1",
+   "kind":"done|offered|claim|result|check", "row":"draft|prep|check|offered|claim|result",
+   "state":"open|answered|with_agent|back", "source":"brief|topic|watch|prep|agent_of_you|agent",
+   "ref":{"briefId","itemKey","offerId","topicId","proposalId","conversationId","saidAt","eventId",
+          "handoffId","jobId","passId","taskId"},
+   "first":[{"text":"Prep for Lena"},{"text":"from the brief","ref":"brief:2026-11-15-evening"}],
+   "noticed":"Lena asked two questions.",
+   "work":{"title":"Prep for Lena","text":"...","minutes":10},
+   "yes":{"does":"keep|mail_draft|agent|right|open","line":"Yes starts it with your agent. What it makes comes back here.",
+          "at":"<RFC 3339>","agent":"claude"},
+   "why":[{"label","ref"}], "gets":[{"id","label","ref","removable":true}],
+   "reasons":["already_done","not_now","not_useful","myself"],
+   "answer":{"action":"yes","reason","edited":{"before","after"},"at","surface":"phone|computer|notification",
+             "line":"Prep for Lena: with your agent","undoUntil"},
+   "agent":{"name":"your agent","since"},
+   "createdAt":"<RFC 3339>","order":0}]}
+```
+
+- **Ids** name their source and never change for the same thing: `brief:<briefId>:offer:<offerId>`
+  (a brief's offer), `brief:<briefId>:<itemKey>` (a brief item, key of section 20.2),
+  `brief:<briefId>:card:<cardId>`, `brief:<briefId>:p<index>` (a sentence), `topic:<topicId>:<proposalId>`,
+  `task:<taskId>`, `followup:<openLoopId>` (watch notes), `prep:<eventId>`, `aoy:<jobId>:<passId>`,
+  `result:<handoffId>`, `check:<handoffId>`. An item whose source is gone (a deleted hour, a withdrawn
+  brief) leaves the list; that is never an error.
+- **Words** (`first[].text`, `yes.line`, `answer.line`) are composed on the computer once, so both
+  devices say the same thing (phone-map rule 10). Content Isoform wrote (`noticed`, `work`) is in the
+  person's language. The phone joins `first` with " · ".
+- **Order** is `order`: the current brief's items in the brief's order, then the rest newest first,
+  a result back from an agent on top of the rest; at most 10 open items. Clients group by `state`.
+- **States.** `open` waits for an answer; `answered` has one (Done today); `with_agent` was handed to
+  the person's agent by a Yes; `back` is a result to be judged (Useful, Not useful). `toAnswer` counts
+  `open` and `back`.
+- **Reasons** a No may carry, by kind: offered `already_done`, `not_now`, `not_useful`, `myself`; done
+  `not_needed`, `wrong_facts`, `not_how_id_say`, `myself`; claim `was_true_once`, `only_sometimes`,
+  `not_at_all`.
+- **Sources in this version:** the current brief's offers (from its phone package) and the daily
+  topics' proposals (section 15.9, while they are on). A topic proposal's Yes starts a task: it is then
+  `with_agent`, and `back` with the task's result line when it finishes. Watch follow-ups, meeting prep,
+  Agent of You's questions and results from other hand-offs join with the same shape.
+
+The phone's older feeds (`needsYou` on `/today`, `/tasks`, `/topics-daily`, brief card asks) stay for
+older phones.

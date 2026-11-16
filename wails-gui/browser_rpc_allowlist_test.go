@@ -397,6 +397,7 @@ var browserRPCReadOnly = []string{
 	"GetKnowledgeVersion",
 	"GetLatestBrief",
 	"GetTodayBriefByID",
+	"GetWorkList",
 	"PrepareTodayBriefParagraph",
 	"GetTodayPanelAnswer",
 	"GetTodayMeetingNote",
