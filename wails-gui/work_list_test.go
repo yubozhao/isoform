@@ -186,3 +186,40 @@ func mustParseWorkTime(t *testing.T, value string) time.Time {
 	}
 	return at
 }
+
+// A proposal with its agent says since when (the phone decodes agent.since;
+// #1136): the time its Yes was given.
+func TestWorkListTopicWithItsAgentSaysSince(t *testing.T) {
+	app, _, _ := dailyTopicsTestApp(t)
+	handoffs, err := handoff.NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.handoffStore = handoffs
+	previous := dailyTopicTaskStart
+	dailyTopicTaskStart = func(*App, string) error { return nil }
+	t.Cleanup(func() { dailyTopicTaskStart = previous })
+	ctx := context.Background()
+	if err := app.store.SetUIState(ctx, topicsDailyEnabledKey, "true"); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.buildDailyTopics(ctx); err != nil {
+		t.Fatal(err)
+	}
+	view, _ := app.GetDailyTopics()
+	harbor := view.Topics[0]
+	if _, err := app.AnswerDailyTopicProposal(harbor.ID, harbor.Proposal.ID, topicday.VerdictYes); err != nil {
+		t.Fatal(err)
+	}
+	list, err := app.buildWorkList(ctx, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := workTestItem(t, list, workTopicProposalID(harbor.ID, harbor.Proposal.ID))
+	if item.Agent == nil || item.Agent.Since == "" || item.Answer == nil || item.Answer.At == "" {
+		t.Fatalf("a proposal with its agent has no since: %+v %+v", item.Agent, item.Answer)
+	}
+	if _, err := time.Parse(time.RFC3339, item.Agent.Since); err != nil {
+		t.Fatalf("since = %q", item.Agent.Since)
+	}
+}

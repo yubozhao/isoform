@@ -130,3 +130,82 @@ async fn splices_a_label_to_its_endpoint_and_refuses_others() {
     assert_eq!(front.metrics.bad_label.load(Ordering::Relaxed), 1);
     assert_eq!(front.metrics.bad_hello.load(Ordering::Relaxed), 1);
 }
+
+fn proxy_v2(client: [u8; 4]) -> Vec<u8> {
+    let mut h = isoform_front::proxyproto::SIGNATURE.to_vec();
+    h.extend_from_slice(&[0x21, 0x11, 0, 12]);
+    h.extend_from_slice(&client);
+    h.extend_from_slice(&[127, 0, 0, 1, 0x30, 0x39, 0x01, 0xbb]);
+    h
+}
+
+#[tokio::test]
+async fn behind_a_proxy_reads_the_proxy_header_then_splices() {
+    let computer = local_endpoint(vec![ALPN.to_vec()], None).await;
+    let lookup = MemoryLookup::new();
+    lookup.add_endpoint_info(computer.addr());
+    let front_ep = local_endpoint(vec![], Some(lookup)).await;
+    let accept = computer.clone();
+    tokio::spawn(async move {
+        while let Some(incoming) = accept.accept().await {
+            let conn = incoming.await.unwrap();
+            tokio::spawn(async move {
+                let (mut send, mut recv) = conn.accept_bi().await.unwrap();
+                let mut buf = [0u8; 4096];
+                while let Ok(Some(n)) = recv.read(&mut buf).await {
+                    if n == 0 {
+                        break;
+                    }
+                    send.write_all(&buf[..n]).await.unwrap();
+                }
+                let _ = send.finish();
+                conn.closed().await;
+            });
+        }
+    });
+    let front = Front::new(
+        Config {
+            suffix: "agents.example.test".into(),
+            proxy_protocol: true,
+            ..Config::default()
+        },
+        front_ep,
+    );
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let serving = front.clone();
+    tokio::spawn(async move {
+        loop {
+            let (tcp, peer) = listener.accept().await.unwrap();
+            tokio::spawn(serving.clone().handle(tcp, peer));
+        }
+    });
+
+    // The proxy's header, then the client's hello: the hello reaches the
+    // computer and the header does not.
+    let hello = client_hello(&format!(
+        "{}.agents.example.test",
+        label::encode(&computer.id())
+    ));
+    let mut tcp = TcpStream::connect(addr).await.unwrap();
+    tcp.write_all(&proxy_v2([203, 0, 113, 9])).await.unwrap();
+    tcp.write_all(&hello).await.unwrap();
+    let mut got = vec![0u8; hello.len()];
+    tokio::time::timeout(Duration::from_secs(20), tcp.read_exact(&mut got))
+        .await
+        .expect("echo in time")
+        .unwrap();
+    assert_eq!(got, hello);
+    drop(tcp);
+
+    // No header where one is required: closed without a dial.
+    let mut tcp = TcpStream::connect(addr).await.unwrap();
+    tcp.write_all(&hello).await.unwrap();
+    let mut buf = [0u8; 8];
+    let n = tokio::time::timeout(Duration::from_secs(5), tcp.read(&mut buf))
+        .await
+        .unwrap()
+        .unwrap_or(0);
+    assert_eq!(n, 0);
+    assert_eq!(front.metrics.spliced.load(Ordering::Relaxed), 1);
+}

@@ -1,0 +1,55 @@
+# The Isoform front on one Fly Machine (docs/front-deploy.md). Port 443 is
+# raw TCP: Fly passes each connection through, still TLS, with a PROXY v2
+# header naming the client, and the front splices it to the person's
+# computer over iroh. Fly never terminates TLS here and holds no
+# certificate: each computer holds its own.
+app = "isoform-front"
+primary_region = "sjc"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[deploy]
+  strategy = "immediate"
+
+[env]
+  ISOFORM_FRONT_LISTEN = "0.0.0.0:8443"
+  # The front's iroh key. Its id is what computers accept, so it must
+  # survive deploys: it lives on the volume.
+  ISOFORM_FRONT_KEY_FILE = "/data/front.key"
+  ISOFORM_FRONT_SUFFIX = "agents.isoform.ai"
+  ISOFORM_FRONT_PROXY_PROTOCOL = "v2"
+
+[mounts]
+  source = "isoform_front_data"
+  destination = "/data"
+  initial_size = "1gb"
+
+[[services]]
+  protocol = "tcp"
+  internal_port = 8443
+  auto_stop_machines = "off"
+  auto_start_machines = false
+  min_machines_running = 1
+
+  [[services.ports]]
+    port = 443
+    handlers = ["proxy_proto"]
+    proxy_proto_options = { version = "v2" }
+
+  [services.concurrency]
+    type = "connections"
+    soft_limit = 3000
+    hard_limit = 4000
+
+  # A plain TCP connect; the front closes it (no PROXY header), which is
+  # all the check needs.
+  [[services.tcp_checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory = "512mb"
