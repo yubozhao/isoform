@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"wails-gui/internal/privacy"
 )
 
 // A sealed brief is a snapshot. Edits, regenerated text and retention removals
@@ -103,7 +105,7 @@ func TestWithdrawnMemoryLeavesSealedBriefOnComputerAndPhone(t *testing.T) {
 	if err := os.Remove(filepath.Join(dir, "safe-recall.md")); err != nil {
 		t.Fatal(err)
 	}
-	publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalSource, SourceKind: "memory", ID: "safe-recall"})
+	publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.Source, SourceKind: "memory", ID: "safe-recall"})
 
 	computer, err := svc.finishedRead(source)
 	if err != nil {
@@ -150,7 +152,7 @@ func TestKeyedWithdrawalAmendsWithoutLiveLookupsOrSeals(t *testing.T) {
 	}
 	lookups := mobileBriefSourceLookups.Load()
 	seals := mobileBriefFinishedReadKeys.Load()
-	publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalSource, SourceKind: "memory", ID: "safe-recall"})
+	publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.Source, SourceKind: "memory", ID: "safe-recall"})
 	if _, err := svc.finishedRead(source); err != nil {
 		t.Fatal(err)
 	}

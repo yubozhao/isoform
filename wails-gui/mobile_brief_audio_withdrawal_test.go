@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"wails-gui/internal/privacy"
 )
 
 // The edit case of TestBriefAudioWithholdsRecordingAfterCitedSourceEdit no longer
@@ -42,7 +44,7 @@ func TestBriefAudioWithdrawnSourceIsNotServedOrSpoken(t *testing.T) {
 	if _, ok := svc.Audio(brief.BriefID); !ok {
 		t.Fatal("original recording was not available")
 	}
-	publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalSource, SourceKind: "memory", ID: "safe-recall"})
+	publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.Source, SourceKind: "memory", ID: "safe-recall"})
 	svc.wg.Wait()
 	if _, ok := svc.Audio(brief.BriefID); ok {
 		t.Fatal("the recording of a withdrawn source was served")

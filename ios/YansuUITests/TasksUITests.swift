@@ -2,6 +2,7 @@ import XCTest
 
 final class TasksUITests: XCTestCase {
     override func setUpWithError() throws {
+        throw XCTSkip("Tasks tab removed (phone-today v1.0.0 rule 19); its work is Your work on Today.")
         try super.setUpWithError()
         continueAfterFailure = false
     }

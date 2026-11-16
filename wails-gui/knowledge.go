@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"wails-gui/internal/pii"
+	"wails-gui/internal/privacy"
 )
 
 const knowledgeHistoryDirName = ".history"
@@ -406,7 +407,7 @@ func (a *App) DeleteKnowledgeEntry(id string) error {
 	deleted := false
 	defer func() {
 		if deleted {
-			publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalSource, SourceKind: "knowledge", ID: id})
+			publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.Source, SourceKind: "knowledge", ID: id})
 		}
 	}()
 	dir, err := knowledgeDir()

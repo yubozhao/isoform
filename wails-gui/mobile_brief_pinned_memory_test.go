@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"wails-gui/internal/handoff"
+	"wails-gui/internal/privacy"
 )
 
 // Isoform writes memory notes all the time (today-review v1.1.15 D12).
@@ -47,13 +48,13 @@ func TestMobileBriefGatherFenceKeepsIsoformMemoryWrites(t *testing.T) {
 			case "removed uncited note", "removed note before the brief is built":
 				err = os.Remove(filepath.Join(dir, "garden.md"))
 			case "forgot uncited note":
-				publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalSource, SourceKind: "memory", ID: "garden"})
+				publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.Source, SourceKind: "memory", ID: "garden"})
 			case "edited cited note", "edited note before the brief is built":
 				_, err = app.SaveMemoryEntry("launch", "# Launch plan\nPrepare the corrected release.")
 			case "removed cited note":
 				err = os.Remove(filepath.Join(dir, "launch.md"))
 			case "forgot cited note":
-				publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalSource, SourceKind: "memory", ID: "launch"})
+				publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.Source, SourceKind: "memory", ID: "launch"})
 			case "knowledge":
 				var knowledge string
 				if knowledge, err = knowledgeDir(); err == nil {

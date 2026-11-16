@@ -32,16 +32,11 @@ func briefReaderPrint(epoch uint64, enabled, paused bool, apps string) string {
 func setBriefReaderPrivacyState(t *testing.T, epoch uint64, log briefWithdrawalLog) {
 	t.Helper()
 	prevEpoch := mobileBriefPrivacyEpoch.Load()
-	mobileBriefPrivacyEpochMu.Lock()
-	prevLog := mobileBriefWithdrawals
-	mobileBriefWithdrawals = log
-	mobileBriefPrivacyEpochMu.Unlock()
+	prevLog := mobileBriefPrivacyEpoch.SwapLog(log)
 	mobileBriefPrivacyEpoch.Store(epoch)
 	t.Cleanup(func() {
 		mobileBriefPrivacyEpoch.Store(prevEpoch)
-		mobileBriefPrivacyEpochMu.Lock()
-		mobileBriefWithdrawals = prevLog
-		mobileBriefPrivacyEpochMu.Unlock()
+		mobileBriefPrivacyEpoch.SwapLog(prevLog)
 	})
 }
 

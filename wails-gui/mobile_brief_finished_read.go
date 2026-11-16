@@ -11,13 +11,13 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"wails-gui/internal/handoff"
+	"wails-gui/internal/privacy"
 )
 
 func init() {
@@ -50,8 +50,9 @@ const (
 	// mobileBriefSealRule is the seal rule of seal v2 (see mobileBriefFinishedRead.Rule).
 	mobileBriefSealRule = 2
 	// mobileBriefLatestShownName is the one latest-brief record (PR 1, item 3).
-	mobileBriefLatestShownName  = "latest-shown.json"
-	mobileBriefPrivacyEpochFile = "privacy-epoch"
+	mobileBriefLatestShownName   = "latest-shown.json"
+	mobileBriefPrivacyEpochFile  = privacy.EpochFile
+	mobileBriefWithdrawalLogFile = privacy.LogFile
 )
 
 var errMobileBriefFinishedReadUnreadable = errors.New("the saved brief could not be read")
@@ -61,11 +62,9 @@ var (
 	// (privacy changes and freshness changes), for caches outside this file.
 	mobileBriefReadEpoch atomic.Uint64
 	// mobileBriefPrivacyEpoch counts privacy changes only; a sealed read is
-	// valid while the epoch it was sealed under is still current.
-	mobileBriefPrivacyEpoch atomic.Uint64
-	// mobileBriefPrivacyEpochMu orders the in-memory epoch with its saved copy.
-	mobileBriefPrivacyEpochMu       sync.Mutex
-	mobileBriefPrivacyEpochSavedDir string
+	// valid while the epoch it was sealed under is still current. It keeps the
+	// withdrawal log and saves both beside the briefs (internal/privacy).
+	mobileBriefPrivacyEpoch = privacy.NewEpoch(writeMobileBriefFileAtomic)
 	// mobileBriefFinishedReadKeys counts sealings (the work of making a read),
 	// for tests: a read that needs no change must not add to it.
 	mobileBriefFinishedReadKeys atomic.Uint64
@@ -74,38 +73,13 @@ var (
 	mobileBriefGateRuns atomic.Uint64
 )
 
-// briefWithdrawn names one source a privacy action withdrew, by the kind and id
-// the brief cites it with. An empty kind matches any kind with that id.
-type briefWithdrawn struct {
-	Kind string `json:"kind,omitempty"`
-	ID   string `json:"id"`
-	// Text is the wording a correction leaves in place of a withdrawn belief
-	// (empty drops the belief). Only the belief correction sets it.
-	Text string `json:"text,omitempty"`
-}
-
-// briefWithdrawal is one privacy epoch change. Keys is empty when the change
-// did not name its sources (an app, a pause, an account or a session): the amend
-// then runs the gates again for each brief, because it cannot tell what to remove.
-type briefWithdrawal struct {
-	Epoch uint64           `json:"epoch"`
-	Keys  []briefWithdrawn `json:"keys,omitempty"`
-}
-
-// briefWithdrawalLog holds the recent privacy changes. Floor is the epoch the log
-// starts after: a copy sealed at or after Floor can be amended from the entries
-// alone; an older copy cannot, and is amended with the gates.
-type briefWithdrawalLog struct {
-	Floor   uint64            `json:"floor"`
-	Entries []briefWithdrawal `json:"entries"`
-}
-
-const (
-	mobileBriefWithdrawalLogFile  = "withdrawals.json"
-	mobileBriefWithdrawalLogLimit = 500
+// briefWithdrawn names one source a privacy action withdrew; briefWithdrawal is
+// one epoch change and briefWithdrawalLog the recent ones (internal/privacy).
+type (
+	briefWithdrawn     = privacy.WithdrawnKey
+	briefWithdrawal    = privacy.LogEntry
+	briefWithdrawalLog = privacy.Log
 )
-
-var mobileBriefWithdrawals briefWithdrawalLog
 
 // briefPrivacyChanged records a privacy change and advances the epoch. Every
 // sealed copy whose print no longer matches is amended before it is shown. The
@@ -127,43 +101,32 @@ func briefPrivacyChanged(keys ...briefWithdrawn) {
 	// Saved first chat pages made before this change leave the disk once the new
 	// epoch is saved, not only when their chat is read again.
 	defer dropStaleStreamPageCopies()
-	mobileBriefPrivacyEpochMu.Lock()
-	defer mobileBriefPrivacyEpochMu.Unlock()
-	value := mobileBriefPrivacyEpoch.Add(1)
-	mobileBriefWithdrawals.Entries = append(mobileBriefWithdrawals.Entries, briefWithdrawal{Epoch: value, Keys: keys})
-	if over := len(mobileBriefWithdrawals.Entries) - mobileBriefWithdrawalLogLimit; over > 0 {
-		mobileBriefWithdrawals.Floor = mobileBriefWithdrawals.Entries[over-1].Epoch
-		mobileBriefWithdrawals.Entries = append([]briefWithdrawal(nil), mobileBriefWithdrawals.Entries[over:]...)
-	}
-	if dir := mobileBriefPrivacyEpochSavedDir; dir != "" {
-		// The log is written before the epoch: a saved epoch always has its entry.
-		if data, err := json.Marshal(mobileBriefWithdrawals); err == nil {
-			_ = writeMobileBriefFileAtomic(dir, mobileBriefWithdrawalLogFile, data)
-		}
-		_ = writeMobileBriefFileAtomic(dir, mobileBriefPrivacyEpochFile, []byte(strconv.FormatUint(value, 10)))
-	}
+	mobileBriefPrivacyEpoch.Advance(keys...)
 }
 
 // withdrawnSince returns the sources withdrawn after epoch. It reports false when
 // the log cannot answer: the copy is older than the log, or a change in between
 // named no sources.
 func withdrawnSince(epoch uint64) ([]briefWithdrawn, bool) {
-	mobileBriefPrivacyEpochMu.Lock()
-	defer mobileBriefPrivacyEpochMu.Unlock()
-	if epoch < mobileBriefWithdrawals.Floor {
-		return nil, false
+	return mobileBriefPrivacyEpoch.WithdrawnSince(epoch)
+}
+
+// briefOnPrivacyWithdrawal is the brief's withdrawal subscriber. A withdrawn
+// source is named, so the briefs that cite it are amended from that alone.
+// Other scopes (apps, sessions, accounts, time ranges) are not named and are
+// amended with the gates. Retention removals never withdraw or amend a sealed
+// brief (docs/design/brief-seal-v2.md rule 2).
+func briefOnPrivacyWithdrawal(withdrawal privacyWithdrawal) {
+	if withdrawal.Retention {
+		return
 	}
+	scope := withdrawal.Scope
 	var keys []briefWithdrawn
-	for _, entry := range mobileBriefWithdrawals.Entries {
-		if entry.Epoch <= epoch {
-			continue
-		}
-		if len(entry.Keys) == 0 {
-			return nil, false
-		}
-		keys = append(keys, entry.Keys...)
+	if scope.Kind == privacyWithdrawalSource && scope.ID != "" {
+		keys = []briefWithdrawn{{Kind: scope.SourceKind, ID: scope.ID}}
 	}
-	return keys, true
+	briefPrivacyChanged(keys...)
+	briefPrivacyAmendSoon()
 }
 
 // briefPrivacyAmendSoon starts the amendment of the sealed briefs after a
@@ -323,43 +286,7 @@ var mobileBriefReadInputEvents = map[string]bool{
 // adoptMobileBriefPrivacyEpoch loads the saved epoch from a briefs directory
 // the first time it is opened. The in-memory epoch never goes backwards.
 func adoptMobileBriefPrivacyEpoch(dir string) {
-	if dir == "" {
-		return
-	}
-	mobileBriefPrivacyEpochMu.Lock()
-	defer mobileBriefPrivacyEpochMu.Unlock()
-	if mobileBriefPrivacyEpochSavedDir == dir {
-		return
-	}
-	mobileBriefPrivacyEpochSavedDir = dir
-	if data, err := os.ReadFile(filepath.Join(dir, mobileBriefPrivacyEpochFile)); err == nil {
-		if saved, err := strconv.ParseUint(strings.TrimSpace(string(data)), 10, 64); err == nil {
-			for {
-				current := mobileBriefPrivacyEpoch.Load()
-				if saved <= current || mobileBriefPrivacyEpoch.CompareAndSwap(current, saved) {
-					break
-				}
-			}
-		}
-	}
-	// The log is loaded with the epoch. Without a log (an older build), it starts
-	// at the current epoch, so every older copy is amended with the gates.
-	mobileBriefWithdrawals = briefWithdrawalLog{Floor: mobileBriefPrivacyEpoch.Load()}
-	if data, err := os.ReadFile(filepath.Join(dir, mobileBriefWithdrawalLogFile)); err == nil {
-		var log briefWithdrawalLog
-		if json.Unmarshal(data, &log) == nil {
-			mobileBriefWithdrawals = log
-		}
-	}
-	// An epoch newer than the log's last entry means a change was saved without
-	// its entry; the log cannot answer for it, so only the gates can.
-	last := mobileBriefWithdrawals.Floor
-	if n := len(mobileBriefWithdrawals.Entries); n > 0 {
-		last = mobileBriefWithdrawals.Entries[n-1].Epoch
-	}
-	if mobileBriefPrivacyEpoch.Load() > last {
-		mobileBriefWithdrawals = briefWithdrawalLog{Floor: mobileBriefPrivacyEpoch.Load()}
-	}
+	mobileBriefPrivacyEpoch.Adopt(dir)
 }
 
 // mobileBriefFinishedRead is the sealed copy of a brief as stored beside it.

@@ -23,6 +23,7 @@ import (
 	"wails-gui/internal/asr"
 	"wails-gui/internal/platform/activitymon"
 	"wails-gui/internal/platform/cmdutil"
+	"wails-gui/internal/privacy"
 )
 
 // Recordings from the watch and the phone (PROTOCOL.md section 24). The phone
@@ -577,8 +578,8 @@ func (s *mobileRecordingStore) forgetAudioOfSession(sessionID string) {
 
 // onPrivacyWithdrawal follows the withdrawal and retention of transcript
 // sessions (privacy_withdrawal.go).
-func (s *mobileRecordingStore) onPrivacyWithdrawal(withdrawal privacyWithdrawal) {
-	if withdrawal.Scope.Kind == privacyWithdrawalSession {
+func (s *mobileRecordingStore) onPrivacyWithdrawal(withdrawal privacy.Withdrawal) {
+	if withdrawal.Scope.Kind == privacy.Session {
 		s.forgetAudioOfSession(withdrawal.Scope.ID)
 		// A name made from the withdrawn words goes too.
 		if id, ok := strings.CutPrefix(withdrawal.Scope.ID, "rec-"); ok && mobileValidUUID(id) {

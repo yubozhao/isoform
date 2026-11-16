@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"wails-gui/internal/engagement"
+	"wails-gui/internal/privacy"
 	"wails-gui/storage"
 )
 
@@ -74,7 +75,7 @@ func (a *App) startMainChatWaitingLifecycle(parent context.Context) {
 	ctx, cancel := context.WithCancel(parent)
 	holder.cancel = cancel
 	holder.done = make(chan struct{})
-	holder.unsubscribe = subscribePrivacyWithdrawals(func(privacyWithdrawal) {
+	holder.unsubscribe = subscribePrivacyWithdrawals(func(privacy.Withdrawal) {
 		a.markMainChatWaitingDirty("privacy-withdrawal")
 	})
 	done := holder.done

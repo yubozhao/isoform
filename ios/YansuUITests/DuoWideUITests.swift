@@ -93,7 +93,8 @@ final class DuoWideUITests: XCTestCase {
         XCTAssertTrue(app.buttons["feed.pastBriefs"].waitForExistence(timeout: 15))
     }
 
-    func testWideTodayUnpairedLaunchShowsThePairPrompt() {
+    func testWideTodayUnpairedLaunchShowsThePairPrompt() throws {
+        throw XCTSkip("Tasks tab removed (phone-today v1.0.0 rule 19); its work is Your work on Today.")
         let app = launchWideToday(state: "unpaired")
         XCTAssertTrue(app.staticTexts["Read your computer's daily brief here."].waitForExistence(timeout: 15))
         XCTAssertTrue(app.buttons["Pair with your computer"].exists)

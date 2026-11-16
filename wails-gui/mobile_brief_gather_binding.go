@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"wails-gui/internal/pii"
+	"wails-gui/internal/privacy"
 )
 
 var errMobileBriefSourcesChanged = errors.New("brief sources changed during collection; regenerate the brief")
@@ -130,8 +131,8 @@ func (a *App) readMobileBriefGatherRevision(ctx context.Context) (*mobileBriefGa
 	revision := &mobileBriefGatherRevision{startedMs: time.Now().UnixMilli(), forgotten: map[string]bool{}}
 	// Watch withdrawals first: one published during any later read rejects,
 	// except a forgotten memory note, which rejects only a brief citing it.
-	revision.stopWatching = subscribePrivacyWithdrawals(func(withdrawal privacyWithdrawal) {
-		if scope := withdrawal.Scope; scope.Kind == privacyWithdrawalSource && scope.SourceKind == "memory" && scope.ID != "" {
+	revision.stopWatching = subscribePrivacyWithdrawals(func(withdrawal privacy.Withdrawal) {
+		if scope := withdrawal.Scope; scope.Kind == privacy.Source && scope.SourceKind == "memory" && scope.ID != "" {
 			id, _, _ := strings.Cut(scope.ID, ":")
 			revision.mu.Lock()
 			revision.forgotten[id] = true

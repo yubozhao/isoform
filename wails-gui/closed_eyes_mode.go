@@ -127,7 +127,7 @@ func (a *App) setObservationPause(enabled bool, deadline time.Time, expectedGene
 			a.emitBrowserEvent(closedEyesModeChangedEvent, enabled)
 		}
 		if !withdrawnAt.IsZero() {
-			scope := privacyWithdrawalScope{Kind: privacyWithdrawalTimeRange, StartMs: withdrawnAt.UnixMilli()}
+			scope := privacy.Scope{Kind: privacy.TimeRange, StartMs: withdrawnAt.UnixMilli()}
 			if !deadline.IsZero() {
 				scope.EndMs = deadline.UnixMilli()
 			}

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"wails-gui/internal/pii"
+	"wails-gui/internal/privacy"
 )
 
 // GetSensitiveApps returns the stored sensitive-apps list. This call is
@@ -27,7 +28,7 @@ func (a *App) AddSensitiveApp(bundlePrefix, category string) error {
 	// The in-memory policy changes even if persistence fails. Notify readers
 	// after all withdrawal work, including the deferred Mail cleanup.
 	defer a.emitBrowserEvent("sensitive-apps:updated")
-	defer publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalApp, ID: bundlePrefix})
+	defer publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.App, ID: bundlePrefix})
 	a.browserHistoryProtectionChanged()
 	pii.AddUserSensitiveApp(bundlePrefix, category)
 	// Proposed know-how whose evidence touches the app is withdrawn at once;

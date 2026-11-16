@@ -102,10 +102,7 @@ func (a *App) derivedDiskStamp() (string, bool) {
 	// service opens its store at services_start (about 4 s): waiting for it
 	// made every first read a live build (8 to 13 s each, 2026-11-15).
 	savedCopyEpochLoad.Do(loadSavedCopyEpoch)
-	mobileBriefPrivacyEpochMu.Lock()
-	loaded := mobileBriefPrivacyEpochSavedDir != ""
-	epoch := mobileBriefPrivacyEpoch.Load()
-	mobileBriefPrivacyEpochMu.Unlock()
+	loaded, epoch := mobileBriefPrivacyEpoch.Adopted()
 	if !loaded {
 		return "", false
 	}

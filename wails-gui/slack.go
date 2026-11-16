@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
+
+	"wails-gui/internal/privacy"
 )
 
 // SlackStatus is the Slack connection state returned to the frontend.
@@ -86,7 +88,7 @@ func (a *App) DisconnectSlack() error {
 	if noYansuAccount() {
 		err := a.disconnectSlackLocal()
 		if err == nil {
-			publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalAccount, ID: "slack"})
+			publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.Account, ID: "slack"})
 		}
 		return err
 	}
@@ -115,7 +117,7 @@ func (a *App) DisconnectSlack() error {
 	}
 
 	// Backend binding cleared (or was already absent). Safe to clean up locally.
-	publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalAccount, ID: "slack"})
+	publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.Account, ID: "slack"})
 	a.StopDaemon()
 
 	// Reset persisted config synchronously so auto-start on next launch is skipped.

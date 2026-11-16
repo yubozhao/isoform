@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"wails-gui/internal/privacy"
 )
 
 // App-level wrappers over the Purpose Map for what the user does by hand: list
@@ -183,7 +185,7 @@ func (a *App) moveUserPurpose(input userPurposeTransition, now time.Time) (Purpo
 				return PurposeOpenLoopDetail{}, err
 			}
 			err = a.withTopicWithdrawal(w, func() error { return nil })
-			publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalSource, SourceKind: "purpose", ID: detail.OpenLoop.ID})
+			publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.Source, SourceKind: "purpose", ID: detail.OpenLoop.ID})
 			if err != nil {
 				return PurposeOpenLoopDetail{}, err
 			}
@@ -207,7 +209,7 @@ func (a *App) moveUserPurpose(input userPurposeTransition, now time.Time) (Purpo
 			return err
 		})
 		if forgotten {
-			publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalSource, SourceKind: "purpose", ID: detail.OpenLoop.ID})
+			publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.Source, SourceKind: "purpose", ID: detail.OpenLoop.ID})
 		}
 		if err != nil {
 			return PurposeOpenLoopDetail{}, err

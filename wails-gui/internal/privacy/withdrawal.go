@@ -42,7 +42,9 @@ type Withdrawal struct {
 // Publisher sends each withdrawal to every subscriber synchronously, so a
 // withdrawn source is gone from every reader before the action returns.
 type Publisher struct {
-	mu          sync.RWMutex
+	mu sync.RWMutex
+	// first runs before every other subscriber (see SetFirst).
+	first       func(Withdrawal)
 	nextID      uint64
 	subscribers map[uint64]func(Withdrawal)
 }
@@ -66,15 +68,27 @@ func (p *Publisher) Subscribe(subscriber func(Withdrawal)) func() {
 	}
 }
 
+// SetFirst sets the subscriber that runs before every other one, for the
+// state the others read (the brief's privacy epoch). It is set once at start.
+func (p *Publisher) SetFirst(subscriber func(Withdrawal)) {
+	p.mu.Lock()
+	p.first = subscriber
+	p.mu.Unlock()
+}
+
 // Publish calls every subscriber with the withdrawal, outside the lock, so a
-// subscriber may subscribe or unsubscribe.
+// subscriber may subscribe or unsubscribe. The first subscriber runs first.
 func (p *Publisher) Publish(withdrawal Withdrawal) {
 	p.mu.RLock()
+	first := p.first
 	subscribers := make([]func(Withdrawal), 0, len(p.subscribers))
 	for _, subscriber := range p.subscribers {
 		subscribers = append(subscribers, subscriber)
 	}
 	p.mu.RUnlock()
+	if first != nil {
+		first(withdrawal)
+	}
 	for _, subscriber := range subscribers {
 		subscriber(withdrawal)
 	}

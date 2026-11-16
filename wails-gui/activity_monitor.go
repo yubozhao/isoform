@@ -27,6 +27,7 @@ import (
 	"wails-gui/internal/platform/activitymon"
 	"wails-gui/internal/platform/activitymon/appparser"
 	"wails-gui/internal/platform/ocr"
+	"wails-gui/internal/privacy"
 
 	"github.com/google/uuid"
 	"golang.org/x/sync/singleflight"
@@ -3526,9 +3527,9 @@ func (a *App) extractSession(triggerKind string) {
 		}
 	}
 
-	privacyWithdrawalScopes := make([]privacyWithdrawalScope, 0, 1+len(protectedMeetingMetas)*3)
-	seenPrivacyWithdrawalScopes := make(map[privacyWithdrawalScope]struct{}, cap(privacyWithdrawalScopes))
-	addPrivacyWithdrawalScope := func(scope privacyWithdrawalScope) {
+	privacyWithdrawalScopes := make([]privacy.Scope, 0, 1+len(protectedMeetingMetas)*3)
+	seenPrivacyWithdrawalScopes := make(map[privacy.Scope]struct{}, cap(privacyWithdrawalScopes))
+	addPrivacyWithdrawalScope := func(scope privacy.Scope) {
 		if _, exists := seenPrivacyWithdrawalScopes[scope]; exists {
 			return
 		}
@@ -3536,18 +3537,18 @@ func (a *App) extractSession(triggerKind string) {
 		privacyWithdrawalScopes = append(privacyWithdrawalScopes, scope)
 	}
 	if sensitiveBundle != "" {
-		addPrivacyWithdrawalScope(privacyWithdrawalScope{Kind: privacyWithdrawalSession, ID: session.ID})
+		addPrivacyWithdrawalScope(privacy.Scope{Kind: privacy.Session, ID: session.ID})
 	}
 	for _, meta := range protectedMeetingMetas {
-		addPrivacyWithdrawalScope(privacyWithdrawalScope{Kind: privacyWithdrawalSession, ID: session.ID})
+		addPrivacyWithdrawalScope(privacy.Scope{Kind: privacy.Session, ID: session.ID})
 		for _, sessionID := range meta.ActivitySessions {
 			if sessionID != "" && sessionID != session.ID {
-				addPrivacyWithdrawalScope(privacyWithdrawalScope{Kind: privacyWithdrawalSession, ID: sessionID})
+				addPrivacyWithdrawalScope(privacy.Scope{Kind: privacy.Session, ID: sessionID})
 			}
 		}
 		if meta.StartMs > 0 {
-			addPrivacyWithdrawalScope(privacyWithdrawalScope{
-				Kind:    privacyWithdrawalTimeRange,
+			addPrivacyWithdrawalScope(privacy.Scope{
+				Kind:    privacy.TimeRange,
 				StartMs: meta.StartMs,
 				EndMs:   session.EndTime,
 			})

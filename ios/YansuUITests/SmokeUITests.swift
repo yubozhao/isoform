@@ -10,7 +10,7 @@ final class SmokeUITests: XCTestCase {
         let app = launch(state: "unpaired")
         XCTAssertTrue(app.buttons["tab.today"].waitForExistence(timeout: 15))
         XCTAssertTrue(app.buttons["tab.chat"].exists)
-        XCTAssertTrue(app.buttons["tab.tasks"].exists)
+        XCTAssertFalse(app.buttons["tab.tasks"].exists, "the Tasks tab goes (phone-today rule 19)")
         XCTAssertTrue(app.buttons["tab.today"].isSelected)
         XCTAssertTrue(app.buttons["root.settings"].exists)
 
@@ -26,10 +26,11 @@ final class SmokeUITests: XCTestCase {
 
     func testPastBriefsRemainsReachableWithoutLibrary() throws {
         let app = launch(state: "feed")
-        let past = app.buttons["feed.pastBriefs"]
-        for _ in 0..<5 where !past.isHittable { app.swipeDown() }
-        XCTAssertTrue(past.waitForExistence(timeout: 10))
-        past.tap()
+        // Past briefs is in the brief card's menu (phone-today rule 2).
+        let menu = app.buttons["feed.brief.menu"].firstMatch
+        XCTAssertTrue(menu.waitForExistence(timeout: 10))
+        menu.tap()
+        app.buttons["Past briefs"].firstMatch.tap()
         XCTAssertTrue(app.descendants(matching: .any)["pastBriefs.screen"].firstMatch.waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons.matching(identifier: "pastBriefs.row").firstMatch.waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["pastBriefs.library"].exists)

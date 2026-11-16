@@ -7,6 +7,7 @@ final class DayOneUITests: XCTestCase {
     }
 
     func testFirstCopyShowsShapesUntilTheComputerResponds() throws {
+        throw XCTSkip("Tasks tab removed (phone-today v1.0.0 rule 19); its work is Your work on Today.")
         for (language, appearance) in [("en", "Light"), ("zh-Hans", "Dark")] {
             let app = XCUIApplication()
             app.launchArguments += ["-AppleLanguages", "(\(language))", "-AppleLocale",
@@ -67,6 +68,7 @@ final class DayOneUITests: XCTestCase {
     }
 
     func testFirstReadChineseDark() throws {
+        throw XCTSkip("Tasks tab removed (phone-today v1.0.0 rule 19); its work is Your work on Today.")
         try exerciseFirstRead(language: "zh-Hans", appearance: "Dark")
         try exerciseWaitingAndFailed(language: "zh-Hans", appearance: "Dark")
         try exerciseBlank(language: "zh-Hans", appearance: "Dark")

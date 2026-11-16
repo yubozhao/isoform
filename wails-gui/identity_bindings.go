@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"wails-gui/internal/identity"
+	"wails-gui/internal/privacy"
 	"wails-gui/storage"
 )
 
@@ -330,7 +331,7 @@ func (a *App) DeletePrincipal(id string) error {
 		return err
 	}
 	// A deleted person withdraws what the sealed briefs cite about them.
-	publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalSource, SourceKind: "principal", ID: id})
+	publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.Source, SourceKind: "principal", ID: id})
 	return nil
 }
 

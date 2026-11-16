@@ -114,11 +114,5 @@ func (s *mobileBriefService) migrateOldCopy(source MobileBriefV1) bool {
 // mobileBriefAllWithdrawnKeys returns every keyed withdrawal in the log. The log
 // keeps the last changes, so a withdrawal older than its floor is not listed.
 func mobileBriefAllWithdrawnKeys() []briefWithdrawn {
-	mobileBriefPrivacyEpochMu.Lock()
-	defer mobileBriefPrivacyEpochMu.Unlock()
-	var keys []briefWithdrawn
-	for _, entry := range mobileBriefWithdrawals.Entries {
-		keys = append(keys, entry.Keys...)
-	}
-	return keys
+	return mobileBriefPrivacyEpoch.AllKeys()
 }

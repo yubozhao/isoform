@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"sort"
 	"time"
+
+	"wails-gui/internal/privacy"
 )
 
 type MemoryForgetItem struct {
@@ -66,7 +68,7 @@ func (a *App) ForgetMemoryEntry(id, confirmationToken string) (resultErr error) 
 	var withdrawnIDs []string
 	defer func() {
 		for _, withdrawnID := range withdrawnIDs {
-			publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalSource, SourceKind: "memory", ID: withdrawnID})
+			publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.Source, SourceKind: "memory", ID: withdrawnID})
 		}
 	}()
 	a.clearPageSnapshots()

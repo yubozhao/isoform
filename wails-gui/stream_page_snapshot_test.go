@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"wails-gui/internal/pii"
+	"wails-gui/internal/privacy"
 	"wails-gui/storage"
 )
 
@@ -203,7 +204,7 @@ func TestAWithdrawalDropsASavedCopyThatHoldsABriefLead(t *testing.T) {
 	const lead = "Withdrawn brief words"
 	withdrawals := map[string]func(){
 		"session withdrawal": func() {
-			publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalSession, ID: "gone"})
+			publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.Session, ID: "gone"})
 		},
 		"brief privacy epoch": func() { briefPrivacyChanged() },
 		"sensitive app": func() {
@@ -258,9 +259,7 @@ func TestASavedFirstPageSurvivesARestart(t *testing.T) {
 	restart := func() {
 		mobileBriefPrivacyEpoch.Store(0)
 		mobileBriefReadEpoch.Store(0)
-		mobileBriefPrivacyEpochMu.Lock()
-		mobileBriefPrivacyEpochSavedDir = ""
-		mobileBriefPrivacyEpochMu.Unlock()
+		mobileBriefPrivacyEpoch.SwapSavedDir("")
 		// A launch reads the saved epoch back before the first read.
 		loadSavedCopyEpoch()
 	}

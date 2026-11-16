@@ -135,6 +135,15 @@ final class WorkStore: ObservableObject {
         await sendPending()
     }
 
+    /// An answer sent at once, outside the queue, for an item the computer may not list (a brief's sentence): the
+    /// caller hears whether it was taken.
+    func answerNow(_ item: WorkItem, action: WorkAction, reason: WorkReason? = nil) async throws {
+        guard supported == true, let hubID = hubID() else { throw HubRequestError.notPaired }
+        let request = WorkAnswerRequest(idempotencyKey: UUID().uuidString.lowercased(), action: action.rawValue,
+                                        reason: reason?.rawValue, answeredAt: RelayTime.format(Date()), seq: Self.nextSeq())
+        _ = try await HubRequestScope.$hubID.withValue(hubID) { try await hub.answerWork(id: item.id, request: request) }
+    }
+
     /// Undo on a done line. An answer still on the phone is simply dropped; one the computer took is undone there.
     func undo(_ item: WorkItem) async {
         if let index = pending.lastIndex(where: { $0.itemID == item.id }) {
@@ -188,6 +197,11 @@ final class WorkStore: ObservableObject {
                 persist(hubID: hubID)
             } catch HubRequestError.conflict {
                 // Answered elsewhere, or past Undo (409): drop this answer and read the list again.
+                pending.removeFirst()
+                persist(hubID: hubID)
+                changed = true
+            } catch HubRequestError.malformedResponse, is DecodingError {
+                // The computer took it but its reply can't be read: never let it hold every later answer back.
                 pending.removeFirst()
                 persist(hubID: hubID)
                 changed = true

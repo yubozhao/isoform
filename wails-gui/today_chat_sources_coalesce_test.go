@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"wails-gui/internal/pii"
+	"wails-gui/internal/privacy"
 )
 
 // Callers that arrive while one collection runs share its result: the
@@ -86,7 +87,7 @@ func TestTodayChatSourcesStampChangeInvalidatesAtOnce(t *testing.T) {
 	}
 	// A withdrawal moves the stamp at once: the next caller must not be served
 	// the result remembered under S1, so it collects again while S1 is held.
-	publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalSession, ID: "stamp-test-session"})
+	publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.Session, ID: "stamp-test-session"})
 	app.collectTodayChatSources(ctx, now)
 	if n := collections.Load(); n != 3 {
 		t.Fatalf("a withdrawal did not start a fresh collection: %d", n)

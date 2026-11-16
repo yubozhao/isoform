@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"wails-gui/internal/agentjoin"
+	"wails-gui/internal/privacy"
 	"wails-gui/internal/tasklink"
 )
 
@@ -159,14 +160,14 @@ func (a *App) agentsAllowed() error {
 // Closed Eyes). The prepared text keeps no lineage, so any withdrawal could
 // touch it; sending again is one tap. A named source also drops the results
 // that came from it. Retention cleanup is not a withdrawal.
-func (a *App) taskLinkPrivacyWithdrawal(w privacyWithdrawal) {
+func (a *App) taskLinkPrivacyWithdrawal(w privacy.Withdrawal) {
 	if w.Retention {
 		return
 	}
 	if n := a.withdrawTaskLinks(nil); n > 0 {
 		log.Printf("[task-links] withdrew %d open link(s) after a privacy withdrawal", n)
 	}
-	if w.Scope.Kind == privacyWithdrawalSource && w.Scope.ID != "" {
+	if w.Scope.Kind == privacy.Source && w.Scope.ID != "" {
 		kind, id := w.Scope.SourceKind, w.Scope.ID
 		if err := a.rewriteTaskLinkResults(func(results []TaskLinkResult) []TaskLinkResult {
 			kept := results[:0]

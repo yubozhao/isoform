@@ -32,16 +32,12 @@ func TestAmendmentSurvivesRestartBeforeItRuns(t *testing.T) {
 
 	// The restart is simulated on the epoch globals, which other tests share.
 	// They are restored afterwards, so the epoch never moves backwards for them.
-	mobileBriefPrivacyEpochMu.Lock()
-	savedDir, savedEpoch := mobileBriefPrivacyEpochSavedDir, mobileBriefPrivacyEpoch.Load()
-	mobileBriefPrivacyEpochSavedDir = ""
+	savedEpoch := mobileBriefPrivacyEpoch.Load()
+	savedDir := mobileBriefPrivacyEpoch.SwapSavedDir("")
 	mobileBriefPrivacyEpoch.Store(0)
-	mobileBriefPrivacyEpochMu.Unlock()
 	t.Cleanup(func() {
-		mobileBriefPrivacyEpochMu.Lock()
-		mobileBriefPrivacyEpochSavedDir = savedDir
+		mobileBriefPrivacyEpoch.SwapSavedDir(savedDir)
 		mobileBriefPrivacyEpoch.Store(max(savedEpoch, mobileBriefPrivacyEpoch.Load()))
-		mobileBriefPrivacyEpochMu.Unlock()
 	})
 	adoptMobileBriefPrivacyEpoch(svc.store.dir)
 

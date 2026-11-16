@@ -12,6 +12,7 @@ import (
 	"wails-gui/internal/engagement"
 	"wails-gui/internal/handoff"
 	"wails-gui/internal/pii"
+	"wails-gui/internal/privacy"
 )
 
 // The week is read once, when its configured last workday evening brief is
@@ -309,7 +310,7 @@ func invalidateYourWeekLive() {
 }
 
 func init() {
-	subscribePrivacyWithdrawals(func(privacyWithdrawal) {
+	subscribePrivacyWithdrawals(func(privacy.Withdrawal) {
 		invalidateYourWeekLive()
 	})
 }

@@ -11,6 +11,8 @@ import (
 	wmcp "wails-gui/internal/mcp"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
+
+	"wails-gui/internal/privacy"
 )
 
 // fallbackComposioApps keeps local/dev Composio testing available when the
@@ -446,7 +448,7 @@ func (a *App) DisconnectComposioApp(app string) error {
 		return err
 	}
 	a.unregisterAndStopMcp(serverID)
-	defer publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalAccount, ID: "composio:" + app})
+	defer publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.Account, ID: "composio:" + app})
 	if !managedComposioAppAccessEnabled {
 		err = mutateComposioByok(func(state *composioByokState) {
 			delete(state.Connections, app)

@@ -17,6 +17,7 @@ import (
 
 	persistencesvc "wails-gui/internal/persistence"
 	"wails-gui/internal/pii"
+	"wails-gui/internal/privacy"
 )
 
 // Re-export persistence DTOs so Wails-exposed method signatures stay stable.
@@ -85,7 +86,7 @@ func (a *App) DeleteProjectData(id string) error {
 		return err
 	}
 	for _, sessionID := range sessionIDs {
-		publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalSession, ID: sessionID})
+		publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.Session, ID: sessionID})
 	}
 
 	// VACUUM after large deletion to reclaim space.
@@ -220,7 +221,7 @@ func (a *App) DeleteSessionData(localID string) (err error) {
 		return err
 	}
 	deleteSucceeded = true
-	publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalSession, ID: localID})
+	publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.Session, ID: localID})
 	return nil
 }
 
@@ -255,7 +256,7 @@ func (a *App) DeleteWorkspaceData(workspaceID string) error {
 		return err
 	}
 	for _, sessionID := range sessionIDs {
-		publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalSession, ID: sessionID})
+		publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.Session, ID: sessionID})
 	}
 
 	// VACUUM after large deletion to reclaim space.

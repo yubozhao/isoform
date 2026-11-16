@@ -10,6 +10,8 @@ import (
 	"time"
 
 	runtime "github.com/wailsapp/wails/v2/pkg/runtime"
+
+	"wails-gui/internal/privacy"
 )
 
 // TelegramStatus is the Telegram connection state returned to the frontend.
@@ -110,12 +112,12 @@ func (a *App) DisconnectTelegram() error {
 	if noYansuAccount() {
 		err := a.disconnectTelegramLocal()
 		if err == nil {
-			publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalAccount, ID: "telegram"})
+			publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.Account, ID: "telegram"})
 		}
 		return err
 	}
 	a.StopTelegramDaemon()
-	publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalAccount, ID: "telegram"})
+	publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.Account, ID: "telegram"})
 
 	token, _ := loadYansuToken()
 	if token != "" {
@@ -221,7 +223,7 @@ func (a *App) DeleteTelegramGroup(chatID int64) error {
 	if err := apiDelete(loadAPIBaseURL(), token, fmt.Sprintf("/api/telegram/groups/%d", chatID)); err != nil {
 		return err
 	}
-	publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalAccount, ID: fmt.Sprintf("telegram:group:%d", chatID)})
+	publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.Account, ID: fmt.Sprintf("telegram:group:%d", chatID)})
 	return nil
 }
 

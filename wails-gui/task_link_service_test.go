@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"wails-gui/internal/privacy"
 	"wails-gui/internal/tasklink"
 )
 
@@ -158,11 +159,11 @@ func TestTaskLinkPrivacyWithdrawalSpendsOpenLinksButRetentionDoesNot(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	publishRetentionRemoval(privacyWithdrawalScope{Kind: privacyWithdrawalSession, ID: "old-session"})
+	publishRetentionRemoval(privacy.Scope{Kind: privacy.Session, ID: "old-session"})
 	if rec := taskLinkGet(t, a, taskLinkToken(t, first)); rec.Code != http.StatusOK {
 		t.Fatalf("GET after retention cleanup = %d, want 200", rec.Code)
 	}
-	a.taskLinkPrivacyWithdrawal(privacyWithdrawal{Scope: privacyWithdrawalScope{Kind: privacyWithdrawalSource, SourceKind: "memory", ID: "m-1"}})
+	a.taskLinkPrivacyWithdrawal(privacy.Withdrawal{Scope: privacy.Scope{Kind: privacy.Source, SourceKind: "memory", ID: "m-1"}})
 	if rec := taskLinkGet(t, a, taskLinkToken(t, first)); rec.Code != http.StatusGone {
 		t.Fatalf("GET after a forget = %d, want 410", rec.Code)
 	}
@@ -183,7 +184,7 @@ func TestTaskLinkWithdrawnSourceDropsItsResults(t *testing.T) {
 			t.Fatalf("POST = %d", rec.Code)
 		}
 	}
-	a.taskLinkPrivacyWithdrawal(privacyWithdrawal{Scope: privacyWithdrawalScope{Kind: privacyWithdrawalSource, SourceKind: "brief_item", ID: "item-1"}})
+	a.taskLinkPrivacyWithdrawal(privacy.Withdrawal{Scope: privacy.Scope{Kind: privacy.Source, SourceKind: "brief_item", ID: "item-1"}})
 	results, err := a.GetTaskLinkResults()
 	if err != nil {
 		t.Fatal(err)

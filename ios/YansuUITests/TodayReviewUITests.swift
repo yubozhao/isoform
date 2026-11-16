@@ -739,6 +739,7 @@ final class TodayReviewUITests: XCTestCase {
     }
 
     func testMoreUsesTheSameCountAndOpensTasks() throws {
+        throw XCTSkip("Tasks tab removed (phone-today v1.0.0 rule 19); its work is Your work on Today.")
         let app = XCUIApplication()
         app.launchEnvironment["YANSU_UITEST_SETTINGS_STATE"] = "feed-review"
         app.launchEnvironment["YANSU_UITEST_TAB"] = "today"
