@@ -18,10 +18,38 @@ struct MobileTodaySnapshot: Codable, Equatable, Sendable {
     /// The one current brief, by id and version (PROTOCOL.md 20.7a). Nil on a Mac before 1.0.
     var currentBrief: TodayBriefRef? = nil
     var tasksVersion: String? = nil
+    /// An opaque change token for Your work (B2): a new one tells the phone to read `/work` again.
+    var workVersion: String? = nil
+    /// The brief's status (B1, PROTOCOL.md 8.2): the current brief, a build in progress, the next one.
+    var briefStatus: MobileBriefStatus? = nil
     /// Set only while the Mac confirms the chosen assistant is signed out (R75). No button on the phone.
     var assistantSignOut: TodayAssistantSignOut? = nil
 
     var generatedDate: Date? { RelayTime.parse(generatedAt) }
+}
+
+struct MobileBriefStatus: Codable, Equatable, Sendable {
+    struct Current: Codable, Equatable, Sendable {
+        let id: String
+        var version: String? = nil
+        var kind: String? = nil
+        var madeAt: String? = nil
+        var audio: Bool? = nil
+    }
+    struct Making: Codable, Equatable, Sendable {
+        var kind: String? = nil
+        var slot: String? = nil
+        var startedAt: String? = nil
+        var readyAt: String? = nil
+    }
+    struct Next: Codable, Equatable, Sendable {
+        var kind: String? = nil
+        var slot: String? = nil
+        var dueAt: String? = nil
+    }
+    var current: Current? = nil
+    var making: Making? = nil
+    var next: Next? = nil
 }
 
 /// The Mac's confirmed sign-out for the chosen assistant (PROTOCOL.md 20.7a).

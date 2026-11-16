@@ -18,6 +18,7 @@ struct BriefDetailView: View {
     @EnvironmentObject private var chat: ChatStore
     @EnvironmentObject private var router: NotificationRouter
     @EnvironmentObject private var onScreen: BriefOnScreen
+    @EnvironmentObject private var work: WorkStore
     @Environment(\.dismiss) private var dismiss
     @Environment(\.tabChromeHeight) private var tabChromeHeight
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -32,6 +33,8 @@ struct BriefDetailView: View {
     /// The brief from the library, read when it opens and when the library changes, not on every playback tick.
     @State private var brief: MobileBriefV1?
     @State private var loaded = false
+    /// The sentence answered Not right, while its reasons show.
+    @State private var notRight: WorkItem?
 
     init(entry: HistoryEntry, player: BriefAudioPlayer, readOnly: Bool = false, fallbackLead: String? = nil,
          landsOnSpoken: Bool = false, presentedAsSheet: Bool = false) {
@@ -84,6 +87,8 @@ struct BriefDetailView: View {
         .accessibilityIdentifier("brief.view")
         .navigationTitle(String(localized: "Brief"))
         .navigationBarTitleDisplayMode(.inline)
+        // The page's own title is the brief's kind and time; the bar stays quiet (board artboard 3).
+        .toolbar { ToolbarItem(placement: .principal) { Text(verbatim: "") } }
         .hardTitleEdge()
         .toolbar(.hidden, for: .tabBar)
         .toolbar {
@@ -164,69 +169,24 @@ struct BriefDetailView: View {
     // MARK: Header
 
     private func header(_ brief: MobileBriefV1) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                pageButton(neighbours.previous, systemImage: "chevron.left",
-                           label: String(localized: "Earlier brief"), identifier: "brief.previous")
-                Spacer(minLength: 0)
-                NavigationLink {
-                    PastBriefsView()
-                } label: {
-                    Text("Past briefs")
-                        .font(.footnote.weight(.medium))
-                        .foregroundStyle(YansuTheme.accent)
-                        .frame(minHeight: 44)
-                }
-                .accessibilityIdentifier("brief.pastBriefs")
-                Spacer(minLength: 0)
-                pageButton(neighbours.next, systemImage: "chevron.right",
-                           label: String(localized: "Later brief"), identifier: "brief.next")
-            }
+        // The kind and the time it was made, then the day (phone-brief rule 1). Swiping moves between briefs; the
+        // arrows and the Past briefs link went (rule 14). Never "late".
+        VStack(alignment: .leading, spacing: 4) {
             Text(brief.titleText)
-                .font(.title2.weight(.semibold))
+                .font(.system(size: 28, weight: .bold))
                 .foregroundStyle(YansuTheme.ink)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier("brief.title")
-            Text(verbatim: Self.dateText(brief))
+            Text(String.localizedStringWithFormat(String(localized: "brief.made"), Self.dateText(brief)))
                 .font(.subheadline)
                 .foregroundStyle(YansuTheme.secondary)
-            if store.hubOnline == false, let asOf = brief.asOfDate {
-                Text(String(format: String(localized: "as of %@"), BriefView.timeText(asOf)))
-                    .font(.footnote)
-                    .foregroundStyle(YansuTheme.secondary)
-                    .accessibilityIdentifier("brief.asOf")
-            }
-            if let late = brief.lateLineText {
-                Text(late)
-                    .font(.footnote)
-                    .foregroundStyle(YansuTheme.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("brief.late")
-            }
+                .accessibilityIdentifier("brief.made")
         }
     }
 
     private static func dateText(_ brief: MobileBriefV1) -> String {
         BriefView.dayTitle(brief)
-    }
-
-    @ViewBuilder
-    private func pageButton(_ target: String?, systemImage: String, label: String, identifier: String) -> some View {
-        Button {
-            guard let target else { return }
-            briefID = target
-        } label: {
-            Image(systemName: systemImage)
-                .font(.body.weight(.semibold))
-                .foregroundStyle(target == nil ? YansuTheme.faint : YansuTheme.accent)
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .disabled(target == nil)
-        .accessibilityLabel(label)
-        .accessibilityIdentifier(identifier)
     }
 
     // MARK: Controls
@@ -241,61 +201,61 @@ struct BriefDetailView: View {
         let startable = player.canStart(brief: brief, hubID: hubID, computerOnline: online)
         let played = selected ? player.finished : (memory?.played == true)
         let problem = selected ? Self.problem(player.state) : nil
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 14) {
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
                 Button {
                     Task { await player.toggle(brief: brief, hubID: hubID) }
                 } label: {
                     Group {
                         if loading {
-                            ProgressView().controlSize(.small)
+                            ProgressView().controlSize(.small).tint(YansuTheme.onSolid)
                         } else {
                             Image(systemName: playing ? "pause.fill" : "play.fill")
                                 .contentTransition(.symbolEffect(.replace))
                         }
                     }
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(YansuTheme.accent)
-                    .frame(width: 52, height: 52)
-                    .background(YansuTheme.accentWash, in: Circle())
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(YansuTheme.onSolid)
+                    .frame(width: 44, height: 44)
+                    .background(YansuTheme.solid, in: Circle())
                 }
                 .buttonStyle(.plain)
                 .disabled(!startable || loading)
                 .opacity(startable ? 1 : 0.4)
                 .accessibilityLabel(playing ? String(localized: "Pause your brief") : String(localized: "Hear your brief"))
                 .accessibilityIdentifier("brief.play")
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(verbatim: "\(BriefPlaybackTime.text(elapsed)) / \(BriefPlaybackTime.text(length))")
-                        .font(.subheadline.monospacedDigit())
-                        .foregroundStyle(YansuTheme.ink)
-                        .accessibilityIdentifier("brief.time")
-                    if played {
-                        Text("Played")
-                            .font(.footnote.weight(.medium))
-                            .foregroundStyle(YansuTheme.secondary)
-                            .accessibilityIdentifier("brief.played")
-                    } else if !startable {
-                        Text("Plays when your computer is back")
-                            .font(.footnote)
-                            .foregroundStyle(YansuTheme.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .accessibilityIdentifier("brief.unavailable")
+                VStack(alignment: .leading, spacing: 6) {
+                    if length > 0, problem == nil {
+                        Slider(value: Binding(get: { elapsed }, set: { if selected { player.seek(to: $0) } }), in: 0...length)
+                            .tint(YansuTheme.accent)
+                            .disabled(!selected)
+                            .accessibilityLabel(String(localized: "Brief playback position"))
+                            .accessibilityValue("\(BriefPlaybackTime.text(elapsed)) / \(BriefPlaybackTime.text(length))")
+                            .accessibilityIdentifier("brief.progress")
                     }
-                }
-                Spacer(minLength: 0)
-                Menu {
-                    ForEach(BriefPlaybackSpeed.allCases, id: \.self) { value in
-                        Button(value.label) { player.setSpeed(value) }
+                    HStack {
+                        Text(verbatim: BriefPlaybackTime.text(elapsed))
+                        Spacer()
+                        Text(verbatim: BriefPlaybackTime.text(length))
                     }
-                } label: {
-                    Text(verbatim: player.speed.label)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(YansuTheme.accent)
-                        .frame(minWidth: 44, minHeight: 44)
+                    .font(.footnote.monospacedDigit())
+                    .foregroundStyle(YansuTheme.secondary)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("brief.time")
                 }
-                .accessibilityLabel(String(localized: "Playback speed"))
-                .accessibilityValue(player.speed.label)
-                .accessibilityIdentifier("brief.speed")
+            }
+            if played {
+                Text("Played")
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(YansuTheme.secondary)
+                    .accessibilityIdentifier("brief.played")
+            } else if !startable {
+                // The text shows at once; the audio waits for the computer (phone-brief rule 4).
+                Text("brief.audioLater")
+                    .font(.footnote)
+                    .foregroundStyle(YansuTheme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("brief.unavailable")
             }
             if let problem {
                 VStack(alignment: .leading, spacing: 4) {
@@ -306,22 +266,31 @@ struct BriefDetailView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("brief.audioStatus")
-            } else if length > 0 {
-                Slider(value: Binding(get: { elapsed }, set: { if selected { player.seek(to: $0) } }), in: 0...length)
-                    .tint(YansuTheme.accent)
-                    .disabled(!selected)
-                    .accessibilityLabel(String(localized: "Brief playback position"))
-                    .accessibilityValue("\(BriefPlaybackTime.text(elapsed)) / \(BriefPlaybackTime.text(length))")
-                    .accessibilityIdentifier("brief.progress")
             }
             HStack {
-                skipButton(seconds: -15, systemImage: "gobackward.15", label: String(localized: "Back 15 seconds"),
+                skipButton(seconds: -15, title: String(localized: "brief.back15"), label: String(localized: "Back 15 seconds"),
                            identifier: "brief.back15", enabled: selected)
                 Spacer(minLength: 0)
-                skipButton(seconds: 15, systemImage: "goforward.15", label: String(localized: "Ahead 15 seconds"),
+                Menu {
+                    ForEach(BriefPlaybackSpeed.allCases, id: \.self) { value in
+                        Button(value.label) { player.setSpeed(value) }
+                    }
+                } label: {
+                    Text(verbatim: player.speed.label)
+                        .font(.subheadline)
+                        .foregroundStyle(YansuTheme.accent)
+                        .frame(minWidth: 44, minHeight: 36)
+                }
+                .accessibilityLabel(String(localized: "Playback speed"))
+                .accessibilityValue(player.speed.label)
+                .accessibilityIdentifier("brief.speed")
+                Spacer(minLength: 0)
+                skipButton(seconds: 15, title: String(localized: "brief.on15"), label: String(localized: "Ahead 15 seconds"),
                            identifier: "brief.ahead15", enabled: selected)
             }
         }
+        .padding(16)
+        .background(YansuTheme.surface, in: RoundedRectangle(cornerRadius: 18))
     }
 
     /// Why the audio cannot play right now, when the player has said so.
@@ -333,13 +302,13 @@ struct BriefDetailView: View {
         }
     }
 
-    private func skipButton(seconds: TimeInterval, systemImage: String, label: String, identifier: String,
+    private func skipButton(seconds: TimeInterval, title: String, label: String, identifier: String,
                             enabled: Bool) -> some View {
         Button { player.skip(by: seconds) } label: {
-            Image(systemName: systemImage)
-                .font(.title2)
-                .foregroundStyle(YansuTheme.ink)
-                .frame(width: 52, height: 44)
+            Text(verbatim: title)
+                .font(.subheadline)
+                .foregroundStyle(YansuTheme.accent)
+                .frame(minHeight: 36)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -352,10 +321,17 @@ struct BriefDetailView: View {
     // MARK: Paragraphs
 
     private func paragraphs(_ brief: MobileBriefV1, spokenNow: Int?, hubID: String?) -> some View {
-        VStack(alignment: .leading, spacing: 22) {
+        let placed = BriefItemPlacement.place(work.items, brief: brief)
+        return VStack(alignment: .leading, spacing: 18) {
             ForEach(Array(brief.narrative.enumerated()), id: \.offset) { index, paragraph in
                 paragraphView(brief, index: index, text: paragraph.text ?? "", spokenNow: spokenNow, hubID: hubID)
                     .id("brief.paragraph.\(index)")
+                // The brief's items sit where it mentions them, the same items as in Your work (phone-brief rule 5).
+                ForEach(placed[index] ?? []) { item in
+                    BriefWorkItem(item: item, now: Date(),
+                                  answer: { action in Task { await work.answer(item, action: action) } },
+                                  undo: { Task { await work.undo(item) } })
+                }
             }
         }
     }
@@ -365,33 +341,42 @@ struct BriefDetailView: View {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty {
             let isSpoken = spokenNow == index
-            let muted = spokenNow != nil && !isSpoken
             VStack(alignment: .leading, spacing: 10) {
                 Button {
-                    if canTalk, brief.chatReference != nil, index != brief.closingParagraphIndex {
-                        askAbout(brief, index: index)
-                    } else {
-                        tappedParagraph = tappedParagraph == index ? nil : index
-                    }
+                    tappedParagraph = tappedParagraph == index ? nil : index
                 } label: {
                     Text(verbatim: trimmed)
-                        .font(.body)
-                        .lineSpacing(4)
-                        .foregroundStyle(muted ? YansuTheme.secondary : YansuTheme.ink)
+                        .font(.system(size: 17))
+                        .lineSpacing(5)
+                        .foregroundStyle(YansuTheme.ink)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        // Read-along: the part being read is highlighted, and the page keeps it in view (rule 3).
+                        .padding(isSpoken ? 6 : 0)
+                        .background(isSpoken ? YansuTheme.accentWash : .clear, in: RoundedRectangle(cornerRadius: 8))
+                        .padding(isSpoken ? -6 : 0)
                         .contentShape(Rectangle())
-                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: muted)
+                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: isSpoken)
                 }
                 .buttonStyle(.plain)
                 .accessibilityHint(String(localized: "Shows what you can do with this paragraph"))
                 .accessibilityAddTraits(isSpoken ? .isSelected : [])
                 .accessibilityIdentifier("brief.paragraph.\(index)")
                 BriefParagraphSources(brief: brief, refs: brief.narrative[index].refs) { evidence = $0 }
-                if tappedParagraph == index {
+                if tappedParagraph == index || (tappedParagraph == nil && isSpoken) {
                     paragraphActions(brief, index: index, hubID: hubID)
                 }
-                if canTalk, let card = brief.paragraphChip(forParagraph: index) {
+                if notRight?.id == BriefItemPlacement.sentenceID(brief: brief.identifier, paragraph: index), let item = notRight {
+                    WorkReasonPicker(item: item, pick: { reason in
+                        Task { await work.answer(item, action: .no, reason: reason) }
+                        notRight = nil
+                    }, undo: { notRight = nil }, skip: {
+                        Task { await work.answer(item, action: .no) }
+                        notRight = nil
+                    })
+                }
+                // Without Your work on the computer, the chips stay the way to act on a paragraph.
+                if work.supported != true, canTalk, let card = brief.paragraphChip(forParagraph: index) {
                     Button { put(card, brief: brief) } label: {
                         HStack(spacing: 5) {
                             Text(verbatim: card.label ?? "")
@@ -407,22 +392,33 @@ struct BriefDetailView: View {
         }
     }
 
+    /// Reply about this (Chat, with the sentence attached) and Not right (a No on that sentence, with a claim's
+    /// reasons); Play from here stays for a brief with audio (phone-brief rule 6).
     private func paragraphActions(_ brief: MobileBriefV1, index: Int, hubID: String?) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 16) {
+            if canTalk, brief.chatReference != nil, index != brief.closingParagraphIndex {
+                Button(String(localized: "brief.reply")) { askAbout(brief, index: index) }
+                    .foregroundStyle(YansuTheme.accent)
+                    .accessibilityIdentifier("brief.askAbout.\(index)")
+            }
+            if work.supported == true, let text = brief.narrative[index].text {
+                Button(String(localized: "brief.notRight")) {
+                    notRight = BriefItemPlacement.sentence(brief: brief.identifier, paragraph: index, text: text)
+                }
+                .foregroundStyle(YansuTheme.secondary)
+                .accessibilityIdentifier("brief.notRight.\(index)")
+            }
             if canListen, let hubID, brief.audio != nil {
                 Button(String(localized: "Play from here")) {
                     Task { await player.play(brief: brief, hubID: hubID, fromParagraph: index) }
                 }
-                .buttonStyle(YansuPillButtonStyle(prominent: true))
+                .foregroundStyle(YansuTheme.secondary)
                 .disabled(!player.canStart(brief: brief, hubID: hubID, computerOnline: store.hubOnline))
                 .accessibilityIdentifier("brief.playFromHere.\(index)")
             }
-            if canTalk, brief.chatReference != nil {
-                Button(String(localized: "Ask about this")) { askAbout(brief, index: index) }
-                    .buttonStyle(YansuPillButtonStyle(prominent: false))
-                    .accessibilityIdentifier("brief.askAbout.\(index)")
-            }
         }
+        .font(.subheadline)
+        .buttonStyle(.plain)
         .fixedSize(horizontal: false, vertical: true)
     }
 

@@ -9,26 +9,24 @@ struct PastBriefsView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @Environment(\.locale) private var locale
     @Environment(\.tabChromeHeight) private var tabChromeHeight
+    @EnvironmentObject private var work: WorkStore
 
     var body: some View {
         let now = Date()
+        // Today's briefs are in the list too, by day (phone-brief rule 10).
         let entries = PastBriefIndex.entries(snapshot: today.snapshot, cached: brief.cachedBriefs,
-                                             latestID: today.newestBrief()?.identifier, now: now)
+                                             latestID: nil, now: now)
         let groups = PastBriefGroups.groups(entries, today: FeedAssembly.localDate(for: now),
                                             yesterday: FeedAssembly.localDate(for: now.addingTimeInterval(-24 * 60 * 60)))
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                Text("Kept on this phone for 30 days")
-                    .font(.subheadline)
-                    .foregroundStyle(YansuTheme.secondary)
+            VStack(alignment: .leading, spacing: 12) {
                 ForEach(groups) { group in
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text(verbatim: title(for: group.day))
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(YansuTheme.secondary)
-                            .padding(.bottom, 6)
-                            .accessibilityAddTraits(.isHeader)
-                        ForEach(group.rows) { entry in
+                    SectionLabel(title: title(for: group.day))
+                        .padding(.horizontal, 4)
+                        .padding(.top, 4)
+                    VStack(spacing: 0) {
+                        ForEach(Array(group.rows.enumerated()), id: \.element.id) { offset, entry in
+                            if offset > 0 { Divider().overlay(YansuTheme.borderSubtle) }
                             NavigationLink {
                                 BriefDetailView(entry: HistoryEntry(id: entry.id, slot: entry.slot, localDate: entry.localDate,
                                                                     asOf: entry.madeDate, narrativeStatus: "ok", isCached: true,
@@ -39,10 +37,18 @@ struct PastBriefsView: View {
                             }
                             .buttonStyle(.plain)
                             .accessibilityIdentifier("pastBriefs.row")
-                            Divider().overlay(YansuTheme.borderSubtle)
                         }
                     }
+                    .padding(.horizontal, 14)
+                    .background(YansuTheme.surface, in: RoundedRectangle(cornerRadius: 16))
                 }
+                Text("past.kept")
+                    .font(.footnote)
+                    .foregroundStyle(YansuTheme.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 4)
+                    .accessibilityIdentifier("pastBriefs.kept")
             }
             .padding(.horizontal, YansuTheme.gutter)
             .padding(.top, 8)
@@ -71,58 +77,60 @@ struct PastBriefsView: View {
     }
 
     private func row(_ entry: TodayBriefIndex) -> some View {
-        // A row's place and whether it was heard come from this phone's copy of the brief, when it has one.
+        // Where you are with it: heard or not, from this phone's copy, and what's left to answer from Your work.
         let copy = brief.cachedBrief(withID: entry.id)
         let memory = copy.flatMap { environment.audioPlayer.playbackMemory(brief: $0, hubID: pairing.paired?.hubID ?? "") }
-        return HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 6) {
+        let items = work.supported == true ? work.items.filter { $0.briefID == entry.id && !BriefItemPlacement.isSentence($0.id, brief: entry.id) } : nil
+        let status = PastBriefStatus(memory: memory, open: items?.filter(\.isOpen).count, total: items?.count)
+        return HStack(alignment: .center, spacing: 11) {
+            Circle()
+                .fill(status.playedThrough ? Color.clear : YansuTheme.accent)
+                .overlay { Circle().stroke(YansuTheme.accent, lineWidth: 1.5) }
+                .frame(width: 8, height: 8)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: BriefTitle.title(BriefTitleInput(index: entry)))
-                    .font(.subheadline.weight(.semibold))
+                    .font(.body.weight(.medium))
                     .foregroundStyle(YansuTheme.ink)
                     .fixedSize(horizontal: false, vertical: true)
-                Text(verbatim: entry.lead)
-                    .font(.subheadline)
+                Text(verbatim: status.line)
+                    .font(.footnote)
                     .foregroundStyle(YansuTheme.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("pastBriefs.lead")
-                if let length = entry.durationSeconds.flatMap(BriefAudio.label) {
-                    Text(verbatim: length)
-                        .font(.footnote.monospacedDigit())
-                        .foregroundStyle(YansuTheme.tertiary)
-                        .accessibilityIdentifier("pastBriefs.length")
-                }
+                    .accessibilityIdentifier("pastBriefs.status")
             }
-            Spacer(minLength: 8)
-            PastBriefState(memory: memory)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Image(systemName: "chevron.right")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(YansuTheme.secondary)
         }
-        .padding(.vertical, 14)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 12)
         .contentShape(Rectangle())
     }
 }
 
-/// The row's state: a ring for how much was heard, "Played" once it was heard to the end, or nothing.
-private struct PastBriefState: View {
+/// One line on where you are with a past brief (phone-brief rules 10 and 11): "Part heard · 3 to answer",
+/// "Played · all answered", "Not opened", "Played · 1 left unanswered". A dot until it was played through.
+struct PastBriefStatus: Equatable {
     let memory: BriefPlaybackMemory?
+    /// Items still open, and all the brief's items, from Your work; nil on a computer without it.
+    let open: Int?
+    let total: Int?
 
-    var body: some View {
-        if let memory, memory.played {
-            Text("Played")
-                .font(.footnote.weight(.medium))
-                .foregroundStyle(YansuTheme.secondary)
-                .accessibilityIdentifier("pastBriefs.played")
-        } else if let memory, memory.progress > 0 {
-            ZStack {
-                Circle().stroke(YansuTheme.border, lineWidth: 2.5)
-                Circle()
-                    .trim(from: 0, to: memory.progress)
-                    .stroke(YansuTheme.accent, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-            }
-            .frame(width: 22, height: 22)
-            .accessibilityLabel(String(localized: "Part heard"))
-            .accessibilityIdentifier("pastBriefs.ring")
-        }
+    var playedThrough: Bool { memory?.played == true }
+
+    var line: String {
+        let notOpened = !playedThrough && (memory?.progress ?? 0) <= 0
+        let heard: String
+        if playedThrough { heard = String(localized: "past.played") }
+        else if notOpened { heard = String(localized: "past.notOpened") }
+        else { heard = String(localized: "past.partHeard") }
+        guard let open, let total, total > 0 else { return heard }
+        if notOpened && open == total { return heard }
+        let answers: String
+        if open == 0 { answers = String(localized: "past.allAnswered") }
+        else if playedThrough { answers = String.localizedStringWithFormat(String(localized: "past.leftOpen"), open) }
+        else { answers = String.localizedStringWithFormat(String(localized: "past.toAnswer"), open) }
+        return heard + " · " + answers
     }
 }
 

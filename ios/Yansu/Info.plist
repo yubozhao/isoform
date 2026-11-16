@@ -54,7 +54,7 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>Isoform uses the camera only to scan the pairing code shown on your computer.</string>
+	<string>Isoform uses the camera only to read the code on your computer.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Isoform uses Face ID to confirm the decisions you make from this phone.</string>
 	<key>NSMicrophoneUsageDescription</key>

@@ -35,6 +35,7 @@ struct YansuApp: App {
                 .environmentObject(environment.briefOnScreen)
                 .environmentObject(environment.today)
                 .environmentObject(environment.tasks)
+                .environmentObject(environment.work)
                 .environmentObject(environment.actions)
                 .environmentObject(environment.chat)
                 .environmentObject(environment.pairing)

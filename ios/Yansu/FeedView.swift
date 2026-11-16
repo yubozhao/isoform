@@ -101,91 +101,6 @@ private struct TodayDraftReviewSheet: View {
     }
 }
 
-private struct TodayMeetingPrepSheet: View {
-    let event: TodayDay.Event
-    @EnvironmentObject private var today: TodayStore
-    @Environment(\.dismiss) private var dismiss
-    @State private var prep: TodayMeetingPrep?
-    @State private var failed = false
-    @State private var loading = false
-
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text(event.title).font(.title3.weight(.semibold)).foregroundStyle(YansuTheme.ink)
-                    if let prep {
-                        YansuCard {
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text(String.localizedStringWithFormat(String(localized: "today.meeting.with"), prep.personName))
-                                    .font(.headline)
-                                if let last = prep.lastTime, !last.isEmpty {
-                                    detail(String(localized: "today.meeting.lastTime"), last)
-                                }
-                                if prep.youOwe?.isEmpty == false || prep.theyAsked?.isEmpty == false {
-                                    Text(String.localizedStringWithFormat(String(localized: "today.meeting.between"), prep.personName))
-                                        .font(.subheadline.weight(.semibold))
-                                }
-                                if let open = prep.youOwe, !open.isEmpty {
-                                    detail(String(localized: "today.meeting.stillOpen"), open)
-                                }
-                                if let asked = prep.theyAsked, !asked.isEmpty {
-                                    detail(String(localized: "today.meeting.asked"), asked)
-                                }
-                            }
-                        }
-                    } else if failed {
-                        HStack {
-                            Text("today.meeting.failed").foregroundStyle(YansuTheme.secondary)
-                            Button(String(localized: "Try again")) { Task { await load() } }
-                        }.font(.subheadline)
-                            .accessibilityIdentifier("today.meeting.failed")
-                    } else if loading {
-                        ProgressView()
-                    }
-                }
-                .padding(YansuTheme.gutter)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .background(YansuTheme.background.ignoresSafeArea())
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button(String(localized: "Done")) { dismiss() }
-                        .accessibilityIdentifier("today.meeting.done")
-                }
-            }
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("today.meeting.sheet")
-        .task { await load() }
-    }
-
-    private func detail(_ title: String, _ text: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.caption.weight(.semibold)).foregroundStyle(YansuTheme.secondary)
-            Text(text).font(.body).foregroundStyle(YansuTheme.ink)
-        }
-    }
-
-    private func load() async {
-        guard let id = event.id, !loading else { failed = true; return }
-        loading = true
-        failed = false
-        defer { loading = false }
-        for attempt in 0..<2 {
-            do { prep = try await today.meetingPrep(id: id); return }
-            catch {
-                if attempt == 0 { try? await Task.sleep(for: .seconds(1)) }
-            }
-        }
-        failed = true
-    }
-}
-
-// Feed tab (RC 1): the offline banner, the Today header with its refresh, "Hear your brief", the brief's
-// paragraphs with their topics and questions, its closing question, "Your topics", today's cards, then the
-// earlier days, each of which opens its brief. Reading and listening work offline; questions, answers and
-// Like or Not right need the computer.
 struct FeedView: View {
     @ObservedObject var feed: FeedStore
     @ObservedObject var topics: TopicStore
@@ -202,6 +117,8 @@ struct FeedView: View {
     @EnvironmentObject private var brief: BriefStore
     @EnvironmentObject private var todayStore: TodayStore
     @EnvironmentObject private var tasks: TasksStore
+    @EnvironmentObject private var work: WorkStore
+    @EnvironmentObject private var push: PushRegistration
     @EnvironmentObject private var actions: ActionStore
     @EnvironmentObject private var notifications: NotificationSettingsStore
     @EnvironmentObject private var keepAwake: KeepAwakeStore
@@ -214,7 +131,6 @@ struct FeedView: View {
     /// Whether the Today page has scrolled under its title bar (P160).
     @State private var pageScrolled = false
     @State private var reviewTask: MobileTask?
-    @State private var showingMeeting = false
     @State private var correcting: FeedCardModel?
     @StateObject private var undoHolds = DecisionHoldCoordinator()
     @State private var heldFeedback: Set<String> = []
@@ -227,6 +143,8 @@ struct FeedView: View {
     @State private var connectionCheckedAt: Date?
     /// Once visible, keep the placeholder on screen until its copy arrives, even after marking it shown.
     @State private var placeholderHubID: String?
+    /// Bumped when the brief folds, so the card reads its fold again.
+    @State private var foldRevision = 0
     @AppStorage("today.keepAwakeOfferDismissed") private var keepAwakeOfferDismissed = false
     @Environment(\.locale) private var locale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -344,9 +262,6 @@ struct FeedView: View {
         .sheet(item: $reviewTask) { task in
             TodayDraftReviewSheet(task: task, tasks: environment.tasks)
         }
-        .sheet(isPresented: $showingMeeting) {
-            if let event = todayStore.snapshot?.day.next { TodayMeetingPrepSheet(event: event) }
-        }
         .sheet(item: $correcting) { card in
             ReasonSheet(title: String(localized: "Not right"),
                         detail: String(localized: "Tell Isoform what is wrong with this. It stops using that memory once your computer confirms."),
@@ -376,6 +291,7 @@ struct FeedView: View {
         }
         await withTaskGroup(of: Void.self) { group in
             if latest { group.addTask { await environment.today.refresh() } }
+            group.addTask { await environment.work.refresh() }
             if environment.refreshesTasks { group.addTask { await environment.tasks.refresh() } }
             if readsTopics { group.addTask { await topics.refresh() } }
             if readsBriefs {
@@ -439,11 +355,13 @@ struct FeedView: View {
                                 .transition(reduceMotion ? .opacity : .offset(y: 8).combined(with: .opacity))
                         }
                     } else if pairing.recoveryMessage != nil {
-                        // A saved pairing that cannot be read is not an unpaired phone (P140): say so, keep the pairing button.
-                        PairPromptCard(
-                            title: String(localized: "This phone's pairing couldn't be read. Pair again."),
-                            retriesSavedPairing: true
-                        )
+                        // A lost pairing never blanks Today (phone-setup rule 11): one amber line with Pair, and the
+                        // brief this phone saved stays under it.
+                        PairingLostLine(retriesSavedPairing: true)
+                        if let saved = todayStore.newestBrief() {
+                            TodayBriefCardView(current: saved, hubID: "", player: environment.audioPlayer,
+                                               canMakeBrief: false, now: now, onPastBriefs: { showingPastBriefs = true })
+                        }
                     } else {
                         PairPromptCard(
                             title: String(localized: "Read your computer's daily brief here."),
@@ -521,8 +439,10 @@ struct FeedView: View {
     @ViewBuilder
     private func pairedContent(now: Date) -> some View {
         if brief.repairNeeded {
-            repairCard
-        } else {
+            // The pairing lost its rights on the computer: the same one line, and Today stays as saved (rule 11).
+            PairingLostLine()
+        }
+        Group {
             todaySummary(now: now)
             let _ = brief.logFetchOutcomes(at: "render")
             if let signOut = todayStore.snapshot?.assistantSignOut {
@@ -536,10 +456,15 @@ struct FeedView: View {
                 if !Calendar.current.isDate(current.asOfDate ?? .distantPast, inSameDayAs: now) {
                     todayFetchLine(state: brief.todayFetchState(localDate: FeedAssembly.localDate(for: now)))
                 }
+                let _ = foldRevision
                 TodayBriefCardView(current: current, hubID: hubID, player: environment.audioPlayer,
                                    topics: topics, onPrepareInTopic: onPrepareInTopic,
                                    canMakeBrief: scopes.contains("brief:refresh"), now: now,
-                                   onPastBriefs: { showingPastBriefs = true })
+                                   onPastBriefs: { showingPastBriefs = true },
+                                   folded: TodayBriefFold.isFolded(current.identifier))
+                if push.showsPermissionExplanation {
+                    NotificationAskCard()
+                }
                 if !Calendar.current.isDate(current.asOfDate ?? .distantPast, inSameDayAs: now),
                    let line = TodayAwaitingBrief.nextBriefLine(in: todayStore.snapshot, now: now, locale: locale) {
                     Text(line)
@@ -551,13 +476,14 @@ struct FeedView: View {
                 TodayAwaitingBriefCard(computerName: pairing.paired?.hubName ?? String(localized: "your computer"),
                                        snapshot: todayStore.snapshot, now: now)
             }
-            todayNeedsYou
-            todayDoneForYou
+            // Your work: the one list, under the brief. It loads on its own and never moves the brief (rank 2).
+            YourWorkSection(work: work, now: now, onAnswered: foldNewestBrief) {
+                legacyYourWork
+            }
             if let notice = actions.todayNotice { NoticeBanner(message: notice, dismiss: { actions.todayNotice = nil }) }
             if let notice = feed.todayNotice { NoticeBanner(message: notice, dismiss: { feed.todayNotice = nil }) }
             todayPendingWrites
-            todayDay.id("today.day.anchor")
-            yourTopics
+            Color.clear.frame(height: 0).id("today.day.anchor")
         }
     }
 
@@ -652,18 +578,11 @@ struct FeedView: View {
             }
             return now.formatted(.dateTime.weekday(.wide).month(.wide).day().locale(locale))
         }()
-        // A queued card that is on its way to the computer no longer needs the person.
-        let count = max(0, tasks.waitingCount - tasks.waitingItems.filter { queuedWrite(for: $0).map { !isExpiredHeld($0) } ?? false }.count)
         let cause = connectionCause
         return VStack(alignment: .leading, spacing: 8) {
             // The date line always stays (P133). The away line sits under it, in the sheet's own words, and opens the sheet.
-            HStack(spacing: 4) {
-                if count == 0 {
-                    Text("\(date) · nothing needs you")
-                } else {
-                    Text("\(date) · \(count) need you")
-                }
-            }
+            // The date under the title; the count to answer is Your work's own (phone-today rule 8).
+            Text(verbatim: date)
             .font(.subheadline)
             .foregroundStyle(YansuTheme.secondary)
             .accessibilityIdentifier("feed.summary")
@@ -755,15 +674,43 @@ struct FeedView: View {
         }
     }
 
+    private func foldNewestBrief() {
+        guard let id = todayStore.newestBrief()?.identifier else { return }
+        TodayBriefFold.fold(id)
+        foldRevision += 1
+    }
+
+    /// Your work on a computer without B2: the rows it already sends (Needs you, Done for you), in Your work's place
+    /// and words, so nothing the Tasks tab showed is lost while the computer catches up.
+    @ViewBuilder
+    private var legacyYourWork: some View {
+        // A queued card that is on its way to the computer no longer needs the person.
+        let count = max(0, tasks.waitingCount - tasks.waitingItems.filter { queuedWrite(for: $0).map { !isExpiredHeld($0) } ?? false }.count)
+        VStack(alignment: .leading, spacing: 12) {
+            YourWorkHeader(count: count)
+            todayNeedsYou
+            todayDoneForYou
+            if count == 0 && tasks.doneForToday(now: Date(), briefMadeAt: todayStore.snapshot?.latestBrief?.madeDate).isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("work.empty").font(.body.weight(.semibold)).foregroundStyle(YansuTheme.ink)
+                    Text("work.emptyNext").font(.subheadline).foregroundStyle(YansuTheme.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("work.empty")
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("today.yourWork")
+    }
+
     @ViewBuilder
     private var todayNeedsYou: some View {
-        let rows = Array(tasks.waitingItems.prefix(3))
+        let rows = Array(tasks.waitingItems.prefix(YourWork.dailyLimit))
         if !rows.isEmpty {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 8) {
-                    Circle().fill(YansuTheme.warning).frame(width: 7, height: 7)
-                    SectionLabel(title: String(localized: "Needs you"))
-                }
+            VStack(alignment: .leading, spacing: 8) {
+                SectionLabel(title: String(localized: "work.upNext"))
+                    .padding(.horizontal, 4)
                 VStack(spacing: 0) {
                     ForEach(Array(rows.enumerated()), id: \.element.id) { index, need in
                         if let task = need.task {
@@ -786,18 +733,7 @@ struct FeedView: View {
                         if index < rows.count - 1 { Divider().overlay(YansuTheme.borderSubtle).padding(.leading, 36) }
                     }
                 }
-                .background(YansuTheme.surface, in: RoundedRectangle(cornerRadius: YansuTheme.cornerRadius))
-                .overlay { RoundedRectangle(cornerRadius: YansuTheme.cornerRadius).stroke(YansuTheme.border) }
-                let more = max(0, tasks.waitingCount - rows.count)
-                if more > 0 {
-                    Button(more == 1 ? String(localized: "today.oneMoreInTasks") :
-                        String.localizedStringWithFormat(String(localized: "today.moreInTasks"), more)) {
-                        router.selectedTab = .tasks
-                    }
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(YansuTheme.accent)
-                    .accessibilityIdentifier("today.moreInTasks")
-                }
+                .background(YansuTheme.surface, in: RoundedRectangle(cornerRadius: 16))
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("today.needsYou")
@@ -845,29 +781,16 @@ struct FeedView: View {
     private var todayDoneForYou: some View {
         let rows = tasks.doneForToday(now: Date(), briefMadeAt: todayStore.snapshot?.latestBrief?.madeDate)
         if !rows.isEmpty {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 8) {
-                    Circle().fill(YansuTheme.accent).frame(width: 7, height: 7)
-                    SectionLabel(title: String(localized: "Done for you"))
-                }
+            VStack(alignment: .leading, spacing: 8) {
+                SectionLabel(title: String(localized: "work.doneToday"))
+                    .padding(.horizontal, 4)
                 VStack(spacing: 0) {
-                    ForEach(Array(rows.prefix(3).enumerated()), id: \.element.id) { index, task in
+                    ForEach(Array(rows.enumerated()), id: \.element.id) { index, task in
                         TaskRow(task: task, directTasks: tasks, source: .today, grouped: true)
-                        if index < min(rows.count, 3) - 1 { Divider().overlay(YansuTheme.borderSubtle).padding(.leading, 56) }
+                        if index < rows.count - 1 { Divider().overlay(YansuTheme.borderSubtle).padding(.leading, 56) }
                     }
                 }
-                .background(YansuTheme.surface, in: RoundedRectangle(cornerRadius: YansuTheme.cornerRadius))
-                .overlay { RoundedRectangle(cornerRadius: YansuTheme.cornerRadius).stroke(YansuTheme.border) }
-                let more = max(0, rows.count - 3)
-                if more > 0 {
-                    Button(more == 1 ? String(localized: "today.oneMoreInTasks") :
-                        String.localizedStringWithFormat(String(localized: "today.moreInTasks"), more)) {
-                        router.selectedTab = .tasks
-                    }
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(YansuTheme.accent)
-                    .accessibilityIdentifier("today.moreDoneInTasks")
-                }
+                .background(YansuTheme.surface, in: RoundedRectangle(cornerRadius: 16))
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("today.doneForYou")
@@ -927,78 +850,6 @@ struct FeedView: View {
         }
     }
 
-    @ViewBuilder
-    private var todayDay: some View {
-        if let day = todayStore.snapshot?.day, day.calendarConnected, day.next != nil || !day.free.isEmpty {
-            VStack(alignment: .leading, spacing: 12) {
-                SectionLabel(title: String(localized: "Your day"))
-                YansuCard {
-                  VStack(alignment: .leading, spacing: 12) {
-                    if let event = day.next {
-                        Button { showingMeeting = true } label: {
-                            HStack(alignment: .top, spacing: 10) {
-                                Image(systemName: "clock").foregroundStyle(YansuTheme.secondary)
-                                VStack(alignment: .leading, spacing: 5) {
-                                    Text("Next").font(.caption).foregroundStyle(YansuTheme.secondary)
-                                    if let start = RelayTime.parse(event.start) {
-                                        Text(String.localizedStringWithFormat(String(localized: "today.meeting.event"), event.title, todayTime(start)))
-                                            .font(.subheadline.weight(.semibold))
-                                    } else {
-                                        Text(verbatim: event.title).font(.subheadline.weight(.semibold))
-                                    }
-                                }
-                                Spacer()
-                                if event.id != nil && event.kind != "personal" {
-                                    Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(YansuTheme.secondary)
-                                }
-                            }.frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .foregroundStyle(YansuTheme.ink)
-                        .buttonStyle(.plain)
-                        // P135: taps are off, but the event stays in the primary color; .disabled would grey it out.
-                        .allowsHitTesting(!(event.id == nil || event.kind == "personal"))
-                        .accessibilityIdentifier("today.day.next")
-                    }
-                    if let free = day.free.first, let start = RelayTime.parse(free.start), let end = RelayTime.parse(free.end) {
-                        if day.next != nil { Divider().overlay(YansuTheme.borderSubtle) }
-                            HStack(alignment: .top, spacing: 10) {
-                              Image(systemName: "clock").foregroundStyle(YansuTheme.secondary)
-                              VStack(alignment: .leading, spacing: 6) {
-                                Text("Free").font(.caption).foregroundStyle(YansuTheme.secondary)
-                                Text("\(todayTime(start)) to \(todayTime(end))").font(.subheadline.weight(.semibold))
-                                ForEach(Array(day.free.dropFirst().enumerated()), id: \.offset) { _, range in
-                                    if let laterStart = RelayTime.parse(range.start), let laterEnd = RelayTime.parse(range.end) {
-                                        let text = String(localized: "\(todayTime(laterStart)) to \(todayTime(laterEnd))")
-                                        Text("Then \(text)").font(.footnote).foregroundStyle(YansuTheme.secondary)
-                                    }
-                                }
-                              }
-                            }.frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                  }
-                }
-            }
-        }
-    }
-
-    private var repairCard: some View {
-        YansuCard {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Pair this phone again")
-                    .font(.headline)
-                    .foregroundStyle(YansuTheme.ink)
-                Text("Isoform can no longer read your feed from your computer. Open Settings and choose Pair again.")
-                    .font(.subheadline)
-                    .foregroundStyle(YansuTheme.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Button("Open Settings") {
-                    router.openSettings()
-                }
-                .buttonStyle(YansuPrimaryButtonStyle())
-            }
-        }
-    }
-
     private func sectionLabel(_ title: LocalizedStringKey) -> some View {
         Text(title)
             .font(.caption.weight(.semibold))
@@ -1006,43 +857,6 @@ struct FeedView: View {
             .textCase(.uppercase)
             .foregroundStyle(YansuTheme.secondary)
             .accessibilityAddTraits(.isHeader)
-    }
-
-    // MARK: Your topics
-
-    /// Work projects and followed topics, in the computer's order, as a row that swipes sideways. Only a computer
-    /// with topic routes has it; the Feed is otherwise unchanged.
-    @ViewBuilder
-    private var yourTopics: some View {
-        let values = todayStore.snapshot?.topics ?? []
-        if !values.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
-                SectionLabel(title: String(localized: "Your topics"))
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(alignment: .top, spacing: 10) {
-                        ForEach(values) { topic in
-                            Button {
-                                router.openTopic(TopicRoute(id: topic.id, name: topic.name))
-                            } label: {
-                                Text(verbatim: topic.name)
-                                    .font(.subheadline.weight(.medium))
-                                    .foregroundStyle(YansuTheme.ink)
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 9)
-                                    .background(YansuTheme.surface, in: RoundedRectangle(cornerRadius: 10))
-                                    .overlay { RoundedRectangle(cornerRadius: 10).stroke(YansuTheme.border) }
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityIdentifier("feed.topic")
-                        }
-                    }
-                    .padding(.horizontal, YansuTheme.gutter)
-                    .padding(.bottom, 4)
-                }
-                .padding(.horizontal, -YansuTheme.gutter)
-            }
-            .accessibilityIdentifier("feed.topics")
-        }
     }
 
     // MARK: Actions
@@ -1255,5 +1069,84 @@ struct PairPromptCard: View {
                 .buttonStyle(YansuPrimaryButtonStyle())
             }
         }
+    }
+}
+
+/// "This phone needs pairing again to get new briefs." and Pair, one amber line above the brief (phone-setup rule 11).
+struct PairingLostLine: View {
+    var retriesSavedPairing = false
+    @EnvironmentObject private var router: NotificationRouter
+    @EnvironmentObject private var environment: AppEnvironment
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.subheadline)
+                .foregroundStyle(YansuTheme.warning)
+            Text("setup.lost")
+                .font(.subheadline)
+                .foregroundStyle(YansuTheme.ink)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if retriesSavedPairing {
+                // Re-reads the saved pairing first; a file that still cannot be read leaves the line as it is.
+                Button(String(localized: "Try again")) { environment.retrySavedPairing() }
+                    .font(.subheadline)
+                    .foregroundStyle(YansuTheme.accent)
+                    .accessibilityIdentifier("pairing.tryAgain")
+            }
+            Button(String(localized: "setup.lostPair")) { router.openPairing(scanCode: true) }
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(YansuTheme.accent)
+                .accessibilityIdentifier("today.pairAgain")
+        }
+        .buttonStyle(.plain)
+        .padding(14)
+        .background(YansuTheme.warningWash, in: RoundedRectangle(cornerRadius: 14))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("today.pairingLost")
+    }
+}
+
+/// Notifications are asked once, under the brief, by saying what they are (phone-setup rule 8). Turn on shows the
+/// system's prompt; Not now asks again only from Settings › Notifications.
+struct NotificationAskCard: View {
+    @EnvironmentObject private var push: PushRegistration
+    @State private var working = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "bell").foregroundStyle(YansuTheme.accent)
+                Text("setup.notifTitle").font(.body.weight(.semibold)).foregroundStyle(YansuTheme.ink)
+            }
+            Text("setup.notifBody")
+                .font(.subheadline)
+                .foregroundStyle(YansuTheme.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            WorkWeightedRow(weights: [1.3, 1], spacing: 8) {
+                Button {
+                    working = true
+                    Task { await push.acceptPermissionExplanation(); working = false }
+                } label: {
+                    Text("setup.notifOn").font(.body.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 44)
+                        .foregroundStyle(YansuTheme.onSolid)
+                        .background(YansuTheme.solid, in: RoundedRectangle(cornerRadius: 12))
+                }
+                .disabled(working)
+                .accessibilityIdentifier("push.permission.accept")
+                Button { push.declinePermissionExplanation() } label: {
+                    Text("setup.notifLater").font(.body).frame(maxWidth: .infinity, minHeight: 44)
+                        .foregroundStyle(YansuTheme.ink)
+                        .overlay { RoundedRectangle(cornerRadius: 12).stroke(YansuTheme.borderStrong) }
+                }
+                .accessibilityIdentifier("push.permission.decline")
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(16)
+        .background(YansuTheme.surface, in: RoundedRectangle(cornerRadius: 18))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("today.notificationAsk")
     }
 }

@@ -63,6 +63,12 @@ extension BriefAudio {
         durationSeconds.flatMap(Self.label)
     }
 
+    /// "2 min" for Today's Hear it (phone-today rule 3): whole minutes, rounded up, at least one.
+    var minutesLabel: String? {
+        guard let seconds = durationSeconds, seconds.isFinite, seconds > 0, seconds < 604800 else { return nil }
+        return String.localizedStringWithFormat(String(localized: "today.brief.length"), max(1, Int((seconds / 60).rounded(.up))))
+    }
+
     /// "1:35" for a length in seconds; nil when it is not a plausible length.
     static func label(_ seconds: TimeInterval) -> String? {
         guard seconds.isFinite, seconds > 0, seconds < 604800 else { return nil }

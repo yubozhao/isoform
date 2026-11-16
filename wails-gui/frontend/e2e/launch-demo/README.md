@@ -57,3 +57,10 @@ Only real strings render: every label comes from the app's locale files and
 every state is one the app reaches with this data. When a page changes what it
 reads, the take shows the page's empty or failed state; add the read to
 `fixture.ts` rather than changing the page.
+
+## The website hero
+
+`website-hero.cjs` shoots the isoform.ai hero (Chat answering "What's my
+9:00?") from this harness; `?empty=1` starts the main chat empty. The
+published capture was made from Mac 1.0.54 (`a3aa3cd45`) and names that build
+in the website's claims table.

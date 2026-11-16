@@ -28,6 +28,8 @@ final class NotificationRouter: ObservableObject {
                 selectedTab = oldValue == .settings ? .today : oldValue
                 sheet = .settings
             }
+            // The Tasks tab went (phone-today rule 19): anything that still names it lands on Today.
+            if selectedTab == .tasks { selectedTab = .today }
             if selectedTab != oldValue { isTabBarCompact = false }
             if selectedTab != .today { pendingCurrentBrief = false }
         }
@@ -93,7 +95,8 @@ final class NotificationRouter: ObservableObject {
         case "task":
             sheet = nil
             pendingTaskID = id
-            selectedTab = .tasks
+            // The Tasks tab went (phone-today rule 19): its work is on Today, where the thread opens.
+            selectedTab = .today
         case "chat":
             noticeOpened(.chat(momentID: id))
         default:
@@ -110,7 +113,7 @@ final class NotificationRouter: ObservableObject {
 
     func showHeldTaskRow(_ taskID: String) {
         sheet = nil
-        selectedTab = .tasks
+        selectedTab = .today
         heldTaskRowRequest = taskID
     }
 
@@ -133,7 +136,7 @@ final class NotificationRouter: ObservableObject {
     func openUpNext() {
         sheet = nil
         upNextRequest = UUID()
-        selectedTab = .tasks
+        selectedTab = .today
     }
 
     /// Opens a non-pairing deep link, such as the link from the widget.
@@ -158,7 +161,7 @@ final class NotificationRouter: ObservableObject {
             tab = .chat
         case "ideas", "tasks":
             if target != nil { openTodayNotice(kind: "task", id: target); return }
-            tab = .tasks
+            tab = .today
         case "settings":
             openSettings()
             return
@@ -203,6 +206,9 @@ final class NotificationRouter: ObservableObject {
     }
 
     /// Opens Pairing, over Settings if it is open.
+    /// "Paired with {computer}", for two seconds above the tabs after pairing (phone-setup rule 6).
+    @Published var pairedToast: String?
+
     func openPairing(scanCode: Bool = false) {
         startsPairingWithScanner = scanCode
         sheet = .pairing

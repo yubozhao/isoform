@@ -76,12 +76,6 @@ struct RootView: View {
             .environmentObject(environment.keepAwake)
             .environmentObject(push)
         }
-        .sheet(isPresented: $push.showsPermissionExplanation) {
-            PushPermissionView()
-                .environmentObject(push)
-                .environmentObject(environment.notifications)
-                .environmentObject(environment.keepAwake)
-        }
         .sheet(item: $router.briefRoute) { route in
             NavigationStack {
                 BriefDetailView(entry: HistoryEntry(id: route.briefID, slot: nil, localDate: nil, asOf: nil,
@@ -123,7 +117,7 @@ struct RootView: View {
                     await environment.push.resumeIfOptedIn()
                     await environment.notifications.refresh()
                     await environment.keepAwake.refresh()
-                    if router.selectedTab == .tasks {
+                    if router.selectedTab == .today {
                         await environment.tasks.refresh()
                         await environment.ideas.refresh()
                     }
@@ -151,6 +145,23 @@ struct RootView: View {
                 return
             }
             router.openDeepLink(url, currentBriefID: environment.today.snapshot?.currentBrief?.id ?? environment.brief.current?.identifier)
+        }
+        .overlay(alignment: .bottom) {
+            if let name = router.pairedToast {
+                Label(String.localizedStringWithFormat(String(localized: "setup.paired"), name), systemImage: "checkmark")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(YansuTheme.onSolid)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(YansuTheme.ink, in: Capsule())
+                    .padding(.bottom, 110)
+                    .transition(.opacity)
+                    .accessibilityIdentifier("setup.pairedToast")
+                    .task {
+                        try? await Task.sleep(for: .seconds(2))
+                        withAnimation { router.pairedToast = nil }
+                    }
+            }
         }
         .overlay {
             if isLocked {
@@ -245,14 +256,6 @@ struct RootView: View {
                 .tag(NotificationRouter.Tab.chat)
                 .toolbar(.hidden, for: .tabBar)
 
-                NavigationStack {
-                    TasksView(navigation: duoNavigation, tasks: environment.tasks)
-                        .onAppear { router.openThreads.removeAll() }
-                        .hardTitleEdge()
-                }
-                .tabItem { Label(Self.tabTitle(.tasks, locale: locale), systemImage: "checklist") }
-                .tag(NotificationRouter.Tab.tasks)
-                .toolbar(.hidden, for: .tabBar)
             }
         .toolbar(.hidden, for: .tabBar)
         .safeAreaInset(edge: .bottom, spacing: 0) {

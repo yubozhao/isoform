@@ -232,8 +232,6 @@ struct FloatingTabBar: View {
             tab(.today, title: RootView.tabTitle(.today, locale: locale), symbol: "sun.max")
             tab(.chat, title: RootView.tabTitle(.chat, locale: locale), symbol: "bubble.left",
                 showsDot: chatNeedsAttention)
-            tab(.tasks, title: RootView.tabTitle(.tasks, locale: locale), symbol: "checklist",
-                count: tasks.firstCopyPending ? 0 : tasks.waitingCount)
         }
         .padding(router.isTabBarCompact ? 4 : 6)
         .background(.ultraThinMaterial, in: Capsule())
