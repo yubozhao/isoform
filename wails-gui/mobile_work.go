@@ -107,15 +107,17 @@ func mobileWorkListForDevice(list WorkList, device mobileDeviceRecord) WorkList 
 // outcome of a retried key; a refused answer stores none.
 func (bridge *mobileBridge) serveWorkAnswer(w http.ResponseWriter, r *http.Request, device mobileDeviceRecord, id string) {
 	var input struct {
-		IdempotencyKey string `json:"idempotencyKey"`
-		Action         string `json:"action"`
-		Reason         string `json:"reason,omitempty"`
-		Before         string `json:"before,omitempty"`
-		After          string `json:"after,omitempty"`
-		Surface        string `json:"surface,omitempty"`
-		AnsweredAt     string `json:"answeredAt,omitempty"`
-		QueuedAt       string `json:"queuedAt,omitempty"`
-		Seq            uint64 `json:"seq,omitempty"`
+		IdempotencyKey string   `json:"idempotencyKey"`
+		Action         string   `json:"action"`
+		Reason         string   `json:"reason,omitempty"`
+		Before         string   `json:"before,omitempty"`
+		After          string   `json:"after,omitempty"`
+		Removed        []string `json:"removed,omitempty"`
+		AgentID        string   `json:"agentId,omitempty"`
+		Surface        string   `json:"surface,omitempty"`
+		AnsweredAt     string   `json:"answeredAt,omitempty"`
+		QueuedAt       string   `json:"queuedAt,omitempty"`
+		Seq            uint64   `json:"seq,omitempty"`
 	}
 	if !mobileDecode(w, r, &input) {
 		return
@@ -140,7 +142,7 @@ func (bridge *mobileBridge) serveWorkAnswer(w http.ResponseWriter, r *http.Reque
 	}
 	bridge.runReceipted(w, device, key, r.Method+" "+r.URL.Path, func(w http.ResponseWriter) {
 		item, err := bridge.app.answerWork(r.Context(), id,
-			WorkAnswerInput{Action: input.Action, Reason: input.Reason, Before: input.Before, After: input.After},
+			WorkAnswerInput{Action: input.Action, Reason: input.Reason, Before: input.Before, After: input.After, Removed: input.Removed, AgentID: input.AgentID},
 			workAnswerMeta{Surface: surface, DeviceID: device.DeviceID, Seq: input.Seq})
 		switch {
 		case err == nil:
