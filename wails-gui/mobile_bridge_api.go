@@ -475,6 +475,11 @@ func (bridge *mobileBridge) handleAuthorized(w http.ResponseWriter, r *http.Requ
 				return
 			}
 			bridge.serveTaskMessage(w, r, device, mobilePathSegments(path)[1])
+		case "DELETE /answers/*":
+			if !mobileRequireScope(w, device, mobileScopeBriefFeedback) {
+				return
+			}
+			bridge.serveForgetAnswer(w, mobilePathSegments(path)[1])
 		case "POST /work/*/answer":
 			if !mobileRequireScope(w, device, mobileScopeBriefFeedback) {
 				return
@@ -596,6 +601,8 @@ func mobileRouteFamily(method, path string) string {
 		return "POST /offers/*/decline"
 	case len(parts) == 3 && parts[0] == "work" && parts[2] == "answer" && method == http.MethodPost:
 		return "POST /work/*/answer"
+	case len(parts) == 2 && parts[0] == "answers" && method == http.MethodDelete:
+		return "DELETE /answers/*"
 	}
 	return ""
 }

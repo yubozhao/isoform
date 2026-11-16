@@ -216,7 +216,7 @@ func (a *App) workItemForNotice(m engagement.Moment) (WorkItem, bool) {
 	if m.Kind != engagement.KindMeetingPrep && m.Kind != engagement.KindWorkFinished || m.SubjectID == "" {
 		return WorkItem{}, false
 	}
-	list, err := a.GetWorkList()
+	list, err := a.workListNow()
 	if err != nil {
 		return WorkItem{}, false
 	}

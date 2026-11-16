@@ -140,7 +140,7 @@ func (a *App) answerWork(ctx context.Context, id string, input WorkAnswerInput, 
 			}
 		}
 	}
-	record := AnswerRecord{ItemID: id, Kind: answerKindWork, Title: item.Work.Title, Action: input.Action, At: mobileTimestamp(now),
+	record := AnswerRecord{ItemID: id, Kind: answerKindWork, Source: item.Source, Title: item.Work.Title, Action: input.Action, At: mobileTimestamp(now),
 		Surface: meta.Surface, DeviceID: meta.DeviceID, Seq: meta.Seq, UndoUntil: list.UndoUntil}
 	switch input.Action {
 	case workActionUndo:

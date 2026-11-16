@@ -175,6 +175,17 @@ var (
 // GetWorkList returns Your work from its snapshot.
 func (a *App) GetWorkList() (perfValue WorkList, perfErr error) {
 	defer logPageBinding("GetWorkList", time.Now(), &perfValue)
+	list, err := a.workListNow()
+	if err == nil {
+		// The computer's Today put these items in front of the person.
+		a.noteWorkShown(list, workSurfaceComputer)
+	}
+	return list, err
+}
+
+// workListNow is Your work as a reader sees it now, for the computer's own
+// uses (Today's version, a notice's item); it records nothing.
+func (a *App) workListNow() (WorkList, error) {
 	list, err := derivedRead(a, derivedWorkList, "", func() (WorkList, error) { return a.buildWorkList(context.Background(), time.Now()) }, nil)
 	if err != nil {
 		return list, err

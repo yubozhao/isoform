@@ -129,7 +129,7 @@ func (a *App) ledgerBeliefAnswer(id, content, action string) {
 	if points := parseMemoryPoints(content); len(points) > 0 {
 		title = points[0]
 	}
-	if _, err := a.recordAnswer(AnswerRecord{ItemID: "belief:" + id, Kind: answerKindBelief, Title: title, Action: action,
+	if _, err := a.recordAnswer(AnswerRecord{ItemID: "belief:" + id, Kind: answerKindBelief, Source: answerSourceAboutYou, Title: title, Action: action,
 		Surface: workSurfaceComputer}); err != nil {
 		log.Printf("[answers] a belief's answer was not kept: %v", err)
 	}

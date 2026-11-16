@@ -17,13 +17,15 @@ func (bridge *mobileBridge) serveWorkList(w http.ResponseWriter, device mobileDe
 		mobileJSON(w, http.StatusServiceUnavailable, nil, errMobileStoreUnavailable.Error())
 		return
 	}
-	list, err := bridge.app.GetWorkList()
+	list, err := bridge.app.workListNow()
 	if err != nil {
 		mobileJSON(w, http.StatusServiceUnavailable, nil, errMobileStoreUnavailable.Error())
 		return
 	}
 	bridge.noteWorkReader(device.DeviceID)
-	mobileJSON(w, http.StatusOK, mobileWorkListForDevice(list, device), "")
+	scoped := mobileWorkListForDevice(list, device)
+	bridge.app.noteWorkShown(scoped, workSurfacePhone)
+	mobileJSON(w, http.StatusOK, scoped, "")
 }
 
 // mobileWorkReadersKey keeps the phones that read Your work: the redesigned
@@ -183,4 +185,21 @@ func (bridge *mobileBridge) serveAnswers(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	mobileJSON(w, http.StatusOK, page, "")
+}
+
+// serveForgetAnswer answers DELETE /answers/{id} (section 26.2): the person
+// deletes one answer for good from Your data on the phone.
+func (bridge *mobileBridge) serveForgetAnswer(w http.ResponseWriter, id string) {
+	if bridge.app == nil {
+		mobileJSON(w, http.StatusServiceUnavailable, nil, errMobileStoreUnavailable.Error())
+		return
+	}
+	switch err := bridge.app.ForgetAnswer(id); {
+	case err == nil:
+		mobileJSON(w, http.StatusOK, map[string]any{"forgotten": true}, "")
+	case errors.Is(err, errAnswerNotFound):
+		mobileJSON(w, http.StatusNotFound, nil, err.Error())
+	default:
+		mobileJSON(w, http.StatusServiceUnavailable, nil, "the answer could not be forgotten; try again")
+	}
 }

@@ -3792,4 +3792,19 @@ the person's note); and chat corrections. It is the most valuable data Isoform h
   `portrait`, `correction:<id>`.
 - **Your data.** `GET /answers?limit=<1..200, default 50>&before=<entry id>` (`brief:read`) and the desktop
   binding `GetAnswers(limit, before)` answer `{"answers":[<entry> + "undone":true when an Undo took it
-  back], "next":"<cursor>"}`, newest first; undo entries themselves are not listed.
+  back], "next":"<cursor>"}`, newest first; undo and shown entries themselves are not listed.
+- **Source.** Every entry names where its item came from: `source` is `brief`, `topic`, `watch`, `prep`,
+  `agent` (a result back), `about_you` or `chat`.
+- **Shown.** The first time an item of Your work is put in front of the person (the computer's
+  `GetWorkList`, the phone's `GET /work`) the ledger gains `{"action":"shown","item","source","surface"}`,
+  once per item. It is a measure, never an answer. The computer's own reads (Today's version, a notice's
+  item) record nothing.
+- **Forget.** `DELETE /answers/{id}` (`brief:feedback`) and the binding `ForgetAnswer(id)` delete one answer
+  for good, the person's choice from Your data: the entry and any Undo of it leave the ledger, which is
+  written again whole (temporary file, sync, rename). It is the one way an entry leaves. The item can be
+  answered again. `404` when the entry is not kept.
+- **Daily measures.** The binding `GetJudgmentStats(days)` (1 to 90, default 7) answers
+  `{"days":[{"day":"2026-11-15","total":{...},"bySource":{"brief":{...}}}]}`, today first, each counts
+  object `{"shown","answered","accepted","declined","notMine","useful","notUseful","undone"}`: items put in
+  front of the person, answers that stand (an undone one counts as `undone`), Yes and Edit as accepted.
+  A brief's items acted on are `bySource.brief.accepted`.
