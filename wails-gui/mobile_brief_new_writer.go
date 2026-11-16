@@ -95,6 +95,8 @@ func newBriefMaterial(in mobileBriefInput, brief MobileBriefV1, larger, name str
 			}
 		}
 	}
+	// marked is set while the watch's marked moments are added.
+	marked := false
 	add := func(group string, c mobileBriefCandidate, agent bool) {
 		if c.EvidenceUnavailable || c.ChatMessageID != "" || strings.TrimSpace(c.SourceID) == "" {
 			return
@@ -149,7 +151,7 @@ func newBriefMaterial(in mobileBriefInput, brief MobileBriefV1, larger, name str
 		}
 		id := m.AddItem(briefcore.MaterialItem{
 			Group: group, Title: c.Title, Detail: detail, Status: c.Status, When: when,
-			Since: !c.At.IsZero() && !c.At.Before(since), Agent: agent,
+			Since: !c.At.IsZero() && !c.At.Before(since), Agent: agent, Marked: marked,
 		})
 		if id == "" {
 			return
@@ -166,6 +168,11 @@ func newBriefMaterial(in mobileBriefInput, brief MobileBriefV1, larger, name str
 			add(group, c, agent)
 		}
 	}
+	// Moments the user marked on their watch go in first, so they keep their
+	// room on a busy day; the writer opens with them.
+	marked = true
+	addAll(briefcore.GroupDone, in.Marked, mobileBriefNewestFirst, false)
+	marked = false
 	// What is ahead and what waits on the user come first, so the forward
 	// groups keep their room when a busy day fills the past groups.
 	addAll(briefcore.GroupAhead, newBriefUpcoming(in.Meetings, in.AsOf), mobileBriefUpcomingFirst, false)
