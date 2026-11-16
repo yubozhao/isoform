@@ -20,6 +20,7 @@ Two runs every morning, before the day starts (docs/rework-2026-11.md, step 4).
 | watch-recordings | Activity > From your watch lists the seeded recording |
 | quick-chat | one prompt through the quick chat helper's own route to the launched app gets an answer (`quick-chat.mjs`; the panel window itself is not drawn) |
 | phone-relay | `TestMobileEndToEndThroughRelayBinary`: the relay binary, the hub code and a scripted phone pair, and a brief reaches the phone (not the launched app) |
+| harness-guards | the fixture-harness layout specs pass: `playwright.polish.config.ts` (composer rows, topic grid widths, Activity marks, stream windowing) and `playwright.today-f1.config.ts` |
 | model-sources | `TestCatalogDefaultSourcesAnswer`: every file of every downloadable model answers its default source (one byte each), so a dead download host is caught before a new user hits it |
 
 Every page must also raise no page errors and match the baseline screenshot (`~/isoform-trials/baseline`; a missing baseline is written by that run). A call the browser bridge refuses fails the run, except the ones kept native-only on purpose (listed in the spec). The app's own log is read for `first_paint` times, error lines (`known-noise.txt` lists the ones a test machine always has) and how each brief read went (shown, or withheld and why).

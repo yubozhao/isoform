@@ -97,6 +97,10 @@ func (bridge *mobileBridge) briefSource() mobileBriefSource {
 // needs a scope the device lacks answers 403.
 func (bridge *mobileBridge) handleAuthorized(w http.ResponseWriter, r *http.Request, device mobileDeviceRecord) {
 	path := strings.TrimPrefix(r.URL.Path, mobileAPIPrefix)
+	// Routes a piece registered from its own file (mobile_bridge_extras.go).
+	if bridge.serveExtraRoute(r.Method+" "+path, w, r, device) {
+		return
+	}
 	switch r.Method + " " + path {
 	case "GET /status":
 		bridge.serveStatus(w)
@@ -684,7 +688,7 @@ func (bridge *mobileBridge) serveStatus(w http.ResponseWriter) {
 		}
 		view.BriefStatus = bridge.cachedBriefStatus()
 	}
-	mobileJSON(w, http.StatusOK, view, "")
+	mobileJSON(w, http.StatusOK, bridge.statusWithExtras(view), "")
 }
 
 // mobileBriefSlotTimes lists the enabled brief slots that fall in the next 24

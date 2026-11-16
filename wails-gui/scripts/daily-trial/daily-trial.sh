@@ -140,6 +140,16 @@ grep -q '"page":"today-layout-' "$RUN/pages.jsonl" 2>/dev/null || echo '{"page":
 # Quick chat: one prompt through the helper's own route to the app.
 node "$TIP/wails-gui/scripts/daily-trial/quick-chat.mjs" "$APP" "$RUN" > "$RUN/quick-chat.log" 2>&1 || true
 
+# Layout guards on fixture harnesses (the composer rows, topic grid widths,
+# Activity marks, stream windowing, Today F1): their own Vite servers, no app.
+# One pages.jsonl line; a spec that fails or did not run fails it.
+HARNESS_FAIL=""
+for cfg in playwright.polish.config.ts playwright.today-f1.config.ts; do
+  ( cd "$TIP/wails-gui/frontend" && nice -n 10 npx playwright test --config "$cfg" --reporter=line ) > "$RUN/harness-${cfg%.config.ts}.log" 2>&1 || HARNESS_FAIL="$HARNESS_FAIL ${cfg%.config.ts}"
+done
+if [ -z "$HARNESS_FAIL" ]; then HARNESS_OK=true; HARNESS_FAILURES='[]'; else HARNESS_OK=false; HARNESS_FAILURES="[\"failed:$HARNESS_FAIL (see harness-*.log)\"]"; fi
+echo "{\"page\":\"harness-guards\",\"ok\":$HARNESS_OK,\"paintMs\":null,\"budgetMs\":0,\"checks\":[\"polish\",\"today-f1\"],\"failures\":$HARNESS_FAILURES,\"screenshot\":\"skipped\"}" >> "$RUN/pages.jsonl"
+
 # 5. The app's own log: first paints and errors since launch.
 cleanup
 LOG="$DATA/yansu-gui.log"

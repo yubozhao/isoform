@@ -651,3 +651,25 @@ func TestStatusAdvertisesRecordingContextAndTheRequestTakesIt(t *testing.T) {
 		t.Fatalf("status %s", raw)
 	}
 }
+
+func TestStatusSaysWhenObservingIsPausedSoTheWatchCanStop(t *testing.T) {
+	if mobileObservingPauseView(false, 1, time.Now()) != nil {
+		t.Fatal("not paused must say nothing")
+	}
+	raw, _ := json.Marshal((&mobileBridge{}).statusWithExtras(mobileStatusView{}))
+	// The key itself: a later piece adds "observingPauseControl", which is not a pause.
+	if strings.Contains(string(raw), `"observingPause":`) {
+		t.Fatalf("status of a computer that is observing: %s", raw)
+	}
+	since := time.Date(2026, 11, 14, 11, 4, 0, 0, time.UTC)
+	until := since.Add(time.Hour)
+	raw, _ = json.Marshal(map[string]any{"observingPause": mobileObservingPauseView(true, since.UnixMilli(), until)})
+	if !strings.Contains(string(raw), `"observingPause":{"since":"2026-11-14T11:04:00Z","until":"2026-11-14T12:04:00Z"}`) {
+		t.Fatalf("status %s", raw)
+	}
+	// A pause with no end and a start the computer cannot vouch for is still a pause.
+	raw, _ = json.Marshal(map[string]any{"observingPause": mobileObservingPauseView(true, 0, time.Time{})})
+	if !strings.Contains(string(raw), `"observingPause":{}`) {
+		t.Fatalf("status %s", raw)
+	}
+}
