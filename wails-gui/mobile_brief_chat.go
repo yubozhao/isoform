@@ -352,11 +352,26 @@ func (bridge *mobileBridge) startBriefChatTurn(row storage.MobileChatRow, prompt
 // user's text, edited or not, goes with the card's sources read again. A
 // legacy offerId tap sends the card's current words, never the phone's text.
 // A brief message with neither keeps the user's own text.
+// todayChatBriefForVersion is the brief revision a phone or Today named by its
+// conversation key: the live read, or the sealed read the phone was given. The
+// phone reads the sealed copy (seal v2) while a Today refresh renumbers the
+// stored brief's evidence, so the two keys differ for the same words; checking
+// the live read alone answered every card Ask with 409 (Nov 14).
+func (a *App) todayChatBriefForVersion(briefID, version string) (MobileBriefV1, bool) {
+	if brief, ok := a.todayChatDeliveredBrief(briefID); ok && brief.ConversationKey == version {
+		return brief, true
+	}
+	if sealed, found := a.todayChatSealedBrief(briefID); found && sealed.ConversationKey == version {
+		return sealed, true
+	}
+	return MobileBriefV1{}, false
+}
+
 func (a *App) mobileBriefChatReference(input mobileBriefChatInput, text string) (TodayChatContextRef, string, error) {
 	ref := TodayChatContextRef{SourceKind: "brief", SourceID: input.BriefVersion, BriefID: input.BriefID}
 	if input.WeekTopicID != "" {
-		brief, ok := a.todayChatDeliveredBrief(input.BriefID)
-		if !ok || brief.ConversationKey != input.BriefVersion || brief.YourWeek == nil || brief.YourWeek.Ask == nil ||
+		brief, ok := a.todayChatBriefForVersion(input.BriefID, input.BriefVersion)
+		if !ok || brief.YourWeek == nil || brief.YourWeek.Ask == nil ||
 			brief.YourWeek.Ask.TopicID != input.WeekTopicID || brief.YourWeek.Ask.Message != input.WeekMessage {
 			return ref, text, errTodayChatItemUnavailable
 		}
@@ -383,8 +398,8 @@ func (a *App) mobileBriefChatReference(input mobileBriefChatInput, text string) 
 	}
 	// Card IDs are scoped to the brief revision the phone showed: a tap on an
 	// older revision may name a card that now does something else.
-	brief, ok := a.todayChatDeliveredBrief(input.BriefID)
-	if !ok || input.BriefVersion != brief.ConversationKey {
+	brief, ok := a.todayChatBriefForVersion(input.BriefID, input.BriefVersion)
+	if !ok {
 		return ref, text, errTodayChatItemUnavailable
 	}
 	card, ok := mobileBriefFindCard(brief, cardID)
