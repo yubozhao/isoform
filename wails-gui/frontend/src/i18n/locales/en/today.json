@@ -820,5 +820,96 @@
         "followUpFailed": "Couldn't add the follow-up.",
         "routineFailed": "Couldn't add the routine.",
         "undoFailed": "Couldn't undo it."
+    },
+    "ctoday": {
+        "titleCount": "Today, {{count}} to answer",
+        "title": "Today",
+        "times": "Briefs at {{morning}} and {{evening}}",
+        "inBrief": "In this brief",
+        "meetings_one": "{{count}} meeting tomorrow",
+        "meetings_other": "{{count}} meetings tomorrow",
+        "meetingsToday_one": "{{count}} meeting today",
+        "meetingsToday_other": "{{count}} meetings today",
+        "toAnswer_one": "{{count}} thing to answer",
+        "toAnswer_other": "{{count}} things to answer",
+        "readAll": "Read all",
+        "pastBriefs": "Past briefs",
+        "pastBriefsEmpty": "No earlier briefs yet.",
+        "pastBriefsFailed": "Couldn't read your past briefs.",
+        "making": {
+            "morning": "Your morning brief is being made",
+            "evening": "Your evening brief is being made"
+        },
+        "couldnt": "Couldn't make the {{kind}} brief: {{reason}}.",
+        "tryAgain": "Try again",
+        "kind": {
+            "morning": "morning",
+            "evening": "evening",
+            "on_request": "new"
+        },
+        "reason": {
+            "timeout": "it took too long",
+            "signedOut": "{{ai}} is signed out",
+            "other": "something went wrong"
+        },
+        "showLess": "Show less",
+        "workSub": "{{n}} to answer · {{m}} back from your agents",
+        "withAgents": "With your agents",
+        "move": "{{i}} of {{n}} · ↑↓ to move",
+        "keys": "move · answer · edit · undo"
+    },
+    "work": {
+        "title": "Your work",
+        "toAnswer_one": "{{count}} to answer",
+        "toAnswer_other": "{{count}} to answer",
+        "yes": "Yes",
+        "no": "No",
+        "notMine": "Not mine",
+        "edit": "Edit",
+        "useful": "Useful",
+        "notUseful": "Not useful",
+        "useIt": "Use it",
+        "handOver": "Hand it over",
+        "cancel": "Cancel",
+        "skip": "Skip",
+        "undo": "Undo",
+        "upNext": "Up next",
+        "doneToday": "Done today",
+        "handOffSoon": "Handing work to your agent comes next.",
+        "itemLabel": "{{source}}. {{sentence}}. {{work}}. {{yes}}",
+        "quickChat": "Quick chat",
+        "since": "since {{time}}",
+        "tomorrowAt": "tomorrow {{time}}",
+        "yesterdayAt": "yesterday {{time}}",
+        "dayAt": "{{day}} {{time}}",
+        "allDone": "That's everything for now.",
+        "allDoneHint": "Prep comes an hour before a meeting; follow-ups, ten minutes after the call or email.",
+        "row": {
+            "draft": "Draft",
+            "prep": "Prep",
+            "check": "Check",
+            "offered": "Offered",
+            "claim": "Claim",
+            "result": "Result"
+        },
+        "reason": {
+            "already_done": "Already done",
+            "not_now": "Not now",
+            "not_useful": "Not useful",
+            "myself": "I'll do it myself",
+            "not_needed": "Not needed",
+            "wrong_facts": "Wrong facts",
+            "not_how_id_say": "Not how I'd say it",
+            "was_true_once": "Was true once",
+            "only_sometimes": "Only sometimes",
+            "not_at_all": "Not at all"
+        },
+        "error": {
+            "gone": "This item is no longer in Your work.",
+            "changed": "This item was answered or changed.",
+            "undoClosed": "This answer can no longer be undone.",
+            "invalid": "That answer doesn't fit this item.",
+            "failed": "Couldn't save your answer. Try again."
+        }
     }
 }

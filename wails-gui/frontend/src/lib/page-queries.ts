@@ -14,7 +14,7 @@ import {
 
 pageQueryCache.setActivityGate(waitForAppActive);
 
-const today = ['GetNeedsYou', 'GetTodayDayShape', 'GetTodayBeforeYouTalk', 'GetTodayNews', 'GetEngagementWeekSummary', 'GetMobileBriefHealth', 'GetTodaySuggestion', 'GetTodayQuietLines', 'GetTodayTopics', 'GetLatestBrief', 'GetTopicFinds', 'GetGoalCheckIn', 'GetPortraitTodayCard', 'IsClosedEyesModeEnabled'];
+const today = ['GetNeedsYou', 'GetTodayDayShape', 'GetTodayBeforeYouTalk', 'GetTodayNews', 'GetEngagementWeekSummary', 'GetMobileBriefHealth', 'GetTodaySuggestion', 'GetTodayQuietLines', 'GetTodayTopics', 'GetLatestBrief', 'GetTopicFinds', 'GetGoalCheckIn', 'GetPortraitTodayCard', 'IsClosedEyesModeEnabled', 'GetWorkList'];
 const chat = ['LoadStreamItemsPage', 'GetMainChatOverview', 'ListMainChatWaitingItems', 'ListMainChatAnswerChips'];
 // Every other page's primary reads. Activity's names are the ones its cache
 // facade (timeline/activity-session-cache.ts) reads under; 'Activity:meetings'
@@ -43,6 +43,8 @@ on(['today-dayshape:updated'], ['GetTodayDayShape', 'GetTodayBeforeYouTalk']);
 on(['calendar:synced', 'activity:session-saved', 'activity:activities-updated', 'mail:synced', 'people:updated', 'session:items-appended'], ['GetTodayBeforeYouTalk']);
 on(['mobile:updated'], ['GetEngagementWeekSummary', 'GetMobileBriefHealth', 'GetMobileBriefSchedule']);
 on(['initiative:updated'], ['GetTodaySuggestion']);
+// Your work is rebuilt in the background and after each answer (Go work_list.go).
+on(['work:updated', 'work:answered'], ['GetWorkList']);
 // Quiet lines change with each brief and with the notice settings; Today
 // otherwise reads them at most every 30 minutes (useTodayQuietLines).
 on(['brief:stored', 'engagement:settings-changed'], ['GetTodayQuietLines']);
@@ -325,6 +327,7 @@ export const GetEngagementWeekSummary = cached('GetEngagementWeekSummary');
 export const GetMobileBriefHealth = cached('GetMobileBriefHealth');
 export const GetTodaySuggestion = cached('GetTodaySuggestion');
 export const GetTodayQuietLines = cached('GetTodayQuietLines');
+export const GetWorkList = cached('GetWorkList', 15 * 60_000);
 // Topics change by "topics:updated" (each rebuild publishes it), never by a
 // poll (snappy-and-first-run-1.0.md, section 1). A pending projection keeps a
 // shorter lifetime, the safety resync for a publication that preceded its

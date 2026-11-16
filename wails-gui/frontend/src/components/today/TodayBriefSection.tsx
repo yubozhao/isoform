@@ -51,6 +51,7 @@ import { briefForDisplay } from "@/lib/brief-hygiene";
 import { activeInterval } from "@/lib/app-activity";
 import { pageQueryCache } from "@/lib/query-cache";
 import { BriefAudioPlayer } from "./BriefAudioPlayer";
+import { TodayBriefBand } from "./TodayBriefBand";
 import { YourWeekCard } from "./YourWeekCard";
 import { TodayWeekBeliefReceipt, useTodayWeekBelief, type TodayWeekBeliefReview } from "./useTodayWeekBelief";
 import { useBriefHoldOffer } from "./useBriefHoldOffer";
@@ -282,6 +283,14 @@ function zonedFormat(date: Date, language: string, options: Intl.DateTimeFormatO
  *  previous one, then the date. Null for an item first seen today. */
 function hasWrittenBrief(brief: MobileBriefDocument | null): boolean {
     return brief?.narrativeStatus === "ok" && briefHasWords(brief);
+}
+
+/** The brief Today's band leads with (computer-today v1.0.0, SH1): a written
+ *  brief that Today shows as the brief, by the card's own test, never a quiet
+ *  or empty one. Every other state keeps its own card. */
+export function bandBrief(view: TodayBriefView | null): MobileBriefDocument | null {
+    const brief = view?.brief ?? null;
+    return view && brief && !view.empty && !view.quiet && hasWrittenBrief(brief) ? brief : null;
 }
 
 export function briefSinceDay(since: string | undefined, now: Date, language: string, tr: Translate, timeZone?: string): string | null {
@@ -530,7 +539,17 @@ export function TodayBriefSection({
     dayShapeDate = "",
     dayShapeFailure = null,
     quietFooter,
+    band = false,
+    onOpenPastBriefs,
+    afterBand,
 }: {
+    /** Your work (SH2): right under the band, or under the brief's card in
+     *  any other state. */
+    afterBand?: ReactNode;
+    /** The brief leads as the band (computer-today v1.0.0, SH1), with
+     *  today's full card under it. */
+    band?: boolean;
+    onOpenPastBriefs?: () => void;
     view: TodayBriefView | null;
     dayShape?: TodayDayShape | null;
     dayShapeDate?: string;
@@ -574,6 +593,8 @@ export function TodayBriefSection({
     const tr: Translate = (key, options) => t(key as never, options as never) as unknown as string;
     // Only a brief with content is observed; its card holds the ref.
     const seenRef = useFirstBriefSeen(!!view?.brief && !view.empty);
+    const unusedCardRef = useRef<HTMLElement>(null);
+    const banded = band ? bandBrief(view) : null;
     const sectionBrief = view?.brief;
     const briefSeenRef = useTodaySectionSeen(active, "brief", view?.quiet || sectionBrief?.yourWeek ? 0 : sectionBrief ? (briefForDisplay(sectionBrief).narrative?.length ?? 0) : 0, !loading);
     const rows = useOpenRows();
@@ -758,7 +779,8 @@ export function TodayBriefSection({
             cardsShown: observationPaused !== null,
             paused: observationPaused === true,
             features,
-            cardRef: seenRef,
+            cardRef: banded ? unusedCardRef : seenRef,
+            hideAudio: !!banded,
             active,
             goalCheckIn,
             onGoalCheckInAnswered,
@@ -845,14 +867,35 @@ export function TodayBriefSection({
         />
     ) : null;
     const hasQuietFooter = !!quietFooter;
+    // SH1: the written brief leads as the band, Hear it and what is in it;
+    // today's full card stays under it, since its chips, day strip, Find time
+    // and Your week have no new home until Your work (SH2). Every other state
+    // keeps its own card.
+    const shownCard = banded && view ? (
+        <section ref={seenRef} className="flex flex-col gap-[18px]">
+            <TodayBriefBand
+                brief={banded}
+                view={view}
+                make={make}
+                onMakeNow={onMakeNow}
+                showLead={false}
+                onOpenPastBriefs={onOpenPastBriefs}
+                active={active}
+                firstCaption={firstBrief?.caption}
+            />
+            {afterBand}
+            {parts.card}
+        </section>
+    ) : parts.card;
     return (
         <div data-testid="today-brief" className="flex flex-col gap-[18px]">
             {locateNonce > 0 ? (
                 // Keyed by the request, so each Show rings the card again.
                 <div key={locateNonce} className="activity-card-locate flex flex-col gap-[18px]" data-testid="today-brief-located">
-                    {(pendingCard || parts.card) && <div ref={briefSeenRef}>{pendingCard}{parts.card}</div>}
+                    {(pendingCard || shownCard) && <div ref={briefSeenRef}>{pendingCard}{shownCard}</div>}
                 </div>
-            ) : (pendingCard || parts.card) && <div ref={briefSeenRef}>{pendingCard}{parts.card}</div>}
+            ) : (pendingCard || shownCard) && <div ref={briefSeenRef}>{pendingCard}{shownCard}</div>}
+            {!banded && afterBand}
             {view?.nothingNew && brief && <p className="text-[13.5px] text-muted" role="status">{tr("todayBrief.nothingNewSince", { time: briefClockTime(view.briefRun?.status === "ok" && view.briefRun.briefId === brief.briefId && view.briefRun.at ? view.briefRun.at : brief.asOf, i18n.language, tr, brief.timezone) })}</p>}
             {beliefReview.receipt && (!hasContent || view?.quiet || !brief?.yourWeek?.learned?.some((row) => row.memoryId === beliefReview.receipt?.id)) && <TodayWeekBeliefReceipt review={beliefReview} />}
             {retryOpening && <button type="button" role="alert" className="self-start text-[12px] text-error" onClick={() => measureToday("T11", "open", "opened", () => { setRetryOpening(null); retryOpening(); })}>{tr("actions.chatOpenFailed")}</button>}
@@ -1228,7 +1271,10 @@ function briefParts({
     prepPeople,
     draftRoutes,
     blind,
+    hideAudio = false,
 }: {
+    /** The band above plays the brief; the full card has no second control. */
+    hideAudio?: boolean;
     /** New-message draft cards whose address a record proves. */
     draftRoutes: ReadonlySet<string>;
     blind?: ReactNode;
@@ -1600,7 +1646,7 @@ function briefParts({
                 className={cn(BRIEF_CARD, "gap-3.5")}
                 data-testid="brief-card"
             >
-                {audio ? (
+                {hideAudio ? null : audio ? (
                     // Keyed by brief: a file still loading for the last brief
                     // never plays under this one.
                     <BriefAudioPlayer key={brief.briefId} briefId={brief.briefId} audio={audio} caption={asOf} />

@@ -122,6 +122,7 @@ const pauseMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/wails-shim-app", () => ({
+    ListPastBriefs: vi.fn().mockResolvedValue([{ briefId: "2026-10-21-evening", slot: "evening", localDate: "2026-10-21", asOf: "2026-10-21T18:00:00Z", narrativeStatus: "ok", lead: "Yesterday's lead." }]),
     GetAssistantSignOut: vi.fn().mockResolvedValue({ assistant: "", signedOut: false }),
     GetTodayYourWeekDeclined: vi.fn(async () => false),
     DeclineTodayYourWeek: vi.fn(async () => undefined),
@@ -496,7 +497,7 @@ describe("TodayPage brief and finds", () => {
             loading: false, loadFailed: false, make: "idle", nextAllowedAt: "", makeNow: vi.fn(), refresh: vi.fn(),
         });
         renderToday(handlers, { active: true });
-        expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("todayBrief.slot.morning");
+        expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("ctoday.title");
         expect(screen.getByTestId("brief-pending")).toBeInTheDocument();
         // v1.1.5 #1: the earlier brief is never shown as the brief.
         expect(screen.queryByTestId("brief-card")).not.toBeInTheDocument();
@@ -1339,6 +1340,21 @@ describe("TodayPage panel width, the Chat button and the header (Claude Design, 
     });
     const slot = () => screen.getByTestId("topic-panel-pinned");
 
+    it("leads with the brief band over today's full card, and opens Past briefs beside Today (SH1)", async () => {
+        width(1400);
+        withBrief(closingBrief());
+        render(<TodayPage handlers={handlers} />);
+        await act(async () => {});
+        const band = screen.getByTestId("today-brief-band");
+        expect(band).toHaveTextContent("ctoday.inBrief");
+        expect(screen.getByTestId("brief-card")).toBeInTheDocument();
+        // The brief's words show once: the card keeps them, the band has none.
+        expect(screen.getAllByText("Halcyon's launch memo is due Tuesday.")).toHaveLength(1);
+        expect(within(band).queryByTestId("brief-band-lead")).toBeNull();
+        fireEvent.click(within(band).getByTestId("brief-band-past"));
+        expect(await within(slot()).findByTestId("past-brief-row")).toHaveTextContent("Yesterday's lead.");
+    });
+
     it("caps and centers Today even when the saved reading preference is full width", async () => {
         width(1400);
         render(<TodayPage handlers={handlers} wideMode />);
@@ -1397,12 +1413,12 @@ describe("TodayPage panel width, the Chat button and the header (Claude Design, 
         withBrief(closingBrief());
         const { unmount } = render(<TodayPage handlers={handlers} />);
         await act(async () => {});
-        expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("todayBrief.slot.morning");
+        expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("ctoday.title");
         unmount();
         withBrief(null);
         render(<TodayPage handlers={handlers} />);
         await act(async () => {});
-        expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("todayBrief.slot.morning");
+        expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("ctoday.title");
         expect(screen.getByRole("heading", { level: 1 })).toHaveClass("display");
         vi.useRealTimers();
     });
@@ -1419,7 +1435,7 @@ describe("TodayPage panel width, the Chat button and the header (Claude Design, 
                 const { unmount } = render(<TodayPage handlers={handlers} />);
                 await act(async () => {});
                 expect(screen.getByTestId("brief-card")).toBeInTheDocument();
-                expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("todayBrief.slot.morning");
+                expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("ctoday.title");
                 unmount();
             }
         } finally {
@@ -1437,7 +1453,7 @@ describe("TodayPage panel width, the Chat button and the header (Claude Design, 
             withBrief({ ...brief, slot: "evening", asOf: new Date(made.getFullYear(), made.getMonth(), made.getDate(), 18, 0).toISOString() });
             render(<TodayPage handlers={handlers} />);
             await act(async () => {});
-            expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("todayBrief.slot.morning");
+            expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("ctoday.title");
         } finally {
             vi.useRealTimers();
         }
@@ -2073,7 +2089,7 @@ describe("Today is never blank (today-review v1.1.14 D8)", () => {
         mockUseTodayStatus.mockReturnValue({ week: null, brief: null, loading: true, refresh: vi.fn() });
         renderToday();
         const header = screen.getByTestId("today-header");
-        expect(within(header).getByRole("heading", { level: 1 })).toHaveTextContent(/^todayBrief\.slot\./);
+        expect(within(header).getByRole("heading", { level: 1 })).toHaveTextContent("ctoday.title");
         expect(within(header).getByTestId("today-status")).not.toBeEmptyDOMElement();
         expect(screen.getByTestId("brief-card-loading")).toHaveAttribute("aria-busy", "true");
         // Nothing on the page waits on an entrance animation to become visible.

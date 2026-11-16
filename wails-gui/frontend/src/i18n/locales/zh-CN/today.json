@@ -820,5 +820,96 @@
         "followUpFailed": "没能添加跟进。",
         "routineFailed": "没能添加例行事务。",
         "undoFailed": "没能撤销。"
+    },
+    "ctoday": {
+        "titleCount": "今天，{{count}} 件待回答",
+        "title": "今天",
+        "times": "简报时间：{{morning}} 和 {{evening}}",
+        "inBrief": "这份简报里",
+        "meetings_one": "明天有 {{count}} 个会议",
+        "meetings_other": "明天有 {{count}} 个会议",
+        "meetingsToday_one": "今天有 {{count}} 个会议",
+        "meetingsToday_other": "今天有 {{count}} 个会议",
+        "toAnswer_one": "{{count}} 件事等你回答",
+        "toAnswer_other": "{{count}} 件事等你回答",
+        "readAll": "阅读全文",
+        "pastBriefs": "以往简报",
+        "pastBriefsEmpty": "还没有更早的简报。",
+        "pastBriefsFailed": "无法读取以往简报。",
+        "making": {
+            "morning": "正在生成你的早间简报",
+            "evening": "正在生成你的晚间简报"
+        },
+        "couldnt": "无法生成{{kind}}简报：{{reason}}。",
+        "tryAgain": "重试",
+        "kind": {
+            "morning": "早间",
+            "evening": "晚间",
+            "on_request": "新的"
+        },
+        "reason": {
+            "timeout": "用时太长",
+            "signedOut": "{{ai}} 已退出登录",
+            "other": "出了点问题"
+        },
+        "showLess": "收起",
+        "workSub": "{{n}} 件待回答 · {{m}} 件从你的代理回来",
+        "withAgents": "在你的代理那里",
+        "move": "第 {{i}} / {{n}} 件 · ↑↓ 切换",
+        "keys": "切换 · 回答 · 编辑 · 撤销"
+    },
+    "work": {
+        "title": "你的工作",
+        "toAnswer_one": "{{count}} 件待回答",
+        "toAnswer_other": "{{count}} 件待回答",
+        "yes": "是",
+        "no": "否",
+        "notMine": "不是我的",
+        "edit": "编辑",
+        "useful": "有用",
+        "notUseful": "没用",
+        "useIt": "使用",
+        "handOver": "交给代理",
+        "cancel": "取消",
+        "skip": "跳过",
+        "undo": "撤销",
+        "upNext": "接下来",
+        "doneToday": "今天已完成",
+        "handOffSoon": "把工作交给你的代理的功能即将推出。",
+        "itemLabel": "{{source}}。{{sentence}}。{{work}}。{{yes}}",
+        "quickChat": "快速聊天",
+        "since": "自 {{time}}",
+        "tomorrowAt": "明天 {{time}}",
+        "yesterdayAt": "昨天 {{time}}",
+        "dayAt": "{{day}} {{time}}",
+        "allDone": "现在没有别的了。",
+        "allDoneHint": "会议准备在会议前一小时送到；跟进在通话或邮件后十分钟送到。",
+        "row": {
+            "draft": "草稿",
+            "prep": "准备",
+            "check": "确认",
+            "offered": "提议",
+            "claim": "判断",
+            "result": "结果"
+        },
+        "reason": {
+            "already_done": "已经做了",
+            "not_now": "现在不",
+            "not_useful": "没用",
+            "myself": "我自己来",
+            "not_needed": "不需要",
+            "wrong_facts": "事实不对",
+            "not_how_id_say": "不是我会说的话",
+            "was_true_once": "以前是这样",
+            "only_sometimes": "只是有时",
+            "not_at_all": "完全不是"
+        },
+        "error": {
+            "gone": "这件事已不在你的工作里。",
+            "changed": "这件事已被回答或已更改。",
+            "undoClosed": "这个回答已无法撤销。",
+            "invalid": "这个回答不适用于这件事。",
+            "failed": "无法保存你的回答，请重试。"
+        }
     }
 }

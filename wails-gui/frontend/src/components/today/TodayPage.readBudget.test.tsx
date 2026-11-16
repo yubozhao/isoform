@@ -10,8 +10,11 @@ import { TodayPage } from './TodayPage';
 // hooks and page cache, on mount and after one event. Each binding is read at
 // most once, and the totals are pinned: a new read on Today's load or on a
 // privacy sweep has to raise its budget here, on purpose.
-const MOUNT_READ_BUDGET = 15;
-const MEMORY_UPDATED_READ_BUDGET = 13;
+// 16: the header's brief times (GetMobileBriefSchedule, computer-today SH1).
+// 17 and 14: Your work (GetWorkList, SH2), which holds the brief's words, so a
+// privacy sweep reads it again too.
+const MOUNT_READ_BUDGET = 17;
+const MEMORY_UPDATED_READ_BUDGET = 14;
 const total = (calls: string[]) => calls.filter(isRead).length;
 
 vi.mock('@/lib/launch-perf', () => ({ markLaunchStage: vi.fn(), markLaunchPaint: vi.fn() }));

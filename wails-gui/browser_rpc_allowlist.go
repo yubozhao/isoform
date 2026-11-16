@@ -157,6 +157,7 @@ var browserRPCAllowlist = map[string]bool{
 	// finding, feedback and topic changes rewrite what Isoform learned.
 	"GetLatestBrief":                     true,
 	"GetTodayBriefByID":                  true,
+	"ListPastBriefs":                     true,
 	"PrepareTodayBriefParagraph":         true,
 	"GetTodayPanelAnswer":                true,
 	"GetTodayMeetingNote":                true,

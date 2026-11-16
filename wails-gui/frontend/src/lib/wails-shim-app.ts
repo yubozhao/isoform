@@ -1204,6 +1204,54 @@ export const DismissTodayBeforeYouTalk = appBinding<[meetingID: string], void>("
 
 export const GetLatestBrief = appBinding<[], TodayBriefView>("GetLatestBrief");
 export const GetTodayBriefByID = appBinding<[briefID: string], TodayBriefView>("GetTodayBriefByID");
+/** One row of Today's Past briefs (Go MobileBriefSummary), newest first. */
+export interface MobileBriefSummary {
+    briefId: string;
+    slot: string;
+    localDate: string;
+    asOf: string;
+    narrativeStatus: string;
+    lead?: string;
+}
+export const ListPastBriefs = appBinding<[], MobileBriefSummary[]>("ListPastBriefs");
+
+/** Your work (PROTOCOL.md section 26, Go work_list.go): the one list of what
+ *  Isoform puts to the person, the same on the computer and the phone. Its
+ *  words are composed on the computer; the clients group items by state. */
+/** key names a fixed phrase and at a time (rendered in the reader's day words); text is the fallback. */
+export interface WorkTextPart { text: string; ref?: string; key?: string; at?: string }
+export interface WorkItem {
+    id: string;
+    kind: "done" | "offered" | "claim" | "result" | "check" | string;
+    row: "draft" | "prep" | "check" | "offered" | "claim" | "result" | string;
+    state: "open" | "answered" | "with_agent" | "back" | string;
+    source: string;
+    ref: Record<string, string | undefined>;
+    first: WorkTextPart[];
+    noticed: string;
+    work: { title: string; text?: string; minutes?: number };
+    yes: { does: string; line: string; at?: string; agent?: string };
+    why?: { label: string; ref?: string }[];
+    gets?: { id: string; label: string; ref?: string; removable: boolean }[];
+    reasons: string[];
+    answer?: { action: string; reason?: string; edited?: { before: string; after: string }; at: string; surface: string; line?: string; undoUntil?: string };
+    agent?: { name: string; since?: string };
+    createdAt: string;
+    order: number;
+}
+export interface WorkList {
+    v: number;
+    version: string;
+    generatedAt: string;
+    toAnswer: number;
+    backFromAgents: number;
+    undoUntil?: string;
+    items: WorkItem[];
+}
+export interface WorkAnswerInput { action: string; reason?: string; before?: string; after?: string }
+export const GetWorkList = appBinding<[], WorkList>("GetWorkList");
+export const AnswerWork = appBinding<[id: string, input: WorkAnswerInput], WorkItem>("AnswerWork");
+export const UndoWork = appBinding<[id: string], WorkItem>("UndoWork");
 export const SaveMorningBriefWeekIntent = appBinding<[briefID: string, answer: string], void>("SaveMorningBriefWeekIntent");
 export const PostMorningBriefWeekAnswer = appBinding<[briefID: string, previous: string, answer: string], void>("PostMorningBriefWeekAnswer");
 export const CancelTodayReplyDraft = appBinding<[string], void>("CancelTodayReplyDraft");
