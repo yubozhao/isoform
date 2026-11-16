@@ -23,3 +23,22 @@ func TestKeepFeedbackRewritesTheLog(t *testing.T) {
 		t.Fatal("an empty log must be fine")
 	}
 }
+
+func TestForgetAllRemovesTheDailyStore(t *testing.T) {
+	s := NewStore(t.TempDir() + "/daily")
+	if err := s.AppendFeedback(Feedback{TopicID: "t", Verdict: VerdictNotMine}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ForgetAll(); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.Feedback(); err != nil || len(got) != 0 {
+		t.Fatalf("feedback after ForgetAll = %+v %v", got, err)
+	}
+	if _, ok := s.Load(); ok {
+		t.Fatal("the daily topics must be gone")
+	}
+	if err := s.ForgetAll(); err != nil {
+		t.Fatal("forgetting twice must be fine")
+	}
+}

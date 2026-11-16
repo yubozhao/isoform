@@ -485,3 +485,21 @@ func boolInt(v bool) int {
 	}
 	return 0
 }
+
+// DeleteAllCalendarEvents removes every stored copy of a calendar event and
+// its attendees (Your data's Forget everything). The calendar sources, the
+// accounts the person chose, stay; the next sync reads the calendars again
+// only while calendar reading is on.
+func (s *Store) DeleteAllCalendarEvents(ctx context.Context) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, query := range []string{`DELETE FROM calendar_event_attendees`, `DELETE FROM calendar_events`} {
+		if _, err := tx.ExecContext(ctx, query); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}

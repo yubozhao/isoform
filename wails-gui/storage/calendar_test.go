@@ -189,3 +189,27 @@ func TestMeetingFollowups(t *testing.T) {
 		t.Fatal("a session id is required")
 	}
 }
+
+func TestDeleteAllCalendarEventsKeepsTheSources(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	if err := s.UpsertCalendarEvents(ctx, []CalendarEventRow{calendarEventFixture("a", 1_000, 2_000), calendarEventFixture("b", 3_000, 4_000)}, 10); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpsertCalendarSource(ctx, CalendarSourceRow{ID: "src", Kind: "eventkit", Title: "Work", FirstSeenAt: 1, LastSeenAt: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteAllCalendarEvents(ctx); err != nil {
+		t.Fatal(err)
+	}
+	events, err := s.ListCalendarEvents(ctx, 0, 10_000, true)
+	if err != nil || len(events) != 0 {
+		t.Fatalf("events after delete = %d %v", len(events), err)
+	}
+	var attendees, sources int
+	_ = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM calendar_event_attendees`).Scan(&attendees)
+	_ = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM calendar_sources`).Scan(&sources)
+	if attendees != 0 || sources != 1 {
+		t.Fatalf("attendees = %d, sources = %d; want 0 and 1", attendees, sources)
+	}
+}

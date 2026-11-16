@@ -127,3 +127,14 @@ func (s *ActivityStore) DeleteBrowserVisitsOf(browser string) (int64, error) {
 	}
 	return res.RowsAffected()
 }
+
+// DeleteAllBrowserActivity removes every stored visit and site day of every
+// browser (Your data's Forget everything).
+func (s *ActivityStore) DeleteAllBrowserActivity() error {
+	for _, query := range []string{`DELETE FROM browser_visits`, `DELETE FROM browser_site_days`} {
+		if _, err := s.db.Exec(query); err != nil {
+			return fmt.Errorf("delete browser activity: %w", err)
+		}
+	}
+	return nil
+}
