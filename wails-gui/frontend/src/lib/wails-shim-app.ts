@@ -5664,7 +5664,7 @@ export interface ActivityFeedRow {
     recordingId?: string;
 }
 export interface ActivityForgetItem {
-    kind: 'topic' | 'goal' | 'screen' | 'words' | 'audio' | 'copies' | 'notes';
+    kind: 'topic' | 'goal' | 'screen' | 'moment' | 'words' | 'audio' | 'copies' | 'notes';
     title?: string;
     startMs?: number;
     endMs?: number;

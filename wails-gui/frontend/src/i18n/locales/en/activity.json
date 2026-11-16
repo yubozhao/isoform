@@ -691,6 +691,7 @@
             "goal": "the goal {{goal}}",
             "goalUntitled": "a goal made from it",
             "screen": "the screen from {{start}} to {{end}}",
+            "moment": "the screen of {{moment}}, which shares it",
             "words": "what it heard",
             "audio": "the audio",
             "copies": "the copies on your phone and watch",
