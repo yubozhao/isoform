@@ -20,10 +20,14 @@ import {
 // with it. Closed Eyes is a striped gap with nothing else about that time.
 // The source is the dot and its name, never a bar at the row's left edge.
 
+// Your agents' hand-offs carry the purple-blue of Your agents; what an agent
+// did on this computer is screen, so it takes the screen's colour
+// (computer-activity v1.2.0 rule 4).
 const DOT_CLASS: Record<Exclude<ActivityFeedKind, 'closed'>, string> = {
-    screen: 'bg-info',
+    screen: 'bg-seaweed',
     watch: 'bg-copper',
-    agent: 'bg-success',
+    agent: 'bg-seaweed',
+    handoff: 'bg-accent',
 };
 
 function clock(ms: number, lang: string): string {
@@ -43,6 +47,7 @@ export function feedSource(t: TFunction<'activity'>, row: ActivityFeedRow): stri
         case 'watch':
             return row.device === 'phone' ? t('feed.sourcePhone') : t('feed.sourceWatch');
         case 'agent':
+        case 'handoff':
             return row.app ? t('feed.sourceAgentApp', { app: row.app }) : t('feed.sourceAgent');
         default:
             return '';
@@ -58,13 +63,33 @@ export function feedTitle(t: TFunction<'activity'>, row: ActivityFeedRow): strin
             return t('feed.watchTitle', { length });
         case 'agent':
             return t('feed.agentTitle', { length: formatDurationMs(row.activeMs || row.endMs - row.startMs) });
+        case 'handoff':
+            return row.title || t('feed.untitledHandoff');
         default:
             return '';
     }
 }
 
-export function feedLine(t: TFunction<'activity'>, row: ActivityFeedRow): string {
+function handoffLine(t: TFunction<'activity'>, row: ActivityFeedRow, lang: string): string {
+    const given = row.surface === 'phone' ? t('act.handedOverPhone') : t('act.handedOverYes');
+    switch (row.outcome) {
+        case 'done':
+            return row.doneMs ? t('act.handedOver', { given, time: clock(row.doneMs, lang) }) : t('act.outcomeLine', { given, outcome: t('act.outcome.done') });
+        case 'taken':
+            return t('act.outcomeLine', { given, outcome: t('act.outcome.taken', { agent: row.app }) });
+        case 'not_done':
+            return t('act.outcomeLine', { given, outcome: t('act.outcome.notDone', { agent: row.app }) });
+        case 'no_word':
+            return t('act.outcomeLine', { given, outcome: t('act.outcome.noWord') });
+        default:
+            return given;
+    }
+}
+
+export function feedLine(t: TFunction<'activity'>, row: ActivityFeedRow, lang = 'en'): string {
     switch (row.kind) {
+        case 'handoff':
+            return handoffLine(t, row, lang);
         case 'screen':
             return row.detail ?? '';
         case 'watch':
@@ -88,6 +113,11 @@ export interface ForgetPlan {
 }
 
 export function forgetPlan(t: TFunction<'activity'>, preview: ActivityForgetPreview, row: ActivityFeedRow, lang: string): ForgetPlan {
+    if (row.kind === 'handoff') {
+        // Isoform's record goes; what the agent made stays with it (v1.2.0 rule 3).
+        const agent = preview.agent || row.app || '';
+        return { title: t('act.forgetHandoff', { title: preview.title || feedTitle(t, row), agent }), lead: '', items: [], count: 1 };
+    }
     const what = row.kind === 'screen' ? (preview.title || feedTitle(t, row)) : feedTitle(t, row);
     const items: string[] = [];
     for (const item of preview.goes) {
@@ -206,7 +236,7 @@ export function ActivityFeed({ date, kinds, emptyText }: {
                             <div className="min-w-0 flex-1">
                                 <p className="text-[11px] text-muted">{feedSource(t, row)}</p>
                                 <p className="text-[13px] text-ink line-clamp-2 break-words">{feedTitle(t, row)}</p>
-                                {feedLine(t, row) && <p className="text-[12px] text-muted line-clamp-2">{feedLine(t, row)}</p>}
+                                {feedLine(t, row, i18n.language) && <p className="text-[12px] text-muted line-clamp-2">{feedLine(t, row, i18n.language)}</p>}
                             </div>
                             <button
                                 type="button"
@@ -226,7 +256,7 @@ export function ActivityFeed({ date, kinds, emptyText }: {
                 title={plan?.title ?? ''}
                 description={plan ? (
                     <div className="flex flex-col gap-2" data-testid="forget-plan">
-                        <p className="m-0">{plan.lead}</p>
+                        {plan.lead && <p className="m-0">{plan.lead}</p>}
                         {plan.items.length > 0 && (
                             <ul className="m-0 flex list-disc flex-col gap-1 pl-5 text-ink">
                                 {plan.items.map((item) => <li key={item}>{item}</li>)}

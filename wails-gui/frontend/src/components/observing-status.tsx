@@ -209,7 +209,7 @@ export function ObservingStatus({ collapsed = false, onOpenSettings }: { collaps
                             setOpen(true);
                         }}
                         className={`group/observing flex items-center font-normal text-left rounded-lg outline-none hover:bg-surface-hover transition-colors focus-visible:ring-1 focus-visible:ring-border-focus ${collapsed ? "w-8 h-7 p-0 justify-center" : "justify-start gap-2 w-full px-2 h-[30px]"}`}
-                        aria-label={collapsed ? stateLabel : t("observingStatus.ariaLabel")}
+                        aria-label={collapsed ? stateLabel : t("observingStatus.ariaLabel", { state: stateLabel })}
                         title={stateLabel}
                     >
                         {/* Green "live" dot (macOS recording convention),

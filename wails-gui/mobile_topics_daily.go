@@ -101,3 +101,31 @@ func (bridge *mobileBridge) serveTopicsDailyAnswer(w http.ResponseWriter, r *htt
 		}
 	})
 }
+
+// serveTopicsDailyEnabled answers POST /topics-daily/enabled with
+// {"enabled": bool} (PROTOCOL.md 15.9.1): the phone's Proposals from your
+// topics switch, the same setting as the computer's. It answers the topics as
+// GET /topics-daily now shows them; turning it on builds today's copy in the
+// background, so the topics may come a little later.
+func (bridge *mobileBridge) serveTopicsDailyEnabled(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Enabled *bool `json:"enabled"`
+	}
+	if !mobileDecode(w, r, &input) {
+		return
+	}
+	if input.Enabled == nil {
+		mobileJSON(w, http.StatusBadRequest, nil, "enabled is required")
+		return
+	}
+	if bridge.app == nil {
+		mobileJSON(w, http.StatusServiceUnavailable, nil, errMobileStoreUnavailable.Error())
+		return
+	}
+	if _, err := bridge.app.SetDailyTopicsEnabled(*input.Enabled); err != nil {
+		mobileJSON(w, http.StatusServiceUnavailable, nil, "the setting could not be saved; try again")
+		return
+	}
+	bridge.notify()
+	bridge.serveTopicsDaily(w, r)
+}

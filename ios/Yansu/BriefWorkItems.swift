@@ -38,6 +38,7 @@ enum BriefItemPlacement {
 /// A brief's item where the brief mentions it: where it came from, the title, and Yes, No, Not mine at 38 points.
 /// An answered one is one line with a check, what happened and Undo.
 struct BriefWorkItem: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let item: WorkItem
     let now: Date
     var answer: (WorkAction) -> Void
@@ -50,26 +51,27 @@ struct BriefWorkItem: View {
                     Text(verbatim: item.firstLine)
                         .font(.footnote)
                         .foregroundStyle(YansuTheme.secondary)
-                        .lineLimit(2)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
                     Text(verbatim: item.work.title)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(YansuTheme.ink)
+                        .workItemAccessibility(item, answer: answer, edit: nil)
                     if YourWork.asksUseful(item) {
                         WorkWeightedRow(weights: [1, 1], spacing: 8) {
                             Button { answer(.useful) } label: {
-                                Text("work.useful").font(.body.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 38)
+                                Text("work.useful").font(.body.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 44)
                                     .foregroundStyle(YansuTheme.onSolid)
                                     .background(YansuTheme.solid, in: RoundedRectangle(cornerRadius: 12))
                             }
                             Button { answer(.notUseful) } label: {
-                                Text("work.notUseful").font(.body).frame(maxWidth: .infinity, minHeight: 38)
+                                Text("work.notUseful").font(.body).frame(maxWidth: .infinity, minHeight: 44)
                                     .foregroundStyle(YansuTheme.ink)
                                     .overlay { RoundedRectangle(cornerRadius: 12).stroke(YansuTheme.borderStrong) }
                             }
                         }
                         .buttonStyle(.plain)
                     } else {
-                        WorkAnswerButtons(height: 38, answer: answer)
+                        WorkAnswerButtons(height: 44, answer: answer)
                     }
                 }
                 .padding(.horizontal, 14)

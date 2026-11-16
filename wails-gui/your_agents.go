@@ -10,7 +10,9 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 
 	"wails-gui/internal/workonit"
 )
@@ -378,4 +380,89 @@ func (bridge *mobileBridge) serveYourAgentChoice(w http.ResponseWriter, r *http.
 			mobileJSON(w, http.StatusOK, agents, "")
 		}
 	})
+}
+
+// mobileAgentHandoff is one hand-off as Your data on the phone shows it
+// (PROTOCOL.md 27.3): what went, when, to whom, and where the Yes was given.
+// It is the computer's own log (GetWorkOnItHandoffs), nothing more.
+type mobileAgentHandoff struct {
+	ID        string `json:"id"`
+	AgentID   string `json:"agentId"`
+	AgentName string `json:"agentName"`
+	Kind      string `json:"kind"`
+	Method    string `json:"method"`
+	Via       string `json:"via,omitempty"`
+	Text      string `json:"text"`
+	Sent      string `json:"sent,omitempty"`
+	SentAt    string `json:"sentAt"`
+	Surface   string `json:"surface"`
+	Source    struct {
+		Kind string `json:"kind"`
+		ID   string `json:"id,omitempty"`
+	} `json:"source"`
+}
+
+type mobileAgentHandoffsPage struct {
+	Handoffs []mobileAgentHandoff `json:"handoffs"`
+	Next     string               `json:"next,omitempty"`
+}
+
+const (
+	mobileAgentHandoffsPageMax = 200
+	mobileAgentHandoffTextMax  = 8000
+	mobileAgentHandoffSentMax  = 2000
+)
+
+// agentHandoffsPage is the kept hand-offs newest first; before is the id of
+// the last one on the previous page.
+func (a *App) agentHandoffsPage(limit int, before string) (mobileAgentHandoffsPage, error) {
+	list, err := a.GetWorkOnItHandoffs()
+	if err != nil {
+		return mobileAgentHandoffsPage{}, err
+	}
+	page := mobileAgentHandoffsPage{Handoffs: []mobileAgentHandoff{}}
+	started := before == ""
+	for _, h := range list {
+		if !started {
+			started = h.ID == before
+			continue
+		}
+		if len(page.Handoffs) == limit {
+			page.Next = page.Handoffs[len(page.Handoffs)-1].ID
+			break
+		}
+		item := mobileAgentHandoff{ID: h.ID, AgentID: h.AgentID, AgentName: h.AgentID, Kind: h.Kind, Method: h.Method, Via: h.Via,
+			Text: mobileChatBound(h.Text, mobileAgentHandoffTextMax), Sent: mobileChatBound(h.Sent, mobileAgentHandoffSentMax),
+			SentAt: mobileTimestamp(time.UnixMilli(h.SentAt)), Surface: h.Surface}
+		if agent, ok := workonit.AgentByID(h.AgentID); ok {
+			item.AgentName = agent.Name
+		}
+		item.Source.Kind, item.Source.ID = h.SourceKind, h.SourceID
+		page.Handoffs = append(page.Handoffs, item)
+	}
+	return page, nil
+}
+
+// serveYourAgentHandoffs answers GET /agents/handoffs?limit=&before=: Sent to
+// your agents in Your data on the phone.
+func (bridge *mobileBridge) serveYourAgentHandoffs(w http.ResponseWriter, r *http.Request) {
+	if bridge.app == nil {
+		mobileJSON(w, http.StatusServiceUnavailable, nil, errMobileStoreUnavailable.Error())
+		return
+	}
+	limit := 50
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > mobileAgentHandoffsPageMax {
+			mobileJSON(w, http.StatusBadRequest, nil, "limit must be between 1 and 200")
+			return
+		}
+		limit = parsed
+	}
+	page, err := bridge.app.agentHandoffsPage(limit, r.URL.Query().Get("before"))
+	if err != nil {
+		mobileJSON(w, http.StatusServiceUnavailable, nil, "the hand-offs could not be read")
+		return
+	}
+	mobileJSON(w, http.StatusOK, page, "")
 }

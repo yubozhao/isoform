@@ -102,7 +102,8 @@ struct YourWorkSection<Legacy: View>: View {
             }
         }
         .animation(reduceMotion ? .easeOut(duration: 0.18) : .easeOut(duration: 0.25), value: groups.open.map(\.id))
-        .sensoryFeedback(.success, trigger: answerHaptics)
+        // A light tap confirms an answer; it never stands in for words (pass-access rule 10).
+        .sensoryFeedback(.impact(weight: .light), trigger: answerHaptics)
         .sheet(item: $editing) { item in
             WorkEditSheet(item: item) { text in
                 Task { await work.answer(item, action: .edit, before: item.work.text, after: text) }

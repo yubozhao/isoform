@@ -203,7 +203,8 @@ struct TodayBriefCardView: View {
                                  asOf: shown.asOfDate, narrativeStatus: shown.narrativeStatus, isCached: true,
                                  displaySlot: shown.displaySlot, timezone: shown.timezone,
                                  kind: shown.kind, dueAt: shown.dueAt)
-        let isFolded = folded && !unfolded
+        // At accessibility sizes the card folds to its title so Your work starts on the first screen (pass-access 7).
+        let isFolded = (folded || dynamicTypeSize.isAccessibilitySize) && !unfolded
         VStack(alignment: .leading, spacing: 10) {
             if weekShown {
                 YansuCard {
@@ -305,7 +306,8 @@ struct TodayBriefCardView: View {
                         .accessibilityIdentifier("feed.brief.recording")
                 }
             }
-            if let words = TodayBriefCard.firstSentences(shown, locale: locale) {
+            if let words = TodayBriefCard.firstSentences(shown, locale: locale),
+               !(isFolded && dynamicTypeSize.isAccessibilitySize) {
                 Text(verbatim: words)
                     .font(.system(size: 16.5))
                     .lineSpacing(3)
@@ -434,7 +436,9 @@ private struct TodayBriefPlayButton: View {
                 }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(playing ? "Pause your brief" : "Hear your brief")
+        .accessibilityLabel(playing ? String(localized: "Pause your brief")
+                            : brief.audio?.minutesLabel.map { String(localized: "today.brief.hear") + ", " + $0 }
+                                ?? String(localized: "Hear your brief"))
         .accessibilityValue(selected ? "\(BriefPlaybackTime.text(player.position)) / \(BriefPlaybackTime.text(player.duration))" : "")
         .accessibilityIdentifier("brief.hearBrief")
     }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"math"
 	"net/http"
 	"sync/atomic"
 	"time"
@@ -24,15 +25,27 @@ const (
 	mobileObservingPauseMaxMinutes     = 4 * 60
 )
 
-// Seams for tests: the real ones are the menu bar's own controls.
+// Seams for tests: the real ones are the menu bar's own controls. Zero
+// minutes is a pause with no end, as the computer's Pause observing switch.
 var (
-	mobilePauseObserving  = func(a *App, minutes int) error { return a.PauseObservationFor(minutes) }
+	mobilePauseObserving = func(a *App, minutes int) error {
+		if minutes == 0 {
+			return a.SetClosedEyesModeEnabled(true)
+		}
+		return a.PauseObservationFor(minutes)
+	}
 	mobileResumeObserving = func(a *App) error { return a.ResumeObservation() }
 )
 
 // mobilePhonePauseUntil is the end, in Unix milliseconds, of the pause a
-// phone last asked for; zero when the current pause was not a phone's.
-var mobilePhonePauseUntil atomic.Int64
+// phone last asked for (math.MaxInt64 for one with no end); zero when the
+// current pause was not a phone's. mobilePhonePauseSince is that pause's
+// start as the computer recorded it, so a later pause made at the computer
+// is never taken for the phone's.
+var (
+	mobilePhonePauseUntil atomic.Int64
+	mobilePhonePauseSince atomic.Int64
+)
 
 func (bridge *mobileBridge) observingPauseAnswer() *mobileObservingPause {
 	app := bridge.app
@@ -44,15 +57,20 @@ func (bridge *mobileBridge) observingPauseAnswer() *mobileObservingPause {
 // serveObservingPause answers POST /observing/pause with {"minutes": n}.
 func (bridge *mobileBridge) serveObservingPause(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Minutes int `json:"minutes"`
+		Minutes    int  `json:"minutes"`
+		UntilEnded bool `json:"untilEnded"`
 	}
 	if !mobileDecode(w, r, &input) {
 		return
 	}
-	if input.Minutes == 0 {
+	if input.UntilEnded && input.Minutes != 0 {
+		mobileJSON(w, http.StatusBadRequest, nil, "send minutes or untilEnded, not both")
+		return
+	}
+	if input.Minutes == 0 && !input.UntilEnded {
 		input.Minutes = mobileObservingPauseDefaultMinutes
 	}
-	if input.Minutes < mobileObservingPauseMinMinutes || input.Minutes > mobileObservingPauseMaxMinutes {
+	if !input.UntilEnded && (input.Minutes < mobileObservingPauseMinMinutes || input.Minutes > mobileObservingPauseMaxMinutes) {
 		mobileJSON(w, http.StatusBadRequest, nil, "minutes must be between 5 and 240")
 		return
 	}
@@ -69,7 +87,13 @@ func (bridge *mobileBridge) serveObservingPause(w http.ResponseWriter, r *http.R
 		mobileJSON(w, http.StatusServiceUnavailable, nil, "the computer could not pause observing")
 		return
 	}
-	mobilePhonePauseUntil.Store(time.Now().Add(time.Duration(input.Minutes) * time.Minute).UnixMilli())
+	until := int64(math.MaxInt64)
+	if !input.UntilEnded {
+		until = time.Now().Add(time.Duration(input.Minutes) * time.Minute).UnixMilli()
+	}
+	since, _ := bridge.app.GetTodayObservationPauseSince()
+	mobilePhonePauseSince.Store(since)
+	mobilePhonePauseUntil.Store(until)
 	bridge.notify()
 	mobileJSON(w, http.StatusOK, map[string]any{"observingPause": bridge.observingPauseAnswer(), "startedHere": true}, "")
 }
@@ -90,7 +114,8 @@ func (bridge *mobileBridge) serveObservingResume(w http.ResponseWriter, r *http.
 		mobileJSON(w, http.StatusOK, map[string]any{"observingPause": nil}, "")
 		return
 	}
-	if until := mobilePhonePauseUntil.Load(); until == 0 || time.Now().UnixMilli() >= until {
+	since, _ := bridge.app.GetTodayObservationPauseSince()
+	if until := mobilePhonePauseUntil.Load(); until == 0 || time.Now().UnixMilli() >= until || since != mobilePhonePauseSince.Load() {
 		mobileJSON(w, http.StatusConflict, map[string]string{"code": "pause_not_from_phone"}, "this pause was made on the computer; resume it there")
 		return
 	}

@@ -3,6 +3,8 @@ package main
 import (
 	"testing"
 	"time"
+
+	"wails-gui/internal/workonit"
 )
 
 // TestActivityFeedClosedEyesIsAGapClippedToTheDay: a Closed Eyes stretch
@@ -107,5 +109,45 @@ func TestActivityFeedShowsAgentsAndForgetsOnlyTheirCapture(t *testing.T) {
 	}
 	if _, err := app.GetActivityForgetPreview("closed", "x"); err == nil {
 		t.Fatal("a Closed Eyes row has nothing to forget")
+	}
+}
+
+// computer-activity v1.2.0, Activity › Agents: each hand-off is a row with its
+// agent, its first line and what Isoform knows the agent did.
+func TestActivityFeedHandoffRowsSayWhatTheAgentDid(t *testing.T) {
+	day := time.Date(2026, 11, 15, 0, 0, 0, 0, time.UTC)
+	at := func(h int) int64 { return day.Add(time.Duration(h) * time.Hour).UnixMilli() }
+	handoffs := []workonit.Handoff{
+		{ID: "h-done", AgentID: "codex", Text: "Write the test plan\nwith the edge cases", SentAt: at(9), Surface: "computer"},
+		{ID: "h-read", AgentID: "claude", Text: "Reply to Sam", SentAt: at(10), Surface: "phone"},
+		{ID: "h-quiet", AgentID: "claude-code", Text: "Fix the parser", SentAt: at(1)},
+		{ID: "h-new", AgentID: "unknown-agent", Text: "Draft the post", SentAt: at(20)},
+		{ID: "h-yesterday", AgentID: "codex", Text: "Old", SentAt: at(-2)},
+	}
+	records := map[string]workonit.Record{
+		"h-done":  {ID: "h-done", Status: workonit.StatusDone, SentAt: at(9), DoneAt: at(11)},
+		"h-read":  {ID: "h-read", Status: workonit.StatusTaken, SentAt: at(10)},
+		"h-quiet": {ID: "h-quiet", Status: workonit.StatusSent, SentAt: at(1)},
+		"h-new":   {ID: "h-new", Status: workonit.StatusSent, SentAt: at(20)},
+	}
+	rows := activityFeedHandoffRows(handoffs, records, at(0), at(24), at(1)+workonit.AskAfter.Milliseconds())
+	if len(rows) != 4 {
+		t.Fatalf("rows = %+v", rows)
+	}
+	byID := map[string]ActivityFeedRow{}
+	for _, row := range rows {
+		byID[row.ID] = row
+	}
+	if r := byID["h-done"]; r.Kind != "handoff" || r.App != "Codex" || r.Title != "Write the test plan" || r.Outcome != "done" || r.DoneMs != at(11) {
+		t.Fatalf("done row = %+v", r)
+	}
+	if r := byID["h-read"]; r.Outcome != "taken" || r.Surface != "phone" || r.App != "Claude" {
+		t.Fatalf("read row = %+v", r)
+	}
+	if r := byID["h-quiet"]; r.Outcome != "no_word" {
+		t.Fatalf("quiet row = %+v", r)
+	}
+	if r := byID["h-new"]; r.Outcome != "sent" || r.App != "unknown-agent" {
+		t.Fatalf("new row = %+v", r)
 	}
 }

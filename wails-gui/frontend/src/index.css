@@ -1967,3 +1967,44 @@ code,
     .today-day-strip [data-testid="today-day-event"], .today-day-strip [data-testid="today-day-hold"], .today-day-block-label { height: 24px !important; margin-top: -2px; }
     .today-day-strip [data-inset="true"] { height: 16px !important; }
 }
+
+/* ── Keyboard focus and reduced motion (pass-access v1.0.0) ──
+   Rule 3: the focus ring is the accent, 2 px, and is never removed. It is
+   unlayered on purpose so a component's `outline-none` cannot take it away
+   from a keyboard user; text fields keep their quieter field border
+   (`color-border-focus`, above), since the caret already shows focus.
+   Rule 11: with Reduce Motion on, nothing slides, pulses or ripples; a sheet
+   appears in place and the mark rests in its still pose (MarkMotion reads
+   the same setting). Durations go to near zero rather than `none` so
+   transitionend and animationend still fire for the code that waits on
+   them. */
+button:focus-visible,
+a:focus-visible,
+summary:focus-visible,
+[role="button"]:focus-visible,
+[role="link"]:focus-visible,
+[role="tab"]:focus-visible,
+[role="menuitem"]:focus-visible,
+[role="option"]:focus-visible,
+[role="switch"]:focus-visible,
+[role="checkbox"]:focus-visible,
+[role="radio"]:focus-visible,
+[role="listitem"][tabindex]:focus-visible,
+[role="article"][tabindex]:focus-visible,
+[tabindex]:not([tabindex="-1"]):not(input):not(textarea):not([contenteditable]):focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        animation-delay: 0ms !important;
+        transition-duration: 0.01ms !important;
+        transition-delay: 0ms !important;
+        scroll-behavior: auto !important;
+    }
+}

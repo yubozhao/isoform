@@ -93,8 +93,12 @@ async function visit(name: string, budgetMs: number, open: () => Promise<void>, 
     record(result);
 }
 
+// A row's name may carry its count or state in words ("Tasks 4 waiting on
+// you", "Chat Unread"; pass-access v1.0.0 rule 5), so match the label at the
+// start.
+const rowName = (name: string) => new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\b|,|$)`);
 const nav = (name: string) => async () => {
-    await page.getByRole("navigation").getByRole("button", { name, exact: true }).first().click();
+    await page.getByRole("navigation").getByRole("button", { name: rowName(name) }).first().click();
 };
 
 test("Today", async () => {
@@ -212,7 +216,7 @@ test("Chat sends and gets an answer", async () => {
 // else Tasks, and waits for the page's heading rather than the task field.
 test("Agents", async () => {
     const sidebar = page.getByRole("navigation");
-    const agents = sidebar.getByRole("button", { name: "Agents", exact: true });
+    const agents = sidebar.getByRole("button", { name: rowName("Agents") });
     const label = await agents.count() > 0 ? "Agents" : "Tasks";
     await visit("agents", 1500, nav(label), () => page.locator("main").getByRole("heading").first());
 });
@@ -287,4 +291,51 @@ test("Settings", async () => {
     await visit("settings", 1500, async () => {
         await page.keyboard.press(process.platform === "darwin" ? "Meta+Comma" : "Control+Comma");
     }, () => page.getByRole("heading", { name: /settings/i }));
+});
+
+// Keyboard only (pass-access v1.0.0, proof 1 and rules 1 to 3): every page
+// opens from its key, focus is always shown with the 2 px ring, and Esc
+// closes Search with focus back where it was. Recorded as one line,
+// "keyboard", with no screenshot.
+test("Keyboard only", async () => {
+    const result: PageResult = { page: "keyboard", ok: true, paintMs: null, budgetMs: 0, checks: [], failures: [], screenshot: "skipped" };
+    const mod = process.platform === "darwin" ? "Meta" : "Control";
+    const errorsBefore = pageErrors.length;
+    const step = async (name: string, run: () => Promise<void>) => {
+        try { await run(); result.checks.push(name); } catch (error) { result.failures.push(`${name}: ${(error as Error).message.split("\n")[0]}`); }
+    };
+    await page.goto("/");
+    await page.locator("main h1").filter({ visible: true }).first().waitFor({ timeout: 30_000 });
+    const current = page.getByRole("navigation").locator('[aria-current="page"]');
+    const agentsLabel = await page.getByRole("navigation").getByRole("button", { name: rowName("Agents") }).count() > 0 ? "Agents" : "Tasks";
+    for (const [key, label] of [["2", "Chat"], ["3", agentsLabel], ["4", "Activity"], ["5", "You"], ["1", "Today"]] as const) {
+        await step(`${mod}+${key} opens ${label}`, async () => {
+            await page.keyboard.press(`${mod}+${key}`);
+            await expect(current.filter({ hasText: label }).first()).toBeVisible({ timeout: 5_000 });
+        });
+    }
+    await step("Tab shows a 2 px focus ring", async () => {
+        await page.locator("body").click({ position: { x: 1, y: 1 } });
+        for (let i = 0; i < 3; i++) await page.keyboard.press("Tab");
+        const ring = await page.evaluate(() => {
+            const el = document.activeElement as HTMLElement | null;
+            if (!el || el === document.body) return "nothing focused";
+            const style = getComputedStyle(el);
+            return style.outlineStyle !== "none" && parseFloat(style.outlineWidth) >= 2 ? "ok" : `${el.tagName} outline ${style.outlineStyle} ${style.outlineWidth}`;
+        });
+        expect(ring).toBe("ok");
+    });
+    await step("Esc closes Search and gives focus back", async () => {
+        const before = await page.evaluate(() => document.activeElement?.outerHTML.slice(0, 80) ?? "");
+        await page.keyboard.press(`${mod}+k`);
+        await expect(page.getByRole("dialog")).toBeVisible({ timeout: 5_000 });
+        await page.keyboard.press("Escape");
+        await expect(page.getByRole("dialog")).toHaveCount(0, { timeout: 5_000 });
+        const after = await page.evaluate(() => document.activeElement?.outerHTML.slice(0, 80) ?? "");
+        expect(after).toBe(before);
+    });
+    const newErrors = pageErrors.slice(errorsBefore);
+    if (newErrors.length) result.failures.push(`${newErrors.length} page error(s): ${newErrors[0].slice(0, 160)}`);
+    result.ok = result.failures.length === 0;
+    record(result);
 });

@@ -5,6 +5,9 @@ import SwiftUI
 
 /// The open item: where it came from, what Isoform noticed, the work, what Yes does, and Yes, No, Not mine.
 struct WorkItemCard: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    /// At accessibility sizes text wraps and never truncates (pass-access rule 7).
+    private var wraps: Bool { dynamicTypeSize.isAccessibilitySize }
     let item: WorkItem
     /// "1 of 4" and the dots; nil hides them.
     var position: (index: Int, count: Int)? = nil
@@ -18,7 +21,7 @@ struct WorkItemCard: View {
                 Text(verbatim: item.firstLine)
                     .font(.footnote)
                     .foregroundStyle(YansuTheme.secondary)
-                    .lineLimit(2)
+                    .lineLimit(wraps ? nil : 2)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityIdentifier("work.item.source")
                 if item.kind != "claim" {
@@ -38,19 +41,21 @@ struct WorkItemCard: View {
                 }
                 .accessibilityLabel(String(localized: "More options"))
             }
-            Text(verbatim: item.noticed)
-                .font(.body.weight(.semibold))
-                .foregroundStyle(YansuTheme.ink)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityIdentifier("work.item.noticed")
-            WorkBox(work: item.work)
-            if let yes = item.yesLine {
-                Text(verbatim: yes)
-                    .font(.footnote)
-                    .foregroundStyle(YansuTheme.secondary)
+            VStack(alignment: .leading, spacing: 10) {
+                Text(verbatim: item.noticed)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(YansuTheme.ink)
                     .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("work.item.yesLine")
+                WorkBox(work: item.work)
+                if let yes = item.yesLine {
+                    Text(verbatim: yes)
+                        .font(.footnote)
+                        .foregroundStyle(YansuTheme.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
+            .workItemAccessibility(item, answer: answer, edit: item.kind == "claim" ? nil : edit)
+            .accessibilityIdentifier("work.item.noticed")
             if YourWork.asksUseful(item) {
                 Text("work.usefulAsk").font(.footnote).foregroundStyle(YansuTheme.secondary)
                 WorkWeightedRow(weights: [1, 1], spacing: 8) {
@@ -127,9 +132,19 @@ struct WorkBox: View {
 struct WorkAnswerButtons: View {
     var height: CGFloat = 46
     var answer: (WorkAction) -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        WorkWeightedRow(weights: [1.3, 1, 1], spacing: 8) {
+        // From the first accessibility size the answers stack full width, Yes first, 56 points each (pass-access rule 7).
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(spacing: 8) { buttons(height: 56) }.buttonStyle(.plain)
+        } else {
+            WorkWeightedRow(weights: [1.3, 1, 1], spacing: 8) { buttons(height: height) }.buttonStyle(.plain)
+        }
+    }
+
+    @ViewBuilder
+    private func buttons(height: CGFloat) -> some View {
             Button { answer(.yes) } label: {
                 Text("work.yes").font(.body.weight(.semibold)).frame(maxWidth: .infinity, minHeight: height)
                     .foregroundStyle(YansuTheme.onSolid)
@@ -148,8 +163,29 @@ struct WorkAnswerButtons: View {
                     .foregroundStyle(YansuTheme.secondary)
             }
             .accessibilityIdentifier("work.notMine")
-        }
-        .buttonStyle(.plain)
+    }
+}
+
+extension View {
+    /// An item read whole by VoiceOver (where it came from, the sentence, the work, what Yes does) and answered with
+    /// its actions (pass-access rule 9). The buttons stay for touch.
+    func workItemAccessibility(_ item: WorkItem, answer: @escaping (WorkAction) -> Void, edit: (() -> Void)?) -> some View {
+        let label = [item.firstLine, item.noticed, item.work.title, item.work.text, item.yesLine]
+            .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ". ")
+        return self
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(verbatim: label))
+            .accessibilityActions {
+                if YourWork.asksUseful(item) {
+                    Button(String(localized: "work.useful")) { answer(.useful) }
+                    Button(String(localized: "work.notUseful")) { answer(.notUseful) }
+                } else {
+                    Button(String(localized: "work.yes")) { answer(.yes) }
+                    Button(String(localized: "work.no")) { answer(.no) }
+                    Button(String(localized: "work.notMine")) { answer(.notMine) }
+                    if let edit { Button(String(localized: "work.edit"), action: edit) }
+                }
+            }
     }
 }
 
@@ -243,6 +279,9 @@ struct WorkDoneLine: View {
 
 /// An Up next row: what it is, where it came from, and a word for its kind.
 struct WorkUpNextRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    /// At accessibility sizes text wraps and never truncates (pass-access rule 7).
+    private var wraps: Bool { dynamicTypeSize.isAccessibilitySize }
     let item: WorkItem
 
     var body: some View {
@@ -252,11 +291,11 @@ struct WorkUpNextRow: View {
                 Text(verbatim: item.work.title)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(YansuTheme.ink)
-                    .lineLimit(1)
+                    .lineLimit(wraps ? nil : 1)
                 Text(verbatim: item.firstLine)
                     .font(.footnote)
                     .foregroundStyle(YansuTheme.secondary)
-                    .lineLimit(1)
+                    .lineLimit(wraps ? nil : 1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if let kind = Self.kindWord(item.row) {
@@ -285,6 +324,9 @@ struct WorkUpNextRow: View {
 
 /// A With your agent row: "Q4 plan outline · Claude · since 4:10 PM".
 struct WorkAgentRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    /// At accessibility sizes text wraps and never truncates (pass-access rule 7).
+    private var wraps: Bool { dynamicTypeSize.isAccessibilitySize }
     let item: WorkItem
     @Environment(\.locale) private var locale
 
@@ -299,7 +341,7 @@ struct WorkAgentRow: View {
                 Text(verbatim: item.work.title)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(YansuTheme.ink)
-                    .lineLimit(1)
+                    .lineLimit(wraps ? nil : 1)
                 if let agent = item.agent {
                     Text(String.localizedStringWithFormat(String(localized: "work.agent.since"), agent.name,
                                                           agent.sinceDate.map { BriefClock.text($0, locale: locale) } ?? ""))

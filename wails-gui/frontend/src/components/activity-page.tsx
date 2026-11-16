@@ -4000,7 +4000,7 @@ export function ActivityPage({ onClose, initialSessionId, initialDate, noticedFo
                     ) : isAgents ? (
                         <div className="flex-1 overflow-y-auto">
                             <div className="mx-auto max-w-2xl px-6 py-6">
-                                <ActivityFeed date={selectedDate} kinds={['agent']} emptyText={t('feed.emptyAgents')} />
+                                <ActivityFeed date={selectedDate} kinds={['handoff', 'agent']} emptyText={t('feed.emptyAgents')} />
                             </div>
                         </div>
                     ) : !isTimeline && scope === 'day' ? (

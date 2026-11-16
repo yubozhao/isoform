@@ -16,6 +16,7 @@ const at = (h: number, m = 0) => new Date(2026, 9, 23, h, m).getTime();
 const ZERO = { shown: 0, answered: 0, accepted: 0, declined: 0, notMine: 0, useful: 0, notUseful: 0, undone: 0 };
 const reads: Record<string, unknown> = {
     GetActivityFeed: [
+        { id: 'h-2', kind: 'handoff', startMs: at(9, 59), endMs: at(9, 59), app: 'Codex', title: 'Write the test plan for the Halcyon import, with the edge cases from the call', surface: 'phone', outcome: 'done', doneMs: at(10, 40) },
         { id: 'run-2', kind: 'agent', startMs: at(9, 40), endMs: at(9, 58), activeMs: 1_080_000, app: 'Codex' },
         { id: 'm-3', kind: 'screen', startMs: at(9, 10), endMs: at(9, 38), app: 'Mail', title: 'Replied to Lena about the Halcyon import test plan and the slides for Thursday', detail: 'Drafted the reply, attached the plan, and moved the review to Thursday afternoon after the standup.' },
         { id: 'rec-1', kind: 'watch', startMs: at(8, 20), endMs: at(8, 56), words: 4200, device: 'watch' },
