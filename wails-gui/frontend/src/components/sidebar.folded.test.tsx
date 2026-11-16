@@ -22,6 +22,10 @@ vi.mock("@/lib/wails-shim-app", () => ({
     GetCaptureCounts: vi.fn(async () => ({ sources: [] })),
     PauseObservationFor: vi.fn(async () => {}),
     ResumeObservation: vi.fn(async () => {}),
+    GetMobileConnectionStatus: vi.fn(async () => null),
+    GetWatchRecordings: vi.fn(async () => []),
+    IsClosedEyesModeEnabled: vi.fn(async () => false),
+    SetClosedEyesModeEnabled: vi.fn(async () => {}),
 }));
 vi.mock("../../wailsjs/runtime/runtime", () => ({ EventsOn: vi.fn(() => () => {}) }));
 
@@ -34,22 +38,14 @@ function SidebarFrame() {
         collapsed={state.sidebarCollapsed}
         width={state.sidebarWidth}
         onToggleCollapse={() => state.setSidebarCollapsed((value) => !value)}
-        onOpenSearch={noop}
         onOpenSettings={noop}
         onOpenActivity={noop}
-        onOpenKnowledge={noop}
-        onOpenMemory={noop}
-        onOpenPeople={noop}
+        onOpenYou={noop}
         onOpenToday={noop}
         onOpenMainChat={noop}
-        onOpenTasks={noop}
-        onSwitchSession={noop}
-        onCloseSession={noop}
-        onTogglePin={noop}
-        onRenameSession={noop}
-        onMarkSessionRead={noop}
-        onMarkSessionUnread={noop}
-        onForkSession={noop}
+        onOpenAgents={noop}
+        closedEyes={false}
+        onToggleClosedEyes={noop}
         waitingCount={2}
         isStaging
         appMode="today"
@@ -81,8 +77,8 @@ async function expectFoldedRail() {
     expect(rail).toHaveAttribute("data-collapsed", "true");
     expect(within(rail).queryByText(t("sidebar.stagingBadge"))).not.toBeInTheDocument();
     expect(rail).toHaveStyle({ width: "56px" });
-    for (const key of ["search", "today", "mainChat", "tasks", "activity", "show"] as const) {
-        const button = within(rail).getByRole("button", { name: t(`sidebar.${key}`) });
+    for (const key of ["today", "mainChat", "agents", "activity", "you", "show"] as const) {
+        const button = within(rail).getByRole("button", { name: new RegExp(`^${t(`sidebar.${key}`)}`) });
         const icon = button.querySelector("svg")!;
         expectPainted(icon);
         expect(Number(icon.getAttribute("width"))).toBeGreaterThan(0);
@@ -92,7 +88,7 @@ async function expectFoldedRail() {
     expectPainted(observing.querySelector("span span")!);
     const account = within(rail).getByRole("button", { name: t("userMenu.account", { name: "Bo" }) });
     expectPainted(within(account).getByText("B"));
-    expectPainted(within(rail).getByLabelText(t("sidebar.waiting", { count: 2 })));
+    expectPainted(within(rail).getByLabelText(t("sidebar.toAnswer", { count: 2 })));
 }
 
 describe.each(["paper", "onedark"])("Folded sidebar paint on macOS (%s)", (theme) => {
@@ -105,7 +101,7 @@ describe.each(["paper", "onedark"])("Folded sidebar paint on macOS (%s)", (theme
         initialWidth = window.innerWidth;
         initialTheme = document.documentElement.getAttribute("data-theme");
         document.documentElement.setAttribute("data-theme", theme);
-        resize(1160);
+        resize(1100);
         // Vitest strips imported styles. Apply the production sidebar motion
         // rules, including collapsed selectors, rather than a test CSS copy.
         const start = sidebarCss.indexOf(".sidebar-width-transition-expand {");
@@ -129,25 +125,25 @@ describe.each(["paper", "onedark"])("Folded sidebar paint on macOS (%s)", (theme
         await i18n.changeLanguage(language);
         const t = i18n.getFixedT(language, "app");
         render(<SidebarFrame />);
-        expect(document.querySelector("aside")).toHaveStyle({ width: "240px" });
+        expect(document.querySelector("aside")).toHaveStyle({ width: "214px" });
         expect(screen.getByText(t("sidebar.stagingBadge"))).toBeInTheDocument();
         fireEvent.click(screen.getByTitle(t("sidebar.collapse")));
         await expectFoldedRail();
         fireEvent.click(screen.getByRole("button", { name: t("sidebar.show") }));
         expect(document.querySelector("aside")).toHaveAttribute("data-collapsed", "false");
-        expect(document.querySelector("aside")).toHaveStyle({ width: "240px" });
-        expectPainted(screen.getByText(t("sidebar.search")));
+        expect(document.querySelector("aside")).toHaveStyle({ width: "214px" });
+        expectPainted(screen.getByText(t("sidebar.today")));
     });
 
-    it.each(["en", "zh-CN"])("paints the same rail after auto-collapse below 1160 in %s", async (language) => {
+    it.each(["en", "zh-CN"])("paints the same rail after auto-collapse below 1100 in %s", async (language) => {
         await i18n.changeLanguage(language);
         render(<SidebarFrame />);
-        resize(1159);
+        resize(1099);
         await expectFoldedRail();
         expect(sessionStorage.getItem("isoform.ui.sidebar.handCollapsed")).toBeNull();
-        resize(1160);
+        resize(1100);
         expect(document.querySelector("aside")).toHaveAttribute("data-collapsed", "false");
-        expect(document.querySelector("aside")).toHaveStyle({ width: "240px" });
+        expect(document.querySelector("aside")).toHaveStyle({ width: "214px" });
     });
 
     it("paints the rail when the window starts narrow", async () => {

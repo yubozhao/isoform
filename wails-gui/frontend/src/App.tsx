@@ -64,13 +64,11 @@ import { AgentChoice } from "@/components/onboarding/components/AgentChoice";
 // stay correct even when the generated wailsjs bindings are stale.
 import {
     GetPlaybooksState,
-    PinTopicToSidebar,
     RecordChatDeliverables,
     SetMenuBarBriefPlayback,
     type MobileBriefActivityTarget,
 } from "@/lib/wails-shim-app";
-import { useSidebarTopics } from "@/hooks/useTodayTopics";
-import { SIDEBAR_TOPICS_CHANGED, type TodayTopic } from "@/components/today/topics";
+import { type TodayTopic } from "@/components/today/topics";
 import type { DeliverableActions } from "@/components/stream-card";
 import { completedChatDeliverables } from "@/lib/chat-deliverable-index";
 import {
@@ -90,7 +88,8 @@ import {
     X,
 } from "lucide-react";
 
-import { Sidebar, type AppMode } from "@/components/sidebar";
+import { Sidebar, isYouMode, type AppMode } from "@/components/sidebar";
+import { useClosedEyes } from "@/components/sidebar-foot";
 import { MainChatPageColumn, MainChatStreamBody } from "@/components/main-chat/main-chat-stream-body";
 import { useMainChatItemPanel } from "@/hooks/useMainChatItemPanel";
 import { MainChatTopicBox } from "@/components/main-chat/main-chat-topic-view";
@@ -825,11 +824,12 @@ export default function App() {
     // from the sidebar's You rows (sidebar handoff 1.0.0, section 2).
     const [appMode, setAppMode] = useState<AppMode>(() => {
         if (localStorage.getItem("yansu.appMode") === "handoffs") {
-            return "tasks";
+            return "agents";
         }
         return "today";
     });
     const appModeRef = useRef(appMode);
+    const closedEyes = useClosedEyes();
     appModeRef.current = appMode;
     // Set once handleSetAppMode exists (below); the You page setters use it.
     const handleSetAppModeRef = useRef<(mode: AppMode) => void>(() => {});
@@ -971,7 +971,7 @@ export default function App() {
         return Boolean(standalone?.workspaces.some((w) => w.sessions.some((session) => isMainChatSession(session) && projects.unreadSessionIds.has(session.localId))));
     }, [projects.projects, projects.unreadSessionIds]);
     // Tasks › Scheduled (was Upcoming), loaded while Tasks is open.
-    const upcoming = useUpcoming(appMode === "tasks");
+    const upcoming = useUpcoming(appMode === "agents");
     // True while viewing a chat that was opened from the Handoffs page, so the
     // main top bar can show a "back to Handoffs" button. Cleared on any explicit
     // app-mode switch (see handleSetAppMode).
@@ -983,25 +983,6 @@ export default function App() {
         sessionId: string;
         automationNames: string[];
     } | null>(null);
-
-    const handleCloseSession = useCallback(
-        (projectId: string, sessionId: string) => {
-            const automationNames = cronJobs.jobs
-                .filter((j) => j.sourceSessionId === sessionId)
-                .map((j) => j.name || "Untitled scheduled job");
-
-            if (automationNames.length > 0) {
-                setPendingDeleteSession({
-                    projectId,
-                    sessionId,
-                    automationNames,
-                });
-            } else {
-                doCloseSession(projectId, sessionId);
-            }
-        },
-        [cronJobs.jobs, doCloseSession],
-    );
 
     // If selected automation is deleted while panel is open, clear selection.
     useEffect(() => {
@@ -1079,7 +1060,7 @@ export default function App() {
     const todayChatRequestRef = useRef(0);
     const todayBriefGate = useRef(new TodayBriefRequestGate());
     const handleSetAppMode = useCallback((mode: AppMode | "handoffs") => {
-        const destination = mode === "handoffs" ? "tasks" : mode;
+        const destination = mode === "handoffs" ? "agents" : mode;
         if (destination !== "memory" && destination !== "knowledge" && destination !== "people") {
             youPageReturnRef.current = destination;
         }
@@ -1095,7 +1076,7 @@ export default function App() {
         // main panel shows the destination view (chat / automation grid /
         // handoffs list), never a stale detail pane on top of it.
         setAutomationsSelectedJobId(null);
-        if (destination !== "tasks") {
+        if (destination !== "agents") {
             setHandoffReaderOpen(false);
         }
         if (destination !== "knowledge") {
@@ -1109,7 +1090,7 @@ export default function App() {
     }, [handleSetAppMode]);
     openHandoffRef.current = (id: string) => {
         setHandoffReaderBackTarget(appMode === "chat" ? "chat" : "list");
-        handleSetAppMode("tasks");
+        handleSetAppMode("agents");
         setHandoffOpenId(id);
     };
     openMainChatRef.current = () => {
@@ -1135,7 +1116,7 @@ export default function App() {
     // playbook in How you do things (sidebar handoff, section 3).
     openUpcomingRef.current = (jobId: string) => {
         settings.setSettingsOpen(false);
-        handleSetAppMode("tasks");
+        handleSetAppMode("agents");
         setTasksFocus((current) => ({ section: "scheduled", nonce: (current?.nonce ?? 0) + 1 }));
         setAutomationsSelectedJobId(jobId || null);
     };
@@ -1148,7 +1129,7 @@ export default function App() {
             .catch(() => null)
             .then((plan) => {
                 if (offerShowsNow(plan)) {
-                    handleSetAppModeRef.current("tasks");
+                    handleSetAppModeRef.current("agents");
                     return;
                 }
                 handleSetAppModeRef.current("knowledge");
@@ -1345,7 +1326,10 @@ export default function App() {
     const activeStreaming = Boolean(projects.activeSession?.streaming);
     useEffect(() => setPrefetchStreaming(activeStreaming), [activeStreaming]);
     useLazyPagesIdleWarm(todayContentReady || chatContentReady);
-    const measuredPage = memoryOpen ? 'about-you' : knowledgeOpen ? 'know-how' : peopleOpen ? 'people' : settings.settingsOpen ? 'settings' : appMode;
+    // The Agents place shows the Tasks page until the Agents page replaces it,
+    // and Tasks reports its first paint as "tasks": time the switch under the
+    // same name, so the line is logged and the speed check can read it.
+    const measuredPage = memoryOpen ? 'about-you' : knowledgeOpen ? 'know-how' : peopleOpen ? 'people' : settings.settingsOpen ? 'settings' : appMode === 'agents' ? 'tasks' : appMode;
     useLayoutEffect(() => beginPageSwitch(measuredPage), [measuredPage]);
     useEffect(() => revalidatePageQueries(appMode), [appMode]);
     useEffect(() => {
@@ -1398,32 +1382,6 @@ export default function App() {
         activeIsMainChat &&
             !onboardingInFront &&
             onboardingFinished(onboardingState),
-    );
-
-    const handleForkSessionFromSidebar = useCallback(
-        async (projectId: string, sessionId: string) => {
-            handleSetAppMode("chat");
-            try {
-                await streaming.waitForSessionPersistence(sessionId);
-            } catch {
-                toast.error(t("sessionItem.branchPersistFailed"));
-                return;
-            }
-            const forkedSessionId = await projects.handleForkSession(
-                projectId,
-                sessionId,
-            );
-            if (forkedSessionId) {
-                requestAnimationFrame(() => focusComposer());
-            }
-        },
-        [
-            handleSetAppMode,
-            streaming.waitForSessionPersistence,
-            projects.handleForkSession,
-            focusComposer,
-            t,
-        ],
     );
 
     // ── Today panel action handlers ──
@@ -1519,23 +1477,8 @@ export default function App() {
         [handleSetAppMode, projects.handleOpenMainChat, composer.prefillTodayPrompt, focusComposer, tToday],
     );
 
-    // Topics pinned to the sidebar (RC 1): a click opens the topic beside
-    // Today; Unpin takes it off the sidebar.
-    const sidebarTopics = useSidebarTopics();
-    const [activeTodayTopicId, setActiveTodayTopicId] = useState<string | null>(null);
+    const [, setActiveTodayTopicId] = useState<string | null>(null);
     const [todayTopicRequest, setTodayTopicRequest] = useState<{ topic: TodayTopic; nonce: number } | null>(null);
-    const handleOpenSidebarTopic = useCallback((topicId: string) => {
-        const topic = sidebarTopics.topics.find((candidate) => candidate.id === topicId);
-        if (!topic) return;
-        handleSetAppMode("today");
-        setTodayTopicRequest((current) => ({ topic, nonce: (current?.nonce ?? 0) + 1 }));
-    }, [sidebarTopics.topics, handleSetAppMode]);
-    const handleUnpinSidebarTopic = useCallback((topicId: string) => {
-        void PinTopicToSidebar(topicId, false).then(
-            () => window.dispatchEvent(new Event(SIDEBAR_TOPICS_CHANGED)),
-            () => toast.error(tToday("topicPanel.pinFailed")),
-        );
-    }, [tToday]);
 
     const briefHandlers = useMemo<TodayActionHandlers>(
         () => ({
@@ -1550,24 +1493,24 @@ export default function App() {
                 setMemoryOpen(true);
             },
             onOpenAutomations: () => {
-                handleSetAppMode("tasks");
+                handleSetAppMode("agents");
                 setHandoffOpenId(null);
                 setTasksFocus((current) => ({ section: "scheduled", nonce: (current?.nonce ?? 0) + 1 }));
             },
             onOpenBriefDetail: (slot: "morning" | "evening") => {
-                handleSetAppMode("tasks");
+                handleSetAppMode("agents");
                 setHandoffOpenId(null);
                 setTasksFocus((current) => ({ section: "scheduled", brief: slot, nonce: (current?.nonce ?? 0) + 1 }));
             },
             // Goals are a group in About you now (sidebar handoff, section 5).
             onOpenGoals: () => setMemoryOpen(true),
             onOpenTasks: () => {
-                handleSetAppMode("tasks");
+                handleSetAppMode("agents");
                 setHandoffOpenId(null);
                 setTasksFocus((current) => ({ section: "needs", nonce: (current?.nonce ?? 0) + 1 }));
             },
             onOpenDoneTasks: () => {
-                handleSetAppMode("tasks");
+                handleSetAppMode("agents");
                 setHandoffOpenId(null);
                 setTasksFocus((current) => ({ section: "done", nonce: (current?.nonce ?? 0) + 1 }));
             },
@@ -2511,11 +2454,11 @@ export default function App() {
         setPendingInsightMemoryId,
         setMemoryOpen,
         openScheduled: () => {
-            handleSetAppMode("tasks");
+            handleSetAppMode("agents");
             setTasksFocus((current) => ({ section: "scheduled", nonce: (current?.nonce ?? 0) + 1 }));
         },
         openTasksUpNext: () => {
-            handleSetAppMode("tasks");
+            handleSetAppMode("agents");
             setTasksFocus((current) => ({ section: "up-next", nonce: (current?.nonce ?? 0) + 1 }));
         },
         openToday: openTodayBrief,
@@ -2643,7 +2586,7 @@ export default function App() {
         // A Needs you item with no chat card opens Tasks › Needs you (evening walk B7).
         const offNeeds = EventsOn("menubar:needs", () => {
             closeOverlaysForSearch();
-            handleSetAppMode("tasks");
+            handleSetAppMode("agents");
             setHandoffOpenId(null);
             setTasksFocus((current) => ({ section: "needs", nonce: (current?.nonce ?? 0) + 1 }));
         });
@@ -2699,7 +2642,7 @@ export default function App() {
         openHandoff: (id) => {
             closeOverlaysForSearch();
             setHandoffReaderBackTarget(appMode === "chat" ? "chat" : "list");
-            handleSetAppMode("tasks");
+            handleSetAppMode("agents");
             setHandoffOpenId(id);
         },
         // Library is gone (sidebar handoff, section 3): each page id opens
@@ -2708,13 +2651,13 @@ export default function App() {
             closeOverlaysForSearch();
             switch (page) {
                 case "automations":
-                    handleSetAppMode("tasks");
+                    handleSetAppMode("agents");
                     setHandoffOpenId(null);
                     setTasksFocus((current) => ({ section: "scheduled", nonce: (current?.nonce ?? 0) + 1 }));
                     break;
                 case "tasks":
                     setHandoffReaderBackTarget("list");
-                    handleSetAppMode("tasks");
+                    handleSetAppMode("agents");
                     setHandoffOpenId(null);
                     setHandoffReaderOpen(false);
                     break;
@@ -2724,7 +2667,7 @@ export default function App() {
                     handleSetAppMode("knowledge");
                     break;
                 case "deliverables":
-                    handleSetAppMode("tasks");
+                    handleSetAppMode("agents");
                     setHandoffOpenId(null);
                     setTasksFocus((current) => ({ section: "all", nonce: (current?.nonce ?? 0) + 1 }));
                     break;
@@ -3598,59 +3541,42 @@ export default function App() {
                 onToggleCollapse={() => sidebar.setSidebarCollapsed((v) => !v)}
                 onLogoClick={envSwitch.handleLogoClick}
                 isStaging={envSwitch.showStagingBadge}
-                onOpenSearch={() => setSearchOpen(true)}
                 shortcutFor={searchShortcutFor}
                 onOpenSettings={() => openSettings()}
                 onOpenProfile={() => openSettings("profile")}
                 onOpenShortcuts={() => openSettings("keybindings")}
                 onOpenHelp={() => openSettings("about")}
                 onOpenObservationSettings={() => openSettings("activity")}
+                onOpenPhoneSettings={() => openSettings("iphone")}
                 waitingCount={tasksNeedsYouCount}
                 chatUnread={mainChatUnread || (mainChatWaitingCount ?? 0) > 0}
-                onOpenActivity={() => {
-                    // The sidebar row is pure navigation: already on the page,
-                    // it does nothing (unlike the deep links, which re-open on
-                    // a specific day).
-                    if (appMode !== "activity") openActivityFresh();
-                }}
-                activityOpen={appMode === "activity"}
-                onOpenKnowledge={() => setKnowledgeOpen(true)}
-                onOpenMemory={() => setMemoryOpen(true)}
-                onOpenPeople={() => setPeopleOpen(true)}
                 onOpenToday={() => handleSetAppMode("today")}
-                todayOpen={appMode === "today"}
-                pinnedTopics={sidebarTopics.topics}
-                activeTopicId={appMode === "today" ? activeTodayTopicId : null}
-                onOpenTopic={handleOpenSidebarTopic}
-                onUnpinTopic={handleUnpinSidebarTopic}
-                onOpenTasks={() => {
-                    handleSetAppMode("tasks");
-                    setHandoffOpenId(null);
-                }}
-                tasksOpen={appMode === "tasks"}
-                appMode={appMode}
-                onNewChat={() => {
-                    void projects.handleNewSession(projects.activeProject?.id ?? STANDALONE_CHAT_PROJECT_ID);
-                    handleSetAppMode("chat");
-                }}
                 onOpenMainChat={() => {
                     handleSetAppMode("chat");
                     void Promise.resolve(projects.handleOpenMainChat()).finally(
                         () => requestAnimationFrame(() => focusComposer()),
                     );
                 }}
-                onSwitchSession={(projectId, sessionId) => {
-                    handleSetAppMode("chat");
-                    projects.handleSwitchSession(projectId, sessionId);
-                    projects.markSessionRead(sessionId);
+                onOpenAgents={() => {
+                    handleSetAppMode("agents");
+                    setHandoffOpenId(null);
                 }}
-                onCloseSession={handleCloseSession}
-                onTogglePin={projects.handleTogglePin}
-                onRenameSession={projects.handleRenameSession}
-                onMarkSessionRead={projects.markSessionRead}
-                onMarkSessionUnread={projects.markSessionUnread}
-                onForkSession={handleForkSessionFromSidebar}
-                unreadSessionIds={projects.unreadSessionIds}
+                onOpenActivity={() => {
+                    // The sidebar row is pure navigation: already on the page,
+                    // it does nothing (unlike the deep links, which re-open on
+                    // a specific day).
+                    if (appMode !== "activity") openActivityFresh();
+                }}
+                onOpenYou={(tab) => {
+                    // Without a tab, You keeps the tab you were on; it opens
+                    // on About you.
+                    if (tab === "howYouDo") setKnowledgeOpen(true);
+                    else if (tab === "people") setPeopleOpen(true);
+                    else if (tab === "about" || !isYouMode(appMode)) setMemoryOpen(true);
+                }}
+                closedEyes={closedEyes.closed}
+                onToggleClosedEyes={closedEyes.toggle}
+                appMode={appMode}
             />
 
             <main className="patina-ground flex-1 min-w-0 flex flex-col h-full bg-background">
@@ -3663,7 +3589,7 @@ export default function App() {
                         { "--wails-draggable": "drag" } as React.CSSProperties
                     }
                 >
-                    {appMode === "tasks" && handoffReaderOpen && (
+                    {appMode === "agents" && handoffReaderOpen && (
                         <button
                             className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[13px] text-muted hover:text-ink hover:bg-border/50 transition-colors cursor-pointer ${sidebar.sidebarCollapsed ? "ml-1" : "ml-2"}`}
                             style={
@@ -3867,7 +3793,7 @@ export default function App() {
                     />
                     </Suspense>
                     </div>
-                ) : appMode === "tasks" ? (
+                ) : appMode === "agents" ? (
                     <TasksPage
                         openHandoffId={handoffOpenId}
                         focus={tasksFocus}
@@ -4027,7 +3953,7 @@ export default function App() {
                                 return (
                                     <MainChatPageColumn enabled={activeIsMainChat} onOpenTarget={handleOpenReportTarget}>
                                         {chatBackToHandoffs && (
-                                            <Button size="sm" variant="quiet" className="self-start mx-6" onClick={() => handleSetAppMode("tasks")}>
+                                            <Button size="sm" variant="quiet" className="self-start mx-6" onClick={() => handleSetAppMode("agents")}>
                                                 {t("handoffsPage.back")}
                                             </Button>
                                         )}

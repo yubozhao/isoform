@@ -10,7 +10,7 @@ describe('Page window titles', () => {
         await i18n.changeLanguage(language);
         const { rerender } = renderHook(({ mode }) => usePageWindowTitle(mode, { kind: 'main', label: 'Ignored label' }), { initialProps: { mode: 'today' as AppMode } });
         const pages = {
-            today: 'sidebar.today', chat: 'sidebar.mainChat', activity: 'sidebar.activity', tasks: 'sidebar.tasks',
+            today: 'sidebar.today', chat: 'sidebar.mainChat', activity: 'sidebar.activity', agents: 'sidebar.agents', you: 'sidebar.you',
             memory: 'userMenu.memory', knowledge: 'userMenu.knowledge', people: 'userMenu.people',
         } as const satisfies Record<AppMode, string>;
         for (const [mode, key] of Object.entries(pages)) {

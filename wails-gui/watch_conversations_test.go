@@ -462,6 +462,34 @@ func TestWatchNotesTurnALongConversationIntoNotesAndACommitmentThatGoWithTheHour
 	if !sourced {
 		t.Fatalf("the commitment's source is not the hour's transcript: %+v", loops[0].Evidence)
 	}
+	// The conversation names the commitment as an item of the one list of work.
+	noted, err := app.watchConversationsOf(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := 0
+	for _, c := range noted {
+		for _, id := range c.ItemIDs {
+			items++
+			if id != watchFollowupItemPrefix+loops[0].OpenLoop.ID {
+				t.Fatalf("item id %q, want the commitment's", id)
+			}
+		}
+	}
+	if items != 1 {
+		t.Fatalf("%d item ids, want the one commitment", items)
+	}
+	phone, _, _, err := app.mobileConversationsFor(store, mobileTestDeviceID, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	phoneItems := 0
+	for _, c := range phone.Conversations {
+		phoneItems += len(c.ItemIDs)
+	}
+	if phoneItems != 1 {
+		t.Fatalf("the phone reads %d item ids, want 1", phoneItems)
+	}
 	// Nothing is asked twice.
 	app.noteWatchConversations(context.Background(), store)
 	if len(prompts) != 1 {

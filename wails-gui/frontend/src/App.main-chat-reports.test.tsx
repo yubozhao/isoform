@@ -230,7 +230,8 @@ function projectFixture(): Project {
 async function mountApp() {
     const mounted = render(<App />);
     await screen.findByTestId('TodayPage');
-    await act(async () => { fixture.sidebarProps!.onSwitchSession('project-1', 'main-1'); });
+    await act(async () => { fixture.sidebarProps!.onOpenMainChat(); });
+    fixture.openMainChat.mockClear?.();
     fixture.switchSession.mockClear();
     await screen.findByTestId('stream');
     return mounted;

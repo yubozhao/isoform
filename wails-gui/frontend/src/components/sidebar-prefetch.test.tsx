@@ -1,8 +1,8 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import i18n from '@/i18n';
 import { Sidebar, UserPopoverMenu } from './sidebar';
-import { STANDALONE_CHAT_PROJECT_ID, createSession } from '@/lib/stream-helpers';
+import { STANDALONE_CHAT_PROJECT_ID } from '@/lib/stream-helpers';
 import { resetPageQueries } from '@/lib/page-queries';
 import type { Project, Session } from '@/types';
 
@@ -47,22 +47,14 @@ function renderSidebar(sessions: Session[] = []) {
             collapsed={false}
             width={260}
             onToggleCollapse={noop}
-            onOpenSearch={noop}
             onOpenSettings={noop}
             onOpenActivity={noop}
-            onOpenKnowledge={noop}
-            onOpenMemory={noop}
-            onOpenPeople={noop}
+            onOpenYou={noop}
             onOpenToday={noop}
-            onOpenTasks={noop}
+            onOpenAgents={noop}
             onOpenMainChat={noop}
-            onSwitchSession={noop}
-            onCloseSession={noop}
-            onTogglePin={noop}
-            onRenameSession={noop}
-            onMarkSessionRead={noop}
-            onMarkSessionUnread={noop}
-            onForkSession={noop}
+            closedEyes={false}
+            onToggleClosedEyes={noop}
             appMode="today"
         />,
     );
@@ -81,7 +73,6 @@ afterEach(() => {
 describe('sidebar row prefetch', () => {
     it.each([
         ['Activity', ['EnsureDailySummary', 'GetActivitiesInRange', 'GetDayThreads']],
-        ['Search', ['GetTodayTopics', 'ListHandoffs']],
         ['Today', ['GetTodayTopics', 'GetLatestBrief']],
         ['Chat', ['GetMainChat']],
     ] as const)('pointerenter on the %s row starts its primary reads', async (label, expected) => {
@@ -97,29 +88,14 @@ describe('sidebar row prefetch', () => {
         fireEvent.focus(screen.getByRole('button', { name: 'Activity' }));
         await vi.waitFor(() => expect(fixture.calls).toContain('EnsureDailySummary'));
     });
-
-    it('pointerenter on a pinned session row warms its stream pages', async () => {
-        const pinned = { ...createSession('claude-sonnet-4-5', 'ws-1', 'Fixture chat'), pinned: true, updatedAt: 10 };
-        renderSidebar([pinned]);
-        fireEvent.pointerEnter(document.querySelector(`[data-session-row="${pinned.localId}"]`)!);
-        await vi.waitFor(() => {
-            const stream = fixture.bindings.get('LoadStreamItemsPage');
-            expect(stream?.mock.calls).toEqual(expect.arrayContaining([[pinned.localId, -1, 50]]));
-        });
-    });
 });
 
 describe('You row prefetch', () => {
-    it.each([
-        ['About you', ['GetAboutYou', 'GetMemoryEntries', 'GetMemoryStatus', 'GetAboutYouPortrait']],
-        ['How you do things', ['ListKnowHow', 'GetKnowledgeEntries', 'GetKnowHowMatch']],
-        ['Who you know', ['ListPeopleOverview', 'ListPrincipalsWithStats', 'GetContactsAccessStatus']],
-    ] as const)('pointerenter on the %s sidebar row starts its page reads', async (label, expected) => {
+    it('pointerenter on the You row starts the About you reads', async () => {
         renderSidebar();
-        const you = document.querySelector('[data-sidebar-section="you"]') as HTMLElement;
-        fireEvent.pointerEnter(within(you).getByRole('button', { name: label }));
+        fireEvent.pointerEnter(screen.getByRole('button', { name: 'You' }));
         await vi.waitFor(() => {
-            for (const name of expected) expect(fixture.calls).toContain(name);
+            for (const name of ['GetAboutYou', 'GetMemoryEntries', 'GetMemoryStatus', 'GetAboutYouPortrait']) expect(fixture.calls).toContain(name);
         });
     });
 });

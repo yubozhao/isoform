@@ -28,6 +28,11 @@ const fixture = vi.hoisted(() => ({
     openDialogChange: null as null | ((open: boolean) => void),
 }));
 
+const pageSwitch = vi.hoisted(() => ({ begun: [] as string[] }));
+vi.mock('@/lib/page-switch-timing', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('@/lib/page-switch-timing')>();
+    return { ...actual, beginPageSwitch: (page: string) => { pageSwitch.begun.push(page); actual.beginPageSwitch(page); } };
+});
 vi.mock('@/lib/wails-shim-app', () => new Proxy({}, {
     has: () => true,
     get: (_target, name: string) => {
@@ -218,7 +223,8 @@ function projectFixture(): Project {
 async function mountApp() {
     const mounted = render(<App />);
     await screen.findByTestId('TodayPage');
-    await act(async () => { fixture.sidebarProps!.onSwitchSession('project-1', 'main-1'); });
+    await act(async () => { fixture.sidebarProps!.onOpenMainChat(); });
+    fixture.openMainChat.mockClear?.();
     await screen.findByTestId('stream');
     return mounted;
 }
@@ -350,9 +356,9 @@ describe('App Activity/Library navigation', () => {
 
     it("routes the sidebar and Today entry points to Tasks and Goals", async () => {
         await mountApp();
-        await act(async () => fixture.sidebarProps!.onOpenTasks());
+        await act(async () => fixture.sidebarProps!.onOpenAgents());
         expect(screen.getByTestId("TasksPage")).toBeInTheDocument();
-        expect(localStorage.getItem("yansu.appMode")).toBe("tasks");
+        expect(localStorage.getItem("yansu.appMode")).toBe("agents");
         await act(async () => fixture.sidebarProps!.onOpenToday());
         // Goals are a group in About you now (sidebar handoff, section 5).
         await act(async () => fixture.pages.TodayPage.handlers.onOpenGoals());
@@ -373,8 +379,8 @@ describe('App Activity/Library navigation', () => {
         await mountApp();
         await act(async () => fixture.pages.SearchDialog.actions.openHandoff("selected-work"));
         expect(fixture.pages.TasksPage.openHandoffId).toBe("selected-work");
-        expect(localStorage.getItem("yansu.appMode")).toBe("tasks");
-        await act(async () => fixture.sidebarProps!.onOpenTasks());
+        expect(localStorage.getItem("yansu.appMode")).toBe("agents");
+        await act(async () => fixture.sidebarProps!.onOpenAgents());
         expect(fixture.pages.TasksPage.openHandoffId).toBeNull();
     });
 
@@ -404,23 +410,12 @@ describe('App Activity/Library navigation', () => {
         for (let i = 0; i < 3; i++) {
             await act(async () => fixture.sidebarProps!.onOpenToday());
             expect(chatNode.closest('[data-retained-page]')).toHaveStyle({ display: 'none' });
-            await act(async () => fixture.sidebarProps!.onSwitchSession('project-1', 'main-1'));
+            await act(async () => fixture.sidebarProps!.onOpenMainChat());
             expect(todayNode.closest('[data-retained-page]')).toHaveStyle({ display: 'none' });
         }
         expect(screen.getByTestId('TodayPage')).toBe(todayNode);
         expect(screen.getByTestId('stream')).toBe(chatNode);
         for (const [name, count] of counts) expect(fixture.listeners.get(name)?.size, name).toBe(count);
-    });
-
-    it('connects the retained Today topic to the new sidebar highlight across a round trip', async () => {
-        await mountApp();
-        await act(async () => fixture.sidebarProps!.onOpenToday());
-        await act(async () => fixture.pages.TodayPage.onActiveTopicChange('topic-1'));
-        expect(fixture.sidebarProps!.activeTopicId).toBe('topic-1');
-        await act(async () => fixture.sidebarProps!.onOpenMainChat());
-        expect(fixture.sidebarProps!.activeTopicId).toBeNull();
-        await act(async () => fixture.sidebarProps!.onOpenToday());
-        expect(fixture.sidebarProps!.activeTopicId).toBe('topic-1');
     });
 
     it('opens Activity as a full page from the sidebar row, on today', async () => {
@@ -523,7 +518,7 @@ describe('App Activity/Library navigation', () => {
             await mountApp();
             if (page === 'MemoryPage') await emit('notification:clicked', 'memory:entry-2');
             if (page === 'KnowledgePage') await emit('notification:clicked', 'knowledge:entry-2');
-            if (page === 'PeoplePage') await act(async () => fixture.sidebarProps!.onOpenPeople());
+            if (page === 'PeoplePage') await act(async () => fixture.sidebarProps!.onOpenYou('people'));
             if (page === 'SettingsPage') await emit('notification:clicked', 'settings:activity-pipeline');
             const field = screen.getByRole('textbox', { name: `${page} selection` });
             fireEvent.change(field, { target: { value: 'Selected entry, history, draft or expanded run' } });
@@ -549,7 +544,7 @@ describe('App Activity/Library navigation', () => {
 
     it('clears People anchors before a later pipeline jump', async () => {
         await mountApp();
-        await act(async () => fixture.sidebarProps!.onOpenPeople());
+        await act(async () => fixture.sidebarProps!.onOpenYou('people'));
         await act(async () => fixture.pages.PeoplePage.onOpenActivitySession('person-session', 12345, 'Alice'));
         expect(fixture.pages.ActivityPage.initialEventTimestamp).toBe(12345);
         await act(async () => fixture.pages.ActivityPage.backButton.onClick());
@@ -570,8 +565,16 @@ describe('App Activity/Library navigation', () => {
         await act(async () => fixture.pages.SettingsPage.onOpenProfile());
         expect(fixture.pages.PeoplePage.initialSelection).toBe('self');
         await emit('activity:open');
-        await act(async () => fixture.sidebarProps!.onOpenPeople());
+        await act(async () => fixture.sidebarProps!.onOpenYou('people'));
         expect(fixture.pages.PeoplePage.initialSelection).toBeUndefined();
+    });
+
+    it('times the Agents place under the name its page reports (tasks)', async () => {
+        await mountApp();
+        pageSwitch.begun.length = 0;
+        await act(async () => fixture.sidebarProps!.onOpenAgents());
+        expect(pageSwitch.begun).toContain('tasks');
+        expect(pageSwitch.begun).not.toContain('agents');
     });
 
     it('has no Library menu: the library:open event is not listened to, and nothing opens', async () => {
@@ -631,14 +634,11 @@ describe('App Search and commands', () => {
         expect(shortcutFor('keyboard-shortcuts')).toBe(comboToDisplayString({ meta: false, ctrl: true, alt: true, shift: false, key: 'h' }));
     });
 
-    it('opens the one dialog from the sidebar Search and from Command K', async () => {
+    it('opens the one dialog from Command K (Search is no sidebar row)', async () => {
         await mountApp();
         expect(fixture.pages.SearchDialog.open).toBe(false);
-        await act(async () => fixture.sidebarProps!.onOpenSearch());
-        expect(fixture.pages.SearchDialog.open).toBe(true);
-        await act(async () => fixture.pages.SearchDialog.onOpenChange(false));
-        expect(fixture.pages.SearchDialog.open).toBe(false);
-        // Command K toggles the same dialog.
+        expect(fixture.sidebarProps!.onOpenSearch).toBeUndefined();
+        // Command K toggles the dialog.
         fireEvent.keyDown(window, { key: 'k', metaKey: true });
         expect(fixture.pages.SearchDialog.open).toBe(true);
         fireEvent.keyDown(window, { key: 'k', metaKey: true });
@@ -669,13 +669,13 @@ describe('App Search and commands', () => {
         expect(fixture.pages.KnowledgePage.initialSelectedId).toBe('entry-4');
         await act(async () => fixture.sidebarProps!.onOpenToday());
         expect(screen.getByTestId('KnowledgePage')).not.toBeVisible();
-        await act(async () => fixture.sidebarProps!.onOpenKnowledge());
+        await act(async () => fixture.sidebarProps!.onOpenYou('howYouDo'));
         expect(fixture.pages.KnowledgePage.initialSelectedId).toBeNull();
 
         await act(async () => fixture.pages.SearchDialog.actions.openAboutYou('memory-5'));
         expect(fixture.pages.MemoryPage.initialSelectedId).toBe('memory-5');
         await act(async () => fixture.sidebarProps!.onOpenToday());
-        await act(async () => fixture.sidebarProps!.onOpenMemory());
+        await act(async () => fixture.sidebarProps!.onOpenYou('about'));
         expect(fixture.pages.MemoryPage.initialSelectedId).toBeNull();
 
         // The notification path forgets its entry the same way.
@@ -683,7 +683,7 @@ describe('App Search and commands', () => {
         await emit('notification:clicked', 'knowledge:entry-2');
         expect(fixture.pages.KnowledgePage.initialSelectedId).toBe('entry-2');
         await act(async () => fixture.sidebarProps!.onOpenToday());
-        await act(async () => fixture.sidebarProps!.onOpenKnowledge());
+        await act(async () => fixture.sidebarProps!.onOpenYou('howYouDo'));
         expect(fixture.pages.KnowledgePage.initialSelectedId).toBeNull();
     });
 

@@ -8,14 +8,14 @@ const resize = (width: number) => act(() => {
 });
 const deps = { layoutRef: { current: null } };
 describe('Sidebar frame UI state', () => {
-    beforeEach(() => { sessionStorage.clear(); resize(1160); });
-    it('opens at 1160 and collapses below it before the Today panel loses its 920 pixels', () => {
+    beforeEach(() => { sessionStorage.clear(); resize(1100); });
+    it('opens at 1100 and collapses below it (computer-window v1.0.0 rule 3)', () => {
         const { result } = renderHook(() => useSidebarResize(deps));
-        expect(result.current.sidebarWidth).toBe(240);
+        expect(result.current.sidebarWidth).toBe(214);
         expect(result.current.sidebarCollapsed).toBe(false);
-        resize(1159);
+        resize(1099);
         expect(result.current.sidebarCollapsed).toBe(true);
-        resize(1160);
+        resize(1100);
         expect(result.current.sidebarCollapsed).toBe(false);
     });
     it('remembers hand collapse after resizing and reloading this window', () => {
@@ -37,7 +37,7 @@ describe('Sidebar frame UI state', () => {
         expect(result.current.sidebarCollapsed).toBe(false);
         resize(990);
         expect(result.current.sidebarCollapsed).toBe(true);
-        resize(1160);
+        resize(1100);
         expect(result.current.sidebarCollapsed).toBe(false);
     });
 });
