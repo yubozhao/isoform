@@ -253,8 +253,9 @@ func main() {
 	// the main size first; the menu bar mark's launch visibility is set here too.
 	if !isWailsBindingsBuild {
 		if launch := prepareSetupWindowAtLaunch(); launch.SetupNeeded {
-			appOptions.Width = setupWindowWidth
-			appOptions.Height = setupWindowHeight
+			w, h := setupWindowSize()
+			appOptions.Width = int(w)
+			appOptions.Height = int(h)
 		}
 	}
 

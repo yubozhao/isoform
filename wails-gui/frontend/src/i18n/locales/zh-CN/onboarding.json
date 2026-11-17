@@ -786,5 +786,114 @@
             "calloutHidden": "Isoform 在菜单栏里，随时可以暂停。",
             "done": "设置完成"
         }
+    },
+    "ob": {
+        "skip": "跳过",
+        "continue": "继续",
+        "1": {
+            "title": "你的一天，两分钟看完。",
+            "body": "每天早晚，Isoform 根据你在电脑上的一天，为你整理一份要点简报。可以读，也可以听。"
+        },
+        "2": {
+            "title": "你说可以，你的 agent 就去做。",
+            "body": "Isoform 找出要做的事：准备、回复、下一步。你说可以、不要或不是我的。说可以的会交给你已经在用的 agent；它做好的东西再回来由你判断。",
+            "agents": "说可以，就交给你的 agent"
+        },
+        "3": {
+            "label": "配合 Apple Watch",
+            "title": "你的手表听见说过的话。",
+            "body": "戴在手腕上时它会聆听；轻点一下标记重要的时刻。你的电脑把对话整理成笔记，以及你答应要做的事。"
+        },
+        "4": {
+            "title": "属于你，留在你的设备上。",
+            "body": "Isoform 保存的一切都留在你的设备上。你说可以之前，什么都不会交给 agent，而且你能看到具体交出了什么。闭眼模式一键在所有设备上停止。"
+        }
+    },
+    "setup": {
+        "sample": "示例",
+        "samples": {
+            "brief": {
+                "kind": "晚间简报",
+                "time": "下午 6:00",
+                "line1": "Halcyon 导入：Lena 已确认数字。",
+                "line2": "Priya 在等周四的议程。",
+                "listen": "收听"
+            },
+            "item": {
+                "title": "准备周四和 Priya 的评审",
+                "why": "来自你的日历和 Priya 的邮件",
+                "yes": "可以",
+                "no": "不要",
+                "notMine": "不是我的"
+            },
+            "talk": {
+                "title": "和 Lena 吃午饭",
+                "time": "下午 12:40",
+                "note": "Lena 希望周五前拿到导入计划。",
+                "toAnswer": "1 件待回答"
+            },
+            "eyes": {
+                "name": "闭眼模式",
+                "kept": "保存在你的电脑上"
+            }
+        },
+        "railTitle": "设置 Isoform",
+        "railFoot": "每一步都可以跳过，之后在设置里完成。",
+        "step1": "Isoform 能看到什么",
+        "step2": "这样对吗？",
+        "step3": "今天它能做什么",
+        "step4": "你的 agent",
+        "step5": "你的手机和手表",
+        "skipStep": "跳过这一步",
+        "rows": {
+            "calendar": {
+                "name": "日历",
+                "line": "会议前帮你准备。"
+            },
+            "mail": {
+                "name": "邮件",
+                "line": "起草别人请你做的事。"
+            },
+            "microphone": {
+                "name": "麦克风",
+                "line": "通话中你这一方的声音，以及你的声音。"
+            },
+            "notifications": {
+                "name": "通知",
+                "line": "简报、会议准备和完成的工作。"
+            },
+            "screen": {
+                "name": "屏幕",
+                "line": "你在做什么，用于你的主题。"
+            }
+        },
+        "allow": "允许…",
+        "allowed": "已允许",
+        "openSettings": "打开系统设置",
+        "mailLater": "邮件打开时再询问",
+        "soFar": "目前：{{what}}。信息和你的 agent 历史保持关闭，直到你在设置中打开。",
+        "soFarNothing": "还没有",
+        "soFarItems": {
+            "calendar": "你的日历",
+            "mail": "你的邮件",
+            "microphone": "你的通话",
+            "screen": "你的屏幕"
+        },
+        "rightLead": "来自你的日历和邮件，一分钟前读取。你的回答从一开始就让 Isoform 属于你。",
+        "rightNothing": "还没有可确认的。Isoform 读过你的日历和邮件后会来问你。",
+        "todayLead": "根据 Isoform 已经看到的内容整理。回答一件，或跳过；它会在你的工作中等着。",
+        "todayNothing": "还没有可以提供的。告诉 Isoform 你在做什么，它就从那里开始。",
+        "agentsLead": "说可以的工作会直接交给你已经在用的 agent。它们只能看到每次交接发送的内容。",
+        "phoneLead": "在手机上看简报和工作；你的手表听见说过的话。",
+        "scan": "在手机上打开 Isoform，选择扫描二维码。",
+        "noApp": "还没有？在手机的 App Store 免费下载。",
+        "watchLine": "配合 Apple Watch，手表 App 一并安装。配对后，手机会请你说一句话来认识你的声音，只问一次。",
+        "waitingPhone": "正在等待你的手机 · 二维码 10 分钟内有效",
+        "finish": "完成设置",
+        "modelsDownload": "现在下载",
+        "modelsLaterButton": "稍后",
+        "modelsLater": "稍后：在电脑接通电源且空闲时下载。可在设置 › 模型中更改。",
+        "thinksWith": "Isoform 使用 {{agent}} 思考",
+        "change": "更改"
     }
 }

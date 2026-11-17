@@ -786,5 +786,114 @@
             "calloutHidden": "Isoform lives in the menu bar. Pause it anytime.",
             "done": "Setup is done"
         }
+    },
+    "ob": {
+        "skip": "Skip",
+        "continue": "Continue",
+        "1": {
+            "title": "Your day, in two minutes.",
+            "body": "Every morning and evening Isoform gives you a brief of what matters, made from your day on your computer. Read it or hear it."
+        },
+        "2": {
+            "title": "Say yes, and your agent does it.",
+            "body": "Isoform finds the work: prep, replies, the next step. You say yes, no or not mine. A yes goes to the agent you already use; what it makes comes back for you to judge.",
+            "agents": "a Yes goes to your agent"
+        },
+        "3": {
+            "label": "With Apple Watch",
+            "title": "Your watch hears what was said.",
+            "body": "It listens while it's on your wrist; tap to mark what matters. Your computer turns the talk into notes, and into what you said you'd do."
+        },
+        "4": {
+            "title": "Yours, and on your devices.",
+            "body": "Everything Isoform keeps stays on your devices. Nothing goes to an agent until you say yes, and you see exactly what goes. Closed Eyes stops it everywhere at once."
+        }
+    },
+    "setup": {
+        "sample": "Sample",
+        "samples": {
+            "brief": {
+                "kind": "Evening brief",
+                "time": "6:00 PM",
+                "line1": "Halcyon import: Lena signed off on the numbers.",
+                "line2": "Priya is waiting on Thursday's agenda.",
+                "listen": "Listen"
+            },
+            "item": {
+                "title": "Prep for Thursday's review with Priya",
+                "why": "From your calendar and Priya's mail",
+                "yes": "Yes",
+                "no": "No",
+                "notMine": "Not mine"
+            },
+            "talk": {
+                "title": "Lunch with Lena",
+                "time": "12:40 PM",
+                "note": "Lena wants the import plan by Friday.",
+                "toAnswer": "1 to answer"
+            },
+            "eyes": {
+                "name": "Closed Eyes",
+                "kept": "Kept on your computer"
+            }
+        },
+        "railTitle": "Set up Isoform",
+        "railFoot": "Each step can be skipped and done later in Settings.",
+        "step1": "What Isoform sees",
+        "step2": "Is this right?",
+        "step3": "What it can do today",
+        "step4": "Your agents",
+        "step5": "Your phone and watch",
+        "skipStep": "Skip this step",
+        "rows": {
+            "calendar": {
+                "name": "Calendar",
+                "line": "Prep before your meetings."
+            },
+            "mail": {
+                "name": "Mail",
+                "line": "Drafts of what people ask you for."
+            },
+            "microphone": {
+                "name": "Microphone",
+                "line": "Your side of calls, and your voice."
+            },
+            "notifications": {
+                "name": "Notifications",
+                "line": "The brief, meeting prep and finished work."
+            },
+            "screen": {
+                "name": "Screen",
+                "line": "What you were working on, for your topics."
+            }
+        },
+        "allow": "Allow…",
+        "allowed": "Allowed",
+        "openSettings": "Open System Settings",
+        "mailLater": "Asked when Mail is open",
+        "soFar": "So far: {{what}}. Messages and your agents' history stay off until you turn them on in Settings.",
+        "soFarNothing": "nothing yet",
+        "soFarItems": {
+            "calendar": "your calendar",
+            "mail": "your mail",
+            "microphone": "your calls",
+            "screen": "your screen"
+        },
+        "rightLead": "From your calendar and mail, read a minute ago. Your answers make Isoform yours from the start.",
+        "rightNothing": "Nothing to check yet. Isoform asks once it has read your calendar and mail.",
+        "todayLead": "Made from what Isoform has already seen. Answer one, or skip; it waits in Your work.",
+        "todayNothing": "Nothing to offer yet. Tell Isoform what you're working on, and it starts there.",
+        "agentsLead": "A yes on offered work goes straight to the agents you already use. They see only what each hand-off sends.",
+        "phoneLead": "Your brief and your work on your phone; your watch hears what was said.",
+        "scan": "Open Isoform on your phone and choose Scan the code.",
+        "noApp": "Don't have it yet? Get it from the App Store on your phone; it's free.",
+        "watchLine": "With Apple Watch, the watch app comes with it. After pairing, the phone asks once to hear a sentence of your voice.",
+        "waitingPhone": "Waiting for your phone · the code works for 10 minutes",
+        "finish": "Finish setup",
+        "modelsDownload": "Download now",
+        "modelsLaterButton": "Later",
+        "modelsLater": "Later: when your computer is plugged in and idle. Change it in Settings › Models.",
+        "thinksWith": "Isoform thinks with {{agent}}",
+        "change": "Change"
     }
 }

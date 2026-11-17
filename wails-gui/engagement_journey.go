@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"os"
 	"sort"
 	"time"
@@ -57,40 +56,8 @@ func (a *App) noteFirstWeekOnboarding(ctx context.Context, raw string) error {
 	// Setup has finished: read the assistant history now, in the background,
 	// so the first brief and the welcome can use it.
 	a.startAssistantHistoryScan(true)
-	a.requestFirstBrief()
+	a.scheduleFirstBrief(ctx, now)
 	return nil
-}
-
-// firstBriefRequestedKey records that a fresh install asked for its first
-// brief, so it is asked for once.
-const firstBriefRequestedKey = "first_run.brief_requested.v1"
-
-// firstBriefWait bounds how long the request waits for the brief service.
-var firstBriefWait = 2 * time.Minute
-
-// requestFirstBrief makes the first brief as soon as setup ends, not at the
-// next scheduled time (Isoform design, first run 1.0, section 3), through
-// the same path as Make my brief now. Text comes first; the spoken version
-// follows when the voice model is there.
-func (a *App) requestFirstBrief() {
-	if a == nil || a.store == nil {
-		return
-	}
-	ctx := context.Background()
-	if done, _ := a.store.GetUIState(ctx, firstBriefRequestedKey); done == "true" {
-		return
-	}
-	if err := a.store.SetUIState(ctx, firstBriefRequestedKey, "true"); err != nil {
-		return
-	}
-	go func() {
-		deadline := time.Now().Add(firstBriefWait)
-		for a.mobileBriefSource() == nil && time.Now().Before(deadline) {
-			time.Sleep(time.Second)
-		}
-		result, err := a.GenerateMobileBriefNow()
-		log.Printf("[first-run] first brief requested: status=%s err=%v", result.Status, err)
-	}()
 }
 
 func (a *App) journeyEnabled(kind engagement.Kind, now time.Time) bool {
@@ -112,6 +79,7 @@ func (a *App) checkEngagementJourney(ctx context.Context, now time.Time) {
 	if !a.onboardingFinished(ctx) {
 		return
 	}
+	a.firstBriefDue(ctx, now)
 	// "Your week" rings with its Friday evening brief (produceYourWeekReady).
 	if day < 0 || day > 7 || !a.journeyEnabled(engagement.KindFirstWeek, now) {
 		return

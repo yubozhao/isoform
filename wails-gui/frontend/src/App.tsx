@@ -177,6 +177,8 @@ import type {
     UpcomingApproval,
 } from "@/types";
 import { OnboardingScreen } from "@/components/onboarding-screen";
+import { SetupV3 } from "@/components/onboarding/v3/SetupV3";
+import { GetSetupVersion } from "@/lib/wails-shim-app";
 import { AppToaster } from "@/components/app-toaster";
 import { loadOnboardingStateRaw, onboardingFinished } from "@/lib/onboarding-gate";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -493,6 +495,18 @@ export default function App() {
     const onboardingStateRef = useRef(onboardingState);
     const [onboardingLoading, setOnboardingLoading] = useState(true);
     const [skipOnboardingSession, setSkipOnboardingSession] = useState(false);
+    // Which first-run setup runs: 3 is computer setup v1.0.0 (ISOFORM_SETUP_V3=1),
+    // 2 is setup v2. Null until the backend answers; a missing binding is v2.
+    const [setupVersion, setSetupVersion] = useState<number | null>(null);
+    useEffect(() => {
+        let live = true;
+        GetSetupVersion()
+            .then((v) => live && setSetupVersion(v))
+            .catch(() => live && setSetupVersion(2));
+        return () => {
+            live = false;
+        };
+    }, []);
     const [connectedProviders, setConnectedProviders] = useState<{
         slack?: string;
         feishu?: string;
@@ -2052,17 +2066,18 @@ export default function App() {
         projects.handleOpenMainChat,
     ]);
 
-    const handleOnboardingFinish = useCallback((startedFirstTask: boolean) => {
+    const handleOnboardingFinish = useCallback((startedFirstTask: boolean, landing: "chat" | "today" = "chat") => {
         // The landing below must not pull the user away from what onboarding
         // opens next.
         landedOnMainChatRef.current = true;
-        // The main window opens on Chat in the sidebar (handoff §4, "The finish"),
-        // not on Today with Chat as the side pane.
-        handleSetAppMode("chat");
+        // Setup v2 opens on Chat in the sidebar (handoff §4, "The finish");
+        // computer setup v1.0.0 lands on Today's first day (rule 9).
+        if (landing === "today") handleSetAppMode("today");
+        else handleSetAppMode("chat");
         // Onboarding's own first task runs in its chat. Onboarding has
         // already closed the main chat's asks it made (first task included),
         // so the main chat does not ask for them again.
-        if (!startedFirstTask) {
+        if (!startedFirstTask && landing === "chat") {
             // Isoform's first message waits in the main chat; land there.
             void Promise.resolve(projects.handleOpenMainChat()).catch((err) =>
                 console.error("[onboarding] open main chat failed:", err),
@@ -3459,6 +3474,19 @@ export default function App() {
     const showOnboarding = !skipOnboardingSession &&
           !onboardingState.completed &&
           !onboardingState.neverShowAgain;
+
+    if (showOnboarding && setupVersion === null) {
+        return <div className="fixed inset-0 bg-background" />;
+    }
+
+    if (showOnboarding && setupVersion === 3) {
+        return (
+            <SetupV3
+                onFinish={() => handleOnboardingFinish(false, "today")}
+                onSkip={handleOnboardingSkipSession}
+            />
+        );
+    }
 
     if (showOnboarding) {
         return (

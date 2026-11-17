@@ -243,7 +243,8 @@ int isoformSetupWindowApply(int mode, double x, double y, double w, double h) {
         isoformSetWindowSetupStyle(window, setup);
         switch (mode) {
             case 1:
-                [window setFrame:isoformCenteredFrame(window, 600, 560) display:YES animate:NO];
+                // The setup's size comes from Go (setupWindowSize); 600 x 560 is setup v2's.
+                [window setFrame:isoformCenteredFrame(window, w > 0 ? w : 600, h > 0 ? h : 560) display:YES animate:NO];
                 break;
             case 2:
                 [window setFrame:NSMakeRect(x, y, w, h) display:YES animate:NO];

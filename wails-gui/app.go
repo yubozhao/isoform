@@ -1770,6 +1770,7 @@ func (a *App) restoreWindowPosition(ctx context.Context) {
 	if setupWindowMode.isActive() {
 		return
 	}
+	applyMainWindowMinSize(ctx, true)
 	state, err := a.LoadWindowState()
 	if err != nil || state == nil {
 		return
@@ -3637,4 +3638,29 @@ func (a *App) SetActivityMaxStorageGB(gb int) error {
 	// Lowering the limit (the page asks first when that removes files) is
 	// the user's yes to removals under it.
 	return a.writeActivityRetentionConfig(days, gb, gb < current)
+}
+
+// The main window's smallest size (computer-window v1.0.0 rule 1): nothing
+// smaller is ever drawn. The first-run setup window is 600 wide, so the
+// minimum is lifted while setup shows and set again when it ends.
+const (
+	mainWindowMinWidth  = 760
+	mainWindowMinHeight = 560
+)
+
+func mainWindowMinSize(on bool) (int, int) {
+	if on {
+		return mainWindowMinWidth, mainWindowMinHeight
+	}
+	return 0, 0
+}
+
+func applyMainWindowMinSize(ctx context.Context, on bool) {
+	// Without a Wails frontend (tests, a plain context) the runtime would
+	// log.Fatal and end the process.
+	if ctx == nil || isWailsBindingsBuild || ctx.Value("frontend") == nil {
+		return
+	}
+	width, height := mainWindowMinSize(on)
+	runtime.WindowSetMinSize(ctx, width, height)
 }
