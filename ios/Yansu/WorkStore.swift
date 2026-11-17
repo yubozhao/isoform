@@ -36,6 +36,28 @@ enum WorkPath {
         guard let encoded = id.addingPercentEncoding(withAllowedCharacters: allowed) else { return nil }
         return "/work/\(encoded)/answer"
     }
+
+    /// A result's file, read-only (phone-agent v1.2.0 rule 3).
+    static func file(_ id: String) -> String? {
+        answer(id).map { String($0.dropLast("/answer".count)) + "/file" }
+    }
+}
+
+/// A readable file of a result, as the computer sends it.
+struct WorkFileText: Decodable, Equatable, Sendable {
+    let name: String
+    let text: String
+}
+
+protocol WorkFileAPI: Sendable {
+    func workFile(itemID: String, fileID: String) async throws -> WorkFileText
+}
+
+extension HubChannel: WorkFileAPI {
+    func workFile(itemID: String, fileID: String) async throws -> WorkFileText {
+        guard let path = WorkPath.file(itemID) else { throw HubRequestError.invalidIdentifier }
+        return try await perform(.workFile(path: path, file: fileID)).payload(WorkFileText.self)
+    }
 }
 
 /// Your work on the phone (phone-today v1.0.0 section 2). It draws from what the phone saved at once, refreshes in
@@ -193,6 +215,15 @@ final class WorkStore: ObservableObject {
             self.page = page
             persist(hubID: hubID)
         }
+    }
+
+    /// Open on your computer: the computer opens the result's file there (v1.2.0 rule 3). Not an answer: the item
+    /// keeps its state, and nothing goes in the ledger.
+    func openFile(_ item: WorkItem, fileID: String) async throws {
+        guard let hubID = hubID() else { throw HubRequestError.notPaired }
+        let request = WorkAnswerRequest(idempotencyKey: UUID().uuidString.lowercased(), action: WorkAction.openFile.rawValue,
+                                        answeredAt: RelayTime.format(Date()), file: fileID)
+        _ = try await HubRequestScope.$hubID.withValue(hubID) { try await hub.answerWork(id: item.id, request: request) }
     }
 
     #if DEBUG

@@ -17,6 +17,15 @@ struct YourWorkSection<Legacy: View>: View {
     @State private var answerHaptics = 0
     /// Yes on offered work: the hand-off shows exactly what goes (phone-agent v1.0.0 rule 3).
     @State private var handingOff: WorkItem?
+    /// With your agents from the computer's statuses (PROTOCOL.md 27.2); nil while unread or on an older computer.
+    @State private var statuses: [HandoffStatus]?
+    @State private var openStatus: HandoffStatus?
+    @State private var takenBack: String?
+    /// A result's text file, open read-only.
+    @State private var reading: ReadingFile?
+    @State private var fileNotice: String?
+
+    struct ReadingFile: Identifiable { let item: WorkItem; let file: WorkFile; var id: String { item.id + "/" + file.id } }
     @EnvironmentObject private var environment: AppEnvironment
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -48,7 +57,9 @@ struct YourWorkSection<Legacy: View>: View {
                 WorkItemCard(item: item, position: (index, groups.open.count),
                              answer: { action in answer(item, action) },
                              edit: { editing = item },
-                             showWhy: { why = item })
+                             showWhy: { why = item },
+                             readFile: { reading = ReadingFile(item: item, file: $0) },
+                             openFile: { file in Task { await open(file, of: item) } })
                     .id(item.id)
                     .transition(reduceMotion ? .opacity : .asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity),
                                                                        removal: .opacity))
@@ -83,7 +94,22 @@ struct YourWorkSection<Legacy: View>: View {
                     }
                 }
             }
-            if !groups.withAgent.isEmpty {
+            if let fileNotice {
+                Text(verbatim: fileNotice)
+                    .font(.footnote)
+                    .foregroundStyle(YansuTheme.secondary)
+                    .accessibilityIdentifier("work.file.notice")
+            }
+            if let takenBack {
+                Text(verbatim: takenBack)
+                    .font(.footnote)
+                    .foregroundStyle(YansuTheme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("with.takenBack")
+            }
+            if let statuses {
+                WithYourAgentsGroup(statuses: statuses, computerAsleep: computerAsleep) { openStatus = $0 }
+            } else if !groups.withAgent.isEmpty {
                 YourWorkGroup(title: String(localized: "work.withAgent"), identifier: "work.withAgent") {
                     ForEach(groups.withAgent) { item in
                         WorkAgentRow(item: item)
@@ -114,8 +140,23 @@ struct YourWorkSection<Legacy: View>: View {
                          hub: agentsHub, alreadyHandedOver: !work.sendsSeparately,
                          sendThroughWork: work.sendsSeparately ? { agent in
                              try await work.sendHandOff(item, agentID: agent.id, removed: [])
-                         } : nil)
+                         } : nil,
+                         computerAsleep: computerAsleep)
                 .presentationDetents([.large])
+        }
+        .sheet(item: $openStatus) { status in
+            HandoffStatusSheet(status: status, hub: statusHub, computerAsleep: computerAsleep) { updated in
+                if updated.known == "taken_back" {
+                    showTakenBack(updated.name)
+                    Task { await work.refresh() }
+                }
+                Task { await loadStatuses() }
+            }
+            .presentationDetents([.medium, .large])
+        }
+        .task(id: work.page?.items.map(\.id)) { await loadStatuses() }
+        .sheet(item: $reading) { reading in
+            WorkFileSheet(item: reading.item, file: reading.file, api: fileAPI)
         }
         .sheet(item: $editing) { item in
             WorkEditSheet(item: item) { text in
@@ -132,6 +173,51 @@ struct YourWorkSection<Legacy: View>: View {
         .accessibilityIdentifier("today.yourWork")
     }
 
+    private var fileAPI: WorkFileAPI {
+        #if DEBUG && targetEnvironment(simulator)
+        if WorkUITestSeed.isOn { return WorkFileUITestHub() }
+        #endif
+        return environment.hub
+    }
+
+    /// Open on your computer: the computer opens it there; the phone says so, or that it couldn't.
+    private func open(_ file: WorkFile, of item: WorkItem) async {
+        do {
+            try await work.openFile(item, fileID: file.id)
+            fileNotice = String.localizedStringWithFormat(String(localized: "work.file.opening"), file.name)
+        } catch {
+            fileNotice = String(localized: "agents.unreachable")
+        }
+        let shown = fileNotice
+        try? await Task.sleep(for: .seconds(5))
+        if fileNotice == shown { fileNotice = nil }
+    }
+
+    private var computerAsleep: Bool { environment.today.connectionCause == .sleeping }
+
+    private var statusHub: HandoffStatusAPI {
+        #if DEBUG && targetEnvironment(simulator)
+        if WorkUITestSeed.isOn { return HandoffStatusUITestHub.shared }
+        #endif
+        return environment.hub
+    }
+
+    /// A computer without the status routes answers an error; its own with_agent rows stay.
+    private func loadStatuses() async {
+        guard work.supported == true else { return }
+        if let read = try? await statusHub.handoffStatuses() { statuses = read }
+    }
+
+    /// "Taken back. {agent} can't open it any more; …" for five seconds (v1.2.1 rule 4).
+    private func showTakenBack(_ name: String) {
+        let line = String.localizedStringWithFormat(String(localized: "with.takenBack"), name, name)
+        takenBack = line
+        Task {
+            try? await Task.sleep(for: .seconds(5))
+            if takenBack == line { takenBack = nil }
+        }
+    }
+
     private var agentsHub: AgentsHubAPI {
         #if DEBUG && targetEnvironment(simulator)
         if WorkUITestSeed.isOn { return AgentsUITestHub() }
@@ -146,7 +232,8 @@ struct YourWorkSection<Legacy: View>: View {
         let recordOnly = action == .yes && item.kind == "offered" && work.sendsSeparately
         Task { await work.answer(item, action: action, send: recordOnly ? false : nil) }
         withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) {
-            declined = action == .no ? item : nil
+            // A request takes No with no reason (v1.2.0 rule 1): nothing to pick.
+            declined = action == .no && !WorkReason.choices(for: item).isEmpty ? item : nil
         }
         if action == .yes, item.kind == "offered" { handingOff = item }
     }

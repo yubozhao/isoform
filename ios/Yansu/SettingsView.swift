@@ -42,14 +42,16 @@ struct SettingsView: View {
                 }
                 VStack(spacing: 0) {
                     if pairing.isPaired {
-                        Button { showsSees = true } label: {
+                        NavigationLink {
+                            YourDataView(answersHub: answersHub, sentHub: sentHub, openSees: { showsSees = true })
+                        } label: {
                             settingsRow(String(localized: "set.data"), sub: String(localized: "set.dataSub"))
                         }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("settings.yourData.open")
                         rowDivider
                         NavigationLink {
-                            YourAgentsView(hub: agentsHub)
+                            YourAgentsView(hub: agentsHub, sentHub: sentHub)
                         } label: {
                             settingsRow(String(localized: "set.agent"), sub: String(localized: "set.agentSub"))
                         }
@@ -103,6 +105,11 @@ struct SettingsView: View {
                 .padding(.horizontal, 16)
                 .background(YansuTheme.surface, in: RoundedRectangle(cornerRadius: YansuTheme.cornerRadius))
                 settingsGroup("Isoform", identifier: "settings.group.isoform") {
+                    // Switches for what's still settling (phone-settings rule 5).
+                    if pairing.isPaired, status?.topicsDailySwitch == true,
+                       pairing.paired?.scopes.contains("offers:decide") == true {
+                        TopicsSwitchRow(hub: app.hub)
+                    }
                     NavigationLink {
                         YourAgentView(store: app.yourAgent)
                     } label: {
@@ -377,6 +384,21 @@ struct SettingsView: View {
     }
 
     private var rowDivider: some View { Divider().overlay(YansuTheme.borderSubtle) }
+
+    private var answersHub: AnswersHubAPI {
+        #if DEBUG && targetEnvironment(simulator)
+        if WorkUITestSeed.isOn { return AnswersUITestHub() }
+        #endif
+        return app.hub
+    }
+
+    /// Sent to your agents reads the computer's hand-off log, on a computer that serves it (PROTOCOL.md 27.2).
+    private var sentHub: AgentsHubAPI? {
+        #if DEBUG && targetEnvironment(simulator)
+        if WorkUITestSeed.isOn { return AgentsUITestHub() }
+        #endif
+        return status?.agentHandoffs == true ? app.hub : nil
+    }
 
     private var agentsHub: AgentsHubAPI {
         #if DEBUG && targetEnvironment(simulator)

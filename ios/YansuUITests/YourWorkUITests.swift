@@ -33,6 +33,54 @@ final class YourWorkUITests: XCTestCase {
         attachScreenshot(app, named: "today-2-up-next-agent-done")
     }
 
+    /// With your agents in the computer's words, no word first; a row opens with Ask again and Take it back
+    /// (phone-agent v1.2.1).
+    func testWithYourAgentsShowsEachStateAndTakesWorkBack() throws {
+        let app = launch()
+        XCTAssertTrue(app.otherElements["today.yourWork"].firstMatch.waitForExistence(timeout: 15))
+        let noWord = app.buttons["with.row.s-noword"].firstMatch
+        for _ in 0..<6 where !(noWord.exists && noWord.isHittable) { app.swipeUp() }
+        XCTAssertTrue(noWord.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["with.row.s-working"].firstMatch.exists)
+        XCTAssertTrue(app.buttons["with.row.s-has"].firstMatch.exists)
+        XCTAssertFalse(app.buttons["with.row.s-back"].exists, "back leaves the group")
+        XCTAssertLessThan(noWord.frame.minY, app.buttons["with.row.s-working"].firstMatch.frame.minY, "no word first")
+        attachScreenshot(app, named: "with-1-every-state")
+        noWord.tap()
+        let takeBack = app.buttons["with.takeBack"].firstMatch
+        XCTAssertTrue(takeBack.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["with.askAgain"].firstMatch.exists)
+        attachScreenshot(app, named: "with-2-opened")
+        takeBack.tap()
+        XCTAssertTrue(app.staticTexts["with.takenBack"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["with.row.s-noword"].exists)
+        attachScreenshot(app, named: "with-3-taken-back")
+    }
+
+    /// An agent's request takes Yes or No; a result's text file reads here, anything else opens on the computer;
+    /// work taken back says so (phone-agent v1.2.0 and v1.2.1).
+    func testAgentsRequestAndResultFiles() throws {
+        let app = launch(work: "agents")
+        XCTAssertTrue(app.otherElements["today.yourWork"].firstMatch.waitForExistence(timeout: 15))
+        let request = app.descendants(matching: .any)["work.item.work-request"].firstMatch
+        for _ in 0..<4 where !request.exists { app.swipeUp() }
+        XCTAssertTrue(request.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.descendants(matching: .any)["work.item.moves"].firstMatch.exists)
+        XCTAssertFalse(app.buttons["work.notMine"].exists, "a request has no Not mine")
+        XCTAssertFalse(app.buttons["work.item.edit"].exists, "and no Edit")
+        attachScreenshot(app, named: "agents-1-request")
+        app.buttons["work.no"].firstMatch.tap()
+        XCTAssertFalse(app.otherElements["work.reasons"].firstMatch.waitForExistence(timeout: 2), "No takes no reason")
+
+        let readIt = app.buttons["work.file.f1"].firstMatch
+        XCTAssertTrue(readIt.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["work.file.f2"].firstMatch.exists)
+        attachScreenshot(app, named: "agents-2-result-files")
+        readIt.tap()
+        XCTAssertTrue(app.staticTexts["work.file.text"].firstMatch.waitForExistence(timeout: 10))
+        attachScreenshot(app, named: "agents-3-read-it")
+    }
+
     func testNoAsksForAnOptionalReasonAndTheBriefFoldsButStays() throws {
         let app = launch()
         let no = app.buttons["work.no"].firstMatch

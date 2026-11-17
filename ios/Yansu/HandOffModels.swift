@@ -83,10 +83,38 @@ struct HandOffSource: Identifiable, Equatable, Sendable {
     }
 }
 
+/// One hand-off as the computer keeps it (PROTOCOL.md 27.2): exactly what went, when, to whom, and from where.
+struct AgentHandoffEntry: Codable, Equatable, Identifiable, Sendable {
+    struct Source: Codable, Equatable, Sendable {
+        var kind: String? = nil
+        var id: String? = nil
+    }
+    let id: String
+    var agentId: String? = nil
+    var agentName: String? = nil
+    var kind: String? = nil
+    var method: String? = nil
+    var via: String? = nil
+    let text: String
+    /// What left, when it differs from `text` (the one line of a task link).
+    var sent: String? = nil
+    let sentAt: String
+    var surface: String? = nil
+    var source: Source? = nil
+
+    var date: Date? { RelayTime.parse(sentAt) }
+}
+
+struct AgentHandoffsPage: Codable, Equatable, Sendable {
+    var handoffs: [AgentHandoffEntry]
+    var next: String? = nil
+}
+
 protocol AgentsHubAPI: Sendable {
     func phoneAgents() async throws -> PhoneAgents
     func chooseAgent(_ request: PhoneAgentChoiceRequest) async throws -> PhoneAgents
     func handOff(_ request: PhoneHandOffRequest) async throws -> PhoneHandOffResult
+    func handoffs(limit: Int, before: String?) async throws -> AgentHandoffsPage
 }
 
 extension HubChannel: AgentsHubAPI {
@@ -104,6 +132,10 @@ extension HubChannel: AgentsHubAPI {
         let body = try JSONEncoder().encode(request)
         return try await perform(.write(path: "/agents/handoffs", body: String(decoding: body, as: UTF8.self)))
             .payload(PhoneHandOffResult.self)
+    }
+
+    func handoffs(limit: Int, before: String?) async throws -> AgentHandoffsPage {
+        try await perform(.agentHandoffs(limit: limit, before: before)).payload(AgentHandoffsPage.self)
     }
 }
 
@@ -138,5 +170,73 @@ enum HandOffRoute: Equatable {
         components.queryItems = [URLQueryItem(name: "body", value: text)]
         guard let query = components.percentEncodedQuery else { return nil }
         return URL(string: "sms:&" + query)
+    }
+}
+
+/// The hand-off's one button, by what the agent is (phone-agent v1.2.0 §3): it says what will really happen.
+enum HandOffButton: Equatable {
+    /// An agent Isoform runs on the computer: "Send to {agent} on your computer".
+    case onComputer
+    /// An agent in its own app: "Open in {agent}", the app opening with the task written in.
+    case openIn(scheme: String)
+    /// "Write it in Messages".
+    case messages
+    /// A cloud agent, or one with no app on this phone: "Send to {agent}".
+    case send
+
+    static func button(for agent: PhoneAgent) -> HandOffButton {
+        let scheme = WorkOnIt.catalog.first { $0.id == agent.id }?.scheme ?? HandOffRoute.knownSchemes[agent.id]
+        switch agent.reach {
+        case "connected_computer": return .onComputer
+        case "on_computer": return agent.isConnected ? .onComputer : .send
+        case "by_text": return .messages
+        default:
+            if let scheme { return .openIn(scheme: scheme) }
+            return .send
+        }
+    }
+
+    func title(_ name: String) -> String {
+        switch self {
+        case .onComputer: return String.localizedStringWithFormat(String(localized: "agent.sendOnComputer"), name)
+        case .openIn: return String.localizedStringWithFormat(String(localized: "agent.openIn"), name)
+        case .messages: return String(localized: "agent.writeMessages")
+        case .send: return String.localizedStringWithFormat(String(localized: "agent.send"), name)
+        }
+    }
+
+    /// The line under the button, when there is one.
+    func foot(_ agent: PhoneAgent) -> String? {
+        switch self {
+        case .onComputer:
+            return agent.kind == "code" ? String.localizedStringWithFormat(String(localized: "agent.newBranch"), agent.name) : nil
+        case .openIn: return String.localizedStringWithFormat(String(localized: "agent.openInFoot"), agent.name)
+        case .messages, .send: return nil
+        }
+    }
+}
+
+/// Settings › Your agents words for one agent (phone-agent v1.2.0 rule 14): Connected or not, and where it runs.
+enum AgentRowWords {
+    static func state(_ agent: PhoneAgent) -> String {
+        let connected = String(localized: agent.isConnected ? "agents.state.connected" : "agents.state.notConnected")
+        let place: String
+        switch agent.reach {
+        case "on_computer", "connected_computer": place = String(localized: "agents.where.computer")
+        case "by_text": place = String(localized: "agents.where.text")
+        default: place = String(localized: "agents.where.app")
+        }
+        return connected + " · " + place
+    }
+
+    static func lastWorked(_ agent: PhoneAgent, now: Date = Date(), locale: Locale) -> String? {
+        guard let at = agent.lastWorkedAt else { return nil }
+        // The computer sends milliseconds; tolerate seconds too.
+        let date = Date(timeIntervalSince1970: at > 10_000_000_000 ? at / 1000 : at)
+        let formatter = RelativeDateTimeFormatter()
+        formatter.locale = locale
+        formatter.unitsStyle = .full
+        return String.localizedStringWithFormat(String(localized: "agents.lastWorked"),
+                                                formatter.localizedString(for: date, relativeTo: now))
     }
 }

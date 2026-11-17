@@ -14,6 +14,8 @@ struct HandOffSheet: View {
     var sendThroughWork: ((PhoneAgent) async throws -> Void)? = nil
     /// After Send: the agent's name, for "Sent to {agent}".
     var onSent: (String) -> Void = { _ in }
+    /// The computer said goodbye for sleep. A Yes already recorded (B3) waits for it, so the sheet says so.
+    var computerAsleep = false
 
     @Environment(\.dismiss) private var dismiss
     @State private var agents: PhoneAgents?
@@ -91,14 +93,29 @@ struct HandOffSheet: View {
                     Text(verbatim: notice).font(.footnote).foregroundStyle(YansuTheme.secondary)
                         .accessibilityIdentifier("handoff.notice")
                 }
+                let button = HandOffButton.button(for: agent)
+                if button == .onComputer, computerAsleep, alreadyHandedOver {
+                    Text("agent.asleepLine")
+                        .font(.footnote)
+                        .foregroundStyle(YansuTheme.warning)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("handoff.asleep")
+                }
                 Button {
                     Task { await send(agent) }
                 } label: {
-                    Text(String.localizedStringWithFormat(String(localized: "agent.send"), agent.name))
+                    Text(verbatim: button.title(agent.name))
                 }
                 .buttonStyle(YansuPrimaryButtonStyle())
                 .disabled(sending)
                 .accessibilityIdentifier("handoff.send")
+                if let foot = button.foot(agent) {
+                    Text(verbatim: foot)
+                        .font(.footnote)
+                        .foregroundStyle(YansuTheme.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("handoff.foot")
+                }
                 VStack(spacing: 6) {
                     Text("agent.ownAccount").font(.footnote).foregroundStyle(YansuTheme.secondary)
                     Menu {
@@ -142,6 +159,14 @@ struct HandOffSheet: View {
         }
     }
 
+    /// "Open in {agent}" for a connected app agent: the computer has the hand-off, and the app opens with the task
+    /// written in (on the clipboard) for the person to press send there (v1.2.0 rule 6).
+    private func openAppIfAsked(_ agent: PhoneAgent) async {
+        guard case .openIn(let scheme) = HandOffButton.button(for: agent), let url = URL(string: "\(scheme)://") else { return }
+        UIPasteboard.general.string = source.text
+        await UIApplication.shared.open(url)
+    }
+
     /// Send: straight to a connected agent; otherwise the agent's own way in, with the person sending it there.
     private func send(_ agent: PhoneAgent) async {
         sending = true
@@ -150,6 +175,7 @@ struct HandOffSheet: View {
         if let sendThroughWork {
             do {
                 try await sendThroughWork(agent)
+                await openAppIfAsked(agent)
                 onSent(agent.name)
                 dismiss()
                 return
@@ -157,6 +183,7 @@ struct HandOffSheet: View {
                 if route == .direct { route = .app(scheme: WorkOnIt.catalog.first { $0.id == agent.id }?.scheme) }
             }
         } else if route == .direct, alreadyHandedOver, override == nil {
+            await openAppIfAsked(agent)
             onSent(agent.name)
             dismiss()
             return
@@ -166,6 +193,7 @@ struct HandOffSheet: View {
                 _ = try await hub.handOff(PhoneHandOffRequest(idempotencyKey: UUID().uuidString.lowercased(), agentId: agent.id,
                                                               kind: source.workKind, sourceKind: source.kind, sourceId: source.id,
                                                               title: source.title, detail: source.detail, done: source.done))
+                await openAppIfAsked(agent)
                 onSent(agent.name)
                 dismiss()
                 return
