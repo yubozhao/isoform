@@ -36,3 +36,17 @@ Setup v2 (`wails-gui/frontend/src/components/onboarding/`) is six screens in a f
 ## Asked of design
 
 Questions that change what the screens show go to Isoform design through the hub; see the hub log for the answers.
+
+## Where a skipped step is done later
+
+From the Settings owner (#1125, #1139). Open with `settings:open` and `(page, { anchor })`; none is linked from setup today.
+
+| Step | Page | Anchor |
+| --- | --- | --- |
+| 1 · Screen, Calls (microphone), Mail, Calendar | `activity` | `sees-screen`, `sees-calls`, `sees-mail`, `sees-calendar` |
+| 1 · Notifications | `notifications` | |
+| 1 · Local models, share usage | `ai-provider` | `{ advanced: true }` |
+| 4 · Your agents | `ai-provider` | |
+| 5 · Your phone and watch | `iphone` | |
+
+Steps 2 and 3 are done later in You and on Today.

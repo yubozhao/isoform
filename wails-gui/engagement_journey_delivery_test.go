@@ -165,7 +165,9 @@ func journeyReminderPurpose(t *testing.T, app *App, now time.Time) string {
 }
 
 func TestFirstWeekHeldWelcomeOmitsElapsedBriefPrediction(t *testing.T) {
-	for _, locked := range []bool{false, true} {
+	// A locked computer no longer holds a notice for the unlock (notify
+	// v1.0.0 B2), so only quiet hours hold the welcome.
+	for _, locked := range []bool{false} {
 		t.Run(map[bool]string{false: "quiet hours", true: "locked computer"}[locked], func(t *testing.T) {
 			app, rig := newJourneyRig(t)
 			ctx := context.Background()

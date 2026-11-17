@@ -8,13 +8,10 @@ final class DuoNavigationTests: XCTestCase {
         navigation.push(.item("brief-card"), on: .today)
         navigation.push(.thread("topic"), on: .chat)
         navigation.push(.draft("topic"), on: .chat)
-        navigation.push(.task("task"), on: .tasks)
 
         XCTAssertEqual(navigation.visiblePanes(on: .today, wide: true), [.today, .item("brief-card")])
         XCTAssertEqual(navigation.visiblePanes(on: .chat, wide: true), [.thread("topic"), .draft("topic")])
-        XCTAssertEqual(navigation.visiblePanes(on: .tasks, wide: true), [.tasks, .task("task")])
         XCTAssertEqual(navigation.visiblePanes(on: .today, wide: false), [.item("brief-card")])
-        XCTAssertEqual(navigation.visiblePanes(on: .tasks, wide: false), [.task("task")])
     }
 
     func testChangingLayoutDoesNotMutatePerTabPaths() {
@@ -22,17 +19,14 @@ final class DuoNavigationTests: XCTestCase {
         navigation.push(.item("brief-card"), on: .today)
         navigation.push(.thread("topic"), on: .chat)
         navigation.push(.draft("main"), on: .chat)
-        navigation.push(.task("running"), on: .tasks)
         let wide = DuoLayout.metrics(width: 890, height: 626, horizontalSizeClassIsRegular: true)
         let narrow = DuoLayout.metrics(width: 600, height: 900, horizontalSizeClassIsRegular: false)
         for metrics in [wide, narrow] {
             _ = navigation.visiblePanes(on: .today, wide: metrics.isWide)
             _ = navigation.visiblePanes(on: .chat, wide: metrics.isWide)
-            _ = navigation.visiblePanes(on: .tasks, wide: metrics.isWide)
         }
 
         XCTAssertEqual(navigation.path(for: .today), [.today, .item("brief-card")])
-        XCTAssertEqual(navigation.path(for: .tasks), [.tasks, .task("running")])
         XCTAssertEqual(navigation.path(for: .chat), [.topics, .thread("topic"), .draft("main")])
     }
 
@@ -84,11 +78,11 @@ final class DuoNavigationTests: XCTestCase {
 
     func testCloseReturnsToThePreviousGeneralStep() {
         let navigation = DuoNavigation()
-        navigation.push(.task("running"), on: .tasks)
-        navigation.close(on: .tasks)
-        XCTAssertEqual(navigation.path(for: .tasks), [.tasks])
-        navigation.close(on: .tasks)
-        XCTAssertEqual(navigation.path(for: .tasks), [.tasks])
+        navigation.push(.item("card"), on: .today)
+        navigation.close(on: .today)
+        XCTAssertEqual(navigation.path(for: .today), [.today])
+        navigation.close(on: .today)
+        XCTAssertEqual(navigation.path(for: .today), [.today])
     }
 
     func testTodaySelectionClearsWhenCardDisappearsOrFeedBecomesUnavailable() {

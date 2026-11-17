@@ -114,6 +114,7 @@ func (a *App) abortAutomaticMeetingRecording() {
 	am.lastMeetingPID = 0
 	am.lastMeetingPaused = false
 	am.lastMeetingEndMs = 0
+	am.lastCallIdentityWrittenMs = 0
 	am.lastMeetingEventMs = 0
 	am.lastMeetingAudioMs = 0
 	am.meetingCandidateActive = false
@@ -127,6 +128,7 @@ func (a *App) abortAutomaticMeetingRecording() {
 		a.armActivityIdleTimerLocked(am, "idle_transition")
 	}
 	am.mu.Unlock()
+	forgetCallIdentity(am)
 
 	if meetingWriter != nil {
 		meetingWriter.Abort()

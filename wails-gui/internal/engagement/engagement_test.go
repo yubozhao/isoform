@@ -343,12 +343,11 @@ func TestChannelFor(t *testing.T) {
 		{"digest gets no channel", Verdict{Mode: ModeDigest}, Presence{PhoneRegistered: true}, ChannelNone},
 		{"at the Mac", active, Presence{MacForeground: true, MacIdle: 10 * time.Second, PhoneRegistered: true}, ChannelDesktop},
 		{"Mac open but idle", active, Presence{MacForeground: true, MacIdle: 5 * time.Minute, PhoneRegistered: true, PhoneLastSeen: now}, ChannelPush},
-		{"phone registered", active, Presence{PhoneRegistered: true, PhoneLastSeen: now.Add(-2 * time.Hour)}, ChannelPush},
-		{"push failed, active moment, Mac nearby", active, Presence{PhoneRegistered: true, PushFailed: true, MacIdle: 3 * time.Minute, TextAvailable: true}, ChannelDesktop},
-		{"push failed, urgent moment", urgent, Presence{PhoneRegistered: true, PushFailed: true, TextAvailable: true, MacIdle: time.Hour}, ChannelText},
-		{"no phone, urgent, text set up", urgent, Presence{TextAvailable: true, MacIdle: time.Hour}, ChannelText},
-		{"no phone, active, Mac asleep", active, Presence{MacIdle: time.Hour}, ChannelNone},
-		{"no phone, active, Mac nearby", active, Presence{MacIdle: 4 * time.Minute}, ChannelDesktop},
+		{"phone registered, long silent", active, Presence{PhoneRegistered: true, PhoneLastSeen: now.Add(-2 * time.Hour), MacIdle: time.Hour}, ChannelPush},
+		{"push failed, Mac nearby", active, Presence{PhoneRegistered: true, PushFailed: true, MacIdle: 3 * time.Minute, TextAvailable: true}, ChannelDesktop},
+		{"push failed, urgent, text set up", urgent, Presence{PhoneRegistered: true, PushFailed: true, TextAvailable: true, MacIdle: time.Hour}, ChannelDesktop},
+		{"no phone, urgent, text set up", urgent, Presence{TextAvailable: true, MacIdle: time.Hour}, ChannelDesktop},
+		{"no phone, Mac idle an hour", active, Presence{MacIdle: time.Hour}, ChannelDesktop},
 	}
 	for _, c := range cases {
 		if got := ChannelFor(c.v, c.p, now); got != c.want {

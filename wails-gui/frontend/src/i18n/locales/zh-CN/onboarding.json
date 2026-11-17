@@ -894,6 +894,25 @@
         "modelsLaterButton": "稍后",
         "modelsLater": "稍后：在电脑接通电源且空闲时下载。可在设置 › 模型中更改。",
         "thinksWith": "Isoform 使用 {{agent}} 思考",
-        "change": "更改"
+        "change": "更改",
+        "rightReading": "正在读取你的日历和邮件…",
+        "rightAsk": "对吗？",
+        "rightYes": "对",
+        "rightNo": "不对",
+        "rightEdit": "修改",
+        "rightSave": "保存",
+        "rightKept": "已保留",
+        "rightNotQuite": "不太对。Isoform 不会使用它。",
+        "rightUndo": "撤销",
+        "rightFailed": "无法保存这个回答。请重试。",
+        "whyCalendar": "来自你的日历，{{day}}",
+        "whyMail": "来自你的邮件，{{day}}",
+        "todayYes": "可以 · 在你的工作中",
+        "todayNo": "不要",
+        "followTitle": "你在做什么，或在关注什么？",
+        "followLine": "一个项目、一个正在权衡的决定、一场比赛、一个团队。它会马上成为一个主题，一分钟内给出第一个想法。",
+        "followAdd": "添加",
+        "followAdded": "{{name}} · 第一个想法一分钟内出现在你的工作中",
+        "followFailed": "无法添加。请重试，或稍后在你的主题中添加。"
     }
 }

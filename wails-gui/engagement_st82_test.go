@@ -17,9 +17,10 @@ func TestST82CapCountsAllAutomaticLevelsAndSurvivesRestart(t *testing.T) {
 		kind     engagement.Kind
 		deadline bool
 	}{
-		{"active", engagement.KindWorkBlocked, false},
-		{"passive", engagement.KindBriefMissed, false},
-		{"time-sensitive", engagement.KindWorkBlocked, true},
+		// Under notify v1.0.0 B3 no automatic passive kind rings (passive
+		// moments are quiet lines on Today), so the cap counts these two.
+		{"active", engagement.KindWorkFinished, false},
+		{"time-sensitive", engagement.KindMeetingPrep, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rig := newEngagementTestRig(t)
@@ -41,7 +42,7 @@ func TestST82CapCountsAllAutomaticLevelsAndSurvivesRestart(t *testing.T) {
 				t.Fatal(err)
 			}
 			rig.svc = fresh
-			next, err := fresh.Submit(ctx, engagement.Moment{Kind: engagement.KindWorkBlocked, SubjectID: "second"})
+			next, err := fresh.Submit(ctx, engagement.Moment{Kind: engagement.KindWorkFinished, SubjectID: "second"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -76,7 +77,7 @@ func TestST82ChatOnlyAndRequestedReminderDoNotConsumeCap(t *testing.T) {
 	if len(rig.pushed) != 1 {
 		t.Fatalf("requested reminder deliveries = %d", len(rig.pushed))
 	}
-	if _, err := rig.svc.Submit(ctx, engagement.Moment{Kind: engagement.KindWorkBlocked, SubjectID: "automatic"}); err != nil {
+	if _, err := rig.svc.Submit(ctx, engagement.Moment{Kind: engagement.KindMeetingPrep, SubjectID: "automatic"}); err != nil {
 		t.Fatal(err)
 	}
 	rig.svc.Pass(ctx)
@@ -132,7 +133,9 @@ func TestST82MissedBriefIsIdempotentAfterSendAndRestart(t *testing.T) {
 		fresh.Pass(ctx)
 	}
 	rows := openMoments(t, rig.store, string(engagement.KindBriefMissed))
-	if len(rows) != 1 || len(rig.pushed) != 1 {
+	// One row however often it is produced; a missed brief is a quiet line
+	// on Today, never a push (B3).
+	if len(rows) != 1 || len(rig.pushed) != 0 {
 		t.Fatalf("rows=%s sends=%d", fmt.Sprint(rows), len(rig.pushed))
 	}
 	if !mobileValidUUID(rows[0].ID) {
@@ -170,12 +173,12 @@ func TestST82FailedSendDoesNotSpendBudget(t *testing.T) {
 		t.Fatal(err)
 	}
 	rig.pushError = context.DeadlineExceeded
-	if _, err := rig.svc.Submit(ctx, engagement.Moment{Kind: engagement.KindWorkBlocked, SubjectID: "first"}); err != nil {
+	if _, err := rig.svc.Submit(ctx, engagement.Moment{Kind: engagement.KindWorkFinished, SubjectID: "first"}); err != nil {
 		t.Fatal(err)
 	}
 	rig.svc.Pass(ctx)
 	rig.pushError = nil
-	if _, err := rig.svc.Submit(ctx, engagement.Moment{Kind: engagement.KindWorkBlocked, SubjectID: "second"}); err != nil {
+	if _, err := rig.svc.Submit(ctx, engagement.Moment{Kind: engagement.KindWorkFinished, SubjectID: "second"}); err != nil {
 		t.Fatal(err)
 	}
 	rig.svc.Pass(ctx)

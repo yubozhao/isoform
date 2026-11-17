@@ -894,6 +894,25 @@
         "modelsLaterButton": "Later",
         "modelsLater": "Later: when your computer is plugged in and idle. Change it in Settings › Models.",
         "thinksWith": "Isoform thinks with {{agent}}",
-        "change": "Change"
+        "change": "Change",
+        "rightReading": "Reading your calendar and mail…",
+        "rightAsk": "Right?",
+        "rightYes": "Yes",
+        "rightNo": "No",
+        "rightEdit": "Edit",
+        "rightSave": "Save",
+        "rightKept": "Kept",
+        "rightNotQuite": "Not quite. Isoform won't use it.",
+        "rightUndo": "Undo",
+        "rightFailed": "Couldn't save that answer. Try again.",
+        "whyCalendar": "From your calendar, {{day}}",
+        "whyMail": "From your mail, {{day}}",
+        "todayYes": "Yes · in Your work",
+        "todayNo": "No",
+        "followTitle": "What are you working on, or following?",
+        "followLine": "A project, a decision you're weighing, a game, a team. It becomes a topic now, with its first idea in a minute.",
+        "followAdd": "Add",
+        "followAdded": "{{name}} · its first idea comes in a minute, in Your work",
+        "followFailed": "Couldn't add that. Try again, or add it later in Your topics."
     }
 }

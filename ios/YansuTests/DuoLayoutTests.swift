@@ -20,10 +20,9 @@ final class DuoLayoutTests: XCTestCase {
         XCTAssertEqual(DuoLayout.frames(for: .today, metrics: metrics).left.width, 250)
         XCTAssertEqual(DuoLayout.frames(for: .today, metrics: metrics, hasSelection: true).left.width, 360)
         XCTAssertEqual(DuoLayout.frames(for: .chat, metrics: metrics).left.width, 300)
-        XCTAssertEqual(DuoLayout.frames(for: .tasks, metrics: metrics).left.width, 360)
-        let frames = DuoLayout.frames(for: .tasks, metrics: metrics, fullScreen: true)
+        let frames = DuoLayout.frames(for: .today, metrics: metrics, fullScreen: true)
         XCTAssertEqual(frames.fullScreen, CGRect(x: 0, y: 0, width: 890, height: 626))
-        XCTAssertEqual(DuoLayout.frames(for: .tasks, metrics: metrics).right.maxX, 810)
+        XCTAssertEqual(DuoLayout.frames(for: .today, metrics: metrics).right.maxX, 810)
         XCTAssertEqual(frames.text.minX, 80)
         XCTAssertEqual(frames.text.maxX, 810)
     }
@@ -42,7 +41,7 @@ final class DuoLayoutTests: XCTestCase {
     func testControlFramesStayClearOfTheFoldInEveryWideState() {
         let states: [(DuoTab, Bool)] = [
             (.today, false), (.today, true), (.chat, false),
-            (.chat, true), (.tasks, false), (.tasks, true)
+            (.chat, true)
         ]
         for foldX: CGFloat in [445, 420, 470] {
             let metrics = DuoMetrics(width: 890, height: 626, foldX: foldX)
@@ -56,28 +55,8 @@ final class DuoLayoutTests: XCTestCase {
                     XCTAssertGreaterThanOrEqual(control.minX, 0)
                     XCTAssertLessThanOrEqual(control.maxX, metrics.width)
                 }
-                if tab == .tasks && !hasSelection {
-                    let buttons = DuoLayout.controlFrames(for: tab, metrics: metrics,
-                                                          hasSelection: hasSelection)
-                    XCTAssertEqual(buttons.count, 2)
-                    XCTAssertGreaterThanOrEqual(buttons[0].minX, foldX + 16)
-                    XCTAssertGreaterThanOrEqual(buttons[1].minX, foldX + 16)
-                    XCTAssertEqual(buttons[0].width, 112)
-                    XCTAssertEqual(buttons[1].minX - buttons[0].minX, 124)
-                }
             }
         }
-    }
-
-    func testTasksDeckFramesMatchTheRenderedFoldSafeButtonRow() {
-        let metrics = DuoMetrics(width: 890, height: 626, foldX: 445)
-        let buttons = DuoLayout.controlFrames(for: .tasks, metrics: metrics,
-                                              hasSelection: false)
-
-        XCTAssertEqual(buttons, [
-            CGRect(x: 461, y: 16, width: 112, height: 44),
-            CGRect(x: 585, y: 16, width: 112, height: 44)
-        ])
     }
 
     func testMotionDocksClearOfTheFold() {

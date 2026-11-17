@@ -125,8 +125,17 @@ func TestEngagementMaturedDigestWaitsThroughQuietHours(t *testing.T) {
 			}
 			rig.clock = next
 			rig.svc.Pass(ctx)
-			if bundles+len(rig.pushed)+len(rig.desktop) != 1 {
-				t.Fatal("digest did not deliver at the next configured slot")
+			if bundled {
+				if bundles != 1 {
+					t.Fatal("digest did not deliver at the next configured slot")
+				}
+				return
+			}
+			// Without a digest, a calendar conflict is a quiet line on Today at
+			// the slot, never a toast or a push (notify v1.0.0 B3).
+			stored, err = rig.store.GetEngagementMoment(ctx, row.ID)
+			if err != nil || stored.State != storage.EngagementStateSent || stored.Channel != string(engagement.ChannelTodayQuiet) || len(rig.pushed)+len(rig.desktop) != 0 {
+				t.Fatalf("at the slot: %+v pushed=%d desktop=%d %v", stored, len(rig.pushed), len(rig.desktop), err)
 			}
 		})
 	}

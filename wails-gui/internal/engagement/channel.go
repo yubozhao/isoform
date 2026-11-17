@@ -67,21 +67,18 @@ type Presence struct {
 	// EmailActive is whether the user verified an address for email through
 	// the relay (PROTOCOL.md section 19) and the relay is connected.
 	EmailActive bool
-	// ScreenLocked is whether the Mac's screen is locked. Non-urgent
-	// deliveries wait for the unlock (HoldWhileLocked).
+	// ScreenLocked is whether the Mac's screen is locked: the person is away
+	// from it (notify v1.0.0 rule 1).
 	ScreenLocked bool
+	// ClosedEyes is whether observation is paused: input is not read, so an
+	// unlocked computer counts as at it.
+	ClosedEyes bool
 }
 
 const (
 	// macAttentionIdle is how recent an input event must be for a desktop
 	// toast to be the right channel.
 	macAttentionIdle = 2 * time.Minute
-	// macNearbyIdle is how recent an input event must be for a desktop toast
-	// to be worth anything at all.
-	macNearbyIdle = 10 * time.Minute
-	// phoneOfflineAfter is how long without contact counts as offline for the
-	// text fallback.
-	phoneOfflineAfter = 30 * time.Minute
 )
 
 // NeedsYou reports whether a kind waits on the user's answer: blocked work.
@@ -117,37 +114,88 @@ func ChannelFor(v Verdict, p Presence, now time.Time) Channel {
 	return ChannelForKind("", v, p, now)
 }
 
-// ChannelForKind picks the channel for an interrupting verdict of a kind.
-// Non-interrupting verdicts get no channel. The order: the Mac when the user
-// is at it, the phone when it can be pushed, a text through the relay when
-// the user subscribed a number and the moment is time-sensitive or needs
-// them, a text through Messages on this Mac only for time-sensitive moments,
-// both only when the phone cannot be reached, and the Mac again if it is at
-// least awake nearby. ChannelText leaves the choice between the relay and
-// Messages to the sender, which prefers the relay.
+// InterruptingKind reports whether a kind may ring at all (notify v1.0.0 B3,
+// redesign v1.0.0 section 8): the brief (with its first-week and weekly
+// forms), meeting prep, finished work, and a reminder the person set
+// themselves (rule 7). Every other kind is a quiet line on Today.
+func InterruptingKind(kind Kind) bool {
+	switch kind {
+	case "", KindBriefReady, KindFirstWeek, KindWeeklyRecap, KindMeetingPrep, KindReminder:
+		return true
+	default:
+		return FinishedWorkKind(kind)
+	}
+}
+
+// NotificationKinds are the three kinds a person switches on or off: the
+// brief, meeting prep and finished work (phone-rings v1.0.0 17c).
+func NotificationKinds() []Kind {
+	return []Kind{KindBriefReady, KindMeetingPrep, KindWorkFinished}
+}
+
+// FinishedWorkKind reports whether a kind is finished work coming back: an
+// agent's work, an answer that waited, a playbook's result (notify v1.0.0
+// rule 4).
+func FinishedWorkKind(kind Kind) bool {
+	switch kind {
+	case KindWorkFinished, KindAnswerReady, KindPlaybookResult:
+		return true
+	default:
+		return false
+	}
+}
+
+// AtComputer reports whether the person is at the computer (notify v1.0.0
+// rule 1): its screen is unlocked and the last input was under 2 minutes
+// ago, in any app. With Closed Eyes on, only the lock counts.
+func AtComputer(p Presence) bool {
+	if p.ScreenLocked {
+		return false
+	}
+	return p.ClosedEyes || p.MacIdle < macAttentionIdle
+}
+
+// PhoneReachable reports whether a paired phone can be pushed now.
+func PhoneReachable(p Presence) bool {
+	return p.PhoneRegistered && !p.PushFailed
+}
+
+// ChannelForKind picks the one place an interrupting verdict of a kind rings
+// (notify v1.0.0 rules 1 to 4, B1, B2, B5). Non-interrupting verdicts get no
+// channel. At the computer, the computer; away, the phone; never both. With
+// no phone that can be reached, the computer shows it at its time, so it
+// waits in Notification Center. Finished work is not a notification at the
+// computer, nor when the phone can't be reached: it is a quiet line on Today
+// (ChannelTodayQuiet). A phone that reads Your work is pushed only for its
+// kinds; the rest wait in the app there. No text message or email stands in
+// for a notification (rule 14): those go only where the person chose them
+// (RequestedChannels).
 func ChannelForKind(kind Kind, v Verdict, p Presence, now time.Time) Channel {
 	if v.Mode != ModeInterrupt {
 		return ChannelNone
 	}
-	if p.MacForeground && p.MacIdle < macAttentionIdle {
+	// Three kinds ring (B3); every other is a quiet line on Today. Its chat
+	// record, where it has one, is unchanged.
+	if !InterruptingKind(kind) {
+		return ChannelTodayQuiet
+	}
+	finished := FinishedWorkKind(kind)
+	if AtComputer(p) {
+		if finished {
+			return ChannelTodayQuiet
+		}
 		return ChannelDesktop
 	}
-	if p.PhoneRegistered && !p.PushFailed && (!p.PhoneReadsWork || PhonePushKind(kind)) {
-		return ChannelPush
+	if PhoneReachable(p) {
+		if !p.PhoneReadsWork || PhonePushKind(kind) {
+			return ChannelPush
+		}
+		return ChannelNone
 	}
-	phoneOffline := p.PhoneLastSeen.IsZero() || now.Sub(p.PhoneLastSeen) >= phoneOfflineAfter
-	unreachable := !p.PhoneRegistered || p.PushFailed || phoneOffline
-	timeSensitive := v.Interruption == InterruptionTimeSensitive
-	if p.SMSActive && unreachable && (timeSensitive || NeedsYou(kind)) {
-		return ChannelText
+	if finished {
+		return ChannelTodayQuiet
 	}
-	if timeSensitive && p.TextAvailable && unreachable {
-		return ChannelText
-	}
-	if p.MacIdle < macNearbyIdle {
-		return ChannelDesktop
-	}
-	return ChannelNone
+	return ChannelDesktop
 }
 
 // RequestedChannels returns the channels the user chose for a moment that can

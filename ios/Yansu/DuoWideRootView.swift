@@ -14,13 +14,11 @@ struct DuoWideRootView: View {
     let metrics: DuoMetrics
 
     @State private var fullScreen = false
-    @State private var showsComposer = false
     @Namespace private var todayCardNamespace
 
     private var selectedTab: DuoTab {
         switch router.selectedTab {
         case .chat: return .chat
-        case .tasks: return .tasks
         default: return .today
         }
     }
@@ -61,20 +59,13 @@ struct DuoWideRootView: View {
                         .transition(reduceMotion ? .opacity : .scale(scale: 0.92).combined(with: .opacity))
                         .accessibilityIdentifier("duo.fullScreen")
                 } else {
-                    Group {
-                        if selectedTab == .tasks {
-                            paneContent
-                                .padding(.top, DuoLayout.headerToolbarClearance)
-                        } else {
-                            HStack(alignment: .top, spacing: DuoLayout.gutter) {
-                                leftPane
-                                    .frame(width: frames.left.width)
-                                    .frame(maxHeight: .infinity, alignment: .top)
-                                paneContent
-                                    .padding(.top, DuoLayout.headerToolbarClearance)
-                                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                            }
-                        }
+                    HStack(alignment: .top, spacing: DuoLayout.gutter) {
+                        leftPane
+                            .frame(width: frames.left.width)
+                            .frame(maxHeight: .infinity, alignment: .top)
+                        paneContent
+                            .padding(.top, DuoLayout.headerToolbarClearance)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     }
                     .padding(.trailing, 80)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -92,24 +83,6 @@ struct DuoWideRootView: View {
                 .frame(maxHeight: .infinity, alignment: .topTrailing)
 
                 HStack(spacing: 8) {
-                    if router.selectedTab == .tasks {
-                        Button {
-                            Task {
-                                if !environment.tasks.brainDumpAvailable { await environment.tasks.refreshBrainDumpCapability() }
-                                showsComposer = true
-                            }
-                        } label: {
-                            Image(systemName: "plus")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(YansuTheme.onSolid)
-                                .frame(width: 36, height: 36)
-                                .background(YansuTheme.solid, in: Circle())
-                        }
-                        .disabled(!pairing.isPaired ||
-                                  !SettingsView.allowsOneTimeWork(pairing.paired?.scopes ?? []))
-                        .accessibilityLabel(String(localized: "Give Isoform a task"))
-                        .accessibilityIdentifier("duo.tasks.add")
-                    }
                     OwnerProfileButton()
                         .environmentObject(pairing)
                         .environmentObject(router)
@@ -153,8 +126,8 @@ struct DuoWideRootView: View {
                     if environment.refreshesTopics {
                         Task { await environment.topics.refresh() }
                     }
-                case .tasks: if navigation.path(for: .tasks).isEmpty { navigation.replaceCurrent(with: .tasks, on: .tasks) }
-                case .settings: break
+                // The Tasks tab went (phone-today rule 19); the router lands its links on Today.
+                case .tasks, .settings: break
                 }
             }
             .sheet(isPresented: $router.showsWatchSheet) {
@@ -176,14 +149,6 @@ struct DuoWideRootView: View {
                 guard !draft.isEmpty, selectedTab == .chat,
                       navigation.path(for: .chat).last != .draft("main") else { return }
                 navigation.push(.draft("main"), on: .chat)
-            }
-            .sheet(isPresented: $showsComposer) {
-                if environment.tasks.brainDumpAvailable {
-                    BrainDumpComposer(tasks: environment.tasks)
-                } else {
-                    OneTimeWorkComposer { notice in environment.tasks.notice = notice }
-                        .environmentObject(environment.actions)
-                }
             }
         }
     }
@@ -223,8 +188,6 @@ struct DuoWideRootView: View {
                 } else {
                     topicsPane
                 }
-            case .tasks:
-                EmptyView()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -288,16 +251,6 @@ struct DuoWideRootView: View {
                         .accessibilityElement(children: .contain)
                         .accessibilityIdentifier("duo.chat.thread")
                 }
-            case .tasks:
-                TasksView(wide: true, navigation: navigation, foldX: metrics.foldX,
-                          windowWidth: metrics.width, tasks: environment.tasks,
-                          fullScreenItem: fullScreen)
-                    .environmentObject(environment)
-                    .environmentObject(pairing)
-                    .environmentObject(environment.brief)
-                    .environmentObject(environment.chat)
-                    .environmentObject(router)
-                    .accessibilityIdentifier("duo.tasks.board")
             }
         }
     }
@@ -404,7 +357,7 @@ struct DuoWideRootView: View {
         let isSelected = selectedTab == tab
         return Button {
             withAnimation(reduceMotion ? .easeInOut(duration: 0.15) : .spring(duration: 0.45)) {
-                router.selectedTab = tab == .today ? .today : tab == .chat ? .chat : .tasks
+                router.selectedTab = tab == .chat ? .chat : .today
             }
         } label: {
             VStack(spacing: 3) {

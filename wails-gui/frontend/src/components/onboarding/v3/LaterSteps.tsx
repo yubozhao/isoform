@@ -6,30 +6,6 @@ import { YourAIScene } from "../v2/scenes/YourAIScene";
 import { prefersReducedMotion } from "../v2/motion";
 import "../v2/setup-v2.css";
 
-// Steps 2 to 4 before their data is built (docs/computer-setup-build-2026-11-15.md):
-// each says what is true now, and Continue or Skip this step moves on.
-
-export function RightStep() {
-    const { t } = useTranslation("onboarding");
-    return (
-        <div className="sv3-step" data-testid="setup-v3-right">
-            <h2 className="sv3-step-title">{t("setup.step2")}</h2>
-            <p className="sv3-body">{t("setup.rightLead")}</p>
-            <p className="sv3-quiet">{t("setup.rightNothing")}</p>
-        </div>
-    );
-}
-
-export function TodayStep() {
-    const { t } = useTranslation("onboarding");
-    return (
-        <div className="sv3-step" data-testid="setup-v3-today">
-            <h2 className="sv3-step-title">{t("setup.step3")}</h2>
-            <p className="sv3-quiet">{t("setup.todayNothing")}</p>
-        </div>
-    );
-}
-
 /** Product names stay untranslated. */
 const AGENT_NAMES = { claude: "Claude Code", codex: "Codex", ollama: "Ollama" } as const;
 

@@ -401,11 +401,11 @@ func TestEngagementTextsNeedsYouThroughTheRelay(t *testing.T) {
 	rig.svc.deliver.Text = func(ctx context.Context, row storage.EngagementMomentRow, m engagement.Moment, _ engagement.Verdict, _ engagementText) error {
 		return sms.ch.SendMoment(ctx, row.ID, m.Kind, m.Params)
 	}
-	// No paired phone and the Mac is away: blocked work needs the user and goes
-	// out as a text; finished work does not.
+	// A text goes only where the person chose it (notify v1.0.0 rule 14):
+	// blocked work routed to text goes out as one; finished work never does.
 	rig.presence = engagement.Presence{SMSActive: sms.ch.Active(), MacIdle: time.Hour}
 	blocked, err := rig.svc.Submit(ctx, engagement.Moment{
-		Kind: engagement.KindWorkBlocked, SubjectID: "hf-1",
+		Kind: engagement.KindWorkBlocked, SubjectID: "hf-1", Channels: []engagement.Channel{engagement.ChannelText},
 		Params: map[string]string{"title": "Expense export", "question": "the project code."},
 	})
 	if err != nil {
@@ -423,7 +423,7 @@ func TestEngagementTextsNeedsYouThroughTheRelay(t *testing.T) {
 	if got, _ := rig.store.GetEngagementMoment(ctx, blocked.ID); got.State != storage.EngagementStateSent || got.Channel != "text" {
 		t.Fatalf("blocked work delivery %+v", got)
 	}
-	if got, _ := rig.store.GetEngagementMoment(ctx, finished.ID); got.State == storage.EngagementStateSent {
+	if got, _ := rig.store.GetEngagementMoment(ctx, finished.ID); got.Channel == "text" {
 		t.Fatalf("finished work was texted: %+v", got)
 	}
 

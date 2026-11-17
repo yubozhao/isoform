@@ -4,7 +4,6 @@ import SwiftUI
 enum DuoTab: Hashable {
     case today
     case chat
-    case tasks
 }
 
 enum DuoStep: Hashable {
@@ -13,7 +12,6 @@ enum DuoStep: Hashable {
     case topics
     case thread(String)
     case draft(String)
-    case tasks
     case task(String)
 }
 
@@ -59,7 +57,6 @@ enum DuoLayout {
         let leftWidth: CGFloat = switch tab {
         case .today: hasSelection ? 360 : 250
         case .chat: 300
-        case .tasks: 360
         }
         let left = CGRect(x: 0, y: 0, width: leftWidth, height: height)
         let right = CGRect(x: leftWidth + gutter, y: 0,
@@ -95,7 +92,6 @@ enum DuoLayout {
             let inset: CGFloat = switch tab {
             case .today: YansuTheme.gutter
             case .chat: 0
-            case .tasks: YansuTheme.gutter * 2
             }
             let close = CGRect(x: right.minX + inset, y: 16, width: 72, height: 40)
             return [metrics.foldX.map {
@@ -103,22 +99,7 @@ enum DuoLayout {
             } ?? close]
         }
 
-        guard tab == .tasks else { return [] }
-
-        let buttonWidth: CGFloat = 112
-        let buttonSpacing: CGFloat = 12
-        let rowX = right.minX + YansuTheme.gutter * 2
-        let rowWidth = buttonWidth * 2 + buttonSpacing
-        let row = CGRect(x: rowX, y: 16, width: rowWidth, height: 44)
-        let clearedRow = metrics.foldX.map {
-            clear(row, ofFoldAt: $0, containerWidth: metrics.width)
-        } ?? row
-        return [
-            CGRect(x: clearedRow.minX, y: clearedRow.minY,
-                   width: buttonWidth, height: clearedRow.height),
-            CGRect(x: clearedRow.minX + buttonWidth + buttonSpacing, y: clearedRow.minY,
-                   width: buttonWidth, height: clearedRow.height)
-        ]
+        return []
     }
 }
 

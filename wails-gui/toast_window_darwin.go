@@ -423,12 +423,14 @@ func renderToastHTML(req *toastRequest) string {
 	if currentThemePreference() == "onedark" {
 		theme = "dark"
 	}
-	payload := map[string]string{
+	payload := map[string]any{
 		"title": req.title,
 		"body":  req.body,
 		"theme": theme,
 	}
-	if label := strings.TrimSpace(req.options.ActionLabel); label != "" {
+	if len(req.options.Actions) > 0 {
+		payload["actions"] = req.options.Actions
+	} else if label := strings.TrimSpace(req.options.ActionLabel); label != "" {
 		payload["action"] = label
 	}
 	if url := iconDataURL(req.iconPath); url != "" {
@@ -471,6 +473,10 @@ func handleToastEvent(id, typ string) {
 		handleToastClick(id)
 	case "action":
 		handleToastAction(id)
+	default:
+		if action, ok := strings.CutPrefix(typ, "action:"); ok {
+			handleToastActionID(id, action)
+		}
 	case "close":
 		handleToastDismiss(id)
 	case "failed":
@@ -546,6 +552,31 @@ func handleToastAction(id string) {
 		go acted()
 	}
 	if clickFn != nil && clickData != "" {
+		go clickFn(clickData)
+	}
+	handleToastClose(id)
+}
+
+// handleToastActionID runs one of a notification's actions by its id: the
+// hook hears which, and only "open" also opens the app at the notification.
+func handleToastActionID(id, action string) {
+	toastState.mu.Lock()
+	inst := toastFindVisible(id)
+	var clickData string
+	var onAction func(string)
+	clickFn := toastState.clickFn
+	if inst != nil {
+		clickData = inst.clickData
+		onAction = inst.options.OnAction
+	}
+	toastState.mu.Unlock()
+	if inst == nil {
+		return
+	}
+	if onAction != nil {
+		go onAction(action)
+	}
+	if toastActionOpens(action) && clickFn != nil && clickData != "" {
 		go clickFn(clickData)
 	}
 	handleToastClose(id)

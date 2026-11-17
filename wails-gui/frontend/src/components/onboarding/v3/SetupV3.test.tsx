@@ -17,6 +17,12 @@ const mocks = vi.hoisted(() => ({
     close: vi.fn(),
     defer: vi.fn(),
     plan: vi.fn(),
+    claims: vi.fn(),
+    confirm: vi.fn(),
+    notQuite: vi.fn(),
+    work: vi.fn(),
+    answerWork: vi.fn(),
+    topic: vi.fn(),
 }));
 vi.mock("@/lib/wails-shim-app", () => ({
     GetSetupPermissions: mocks.permissions,
@@ -43,6 +49,14 @@ vi.mock("@/lib/wails-shim-app", () => ({
     PlanSetupModelDownload: mocks.plan,
     StartModelDownloads: vi.fn().mockResolvedValue(undefined),
     DeferModelDownloads: mocks.defer,
+    BuildSetupClaims: mocks.claims,
+    ConfirmMemoryEntry: mocks.confirm,
+    NotQuiteMemoryEntry: mocks.notQuite,
+    UndoNotQuiteMemoryEntry: vi.fn().mockResolvedValue(undefined),
+    ReviseSetupClaim: vi.fn().mockResolvedValue(undefined),
+    GetWorkList: mocks.work,
+    AnswerWork: mocks.answerWork,
+    UpdateUserTopic: mocks.topic,
 }));
 vi.mock("../v2/useAgentProbe", () => ({ useAgentProbe: () => ({ probe: { agents: [] }, ready: true }) }));
 vi.mock("../v2/scenes/YourAIScene", () => ({ YourAIScene: () => <div data-testid="your-ai-stub" /> }));
@@ -71,6 +85,12 @@ beforeEach(async () => {
     mocks.save.mockResolvedValue(undefined);
     mocks.close.mockResolvedValue(undefined);
     mocks.defer.mockResolvedValue(undefined);
+    mocks.claims.mockResolvedValue({ status: "nothing", claims: [] });
+    mocks.confirm.mockResolvedValue({});
+    mocks.notQuite.mockResolvedValue(42);
+    mocks.work.mockResolvedValue({ toAnswer: 0, items: [] });
+    mocks.answerWork.mockResolvedValue({});
+    mocks.topic.mockResolvedValue({ topics: [], removed: [] });
     mocks.plan.mockResolvedValue({ planId: "p", choices: {}, requiredBytes: 0, items: [{ id: "m" }], totalBytes: 1e9, freeBytes: 5e10, enoughSpace: true, modelsFolder: "" });
 });
 
@@ -120,6 +140,61 @@ describe("computer setup v1.0.0", () => {
         expect(screen.getByTestId("setup-v3-next").textContent).toContain("Finish setup");
         fireEvent.click(screen.getByTestId("setup-v3-next"));
         expect(onFinish).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe("step 2 claims", () => {
+    it("answers each claim as You does, with Y and N on the first open one", async () => {
+        mocks.load.mockResolvedValue("right");
+        mocks.claims.mockResolvedValue({
+            status: "ready",
+            claims: [
+                { id: "memory-setup-a", text: "You meet Lena most weeks.", source: "calendar", at: Date.UTC(2026, 10, 14) },
+                { id: "memory-setup-b", text: "Priya runs Thursday's review.", source: "mail", at: Date.UTC(2026, 10, 13) },
+            ],
+        });
+        render(<SetupV3 onFinish={vi.fn()} onSkip={vi.fn()} />);
+        expect(await screen.findByText("You meet Lena most weeks.")).toBeTruthy();
+        expect(screen.getByText(/From your calendar, /)).toBeTruthy();
+        fireEvent.keyDown(window, { key: "y" });
+        await waitFor(() => expect(mocks.confirm).toHaveBeenCalledWith("memory-setup-a"));
+        fireEvent.keyDown(window, { key: "n" });
+        await waitFor(() => expect(mocks.notQuite).toHaveBeenCalledWith("memory-setup-b"));
+        expect(await screen.findByText("Kept")).toBeTruthy();
+    });
+
+    it("says there is nothing to check when nothing was read", async () => {
+        mocks.load.mockResolvedValue("right");
+        render(<SetupV3 onFinish={vi.fn()} onSkip={vi.fn()} />);
+        expect(await screen.findByText(/Nothing to check yet/)).toBeTruthy();
+    });
+});
+
+describe("step 3 day one", () => {
+    it("shows only day-one work, answers it with Y, and adds a named topic", async () => {
+        mocks.load.mockResolvedValue("today");
+        mocks.work.mockResolvedValue({
+            toAnswer: 2,
+            items: [
+                { id: "w1", source: "day_one", work: { title: "Prepare notes for your 2:00 with Lena" }, noticed: "From your calendar" },
+                { id: "w2", source: "brief", work: { title: "Not day one" }, noticed: "" },
+            ],
+        });
+        render(<SetupV3 onFinish={vi.fn()} onSkip={vi.fn()} />);
+        expect(await screen.findByText("Prepare notes for your 2:00 with Lena")).toBeTruthy();
+        expect(screen.queryByText("Not day one")).toBeNull();
+        fireEvent.keyDown(window, { key: "y" });
+        await waitFor(() => expect(mocks.answerWork).toHaveBeenCalledWith("w1", { action: "yes" }));
+        fireEvent.change(screen.getByLabelText("What are you working on, or following?"), { target: { value: "Halcyon import" } });
+        fireEvent.click(screen.getByTestId("setup-v3-add-topic"));
+        await waitFor(() => expect(mocks.topic).toHaveBeenCalledWith({ id: "", action: "add", label: "Halcyon import" }));
+    });
+
+    it("shows only the field when there is nothing to offer", async () => {
+        mocks.load.mockResolvedValue("today");
+        render(<SetupV3 onFinish={vi.fn()} onSkip={vi.fn()} />);
+        expect(await screen.findByText(/Nothing to offer yet/)).toBeTruthy();
+        expect(screen.getByLabelText("What are you working on, or following?")).toBeTruthy();
     });
 });
 

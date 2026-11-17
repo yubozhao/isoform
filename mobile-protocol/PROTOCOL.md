@@ -964,7 +964,7 @@ rule 7. Ranked goal 1: the latest brief shows up. Additive in protocol v1.
   kind of a scheduled slot is its slot name; a Friday evening's `week` kind is known only once it is made.
 
 **The push waits for the recording.** Two pushes carry a brief: the computer's `brief_ready` notice (section 14,
-category `YANSU_BRIEF`), which is the brief's notification on the phone and the computer, and, for a brief made ahead
+category `YANSU_BRIEF`), which is the brief's notification on the phone or the computer (one of them, 9.3), and, for a brief made ahead
 of its slot only, the relay's own brief push. Both wait for the recording. The `brief_ready` moment is stored when the
 words are written, held at most 2 minutes (`NotBefore`), and released as soon as the recording step ends, never before
 the brief's slot; the first read's ordering still sees it. For the relay's push: a written brief's first package (text
@@ -1101,6 +1101,31 @@ same privacy filter as every notice text, and it is left out (an empty `body`) w
 on, when any of the run fell in a Closed Eyes period, or when the pause log can't be read. The
 phone shows them as any notice; iOS's own Show Previews decides what the lock screen shows. An
 older phone keeps "Work finished.".
+
+### 9.3 Where it rings (notify v1.0.0, 2026-11-15)
+
+Design: `docs/handoff-2026-11-15/handoff-2026-11-15-2135-notify-v1.0.0.md` rules 1 to 4 and 14, B1, B2, B5.
+The computer decides, at the moment a notice is due, where it rings, and it rings in one place:
+
+- **At the computer** (its screen unlocked and the last key press or pointer movement under 2 minutes
+  ago, in any app) the computer shows it; **away** (locked, asleep, or idle 2 minutes) the phone is
+  pushed. Never both. With Closed Eyes on, only the lock counts. The computer reads only those two facts,
+  at that moment, and keeps neither.
+- **No phone paired, or its pushes fail:** the computer shows it at its time, so it waits in
+  Notification Center. A brief whose push fails is shown on the computer instead.
+- **Finished work** (`work_finished`, `answer_ready`, `playbook_result`) at the computer, or with no
+  phone to reach, is not a notification: it is a quiet line on Today. Away, the phone is pushed.
+- A locked computer no longer holds notices for the unlock: locked is away.
+- **No text message or email stands in for a notification.** A moment goes by text or email only when
+  the person chose that channel for it (a playbook's result, sections 18 and 19).
+- The computer logs each decision as one line: `route kind=<kind> channel=<channel> reason=<at_computer|away|locked>[_no_phone]`.
+- **Three kinds ring** (B3): the brief (`brief_ready`, with `first_week` and `weekly_recap`), meeting prep
+  (`meeting_prep`), finished work (above), and a reminder the person set themselves (`reminder`). Every other
+  kind is a quiet line on Today, unless the person routed that moment somewhere. `GET /notifications` lists
+  only `brief_ready`, `meeting_prep` and `work_finished` as switches ("Three kinds, and nothing else").
+- **Every action** of a kind is a button on the computer's notification too (B6); prep shows its action and
+  Not needed, finished work Useful, and those answer the Your work item with surface `notification`, as the
+  phone's do (9.2).
 
 ## 10. Scopes
 

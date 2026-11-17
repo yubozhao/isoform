@@ -304,3 +304,31 @@
     border-radius: var(--radius-xl);
     overflow: hidden;
 }
+.sv3-claim {
+    align-items: flex-start;
+}
+.sv3-claim-words {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.sv3-input {
+    width: 100%;
+    padding: 6px 10px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: var(--color-panel);
+    color: var(--color-ink);
+    font: inherit;
+}
+.sv3-input:focus {
+    outline: none;
+    border-color: var(--color-border-focus);
+}
+.sv3-follow {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}

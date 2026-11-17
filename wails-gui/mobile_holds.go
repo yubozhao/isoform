@@ -52,6 +52,10 @@ func mobileHoldOfferThing(title string) string {
 }
 
 func (bridge *mobileBridge) mobileHoldsAvailable(granted bool) bool {
+	// Calendar holds are switched off in the rework (calendar-holds feature switch); the phone gets none while off.
+	if !featureOn(featureCalendarHolds) {
+		return false
+	}
 	if !granted || bridge.app == nil || bridge.app.store == nil {
 		return false
 	}

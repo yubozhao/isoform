@@ -40,7 +40,6 @@ final class AppEnvironment: ObservableObject {
     let work: WorkStore
     /// Notices read elsewhere leave this phone; the brief Today shows is read everywhere (notify A).
     let noticesRead: NoticesReadStore
-    let holds: HoldsStore
     let yourAgent: YourAgentStore
     let topics: TopicStore
     let push: PushRegistration
@@ -102,7 +101,6 @@ final class AppEnvironment: ObservableObject {
          feedHub: FeedHubAPI? = nil,
          tasksHub: TasksHubAPI? = nil,
          workHub: WorkHubAPI? = nil,
-         holdsHub: HoldsHubAPI? = nil,
          topicHub: TopicHubAPI? = nil,
          todayHub: TodayHubAPI? = nil,
          weekDeclineHub: YourWeekDeclineAPI? = nil,
@@ -255,25 +253,14 @@ final class AppEnvironment: ObservableObject {
                               canRead: { pairing.paired?.scopes.contains("brief:read") == true },
                               hubID: { vault.current()?.hubID },
                               fileURL: journalURL.deletingLastPathComponent().appendingPathComponent("work.json"))
-        self.holds = HoldsStore(hub: holdsHub ?? hub, journal: journal, pairingID: {
-            guard let device = vault.current() else { return nil }
-            return "\(device.hubID)/\(device.deviceID)"
-        })
         let heardChat = self.chat
         let heardTasks = self.tasks
-        self.holds.onChange = { [weak heardTasks] in
-            guard let heardTasks else { return }
-            await heardTasks.refresh()
-            if let id = heardTasks.detail?.id { _ = await heardTasks.loadDetail(id: id) }
-        }
         let heardWeekDeclines = self.weekDeclines
-        let heardHolds = self.holds
         let heardToday = self.today
         let directRoutes = DirectRouteKeeper(vault: vault, fetch: { try await hub.remoteAccess() })
         Task {
             await heardTasks.loadPendingDraftSends()
             await heardTasks.retryDraftSends()
-            await heardHolds.restoreQueued()
             await hub.onHeardFromComputer {
                 Task { @MainActor in
                     heardToday.noteHeardFromComputer()
@@ -281,7 +268,6 @@ final class AppEnvironment: ObservableObject {
                     heardChat.heardFromComputer()
                     await heardTasks.retryDraftSends(computerResponded: true)
                     await heardWeekDeclines.retryPending()
-                    await heardHolds.resendQueued()
                     WatchLink.shared.drain()
                 }
             }
@@ -860,7 +846,7 @@ extension AppEnvironment {
                "feed-no-history", "feed-catchup", "feed-offline", "feed-review", "feed-first-brief", "feed-fetching", "feed-fetch-failed",
                "feed-audio", "feed-audio-rendering", "feed-words", "feed-conversation", "feed-your-week", "feed-topics", "feed-topics-no-chat-read", "chat",
                "chat-not-sent", "chat-sent", "chat-away", "chat-live", "chat-live-cold", "chat-proactive", "chat-status", "chat-draft", "chat-cards", "chat-empty", "goals",
-               "goals-empty", "library", "ideas", "ideas-empty", "tasks-seeded", "brain-dump", "holds-seeded", "launch-demo", "day-one"].contains(state) else { return nil }
+               "goals-empty", "library", "ideas", "ideas-empty", "tasks-seeded", "brain-dump", "launch-demo", "day-one"].contains(state) else { return nil }
         let motionCapture = state == "tasks-seeded"
             && ProcessInfo.processInfo.environment["YANSU_UITEST_MOTION_CAPTURE"] == "1"
         if motionCapture { UserDefaults.standard.removeObject(forKey: "tasks.deck.leanShown") }
@@ -929,7 +915,7 @@ extension AppEnvironment {
                     .store(paired, devicePrivateKey: RelayCrypto.base64URLEncode(device.privateKey),
                            bearer: RelayCrypto.base64URLEncode(RelayCrypto.randomBytes(32)))
             case "paired", "older-pairing", "push-unavailable", "push-denied", "feed", "feed-empty", "feed-no-history", "feed-first-brief", "feed-fetching", "feed-fetch-failed",
-                 "feed-audio", "feed-audio-rendering", "feed-words", "feed-catchup", "feed-offline", "feed-review", "library", "tasks-seeded", "brain-dump", "holds-seeded":
+                 "feed-audio", "feed-audio-rendering", "feed-words", "feed-catchup", "feed-offline", "feed-review", "library", "tasks-seeded", "brain-dump":
                 let paired = PairedDevice(
                     hubID: "settings-ui-hub", hubName: "Settings Test Mac", hubPublicKey: "",
                     relayOrigin: "https://settings-ui.invalid", deviceID: "settings-ui-phone",
@@ -983,7 +969,6 @@ extension AppEnvironment {
             let feedNeedsCard = state == "feed-review" && ProcessInfo.processInfo.environment["YANSU_UITEST_TODAY_WAITS"] == "1"
             let tasksTestHub = ["tasks-seeded", "day-one", "feed-review", "brain-dump"].contains(state) && !feedNeedsCard
                 ? TasksUITestHub(brainDump: state == "brain-dump") : nil
-            let holdsTestHub = state == "holds-seeded" ? HoldsUITestHub() : nil
             // The launch demo's morning (LaunchDemoUITestSeed): its brief, Today, chat and Priya's Send.
             let demoBrief = state == "launch-demo" ? LaunchDemoUITestSeed.brief() : nil
             let demoHub = state == "launch-demo" ? LaunchDemoHub() : nil
@@ -1032,13 +1017,12 @@ extension AppEnvironment {
                     ?? (["chat-proactive", "chat-draft", "chat-cards"].contains(state) ? ChatUITestProactiveHub(
                     refusesAction: ProcessInfo.processInfo.environment["YANSU_UITEST_PROACTIVE_ACTION"] == "refuse")
                     : state.hasPrefix("feed-topics") ? TopicUITestProactiveHub() : nil),
-                ideasHub: holdsTestHub.map { $0 as IdeasHubAPI } ?? (state.hasPrefix("ideas") || ["tasks-seeded", "day-one"].contains(state)
+                ideasHub: (state.hasPrefix("ideas") || ["tasks-seeded", "day-one"].contains(state)
                     ? IdeasUITestHub(empty: state == "ideas-empty", motionCapture: motionCapture || state == "day-one") : nil),
                 actionHub: tasksTestHub,
                 feedHub: state == "feed" ? FeedFeedbackUITestHub() : nil,
-                tasksHub: holdsTestHub.map { $0 as TasksHubAPI } ?? tasksTestHub.map { $0 as TasksHubAPI } ?? (state.hasPrefix("feed") ? FeedTasksUITestHub(snapshot: todayFixture) : nil),
+                tasksHub: tasksTestHub.map { $0 as TasksHubAPI } ?? (state.hasPrefix("feed") ? FeedTasksUITestHub(snapshot: todayFixture) : nil),
                 workHub: WorkUITestSeed.isOn ? WorkUITestHub() : nil,
-                holdsHub: holdsTestHub,
                 topicHub: demoHub.map { $0 as TopicHubAPI } ?? (state.hasPrefix("feed-topics") || state == "tasks-seeded" || state == "feed-review"
                     ? TopicUITestHub(now: Date()) : nil),
                 todayHub: state.hasPrefix("feed") || demoBrief != nil ? TodayUITestHub(snapshot: todayFixture, offline: state == "feed-offline" || FeedUITestSeed.moment == "waiting"
@@ -1073,7 +1057,7 @@ extension AppEnvironment {
             }
             if state != "first-run" { environment.firstRun.complete() }
             environment.refreshesBriefs = false
-            environment.refreshesTasks = state.hasPrefix("feed") || state == "tasks-seeded" || state == "brain-dump" || state == "holds-seeded"
+            environment.refreshesTasks = state.hasPrefix("feed") || state == "tasks-seeded" || state == "brain-dump"
             environment.refreshesTopics = state.hasPrefix("feed-topics") || state == "tasks-seeded" || demoBrief != nil
             environment.isLibraryUITest = state == "library"
             switch ProcessInfo.processInfo.environment["YANSU_UITEST_TAB"] {

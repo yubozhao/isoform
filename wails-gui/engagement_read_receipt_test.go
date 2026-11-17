@@ -103,7 +103,8 @@ func TestEngagementReappearanceReceiptFollowsProductionSightingWrite(t *testing.
 				}
 			}
 			if state == "readable" {
-				if sent != 1 || stored.State != storage.EngagementStateSent || stored.Params == "{}" {
+				// Delivered as a quiet line on Today; it never rings (B3).
+				if sent != 0 || stored.State != storage.EngagementStateSent || stored.Params == "{}" {
 					t.Fatalf("valid reappearance suppressed: sent=%d row=%+v", sent, stored)
 				}
 			} else if sent != 0 || stored.State != storage.EngagementStateSuppressed || stored.Params != "{}" {

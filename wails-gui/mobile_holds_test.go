@@ -61,6 +61,20 @@ func mobileHoldActionCall(t *testing.T, bridge *mobileBridge, device mobileDevic
 	return w
 }
 
+// Calendar holds are switched off in the rework: with the switch off, the phone is told holds are unavailable
+// even with calendar access and the preference on.
+func TestMobileHoldsOffWhileTheSwitchIsOff(t *testing.T) {
+	bridge, _, _ := mobileHoldTestBridge(t)
+	t.Setenv(featureSwitchesEnv, "")
+	if bridge.mobileHoldsAvailable(true) {
+		t.Fatal("holds reached the phone with calendar-holds switched off")
+	}
+	t.Setenv(featureSwitchesEnv, string(featureCalendarHolds))
+	if !bridge.mobileHoldsAvailable(true) {
+		t.Fatal("holds must reach the phone once calendar-holds is switched on")
+	}
+}
+
 func TestMobileHoldProposalCapabilityAndScopes(t *testing.T) {
 	bridge, _, _ := mobileHoldTestBridge(t)
 	device := mobileTestDevice(mobileScopeHandoff, mobileScopeBriefRead)

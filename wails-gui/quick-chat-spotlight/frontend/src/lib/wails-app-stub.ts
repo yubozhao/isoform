@@ -1179,3 +1179,5 @@ export const GetForgetEverything = makeNoop("GetForgetEverything");
 export const RewordMemoryEntry = makeNoop("RewordMemoryEntry");
 export const RequestSetupPermissions = makeNoop("RequestSetupPermissions");
 export const GetSetupVersion = makeNoop("GetSetupVersion");
+export const BuildSetupClaims = makeNoop("BuildSetupClaims");
+export const ReviseSetupClaim = makeNoop("ReviseSetupClaim");
