@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"os"
 	"runtime"
 	"sync"
 	"time"
@@ -19,6 +20,11 @@ const (
 	// setupWindowWidth and setupWindowHeight are the setup window's content size in points.
 	setupWindowWidth  = 600
 	setupWindowHeight = 560
+
+	// setupV3WindowWidth and setupV3WindowHeight are computer setup v1.0.0's
+	// size: the sample beside the words, and the rail beside each step.
+	setupV3WindowWidth  = 960
+	setupV3WindowHeight = 640
 
 	// setupMainWindowWidth and setupMainWindowHeight are the main window's default size (main.go).
 	setupMainWindowWidth  = 1200
@@ -277,7 +283,14 @@ func (a *App) SetSetupWindowMode(on bool) error {
 	if !setupWindowNativeAvailable {
 		return nil
 	}
-	return setupWindowMode.apply(on, nativeSetupWindowFrame, nativeSetupWindowApply, a.setupMainWindowSize)
+	if on {
+		applyMainWindowMinSize(a.ctx, false)
+	}
+	err := setupWindowMode.apply(on, nativeSetupWindowFrame, nativeSetupWindowApply, a.setupMainWindowSize)
+	if err == nil && !on {
+		applyMainWindowMinSize(a.ctx, true)
+	}
+	return err
 }
 
 // apply records a mode change only after the native side applied it. When
@@ -300,7 +313,8 @@ func (s *setupWindowState) apply(
 			current, haveCurrent = frame()
 			mode = setupApplyEnter
 		}
-		if !native(mode, setupWindowRect{}) {
+		w, h := setupWindowSize()
+		if !native(mode, setupWindowRect{W: w, H: h}) {
 			return errSetupWindowNotReady
 		}
 		if entering {
@@ -404,4 +418,27 @@ type setupFinishPlay struct {
 	Ring                   bool
 	ReduceMotion           bool
 	Callout                string
+}
+
+// setupV3EnvVar turns on computer setup v1.0.0 (docs/computer-setup-build-2026-11-15.md)
+// until every step is built; setup v2 stays the default meanwhile.
+const setupV3EnvVar = "ISOFORM_SETUP_V3"
+
+func setupV3Enabled() bool { return os.Getenv(setupV3EnvVar) == "1" }
+
+// setupWindowSize is the setup window's content size for the setup that runs.
+func setupWindowSize() (float64, float64) {
+	if setupV3Enabled() {
+		return setupV3WindowWidth, setupV3WindowHeight
+	}
+	return setupWindowWidth, setupWindowHeight
+}
+
+// GetSetupVersion tells the frontend which first-run setup to show: 3 for
+// computer setup v1.0.0, 2 for setup v2.
+func (a *App) GetSetupVersion() int {
+	if setupV3Enabled() {
+		return 3
+	}
+	return 2
 }

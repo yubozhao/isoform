@@ -82,6 +82,7 @@ describe('PP Mori display scope', () => {
         expect(callers.sort()).toEqual([
             'components/about-you/portrait.tsx:p.portrait',
             'components/activity-day-view.tsx:p.display',
+            'components/onboarding/v3/IntroScreen.tsx:h1.display',
             'components/today/TodayPage.tsx:h1.display',
         ]);
     });

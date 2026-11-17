@@ -500,6 +500,10 @@ export const SetMobileKeepAwake = appBinding<[boolean], MobileKeepAwakeStatus>(
 export const GetMobileBriefSchedule = appBinding<[], MobileBriefSchedule>(
     "GetMobileBriefSchedule",
 );
+/** When the first brief comes (computer setup v1.0.0 rule 10): `at` is empty
+ *  once a brief has been made since setup. */
+export interface FirstBriefTime { at?: string; slot?: string }
+export const GetFirstBriefTime = appBinding<[], FirstBriefTime>("GetFirstBriefTime");
 export const SetMobileBriefSchedule = appBinding<
     [MobileBriefSchedule],
     MobileBriefSchedule
@@ -6430,6 +6434,8 @@ export const RefreshAgentProbe = appBinding<[], void>('RefreshAgentProbe');
 export const SetSetupWelcomeVisible = appBinding<[visible: boolean], void>('SetSetupWelcomeVisible');
 export const RequestAllPermissions = appBinding<[], void>('RequestAllPermissions');
 export const GetSetupPermissions = appBinding<[], import('./setup-backend').SetupPermissions>('GetSetupPermissions');
+export const RequestSetupPermissions = appBinding<[string[]], void>('RequestSetupPermissions');
+export const GetSetupVersion = appBinding<[], number>('GetSetupVersion');
 
 export const ResumeModelDownload = appBinding<[id: string], void>('ResumeModelDownload');
 export const GetModelNetworkState = appBinding<[], import('./setup-backend').ModelNetworkState>('GetModelNetworkState');

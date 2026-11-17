@@ -336,6 +336,7 @@ var browserRPCAllowlist = map[string]bool{
 	"GetAssistantSignOut":        true,
 	"GetScreenRecordingRelaunch": true,
 	"GetMobileBriefHealth":       true,
+	"GetFirstBriefTime":          true,
 	"GetMobileBriefAudio":        true,
 	"GetTodayDayShape":           true,
 	"GetGoalCheckIn":             true,

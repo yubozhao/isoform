@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"testing"
 )
 
@@ -195,4 +196,23 @@ func TestSetupWindowApplyRecordsOnlyAfterTheWindowChanged(t *testing.T) {
 		t.Fatalf("retried leave mode = %d target = %+v active = %v, want %d, %+v, false",
 			modes[last], targets[last], s.isActive(), setupApplyLeaveFrame, main)
 	}
+}
+
+func TestMainWindowMinSizeIsLiftedOnlyForSetup(t *testing.T) {
+	if w, h := mainWindowMinSize(true); w != 760 || h != 560 {
+		t.Fatalf("main window minimum = %dx%d, want 760x560", w, h)
+	}
+	if w, h := mainWindowMinSize(false); w != 0 || h != 0 {
+		t.Fatalf("setup window minimum = %dx%d, want none", w, h)
+	}
+	if setupWindowWidth >= mainWindowMinWidth {
+		t.Fatal("setup is narrower than the main minimum, which is why it is lifted during setup")
+	}
+}
+
+// Without a Wails frontend the runtime would log.Fatal and end the test
+// binary (the queue's desktop shard 0, #1194): the minimum is skipped.
+func TestApplyMainWindowMinSizeSkipsAPlainContext(t *testing.T) {
+	applyMainWindowMinSize(context.Background(), true)
+	applyMainWindowMinSize(context.WithValue(context.Background(), "events", struct{}{}), false)
 }

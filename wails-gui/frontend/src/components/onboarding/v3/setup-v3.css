@@ -1,0 +1,306 @@
+/* Computer setup v1.0.0, in the 960 x 640 setup window (setup_window.go).
+   Colors, type, radii and shadows are the app's tokens (docs/design-system). */
+
+.sv3 {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--color-background);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+}
+.sv3-drag {
+    height: 28px;
+    flex: none;
+    --wails-draggable: drag;
+}
+
+/* The four screens: the sample on the left, the words on the right. */
+.sv3-intro {
+    position: relative;
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 48px;
+    align-items: center;
+    padding: 0 56px 48px;
+}
+.sv3-skip {
+    position: absolute;
+    top: -16px;
+    right: 24px;
+}
+.sv3-sample {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 40px 32px;
+    border-radius: var(--radius-xl);
+    background: var(--color-panel-warm);
+}
+.sv3-sample-label {
+    font-size: var(--text-label);
+    color: var(--color-subtle);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+.sv3-card {
+    width: 100%;
+    max-width: 340px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 16px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-xl);
+    background: var(--color-panel);
+    box-shadow: var(--shadow-card);
+    font-size: var(--text-body-sm);
+}
+.sv3-card p {
+    margin: 0;
+}
+.sv3-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+.sv3-strong {
+    margin: 0;
+    font-weight: 600;
+    color: var(--color-ink);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.sv3-quiet {
+    margin: 0;
+    color: var(--color-muted);
+    font-size: var(--text-body-sm);
+}
+.sv3-chip {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 10px;
+    border-radius: var(--radius-full);
+    background: var(--color-accent-light);
+    color: var(--color-accent);
+    font-size: var(--text-caption);
+}
+.sv3-chip-wait {
+    background: var(--color-warning-bg);
+    color: var(--color-warning);
+}
+.sv3-answers {
+    display: flex;
+    gap: 6px;
+}
+.sv3-key {
+    padding: 2px 10px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    font-size: var(--text-caption);
+    color: var(--color-muted);
+}
+.sv3-key-on {
+    border-color: var(--color-solid-btn-bg);
+    background: var(--color-solid-btn-bg);
+    color: var(--color-solid-btn-fg);
+}
+.sv3-words {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+}
+.sv3-label {
+    font-size: var(--text-caption);
+    color: var(--color-accent);
+}
+.sv3-title {
+    margin: 0;
+}
+.sv3-body {
+    margin: 0;
+    color: var(--color-muted);
+    line-height: 1.5;
+}
+.sv3-dots {
+    display: flex;
+    gap: 6px;
+}
+.sv3-dots i {
+    width: 6px;
+    height: 6px;
+    border-radius: var(--radius-full);
+    background: var(--color-border-strong);
+}
+.sv3-dots i.on {
+    background: var(--color-ink);
+}
+
+/* The five steps: the rail on the left, the step on the right. */
+.sv3-layout {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 232px 1fr;
+}
+.sv3-rail {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 8px 20px 24px;
+    border-right: 1px solid var(--color-border);
+}
+.sv3-rail-title {
+    margin: 0;
+    font-weight: 600;
+}
+.sv3-rail ol {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.sv3-rail li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 10px;
+    border-radius: var(--radius-md);
+    color: var(--color-muted);
+    font-size: var(--text-body-sm);
+}
+.sv3-rail li.on {
+    background: var(--color-panel-warm);
+    color: var(--color-ink);
+    font-weight: 500;
+}
+.sv3-rail-mark {
+    width: 18px;
+    height: 18px;
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-full);
+    border: 1px solid var(--color-border-strong);
+    font-size: var(--text-micro);
+}
+.sv3-rail-foot {
+    margin: auto 0 0;
+    color: var(--color-subtle);
+    font-size: var(--text-caption);
+    line-height: 1.5;
+}
+.sv3-main {
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 8px 40px 24px;
+}
+.sv3-step {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+.sv3-step-title {
+    margin: 0;
+    font-size: var(--text-heading-1);
+    font-weight: 600;
+}
+.sv3-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding-top: 16px;
+}
+.sv3-rows {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-xl);
+    background: var(--color-panel);
+}
+.sv3-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 16px;
+}
+.sv3-row + .sv3-row {
+    border-top: 1px solid var(--color-border);
+}
+.sv3-allowed {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--color-success);
+    font-size: var(--text-body-sm);
+}
+.sv3-warn {
+    margin: 0;
+    color: var(--color-warning);
+    font-size: var(--text-body-sm);
+}
+.sv3-usage {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.sv3-usage-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-size: var(--text-body-sm);
+}
+.sv3-pair {
+    display: flex;
+    gap: 24px;
+    align-items: flex-start;
+}
+.sv3-code {
+    width: 176px;
+    height: 176px;
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-xl);
+    background: var(--color-panel);
+    color: var(--color-ink);
+}
+.sv3-pair-words {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.sv3-models {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-xl);
+    background: var(--color-panel);
+}
+/* Setup v2's Your AI, placed inside step 4: in the flow, not over the window. */
+.sv2.sv3-embed {
+    position: relative;
+    inset: auto;
+    min-height: 420px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-xl);
+    overflow: hidden;
+}
