@@ -25,7 +25,7 @@ import {
 } from '@/lib/stream-helpers';
 import type { StreamItem } from '@/types';
 import { handoffBlockedReasonKey, handoffStatusKey, handoffVerificationLine } from '@/components/handoffs/handoffStatus';
-import { localDayKey, notifyMainChatViewChanged } from '@/lib/main-chat-view';
+import { isChatBriefCard, localDayKey, notifyMainChatViewChanged } from '@/lib/main-chat-view';
 import { mainChatBriefMissedText, mainChatPastLineText } from '@/lib/main-chat-brief-relative';
 import { MainChatTopicTags } from '@/components/main-chat/main-chat-topic-tags';
 import { communicationDraftDetails } from '@/lib/communication';
@@ -731,9 +731,7 @@ function ProactiveMessage({ item, message, onOpenTarget, nested = false, topicId
 }
 
 /** A brief's card: the brief ready, the week's recap, or the first week's brief. */
-export function isChatBriefCard(message: { kind: string; briefId?: string }): boolean {
-    return (message.kind === 'brief_ready' || message.kind === 'weekly_recap' || message.kind === 'first_week') && Boolean(message.briefId);
-}
+export { isChatBriefCard };
 
 export function MainChatProactiveCard({ item, onOpenTarget, compact = false, panelSurface = 'chat', detailPanel = false, inPanel = false, titleInHeader = false }: MainChatProactiveProps) {
     const panel = useMainChatItemPanel(panelSurface);

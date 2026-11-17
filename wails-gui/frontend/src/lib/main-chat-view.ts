@@ -102,6 +102,21 @@ export function isWithheldCard(item: StreamItem): boolean {
     return getMainChatProactive(item)?.kind === 'withheld';
 }
 
+/** The brief lives on Today, and Chat never speaks first (pass-questions
+ *  v1.0.0 rule 8): a brief card leaves Chat, with no row kept for it. */
+export function isChatBriefCard(message: { kind: string; briefId?: string }): boolean {
+    return (message.kind === 'brief_ready' || message.kind === 'weekly_recap' || message.kind === 'first_week') && Boolean(message.briefId);
+}
+
+/** A card Chat's card view draws as nothing (MainChatProactiveCard): a brief
+ *  card or a first read without its sentences. Its day keeps no divider for it, so no day shows empty. */
+export function isCardChatHides(item: StreamItem): boolean {
+    const card = getMainChatProactive(item);
+    if (!card) return false;
+    if (isChatBriefCard(card)) return true;
+    return card.kind === 'first_read' && !card.sentences?.length;
+}
+
 export function isWithdrawnThreadUpdate(item: StreamItem): boolean {
     const card = getMainChatProactive(item);
     if (!card) return false;
@@ -167,6 +182,10 @@ export function buildMainChatDays(items: readonly StreamItem[], today: string): 
             const target = section(day);
             target.routine.push(item);
             target.routineCount += routineUpdateCount(item);
+            continue;
+        }
+        if (isCardChatHides(item)) {
+            section(day).withheld += 1;
             continue;
         }
         if (item.rowClass === 'conversation' || item.kind === 'user' || (item.kind === 'assistant' && !item.toolName)) {

@@ -1,7 +1,8 @@
 import { resetPageQueries } from '@/lib/page-queries';
 import { rememberActivityDate, resetActivitySessionCache } from '@/components/timeline/activity-session-cache';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import { chatThreadUpdates } from '@/lib/main-chat-view';
 import type { Project, StreamItem } from '@/types';
 import i18n from '@/i18n';
 import { toast } from 'sonner';
@@ -779,6 +780,11 @@ describe('App Search and commands', () => {
     });
 
     it('opens a chat message: loads back to it with no gap and scrolls there', async () => {
+        // With Isoform's updates out of Chat, a page of only a status row
+        // loads older pages by itself (main-chat-quiet-load.test.tsx); this
+        // covers the jump on its own, with the updates shown.
+        chatThreadUpdates.shown = true;
+        onTestFinished(() => { chatThreadUpdates.shown = false; });
         const base = projectFixture();
         const session = base.workspaces[0].sessions[0];
         fixture.initialProjects = [{

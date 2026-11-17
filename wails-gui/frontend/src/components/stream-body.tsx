@@ -49,6 +49,9 @@ interface StreamBodyProps {
     hasMore?: boolean;
     loadingMore?: boolean;
     onLoadMore?: () => void;
+    /** Load older rows until the stream fills its view, so a page whose newest
+     *  rows are hidden still opens on what it holds (the main chat). */
+    fillViewport?: boolean;
     onEditMessage?: (itemId: string, sortOrder: number, newContent: string) => void;
     connectedProviders?: { slack?: string; feishu?: string };
     onFillComposer?: (prompt: string) => void;
@@ -122,6 +125,7 @@ export function StreamBody({
     hasMore = false,
     loadingMore = false,
     onLoadMore,
+    fillViewport = false,
     onEditMessage,
     connectedProviders = {},
     onFillComposer,
@@ -298,6 +302,15 @@ export function StreamBody({
         viewport.addEventListener('scroll', handleScroll, { passive: true });
         return () => viewport.removeEventListener('scroll', handleScroll);
     }, [hasMore, loadingMore, onLoadMore]);
+
+    // Nothing to scroll means no scroll event: a short stream with older rows
+    // loads them itself, by the same near-the-top rule.
+    useEffect(() => {
+        if (!fillViewport || !hasMore || loadingMore || !onLoadMore) return;
+        const viewport = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]');
+        if (!viewport || viewport.clientHeight <= 0) return;
+        if (viewport.scrollHeight - viewport.clientHeight < 200) onLoadMore();
+    }, [fillViewport, hasMore, loadingMore, onLoadMore, items]);
 
     // Capture scrollHeight before a prepend render (items grew at the beginning).
     // We detect a prepend when item count increases but the first item ID changed.
