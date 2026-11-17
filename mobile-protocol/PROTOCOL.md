@@ -4123,6 +4123,20 @@ One agent asks another for something only the person can allow. The request is a
   Done today line. Answered and ran-out requests leave the list a day later.
 - The agent tools `ask_agent` and `get_answer` create a request and read its answer on the computer.
 
+### 26.5 Day one (computer-setup v1.0.0 rule 6, computer-today v1.1.0 rule 2; 2026-11-16)
+
+Before the first brief, Your work holds real work made from what Isoform has already seen, during the first
+day after setup only:
+
+- `source` `day_one`, `ref.origin` `calendar` (today's meetings still ahead: "Prepare for {meeting}"),
+  `mail` (what waits on your answer: "Reply to {person}") or `seen` (what you were doing: "Pick up {thing}").
+  At most two of each, five in all, from the sources a brief could show, through the brief's privacy gates.
+- `first` begins with `{"text":"Day one · from your calendar|mail|files","key":"day_one"}`; a meeting adds a
+  `clock` part.
+- Offered work: Yes hands it to your agent (as section 26.1's offered work, with `send:false` and the sheet);
+  No takes an offered reason. Not mine and Edit are `400`.
+- `WorkList.dayOne` counts the open day-one items, for "{n} to answer · day one".
+
 ## 27. Your agents (v1, 2026-11-15)
 
 Design: `docs/handoff-2026-11-15/handoff-2026-11-15-1649-phone-agent-v1.1.0.md` §1 and §4 (B4).

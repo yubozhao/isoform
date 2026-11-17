@@ -19,13 +19,15 @@ import (
 // derived view: built in the background, read as a snapshot, rebuilt when a
 // source changes or an answer is given.
 type WorkList struct {
-	V              int        `json:"v"`
-	Version        string     `json:"version"`
-	GeneratedAt    string     `json:"generatedAt"`
-	ToAnswer       int        `json:"toAnswer"`
-	BackFromAgents int        `json:"backFromAgents"`
-	UndoUntil      string     `json:"undoUntil,omitempty"`
-	Items          []WorkItem `json:"items"`
+	V              int    `json:"v"`
+	Version        string `json:"version"`
+	GeneratedAt    string `json:"generatedAt"`
+	ToAnswer       int    `json:"toAnswer"`
+	BackFromAgents int    `json:"backFromAgents"`
+	// DayOne counts the open day-one items ("{n} to answer · day one").
+	DayOne    int        `json:"dayOne,omitempty"`
+	UndoUntil string     `json:"undoUntil,omitempty"`
+	Items     []WorkItem `json:"items"`
 }
 
 // WorkItem is one thing put to the person. Its words are composed here, once,
@@ -72,8 +74,10 @@ type WorkRef struct {
 	BriefID string `json:"briefId,omitempty"`
 	// Paragraph is the brief paragraph the item sits under (zero-based), when
 	// the brief cites what the item is about.
-	Paragraph      *int   `json:"paragraph,omitempty"`
-	ItemKey        string `json:"itemKey,omitempty"`
+	Paragraph *int   `json:"paragraph,omitempty"`
+	ItemKey   string `json:"itemKey,omitempty"`
+	// Origin is where a day-one item came from: calendar, mail or seen.
+	Origin         string `json:"origin,omitempty"`
 	OfferID        string `json:"offerId,omitempty"`
 	TopicID        string `json:"topicId,omitempty"`
 	ProposalID     string `json:"proposalId,omitempty"`
@@ -280,7 +284,7 @@ func workDayWord(at, now time.Time) string {
 func (a *App) buildWorkList(ctx context.Context, now time.Time) (WorkList, error) {
 	list := WorkList{V: 1, GeneratedAt: mobileTimestamp(now), Items: []WorkItem{}}
 	brief := a.applyWorkAnswers(a.workBriefItems(ctx))
-	rest := a.applyWorkAnswers(append(append(append(a.workTopicItems(ctx), a.workPrepItems(now)...), a.workResultItems(now, brief)...), a.workRequestItems(now)...))
+	rest := a.applyWorkAnswers(append(append(append(append(a.workTopicItems(ctx), a.workPrepItems(now)...), a.workResultItems(now, brief)...), a.workRequestItems(now)...), a.workDayOneItems(ctx, now)...))
 	sort.SliceStable(rest, func(i, j int) bool {
 		if (rest[i].State == workStateBack) != (rest[j].State == workStateBack) {
 			return rest[i].State == workStateBack
@@ -302,6 +306,9 @@ func (a *App) buildWorkList(ctx context.Context, now time.Time) (WorkList, error
 		switch item.State {
 		case workStateOpen:
 			list.ToAnswer++
+			if item.Source == workSourceDayOne {
+				list.DayOne++
+			}
 		case workStateBack:
 			list.ToAnswer++
 			list.BackFromAgents++
