@@ -150,4 +150,27 @@ describe('ActivityFeed', () => {
         fireEvent.click(within(dialog).getByRole('button', { name: enActivity.act.forgetOne }));
         await waitFor(() => expect(binding('ForgetActivityFeedRow')).toHaveBeenCalledWith('handoff', 'h-1'));
     });
+
+    // computer-trouble v1.0.0 rule 7: the hours trouble stopped Isoform are a
+    // gap with a dashed dot and its cause, and no Forget.
+    it('keeps the hours trouble stopped Isoform as a gap with its cause', async () => {
+        binding('GetActivityFeed').mockResolvedValue([
+            { id: '', kind: 'trouble', startMs: at(16), endMs: at(18, 40), cause: 'screen' },
+            { id: '', kind: 'trouble', startMs: at(17, 3), endMs: at(17, 13), cause: 'restarted' },
+            { id: '', kind: 'trouble', startMs: at(20), endMs: at(21), cause: 'offline', ongoing: true },
+        ]);
+        await act(async () => {
+            render(<ActivityFeed date={day} />);
+        });
+        const gaps = await screen.findAllByText(/^Not seen|^Isoform restarted/);
+        expect(gaps.map((g) => g.textContent)).toEqual([
+            expect.stringMatching(/^Not seen, until 6:40\s?PM$/),
+            expect.stringMatching(/^Isoform restarted · not seen, 5:03\s?PM to 5:13\s?PM$/),
+            'Not seen, since then',
+        ]);
+        expect(screen.getByText('Screen Recording was off for Isoform. Nothing from these hours is in a brief.')).toBeInTheDocument();
+        expect(screen.getByText('There was no internet. Nothing from these hours is in a brief.')).toBeInTheDocument();
+        expect(document.querySelectorAll('[data-feed-kind="trouble"] button')).toHaveLength(0);
+        expect(document.querySelectorAll('[data-trouble-dot]')).toHaveLength(3);
+    });
 });

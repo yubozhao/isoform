@@ -913,6 +913,8 @@
         "followLine": "A project, a decision you're weighing, a game, a team. It becomes a topic now, with its first idea in a minute.",
         "followAdd": "Add",
         "followAdded": "{{name}} · its first idea comes in a minute, in Your work",
-        "followFailed": "Couldn't add that. Try again, or add it later in Your topics."
+        "followFailed": "Couldn't add that. Try again, or add it later in Your topics.",
+        "connectedForCode": "{{agent}} · Connected · for code",
+        "connectedForElse": "{{agent}} · Connected · for everything else"
     }
 }

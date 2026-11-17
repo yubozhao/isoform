@@ -913,6 +913,8 @@
         "followLine": "一个项目、一个正在权衡的决定、一场比赛、一个团队。它会马上成为一个主题，一分钟内给出第一个想法。",
         "followAdd": "添加",
         "followAdded": "{{name}} · 第一个想法一分钟内出现在你的工作中",
-        "followFailed": "无法添加。请重试，或稍后在你的主题中添加。"
+        "followFailed": "无法添加。请重试，或稍后在你的主题中添加。",
+        "connectedForCode": "{{agent}} · 已连接 · 负责代码",
+        "connectedForElse": "{{agent}} · 已连接 · 负责其他一切"
     }
 }

@@ -619,6 +619,23 @@
         "nav": "From your watch",
         "title": "From your watch",
         "subtitle": "Recordings from your watch, kept on this computer with your other recordings.",
+        "lane": {
+            "title": "Your watch today",
+            "now": "Now",
+            "hourTalk_one": "{{hour}}: {{count}} min of talk",
+            "hourTalk_other": "{{hour}}: {{count}} min of talk",
+            "hourTalkPaused": "{{hour}}: {{talk}} min of talk. Paused for {{paused}} min.",
+            "hourPaused_one": "{{hour}}: paused for {{count}} min",
+            "hourPaused_other": "{{hour}}: paused for {{count}} min",
+            "hourQuiet": "{{hour}}: quiet"
+        },
+        "conversations": "Conversations",
+        "hours": "Hours",
+        "conversationRange": "{{start}} to {{end}}",
+        "conversationWords_one": "{{count}} word",
+        "conversationWords_other": "{{count}} words",
+        "conversationAcross_one": "in {{count}} hour",
+        "conversationAcross_other": "across {{count}} hours",
         "empty": "Recordings from your watch show here once your phone has sent them.",
         "loadFailed": "The recordings could not be loaded.",
         "untimed": "Recording",
@@ -651,24 +668,7 @@
         "deleteTitle": "Delete everywhere?",
         "deleteBody": "The recording and what Isoform learned only from it go from your watch, your phone and your computer.",
         "deleteConfirm": "Delete",
-        "deleteFailed": "Didn't delete. Try again.",
-        "lane": {
-            "title": "Your watch today",
-            "now": "Now",
-            "hourTalk_one": "{{hour}}: {{count}} min of talk",
-            "hourTalk_other": "{{hour}}: {{count}} min of talk",
-            "hourTalkPaused": "{{hour}}: {{talk}} min of talk. Paused for {{paused}} min.",
-            "hourPaused_one": "{{hour}}: paused for {{count}} min",
-            "hourPaused_other": "{{hour}}: paused for {{count}} min",
-            "hourQuiet": "{{hour}}: quiet"
-        },
-        "conversations": "Conversations",
-        "hours": "Hours",
-        "conversationRange": "{{start}} to {{end}}",
-        "conversationWords_one": "{{count}} word",
-        "conversationWords_other": "{{count}} words",
-        "conversationAcross_one": "in {{count}} hour",
-        "conversationAcross_other": "across {{count}} hours"
+        "deleteFailed": "Didn't delete. Try again."
     },
     "act": {
         "sub": "What Isoform saw today, by time and source. Forget anything; what was made from it goes too.",
@@ -696,6 +696,15 @@
             "noWord": "no word yet"
         },
         "forgetHandoff": "Forget your record of \"{{title}}\"? What {{agent}} made stays with {{agent}}.",
+        "gap": "Not seen, until {{time}}",
+        "gapNow": "Not seen, since then",
+        "gapWhy": "{{cause}}. Nothing from these hours is in a brief.",
+        "restarted": "Isoform restarted · not seen, {{from}} to {{to}}",
+        "cause": {
+            "screen": "Screen Recording was off for Isoform",
+            "signedOut": "Your assistant was signed out",
+            "offline": "There was no internet"
+        },
         "tabAnswers": "Your answers"
     },
     "feed": {

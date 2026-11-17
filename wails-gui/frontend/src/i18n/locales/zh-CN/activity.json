@@ -619,6 +619,23 @@
         "nav": "来自你的手表",
         "title": "来自你的手表",
         "subtitle": "手表上的录音，与你的其他录音一起保存在这台电脑上。",
+        "lane": {
+            "title": "今天的手表",
+            "now": "现在",
+            "hourTalk_one": "{{hour}}：{{count}} 分钟的谈话",
+            "hourTalk_other": "{{hour}}：{{count}} 分钟的谈话",
+            "hourTalkPaused": "{{hour}}：{{talk}} 分钟的谈话。暂停了 {{paused}} 分钟。",
+            "hourPaused_one": "{{hour}}：暂停了 {{count}} 分钟",
+            "hourPaused_other": "{{hour}}：暂停了 {{count}} 分钟",
+            "hourQuiet": "{{hour}}：安静"
+        },
+        "conversations": "对话",
+        "hours": "按小时",
+        "conversationRange": "{{start}} 至 {{end}}",
+        "conversationWords_one": "{{count}} 个词",
+        "conversationWords_other": "{{count}} 个词",
+        "conversationAcross_one": "在 {{count}} 个小时内",
+        "conversationAcross_other": "跨 {{count}} 个小时",
         "empty": "手机把手表录音发送过来后，会显示在这里。",
         "loadFailed": "无法加载录音。",
         "untimed": "录音",
@@ -651,24 +668,7 @@
         "deleteTitle": "全部删除？",
         "deleteBody": "这段录音以及 Isoform 仅从中了解到的内容，会从你的手表、手机和电脑上删除。",
         "deleteConfirm": "删除",
-        "deleteFailed": "未能删除，请重试。",
-        "lane": {
-            "title": "今天的手表",
-            "now": "现在",
-            "hourTalk_one": "{{hour}}：{{count}} 分钟的谈话",
-            "hourTalk_other": "{{hour}}：{{count}} 分钟的谈话",
-            "hourTalkPaused": "{{hour}}：{{talk}} 分钟的谈话。暂停了 {{paused}} 分钟。",
-            "hourPaused_one": "{{hour}}：暂停了 {{count}} 分钟",
-            "hourPaused_other": "{{hour}}：暂停了 {{count}} 分钟",
-            "hourQuiet": "{{hour}}：安静"
-        },
-        "conversations": "对话",
-        "hours": "按小时",
-        "conversationRange": "{{start}} 至 {{end}}",
-        "conversationWords_one": "{{count}} 个词",
-        "conversationWords_other": "{{count}} 个词",
-        "conversationAcross_one": "在 {{count}} 个小时内",
-        "conversationAcross_other": "跨 {{count}} 个小时"
+        "deleteFailed": "未能删除，请重试。"
     },
     "act": {
         "sub": "Isoform 今天看到的一切，按时间和来源排列。任何一条都可以忘记，由它生成的内容也会一并删除。",
@@ -696,6 +696,15 @@
             "noWord": "还没有消息"
         },
         "forgetHandoff": "忘记你对「{{title}}」的记录？{{agent}} 做出的内容会留在 {{agent}} 那里。",
+        "gap": "没有看到，直到 {{time}}",
+        "gapNow": "没有看到，从那时起",
+        "gapWhy": "{{cause}}。这几个小时的内容都不在简报里。",
+        "restarted": "Isoform 重新启动 · 没有看到，{{from}} 到 {{to}}",
+        "cause": {
+            "screen": "Isoform 的屏幕录制已关闭",
+            "signedOut": "你的助手已退出登录",
+            "offline": "没有网络"
+        },
         "tabAnswers": "你的回答"
     },
     "feed": {

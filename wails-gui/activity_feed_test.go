@@ -151,3 +151,27 @@ func TestActivityFeedHandoffRowsSayWhatTheAgentDid(t *testing.T) {
 		t.Fatalf("new row = %+v", r)
 	}
 }
+
+// computer-trouble v1.0.0 rule 7: the hours trouble stopped Isoform are a gap
+// with their cause, clipped to the day; one still on runs to now.
+func TestActivityFeedTroubleIsAGapWithItsCause(t *testing.T) {
+	rows := activityFeedTroubleRows([]TroubleStretch{
+		{StartMs: 50, EndMs: 150, Cause: "screen"},
+		{StartMs: 300, EndMs: 400, Cause: "restarted"},
+		{StartMs: 900, EndMs: 0, Cause: "offline"},
+		{StartMs: 10, EndMs: 40, Cause: "signed_out"},
+	}, 100, 1000, 950)
+	want := []ActivityFeedRow{
+		{Kind: "trouble", StartMs: 100, EndMs: 150, Cause: "screen"},
+		{Kind: "trouble", StartMs: 300, EndMs: 400, Cause: "restarted"},
+		{Kind: "trouble", StartMs: 900, EndMs: 950, Cause: "offline", Ongoing: true},
+	}
+	if len(rows) != len(want) {
+		t.Fatalf("rows = %+v", rows)
+	}
+	for i := range want {
+		if rows[i] != want[i] {
+			t.Fatalf("row %d = %+v, want %+v", i, rows[i], want[i])
+		}
+	}
+}
