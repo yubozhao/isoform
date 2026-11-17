@@ -31,23 +31,40 @@ type WorkList struct {
 // WorkItem is one thing put to the person. Its words are composed here, once,
 // so every device says the same thing.
 type WorkItem struct {
-	ID        string         `json:"id"`
-	Kind      string         `json:"kind"`
-	Row       string         `json:"row"`
-	State     string         `json:"state"`
-	Source    string         `json:"source"`
-	Ref       WorkRef        `json:"ref"`
-	First     []WorkTextPart `json:"first"`
-	Noticed   string         `json:"noticed"`
-	Work      WorkBody       `json:"work"`
-	Yes       WorkYes        `json:"yes"`
-	Why       []WorkLink     `json:"why,omitempty"`
-	Gets      []WorkGets     `json:"gets,omitempty"`
-	Reasons   []string       `json:"reasons"`
-	Answer    *WorkAnswer    `json:"answer,omitempty"`
-	Agent     *WorkAgent     `json:"agent,omitempty"`
-	CreatedAt string         `json:"createdAt"`
-	Order     int            `json:"order"`
+	ID      string         `json:"id"`
+	Kind    string         `json:"kind"`
+	Row     string         `json:"row"`
+	State   string         `json:"state"`
+	Source  string         `json:"source"`
+	Ref     WorkRef        `json:"ref"`
+	First   []WorkTextPart `json:"first"`
+	Noticed string         `json:"noticed"`
+	Work    WorkBody       `json:"work"`
+	Yes     WorkYes        `json:"yes"`
+	Why     []WorkLink     `json:"why,omitempty"`
+	Gets    []WorkGets     `json:"gets,omitempty"`
+	Reasons []string       `json:"reasons"`
+	Answer  *WorkAnswer    `json:"answer,omitempty"`
+	Agent   *WorkAgent     `json:"agent,omitempty"`
+	// Request is set on an agent's request to another (kind "request").
+	Request *WorkRequest `json:"request,omitempty"`
+	// ExpiresAt is when a request ends by itself.
+	ExpiresAt string `json:"expiresAt,omitempty"`
+	CreatedAt string `json:"createdAt"`
+	Order     int    `json:"order"`
+}
+
+// WorkRequest is who asks whom, and what a Yes would move.
+type WorkRequest struct {
+	From  WorkAgentRef `json:"from"`
+	To    WorkAgentRef `json:"to"`
+	Moves string       `json:"moves,omitempty"`
+}
+
+// WorkAgentRef names an agent.
+type WorkAgentRef struct {
+	AgentID string `json:"agentId"`
+	Name    string `json:"name"`
 }
 
 // WorkRef names the item's source records.
@@ -157,6 +174,7 @@ const (
 	workKindOffered = "offered"
 	workKindClaim   = "claim"
 	workKindResult  = "result"
+	workKindRequest = "request"
 	workKindCheck   = "check"
 
 	workStateOpen      = "open"
@@ -262,7 +280,7 @@ func workDayWord(at, now time.Time) string {
 func (a *App) buildWorkList(ctx context.Context, now time.Time) (WorkList, error) {
 	list := WorkList{V: 1, GeneratedAt: mobileTimestamp(now), Items: []WorkItem{}}
 	brief := a.applyWorkAnswers(a.workBriefItems(ctx))
-	rest := a.applyWorkAnswers(append(append(a.workTopicItems(ctx), a.workPrepItems(now)...), a.workResultItems(now, brief)...))
+	rest := a.applyWorkAnswers(append(append(append(a.workTopicItems(ctx), a.workPrepItems(now)...), a.workResultItems(now, brief)...), a.workRequestItems(now)...))
 	sort.SliceStable(rest, func(i, j int) bool {
 		if (rest[i].State == workStateBack) != (rest[j].State == workStateBack) {
 			return rest[i].State == workStateBack
