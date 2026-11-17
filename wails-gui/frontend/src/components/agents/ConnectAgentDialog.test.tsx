@@ -26,7 +26,7 @@ beforeEach(async () => {
     vi.resetAllMocks();
     vi.useFakeTimers({ shouldAdvanceTime: true });
     await i18n.changeLanguage("en");
-    mocks.start.mockResolvedValue({ message, link: "https://abc.agents.isoform.ai/j/code", expiresAt: 0, local: false });
+    mocks.start.mockResolvedValue({ message, link: "https://abc.agents.isoform.ai/j/code", expiresAt: 0, local: false, mcpAddress: "https://abc.agents.isoform.ai/mcp?join=key" });
     mocks.join.mockResolvedValue({ state: "waiting", expiresAt: 0 });
     mocks.copy.mockResolvedValue(undefined);
     mocks.answer.mockResolvedValue(undefined);
@@ -56,10 +56,10 @@ describe("Connect an agent", () => {
         await screen.findByText(message);
         mocks.join.mockResolvedValue({ state: "requested", expiresAt: 0, name: "Grok", device: "the cloud", mayOpen: "the web only", check: "4821" });
         await act(async () => { vi.advanceTimersByTime(JOIN_POLL_MS + 10); });
-        expect(await screen.findByText("Grok wants to join")).toBeInTheDocument();
-        expect(screen.getByText(/Check number 4821/)).toBeInTheDocument();
-        expect(screen.getByText("May open: the web only")).toBeInTheDocument();
-        fireEvent.click(screen.getByRole("button", { name: en.agents.connectSheet.allow }));
+        expect(await screen.findByText("Grok is asking to join")).toBeInTheDocument();
+        expect(screen.getByText("4821")).toBeInTheDocument();
+        expect(screen.getByText("From the cloud · to work in the web only")).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: "Yes, it shows 4821" }));
         await waitFor(() => expect(mocks.answer).toHaveBeenCalledWith(true));
         expect(await screen.findByText("Grok is connected")).toBeInTheDocument();
         // The agent's token read spends the join; the sheet keeps saying it's connected.
@@ -82,6 +82,21 @@ describe("Connect an agent", () => {
         await waitFor(() => expect(row().textContent).toContain(en.agents.job.connected));
     });
 
+    it("shows each app's own steps, and says plainly when an app can't connect", async () => {
+        render(<ConnectAgentDialog open onOpenChange={() => undefined} agents={agents} onConnected={() => undefined} />);
+        await screen.findByText(message);
+        fireEvent.click(screen.getByRole("button", { name: "Claude" }));
+        expect(screen.getByText("https://abc.agents.isoform.ai/mcp?join=key")).toBeInTheDocument();
+        expect(screen.getByText(en.agents.connectSheet.steps.claude)).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: en.agents.connectSheet.copy }));
+        await waitFor(() => expect(mocks.copy).toHaveBeenCalledWith("https://abc.agents.isoform.ai/mcp?join=key"));
+        fireEvent.click(screen.getByRole("button", { name: "ChatGPT" }));
+        expect(screen.getByText(en.agents.connectSheet.chatgptDev)).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: "Muse" }));
+        expect(screen.getByText("Muse can't connect to Isoform yet. It gets each task written in, and sends results back through a link.")).toBeInTheDocument();
+        expect(screen.queryByText("https://abc.agents.isoform.ai/mcp?join=key")).not.toBeInTheDocument();
+    });
+
     it("says why when agents can't connect, and closes an open link on close", async () => {
         mocks.start.mockRejectedValueOnce(new Error("task links are off"));
         const onOpenChange = vi.fn();
@@ -91,7 +106,8 @@ describe("Connect an agent", () => {
         expect(await screen.findByText(message)).toBeInTheDocument();
         fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
         await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
-        expect(mocks.cancel).toHaveBeenCalled();
+        // Closing the sheet closes the link still waiting.
         rerender(<ConnectAgentDialog open={false} onOpenChange={onOpenChange} agents={agents} onConnected={() => undefined} />);
+        await waitFor(() => expect(mocks.cancel).toHaveBeenCalled());
     });
 });

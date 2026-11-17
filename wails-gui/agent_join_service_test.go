@@ -51,7 +51,7 @@ func TestAgentJoinsThroughTheListener(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !start.Local || start.Message != agentjoin.Message(start.Link) || !strings.Contains(start.Link, agentjoin.PathPrefix) {
+	if !start.Local || start.Message != agentjoin.Message(start.Link) || !strings.Contains(start.Link, agentjoin.PathPrefix) || !strings.Contains(start.MCPAddress, "/mcp?join=") || strings.Contains(start.Message, "/mcp") {
 		t.Fatalf("start = %+v", start)
 	}
 	if status, _, page := agentJoinCall(t, http.MethodGet, start.Link, ""); status != http.StatusOK || !strings.Contains(page, "/a/inbox") {

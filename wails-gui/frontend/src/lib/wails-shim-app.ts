@@ -4149,10 +4149,10 @@ export const PrepareWorkOnIt = appBinding<[WorkOnItInput], WorkOnItPrepared>("Pr
 export const SendWorkOnIt = appBinding<[string, string, string], WorkOnItSent>("SendWorkOnIt");
 export const SetWorkOnItHandle = appBinding<[string, string], void>("SetWorkOnItHandle");
 // Your agents: one for code, one for everything else (your_agents.go, phone-map B4).
-export type YourAgentReach = "connected" | "connected_computer" | "on_computer" | "its_app" | "by_text";
-export interface YourAgentView { id: string; name: string; kind: WorkOnItKind; reach: YourAgentReach; found: boolean; connected: boolean; connectedHere?: boolean; lastWorkedAt?: number }
+export type YourAgentReach = "connected" | "connected_computer" | "on_computer" | "its_app" | "by_text" | "disconnected";
+export interface YourAgentView { id: string; name: string; kind: WorkOnItKind; reach: YourAgentReach; found: boolean; connected: boolean; connectedHere?: boolean; lastWorkedAt?: number; disconnectedAt?: number }
 export interface YourAgents { choices: Record<WorkOnItKind, string>; agents: YourAgentView[] }
-export interface WorkOnItHandoff { id: string; sourceKind: WorkOnItSourceKind; sourceId?: string; kind: WorkOnItKind; agentId: string; method: WorkOnItMethod; via?: string; text: string; sent?: string; sentAt: number; surface: "computer" | "phone"; taskId?: string; taskState?: "running" | "done" | "failed"; taskResult?: string }
+export interface WorkOnItHandoff { id: string; sourceKind: WorkOnItSourceKind; sourceId?: string; kind: WorkOnItKind; agentId: string; method: WorkOnItMethod; via?: string; text: string; sent?: string; sentAt: number; surface: "computer" | "phone"; agentName?: string; taskId?: string; taskState?: "running" | "done" | "failed"; taskResult?: string }
 export const GetYourAgents = appBinding<[], YourAgents>("GetYourAgents");
 export const SetYourAgent = appBinding<[WorkOnItKind, string], YourAgents>("SetYourAgent");
 // Coding agents on this computer, connected with one click (agents_here.go, C1).
@@ -4166,7 +4166,7 @@ export const GetWorkOnItAgents = appBinding<[], WorkOnItAgentView[]>("GetWorkOnI
 export const UndoChatCorrection = appBinding<[string], string>("UndoChatCorrection");
 export const AnswerChatHandoffCard = appBinding<[string, "declined" | "handed"], string>("AnswerChatHandoffCard");
 // Agents join your Isoform once (agent_join_service.go, phone-agent v1.1.0 B5).
-export interface AgentJoinStart { message: string; link: string; expiresAt: number; local: boolean }
+export interface AgentJoinStart { message: string; link: string; expiresAt: number; local: boolean; mcpAddress: string }
 export type AgentJoinState = "waiting" | "requested" | "allowed" | "denied" | "expired";
 export interface AgentJoin { state: AgentJoinState; expiresAt: number; name?: string; device?: string; mayOpen?: string; check?: string; agentId?: string }
 export interface ConnectedAgent { id: string; name: string; device: string; mayOpen: string; joinedAt: number; lastSeenAt?: number; catalogId?: string }
