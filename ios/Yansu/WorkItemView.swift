@@ -14,17 +14,23 @@ struct WorkItemCard: View {
     var answer: (WorkAction) -> Void
     var edit: () -> Void
     var showWhy: () -> Void
+    /// A result's file: Read it here (text), or Open on your computer (anything else).
+    var readFile: (WorkFile) -> Void = { _ in }
+    var openFile: (WorkFile) -> Void = { _ in }
+    @Environment(\.locale) private var locale
+
+    private var isRequest: Bool { item.kind == "request" }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center, spacing: 8) {
-                Text(verbatim: item.firstLine)
+                Text(verbatim: isRequest ? WorkRequestWords.firstLine(item, locale: locale) : item.firstLine)
                     .font(.footnote)
                     .foregroundStyle(YansuTheme.secondary)
                     .lineLimit(wraps ? nil : 2)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityIdentifier("work.item.source")
-                if item.kind != "claim" {
+                if item.kind != "claim", !isRequest {
                     Button(String(localized: "work.edit"), action: edit)
                         .font(.subheadline)
                         .foregroundStyle(YansuTheme.accent)
@@ -42,20 +48,42 @@ struct WorkItemCard: View {
                 .accessibilityLabel(String(localized: "More options"))
             }
             VStack(alignment: .leading, spacing: 10) {
-                Text(verbatim: item.noticed)
+                Text(verbatim: isRequest ? item.work.title : item.noticed)
                     .font(.body.weight(.semibold))
                     .foregroundStyle(YansuTheme.ink)
                     .fixedSize(horizontal: false, vertical: true)
-                WorkBox(work: item.work)
-                if let yes = item.yesLine {
+                if isRequest {
+                    WorkMovesBox(moves: item.request?.moves)
+                } else {
+                    WorkBox(work: item.work)
+                }
+                if !isRequest, let yes = item.yesLine {
                     Text(verbatim: yes)
                         .font(.footnote)
                         .foregroundStyle(YansuTheme.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .workItemAccessibility(item, answer: answer, edit: item.kind == "claim" ? nil : edit)
+            .workItemAccessibility(item, answer: answer, edit: item.kind == "claim" ? nil : edit, notMine: !isRequest)
             .accessibilityIdentifier("work.item.noticed")
+            // Outside the item's one VoiceOver element: these lines and the file chips are read and tapped on their own.
+            if let taken = item.takenBack {
+                Text(verbatim: WorkRequestWords.takenBack(taken, locale: locale))
+                    .font(.footnote)
+                    .foregroundStyle(YansuTheme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("work.item.takenBack")
+            }
+            ForEach(item.files ?? []) { file in
+                WorkFileChip(file: file, read: { readFile(file) }, open: { openFile(file) })
+            }
+            if isRequest, let line = WorkRequestWords.yesLine(item, now: Date(), locale: locale) {
+                Text(verbatim: line)
+                    .font(.footnote)
+                    .foregroundStyle(YansuTheme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("work.item.yesLine")
+            }
             if YourWork.asksUseful(item) {
                 Text("work.usefulAsk").font(.footnote).foregroundStyle(YansuTheme.secondary)
                 WorkWeightedRow(weights: [1, 1], spacing: 8) {
@@ -75,7 +103,7 @@ struct WorkItemCard: View {
                 }
                 .buttonStyle(.plain)
             } else {
-                WorkAnswerButtons(height: 46, answer: answer)
+                WorkAnswerButtons(height: 46, notMine: !isRequest, answer: answer)
             }
             if let position, position.count > 1 {
                 HStack {
@@ -131,6 +159,8 @@ struct WorkBox: View {
 /// Yes, No, Not mine: Yes filled and widest, No outlined, Not mine plain (board artboard 2).
 struct WorkAnswerButtons: View {
     var height: CGFloat = 46
+    /// Off for an agent's request, which takes Yes or No only (phone-agent v1.2.0 rule 1).
+    var notMine = true
     var answer: (WorkAction) -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -139,7 +169,7 @@ struct WorkAnswerButtons: View {
         if dynamicTypeSize.isAccessibilitySize {
             VStack(spacing: 8) { buttons(height: 56) }.buttonStyle(.plain)
         } else {
-            WorkWeightedRow(weights: [1.3, 1, 1], spacing: 8) { buttons(height: height) }.buttonStyle(.plain)
+            WorkWeightedRow(weights: notMine ? [1.3, 1, 1] : [1.3, 1], spacing: 8) { buttons(height: height) }.buttonStyle(.plain)
         }
     }
 
@@ -158,18 +188,21 @@ struct WorkAnswerButtons: View {
                     .overlay { RoundedRectangle(cornerRadius: 12).stroke(YansuTheme.borderStrong) }
             }
             .accessibilityIdentifier("work.no")
-            Button { answer(.notMine) } label: {
-                Text("work.notMine").font(.body).frame(maxWidth: .infinity, minHeight: height)
-                    .foregroundStyle(YansuTheme.secondary)
+            if notMine {
+                Button { answer(.notMine) } label: {
+                    Text("work.notMine").font(.body).frame(maxWidth: .infinity, minHeight: height)
+                        .foregroundStyle(YansuTheme.secondary)
+                }
+                .accessibilityIdentifier("work.notMine")
             }
-            .accessibilityIdentifier("work.notMine")
     }
 }
 
 extension View {
     /// An item read whole by VoiceOver (where it came from, the sentence, the work, what Yes does) and answered with
     /// its actions (pass-access rule 9). The buttons stay for touch.
-    func workItemAccessibility(_ item: WorkItem, answer: @escaping (WorkAction) -> Void, edit: (() -> Void)?) -> some View {
+    func workItemAccessibility(_ item: WorkItem, answer: @escaping (WorkAction) -> Void, edit: (() -> Void)?,
+                               notMine: Bool = true) -> some View {
         let label = [item.firstLine, item.noticed, item.work.title, item.work.text, item.yesLine]
             .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ". ")
         return self
@@ -182,10 +215,102 @@ extension View {
                 } else {
                     Button(String(localized: "work.yes")) { answer(.yes) }
                     Button(String(localized: "work.no")) { answer(.no) }
-                    Button(String(localized: "work.notMine")) { answer(.notMine) }
+                    if notMine { Button(String(localized: "work.notMine")) { answer(.notMine) } }
                     if let edit { Button(String(localized: "work.edit"), action: edit) }
                 }
             }
+    }
+}
+
+/// An agent's request: "What would move:" over what Yes lets the other agent do (v1.2.0 rule 1).
+struct WorkMovesBox: View {
+    let moves: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text("work.request.moves")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(YansuTheme.ink)
+            if let moves, !moves.isEmpty {
+                Text(verbatim: moves)
+                    .font(.subheadline)
+                    .foregroundStyle(YansuTheme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 13)
+        .padding(.vertical, 12)
+        .background(YansuTheme.surfaceWarm, in: RoundedRectangle(cornerRadius: 12))
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("work.item.moves")
+    }
+}
+
+/// A result's file as a chip: its name, where it lives, and Read it (text) or Open on your computer (v1.2.0 rules 3
+/// and 4). Where a file lives is always said; nothing is copied to the phone unless it's text and opened.
+struct WorkFileChip: View {
+    let file: WorkFile
+    var read: () -> Void
+    var open: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: file.readable == true ? "doc.text" : "doc")
+                .font(.subheadline)
+                .foregroundStyle(YansuTheme.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: file.name).font(.subheadline.weight(.semibold)).foregroundStyle(YansuTheme.ink)
+                    .lineLimit(1)
+                Text(verbatim: WorkRequestWords.fileWhere(file))
+                    .font(.footnote).foregroundStyle(YansuTheme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Button(String(localized: file.readable == true ? "agent.readIt" : "agent.openOnComputer"),
+                   action: file.readable == true ? read : open)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(YansuTheme.accent)
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("work.file.\(file.id)")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .overlay { RoundedRectangle(cornerRadius: 12).stroke(YansuTheme.borderSubtle) }
+    }
+}
+
+/// The words of a request, a file and a taken-back item.
+enum WorkRequestWords {
+    /// "Codex asks Muse · 4:10 PM".
+    static func firstLine(_ item: WorkItem, locale: Locale) -> String {
+        guard let request = item.request else { return item.firstLine }
+        let asks = String.localizedStringWithFormat(String(localized: "work.request.asks"), request.from.name, request.to.name)
+        guard let at = item.createdDate else { return asks }
+        return asks + " · " + BriefClock.text(at, locale: locale)
+    }
+
+    /// "Yes lets Muse do it. It waits until 4:10 PM tomorrow, then ends."
+    static func yesLine(_ item: WorkItem, now: Date, calendar: Calendar = .current, locale: Locale) -> String? {
+        guard let request = item.request else { return nil }
+        guard let ends = item.expiresAt.flatMap(RelayTime.parse) else {
+            return String.localizedStringWithFormat(String(localized: "work.request.yesLineNoEnd"), request.to.name)
+        }
+        let when = BriefClock.text(ends, locale: locale) + " "
+            + YourWork.dayWord(ends, now: now, calendar: calendar, locale: locale)
+        return String.localizedStringWithFormat(String(localized: "work.request.yesLine"), request.to.name, when)
+    }
+
+    /// "branch halcyon/test-plan, on your computer".
+    static func fileWhere(_ file: WorkFile) -> String {
+        guard let place = file.where, !place.isEmpty else { return String(localized: "agents.where.computer") }
+        return String.localizedStringWithFormat(String(localized: "agent.fileWhere"), place)
+    }
+
+    /// "Taken back from Claude at 4:30 PM. Hand it to someone else, or keep it for later."
+    static func takenBack(_ taken: WorkTakenBack, locale: Locale) -> String {
+        let at = RelayTime.parse(taken.at).map { BriefClock.text($0, locale: locale) } ?? ""
+        return String.localizedStringWithFormat(String(localized: "with.takenBackItem"), taken.agentName, at)
     }
 }
 

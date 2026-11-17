@@ -33,6 +33,18 @@ enum HubRoute: Equatable, Sendable {
     case work
     /// Your agents: the two choices and every agent Isoform can reach (PROTOCOL.md 27).
     case agents
+    /// Your answers, newest first (the answers ledger, Your data).
+    case answers(limit: Int, before: String?)
+    /// Forget one answer for good.
+    case forgetAnswer(id: String)
+    /// What went to the person's agents, newest first (PROTOCOL.md 27.2).
+    case agentHandoffs(limit: Int, before: String?)
+    /// Daily topics and whether their proposals are on (PROTOCOL.md 15.9).
+    case topicsDaily
+    /// A result's readable file (phone-agent v1.2.0 rule 3); `path` is `/work/{id}/file`, already encoded.
+    case workFile(path: String, file: String)
+    /// What each hand-off is doing, in the computer's words (PROTOCOL.md 27.2, With your agents).
+    case handoffStatuses
     case goals(limit: Int, cursor: String?)
     case goal(id: String)
     case offers
@@ -57,6 +69,8 @@ enum HubRoute: Equatable, Sendable {
         switch self {
         case .yourAgent, .recordings, .recordingTranscript, .recordingConversations, .recordingConversation, .watchNotes, .voice: return "GET"
         case .refreshBrief, .write, .briefReceived: return "POST"
+        case .forgetAnswer: return "DELETE"
+        case .answers, .agentHandoffs, .topicsDaily, .handoffStatuses, .workFile: return "GET"
         case .status, .today, .todayMeetingPrep, .findTime, .findTimeLegacy, .holdProposal, .holdStatus, .todayPart, .latestBrief, .briefList, .brief, .briefPackage, .briefPart, .briefAudio, .briefAskAnswer, .briefCardAskAnswer, .briefWeekDecline, .briefWeekAskAnswer, .chats, .chat, .notifications, .keepAwake, .tasks, .task, .work, .agents, .goals, .goal, .offers, .offersWithHolds,
              .topics, .topic, .privacy: return "GET"
         }
@@ -96,6 +110,12 @@ enum HubRoute: Equatable, Sendable {
         case .tasks: return "/tasks"
         case .work: return "/work"
         case .agents: return "/agents"
+        case .answers: return "/answers"
+        case .agentHandoffs: return "/agents/handoffs"
+        case .topicsDaily: return "/topics-daily"
+        case .handoffStatuses: return "/agents/handoffs/status"
+        case .workFile(let path, _): return path
+        case .forgetAnswer(let id): return "/answers/" + (id.addingPercentEncoding(withAllowedCharacters: .alphanumerics.union(CharacterSet(charactersIn: "-._~"))) ?? id)
         case .task(let id): return "/tasks/\(id)"
         case .goals: return "/goals"
         case .goal(let id): return "/goals/\(id)"
@@ -158,6 +178,21 @@ enum HubRoute: Equatable, Sendable {
             components.queryItems = [URLQueryItem(name: "version", value: version), URLQueryItem(name: "weekTopicId", value: topicID), URLQueryItem(name: "weekMessage", value: message)]
             return (components.percentEncodedQuery ?? "").replacingOccurrences(of: "+", with: "%2B")
         case .briefList(let limit): return "limit=\(min(max(limit, 1), 14))"
+        case .answers(let limit, let before):
+            var components = URLComponents()
+            components.queryItems = [URLQueryItem(name: "limit", value: String(min(max(limit, 1), 200)))]
+                + (before.map { [URLQueryItem(name: "before", value: $0)] } ?? [])
+            return components.percentEncodedQuery ?? ""
+        case .agentHandoffs(let limit, let before):
+            var components = URLComponents()
+            components.queryItems = [URLQueryItem(name: "limit", value: String(min(max(limit, 1), 200)))]
+                + (before.map { [URLQueryItem(name: "before", value: $0)] } ?? [])
+            return components.percentEncodedQuery ?? ""
+        case .workFile(_, let file):
+            var components = URLComponents()
+            components.queryItems = [URLQueryItem(name: "file", value: file)]
+            return components.percentEncodedQuery ?? ""
+        case .forgetAnswer, .topicsDaily, .handoffStatuses: return ""
         case .chats(let limit): return "limit=\(min(max(limit, 1), 50))"
         case .chat(_, let after, let limit):
             // Without `after` the Mac answers with its newest page. `after=0` is the start of the chat.
@@ -180,7 +215,7 @@ enum HubRoute: Equatable, Sendable {
 
     var body: String {
         switch self {
-        case .yourAgent, .recordings, .recordingTranscript, .recordingConversations, .recordingConversation, .watchNotes, .voice: return ""
+        case .yourAgent, .recordings, .recordingTranscript, .recordingConversations, .recordingConversation, .watchNotes, .voice, .answers, .forgetAnswer, .agentHandoffs, .topicsDaily, .handoffStatuses, .workFile: return ""
         case .refreshBrief: return "{}"
         case .write(_, let body): return body
         case .briefReceived(_, let version): return "{\"version\":\"\(version)\"}"
@@ -221,6 +256,12 @@ enum HubRoute: Equatable, Sendable {
         case .task: return "tasks.detail"
         case .work: return "work.list"
         case .agents: return "agents.list"
+        case .answers: return "answers.list"
+        case .forgetAnswer: return "answers.forget"
+        case .agentHandoffs: return "agents.handoffs"
+        case .topicsDaily: return "topics.daily"
+        case .handoffStatuses: return "agents.handoffs.status"
+        case .workFile: return "work.file"
         case .goals: return "goals.list"
         case .goal: return "goals.detail"
         case .offers, .offersWithHolds: return "offers.list"
@@ -362,6 +403,12 @@ struct HubStatus: Decodable, Equatable, Sendable {
     var observingPauseControl: Bool? = nil
     /// Set while observing is paused (24.8).
     var observingPause: ObservingPause? = nil
+    /// Closed Eyes can run until the person ends it (`untilEnded`, 24.10).
+    var observingPauseUntilEnded: Bool? = nil
+    /// The phone can turn Proposals from your topics on and off (PROTOCOL.md 15.9.1).
+    var topicsDailySwitch: Bool? = nil
+    /// The computer serves Sent to your agents (PROTOCOL.md 27.2).
+    var agentHandoffs: Bool? = nil
 }
 
 struct ObservingPause: Codable, Equatable, Sendable {

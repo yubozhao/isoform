@@ -20,7 +20,10 @@ final class SettingsRedesignUITests: XCTestCase {
         attachScreenshot(app, named: "settings-2-this-phone")
         app.swipeDown()
         app.buttons["settings.yourAgents.open"].firstMatch.tap()
-        XCTAssertTrue(app.staticTexts["handoff.pick.title"].firstMatch.waitForExistence(timeout: 10))
+        // The two jobs on top, then the other agents (phone-agent v1.2.0 rule 13).
+        XCTAssertTrue(app.descendants(matching: .any)["agents.job.code"].firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.descendants(matching: .any)["agents.job.else"].firstMatch.exists)
+        XCTAssertTrue(app.descendants(matching: .any)["agents.row.claude"].firstMatch.exists)
         attachScreenshot(app, named: "settings-3-your-agents")
     }
 }

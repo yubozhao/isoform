@@ -6,6 +6,9 @@ import Foundation
 enum WorkUITestSeed {
     static var isOn: Bool { ProcessInfo.processInfo.environment["YANSU_UITEST_WORK"] != nil }
     static var allAnswered: Bool { ProcessInfo.processInfo.environment["YANSU_UITEST_WORK"] == "done" }
+    /// `=agents` adds an agent's request, a result with files, a taken-back item and a request that ran out
+    /// (phone-agent v1.2.0 and v1.2.1).
+    static var agents: Bool { ProcessInfo.processInfo.environment["YANSU_UITEST_WORK"] == "agents" }
 
     /// The seeded brief's id, so the brief's own items sit in the brief in full.
     @MainActor static var briefID: String?
@@ -55,6 +58,38 @@ enum WorkUITestSeed {
                      answer: WorkAnswer(action: "yes", at: at(10), line: "Reply to Priya: in your Mail drafts",
                                         undoUntil: tomorrow), createdAt: at(200)),
         ]
+        if agents {
+            let ends = RelayTime.format(Calendar.current.startOfDay(for: now.addingTimeInterval(86_400)).addingTimeInterval(16 * 3600 + 600))
+            items.insert(contentsOf: [
+                WorkItem(id: "work-request", kind: "request", row: "request", state: "open", source: "agent",
+                         first: [], noticed: "",
+                         work: WorkBody(title: "Codex asks Muse to collect the three customers' date formats."),
+                         reasons: [], createdAt: at(15),
+                         request: WorkRequest(from: WorkAgentName(agentId: "codex", name: "Codex"),
+                                              to: WorkAgentName(agentId: "muse", name: "Muse"),
+                                              moves: "The importer's last failing test, once Codex has the formats."),
+                         expiresAt: ends),
+                WorkItem(id: "work-result-plan", kind: "result", row: "result", state: "back", source: "agent",
+                         first: [WorkFirstPart(text: "Back from Claude"), WorkFirstPart(text: "you said yes at 4:10 PM")],
+                         noticed: "Claude wrote the test plan for the full customer file.",
+                         work: WorkBody(title: "Halcyon test plan", text: "Twelve cases, with the two failing date formats first."),
+                         createdAt: at(12),
+                         files: [WorkFile(id: "f1", name: "test-plan.md", where: "branch halcyon/test-plan", readable: true),
+                                 WorkFile(id: "f2", name: "fixtures.zip", where: "branch halcyon/test-plan", readable: false)]),
+            ], at: 0)
+            items.append(WorkItem(id: "work-taken", kind: "offered", row: "offered", state: "open", source: "topic",
+                                  first: [WorkFirstPart(text: "Pricing page"), WorkFirstPart(text: "from your topics")],
+                                  noticed: "The pricing page still shows last year's team price.",
+                                  work: WorkBody(title: "Update the team price"), createdAt: at(5),
+                                  takenBack: WorkTakenBack(agentId: "claude", agentName: "Claude", at: at(3))))
+            items.append(WorkItem(id: "work-ran-out", kind: "request", row: "request", state: "answered", source: "agent",
+                                  first: [], noticed: "", work: WorkBody(title: "Codex asks Muse for the release notes."),
+                                  answer: WorkAnswer(action: "ran_out", at: at(60), line: "Codex's request to Muse ran out · nothing moved"),
+                                  createdAt: at(1500),
+                                  request: WorkRequest(from: WorkAgentName(name: "Codex"), to: WorkAgentName(name: "Muse"))))
+            // The computer's order: the request first, then the result.
+            for index in items.indices { items[index].order = index }
+        }
         if allAnswered {
             items = items.map { item in
                 guard item.isOpen else { return item }
@@ -106,7 +141,8 @@ actor WorkUITestHub: WorkHubAPI {
 /// The stub of GET /agents and its writes (PROTOCOL.md 27), with the nine agents and no choice for everything else.
 actor AgentsUITestHub: AgentsHubAPI {
     private var current = PhoneAgents(choices: .init(code: "codex", else: ""), agents: [
-        PhoneAgent(id: "codex", name: "Codex", kind: "code", reach: "connected_computer", connected: true),
+        PhoneAgent(id: "codex", name: "Codex", kind: "code", reach: "connected_computer", connected: true,
+                   lastWorkedAt: Date().addingTimeInterval(-7200).timeIntervalSince1970 * 1000),
         PhoneAgent(id: "claude-code", name: "Claude Code", kind: "code", reach: "on_computer"),
         PhoneAgent(id: "cursor", name: "Cursor", kind: "code", reach: "on_computer"),
         PhoneAgent(id: "claude", name: "Claude", kind: "else", reach: "its_app"),
@@ -127,5 +163,35 @@ actor AgentsUITestHub: AgentsHubAPI {
     func handOff(_ request: PhoneHandOffRequest) async throws -> PhoneHandOffResult {
         PhoneHandOffResult(recordId: "ui-1", agentId: request.agentId ?? "")
     }
+
+    func handoffs(limit: Int, before: String?) async throws -> AgentHandoffsPage {
+        AgentHandoffsPage(handoffs: [
+            AgentHandoffEntry(id: "h1", agentId: "claude-code", agentName: "Claude Code", kind: "code", method: "task_link",
+                              text: "Fix the failing release build and open a PR.", sent: "Fix the failing release build",
+                              sentAt: RelayTime.format(Date().addingTimeInterval(-900)), surface: "phone",
+                              source: .init(kind: "work_item", id: "w1")),
+            AgentHandoffEntry(id: "h2", agentId: "chatgpt", agentName: "ChatGPT", kind: "else", method: "paste",
+                              text: "Write the launch checklist.", sentAt: RelayTime.format(Date().addingTimeInterval(-5400)),
+                              surface: "computer", source: .init(kind: "topic_proposal")),
+        ])
+    }
+}
+#endif
+
+#if DEBUG && targetEnvironment(simulator)
+/// The stub of GET /answers and DELETE /answers/{id}, with invented answers.
+actor AnswersUITestHub: AnswersHubAPI {
+    private var page = AnswersPage(answers: [
+        AnswerEntry(id: "a1", item: "brief:b:prep", kind: "work", title: "Prep for Lena", action: "yes",
+                    at: RelayTime.format(Date().addingTimeInterval(-600)), surface: "phone", source: "brief"),
+        AnswerEntry(id: "a2", item: "topic:t:p", kind: "work", title: "Write the test plan", action: "no", reason: "not_now",
+                    at: RelayTime.format(Date().addingTimeInterval(-3600)), surface: "computer", source: "topic"),
+        AnswerEntry(id: "a3", item: "prep:e", kind: "work", title: "Prep for the design review", action: "no",
+                    reason: "not_needed", at: RelayTime.format(Date().addingTimeInterval(-7200)), surface: "notification",
+                    source: "prep", undone: true),
+    ])
+
+    func answers(limit: Int, before: String?) async throws -> AnswersPage { page }
+    func forgetAnswer(id: String) async throws { page.answers.removeAll { $0.id == id } }
 }
 #endif

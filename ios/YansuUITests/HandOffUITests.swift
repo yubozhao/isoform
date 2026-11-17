@@ -23,6 +23,9 @@ final class HandOffUITests: XCTestCase {
         app.buttons["handoff.agent.claude"].firstMatch.tap()
         XCTAssertTrue(app.staticTexts["handoff.title"].firstMatch.waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["handoff.text"].firstMatch.exists, "exactly what goes")
+        // Claude runs in its own app: the button says it opens there (phone-agent v1.2.0 rule 6).
+        XCTAssertEqual(app.buttons["handoff.send"].firstMatch.label, "Open in Claude")
+        XCTAssertTrue(app.staticTexts["handoff.foot"].firstMatch.exists)
         attachScreenshot(app, named: "handoff-2-hand-it-to")
     }
 }

@@ -33,6 +33,14 @@ struct WorkItem: Codable, Equatable, Hashable, Identifiable, Sendable {
     let createdAt: String
     /// The computer's order; the clients group by state.
     var order: Int? = nil
+    /// One agent asking another (`kind` `request`, phone-agent v1.2.0 §1): who asks whom, and what would move.
+    var request: WorkRequest? = nil
+    /// When a request ends by itself (RFC 3339).
+    var expiresAt: String? = nil
+    /// A result's files (v1.2.0 §2): where each lives, and whether the phone may read it.
+    var files: [WorkFile]? = nil
+    /// Work taken back from an agent, offered again (v1.2.1 rule 5).
+    var takenBack: WorkTakenBack? = nil
 
     var createdDate: Date? { RelayTime.parse(createdAt) }
     var isOpen: Bool { state == "open" || state == "back" }
@@ -55,6 +63,34 @@ struct WorkItem: Codable, Equatable, Hashable, Identifiable, Sendable {
         return yes.line + " " + String.localizedStringWithFormat(String(localized: "work.yes.opensAt"), BriefClock.text(at, locale: .current))
     }
     var briefID: String? { ref?.briefId }
+}
+
+struct WorkAgentName: Codable, Equatable, Hashable, Sendable {
+    var agentId: String? = nil
+    let name: String
+}
+
+struct WorkRequest: Codable, Equatable, Hashable, Sendable {
+    let from: WorkAgentName
+    let to: WorkAgentName
+    /// "What would move", in the grey box.
+    var moves: String? = nil
+}
+
+struct WorkFile: Codable, Equatable, Hashable, Identifiable, Sendable {
+    let id: String
+    let name: String
+    /// "branch halcyon/test-plan": always said, with "on your computer".
+    var `where`: String? = nil
+    /// Text the phone may open read-only; anything else opens on the computer.
+    var readable: Bool? = nil
+    var bytes: Int? = nil
+}
+
+struct WorkTakenBack: Codable, Equatable, Hashable, Sendable {
+    var agentId: String? = nil
+    let agentName: String
+    let at: String
 }
 
 struct WorkRef: Codable, Equatable, Hashable, Sendable {
@@ -166,6 +202,8 @@ struct WorkAnswerRequest: Codable, Equatable, Sendable {
     /// What it gets, removed in the hand-off, and the agent picked for this one hand-off.
     var removed: [String]? = nil
     var agentId: String? = nil
+    /// Open on your computer: the file to open (`open_file`, v1.2.0 rule 3).
+    var file: String? = nil
 }
 
 struct WorkAnswerResult: Decodable, Equatable, Sendable {
@@ -177,6 +215,8 @@ enum WorkAction: String, CaseIterable, Sendable {
     case yes, no, notMine = "not_mine", edit, useful, notUseful = "not_useful", undo
     /// The hand-off's Send, after a Yes recorded with `send: false` (PROTOCOL.md 26.1).
     case send
+    /// Opens a result's file on the computer; not kept in the ledger.
+    case openFile = "open_file"
 }
 
 enum WorkReason: String, CaseIterable, Sendable {
@@ -187,6 +227,7 @@ enum WorkReason: String, CaseIterable, Sendable {
     /// The reasons No offers for an item's kind (phone-map rule 7). None is needed.
     static func choices(for item: WorkItem) -> [WorkReason] {
         // The computer's reasons win when it sends them (B2); the kind's own list stands in otherwise.
+        if item.kind == "request" { return [] }
         if let sent = item.reasons?.compactMap(WorkReason.init(rawValue:)), !sent.isEmpty { return sent }
         return choices(for: item.kind)
     }
@@ -195,6 +236,8 @@ enum WorkReason: String, CaseIterable, Sendable {
         switch kind {
         case "done": return [.notNeeded, .wrongFacts, .notHowIdSayIt, .myself]
         case "claim": return [.wasTrueOnce, .onlySometimes, .notAtAll]
+        // An agent's request takes Yes or No and nothing more (v1.2.0 rule 1).
+        case "request": return []
         default: return [.alreadyDone, .notNow, .notUseful, .myself]
         }
     }
@@ -314,7 +357,7 @@ enum YourWork {
             return String.localizedStringWithFormat(String(localized: "work.done.no"), title)
         case .notMine:
             return String.localizedStringWithFormat(String(localized: "work.done.notMine"), title)
-        case .undo:
+        case .undo, .openFile:
             return title
         case .send:
             return String.localizedStringWithFormat(String(localized: "work.done.yes"), title)
