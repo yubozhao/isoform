@@ -126,6 +126,11 @@ func Pace(m Moment, spec KindSpec, prefs Prefs, state *PaceState, now time.Time)
 		// The user picked this time themselves.
 		return Verdict{Mode: ModeInterrupt, Interruption: level, Reason: "reminder time"}
 	}
+	if prefs.Quiet.Contains(now) && spec.Kind == KindMeetingPrep {
+		// Inside quiet hours prep still comes, without a sound (rule 11):
+		// waiting would make it late for its meeting.
+		return Verdict{Mode: ModeInterrupt, Interruption: InterruptionPassive, Reason: "quiet hours prep"}
+	}
 	if prefs.Quiet.Contains(now) {
 		breakable := level == InterruptionTimeSensitive && spec.Kind == KindWorkBlocked
 		spaced := state.LastQuietBreak.IsZero() || now.Sub(state.LastQuietBreak) >= prefs.QuietBreakSpacing

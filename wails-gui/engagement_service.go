@@ -90,6 +90,8 @@ type engagementService struct {
 	paceChanged            func()
 	journey                func(context.Context, time.Time)
 	afterPass              func()
+	// noticeRead reports whether a notice was read anywhere (notices_read.go).
+	noticeRead func(id string) bool
 
 	// chatReportRetry, when set, says when a failed chat report is tried
 	// again; activity-driven cards wait for the hourly batch.
@@ -659,6 +661,7 @@ func (s *engagementService) Pass(ctx context.Context) {
 		s.handle(ctx, row, now)
 	}
 	s.handleDigest(ctx, digest, now)
+	s.followPrepToPhone(ctx, now)
 }
 
 // ensureLoaded refuses delivery until persisted preferences can be read.

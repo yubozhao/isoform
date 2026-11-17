@@ -201,7 +201,11 @@ func (s KindSpec) Interruption(m Moment, now time.Time) Interruption {
 			return InterruptionTimeSensitive
 		}
 		return InterruptionActive
-	case KindCommitmentSlipping, KindWorkFinished, KindMeetingPrep, KindPlaybookResult, KindFirstWeek, KindWeeklyRecap:
+	case KindMeetingPrep:
+		// Prep is Time Sensitive on both devices (notify v1.0.0 rule 11, B4):
+		// it passes a Focus only where the person allows that for Isoform.
+		return InterruptionTimeSensitive
+	case KindCommitmentSlipping, KindWorkFinished, KindPlaybookResult, KindFirstWeek, KindWeeklyRecap:
 		return InterruptionActive
 	case KindBriefReady:
 		// A scheduled brief is the notification people act on, so it uses the

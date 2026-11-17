@@ -53,8 +53,11 @@ type mobileStatusView struct {
 	RecordingDetail bool `json:"recordingDetail,omitempty"`
 	// RecordingMarks is true when POST /recordings takes the moments the wearer marked in a part (24.9).
 	RecordingMarks bool `json:"recordingMarks,omitempty"`
-	FirstRead      bool `json:"firstRead,omitempty"`
-	Holds          bool `json:"holds,omitempty"`
+	// NoticesRead is true when GET and POST /notices/read carry the notices
+	// read anywhere (9.4).
+	NoticesRead bool `json:"noticesRead,omitempty"`
+	FirstRead   bool `json:"firstRead,omitempty"`
+	Holds       bool `json:"holds,omitempty"`
 	// Sees is true when this Mac serves What Isoform sees (20.7e).
 	Sees bool `json:"sees,omitempty"`
 	// TaskThreads is true when this Mac serves task threads (20.7b): thread
@@ -238,6 +241,16 @@ func (bridge *mobileBridge) handleAuthorized(w http.ResponseWriter, r *http.Requ
 			return
 		}
 		bridge.serveYourAgentChoice(w, r, device)
+	case "GET /notices/read":
+		if !mobileRequireScope(w, device, mobileScopePush) {
+			return
+		}
+		bridge.serveNoticesRead(w, r)
+	case "POST /notices/read":
+		if !mobileRequireScope(w, device, mobileScopePush) {
+			return
+		}
+		bridge.serveNoticesMarkRead(w, r)
 	case "POST /agents/handoffs":
 		if !mobileRequireScope(w, device, mobileScopeHandoff) {
 			return
@@ -766,8 +779,8 @@ func mobileRequireScope(w http.ResponseWriter, device mobileDeviceRecord, scope 
 
 func (bridge *mobileBridge) serveStatus(w http.ResponseWriter) {
 	view := mobileStatusView{
-		HubName: mobileHubName(), AppVersion: Version, ProtocolVersion: 1, Topics: true, TopicsDaily: true, TaskThreads: true, BrainDump: true, Recordings: true, OwnerVoice: true, RecordingContext: true, RecordingDetail: true, RecordingMarks: true, Sees: true, FirstRead: true, TodayMeetingPrep: true, ChatMainSend: true, NotificationTest: true, Work: true, WorkSend: true, AgentJoin: true, BriefRelevanceFeedback: true, BriefAsk: true, BriefWeekDecline: true, HandoffStatus: true, WorkAgentActions: true, ChatB10: chatB10Enabled, ScopeRequest: chatB10Enabled,
-		KeepAwake: bridge.keepAwakeSetting(), InstantPush: mobileInstantPushConfigured(),
+		HubName: mobileHubName(), AppVersion: Version, ProtocolVersion: 1, Topics: true, TopicsDaily: true, TaskThreads: true, BrainDump: true, Recordings: true, OwnerVoice: true, RecordingContext: true, RecordingDetail: true, RecordingMarks: true, Sees: true, FirstRead: true, TodayMeetingPrep: true, ChatMainSend: true, NotificationTest: true, Work: true, WorkSend: true, BriefRelevanceFeedback: true, BriefAsk: true, BriefWeekDecline: true, HandoffStatus: true, WorkAgentActions: true, AgentJoin: true, ChatB10: chatB10Enabled, ScopeRequest: chatB10Enabled,
+		KeepAwake: bridge.keepAwakeSetting(), InstantPush: mobileInstantPushConfigured(), NoticesRead: true,
 		BriefSchedule: []mobileBriefSlotTime{},
 	}
 	view.Holds = bridge.mobileHoldsAvailable(calendarAccessGranted())

@@ -61,6 +61,7 @@ func (a *App) startEngagement(ctx context.Context) {
 	svc.holdStagedListReminder = a.holdStagedBrainDumpReminder
 	svc.chatReportRetry = a.engagementChatReportRetryAt
 	svc.completion = a.engagementItemCompletedAt
+	svc.noticeRead = a.noticeWasRead
 	a.engagement = svc
 	a.initializeFirstWeek(context.Background(), svc.now())
 	svc.journey = a.checkEngagementJourney
@@ -317,6 +318,7 @@ func (a *App) engagementDesktop(_ context.Context, row storage.EngagementMomentR
 				a.answerWorkFromNotification(item.ID, action)
 			}
 		},
+		Tag:         row.ID,
 		OnShown:     receipt(storage.EngagementReceiptDelivered, ""),
 		OnOpened:    receipt(storage.EngagementReceiptOpened, ""),
 		OnDismissed: receipt(storage.EngagementReceiptDismissed, ""),
@@ -458,6 +460,10 @@ func (a *App) engagementDesktopReceipt(momentID, state, action string) {
 	if err := a.engagement.Receipt(context.Background(), momentID, string(engagement.ChannelDesktop), state, action, time.Time{}); err != nil {
 		log.Printf("[engagement] desktop receipt for %s: %v", momentID, err)
 	}
+	if state == storage.EngagementReceiptOpened {
+		// Read here: it goes from the phone too (notify v1.0.0 rule 8).
+		a.noteMomentRead(momentID, time.Now())
+	}
 }
 
 // engagementReceipt records a phone receipt against the moment it belongs to.
@@ -486,6 +492,10 @@ func (a *App) engagementReceiptOn(channel engagement.Channel, momentID, state, a
 	if err := a.engagement.Receipt(ctx, momentID, string(channel), state, action, at); err != nil {
 		log.Printf("[engagement] receipt for %s: %v", momentID, err)
 		return
+	}
+	if state == storage.EngagementReceiptOpened {
+		// Read on the phone or the watch: it goes from the computer too.
+		a.noteMomentRead(momentID, at)
 	}
 	a.applySuggestionReceipt(ctx, momentID, reportedState, action)
 }

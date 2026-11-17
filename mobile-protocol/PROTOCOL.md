@@ -1123,9 +1123,42 @@ The computer decides, at the moment a notice is due, where it rings, and it ring
   (`meeting_prep`), finished work (above), and a reminder the person set themselves (`reminder`). Every other
   kind is a quiet line on Today, unless the person routed that moment somewhere. `GET /notifications` lists
   only `brief_ready`, `meeting_prep` and `work_finished` as switches ("Three kinds, and nothing else").
+- **Prep is Time Sensitive** (B4): its notice's `level` is `time-sensitive`, so it passes a Focus only where
+  the person allows Time Sensitive notifications for Isoform; inside quiet hours it comes `passive`, without a
+  sound, rather than late. Isoform never asks to break through.
+- **Prep follows you once** (rule 5, B8): prep that rang on the computer, still unopened when the person
+  leaves the computer before its meeting starts, is pushed to the phone once, `passive`. Never the other
+  way, never twice, and not once anyone opened or answered it.
 - **Every action** of a kind is a button on the computer's notification too (B6); prep shows its action and
   Not needed, finished work Useful, and those answer the Your work item with surface `notification`, as the
   phone's do (9.2).
+
+### 9.4 Read anywhere, gone everywhere (notify v1.0.0 rules 8 and 9, B7; 2026-11-16)
+
+Reading a notice anywhere takes its notification away everywhere, within a minute: opening the brief, the
+prep or the result in the app, on the phone or the watch, or pressing its action (Read it, Not needed,
+Useful). Swiping a notification away removes it on that device only and is not an answer. `GET /status`
+advertises `noticesRead: true`.
+
+- A notice's id is the moment's notice id (`yansu.id`, section 14) and, for the brief, also
+  `brief:<briefId>`. A brief's notification may be either (the `brief_ready` notice or the relay's own brief
+  push), so both ids are listed when a brief is read.
+- `GET /notices/read?since=<RFC 3339>` (scope `push`): `200 {"read":[{"id","at"}]}`, oldest first, for the
+  last 48 hours (an earlier `since` is the 48 hours). `400` for a bad `since`. The phone reads it on launch
+  and with every status read, from its last successful read, and removes delivered notifications that match
+  by `yansu.id`, or for `brief:<briefId>` by the opened notice's `destinationId` or its local brief
+  notification's `localBriefID`.
+- `POST /notices/read` `{"ids":["brief:<briefId>"]}` (scope `push`, 1 to 50 ids): the phone read these in
+  the app (the brief opened in Today without its notification). `200 {"read":n}`.
+- A phone's `opened` receipt (section 14), a Your work answer from any surface (prep, finished work), the
+  computer's own toast opened or answered, and the brief opened on the computer all count as read. The
+  computer closes its own toast at once.
+- **The withdraw push.** The computer sends the relay `{"t":"withdraw","deviceId","ids":[...]}` (1 to 20
+  ids, each a notice id or `brief:<briefId>`) for each phone with the push scope, and the relay sends one
+  background push: `{"aps":{"content-available":1},"yansu":{"kind":"withdraw","hub":"<hubId>","ids":[...]}}`,
+  `apns-push-type: background`, priority 5, no collapse id, expiring after an hour. The phone removes the
+  delivered notifications that match. iOS throttles background pushes, so the poll above stays the
+  guarantee. A relay or push gateway without this refuses the frame and stays connected.
 
 ## 10. Scopes
 

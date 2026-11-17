@@ -11,8 +11,11 @@ type toastOptions struct {
 	// Actions, when set, replaces the one button with every action of the
 	// notification's kind (notify v1.0.0 B6), each reported to OnAction by
 	// its id. An action other than "open" leaves the app closed.
-	Actions     []toastAction
-	OnAction    func(id string)
+	Actions  []toastAction
+	OnAction func(id string)
+	// Tag names what the toast is about (a notice id), so reading it
+	// elsewhere can take it away (closeDesktopToastsTagged).
+	Tag         string
 	OnShown     func()
 	OnOpened    func()
 	OnActed     func()
