@@ -44,6 +44,10 @@ type ActivityFeedRow struct {
 	Surface string `json:"surface,omitempty"`
 	Outcome string `json:"outcome,omitempty"`
 	DoneMs  int64  `json:"doneMs,omitempty"`
+	// Cause is why Isoform didn't see a "trouble" row: "screen",
+	// "signed_out", "offline" or "restarted". Ongoing is true while it lasts.
+	Cause   string `json:"cause,omitempty"`
+	Ongoing bool   `json:"ongoing,omitempty"`
 }
 
 // ActivityForgetItem is one thing that goes when a row is forgotten. Kind is
@@ -95,6 +99,9 @@ func (a *App) GetActivityFeed(startMs, endMs int64) (perfValue []ActivityFeedRow
 	}
 	if pauses, err := a.observationPauses(); err == nil {
 		rows = append(rows, activityFeedClosedRows(pauses, startMs, endMs, time.Now().UnixMilli())...)
+	}
+	if stretches, err := a.troubleStretches(startMs, endMs); err == nil {
+		rows = append(rows, activityFeedTroubleRows(stretches, startMs, endMs, time.Now().UnixMilli())...)
 	}
 	sortActivityFeed(rows)
 	return rows, nil
@@ -191,6 +198,25 @@ func activityFeedHandoffRows(handoffs []workonit.Handoff, records map[string]wor
 			}
 		}
 		out = append(out, row)
+	}
+	return out
+}
+
+// activityFeedTroubleRows are the hours trouble stopped Isoform
+// (computer-trouble v1.0.0 rule 7): a gap with its cause, clipped to the
+// window, with no id and no Forget, since nothing was kept.
+func activityFeedTroubleRows(stretches []TroubleStretch, startMs, endMs, nowMs int64) []ActivityFeedRow {
+	out := []ActivityFeedRow{}
+	for _, t := range stretches {
+		end, ongoing := t.EndMs, t.EndMs == 0
+		if ongoing {
+			end = nowMs
+		}
+		s, e := max(t.StartMs, startMs), min(end, endMs)
+		if e <= s {
+			continue
+		}
+		out = append(out, ActivityFeedRow{Kind: "trouble", StartMs: s, EndMs: e, Cause: t.Cause, Ongoing: ongoing && end <= endMs})
 	}
 	return out
 }

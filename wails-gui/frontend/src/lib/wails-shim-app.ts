@@ -5868,7 +5868,7 @@ export interface WatchConversationFollowup {
 }
 export const GetWatchConversations = appBinding<[], WatchConversation[]>('GetWatchConversations');
 // The Activity page's one timeline (activity_feed.go).
-export type ActivityFeedKind = 'screen' | 'watch' | 'agent' | 'handoff' | 'closed';
+export type ActivityFeedKind = 'screen' | 'watch' | 'agent' | 'handoff' | 'closed' | 'trouble';
 export interface ActivityFeedRow {
     id: string;
     kind: ActivityFeedKind;
@@ -5886,6 +5886,8 @@ export interface ActivityFeedRow {
     surface?: string;
     outcome?: 'sent' | 'taken' | 'done' | 'not_done' | 'no_word';
     doneMs?: number;
+    cause?: 'screen' | 'signed_out' | 'offline' | 'restarted';
+    ongoing?: boolean;
 }
 export interface ActivityForgetItem {
     kind: 'topic' | 'goal' | 'screen' | 'moment' | 'words' | 'audio' | 'copies' | 'notes';

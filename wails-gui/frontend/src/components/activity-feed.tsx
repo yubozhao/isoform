@@ -23,7 +23,7 @@ import {
 // Your agents' hand-offs carry the purple-blue of Your agents; what an agent
 // did on this computer is screen, so it takes the screen's colour
 // (computer-activity v1.2.0 rule 4).
-const DOT_CLASS: Record<Exclude<ActivityFeedKind, 'closed'>, string> = {
+const DOT_CLASS: Record<Exclude<ActivityFeedKind, 'closed' | 'trouble'>, string> = {
     screen: 'bg-seaweed',
     watch: 'bg-copper',
     agent: 'bg-seaweed',
@@ -98,6 +98,23 @@ export function feedLine(t: TFunction<'activity'>, row: ActivityFeedRow, lang = 
             return t('feed.agentLine');
         default:
             return '';
+    }
+}
+
+/** A trouble gap's line (computer-trouble v1.0.0 rule 7). */
+export function troubleTitle(t: TFunction<'activity'>, row: ActivityFeedRow, lang: string): string {
+    if (row.cause === 'restarted') return t('act.restarted', { from: clock(row.startMs, lang), to: clock(row.endMs, lang) });
+    return row.ongoing ? t('act.gapNow') : t('act.gap', { time: clock(row.endMs, lang) });
+}
+
+export function troubleCause(t: TFunction<'activity'>, cause: ActivityFeedRow['cause']): string {
+    switch (cause) {
+        case 'screen':
+            return t('act.cause.screen');
+        case 'signed_out':
+            return t('act.cause.signedOut');
+        default:
+            return t('act.cause.offline');
     }
 }
 
@@ -216,7 +233,20 @@ export function ActivityFeed({ date, kinds, emptyText }: {
             )}
             <ol className="flex flex-col">
                 {(rows ?? []).map((row) =>
-                    row.kind === 'closed' ? (
+                    row.kind === 'trouble' ? (
+                        <li
+                            key={`trouble-${row.startMs}`}
+                            data-feed-kind="trouble"
+                            className="flex items-start gap-3 rounded-md px-3 py-2"
+                        >
+                            <span className="w-[62px] shrink-0 pt-px text-[12px] tabular-nums text-muted">{clock(row.startMs, i18n.language)}</span>
+                            <span aria-hidden data-trouble-dot className="mt-[5px] size-[9px] shrink-0 rounded-full border border-dashed border-muted" />
+                            <div className="min-w-0 flex-1">
+                                <p className="text-[13px] text-ink">{troubleTitle(t, row, i18n.language)}</p>
+                                {row.cause !== 'restarted' && <p className="text-[12px] text-muted">{t('act.gapWhy', { cause: troubleCause(t, row.cause) })}</p>}
+                            </div>
+                        </li>
+                    ) : row.kind === 'closed' ? (
                         <li
                             key={`closed-${row.startMs}`}
                             data-feed-kind="closed"

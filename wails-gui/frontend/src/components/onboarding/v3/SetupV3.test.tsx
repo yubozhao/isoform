@@ -23,6 +23,9 @@ const mocks = vi.hoisted(() => ({
     work: vi.fn(),
     answerWork: vi.fn(),
     topic: vi.fn(),
+    yourAgents: vi.fn(),
+    setAgent: vi.fn(),
+    connectHere: vi.fn(),
 }));
 vi.mock("@/lib/wails-shim-app", () => ({
     GetSetupPermissions: mocks.permissions,
@@ -57,6 +60,14 @@ vi.mock("@/lib/wails-shim-app", () => ({
     GetWorkList: mocks.work,
     AnswerWork: mocks.answerWork,
     UpdateUserTopic: mocks.topic,
+    GetYourAgents: mocks.yourAgents,
+    SetYourAgent: mocks.setAgent,
+    ConnectAgentHere: mocks.connectHere,
+    StartAgentJoin: vi.fn().mockResolvedValue({ message: "Join my Isoform: read isoform.ai/j/abc", link: "x", expiresAt: Date.now() + 600_000, local: false }),
+    GetAgentJoin: vi.fn().mockResolvedValue({ state: "waiting", expiresAt: Date.now() + 600_000 }),
+    AnswerAgentJoin: vi.fn().mockResolvedValue(undefined),
+    CancelAgentJoin: vi.fn().mockResolvedValue(undefined),
+    NativeClipboardSetText: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("../v2/useAgentProbe", () => ({ useAgentProbe: () => ({ probe: { agents: [] }, ready: true }) }));
 vi.mock("../v2/scenes/YourAIScene", () => ({ YourAIScene: () => <div data-testid="your-ai-stub" /> }));
@@ -91,6 +102,10 @@ beforeEach(async () => {
     mocks.work.mockResolvedValue({ toAnswer: 0, items: [] });
     mocks.answerWork.mockResolvedValue({});
     mocks.topic.mockResolvedValue({ topics: [], removed: [] });
+    const found = { id: "claude-code", name: "Claude Code", kind: "code", reach: "here", found: true, connected: false };
+    mocks.yourAgents.mockResolvedValue({ choices: { code: "", else: "" }, agents: [found] });
+    mocks.connectHere.mockResolvedValue({ choices: { code: "", else: "" }, agents: [{ ...found, connected: true }] });
+    mocks.setAgent.mockResolvedValue({ choices: { code: "claude-code", else: "" }, agents: [{ ...found, connected: true }] });
     mocks.plan.mockResolvedValue({ planId: "p", choices: {}, requiredBytes: 0, items: [{ id: "m" }], totalBytes: 1e9, freeBytes: 5e10, enoughSpace: true, modelsFolder: "" });
 });
 
@@ -195,6 +210,23 @@ describe("step 3 day one", () => {
         render(<SetupV3 onFinish={vi.fn()} onSkip={vi.fn()} />);
         expect(await screen.findByText(/Nothing to offer yet/)).toBeTruthy();
         expect(screen.getByLabelText("What are you working on, or following?")).toBeTruthy();
+    });
+});
+
+describe("step 4 your agents", () => {
+    it("connects an agent found here with one click and its confirmation, and gives it the job its kind suggests", async () => {
+        mocks.load.mockResolvedValue("agents");
+        render(<SetupV3 onFinish={vi.fn()} onSkip={vi.fn()} />);
+        const row = await screen.findByText("Claude Code");
+        const item = row.closest("[data-connect-here]") as HTMLElement;
+        fireEvent.click(item.querySelector("button") as HTMLElement);
+        expect(mocks.connectHere).not.toHaveBeenCalled();
+        await waitFor(() => expect(item.querySelector("[data-connect-here-yes]")).toBeTruthy());
+        fireEvent.click(item.querySelector("[data-connect-here-yes]") as HTMLElement);
+        await waitFor(() => expect(mocks.connectHere).toHaveBeenCalledWith("claude-code"));
+        await waitFor(() => expect(mocks.setAgent).toHaveBeenCalledWith("code", "claude-code"));
+        expect(await screen.findByTestId("setup-v3-job-claude-code")).toBeTruthy();
+        expect(screen.getByText(/Join my Isoform/)).toBeTruthy();
     });
 });
 

@@ -33,6 +33,39 @@ export function ConnectAgentDialog({ open, onOpenChange, agents, onConnected }: 
     onConnected: () => void;
 }) {
     const { t } = useTranslation("app");
+    const [waiting, setWaiting] = useState(false);
+    const close = (next: boolean) => {
+        if (!next && waiting) void CancelAgentJoin();
+        onOpenChange(next);
+    };
+    return (
+        <Dialog open={open} onOpenChange={close}>
+            <DialogContent className="w-[560px]" data-connect-agent>
+                <DialogHeader className="flex-col items-start gap-1.5">
+                    <DialogTitle>{t("agents.connectSheet.title")}</DialogTitle>
+                    <DialogDescription>{t("agents.connectSheet.body")}</DialogDescription>
+                </DialogHeader>
+                <div className="flex flex-col gap-5 overflow-y-auto px-6 pt-4 pb-6">
+                    <ConnectAgentPanel active={open} agents={agents} onConnected={onConnected} onWaitingChange={setWaiting} />
+                </div>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+/**
+ * The body of Connect an agent, shared by the sheet and setup's step 4
+ * (computer setup v1.0.0 rule 7): the agents found on this computer with
+ * Connect, and the one message for any other agent. `active` starts a join
+ * link and reads it while waiting.
+ */
+export function ConnectAgentPanel({ active, agents, onConnected, onWaitingChange }: {
+    active: boolean;
+    agents: YourAgents | null;
+    onConnected: (agentId: string) => void;
+    onWaitingChange?: (waiting: boolean) => void;
+}) {
+    const { t } = useTranslation("app");
     const [start, setStart] = useState<AgentJoinStart | null>(null);
     const [join, setJoin] = useState<AgentJoin | null>(null);
     const [startFailed, setStartFailed] = useState(false);
@@ -58,18 +91,19 @@ export function ConnectAgentDialog({ open, onOpenChange, agents, onConnected }: 
     }, []);
 
     useEffect(() => {
-        if (!open) return;
+        if (!active) return;
         announced.current = null;
         setPasteInto(null);
         setAsking(null);
         setHereFailed(null);
         setConnectedHere(new Set());
         void makeLink();
-    }, [open, makeLink]);
+    }, [active, makeLink]);
 
     const waiting = join?.state === "waiting" || join?.state === "requested";
+    useEffect(() => onWaitingChange?.(waiting), [waiting, onWaitingChange]);
     useEffect(() => {
-        if (!open || !waiting) return;
+        if (!active || !waiting) return;
         // Read only while the window is looked at (lib/app-activity.ts).
         return activeInterval(() => {
             void GetAgentJoin().then((current) => {
@@ -77,19 +111,14 @@ export function ConnectAgentDialog({ open, onOpenChange, agents, onConnected }: 
                 setJoin((previous) => current ?? (previous?.state === "allowed" ? previous : { state: "expired", expiresAt: previous?.expiresAt ?? 0 }));
             }).catch(() => undefined);
         }, JOIN_POLL_MS);
-    }, [open, waiting]);
+    }, [active, waiting]);
 
     useEffect(() => {
         if (join?.state === "allowed" && join.agentId && announced.current !== join.agentId) {
             announced.current = join.agentId;
-            onConnected();
+            onConnected(join.agentId);
         }
     }, [join, onConnected]);
-
-    const close = (next: boolean) => {
-        if (!next && waiting) void CancelAgentJoin();
-        onOpenChange(next);
-    };
 
     const copy = async () => {
         if (!start) return;
@@ -122,20 +151,14 @@ export function ConnectAgentDialog({ open, onOpenChange, agents, onConnected }: 
             await ConnectAgentHere(id);
             setConnectedHere((prev) => new Set(prev).add(id));
             setHereFailed(null);
-            onConnected();
+            onConnected(id);
         } catch {
             setHereFailed(id);
         }
     };
 
     return (
-        <Dialog open={open} onOpenChange={close}>
-            <DialogContent className="w-[560px]" data-connect-agent>
-                <DialogHeader className="flex-col items-start gap-1.5">
-                    <DialogTitle>{t("agents.connectSheet.title")}</DialogTitle>
-                    <DialogDescription>{t("agents.connectSheet.body")}</DialogDescription>
-                </DialogHeader>
-                <div className="flex flex-col gap-5 overflow-y-auto px-6 pt-4 pb-6">
+        <>
                     {here.length > 0 && (
                         <section className="flex flex-col gap-2" aria-label={t("agents.connectSheet.onThis")}>
                             <h3 className={sectionLabel}>{t("agents.connectSheet.onThis")}</h3>
@@ -197,9 +220,7 @@ export function ConnectAgentDialog({ open, onOpenChange, agents, onConnected }: 
                     </section>
 
                     {join && <JoinState join={join} onAnswer={(allow) => void answer(allow)} onNewLink={() => void makeLink()} />}
-                </div>
-            </DialogContent>
-        </Dialog>
+        </>
     );
 }
 
