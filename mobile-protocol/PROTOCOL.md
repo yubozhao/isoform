@@ -4101,6 +4101,28 @@ the person's note); and chat corrections. It is the most valuable data Isoform h
   front of the person, answers that stand (an undone one counts as `undone`), Yes and Edit as accepted.
   A brief's items acted on are `bySource.brief.accepted`.
 
+### 26.4 Your agents asking each other (phone-agent v1.2.0 rules 1 and 2; 2026-11-16)
+
+One agent asks another for something only the person can allow. The request is an item in Your work:
+
+```json
+{"id":"request:<id>","kind":"request","row":"request","state":"open","source":"agent",
+ "ref":{"handoffId":"<optional>"},
+ "first":[{"text":"Codex asks Claude","key":"agent_asks"},{"key":"clock","at":"<RFC 3339>"}],
+ "noticed":"<the sentence>","work":{"title":"<the sentence>","text":"<what would move>"},
+ "yes":{"does":"allow","line":"Yes lets Claude do it."},"reasons":[],
+ "request":{"from":{"agentId":"codex","name":"Codex"},"to":{"agentId":"claude","name":"Claude"},"moves":"<what would move>"},
+ "expiresAt":"<RFC 3339>","createdAt":"<RFC 3339>"}
+```
+
+- Yes and No only, through `POST /work/{id}/answer`. Edit, Not mine, a reason, `send` or `agentId` are `400`.
+  An answer can't be undone, since the asking agent may already have read it. It counts in `toAnswer` and
+  never notifies.
+- It waits a day (`expiresAt`), then ends by itself: the same item, `state` `answered`, with
+  `answer {"action":"ran_out","at","line":"Codex's request to Claude ran out · nothing moved"}`, for the
+  Done today line. Answered and ran-out requests leave the list a day later.
+- The agent tools `ask_agent` and `get_answer` create a request and read its answer on the computer.
+
 ## 27. Your agents (v1, 2026-11-15)
 
 Design: `docs/handoff-2026-11-15/handoff-2026-11-15-1649-phone-agent-v1.1.0.md` §1 and §4 (B4).

@@ -247,6 +247,9 @@ func (a *App) answerWork(ctx context.Context, id string, input WorkAnswerInput, 
 		if err != nil {
 			return item, err
 		}
+		if item.Kind == workKindRequest {
+			record.UndoUntil = ""
+		}
 		record.TaskID, record.HandoffID = sent.TaskID, sent.HandoffID
 		if sent.AgentID != "" {
 			record.AgentID = sent.AgentID
@@ -356,6 +359,25 @@ type workSent struct {
 
 // dispatchWorkAnswer does what the answer means at the item's source.
 func (a *App) dispatchWorkAnswer(ctx context.Context, item WorkItem, input WorkAnswerInput, surface string) (workSent, error) {
+	if item.Kind == workKindRequest {
+		// Yes or No, nothing else (phone-agent v1.2.0 rule 1); the asking
+		// agent reads it through get_answer.
+		if (input.Action != workActionYes && input.Action != workActionNo) || input.Reason != "" || input.After != "" ||
+			len(input.Removed) > 0 || input.AgentID != "" {
+			return workSent{}, errWorkAnswerInvalid
+		}
+		answer := agentRequestYes
+		if input.Action == workActionNo {
+			answer = agentRequestNo
+		}
+		switch err := a.answerAgentRequest(strings.TrimPrefix(item.ID, "request:"), answer, time.Now()); {
+		case errors.Is(err, errAgentRequestOver):
+			return workSent{}, errWorkItemChanged
+		case err != nil:
+			return workSent{}, err
+		}
+		return workSent{}, nil
+	}
 	switch item.Source {
 	case workSourceTopic:
 		verdict := input.Action
@@ -609,6 +631,10 @@ func (a *App) undoWorkAnswer(item WorkItem, answers []AnswerRecord, now time.Tim
 	if until, err := time.Parse(time.RFC3339, record.UndoUntil); err == nil && now.After(until) {
 		return AnswerRecord{}, errWorkUndoClosed
 	}
+	if item.Kind == workKindRequest {
+		// The asking agent may already have read the answer.
+		return AnswerRecord{}, errWorkUndoClosed
+	}
 	switch record.Action {
 	case workActionYes, workActionEdit:
 		// The work left: a local task, or an agent's inbox, which keeps it.
@@ -678,6 +704,18 @@ func (a *App) applyWorkAnswers(items []WorkItem) []WorkItem {
 			item.Answer, item.State = answer, workStateAnswered
 			if record.Action == workActionYes {
 				answer.Line = item.Work.Title + ": kept with the meeting"
+			}
+		case workSourceAgent:
+			if item.Kind == workKindRequest && item.State == workStateOpen {
+				// A request is Yes or No; the agent reads the answer.
+				item.Answer, item.State = answer, workStateAnswered
+				if item.Request != nil {
+					verb := "allowed"
+					if record.Action == workActionNo {
+						verb = "declined"
+					}
+					answer.Line = item.Request.From.Name + "'s request to " + item.Request.To.Name + ": " + verb
+				}
 			}
 		case workSourceBrief:
 			item.Answer = answer
