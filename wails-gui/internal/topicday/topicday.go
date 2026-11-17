@@ -98,6 +98,8 @@ type Copy struct {
 	Day     string  `json:"day"` // local date it was built for, YYYY-MM-DD
 	BuiltAt int64   `json:"builtAt"`
 	Topics  []Topic `json:"topics"`
+	// Rested counts the topics whose proposal rested, by why (Rest).
+	Rested map[string]int `json:"rested,omitempty"`
 }
 
 // Choices are the person's own choices a build and a send honor.
@@ -163,7 +165,9 @@ type Feedback struct {
 	ProposalID    string `json:"proposalId"`
 	ProposalTitle string `json:"proposalTitle"`
 	Verdict       string `json:"verdict"`
-	At            int64  `json:"at"`
+	// Reason is the No's reason, when it carried one (Reason*).
+	Reason string `json:"reason,omitempty"`
+	At     int64  `json:"at"`
 }
 
 // ProposalDraft is what a Proposer returns for a topic.
@@ -174,7 +178,8 @@ type ProposalDraft struct {
 }
 
 // Proposer proposes the next piece of work for each topic, keyed by topic ID.
-// It gets the feedback so far, so it does not propose declined work again.
+// It gets the standing feedback so far, so it does not propose declined work
+// again. Topics whose proposal rests (Rest) are not asked about.
 type Proposer func(ctx context.Context, topics []Topic, feedback []Feedback) (map[string]ProposalDraft, error)
 
 // ErrClosedEyes is returned by Build while Closed Eyes is on: no copy is made.
@@ -214,6 +219,8 @@ func Build(ctx context.Context, day string, now time.Time, candidates []Candidat
 	if len(topics) > MaxTopics {
 		topics = topics[:MaxTopics]
 	}
+	standing := Standing(feedback)
+	rested := map[string]int{}
 	kept := map[string]*Proposal{}
 	if previous != nil {
 		for _, t := range previous.Topics {
@@ -229,10 +236,14 @@ func Build(ctx context.Context, day string, now time.Time, candidates []Candidat
 			topics[i].Proposal = p
 			continue
 		}
+		if why := Rest(topics[i], standing, now); why != "" {
+			rested[why]++
+			continue
+		}
 		ask = append(ask, topics[i])
 	}
 	if propose != nil && len(ask) > 0 {
-		drafts, err := propose(ctx, ask, feedback)
+		drafts, err := propose(ctx, ask, standing)
 		if err == nil {
 			for i := range topics {
 				if topics[i].Proposal != nil {
@@ -247,5 +258,9 @@ func Build(ctx context.Context, day string, now time.Time, candidates []Candidat
 			}
 		}
 	}
-	return Copy{Version: CopyVersion, Day: day, BuiltAt: now.UnixMilli(), Topics: topics}, nil
+	built := Copy{Version: CopyVersion, Day: day, BuiltAt: now.UnixMilli(), Topics: topics}
+	if len(rested) > 0 {
+		built.Rested = rested
+	}
+	return built, nil
 }

@@ -23,10 +23,12 @@ var errDailyTopicNotAllowed = errors.New("this topic is no longer shown")
 
 // AnswerDailyTopicProposal records yes, no or "not mine" for a proposal.
 func (a *App) AnswerDailyTopicProposal(topicID, proposalID, verdict string) (DailyTopicView, error) {
-	return a.answerDailyTopicProposal(context.Background(), topicID, proposalID, verdict)
+	return a.answerDailyTopicProposal(context.Background(), topicID, proposalID, verdict, "")
 }
 
-func (a *App) answerDailyTopicProposal(ctx context.Context, topicID, proposalID, verdict string) (DailyTopicView, error) {
+// answerDailyTopicProposal records the answer; reason is a No's reason from
+// Your work, kept with the feedback the next build reads.
+func (a *App) answerDailyTopicProposal(ctx context.Context, topicID, proposalID, verdict, reason string) (DailyTopicView, error) {
 	switch verdict {
 	case topicday.VerdictYes, topicday.VerdictNo, topicday.VerdictNotMine:
 	default:
@@ -79,8 +81,11 @@ func (a *App) answerDailyTopicProposal(ctx context.Context, topicID, proposalID,
 	if err != nil {
 		return DailyTopicView{}, err
 	}
+	if verdict != topicday.VerdictNo {
+		reason = ""
+	}
 	if err := store.AppendFeedback(topicday.Feedback{TopicID: topic.ID, TopicName: topic.Name, ProposalID: proposalID,
-		ProposalTitle: proposal.Title, Verdict: verdict, At: now}); err != nil {
+		ProposalTitle: proposal.Title, Verdict: verdict, Reason: reason, At: now}); err != nil {
 		return DailyTopicView{}, err
 	}
 	noteProposalAnswered(judgmentTopic, proposalID, verdict == topicday.VerdictYes)

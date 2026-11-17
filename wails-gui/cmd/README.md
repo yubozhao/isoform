@@ -23,6 +23,17 @@ go run ./cmd/ax-tree-dump --delay 5 > /tmp/slack-axtree.json
 
 Output is a JSON object containing timestamp, bundle/app info, raw AX tree (unless `--no-tree`), flat text fallback, parser result, and a dispatch summary showing which parser matched and how many messages/items were extracted.
 
+### topic-proposal-replay
+
+Measures the daily topics' proposals on a data folder: how many were answered, how many taken, why the rest were turned down, and how many of those the build's rest rules (`internal/topicday/rest.go`) would have left out. Read-only; prints counts only, never a title, a name, an id or a path.
+
+```
+go run ./cmd/topic-proposal-replay                    # ~/.isoform-agent
+go run ./cmd/topic-proposal-replay -data /path/to/data-root
+```
+
+Output: `answered`, `yes`, `no`, `not_mine` and `accept_before`; the No reasons; the answers each rule would have rested; and `accept_after` over the proposals the rules would still have made.
+
 ### pii-test
 
 End-to-end test of the PII detection and masking pipeline. Takes a desktop screenshot (JPEG snapshot), runs OCR, detects PII via GLiNER and regex fallback, merges detections, and produces a masked output image.

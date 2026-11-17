@@ -430,7 +430,7 @@ func (a *App) dispatchWorkAnswer(ctx context.Context, item WorkItem, input WorkA
 				return a.handOffTopicProposal(ctx, item, agent, surface)
 			}
 		}
-		view, err := a.answerDailyTopicProposal(ctx, item.Ref.TopicID, item.Ref.ProposalID, verdict)
+		view, err := a.answerDailyTopicProposal(ctx, item.Ref.TopicID, item.Ref.ProposalID, verdict, input.Reason)
 		switch {
 		case errors.Is(err, errDailyTopicAnswered):
 			return workSent{}, errWorkItemChanged
@@ -714,10 +714,16 @@ func (a *App) reopenDailyTopicProposal(topicID, proposalID string) error {
 		p.State, p.AnsweredAt = topicday.StateProposed, 0
 		return nil
 	})
-	if err == nil {
-		a.emitBrowserEvent("topics-daily:updated", map[string]any{"topicId": topicID})
+	if err != nil {
+		return err
 	}
-	return err
+	// The answer no longer counts: the next build and "not mine" read only
+	// the answers still standing.
+	if err := store.AppendFeedback(topicday.Feedback{TopicID: topicID, ProposalID: proposalID, Verdict: topicday.VerdictUndo, At: time.Now().UnixMilli()}); err != nil {
+		log.Printf("[work] the undo was not kept for the next build: %v", err)
+	}
+	a.emitBrowserEvent("topics-daily:updated", map[string]any{"topicId": topicID})
+	return nil
 }
 
 func workFind(list WorkList, id string) (WorkItem, bool) {
