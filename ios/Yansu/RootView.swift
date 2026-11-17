@@ -50,6 +50,9 @@ struct RootView: View {
                 Task { await unlock() }
             }
         }
+        .sheet(item: $router.joinCheck) { route in
+            AgentJoinSheet(api: environment.hub, joinID: route.joinId)
+        }
         .sheet(item: $router.sheet, onDismiss: {
             if router.sheet == nil { environment.pairing.cancel() }
         }) { sheet in

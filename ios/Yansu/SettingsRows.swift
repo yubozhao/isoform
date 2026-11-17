@@ -106,7 +106,12 @@ struct YourAgentsView: View {
     let hub: AgentsHubAPI
     /// The hand-off log, when the computer serves it (PROTOCOL.md 27.2).
     var sentHub: AgentsHubAPI? = nil
+    /// Connect an agent from the phone, when the computer takes joins (PROTOCOL.md 27.4).
+    var joinAPI: AgentJoinAPI? = nil
     @State private var agents: PhoneAgents?
+    @State private var joining: JoinTarget?
+
+    struct JoinTarget: Identifiable { let agent: PhoneAgent?; var id: String { agent?.id ?? "new" } }
     @State private var failed = false
     @Environment(\.locale) private var locale
 
@@ -129,7 +134,7 @@ struct YourAgentsView: View {
                             VStack(spacing: 0) {
                                 ForEach(Array(others.enumerated()), id: \.element.id) { index, agent in
                                     if index > 0 { Divider().overlay(YansuTheme.borderSubtle) }
-                                    agentRow(agent, title: agent.name)
+                                    otherRow(agent)
                                 }
                             }
                             .padding(.horizontal, 16)
@@ -138,9 +143,15 @@ struct YourAgentsView: View {
                     }
                     VStack(alignment: .leading, spacing: 8) {
                         SectionLabel(title: String(localized: "agents.connectTitle")).padding(.horizontal, 4)
-                        Text("agents.connectHint").font(.footnote).foregroundStyle(YansuTheme.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(.horizontal, 4)
+                        if joinAPI != nil {
+                            Button(String(localized: "agents.connectTitle")) { joining = JoinTarget(agent: nil) }
+                                .buttonStyle(YansuSecondaryButtonStyle())
+                                .accessibilityIdentifier("agents.connect")
+                        } else {
+                            Text("agents.connectHint").font(.footnote).foregroundStyle(YansuTheme.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.horizontal, 4)
+                        }
                     }
                     if let sentHub {
                         NavigationLink {
@@ -176,6 +187,13 @@ struct YourAgentsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task {
             do { agents = try await hub.phoneAgents() } catch { failed = true }
+        }
+        .sheet(item: $joining) { target in
+            if let joinAPI {
+                AgentJoinSheet(api: joinAPI, reconnect: target.agent) {
+                    Task { if let read = try? await hub.phoneAgents() { agents = read } }
+                }
+            }
         }
         .accessibilityIdentifier("settings.yourAgents")
     }
@@ -227,6 +245,22 @@ struct YourAgentsView: View {
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier(agent.map { "agents.row.\($0.id)" } ?? "agents.row.none")
+    }
+
+    /// An agent that isn't one of the two jobs. Disconnected ones fade, with Connect again, for 30 days (rule 14).
+    @ViewBuilder private func otherRow(_ agent: PhoneAgent) -> some View {
+        if agent.isDisconnected, joinAPI != nil {
+            HStack(spacing: 10) {
+                agentRow(agent, title: agent.name).opacity(0.55)
+                Button(String(localized: "agents.connectAgain")) { joining = JoinTarget(agent: agent) }
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(YansuTheme.accent)
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("agents.connectAgain.\(agent.id)")
+            }
+        } else {
+            agentRow(agent, title: agent.name).opacity(agent.isDisconnected ? 0.55 : 1)
+        }
     }
 
     private func choose(_ chosen: PhoneAgent) async {

@@ -53,8 +53,86 @@ func (a *App) produceWorkFinished(entry handoff.Entry) {
 		SubjectID: entry.ID,
 		DedupeKey: engagement.DedupeKey(engagement.KindWorkFinished, entry.ID),
 		Stakes:    engagementWorkFinishedStakes,
-		Params:    map[string]string{"title": engagementTitle(entry.Title)},
+		Params:    a.workFinishedParams(entry, time.Now()),
 	})
+}
+
+// The agent and the one sentence finished work carries to a phone that
+// reads Your work (phone-agent v1.2.0 rule 10). Both pass the moment's
+// privacy filter (sanitizeEngagementMoment) like every param.
+const (
+	engagementAgentParam    = "agent"
+	engagementSentenceParam = "sentence"
+	engagementSentenceMax   = 200
+)
+
+func (a *App) workFinishedParams(entry handoff.Entry, now time.Time) map[string]string {
+	params := map[string]string{"title": engagementTitle(entry.Title)}
+	if a == nil {
+		return params
+	}
+	agentID := ""
+	if handoffs, err := a.GetWorkOnItHandoffs(); err == nil {
+		for _, h := range handoffs {
+			// A local task's hand-off shares the task's id.
+			if h.ID == entry.ID {
+				agentID = h.AgentID
+				break
+			}
+		}
+	}
+	params[engagementAgentParam] = a.workAgentName(agentID)
+	if sentence := a.workFinishedSentence(entry, now); sentence != "" {
+		params[engagementSentenceParam] = sentence
+	}
+	return params
+}
+
+// workFinishedSentence is the first sentence of the work's result, or ""
+// when any of the run fell in a Closed Eyes period, Closed Eyes is on now,
+// or the pause log can't be read (it fails closed).
+func (a *App) workFinishedSentence(entry handoff.Entry, now time.Time) string {
+	if a.IsClosedEyesModeEnabled() {
+		return ""
+	}
+	pauses, err := a.observationPauses()
+	if err != nil {
+		return ""
+	}
+	start := entry.AttemptStartedAt
+	if start == 0 {
+		start = entry.CreatedAt
+	}
+	for _, p := range pauses {
+		end := p.End
+		if end == 0 {
+			end = now.UnixMilli()
+		}
+		if end > start && p.Start <= now.UnixMilli() {
+			return ""
+		}
+	}
+	_, summary := dailyTopicTaskState(entry)
+	return engagementFirstSentence(summary)
+}
+
+// engagementFirstSentence is a text's first sentence, at most
+// engagementSentenceMax runes.
+func engagementFirstSentence(text string) string {
+	if line, _, found := strings.Cut(strings.TrimSpace(text), "\n"); found {
+		text = line
+	}
+	text = strings.Join(strings.Fields(text), " ")
+	for i, r := range text {
+		if r == '。' || ((r == '.' || r == '!' || r == '?') && (i+1 == len(text) || text[i+1] == ' ')) {
+			text = text[:i+len(string(r))]
+			break
+		}
+	}
+	if runes := []rune(text); len(runes) > engagementSentenceMax {
+		return strings.TrimSpace(string(runes[:engagementSentenceMax])) + "..."
+	}
+	return text
 }
 
 // produceWorkBlocked submits work_blocked for a Handoff that became blocked. The

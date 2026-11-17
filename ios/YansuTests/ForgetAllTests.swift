@@ -168,3 +168,42 @@ final class NoticesReadTests: XCTestCase {
         XCTAssertEqual(marked, [["brief:b2"]])
     }
 }
+
+// An agent joining from the phone (phone-agent v1.2.0 §4 and rule 14; PROTOCOL.md 27.4).
+final class AgentJoinTests: XCTestCase {
+    func testJoinDecodesEachState() throws {
+        let start = try JSONDecoder().decode(AgentJoinStart.self, from: Data(#"{"joinId":"j1","message":"Connect: https://x","link":"https://x","expiresAt":1763280000000,"local":false}"#.utf8))
+        XCTAssertEqual(start.joinId, "j1")
+        let requested = try JSONDecoder().decode(AgentJoinState.self, from: Data(#"{"joinId":"j1","state":"requested","expiresAt":1763280000000,"agentName":"Claude Code","from":"Claude Code on this Mac","toOpen":"Only what each hand-off sends","code":"0417"}"#.utf8))
+        XCTAssertFalse(requested.isOver)
+        XCTAssertEqual(requested.code, "0417", "leading zeros stay")
+        XCTAssertEqual(AgentJoinWords.spaced("0417"), "0 4 1 7")
+        XCTAssertEqual(AgentJoinWords.fromLine(requested), "From Claude Code on this Mac · to open Only what each hand-off sends")
+        XCTAssertTrue(AgentJoinState(joinId: "j1", state: "denied").isOver)
+        XCTAssertEqual(AgentJoinPath.join("j1"), "/agents/join/j1")
+        XCTAssertNil(AgentJoinPath.join("../x"))
+        XCTAssertEqual(HubRoute.agentJoin(path: "/agents/join/j1").method, "GET")
+        XCTAssertEqual(AgentJoinConflict.code(in: #"{"ok":false,"error":"conflict","data":{"code":"no_address"}}"#), "no_address")
+        XCTAssertNil(AgentJoinConflict.code(in: "not json"))
+    }
+
+    func testADisconnectedAgentFadesWithConnectAgainWords() {
+        let gone = PhoneAgent(id: "cursor", name: "Cursor", kind: "code", reach: "on_computer", disconnectedAt: 1_763_000_000_000)
+        XCTAssertTrue(gone.isDisconnected)
+        XCTAssertEqual(AgentRowWords.state(gone), "Disconnected")
+        let back = PhoneAgent(id: "cursor", name: "Cursor", kind: "code", reach: "connected_computer", connected: true,
+                              disconnectedAt: 1_763_000_000_000)
+        XCTAssertFalse(back.isDisconnected, "connected again clears it")
+        let joined = PhoneAgent(id: "ag_1", name: "Ana's Helper", kind: "else", reach: "disconnected", connected: false,
+                                disconnectedAt: 1_763_000_000_000)
+        XCTAssertEqual(WhoDoesYourWork.reachLine(joined), "Disconnected")
+        XCTAssertEqual(AgentRowWords.state(joined), "Disconnected")
+    }
+
+    @MainActor
+    func testTheJoinNoticeOpensItsCodeSheet() {
+        let router = NotificationRouter()
+        router.openTodayNotice(kind: "agent_join", id: "join-7")
+        XCTAssertEqual(router.joinCheck?.joinId, "join-7")
+    }
+}

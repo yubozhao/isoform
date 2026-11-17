@@ -41,6 +41,8 @@ final class NotificationRouter: ObservableObject {
 
     /// The sidebar opens on every tab root; Pairing from a button or an Isoform or legacy pairing link.
     @Published var sheet: Sheet?
+    /// "{agent} is asking to join": the code sheet for that join (phone-agent v1.2.0 rule 11).
+    @Published var joinCheck: AgentJoinRoute?
     private(set) var startsPairingWithScanner = false
     @Published private(set) var briefPushes = 0
     @Published private(set) var pendingMomentID: String?
@@ -103,6 +105,9 @@ final class NotificationRouter: ObservableObject {
             selectedTab = .today
         case "chat":
             noticeOpened(.chat(momentID: id))
+        case "agent_join":
+            sheet = nil
+            joinCheck = AgentJoinRoute(joinId: id)
         default:
             briefPushReceived()
         }

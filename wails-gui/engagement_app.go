@@ -196,6 +196,11 @@ func (a *App) engagementPush(_ context.Context, row storage.EngagementMomentRow,
 		// (phone-map rule 16): Not needed on prep, Useful on finished work.
 		notice.WorkItemID = item.ID
 		notice.Actions = append(append([]mobileNoticeAction{}, notice.Actions...), workNoticeAction(m.Kind))
+		if text.PhoneTitle != "" {
+			// Finished work reads "Back from {agent}" with its one sentence;
+			// the phone's own Show Previews decides what the lock screen shows.
+			notice.Title, notice.Body = text.PhoneTitle, text.PhoneBody
+		}
 		return bridge.publishMobileNotice(notice, answerable)
 	}
 	return bridge.publishMobileNotice(notice, devices)
