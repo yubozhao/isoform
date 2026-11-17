@@ -580,6 +580,14 @@ describe('App Activity/Library navigation', () => {
         expect(fixture.pages.PeoplePage.initialSelection).toBeUndefined();
     });
 
+    it("opens Today from the menu bar popover's Next row", async () => {
+        await mountApp();
+        const today = screen.getByTestId('TodayPage');
+        expect(today.closest('[data-retained-page]')).toHaveStyle({ display: 'none' });
+        await emit('menubar:open-today', 'need-1');
+        expect(today.closest('[data-retained-page]')).not.toHaveStyle({ display: 'none' });
+    });
+
     it('times the Agents place under the name its shown page reports', async () => {
         await mountApp();
         pageSwitch.begun.length = 0;

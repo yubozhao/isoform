@@ -1062,6 +1062,11 @@ func (s *engagementService) render(spec engagement.KindSpec, m engagement.Moment
 		Actions:  actions,
 		Category: engagementCategory(spec.Kind),
 	}
+	if m.Kind == engagement.KindBriefReady && strings.TrimSpace(m.Params[briefTroubleParam]) != "" {
+		// The brief's notification carries what it's missing (computer-
+		// trouble v1.0.0 rule 5): "… · Isoform hasn't seen your screen since 2:10 PM."
+		text.Title = strings.TrimSpace(text.Title) + " · " + strings.TrimSpace(m.Params[briefTroubleParam])
+	}
 	if m.Kind == engagement.KindFirstWeek {
 		text.Title = engagement.FirstWeekText(m.Params["stage"], m.Params["first_brief"], m.Params["history"], m.Params["name"], lang)
 	}

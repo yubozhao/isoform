@@ -40,9 +40,13 @@ type MobileTodayV1 struct {
 	// AssistantSignOut is additive (R75): present only when the chosen
 	// assistant is confirmed signed out on the computer.
 	AssistantSignOut *mobileTodayAssistantSignOut `json:"assistantSignOut,omitempty"`
-	KeepAwake        bool                         `json:"keepAwake"`
-	InstantPush      bool                         `json:"instantPush"`
-	BriefSchedule    []mobileBriefSlotTime        `json:"briefSchedule"`
+	// Trouble is the computer's trouble the phone says under its date
+	// (computer-trouble v1.0.0 rule 8): the screen not seen and the assistant
+	// signed out, first by rank. Absent when there is none.
+	Trouble       []mobileTodayTrouble  `json:"trouble,omitempty"`
+	KeepAwake     bool                  `json:"keepAwake"`
+	InstantPush   bool                  `json:"instantPush"`
+	BriefSchedule []mobileBriefSlotTime `json:"briefSchedule"`
 
 	// WorkVersion changes when Your work changes (section 26); the phone
 	// reads GET /work again then.
@@ -419,6 +423,7 @@ func (bridge *mobileBridge) buildToday() (MobileTodayV1, error) {
 	}
 	view.NoticePacing = mobileTodayPacing(app.engagement, now)
 	view.AssistantSignOut = app.mobileTodaySignOut(routeOrder(loadAIProviderConfig()))
+	view.Trouble = mobileTodayTroubleLines(app.menuBarTrouble(time.Now()))
 	seen := map[string]bool{}
 	if app.storeForMobile() != nil {
 		cursor := ""
@@ -987,4 +992,24 @@ func (bridge *mobileBridge) todayLoop() {
 			lastBuild = time.Now()
 		}
 	}
+}
+
+// mobileTodayTrouble is one trouble line for the phone: kind, since when, and
+// for a sign-out the assistant. The phone words it, with no button.
+type mobileTodayTrouble struct {
+	Kind      string `json:"kind"`
+	Since     string `json:"since"`
+	Assistant string `json:"assistant,omitempty"`
+}
+
+// mobileTodayTroubleLines keeps the two kinds the phone shows (rule 8).
+func mobileTodayTroubleLines(lines []TroubleLine) []mobileTodayTrouble {
+	var out []mobileTodayTrouble
+	for _, line := range lines {
+		switch line.Kind {
+		case troubleScreen, troubleSignedOut:
+			out = append(out, mobileTodayTrouble{Kind: line.Kind, Since: line.Since, Assistant: line.Assistant})
+		}
+	}
+	return out
 }

@@ -62,7 +62,7 @@ func (a *App) noteMenuBarEvent(event string) {
 		menuBarPresentation.privacyEpoch = epoch
 	case "sensitive-apps:updated", closedEyesModeChangedEvent, "background-listening:changed", "permissions:changed":
 		menuBarPresentation.privacyEpoch = mobileBriefPrivacyEpoch.Load()
-	case mainChatWaitingChangedEvent, mainChatWaitingItemsUpdated:
+	case mainChatWaitingChangedEvent, mainChatWaitingItemsUpdated, workUpdatedEvent:
 		// The waiting set changed: the next status tick reads the waiting
 		// list again (from the waiting snapshot). Nothing is withdrawn. A
 		// new chat row alone no longer re-reads it.
@@ -138,6 +138,7 @@ func (a *App) presentMenuBarView() bool {
 	// What the native side shows on the next click.
 	menuBarPresentation.presentedIDs = append([]string(nil), view.WaitingIDs...)
 	view.Icon = menuBarPresentation.attention.icon(view.Paused, menuBarPresentation.open, view.WaitingIDs)
+	view.Icon.Trouble = view.SignOut != nil
 	data, _ := json.Marshal(view)
 	c := C.CString(string(data))
 	defer C.free(unsafe.Pointer(c))
@@ -327,6 +328,18 @@ func (a *App) runMenuBarCommand(command string) error {
 		return a.PauseObservationFor(60)
 	case "pause15":
 		return a.PauseObservationFor(15)
+	case "closedEyes":
+		// The popover's first control (redesign v1.0.0 rule 27): eyes close
+		// until the person opens them, on every device.
+		menuBarToggleActivityMu.Lock()
+		defer menuBarToggleActivityMu.Unlock()
+		return a.SetClosedEyesModeEnabled(true)
+	case "openScreenSettings":
+		// Trouble's one fix: the exact Screen Recording pane.
+		return a.OpenTroubleFix(troubleScreen)
+	case "quickChat":
+		// The same Quick chat as its shortcut, never the old panel session.
+		go a.openQuickChat("")
 	case "resume":
 		menuBarToggleActivityMu.Lock()
 		defer menuBarToggleActivityMu.Unlock()
@@ -360,6 +373,19 @@ func (a *App) runMenuBarCommand(command string) error {
 				a.emitBrowserEvent("notification:clicked", "today:brief:"+id)
 			}
 		}
+		if id, ok := strings.CutPrefix(command, "workYes:"); ok {
+			return a.answerWorkFromMenuBar(id, workActionYes)
+		}
+		if id, ok := strings.CutPrefix(command, "workNo:"); ok {
+			return a.answerWorkFromMenuBar(id, workActionNo)
+		}
+		if strings.HasPrefix(command, "today:") {
+			// Next's Open Today: Today, on that item, where its answers and
+			// any hand-off sheet are (computer-settings v1.0.1 rule 8).
+			a.showFromMenuBar()
+			a.emitBrowserEvent("menubar:open-today", strings.TrimPrefix(command, "today:"))
+			return nil
+		}
 		if strings.HasPrefix(command, "waiting:"+menuBarNeedNoChat) {
 			a.showFromMenuBar()
 			a.emitBrowserEvent("menubar:needs")
@@ -384,5 +410,30 @@ func (a *App) runMenuBarCommand(command string) error {
 			a.emitBrowserEvent("menubar:waiting", overview.SessionID, id)
 		}
 	}
+	return nil
+}
+
+// answerWorkFromMenuBar answers Next from the popover. A Yes that hands work
+// to an agent never goes from here: it opens Today on the item, where the
+// hand-off sheet is (computer-settings v1.0.1 rule 8). An item that was
+// answered or changed elsewhere refreshes the popover instead of failing.
+func (a *App) answerWorkFromMenuBar(id, action string) error {
+	// Answer only an item the current list still has open, whose Yes doesn't
+	// hand work to an agent. Anything else (the list can't be read, the item
+	// is gone, or Yes goes to an agent) opens Today on it: nothing is ever
+	// sent from the popover without the sheet.
+	list, err := a.GetWorkList()
+	if err != nil || !menuBarAnswersHere(list, id, action) {
+		a.showFromMenuBar()
+		a.emitBrowserEvent("menubar:open-today", id)
+		return nil
+	}
+	if _, err := a.AnswerWork(id, WorkAnswerInput{Action: action}); err != nil {
+		log.Printf("[menubar] action=work-%s result=failed: %v", action, err)
+	}
+	menuBarPresentation.Lock()
+	menuBarPresentation.waiting.changed()
+	menuBarPresentation.Unlock()
+	go a.refreshMenuBarPresentation()
 	return nil
 }

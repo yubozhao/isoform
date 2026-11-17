@@ -1265,6 +1265,17 @@
             "instinct": "Instinct 的条款允许它用收到的内容训练模型。"
         }
     },
+    "trouble": {
+        "screen": "Isoform 自 {{time}} 起没能看到你的屏幕。",
+        "screenWhy": "Isoform 的屏幕录制已关闭。",
+        "openSettings": "打开系统设置",
+        "signIn": "登录",
+        "signedOut": "{{assistant}} 自 {{time}} 起已退出登录，所以简报会更简短，聊天也无法回答。",
+        "offline": "自 {{time}} 起没有网络。恢复前简报会更简短。",
+        "phone": "你的手机自 {{time}} 起没有联系。在它联系之前，通知会显示在这里。",
+        "more_one": "还有 {{count}} 项 ›",
+        "more_other": "还有 {{count}} 项 ›"
+    },
     "agents": {
         "title": "代理",
         "sub": "你的代理在这里汇合：你交给它们的事、它们彼此的请求，以及它们做出的东西。",

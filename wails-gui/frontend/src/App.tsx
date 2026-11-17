@@ -2601,6 +2601,12 @@ export default function App() {
             }, () => { reportChatPlaceFailure({ key: "failure.loadChat", retry: open }); return false; });
             void open();
         });
+        // The popover's Next row: Today, where its answers and any hand-off
+        // sheet are (computer-settings v1.0.1 rule 8).
+        const offOpenToday = EventsOn("menubar:open-today", () => {
+            closeOverlaysForSearch();
+            handleSetAppMode("today");
+        });
         // A Needs you item with no chat card opens Tasks › Needs you (evening walk B7).
         const offNeeds = EventsOn("menubar:needs", () => {
             closeOverlaysForSearch();
@@ -2632,7 +2638,7 @@ export default function App() {
         const offForget = EventsOn("memory:withdrawn", stopBriefPlayback);
         const offStored = EventsOn("brief:stored", stopBriefPlayback);
         const offSources = ["permissions:changed", "sensitive-apps:updated", "background-listening:changed"].map(event => EventsOn(event, stopBriefPlayback));
-        return () => { offWaiting(); offNeeds(); offBrief(); offMake(); offPause(); offForget(); offStored(); offSources.forEach(off => off()); };
+        return () => { offWaiting(); offOpenToday(); offNeeds(); offBrief(); offMake(); offPause(); offForget(); offStored(); offSources.forEach(off => off()); };
     }, [chatJump.jump, closeOverlaysForSearch, handleSetAppMode, projects.handleOpenMainChat, t, tChat, tToday]);
 
     const searchShortcutFor = useCallback(

@@ -19,15 +19,15 @@ func TestMenuBarIconLifecycle(t *testing.T) {
 		ids          []string
 		want         menuBarIconState
 	}{
-		{false, false, nil, menuBarIconState{1, false, false}},
-		{true, false, nil, menuBarIconState{.45, false, false}},
-		{false, false, []string{"a"}, menuBarIconState{1, true, false}},
-		{false, true, []string{"a"}, menuBarIconState{1, false, true}},
-		{false, false, []string{"a"}, menuBarIconState{1, false, false}},
-		{true, false, []string{"b"}, menuBarIconState{.45, true, false}},
-		{true, true, []string{"b"}, menuBarIconState{.45, false, true}},
-		{false, false, nil, menuBarIconState{1, false, false}},
-		{false, false, []string{"b"}, menuBarIconState{1, true, false}},
+		{false, false, nil, menuBarIconState{1, false, false, false}},
+		{true, false, nil, menuBarIconState{.45, false, false, false}},
+		{false, false, []string{"a"}, menuBarIconState{1, true, false, false}},
+		{false, true, []string{"a"}, menuBarIconState{1, false, true, false}},
+		{false, false, []string{"a"}, menuBarIconState{1, false, false, false}},
+		{true, false, []string{"b"}, menuBarIconState{.45, true, false, false}},
+		{true, true, []string{"b"}, menuBarIconState{.45, false, true, false}},
+		{false, false, nil, menuBarIconState{1, false, false, false}},
+		{false, false, []string{"b"}, menuBarIconState{1, true, false, false}},
 	}
 	for i, step := range steps {
 		if got := attention.icon(step.paused, step.open, step.ids); got != step.want {
@@ -563,12 +563,12 @@ func TestMenuBarFooterNamesWhatIsoformSees(t *testing.T) {
 
 func TestMenuBarPausedStateSaysUntilWhen(t *testing.T) {
 	until := time.Date(2026, 11, 5, 19, 15, 0, 0, time.Local).UnixMilli()
-	for _, tc := range []struct{ lang, want string }{{"en", "Paused until 7:15 PM"}, {"zh-CN", "已暂停至 19:15"}} {
+	for _, tc := range []struct{ lang, want string }{{"en", "Closed Eyes · until 7:15 PM · every device"}, {"zh-CN", "Closed Eyes · 至 19:15 · 所有设备"}} {
 		if got := menuBarPausedState(menuBarWords(tc.lang), tc.lang, DoingNow{Kind: doingNowPaused, PausedUntil: until}); got != tc.want {
 			t.Fatalf("%s: got %q, want %q", tc.lang, got, tc.want)
 		}
 	}
-	if got := menuBarPausedState(menuBarWords("en"), "en", DoingNow{Kind: doingNowPaused}); got != "Observing paused" {
+	if got := menuBarPausedState(menuBarWords("en"), "en", DoingNow{Kind: doingNowPaused}); got != "Closed Eyes · every device" {
 		t.Fatalf("no timer: got %q", got)
 	}
 }
@@ -646,4 +646,150 @@ func TestMenuBarSignedOutLinesNameTheChosenAssistant(t *testing.T) {
 			t.Errorf("%s %q: %q, want %q", tc.lang, tc.assistant, got.Title, tc.want)
 		}
 	}
+}
+
+// The popover's header and Next row (computer-settings v1.0.1 rule 8):
+// "seeing", with "watch listening" once a watch sent audio within the hour;
+// the first item to answer with its place in the list and its source.
+func TestMenuBarNextItemAndWatchListening(t *testing.T) {
+	w := menuBarWords("en")
+	if menuBarNextItem(w, WorkList{}) != nil {
+		t.Fatal("no items should give no Next row")
+	}
+	list := WorkList{Items: []WorkItem{
+		{ID: "done", State: workStateAnswered, Work: WorkBody{Title: "Answered already"}},
+		{ID: "a", State: workStateOpen, Source: workSourceBrief, Work: WorkBody{Title: "Reply to Lena about the import", Text: "She asked twice"}, Yes: WorkYes{Does: "mail_draft"}},
+		{ID: "b", State: workStateOpen, Source: workSourceAgent, Yes: WorkYes{Does: "agent"}},
+		{ID: "c", State: workStateOpen}, {ID: "d", State: workStateOpen},
+	}}
+	next := menuBarNextItem(w, list)
+	if next == nil || next.ID != "a" || next.Line != "Next · 1 of 4 · Your brief" || next.Title != "Reply to Lena about the import" || next.Detail != "She asked twice" || next.ToAgent {
+		t.Fatalf("next = %+v", next)
+	}
+	if got := menuBarNextItem(w, WorkList{Items: list.Items[2:]}); !got.ToAgent || got.Line != "Next · 1 of 3 · Your agent" {
+		t.Fatalf("agent next = %+v", got)
+	}
+	if got := menuBarNextItem(w, WorkList{Items: list.Items[3:4]}); got.Line != "Next · 1 of 1" {
+		t.Fatalf("no source line = %q", got.Line)
+	}
+	if got := menuBarNextItem(menuBarWords("zh-CN"), list); !strings.Contains(got.Line, "4") || !strings.Contains(got.Line, "你的简报") {
+		t.Fatalf("zh-CN line = %q", got.Line)
+	}
+	now := time.Date(2026, 11, 15, 18, 0, 0, 0, time.UTC)
+	if watchListeningAt(nil, now) {
+		t.Fatal("no recordings is not listening")
+	}
+	if !watchListeningAt([]WatchRecording{{StartedAt: now.Add(-40 * time.Minute).Format(time.RFC3339)}}, now) {
+		t.Fatal("a recording 40 minutes ago is listening")
+	}
+	if watchListeningAt([]WatchRecording{{StartedAt: now.Add(-3 * time.Hour).Format(time.RFC3339)}, {StartedAt: "bad"}}, now) {
+		t.Fatal("a recording three hours ago is not listening")
+	}
+}
+
+func TestQuickChatHotkeyDisplay(t *testing.T) {
+	for _, tc := range []struct {
+		in   QuickChatHotkeyConfig
+		want string
+	}{
+		{QuickChatHotkeyConfig{Key: quickChatHotkeyKeyOptOpt}, "⌥⌥"},
+		{QuickChatHotkeyConfig{Key: quickChatHotkeyKeyOff}, ""},
+		{QuickChatHotkeyConfig{Alt: true, Key: " "}, "⌥Space"},
+		{QuickChatHotkeyConfig{Meta: true, Shift: true, Key: "k"}, "⇧⌘K"},
+	} {
+		if got := quickChatHotkeyDisplay(tc.in); got != tc.want {
+			t.Errorf("%+v: got %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// Next stays on the five-second ticks that don't read the list, and leaves
+// with a privacy withdraw.
+func TestMenuBarWaitingMemoryHoldsNext(t *testing.T) {
+	var m menuBarWaitingMemory
+	now := time.Now()
+	read := menuBarView{Language: "en", Words: menuBarWords("en"), Next: &menuBarNext{ID: "a", Line: "Next · 1 of 1"}}
+	m.settle(&read, true, nil, now)
+	tick := menuBarView{Language: "en", Words: menuBarWords("en")}
+	m.settle(&tick, false, nil, now.Add(5*time.Second))
+	if tick.Next == nil || tick.Next.ID != "a" {
+		t.Fatalf("tick next = %+v", tick.Next)
+	}
+	m.withdraw()
+	after := menuBarView{Language: "en", Words: menuBarWords("en")}
+	m.settle(&after, false, nil, now.Add(10*time.Second))
+	if after.Next != nil {
+		t.Fatalf("next after withdraw = %+v", after.Next)
+	}
+}
+
+func TestMenuBarAnswersOnlyOpenItemsAndNeverAnAgentsYes(t *testing.T) {
+	list := WorkList{Items: []WorkItem{
+		{ID: "draft", State: workStateOpen, Yes: WorkYes{Does: "mail_draft"}},
+		{ID: "code", State: workStateOpen, Yes: WorkYes{Does: "agent"}},
+		{ID: "done", State: workStateAnswered},
+	}}
+	for _, tc := range []struct {
+		id, action string
+		want       bool
+	}{
+		{"draft", workActionYes, true},
+		{"draft", workActionNo, true},
+		{"code", workActionYes, false},
+		{"code", workActionNo, true},
+		{"done", workActionYes, false},
+		{"gone", workActionYes, false},
+		{"gone", workActionNo, false},
+	} {
+		if got := menuBarAnswersHere(list, tc.id, tc.action); got != tc.want {
+			t.Errorf("%s %s: answers here = %v, want %v", tc.id, tc.action, got, tc.want)
+		}
+	}
+	if menuBarAnswersHere(WorkList{}, "draft", workActionYes) {
+		t.Fatal("an empty list (or one that could not be read) never answers here")
+	}
+}
+
+// The state line never hides the watch's state (computer-settings v1.2.0
+// rule 5), and Closed Eyes shows its one shortcut.
+func TestMenuBarStateLineSaysTheWatch(t *testing.T) {
+	w := menuBarWords("en")
+	now := time.Date(2026, 11, 15, 18, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		recordings []WatchRecording
+		want       string
+	}{
+		{nil, "seeing · no watch paired"},
+		{[]WatchRecording{{StartedAt: now.Add(-20 * time.Minute).Format(time.RFC3339)}}, "seeing · watch listening"},
+		{[]WatchRecording{{StartedAt: now.Add(-5 * time.Hour).Format(time.RFC3339)}}, "seeing · watch not listening"},
+	} {
+		menuBarWatch.Store(menuBarWatchWord(tc.recordings, now))
+		if got := menuBarStateLine(w, w["observing"]); got != tc.want {
+			t.Errorf("state line = %q, want %q", got, tc.want)
+		}
+	}
+	menuBarWatch.Store("watchNot")
+	if got := menuBarStateLine(w, w["paused"]); got != "Closed Eyes · every device · watch not listening" {
+		t.Errorf("closed state line = %q", got)
+	}
+	menuBarWatch.Store("")
+	if closedEyesHotkeyDisplay("darwin") != "⌃⌥⌘E" || closedEyesHotkeyDisplay("linux") != "" {
+		t.Fatal("Closed Eyes shortcut display")
+	}
+}
+
+func TestMenuBarMarkLabelSaysTheState(t *testing.T) {
+	w := menuBarWords("en")
+	menuBarWatch.Store("watchListening")
+	if got := menuBarMarkLabel(w, false); got != "Listening" {
+		t.Fatalf("listening label = %q", got)
+	}
+	if got := menuBarMarkLabel(w, true); got != "Closed Eyes" {
+		t.Fatalf("closed label = %q", got)
+	}
+	menuBarWatch.Store("watchNot")
+	if got := menuBarMarkLabel(w, false); got != "Not listening" {
+		t.Fatalf("not listening label = %q", got)
+	}
+	menuBarWatch.Store("")
 }

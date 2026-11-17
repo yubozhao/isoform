@@ -1265,6 +1265,17 @@
             "instinct": "Instinct's terms allow it to train on what it receives."
         }
     },
+    "trouble": {
+        "screen": "Isoform hasn't seen your screen since {{time}}.",
+        "screenWhy": "Screen Recording is off for Isoform.",
+        "openSettings": "Open System Settings",
+        "signIn": "Sign in",
+        "signedOut": "{{assistant}} has been signed out since {{time}}, so briefs are shorter and Chat can't answer.",
+        "offline": "No internet since {{time}}. Briefs are shorter until it's back.",
+        "phone": "Your phone hasn't checked in since {{time}}. Notifications show here until it does.",
+        "more_one": "{{count}} more ›",
+        "more_other": "{{count}} more ›"
+    },
     "agents": {
         "title": "Agents",
         "sub": "Your agents meet here: what you handed them, what they asked each other, and what they made.",
