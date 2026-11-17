@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Topics v1.0.0 rule 30: a topic the person names is a topic at once, with its
@@ -51,5 +52,34 @@ func TestAddedTopicsAreDailyBuildCandidates(t *testing.T) {
 	got := app.addedTopicCandidates()
 	if len(got) != 1 || got[0].Name != "Kitchen remodel" || len(got[0].Apps) != 0 || got[0].LastSeenAt == "" {
 		t.Fatalf("candidates = %+v", got)
+	}
+}
+
+// The hub's guard for rule 32: a topic the person added today is still there
+// after tomorrow's build, first, with a proposal of its own.
+func TestAnAddedTopicKeepsItsPlaceInTheNextDaysBuild(t *testing.T) {
+	app, runner, clock := dailyTopicsTestApp(t)
+	ctx := context.Background()
+	if err := app.store.SetUIState(ctx, topicsDailyEnabledKey, "true"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.topicsSvc().update(UserTopicUpdate{Action: "add", Label: "Kitchen remodel"}); err != nil {
+		t.Fatal(err)
+	}
+	added := app.topicsSvc().store.load().Added[0]
+	runner.response = `{"` + added.ID + `":{"title":"Price the cabinets","prompt":"Compare three cabinet quotes."},` +
+		`"t1":{"title":"Draft the harbor launch checklist","prompt":"Write it."},"t2":{"title":"Summarize the tide research","prompt":"Summarize it."}}`
+	*clock = clock.Add(24 * time.Hour)
+	if err := app.buildDailyTopics(ctx); err != nil {
+		t.Fatal(err)
+	}
+	store, err := app.topicsDailyStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, ok := store.Load()
+	if !ok || len(saved.Topics) == 0 || saved.Topics[0].ID != added.ID || !saved.Topics[0].Named || saved.Topics[0].Proposal == nil ||
+		saved.Topics[0].Proposal.Title != "Price the cabinets" {
+		t.Fatalf("the next day's copy lost the named topic: %+v", saved.Topics)
 	}
 }
