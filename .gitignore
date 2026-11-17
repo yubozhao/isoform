@@ -48,6 +48,8 @@ go.work
 
 # ---- Node ----
 node_modules/
+# also a symlink named node_modules (the slash form above matches directories only)
+node_modules
 dist/
 *.tsbuildinfo
 .eslintcache

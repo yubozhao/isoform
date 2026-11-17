@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"os"
 	"strconv"
 	"time"
 
@@ -212,4 +213,49 @@ func storedBody(ctx context.Context, q querier, deviceID, dir string, seq uint64
 		return nil, err
 	}
 	return []byte(body), nil
+}
+
+// PurgeDevice drops every ciphertext queued for one of the hub's devices: its
+// envelopes both ways, its stored briefs, its uploads and its pushes not yet
+// sent (PROTOCOL.md 28). The pairing stays.
+func (s *Store) PurgeDevice(ctx context.Context, hubID, deviceID string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err = deviceInHub(ctx, tx, hubID, deviceID); err != nil {
+		return err
+	}
+	rows, err := tx.QueryContext(ctx, "SELECT id FROM uploads WHERE device_id=?", deviceID)
+	if err != nil {
+		return err
+	}
+	var uploads []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		uploads = append(uploads, id)
+	}
+	rows.Close()
+	for _, statement := range []string{
+		"DELETE FROM envelopes WHERE device_id=?",
+		"DELETE FROM briefs WHERE device_id=?",
+		"DELETE FROM uploads WHERE device_id=?",
+		"UPDATE push_outbox SET state='cancelled' WHERE device_id=? AND state IN ('queued','inflight')",
+	} {
+		if _, err = tx.ExecContext(ctx, statement, deviceID); err != nil {
+			return err
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	for _, id := range uploads {
+		_ = os.Remove(s.uploadPath(hubID, id))
+	}
+	return nil
 }

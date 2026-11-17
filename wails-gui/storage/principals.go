@@ -27,6 +27,13 @@ var validPrincipalKinds = map[string]struct{}{
 	PrincipalKindAnonymous:      {},
 }
 
+// AutoPrincipalsQuiet, set by the app, holds back people made from observed
+// activity while Forget everything runs (and just after).
+var AutoPrincipalsQuiet func() bool
+
+// ErrAutoPrincipalsQuiet is EnsureAnonymousContact's answer while it's held back.
+var ErrAutoPrincipalsQuiet = errors.New("storage: new people wait while Isoform forgets everything")
+
 // CreatePrincipal inserts a new principal row plus any aliases.
 // The kind must be one of the validPrincipalKinds; ID is generated if empty.
 // For kind=self the caller should prefer EnsureSelf, which is idempotent.
@@ -624,6 +631,9 @@ func (s *Store) principalIDBySpacedName(ctx context.Context, query, name string,
 // This keeps the anonymous-buckets table from exploding when the same
 // untagged sender appears across many sessions.
 func (s *Store) EnsureAnonymousContact(ctx context.Context, app, handleID, displayHandle string) (PrincipalRow, error) {
+	if AutoPrincipalsQuiet != nil && AutoPrincipalsQuiet() {
+		return PrincipalRow{}, ErrAutoPrincipalsQuiet
+	}
 	app = strings.TrimSpace(strings.ToLower(app))
 	handleID = strings.TrimSpace(handleID)
 	displayHandle = strings.TrimSpace(displayHandle)
@@ -1706,4 +1716,33 @@ func (s *Store) PrincipalIDs(ctx context.Context) (map[string]bool, error) {
 		out[id] = true
 	}
 	return out, rows.Err()
+}
+
+// ResetPrincipalToIdentity keeps a principal as identity only: its row (kind
+// and name) and its "this is me" contact link. Everything learned about it
+// goes: notes, relationship, aliases, handles, sightings, recent messages,
+// voices, research and merge history (Your data's Forget everything, for the
+// person's own self row).
+func (s *Store) ResetPrincipalToIdentity(ctx context.Context, id string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, q := range []string{
+		`UPDATE principals SET relationship = '', notes = '', confidence = 1.0 WHERE id = ?`,
+		`DELETE FROM principal_aliases WHERE principal_id = ?`,
+		`DELETE FROM app_handles WHERE principal_id = ?`,
+		`DELETE FROM principal_sightings WHERE principal_id = ?`,
+		`DELETE FROM principal_recent_messages WHERE principal_id = ?`,
+		`DELETE FROM principal_session_sightings WHERE principal_id = ?`,
+		`DELETE FROM principal_voice_embeddings WHERE principal_id = ?`,
+		`DELETE FROM principal_research WHERE principal_id = ?`,
+		`DELETE FROM principal_merge_updates WHERE principal_id = ?`,
+	} {
+		if _, err := tx.ExecContext(ctx, q, id); err != nil {
+			return fmt.Errorf("reset principal: %w", err)
+		}
+	}
+	return tx.Commit()
 }

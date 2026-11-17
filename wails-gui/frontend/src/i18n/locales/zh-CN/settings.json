@@ -4066,7 +4066,12 @@
             "topics": "主题",
             "answers": "回答",
             "workProfile": "工作档案",
-            "agentOfYou": "Agent of You 档案"
+            "agentOfYou": "Agent of You 档案",
+            "moments": "时刻",
+            "mainChat": "聊天",
+            "logs": "日志和探测记录",
+            "phones": "你的手机和手表",
+            "briefs": "简报"
         }
     },
     "aoy": {

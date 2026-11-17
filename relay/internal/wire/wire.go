@@ -78,7 +78,7 @@ func (e Envelope) Validate() error {
 	switch {
 	case e.Dir == "d2h" && e.Kind == "req":
 		maxPlaintext = MaxMessagePlaintext
-	case e.Dir == "h2d" && (e.Kind == "res" || e.Kind == "event"):
+	case e.Dir == "h2d" && (e.Kind == "res" || e.Kind == "event" || e.Kind == "forget_all"):
 		maxPlaintext = MaxMessagePlaintext
 	case e.Dir == "h2d" && e.Kind == "brief":
 		maxPlaintext = MaxBriefPlaintext

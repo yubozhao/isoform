@@ -1487,6 +1487,9 @@ func portraitWithinCap(doc *portraitDocument, now time.Time, due string) bool {
 // write runs pass 2 and publishes what survived, or records why the AI
 // couldn't be used.
 func (s *AboutYouPortraitService) write(ctx context.Context, path string, now time.Time, due string, sources []portraitSource, sides [4]float64, sideAreas [4][]string, language, note, noteID string, rows []string) {
+	if derivedSavesQuiet() {
+		return
+	}
 	selected := append([]portraitSource(nil), sources...)
 	sort.SliceStable(selected, func(i, j int) bool {
 		if selected[i].Confirmed != selected[j].Confirmed {

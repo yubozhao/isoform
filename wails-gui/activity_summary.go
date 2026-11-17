@@ -161,6 +161,9 @@ func (s *ActivityStore) SaveSummaryWithLanguage(date, summaryType, summary, mode
 }
 
 func (s *ActivityStore) saveSummaryWithSources(date, summaryType, summary, model string, isPartial bool, language string, sources []activitySourceProvenance) (int, error) {
+	if derivedSavesQuiet() {
+		return 0, errForgetQuiet
+	}
 	provenance := ""
 	if len(sources) > 0 {
 		raw, err := json.Marshal(sources)

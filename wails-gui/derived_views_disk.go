@@ -197,7 +197,7 @@ func derivedDiskSourcesRemain(saved, now *derivedDiskSources) bool {
 // derivedDiskSave writes a built snapshot unless a privacy action happened
 // since its build started.
 func (a *App) derivedDiskSave(view derivedViewName, key string, raw []byte, at time.Time, token derivedDiskToken) {
-	if !token.ok {
+	if !token.ok || derivedSavesQuiet() {
 		return
 	}
 	path, err := derivedDiskPath(view, key)

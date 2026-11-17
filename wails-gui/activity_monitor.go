@@ -3088,6 +3088,7 @@ func (a *App) extractSession(triggerKind string) {
 			am.lastMeetingEndMs = time.Now().UnixMilli()
 			am.lastMeetingPaused = audioLocked
 			am.inMeeting = false
+			noteMeetingActiveMarker("")
 			am.meetingAppName = ""
 			am.meetingBundleID = ""
 			am.meetingStartMs = 0
@@ -3186,6 +3187,7 @@ func (a *App) extractSession(triggerKind string) {
 			am.lastMeetingPaused = audioLocked
 		}
 		am.inMeeting = false
+		noteMeetingActiveMarker("")
 		am.meetingAppName = ""
 		am.meetingBundleID = ""
 		am.meetingStartMs = 0
@@ -5230,6 +5232,7 @@ func (a *App) onMeetingStarted(am *activityMonitorState, result meetingdetect.Re
 		am.meetingCandidateRecordingEpoch == meetingEpoch &&
 		am.meetingCandidateAppName == result.MeetingName
 	am.inMeeting = true
+	noteMeetingActiveMarker(result.MeetingName)
 	am.meetingAppName = result.MeetingName
 	am.meetingBundleID = result.BundleID
 	am.meetingStartMs = time.Now().UnixMilli()
@@ -5366,6 +5369,7 @@ func (a *App) flushMeetingStateOnEmptyExtract(am *activityMonitorState, isPeriod
 			am.lastMeetingPaused = audioLocked
 		}
 		am.inMeeting = false
+		noteMeetingActiveMarker("")
 		am.meetingAppName = ""
 		am.meetingBundleID = ""
 		am.meetingStartMs = 0

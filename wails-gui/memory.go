@@ -768,6 +768,10 @@ func (a *App) saveMemoryEntryWithRewrite(id string, content string, userEdit boo
 	}
 
 	if !userEdit {
+		// An automatic write waits while Forget everything runs and just after.
+		if derivedSavesQuiet() {
+			return MemoryEntry{}, errForgetQuiet
+		}
 		if err := a.prepareMemoryObservedWrite(dir, id, content); err != nil {
 			return MemoryEntry{}, err
 		}

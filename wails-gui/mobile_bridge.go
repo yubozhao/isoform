@@ -810,6 +810,8 @@ func (bridge *mobileBridge) relayRegistered(client *mobileRelayClient, presence 
 	}
 	bridge.flushPendingBriefs(client, briefs)
 	bridge.wakeTodayPhones()
+	// A forget a phone hasn't confirmed goes again (PROTOCOL.md 28).
+	go bridge.resendForgetAll()
 }
 
 func (bridge *mobileBridge) relayStateChanged() {
