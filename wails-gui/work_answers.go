@@ -423,6 +423,24 @@ func (a *App) dispatchWorkAnswer(ctx context.Context, item WorkItem, input WorkA
 	case workSourceAgent:
 		// A result is judged Useful or Not useful, not answered Yes or No.
 		return workSent{}, errWorkAnswerInvalid
+	case workSourceDayOne:
+		// Yes or No (Topics rule 31: no topic yet, so no Not mine; no Edit).
+		switch input.Action {
+		case workActionNo:
+			return workSent{}, nil
+		case workActionYes:
+		default:
+			return workSent{}, errWorkAnswerInvalid
+		}
+		prompt, ok := a.workDayOnePrompt(ctx, item.ID)
+		if !ok {
+			return workSent{}, errWorkItemGone
+		}
+		text, err := workHandOffText(prompt, item, input.Removed)
+		if err != nil {
+			return workSent{}, err
+		}
+		return a.handOffWork(item, text, input.AgentID, surface)
 	case workSourceBrief:
 		if input.Action != workActionYes && input.Action != workActionEdit {
 			return workSent{}, nil
@@ -717,7 +735,7 @@ func (a *App) applyWorkAnswers(items []WorkItem) []WorkItem {
 					answer.Line = item.Request.From.Name + "'s request to " + item.Request.To.Name + ": " + verb
 				}
 			}
-		case workSourceBrief:
+		case workSourceBrief, workSourceDayOne:
 			item.Answer = answer
 			item.State = workStateAnswered
 			if record.HandoffID != "" && (record.Action == workActionYes || record.Action == workActionEdit) {
