@@ -989,9 +989,21 @@ private final class StubUploads: RecordingUploadTransport, @unchecked Sendable {
     private var stored: [String: Data] = [:]
     var error: Error?
 
+    /// Uploads that arrive at the relay although the phone is told they failed.
+    var arrivesAnyway = false
+    /// Ids the phone handed over, in order, repeats included.
+    private(set) var handed: [String] = []
+
     func putUpload(_ credentials: RelayCredentials, id: String, sealed: Data) async throws {
+        let held = lock.withLock { () -> Bool in
+            handed.append(id)
+            if let before = stored[id] { precondition(before == sealed, "the same id must carry the same bytes") }
+            let held = stored[id] != nil
+            if error == nil || arrivesAnyway { stored[id] = sealed }
+            return held
+        }
         if let error { throw error }
-        lock.withLock { stored[id] = sealed }
+        if held { throw RelayClientError.conflict }
     }
     func body(_ id: String) -> Data? { lock.withLock { stored[id] } }
     var count: Int { lock.withLock { stored.count } }
@@ -1546,6 +1558,87 @@ final class WatchRecordingForwarderTests: XCTestCase {
         outcome = await forwarder.drain()
         XCTAssertEqual(outcome, .drained)
         XCTAssertTrue(inbox.pending().isEmpty)
+    }
+}
+
+extension WatchRecordingForwarderTests {
+    /// An upload that goes on in the background is asked about again with the same id and the
+    /// same bytes, and the parts behind it are not held back.
+    func testAnUploadStillInFlightKeepsItsIDAndDoesNotHoldTheOthersBack() async throws {
+        let hub = StubRecordingHub()
+        let uploads = StubUploads()
+        let (inbox, forwarder) = make(hub, uploads)
+        let id = WatchRecordingWire.newRecordingID()
+        _ = try await deliver(inbox, forwarder, id: id, part: 0, last: false, audio: "first")
+        uploads.error = RecordingUploadInFlight()
+        _ = try await deliver(inbox, forwarder, id: id, part: 1, last: true, audio: "second")
+
+        var outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .waiting)
+        XCTAssertEqual(Set(uploads.handed).count, 2, "both parts were handed over in one pass")
+        XCTAssertEqual(inbox.pending().count, 2)
+        XCTAssertTrue(inbox.pending().allSatisfy { $0.refusals == 0 && $0.held == nil && $0.uploading != nil })
+        let first = uploads.handed
+
+        uploads.error = nil
+        outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .drained)
+        XCTAssertEqual(Set(uploads.handed), Set(first), "no part got a second upload id")
+        XCTAssertTrue(inbox.pending().isEmpty)
+        let posted = await hub.posted
+        XCTAssertEqual(posted.map(\.part), [0, 1])
+    }
+
+    /// The upload arrived but the phone heard a failure (the app was closed in between). The next
+    /// try hands over the same id; the relay says it holds it, and the part goes on to the computer.
+    func testAnUploadThatArrivedUnheardIsNotStoredTwice() async throws {
+        let hub = StubRecordingHub()
+        let uploads = StubUploads()
+        let (inbox, forwarder) = make(hub, uploads)
+        let id = WatchRecordingWire.newRecordingID()
+        _ = try await deliver(inbox, forwarder, id: id, part: 0, last: true, audio: "audio")
+        uploads.error = RelayClientError.offline
+        uploads.arrivesAnyway = true
+        var outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .waiting)
+        XCTAssertEqual(uploads.count, 1)
+
+        uploads.error = nil
+        outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .drained)
+        XCTAssertEqual(uploads.count, 1, "one copy on the relay")
+        XCTAssertTrue(inbox.pending().isEmpty)
+        let posted = await hub.posted
+        XCTAssertEqual(posted.first?.upload.id, uploads.handed.first)
+    }
+
+    /// Only a few uploads are with the system at a time.
+    func testOnlyAFewUploadsAreInFlightAtOnce() async throws {
+        let hub = StubRecordingHub()
+        let uploads = StubUploads()
+        let (inbox, forwarder) = make(hub, uploads)
+        let id = WatchRecordingWire.newRecordingID()
+        for part in 0..<(WatchRecordingForwarder.uploadsAtOnce + 3) {
+            _ = try await deliver(inbox, forwarder, id: id, part: part, last: false, audio: "part \(part)")
+        }
+        uploads.error = RecordingUploadInFlight()
+        let before = uploads.handed.count
+        _ = await forwarder.drain()
+        XCTAssertEqual(Set(uploads.handed.dropFirst(before)).count, WatchRecordingForwarder.uploadsAtOnce)
+    }
+
+    func testHowABackgroundUploadEndedIsRead() {
+        XCTAssertNoThrow(try RecordingBackgroundUploads.check(.init(status: 201, retryAfter: nil)))
+        XCTAssertNoThrow(try RecordingBackgroundUploads.check(.init(status: 409, retryAfter: nil)), "the relay already holds it")
+        XCTAssertThrowsError(try RecordingBackgroundUploads.check(.init(status: 429, retryAfter: 600))) {
+            XCTAssertEqual($0 as? RelayClientError, .rateLimited(retryAfter: 600))
+        }
+        XCTAssertThrowsError(try RecordingBackgroundUploads.check(.init(status: 0, retryAfter: nil))) {
+            XCTAssertEqual($0 as? RelayClientError, .offline)
+        }
+        XCTAssertThrowsError(try RecordingBackgroundUploads.check(.init(status: 413, retryAfter: nil))) {
+            XCTAssertEqual($0 as? RelayClientError, .payloadTooLarge)
+        }
     }
 }
 

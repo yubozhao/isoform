@@ -185,6 +185,11 @@ final class WatchRecordingInbox: @unchecked Sendable {
         /// grows with each refusal and never ends: the audio stays on the phone until the
         /// computer stores it or the person deletes it.
         var nextTry: Date? = nil
+        /// The upload this part was last handed over as, set before the bytes leave. Every try
+        /// until the relay holds it uses the same id, key and nonce, so the same bytes go up: an
+        /// upload that arrived without the phone hearing of it is not stored a second time (the
+        /// relay answers 409 for an id it holds).
+        var uploading: HeldUpload? = nil
     }
 
     /// A part's upload on the relay and the pairing it was sealed for.
@@ -265,6 +270,7 @@ final class WatchRecordingInbox: @unchecked Sendable {
             next.refusals += 1
             // A refused part is sealed again next time.
             next.held = nil
+            next.uploading = nil
             next.nextTry = now.addingTimeInterval(Self.retryDelay(refusals: next.refusals))
             try? write(next)
         }
@@ -305,6 +311,17 @@ final class WatchRecordingInbox: @unchecked Sendable {
             guard let data = try? Data(contentsOf: metaURL(info)),
                   var pending = try? JSONDecoder().decode(Pending.self, from: data) else { return }
             pending.held = held
+            if held == nil { pending.uploading = nil }
+            try? write(pending)
+        }
+    }
+
+    /// Remembers the upload a part is about to be sent as.
+    func uploading(_ upload: HeldUpload, for info: WatchRecordingPartInfo) {
+        lock.withLock {
+            guard let data = try? Data(contentsOf: metaURL(info)),
+                  var pending = try? JSONDecoder().decode(Pending.self, from: data) else { return }
+            pending.uploading = upload
             try? write(pending)
         }
     }
@@ -563,6 +580,9 @@ actor WatchRecordingForwarder {
         if pending.contains(where: { $0.info.marks != nil }) {
             takesMarks = (try? await hub.recordingMarksAvailable()) ?? false
         }
+        // Parts that could not be finished in this pass; the pass goes on with the others.
+        var unfinished = false
+        var inFlight = 0
         for item in pending {
             do {
                 sending = item.info.recordingID
@@ -578,6 +598,16 @@ actor WatchRecordingForwarder {
                 if item.refusals + 1 >= WatchRecordingInbox.maxRefusals { set(item.info.recordingID, .failed) }
             } catch RelayClientError.payloadTooLarge {
                 inbox.refused(item, now: now())
+            } catch is RecordingUploadInFlight {
+                // The upload is with the system and goes on by itself. A few at a time, so the
+                // relay's room for this phone is not used up by parts the computer has not fetched.
+                unfinished = true
+                inFlight += 1
+                if inFlight >= Self.uploadsAtOnce { return .waiting }
+            } catch HubRequestError.rejected {
+                // The computer answered, and could not take this part now (it could not fetch
+                // it yet). The other parts are not held back by it.
+                unfinished = true
             } catch RelayClientError.rateLimited {
                 // The relay keeps no more of this phone's recordings until the computer fetched
                 // some. Said as it is, so a full relay never looks like a sleeping computer.
@@ -588,8 +618,11 @@ actor WatchRecordingForwarder {
             }
         }
         await refreshStates()
-        return .drained
+        return unfinished ? .waiting : .drained
     }
+
+    /// How many uploads are with the system at a time.
+    static let uploadsAtOnce = 4
 
     private func send(_ item: WatchRecordingInbox.Pending, withContext: Bool, withMarks: Bool = false) async throws {
         let context = try session()
@@ -599,10 +632,26 @@ actor WatchRecordingForwarder {
         if let held = item.held, held.hubID == context.hubID, held.deviceID == context.deviceID {
             upload = held.upload
         } else {
-            let (sealed, fresh) = try RecordingSeal.seal(plaintext, hubID: context.hubID, deviceID: context.deviceID)
-            try await relay.putUpload(context.credentials, id: fresh.id, sealed: sealed)
-            inbox.hold(.init(upload: fresh, hubID: context.hubID, deviceID: context.deviceID), for: info)
-            upload = fresh
+            // The same id, key and nonce as the last try of this part, so the same bytes go up.
+            let sealed: Data
+            let coordinates: RecordingPartRequest.Upload
+            if let earlier = item.uploading, earlier.hubID == context.hubID, earlier.deviceID == context.deviceID,
+               let key = try? RelayCrypto.base64URLDecode(earlier.upload.key),
+               let nonce = try? RelayCrypto.base64URLDecode(earlier.upload.nonce) {
+                (sealed, coordinates) = try RecordingSeal.seal(plaintext, hubID: context.hubID, deviceID: context.deviceID,
+                                                               uploadID: earlier.upload.id, key: key, nonce: nonce)
+            } else {
+                (sealed, coordinates) = try RecordingSeal.seal(plaintext, hubID: context.hubID, deviceID: context.deviceID)
+            }
+            let handed = WatchRecordingInbox.HeldUpload(upload: coordinates, hubID: context.hubID, deviceID: context.deviceID)
+            inbox.uploading(handed, for: info)
+            do {
+                try await relay.putUpload(context.credentials, id: coordinates.id, sealed: sealed)
+            } catch RelayClientError.conflict {
+                // The relay already holds this id: an earlier try arrived without the phone hearing of it.
+            }
+            inbox.hold(handed, for: info)
+            upload = coordinates
         }
         let request = RecordingPartRequest(
             idempotencyKey: "rec-\(info.recordingID)-\(info.part)", recordingId: info.recordingID, part: info.part,
