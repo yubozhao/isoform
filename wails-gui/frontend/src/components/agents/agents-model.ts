@@ -67,6 +67,8 @@ export function agentRows(agents: YourAgents, connected: ConnectedAgent[], hando
     });
     const rows: AgentRow[] = [];
     for (const view of agents.agents) {
+        // A disconnected joined agent fades on the phone only.
+        if (view.reach === "disconnected") continue;
         const chosenFor = chosen.get(view.id);
         if (!chosenFor && !view.connected && !(view.found && view.kind === "code")) continue;
         const connection = connected.find((c) => c.id === view.id || c.catalogId === view.id);

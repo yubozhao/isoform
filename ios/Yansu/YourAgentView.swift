@@ -100,7 +100,7 @@ struct YourAgentView: View {
         VStack(alignment: .leading, spacing: 10) {
             title
             badge
-            Text("Soon, people can hire your Agent of You.")
+            Text("Soon, people can hire Agent of You.")
                 .font(.subheadline).foregroundStyle(YansuTheme.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Text("It works the way you do, makes things for them in minutes, and you get paid for every minute it works.")

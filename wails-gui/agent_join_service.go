@@ -82,6 +82,9 @@ type AgentJoinStart struct {
 	ExpiresAt int64  `json:"expiresAt"`
 	// Local is true when only agents on this computer can read the link.
 	Local bool `json:"local"`
+	// MCPAddress is the tool server address a chat app's connector takes
+	// (agents-join v1.1.0 §2): the person pastes it in the app's settings.
+	MCPAddress string `json:"mcpAddress"`
 }
 
 // StartAgentJoin makes a join link and the one message to paste. A link
@@ -102,7 +105,7 @@ func (a *App) StartAgentJoin() (AgentJoinStart, error) {
 		return AgentJoinStart{}, err
 	}
 	link := base + agentjoin.PathPrefix + code
-	return AgentJoinStart{Message: agentjoin.Message(link), Link: link, ExpiresAt: expires.UnixMilli(), Local: !strings.HasPrefix(base, "https://")}, nil
+	return AgentJoinStart{Message: agentjoin.Message(link), Link: link, ExpiresAt: expires.UnixMilli(), Local: !strings.HasPrefix(base, "https://"), MCPAddress: base + "/mcp?join=" + a.agentJoinService().MCPKey()}, nil
 }
 
 // GetAgentJoin is the open join, or nil: waiting, an agent asking with its

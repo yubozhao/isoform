@@ -11,7 +11,7 @@ final class LocalizationTests: XCTestCase {
             "Agent of You",
             "Soon",
             "Coming soon",
-            "Soon, people can hire your Agent of You.",
+            "Soon, people can hire Agent of You.",
             "It works the way you do, makes things for them in minutes, and you get paid for every minute it works.",
             "Use 3 to 30 letters, numbers or dots, not starting or ending with a dot.",
             "Page name, after isoform.ai/agents/",
