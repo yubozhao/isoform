@@ -158,7 +158,7 @@ func (c *mobileRelayClient) uploadAttachment(ctx context.Context, attachmentID s
 	}
 	ctx, cancel := context.WithTimeout(ctx, mobileAttachmentUploadWait)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, c.origin+"/v1/hub/attachments/"+attachmentID, bytes.NewReader(sealed))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, c.hubOrigin()+"/v1/hub/attachments/"+attachmentID, bytes.NewReader(sealed))
 	if err != nil {
 		return err
 	}

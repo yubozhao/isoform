@@ -74,8 +74,10 @@ type mobileRelayHandler interface {
 // mobileRelayClient keeps one outbound WebSocket to the relay. The Mac only dials
 // out (PROTOCOL.md section 6), so no inbound port is opened.
 type mobileRelayClient struct {
-	origin     string
-	wsURL      string
+	origin string
+	wsURL  string
+	// local is the relay's address on this computer, when it runs here.
+	local      string
 	hubID      string
 	credential string
 	hubName    string
@@ -109,12 +111,24 @@ func newMobileRelayClient(origin string, identity mobileHubIdentity, hubName str
 	if err != nil {
 		return nil, err
 	}
-	wsURL, err := mobileRelayWebSocketURL(normalized)
+	// A relay on this computer is reached here, never through its public
+	// address (mobile_relay_local.go). `origin` stays the address phones use.
+	local := mobileRelayLocalOrigin()
+	if local == normalized {
+		local = ""
+	}
+	reach := normalized
+	if local != "" {
+		reach = local
+		log.Printf("[mobile-relay] this computer reaches the relay at %s; phones use %s", local, normalized)
+	}
+	wsURL, err := mobileRelayWebSocketURL(reach)
 	if err != nil {
 		return nil, err
 	}
 	return &mobileRelayClient{
 		origin:     normalized,
+		local:      local,
 		wsURL:      wsURL,
 		hubID:      identity.HubID,
 		credential: identity.Credential,

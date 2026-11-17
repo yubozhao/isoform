@@ -162,7 +162,7 @@ func (c *mobileRelayClient) waitRetry(ctx context.Context, delay time.Duration) 
 }
 
 func (c *mobileRelayClient) relayHealthy(ctx context.Context) bool {
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.origin+"/v1/health", nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.hubOrigin()+"/v1/health", nil)
 	if err != nil {
 		return false
 	}
