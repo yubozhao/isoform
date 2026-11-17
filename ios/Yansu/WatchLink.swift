@@ -18,7 +18,10 @@ final class WatchLink: NSObject, WCSessionDelegate, @unchecked Sendable {
     func start(directory: URL, vault: PairingVault, hub: RecordingHubAPI) {
         guard forwarder == nil, WCSession.isSupported(), !WatchRecordingsModel.isSeeded else { return }
         let inbox = WatchRecordingInbox(directory: directory.appendingPathComponent("watch-recordings", isDirectory: true))
-        let forwarder = WatchRecordingForwarder(inbox: inbox, hub: hub, session: { try vault.session() })
+        // Parts go up as background uploads: the system finishes them while the app is closed.
+        let uploads = RecordingBackgroundUploads.shared
+        uploads.onEnded = { [weak self] in self?.drain() }
+        let forwarder = WatchRecordingForwarder(inbox: inbox, hub: hub, relay: uploads, session: { try vault.session() })
         self.inbox = inbox
         self.forwarder = forwarder
         Task { [weak self] in

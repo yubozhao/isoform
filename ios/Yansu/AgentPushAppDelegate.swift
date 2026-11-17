@@ -46,6 +46,16 @@ final class AgentPushAppDelegate: NSObject, UIApplicationDelegate, UNUserNotific
         return true
     }
 
+    /// iOS started the app because recording uploads ended while it was closed.
+    func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String,
+                     completionHandler: @escaping () -> Void) {
+        guard identifier == RecordingBackgroundUploads.sessionIdentifier else {
+            completionHandler()
+            return
+        }
+        RecordingBackgroundUploads.shared.systemWoke(completion: completionHandler)
+    }
+
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
         guard let environment else {
             pendingToken = deviceToken
