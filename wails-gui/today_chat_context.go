@@ -43,6 +43,11 @@ type TodayChatContextRef struct {
 	MeetingNote    bool  `json:"meetingNote,omitempty"`
 	BriefDraft     bool  `json:"briefDraft,omitempty"`
 	MeetingStartMs int64 `json:"meetingStartMs,omitempty"`
+	// AboutID and AboutTitle are set by the computer when the phone attached
+	// the message (chat_b10_phone.go): the id the phone reads back on the
+	// receipt, and the words the chip shows. Never from a client.
+	AboutID    string `json:"-"`
+	AboutTitle string `json:"-"`
 }
 
 type TodayChatContextCounts struct {
@@ -95,6 +100,9 @@ var errTodayChatObservationPaused = errors.New("TODAY_CHAT_OBSERVATION_PAUSED")
 var errTodayChatDeferred = errors.New("TODAY_CHAT_DEFERRED")
 
 const todayChatPausedKind = "paused"
+
+// todayChatWorkKind is a Your work item, attached to a phone message.
+const todayChatWorkKind = "work"
 
 func todayChatPausedItem() todayChatItem {
 	return todayChatItem{

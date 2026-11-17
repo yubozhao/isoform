@@ -244,6 +244,7 @@ func (bridge *mobileBridge) serveTopicMessage(w http.ResponseWriter, r *http.Req
 			bridge.chat.mu.Unlock()
 			bridge.app.notifySpotlightSessionChanged(sessionID)
 		}
+		bridge.app.notePhoneTurnSender(device)
 		sent, err := bridge.app.sendMainChatWithTopic(text, id, promptOriginPhone, onAdmitted)
 		if err != nil {
 			mobileTopicRequestError(w, err, "the message could not be sent")

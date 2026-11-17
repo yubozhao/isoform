@@ -108,7 +108,17 @@ func TestCorrectIsoformIsForComputerTurnsInTheMainChat(t *testing.T) {
 	if got := rig.app.injectChatCorrectionContext(main.LocalID, promptOriginMac); !strings.Contains(got, "call CorrectIsoform once") {
 		t.Fatalf("computer context = %q", got)
 	}
-	for _, origin := range []promptOrigin{promptOriginPhone, promptOriginPhoneAsk, promptOriginPanelAsk, promptOriginResume} {
+	// A phone turn saves a correction only when its phone holds chat:correct.
+	t.Cleanup(func() { phoneTurnCorrections.Delete(rig.app) })
+	rig.app.notePhoneTurnSender(mobileTestDevice(mobileScopeChatWrite))
+	if got := rig.app.mainChatCorrectionTools(main.LocalID, promptOriginPhone); got != nil {
+		t.Fatalf("a phone without chat:correct got %v", got)
+	}
+	rig.app.notePhoneTurnSender(mobileTestDevice(mobileScopeChatWrite, mobileScopeChatCorrect))
+	if got := rig.app.mainChatCorrectionTools(main.LocalID, promptOriginPhone); len(got) != 1 {
+		t.Fatalf("a phone with chat:correct got %v", got)
+	}
+	for _, origin := range []promptOrigin{promptOriginPhoneAsk, promptOriginPanelAsk, promptOriginResume} {
 		if got := rig.app.mainChatCorrectionTools(main.LocalID, origin); got != nil {
 			t.Fatalf("origin %q got %v", origin, got)
 		}

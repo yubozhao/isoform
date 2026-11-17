@@ -553,6 +553,9 @@ func (bridge *mobileBridge) chatListState(chatID string) string {
 // it writes anything, so a rejected send leaves no user row behind. It returns
 // the turn id and the seq of the stored user item (PROTOCOL.md 15.3).
 func (bridge *mobileBridge) startChatTurn(row storage.MobileChatRow, prompt string, refs []mobileOfferReference) (string, int64, error) {
+	// Turns started for the computer's own reasons (a hand-off, a task
+	// thread, a reply) carry no phone's chat:correct.
+	phoneTurnCorrections.Delete(bridge.app)
 	return bridge.startChatTurnWaited(row, prompt, refs, false)
 }
 
@@ -784,6 +787,14 @@ type mobileChatItemView struct {
 	// (chat_cause.go), so the phone's line matches the computer's.
 	Code      string `json:"code,omitempty"`
 	Assistant string `json:"assistant,omitempty"`
+	// About, Sources and Claims, Correction and Handoff are phone-chat B10's
+	// fields (15.10): what a message was attached to, where an answer
+	// came from, what a correction changed, and a hand-off card.
+	About      *mobileChatAbout          `json:"about,omitempty"`
+	Sources    []chatSource              `json:"sources,omitempty"`
+	Claims     []chatSourceClaim         `json:"claims,omitempty"`
+	Correction *mobileChatCorrectionView `json:"correction,omitempty"`
+	Handoff    *mobileChatHandoffView    `json:"handoff,omitempty"`
 }
 
 type mobileChatPermissionView struct {
@@ -835,6 +846,12 @@ func mobileChatStructuredItem(view *mobileChatItemView, row storage.StreamItemRo
 	if len(row.ToolInput) > mobileChatPageBudget {
 		return
 	}
+	if mobileChatB10Item(view, row) {
+		if mobileChatItemCost(*view) > mobileChatPageBudget {
+			mobileChatPlain(view)
+		}
+		return
+	}
 	switch row.ToolName {
 	case mainChatProactiveTool:
 		var item mainChatProactive
@@ -868,8 +885,14 @@ func mobileChatStructuredItem(view *mobileChatItemView, row storage.StreamItemRo
 		return
 	}
 	if mobileChatItemCost(*view) > mobileChatPageBudget {
-		view.Kind, view.Proactive, view.Status, view.Report = "text", nil, nil, nil
+		mobileChatPlain(view)
 	}
+}
+
+// mobileChatPlain drops an item's structured payload, keeping its text.
+func mobileChatPlain(view *mobileChatItemView) {
+	view.Kind, view.Proactive, view.Status, view.Report = "text", nil, nil, nil
+	view.Sources, view.Claims, view.Correction, view.Handoff = nil, nil, nil, nil
 }
 
 // mobileChatItemCost is the item's size inside the sealed response: the body is
@@ -919,7 +942,7 @@ func mobileChatPageWithView(rows []storage.StreamItemRow, hasMore, newest bool, 
 			if enrich != nil {
 				enrich(&views[i])
 				if mobileChatItemCost(views[i]) > mobileChatPageBudget {
-					views[i].Kind, views[i].Proactive, views[i].Status, views[i].Report = "text", nil, nil, nil
+					mobileChatPlain(&views[i])
 				}
 			}
 			views[i] = displayModelCopy(views[i], language)
@@ -927,6 +950,12 @@ func mobileChatPageWithView(rows []storage.StreamItemRow, hasMore, newest bool, 
 		}
 	}
 	mobileChatMarkAskedAt(views, keep)
+	mobileChatMarkAbout(rows, views, keep)
+	for i := range views {
+		if keep[i] && views[i].About != nil {
+			costs[i] = mobileChatItemCost(views[i])
+		}
+	}
 	if len(rows) > 0 && newest {
 		page.Cursor = int64(rows[len(rows)-1].SortOrder) + 1
 	}
@@ -1413,6 +1442,9 @@ type mobileChatMessageInput struct {
 	QueuedAt string `json:"queuedAt,omitempty"`
 	// Undone counts the waiting messages the phone took back since its last message.
 	Undone int `json:"undone,omitempty"`
+	// About is what the message is attached to (15.10). Its title is ignored:
+	// the computer reads the item again by id.
+	About *mobileChatAbout `json:"about,omitempty"`
 }
 
 // mobileChatPhoneOriginToolInput marks a user row sent from the phone, so the computer's Chat can say "From your
@@ -1489,7 +1521,22 @@ func (bridge *mobileBridge) serveChatMessage(w http.ResponseWriter, r *http.Requ
 			mobileJSON(w, http.StatusNotFound, nil, "this chat is no longer on your computer")
 			return
 		}
-		turnID, seq, err := bridge.startChatTurnWaited(row, text, input.OfferReferences, !queuedAt.IsZero())
+		var turnID string
+		var seq int64
+		bridge.app.notePhoneTurnSender(device)
+		ref, attached := TodayChatContextRef{}, false
+		if input.About != nil && len(input.OfferReferences) == 0 && bridge.app.isMainChatSession(bridge.ctx, row.ID) {
+			// An item that is gone or hidden is dropped: the words still go.
+			ref, attached = bridge.app.mobileChatAboutRef(bridge.ctx, input.About)
+		}
+		if attached {
+			turnID, seq, err = bridge.startAboutChatTurn(row, text, ref, !queuedAt.IsZero())
+			if errors.Is(err, errTodayChatItemUnavailable) || errors.Is(err, errTodayChatObservationPaused) {
+				turnID, seq, err = bridge.startChatTurnWaited(row, text, nil, !queuedAt.IsZero())
+			}
+		} else {
+			turnID, seq, err = bridge.startChatTurnWaited(row, text, input.OfferReferences, !queuedAt.IsZero())
+		}
 		switch {
 		case err == nil:
 			bridge.recordPhoneChatWait(queuedAt, input.Undone)

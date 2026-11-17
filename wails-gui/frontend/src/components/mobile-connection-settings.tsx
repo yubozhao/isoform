@@ -13,6 +13,7 @@ import { GetMobileBriefHealth } from "@/lib/page-queries";
 // so the calls and the state below agree on one shape.
 import {
     ConfirmMobilePairing,
+    ConfirmMobileScopeRequest,
     DisableMobileConnection,
     EnableMobileConnectionUsingRelay,
     GenerateMobileBriefNow,
@@ -102,6 +103,7 @@ const SCOPE_LABELS = {
     "goals:read": "mobileConnection.scopeGoalsRead",
     "goals:write": "mobileConnection.scopeGoalsWrite",
     "library:read": "mobileConnection.scopeLibraryRead",
+    "chat:correct": "mobileConnection.scopeChatCorrect",
 } as const;
 
 // Same chips as the Chat apps list: green while connected, neutral otherwise.
@@ -119,6 +121,7 @@ type ErrorScope =
     | "code"
     | "copy"
     | "approval"
+    | "scopeRequest"
     | "revoke"
     | "remoteReset"
     | "remoteSwitch"
@@ -126,7 +129,16 @@ type ErrorScope =
     | "brief"
     | "keepAwake";
 
-type StatusAction = "enable" | "disable" | "code" | "approve" | "decline" | "revoke" | "remote-reset";
+type StatusAction =
+    | "enable"
+    | "disable"
+    | "code"
+    | "approve"
+    | "decline"
+    | "scope-allow"
+    | "scope-decline"
+    | "revoke"
+    | "remote-reset";
 
 type ScheduleDraft = Pick<MobileBriefSchedule, "enabled" | "morning" | "evening" | "feedEnabled" | "adaptiveTiming">;
 
@@ -586,6 +598,17 @@ export function MobileConnectionSettings({
             t("mobileConnection.approvalFailed"),
         );
     };
+
+    // A paired phone asks to save corrections from Chat (chat:correct).
+    const answerScopeRequest = (deviceId: string, approve: boolean) => {
+        void runStatusAction(
+            approve ? "scope-allow" : "scope-decline",
+            () => ConfirmMobileScopeRequest(deviceId, approve),
+            "scopeRequest",
+            t("mobileConnection.scopeRequestFailed"),
+        );
+    };
+    const scopeAsks = devices.filter((device) => device.scopeRequest?.state === "waiting");
 
     const deferApproval = () => {
         if (busy || !pending) return;
@@ -1078,6 +1101,43 @@ export function MobileConnectionSettings({
                                     );
                                 })}
                             </div>
+                        )}
+
+                        {scopeAsks.map((device) => (
+                            <div
+                                key={`scope-${device.deviceId}`}
+                                className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-background-accent/30 p-3"
+                            >
+                                <p className="text-sm text-ink">
+                                    {t("mobileConnection.scopeRequestCorrections", { name: deviceName(device) })}
+                                </p>
+                                <div className="flex gap-2">
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        disabled={busy}
+                                        onClick={() => answerScopeRequest(device.deviceId, false)}
+                                    >
+                                        {action === "scope-decline" && <Loader2 className="size-3.5 animate-spin" />}
+                                        {t("mobileConnection.scopeRequestNotNow")}
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        size="sm"
+                                        disabled={busy}
+                                        onClick={() => answerScopeRequest(device.deviceId, true)}
+                                    >
+                                        {action === "scope-allow" && <Loader2 className="size-3.5 animate-spin" />}
+                                        {t("mobileConnection.scopeRequestAllow")}
+                                    </Button>
+                                </div>
+                            </div>
+                        ))}
+                        {errors.scopeRequest && (
+                            <p role="alert" className="text-xs text-copper">
+                                {errors.scopeRequest}
+                            </p>
                         )}
 
                         {pending !== null && !approvalOpen && (

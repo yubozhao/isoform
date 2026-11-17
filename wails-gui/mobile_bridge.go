@@ -38,11 +38,14 @@ var errMobileRemoteRetryNoLongerNeeded = errors.New("remote access retry is no l
 // client. It opens no listener: every byte travels over the outbound relay socket
 // as end-to-end encrypted envelopes (PROTOCOL.md sections 4 and 6).
 type mobileBridge struct {
-	app          *App
-	stateDir     string
-	ctx          context.Context
-	cancel       context.CancelFunc
-	requestSlots chan struct{}
+	app *App
+	// scopeRequests are paired phones' asks for a scope they did not hold at
+	// pairing, by device id (mobile_scope_request.go). Held under mu, in memory.
+	scopeRequests map[string]mobileScopeRequestState
+	stateDir      string
+	ctx           context.Context
+	cancel        context.CancelFunc
+	requestSlots  chan struct{}
 	// background tracks detached jobs that touch the app's stores (device
 	// request serving, settled-turn timers, coalesced publishes). Stop waits
 	// for every admitted job, so the stores are never closed underneath one.
@@ -882,6 +885,7 @@ func (bridge *mobileBridge) dropDevice(id string) error {
 		return err
 	}
 	delete(bridge.replayWindows, id)
+	delete(bridge.scopeRequests, id)
 	delete(bridge.pendingBriefs, id)
 	bridge.briefOutbox.drop(id)
 	bridge.closeWorkerLocked(id)

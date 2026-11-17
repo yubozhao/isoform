@@ -87,7 +87,10 @@ func TestContextPrintsTheRefsCiteSourcesAccepts(t *testing.T) {
 	if got := rig.app.injectChatSourcesContext(main.LocalID, promptOriginMac); !strings.Contains(got, "call CiteSources once") {
 		t.Fatalf("context = %q", got)
 	}
-	for _, origin := range []promptOrigin{promptOriginPhone, promptOriginPanelAsk, promptOriginResume} {
+	if rig.app.mainChatSourcesTools(main.LocalID, promptOriginPhone) == nil {
+		t.Fatal("a phone turn did not get CiteSources")
+	}
+	for _, origin := range []promptOrigin{promptOriginPhoneAsk, promptOriginPanelAsk, promptOriginResume} {
 		if rig.app.mainChatSourcesTools(main.LocalID, origin) != nil || rig.app.injectChatSourcesContext(main.LocalID, origin) != "" {
 			t.Fatalf("origin %q got CiteSources", origin)
 		}

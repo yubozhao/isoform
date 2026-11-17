@@ -505,6 +505,8 @@ struct FeedView: View {
             YourWorkSection(work: work, now: now, onAnswered: foldNewestBrief) {
                 legacyYourWork
             }
+            // On a wide phone, Your work starts right of the fold: no item's Yes and No sit across it.
+            .duoFoldClear(foldX)
             .id("today.yourWork.anchor")
             heldReplies
             if work.supported == true {

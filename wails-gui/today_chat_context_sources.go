@@ -201,6 +201,15 @@ func (a *App) resolveTodayChatItem(ctx context.Context, ref TodayChatContextRef,
 				}
 			}
 		}
+	case todayChatWorkKind:
+		if list, err := a.workListNow(); err == nil {
+			if item, found := workFind(list, ref.SourceID); found {
+				label = item.Work.Title
+				record = todayChatRecord{Kind: todayChatWorkKind, ID: item.ID, At: mobileBriefParseTime(item.CreatedAt).UnixMilli(), Text: mobileBriefJoinParts(item.Work.Title, item.Work.Text, "state: "+item.State),
+					Owned: true, OwnedText: true}
+				ok = true
+			}
+		}
 	case "deliverable":
 		items, _ := a.listDeliverablesContext(ctx)
 		for _, item := range items {

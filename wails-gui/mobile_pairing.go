@@ -54,6 +54,7 @@ var mobileKnownScopes = []string{
 	mobileScopeChatRead, mobileScopeChatWrite, mobileScopeMemoryFix, mobileScopeHandoff,
 	mobileScopeBriefFeedback, mobileScopeOffersRead, mobileScopeOffersDecide,
 	mobileScopeGoalsRead, mobileScopeGoalsWrite, mobileScopeLibraryRead,
+	mobileScopeChatCorrect,
 }
 
 var errMobilePairingRejected = errors.New("the phone's pairing request could not be verified")
