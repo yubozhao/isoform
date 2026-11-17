@@ -829,32 +829,6 @@ var (
 	mobileRecordingStores   = map[string]*mobileRecordingStore{}
 )
 
-// downloadUpload reads a phone's sealed upload (GET /v1/hub/uploads/{id}).
-func (c *mobileRelayClient) downloadUpload(ctx context.Context, uploadID string) ([]byte, error) {
-	resp, err := c.hubUploadRequest(ctx, http.MethodGet, uploadID)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	switch resp.StatusCode {
-	case http.StatusOK:
-	case http.StatusNotFound:
-		return nil, errMobileRecordingGone
-	default:
-		// Not the part's fault: the phone tries again later (503), it does not
-		// count a refusal.
-		return nil, fmt.Errorf("the relay answered %d for the upload", resp.StatusCode)
-	}
-	sealed, err := io.ReadAll(io.LimitReader(resp.Body, mobileAttachmentMaxBytes+1))
-	if err != nil {
-		return nil, err
-	}
-	if len(sealed) == 0 || len(sealed) > mobileAttachmentMaxBytes {
-		return nil, errMobileAttachmentTooLarge
-	}
-	return sealed, nil
-}
-
 // deleteUpload removes a phone's upload the computer now holds.
 func (c *mobileRelayClient) deleteUpload(ctx context.Context, uploadID string) error {
 	resp, err := c.hubUploadRequest(ctx, http.MethodDelete, uploadID)
@@ -870,20 +844,28 @@ func (c *mobileRelayClient) deleteUpload(ctx context.Context, uploadID string) e
 }
 
 func (c *mobileRelayClient) hubUploadRequest(ctx context.Context, method, uploadID string) (*http.Response, error) {
-	if !mobileValidUUID(uploadID) {
-		return nil, errMobileRecordingInvalid
-	}
-	req, err := http.NewRequestWithContext(ctx, method, c.origin+"/v1/hub/uploads/"+uploadID, nil)
+	req, err := c.hubUploadNewRequest(ctx, method, uploadID)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.credential)
-	req.Header.Set("X-Yansu-Hub", c.hubID)
 	resp, err := mobileAttachmentHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("could not reach the relay: %w", err)
 	}
 	return resp, nil
+}
+
+func (c *mobileRelayClient) hubUploadNewRequest(ctx context.Context, method, uploadID string) (*http.Request, error) {
+	if !mobileValidUUID(uploadID) {
+		return nil, errMobileRecordingInvalid
+	}
+	req, err := http.NewRequestWithContext(ctx, method, c.hubOrigin()+"/v1/hub/uploads/"+uploadID, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.credential)
+	req.Header.Set("X-Yansu-Hub", c.hubID)
+	return req, nil
 }
 
 // mobileRecordingWriteFile writes data through a temporary file in the same
