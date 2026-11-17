@@ -13,6 +13,8 @@ import type { MainChatStreamView } from './main-chat-view-context';
 import { MainChatItemPanel } from '@/components/main-chat-item-panel';
 import { useMainChatItemPanel } from '@/hooks/useMainChatItemPanel';
 import { getMainChatProactive, type MainChatReportTarget } from '@/lib/stream-helpers';
+import { chatThreadUpdates } from '@/lib/main-chat-view';
+import type { StreamItem } from '@/types';
 
 type StreamBodyProps = ComponentProps<typeof StreamBody>;
 
@@ -80,6 +82,16 @@ export function MainChatStreamBody({ mainChat, onPrepare, ...props }: StreamBody
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [focusSignal]);
 
+    // Chat opens on the person's conversation (chatThreadUpdates): when the
+    // newest page holds only Isoform's updates, which Chat does not show, the
+    // older pages load until a conversation row arrives or none are left.
+    const quiet = enabled && !chatThreadUpdates.shown && filterKind === 'all';
+    const conversationLoaded = Boolean(props.items?.some(isConversationRow));
+    const { hasMore, loadingMore, onLoadMore } = props;
+    useEffect(() => {
+        if (quiet && !conversationLoaded && hasMore && !loadingMore) onLoadMore?.();
+    }, [quiet, conversationLoaded, hasMore, loadingMore, onLoadMore, props.items]);
+
     if (!view || !streamView) return <StreamBody {...props} />;
 
     const overview = view.overview;
@@ -112,7 +124,13 @@ export function MainChatStreamBody({ mainChat, onPrepare, ...props }: StreamBody
             {...props}
             toolbar={filters}
             mainChatView={streamView}
+            fillViewport={quiet}
             footer={props.footer || starters ? <>{props.footer}{starters}</> : undefined}
         />
     );
+}
+
+/** A row of the person's own conversation, as buildMainChatDays reads one. */
+function isConversationRow(item: StreamItem): boolean {
+    return item.rowClass === 'conversation' || item.kind === 'user' || (item.kind === 'assistant' && !item.toolName);
 }
