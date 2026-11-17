@@ -7,6 +7,9 @@ struct YourWorkSection<Legacy: View>: View {
     let now: Date
     /// Called after the first answer, so the brief folds to two lines.
     var onAnswered: () -> Void = {}
+    /// What still waits on the person outside Your work (Needs you): above Done today, since what waits on you ranks
+    /// above what's done (hub 2026-11-16).
+    var waiting: AnyView? = nil
     /// What a computer without Your work (B2) still shows, in the same place: its Needs you and Done rows.
     @ViewBuilder var legacy: () -> Legacy
 
@@ -117,6 +120,7 @@ struct YourWorkSection<Legacy: View>: View {
                     }
                 }
             }
+            if let waiting { waiting }
             if !groups.doneToday.isEmpty {
                 YourWorkGroup(title: String(localized: "work.doneToday"), identifier: "work.doneToday") {
                     ForEach(groups.doneToday) { item in

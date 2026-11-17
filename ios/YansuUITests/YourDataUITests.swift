@@ -14,6 +14,8 @@ final class YourDataUITests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 10))
         row.tap()
         XCTAssertTrue(app.buttons["data.answers"].firstMatch.waitForExistence(timeout: 10))
+        // Kept on your computer: Your voice, one sample (phone-settings rule 12).
+        XCTAssertTrue(app.buttons["data.voice"].firstMatch.exists)
         attachScreenshot(app, named: "data-1-your-data")
         app.buttons["data.answers"].firstMatch.tap()
         XCTAssertTrue(app.staticTexts["Write the test plan"].firstMatch.waitForExistence(timeout: 10))

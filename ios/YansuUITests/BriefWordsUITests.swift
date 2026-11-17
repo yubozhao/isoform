@@ -23,15 +23,18 @@ final class BriefWordsUITests: XCTestCase {
         XCTAssertTrue(title.waitForExistence(timeout: 15))
         XCTAssertTrue(title.label.hasPrefix("Morning brief · "), title.label)
 
-        let opening = app.descendants(matching: .any)["brief.paragraph.0"].firstMatch
+        // The card shows the brief's first lines (phone-today v1.0.0 rule 2), starting with the opening paragraph.
+        let opening = app.descendants(matching: .any)["feed.brief.words"].firstMatch
         XCTAssertTrue(opening.waitForExistence(timeout: 5))
-        XCTAssertEqual(opening.label, paragraphs[0], "the opening paragraph is the greeting joined to the first sentence")
-        XCTAssertFalse(app.descendants(matching: .any)["brief.paragraph.1"].exists, "the card shows the opening only")
+        XCTAssertTrue(opening.label.hasPrefix(paragraphs[0]), opening.label)
+        XCTAssertFalse(app.descendants(matching: .any)["brief.paragraph.1"].exists, "the paragraphs are on the brief")
 
         let play = app.buttons["brief.hearBrief"]
         XCTAssertTrue(play.waitForExistence(timeout: 10))
-        XCTAssertEqual(play.label, "Hear your brief")
-        XCTAssertEqual(app.descendants(matching: .any)["feed.brief.length"].firstMatch.label, "0:30")
+        // VoiceOver reads the button with the brief's length (pass-access rule 9).
+        XCTAssertEqual(play.label, "Hear it, 1 min")
+        // "Hear it · 1 min": the length in minutes (phone-today v1.0.0 rule 3).
+        XCTAssertEqual(app.descendants(matching: .any)["feed.brief.length"].firstMatch.label, "1 min")
         play.tap()
         expectation(for: NSPredicate(format: "label == %@", "Pause your brief"), evaluatedWith: play)
         waitForExpectations(timeout: 5)
@@ -45,7 +48,7 @@ final class BriefWordsUITests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any)["player.mini"].exists)
 
         // Read all opens the same brief, with every paragraph's words and the player still on that brief.
-        app.buttons["Read all"].tap()
+        app.buttons["feed.readAll"].firstMatch.tap()
         for (index, text) in paragraphs.enumerated() {
             let paragraph = app.descendants(matching: .any)["brief.paragraph.\(index)"].firstMatch
             reveal(paragraph, in: app)
@@ -58,29 +61,23 @@ final class BriefWordsUITests: XCTestCase {
     }
 
     func testNewerBriefWhileListeningWaitsBehindARowAndKeepsItsPlayer() throws {
-        let app = launch(newerBriefAfter: 4)
+        // Late enough that Play is tapped on the first brief before the newer one replaces the card.
+        let app = launch(newerBriefAfter: 10)
         let play = app.buttons["brief.hearBrief"]
         XCTAssertTrue(play.waitForExistence(timeout: 15))
         play.tap()
         expectation(for: NSPredicate(format: "label == %@", "Pause your brief"), evaluatedWith: play)
         waitForExpectations(timeout: 5)
 
-        let row = app.buttons["feed.brief.newer"]
-        XCTAssertTrue(row.waitForExistence(timeout: 20), "a newer brief is ready")
-        XCTAssertTrue(row.label.hasPrefix("A newer brief is ready · "), row.label)
+        // The newer brief replaces the card in place, with no row asking to be tapped (phone-today v1.0.0 rule 6),
+        // and the brief being played keeps playing in the mini player.
         let title = app.staticTexts["feed.brief.title"]
-        XCTAssertTrue(title.label.hasPrefix("Morning brief · "), "the card keeps the brief being played")
-        XCTAssertEqual(play.label, "Pause your brief", "the player keeps its brief")
-        attach(app, named: "brief-words-newer-row")
-
-        row.tap()
-        expectation(for: NSPredicate { _, _ in
-            (app.staticTexts["feed.brief.title"].label).hasPrefix("Brief · ")
-        }, evaluatedWith: title)
-        waitForExpectations(timeout: 5)
-        XCTAssertFalse(app.buttons["feed.brief.newer"].exists, "the row leaves once the newer brief is shown")
-        XCTAssertTrue(app.descendants(matching: .any)["player.mini"].waitForExistence(timeout: 5),
-                      "the player comes back once the card shows another brief")
+        expectation(for: NSPredicate { _, _ in !title.label.hasPrefix("Morning brief · ") }, evaluatedWith: title)
+        waitForExpectations(timeout: 20)
+        XCTAssertFalse(app.buttons["feed.brief.newer"].exists, "no \"A newer brief is ready\" row")
+        XCTAssertTrue(app.descendants(matching: .any)["player.mini"].firstMatch.waitForExistence(timeout: 5),
+                      "the player keeps the brief it plays")
+        attach(app, named: "brief-words-newer-in-place")
     }
 
     private func launch(newerBriefAfter seconds: Double? = nil) -> XCUIApplication {

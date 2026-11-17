@@ -220,6 +220,13 @@ struct YourAgentsView: View {
 
     private func agentRow(_ agent: PhoneAgent?, title: String, name: String? = nil, chevron: Bool = false) -> some View {
         HStack(alignment: .center, spacing: 10) {
+            // The agent's badge, as in With your agents.
+            Text(verbatim: String((agent?.name ?? "·").prefix(1)))
+                .font(.caption.weight(.bold))
+                .foregroundStyle(agent == nil ? YansuTheme.secondary : YansuTheme.accent)
+                .frame(width: 26, height: 26)
+                .background(agent == nil ? YansuTheme.surfaceWarm : YansuTheme.accentWash, in: Circle())
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 if let name {
                     Text(verbatim: title).font(.footnote).foregroundStyle(YansuTheme.secondary)

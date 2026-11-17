@@ -26,6 +26,8 @@ struct SettingsView: View {
     @State private var unpairing = false
     @State private var faceIDFailure = false
     @State private var status: HubStatus?
+    /// The person's two agents, at the right of Your agents (phone-settings rule 5): "Codex · Claude".
+    @State private var agentNames: String?
     @AppStorage("faceIDToOpen") private var faceIDToOpen = false
 
     var body: some View {
@@ -43,7 +45,11 @@ struct SettingsView: View {
                 VStack(spacing: 0) {
                     if pairing.isPaired {
                         NavigationLink {
-                            YourDataView(answersHub: answersHub, sentHub: sentHub, openSees: { showsSees = true })
+                            YourDataView(answersHub: answersHub, sentHub: sentHub,
+                                         voicePage: status?.ownerVoice == true && Self.allowsOwnerVoice(pairing.paired?.scopes ?? [])
+                                            ? AnyView(OwnerVoiceView(hub: app.hub, session: { [vault = app.vault] in try vault.session() }))
+                                            : nil,
+                                         openSees: { showsSees = true })
                         } label: {
                             settingsRow(String(localized: "set.data"), sub: String(localized: "set.dataSub"))
                         }
@@ -53,7 +59,8 @@ struct SettingsView: View {
                         NavigationLink {
                             YourAgentsView(hub: agentsHub, sentHub: sentHub, joinAPI: joinAPI)
                         } label: {
-                            settingsRow(String(localized: "set.agent"), sub: String(localized: "set.agentSub"))
+                            settingsRow(String(localized: "set.agent"), sub: String(localized: "set.agentSub"),
+                                        trailing: agentNames)
                         }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("settings.yourAgents.open")
@@ -347,8 +354,6 @@ struct SettingsView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("settings.clearThisPhone")
-                Link("Privacy Policy", destination: URL(string: "https://www.isoform.ai/privacy")!)
-                    .accessibilityIdentifier("settings.privacyPolicy")
                 if pairing.isPaired || pairing.recoveryMessage != nil {
                     Button(role: .destructive) {
                         if pairing.isPaired { confirmUnpair = true } else { confirmForgetPairing = true }
@@ -368,7 +373,7 @@ struct SettingsView: View {
     }
 
     /// One row of the middle list: a title, a line under it, and a chevron.
-    private func settingsRow(_ title: String, sub: String?) -> some View {
+    private func settingsRow(_ title: String, sub: String?, trailing: String? = nil) -> some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: title).font(.body).foregroundStyle(YansuTheme.ink)
@@ -377,6 +382,10 @@ struct SettingsView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            if let trailing, !trailing.isEmpty {
+                Text(verbatim: trailing).font(.subheadline).foregroundStyle(YansuTheme.secondary).lineLimit(1)
+                    .accessibilityIdentifier("settings.row.trailing")
+            }
             Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(YansuTheme.secondary)
         }
         .padding(.vertical, 12)
@@ -447,6 +456,20 @@ struct SettingsView: View {
 
     private func loadStatus() async {
         guard pairing.isPaired, pairing.paired?.scopes.contains("brief:read") == true else { return }
+        if let agents = try? await agentsHub.phoneAgents() {
+            agentNames = [agents.choice(for: "code")?.name, agents.choice(for: "else")?.name]
+                .compactMap { $0 }.joined(separator: " · ")
+        }
+        #if DEBUG && targetEnvironment(simulator)
+        // The seeded computer's flags, so Closed Eyes and the switches show in screenshots.
+        if WorkUITestSeed.isOn {
+            status = HubStatus(hubName: "Settings Test Mac", appVersion: nil, protocolVersion: 1, narrativeAvailable: true,
+                               lastBriefAt: nil, keepAwake: true, ownerVoice: true, observingPauseControl: true,
+                               observingPauseUntilEnded: true, topicsDailySwitch: true, agentHandoffs: true, agentJoin: true)
+            if let status { keepAwake.accept(status) }
+            return
+        }
+        #endif
         status = try? await app.hub.status()
         if let status { keepAwake.accept(status) }
         await keepAwake.refresh()
@@ -471,12 +494,19 @@ struct SettingsView: View {
 
     // MARK: About
 
+    /// At the bottom (phone-settings rule 11), with the privacy policy beside it: This phone ends with Unpair.
     private var aboutSection: some View {
-        Text("Version \(Self.appVersion). Briefs are end to end encrypted.")
-            .font(.footnote)
-            .foregroundStyle(YansuTheme.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-            .accessibilityIdentifier("settings.about")
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Version \(Self.appVersion). Briefs are end-to-end encrypted.")
+                .font(.footnote)
+                .foregroundStyle(YansuTheme.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("settings.about")
+            Link("Privacy Policy", destination: URL(string: "https://www.isoform.ai/privacy")!)
+                .font(.footnote)
+                .accessibilityIdentifier("settings.privacyPolicy")
+        }
+        .padding(.horizontal, 4)
     }
 
     // MARK: Helpers

@@ -127,7 +127,11 @@ enum FeedUITestSeed {
 
     /// The morning brief of the words test: its four paragraphs, and sections to check them against.
     static func wordsBrief(now: Date) -> MobileBriefV1 {
-        var brief = brief(on: now, slot: "morning", hour: 7, items: [
+        // "waiting" needs a brief older than the slot that just came due (two minutes ago). Before 7:40 AM today's
+        // morning brief would be in the future, so that moment takes yesterday's.
+        let day = moment == "waiting" && Calendar.current.component(.hour, from: now) < 8
+            ? now.addingTimeInterval(-86_400) : now
+        var brief = brief(on: day, slot: "morning", hour: 7, items: [
             ("meetings", item("Design review with Sam", "11:00 to 11:30. Last week's notes are in Drafts.", "calendar", "ev-2")),
             ("people", item("Dana is waiting on a reply", "Since Tuesday, about the Q3 deck", "principal", "p-dana")),
             ("deliverables", item("The Q3 outline is ready", "Drafted from your notes. Open it on your computer.", "deliverable", "d-9")),

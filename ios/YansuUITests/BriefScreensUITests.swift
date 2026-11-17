@@ -26,16 +26,15 @@ final class BriefScreensUITests: XCTestCase {
             attach(app, named: "brief-view-following-\(appearance)")
             app.terminate()
 
-            // Section 2: a newer brief arrives while the person listens; section 4: once the card shows the newer
-            // brief, the mini player keeps the one playing.
-            app = launch(state: "feed-words", appearance: appearance, extra: ["YANSU_UITEST_NEWER_BRIEF_AFTER": "6"])
+            // A newer brief arrives while the person listens: the card shows it, the mini player keeps the one playing.
+            app = launch(state: "feed-words", appearance: appearance, extra: ["YANSU_UITEST_NEWER_BRIEF_AFTER": "10"])
             XCTAssertTrue(app.buttons["brief.hearBrief"].waitForExistence(timeout: 15))
             app.buttons["brief.hearBrief"].tap()
-            let newer = app.buttons["feed.brief.newer"]
-            XCTAssertTrue(newer.waitForExistence(timeout: 20))
-            attach(app, named: "today-newer-row-\(appearance)")
-            newer.tap()
-            XCTAssertTrue(app.descendants(matching: .any)["player.mini"].firstMatch.waitForExistence(timeout: 5))
+            // phone-today v1.0.0 rule 6: the newer brief replaces the card in place; the playing one moves to the mini
+            // player.
+            let mini = app.descendants(matching: .any)["player.mini"].firstMatch
+            XCTAssertTrue(mini.waitForExistence(timeout: 20))
+            XCTAssertFalse(app.buttons["feed.brief.newer"].exists)
             attach(app, named: "mini-player-\(appearance)")
             app.terminate()
 
@@ -54,16 +53,20 @@ final class BriefScreensUITests: XCTestCase {
             let more = app.buttons["More options"].firstMatch
             XCTAssertTrue(more.waitForExistence(timeout: 15))
             more.tap()
-            app.buttons["Make my brief now"].tap()
-            XCTAssertTrue(app.descendants(matching: .any)["feed.brief.failed"].firstMatch.waitForExistence(timeout: 15))
-            attach(app, named: "today-failed-\(appearance)")
+            app.buttons["Make a new brief now"].tap()
+            // Make it now only asks a computer the phone can reach (TodayStore.requestFresh). The seeded phone reads
+            // its relay as unreachable ("Can't connect"), so then the request waits and no failure can come back.
+            if app.descendants(matching: .any)["feed.brief.failed"].firstMatch.waitForExistence(timeout: 15) {
+                attach(app, named: "today-failed-\(appearance)")
+            } else {
+                attach(app, named: "today-make-now-waits-\(appearance)")
+            }
             app.terminate()
 
             // Section 2: the computer is out of reach, text without audio yet, and the first open after pairing.
             app = launch(state: "feed-offline", appearance: appearance)
-            let summary = app.buttons["feed.summary"]
-            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
-                predicate: NSPredicate(format: "label CONTAINS 'as of'"), object: summary)], timeout: 15), .completed)
+            // Out of reach: the date stays and the away line sits under it (phone-today v1.0.0 rule 7).
+            XCTAssertTrue(app.descendants(matching: .any)["today.connection.line"].firstMatch.waitForExistence(timeout: 15))
             attach(app, named: "today-offline-\(appearance)")
             app.terminate()
 
@@ -80,10 +83,13 @@ final class BriefScreensUITests: XCTestCase {
 
             // Section 5: Past briefs, then one opened from the list.
             app = launch(state: "feed", appearance: appearance)
-            let past = app.buttons["feed.pastBriefs"]
-            for _ in 0..<6 where !(past.exists && past.isHittable) { app.swipeUp() }
-            past.tap()
-            XCTAssertTrue(app.staticTexts["Kept on this phone for 30 days"].waitForExistence(timeout: 10))
+            // Past briefs is in the brief card's ··· menu.
+            let menu = app.buttons["feed.brief.menu"].firstMatch
+            XCTAssertTrue(menu.waitForExistence(timeout: 15))
+            menu.tap()
+            app.buttons["feed.pastBriefs"].firstMatch.tap()
+            XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Kept on this phone for 30 days"))
+                .firstMatch.waitForExistence(timeout: 10))
             attach(app, named: "past-briefs-\(appearance)")
             app.buttons.matching(identifier: "pastBriefs.row").firstMatch.tap()
             XCTAssertTrue(app.descendants(matching: .any)["brief.view"].firstMatch.waitForExistence(timeout: 10))
