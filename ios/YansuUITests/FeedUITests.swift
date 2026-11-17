@@ -13,7 +13,8 @@ final class FeedUITests: XCTestCase {
         let brief = app.descendants(matching: .any)["feed.brief"].firstMatch
         XCTAssertTrue(brief.waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["feed.brief.title"].exists)
-        let needs = app.staticTexts["Needs you"]
+        // Your work sits under the brief (phone-today v1.0.0 rule 8).
+        let needs = app.descendants(matching: .any)["today.yourWork"].firstMatch
         XCTAssertTrue(needs.waitForExistence(timeout: 10))
         XCTAssertLessThan(brief.frame.minY, needs.frame.minY)
         XCTAssertFalse(app.staticTexts["Nothing new yet."].exists)
@@ -27,22 +28,20 @@ final class FeedUITests: XCTestCase {
     }
 
     func testOfflineAsOfAndNote() throws {
-        let app = launch(state: "feed-offline")
-        let summary = app.buttons["feed.summary"]
-        XCTAssertTrue(summary.waitForExistence(timeout: 10))
-        let asOf = NSPredicate(format: "label CONTAINS 'as of'")
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: asOf, object: summary)], timeout: 15), .completed)
-        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH 'Your computer is asleep.'")).firstMatch.exists)
+        let app = launch(state: "feed-offline", cause: "sleeping")
+        // Out of reach: the date stays and the away line sits under it (phone-today v1.0.0 rule 7).
+        XCTAssertTrue(app.buttons["today.connection.line"].waitForExistence(timeout: 15))
+        // The line names the cause; the directions under it say what to do (P147).
+        XCTAssertTrue(app.buttons["today.connection.line"].label.hasPrefix("Computer asleep"), app.buttons["today.connection.line"].label)
+        XCTAssertTrue(app.staticTexts["Press any key on your computer. Isoform picks up where it left off."].exists, app.debugDescription)
     }
 
     func testPastBriefsShowLeads() throws {
         let app = launch(state: "feed")
-        let past = app.buttons["feed.pastBriefs"]
-        reveal(past, in: app)
-        XCTAssertTrue(past.waitForExistence(timeout: 10))
-        past.tap()
-        XCTAssertTrue(app.staticTexts["Kept on this phone for 30 days"].waitForExistence(timeout: 10))
-        let lead = app.staticTexts["pastBriefs.lead"].firstMatch
+        openPastBriefs(in: app)
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Kept on this phone for 30 days")).firstMatch.waitForExistence(timeout: 10))
+        // Each row carries its brief's lead in its label.
+        let lead = app.buttons.matching(identifier: "pastBriefs.row").firstMatch
         XCTAssertTrue(lead.waitForExistence(timeout: 10))
         XCTAssertFalse(lead.label.isEmpty)
         XCTAssertFalse(app.staticTexts["Summary unavailable"].exists)
@@ -51,11 +50,9 @@ final class FeedUITests: XCTestCase {
     }
 
     func testTopicCardOpensChatWithClearableFilter() throws {
+        throw XCTSkip("The topic cards that opened Chat with a filter left Today (phone-today v1.0.0 rule 20); a topic opens from the brief, covered by testAParagraphTopicOpensItsTopicInDarkAndChinese.")
         let app = launchTopics()
-        let card = app.buttons.matching(identifier: "feed.topic").firstMatch
-        scrollIntoView(card, in: app)
-        XCTAssertTrue(card.waitForExistence(timeout: 10))
-        card.tap()
+        openTopicFromBrief(in: app)
         XCTAssertTrue(app.buttons["tab.chat"].isSelected)
         let chip = app.buttons["chat.topicFilter.clear"]
         XCTAssertTrue(chip.waitForExistence(timeout: 10))
@@ -71,10 +68,7 @@ final class FeedUITests: XCTestCase {
 
     func testTopicComposerDoneDismissesKeyboardAndKeepsTabBar() throws {
         let app = launchTopics()
-        let card = app.buttons.matching(identifier: "feed.topic").firstMatch
-        scrollIntoView(card, in: app)
-        XCTAssertTrue(card.waitForExistence(timeout: 15))
-        card.tap()
+        openTopicFromBrief(in: app)
         let composer = app.descendants(matching: .any)["topic.composer"].firstMatch
         XCTAssertTrue(composer.waitForExistence(timeout: 10))
         composer.tap()
@@ -99,26 +93,21 @@ final class FeedUITests: XCTestCase {
             app.swipeDown()
             app.swipeDown()
             attach(app, named: "today-reachable-\(suffix)")
-            let topics = app.buttons.matching(identifier: "feed.topic").firstMatch
-            scrollIntoView(topics, in: app)
-            XCTAssertTrue(topics.exists)
+            app.swipeUp()
             attach(app, named: "today-scrolled-\(suffix)")
-            topics.tap()
-            XCTAssertTrue(app.buttons["chat.topicFilter.clear"].waitForExistence(timeout: 10))
+            openTopicFromBrief(in: app)
+            XCTAssertTrue(app.buttons["topic.readDraft"].waitForExistence(timeout: 10))
             attach(app, named: "chat-topic-\(suffix)")
-            app.buttons["tab.today"].tap()
-            let past = app.buttons["feed.pastBriefs"]
-            scrollIntoView(past, in: app)
-            XCTAssertTrue(past.isHittable)
-            past.tap()
-            XCTAssertTrue(app.staticTexts["Kept on this phone for 30 days"].waitForExistence(timeout: 10))
+            app.terminate()
+            app.launch()
+            openPastBriefs(in: app)
+            XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Kept on this phone for 30 days")).firstMatch.waitForExistence(timeout: 10))
             attach(app, named: "past-briefs-\(suffix)")
             app.terminate()
 
             let offline = launch(state: "feed-offline", appearance: appearance)
-            let summary = offline.buttons["feed.summary"]
-            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
-                predicate: NSPredicate(format: "label CONTAINS 'as of'"), object: summary)], timeout: 15), .completed)
+            // Out of reach: the date stays and the away line sits under it (phone-today v1.0.0 rule 7).
+            XCTAssertTrue(offline.buttons["today.connection.line"].waitForExistence(timeout: 15))
             attach(offline, named: "today-offline-\(suffix)")
             offline.terminate()
 
@@ -142,7 +131,7 @@ final class FeedUITests: XCTestCase {
         XCTAssertTrue(app.buttons["root.settings"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["feed.brief"].firstMatch.waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["feed.refresh"].exists)
-        let read = app.buttons["Read all"]
+        let read = app.buttons["feed.readAll"].firstMatch
         reveal(read, in: app)
         XCTAssertTrue(read.exists)
         read.tap()
@@ -163,20 +152,18 @@ final class FeedUITests: XCTestCase {
 
     func testOfflineMemoryCorrectionQueuesWithUndo() throws {
         let app = launch(state: "feed-offline", ownerCheck: "allow")
-        let summary = app.buttons["feed.summary"]
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "label CONTAINS 'as of'"), object: summary)], timeout: 15), .completed)
+        XCTAssertTrue(app.buttons["today.connection.line"].waitForExistence(timeout: 15))
         app.buttons["feed.readAll"].tap()
-        let card = app.otherElements.matching(identifier: "feed.card")
-            .containing(NSPredicate(format: "label == %@", "You prefer short replies in the morning")).firstMatch
-        let notRight = card.buttons["feed.notRight"].firstMatch
+        // A remembered item's one action is Not quite, corrected inline on the brief page (P151).
+        let notRight = app.buttons["brief.notRight"].firstMatch
         scrollIntoView(notRight, in: app)
-        XCTAssertTrue(notRight.isHittable)
+        XCTAssertTrue(notRight.isHittable, app.debugDescription)
         notRight.tap()
-        let field = app.descendants(matching: .any)["reason.field"].firstMatch
+        let field = app.descendants(matching: .any)["brief.correction.field"].firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
         field.typeText("This is about evenings")
-        app.buttons["reason.confirm"].tap()
+        app.buttons["brief.correction.send"].tap()
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "exists == false"), object: field)], timeout: 10), .completed)
         app.navigationBars.buttons.element(boundBy: 0).tap()
@@ -190,18 +177,13 @@ final class FeedUITests: XCTestCase {
         let app = launch(state: "feed-empty")
         XCTAssertTrue(app.descendants(matching: .any)["feed.brief"].firstMatch.waitForExistence(timeout: 10))
         XCTAssertFalse(app.staticTexts["Nothing new yet."].exists)
-        let past = app.buttons["feed.pastBriefs"]
-        reveal(past, in: app)
-        past.tap()
+        openPastBriefs(in: app)
         XCTAssertTrue(app.buttons.matching(identifier: "pastBriefs.row").firstMatch.waitForExistence(timeout: 10))
     }
 
     func testPastBriefsHasNoLibraryEntryPoint() throws {
         let app = launch(state: "feed")
-        let past = app.buttons["feed.pastBriefs"]
-        reveal(past, in: app)
-        XCTAssertTrue(past.waitForExistence(timeout: 10))
-        past.tap()
+        openPastBriefs(in: app)
         XCTAssertTrue(app.descendants(matching: .any)["pastBriefs.screen"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["pastBriefs.library"].exists)
     }
@@ -214,21 +196,20 @@ final class FeedUITests: XCTestCase {
         XCTAssertTrue(play.waitForExistence(timeout: 10))
         XCTAssertEqual(play.label, "Hear your brief")
         let progress = app.sliders["brief.progress"]
-        let duration = app.staticTexts["brief.time"]
+        // The time line is read in words now (BriefSpokenTime); the slider's value keeps "0:12 / 0:30".
+        let duration = progress
         XCTAssertTrue(progress.waitForExistence(timeout: 5))
-        XCTAssertEqual(duration.label, "0:00 / 0:30")
+        XCTAssertEqual(duration.value as? String, "0:00 / 0:30")
         attach(app, named: "hear-your-brief-light-ready")
 
         play.tap()
         let playing = NSPredicate(format: "label == %@", "Pause your brief")
         expectation(for: playing, evaluatedWith: play)
         waitForExpectations(timeout: 5)
-        expectation(for: NSPredicate(format: "label != %@", "0:00 / 0:30"), evaluatedWith: duration)
+        expectation(for: NSPredicate(format: "value != %@", "0:00 / 0:30"), evaluatedWith: duration)
         waitForExpectations(timeout: 5)
         let beforeNavigation = try elapsedSeconds(in: duration)
-        app.buttons["tab.chat"].tap()
-        XCTAssertTrue(app.buttons["tab.chat"].isSelected)
-        app.buttons["tab.today"].tap()
+        leaveForChatAndComeBack(app)
         XCTAssertTrue(play.waitForExistence(timeout: 5))
         XCTAssertEqual(play.label, "Pause your brief", "Playback continues while another tab is open")
         expectation(for: NSPredicate { _, _ in
@@ -240,15 +221,13 @@ final class FeedUITests: XCTestCase {
 
         play.tap()
         XCTAssertEqual(play.label, "Hear your brief")
-        let pausedDuration = duration.label
+        let pausedDuration = duration.value as? String
         let pausedProgress = progress.value as? String
         attach(app, named: "hear-your-brief-light-paused")
 
-        app.buttons["tab.chat"].tap()
-        XCTAssertTrue(app.buttons["tab.chat"].isSelected)
-        app.buttons["tab.today"].tap()
+        leaveForChatAndComeBack(app)
         XCTAssertTrue(play.waitForExistence(timeout: 5))
-        XCTAssertEqual(duration.label, pausedDuration)
+        XCTAssertEqual(duration.value as? String, pausedDuration)
         XCTAssertEqual(progress.value as? String, pausedProgress)
         play.tap()
         expectation(for: playing, evaluatedWith: play)
@@ -275,8 +254,37 @@ final class FeedUITests: XCTestCase {
         XCTAssertTrue(app.buttons["tab.chat"].isSelected)
     }
 
+    /// Your topics left Today (phone-today v1.0.0 rule 20); a topic opens from its link in the brief.
+    private func openTopicFromBrief(in app: XCUIApplication) {
+        openBrief(in: app)
+        let topic = app.buttons["brief.topic.1"]
+        reveal(topic, in: app)
+        XCTAssertTrue(topic.waitForExistence(timeout: 15))
+        topic.tap()
+    }
+
+    /// Past briefs is in the brief card's ··· menu (phone-today v1.0.0 rule 2).
+    private func openPastBriefs(in app: XCUIApplication) {
+        let menu = app.buttons["feed.brief.menu"].firstMatch
+        XCTAssertTrue(menu.waitForExistence(timeout: 10))
+        menu.tap()
+        let past = app.buttons["feed.pastBriefs"].firstMatch
+        XCTAssertTrue(past.waitForExistence(timeout: 5))
+        past.tap()
+    }
+
+    /// The brief page hides the tab bar: back to Today, over to Chat and back, then Read all opens the brief again.
+    private func leaveForChatAndComeBack(_ app: XCUIApplication) {
+        app.navigationBars.buttons.firstMatch.tap()
+        app.buttons["tab.chat"].tap()
+        XCTAssertTrue(app.buttons["tab.chat"].isSelected)
+        app.buttons["tab.today"].tap()
+        openBrief(in: app)
+    }
+
     private func elapsedSeconds(in duration: XCUIElement) throws -> Int {
-        let stamp = try XCTUnwrap(duration.label.split(separator: " ").first)
+        // The slider's value: "0:12 / 0:30".
+        let stamp = try XCTUnwrap((duration.value as? String ?? "").split(separator: " ").first)
         let parts = stamp.split(separator: ":")
         XCTAssertEqual(parts.count, 2)
         guard parts.count == 2 else { throw NSError(domain: "BriefAudioUITest", code: 1) }
@@ -291,7 +299,7 @@ final class FeedUITests: XCTestCase {
         XCTAssertTrue(play.waitForExistence(timeout: 10))
         XCTAssertEqual(play.label, "Hear your brief")
         XCTAssertTrue(app.sliders["brief.progress"].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.staticTexts["brief.time"].label, "0:00 / 0:30")
+        XCTAssertEqual(app.sliders["brief.progress"].value as? String, "0:00 / 0:30")
         attach(app, named: "hear-your-brief-dark-ready")
     }
 
@@ -312,6 +320,7 @@ final class FeedUITests: XCTestCase {
     }
 
     func testIdeasCardsOpenAnUnsentMainChatDraftInLightAndDark() throws {
+        throw XCTSkip("Ideas lived in the Tasks tab, which phone-today v1.0.0 rule 19 removed; offered work is Your work on Today.")
         for appearance in ["Light", "Dark"] {
             let app = launchIdeas(appearance: appearance)
             let card = ideaCard("I can tidy the project notes", in: app)
@@ -336,6 +345,7 @@ final class FeedUITests: XCTestCase {
     }
 
     func testDecliningOwnerCheckLeavesIdeaInPlace() throws {
+        throw XCTSkip("Ideas lived in the Tasks tab, which phone-today v1.0.0 rule 19 removed; offered work is Your work on Today.")
         let app = launchIdeas(ownerCheck: "decline")
         let card = ideaCard("I can tidy the project notes", in: app)
         XCTAssertTrue(card.waitForExistence(timeout: 10))
@@ -346,6 +356,7 @@ final class FeedUITests: XCTestCase {
     }
 
     func testIdeasNotForMeDismissesOnlyItsCardAndStaysDismissedAfterRefresh() throws {
+        throw XCTSkip("Ideas lived in the Tasks tab, which phone-today v1.0.0 rule 19 removed; offered work is Your work on Today.")
         let app = launchIdeas(ownerCheck: "allow")
         let card = ideaCard("I can tidy the project notes", in: app)
         XCTAssertTrue(card.waitForExistence(timeout: 10))
@@ -372,6 +383,7 @@ final class FeedUITests: XCTestCase {
     }
 
     func testIdeasChineseCopyAndAccessibilityLabels() throws {
+        throw XCTSkip("Ideas lived in the Tasks tab, which phone-today v1.0.0 rule 19 removed; offered work is Your work on Today.")
         let app = launchIdeas(language: "zh-Hans")
         let card = ideaCard("I can tidy the project notes", in: app)
         XCTAssertTrue(card.waitForExistence(timeout: 10))
@@ -383,6 +395,7 @@ final class FeedUITests: XCTestCase {
     }
 
     func testNativeUndoRetainsIdeaSourcesAfterClearAndCannotRestoreAfterSendOrDiscard() throws {
+        throw XCTSkip("Ideas lived in the Tasks tab, which phone-today v1.0.0 rule 19 removed; offered work is Your work on Today.")
         let prompt = "Help me tidy the project notes. Show me a plan before making changes."
         for finishingAction in ["chat.send", "chat.discardDraft"] {
             let app = launchIdeas()
@@ -429,9 +442,10 @@ final class FeedUITests: XCTestCase {
             app.launchEnvironment["YANSU_UITEST_APPEARANCE"] = appearance.lowercased()
             app.launch()
             let name = "\(appearance.lowercased())-\(language)"
-            let paragraph = app.buttons["brief.paragraph.0"]
-            XCTAssertTrue(paragraph.waitForExistence(timeout: 15))
-            XCTAssertEqual(paragraph.label, english ? "Start with the project notes today." : "今天可以先整理项目笔记。")
+            // The card shows the brief's first lines (phone-today v1.0.0 rule 2); the cards are on the brief page.
+            let words = app.descendants(matching: .any)["feed.brief.words"].firstMatch
+            XCTAssertTrue(words.waitForExistence(timeout: 15))
+            XCTAssertTrue(words.label.hasPrefix(english ? "Start with the project notes today." : "今天可以先整理项目笔记。"), words.label)
             XCTAssertFalse(app.descendants(matching: .any)["feed.prompt"].exists)
             app.buttons["feed.readAll"].tap()
             let button = app.buttons["brief.card.card-plan"]
@@ -455,29 +469,35 @@ final class FeedUITests: XCTestCase {
     func testBriefChipAndParagraphTapAskInASheet() throws {
         for appearance in ["Light", "Dark"] {
             let app = launch(state: "feed-conversation", appearance: appearance)
+            openBrief(in: app)
             let chip = app.buttons["brief.chip.0"]
             XCTAssertTrue(chip.waitForExistence(timeout: 15))
             XCTAssertEqual(chip.label, "Review the project notes")
-            attach(app, named: "brief-chip-today-\(appearance.lowercased())")
+            attach(app, named: "brief-chip-\(appearance.lowercased())")
             if appearance == "Light" {
                 chip.tap()
                 let question = app.staticTexts["brief.ask.question"]
                 XCTAssertTrue(question.waitForExistence(timeout: 10))
                 XCTAssertEqual(question.label, "What changed in the project notes?")
-                XCTAssertFalse(app.buttons["tab.chat"].isSelected, "the chip tap never jumps to Chat")
+                XCTAssertFalse(app.buttons["tab.chat"].exists && app.buttons["tab.chat"].isSelected, "the chip tap never jumps to Chat")
             }
             app.terminate()
         }
 
         let app = launch(state: "feed-conversation")
+        openBrief(in: app)
         let paragraph = app.buttons["brief.paragraph.0"]
         XCTAssertTrue(paragraph.waitForExistence(timeout: 15))
         XCTAssertEqual(paragraph.label, "Start with the project notes today.")
-        paragraph.tap()
+        // A tap shows the paragraph's actions (a second tap hides them); Reply about this opens the sheet.
+        let reply = app.buttons["brief.askAbout.0"].firstMatch
+        if !reply.exists { paragraph.tap() }
+        XCTAssertTrue(reply.waitForExistence(timeout: 5))
+        reply.tap()
         XCTAssertTrue(app.descendants(matching: .any)["brief.ask.field"].firstMatch.waitForExistence(timeout: 10))
         XCTAssertEqual(app.staticTexts["brief.ask.quote"].label, "Start with the project notes today.")
         XCTAssertFalse(app.staticTexts["brief.ask.question"].exists, "nothing is asked until the person asks")
-        XCTAssertFalse(app.buttons["tab.chat"].isSelected)
+        XCTAssertFalse(app.buttons["tab.chat"].exists && app.buttons["tab.chat"].isSelected)
         app.terminate()
     }
 
@@ -511,18 +531,20 @@ final class FeedUITests: XCTestCase {
     func testTodaysBriefShowsTopicsQuestionsAndClosingAndKeepsCardsAndEarlier() throws {
         for appearance in ["Light", "Dark"] {
             let app = launchTopics(appearance: appearance)
+            openBrief(in: app)
             XCTAssertTrue(app.buttons["brief.paragraph.0"].waitForExistence(timeout: 15))
-            XCTAssertEqual(app.buttons["brief.chip.0"].label, "Review the SOW")
-            XCTAssertEqual(app.buttons["brief.chip.1"].label, "Review the date")
+            // This computer lists the brief's items, so the brief page shows no paragraph chips (review 2026-11-15).
             XCTAssertFalse(app.staticTexts["Swipe for more"].exists)
-            let topic = app.buttons.matching(identifier: "feed.topic").firstMatch
-            scrollIntoView(topic, in: app)
+            // The topic is linked from the brief now; Your topics left Today (rule 20).
+            let topic = app.buttons["brief.topic.1"]
+            reveal(topic, in: app)
             XCTAssertTrue(topic.waitForExistence(timeout: 10))
             app.terminate()
         }
     }
 
     func testAQuestionAndAnAnswerOnlyFillTheBox() throws {
+        throw XCTSkip("Chips and answer cards ask in a sheet over the brief now, never filling Chat's box (P036); TodayReviewUITests.testBriefCardsAskInSheetWithoutPrefillingChat covers it.")
         for (cardID, words) in [("brief.chip.0", "What changed in the SOW?"),
                                 ("brief.card.answer-hold", "Hold Thursday 1:00 to 4:00 PM for the Meridian memo.")] {
             let app = launchTopics()
@@ -544,12 +566,7 @@ final class FeedUITests: XCTestCase {
     func testTheTopicScreenShowsTheFilteredMainChatAndSendsWithTheTopic() throws {
         // A declining owner check proves that neither Not now nor Send asks for one.
         let app = launchTopics(ownerCheck: "decline")
-        let card = app.buttons.matching(identifier: "feed.topic").firstMatch
-        scrollIntoView(card, in: app)
-        XCTAssertTrue(card.waitForExistence(timeout: 15))
-        card.tap()
-        XCTAssertTrue(app.buttons["chat.topicFilter.clear"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.buttons["chat.topicFilter.clear"].label.contains("Halcyon ERP sync"))
+        openTopicFromBrief(in: app)
         let event = app.descendants(matching: .any)["topic.event"].firstMatch
         XCTAssertTrue(event.waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["Only by skipping the 2 open review comments on v0.3. Both touch invoice mapping, so they are worth keeping."].exists)
@@ -592,8 +609,6 @@ final class FeedUITests: XCTestCase {
             XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'opened the Halcyon thread'")).firstMatch
                 .waitForExistence(timeout: 10), "an earlier page goes above")
         }
-        app.buttons["chat.topicFilter.clear"].tap()
-        XCTAssertFalse(app.buttons["chat.topicFilter.clear"].exists)
     }
 
     func testAParagraphTopicOpensItsTopicInDarkAndChinese() throws {
@@ -620,9 +635,7 @@ final class FeedUITests: XCTestCase {
 
     func testTopicDraftSendUsesTheVisibleDraftAndNoOwnerCheck() throws {
         let app = launchTopics(ownerCheck: "decline")
-        let topic = app.buttons.matching(identifier: "feed.topic").firstMatch
-        scrollIntoView(topic, in: app)
-        topic.tap()
+        openTopicFromBrief(in: app)
         let read = app.buttons["topic.readDraft"]
         XCTAssertTrue(read.waitForExistence(timeout: 15))
         read.tap()
@@ -704,9 +717,11 @@ final class FeedUITests: XCTestCase {
             .containing(NSPredicate(format: "label == %@", title)).firstMatch
     }
 
-    private func launch(state: String, ownerCheck: String? = nil, appearance: String? = nil) -> XCUIApplication {
+    private func launch(state: String, ownerCheck: String? = nil, appearance: String? = nil,
+                        cause: String? = nil) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment["YANSU_UITEST_SETTINGS_STATE"] = state
+        app.launchEnvironment["YANSU_UITEST_CONNECTION_CAUSE"] = cause
         app.launchEnvironment["YANSU_UITEST_OWNER_CHECK"] = ownerCheck
         app.launchEnvironment["YANSU_UITEST_TAB"] = "feed"
         if let appearance {
@@ -730,5 +745,15 @@ final class FeedUITests: XCTestCase {
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+
+    /// The brief's paragraphs and chips are on the brief page, which Read all opens from the Today card
+    /// (phone-today v1.0.0 rule 2).
+    private func openBrief(in app: XCUIApplication) {
+        let read = app.buttons["feed.readAll"].firstMatch
+        // Once read or answered, the card folds to its title (phone-today rule 5); a tap unfolds it.
+        if !read.waitForExistence(timeout: 10) { app.descendants(matching: .any)["feed.brief"].firstMatch.tap() }
+        XCTAssertTrue(read.waitForExistence(timeout: 5))
+        read.tap()
     }
 }

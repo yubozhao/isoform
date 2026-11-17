@@ -9,7 +9,7 @@ final class LocalNotificationUITests: XCTestCase {
     func testOfflineAwakeOfferAndSettingsFooters() throws {
         let app = launch(offline: true, instant: false)
         let offer = app.descendants(matching: .any)["today.keepAwakeOffer"].firstMatch
-        XCTAssertTrue(offer.waitForExistence(timeout: 15))
+        XCTAssertTrue(offer.waitForExistence(timeout: 15), app.debugDescription)
         attachScreenshot(app, named: "today-asleep-awake-offer")
         app.buttons["Turn on"].tap()
         XCTAssertTrue(app.staticTexts["Turns on when your computer is back."].waitForExistence(timeout: 10))
@@ -149,6 +149,9 @@ final class LocalNotificationUITests: XCTestCase {
         app.launchEnvironment["YANSU_UITEST_KEEP_AWAKE"] = "off"
         app.launchEnvironment["YANSU_UITEST_INSTANT_PUSH"] = instant ? "true" : "false"
         app.launchEnvironment["YANSU_UITEST_RESET_AWAKE_OFFER"] = "1"
+        // The keep-awake offer is for a computer that said goodbye for sleep; a seed with no goodbye reads "Can't
+        // connect", so name the cause.
+        if offline { app.launchEnvironment["YANSU_UITEST_CONNECTION_CAUSE"] = "sleeping" }
         app.launch()
         XCTAssertTrue(app.buttons["tab.today"].waitForExistence(timeout: 15))
         return app

@@ -209,11 +209,20 @@ struct TodayBriefCardView: View {
             if weekShown {
                 YansuCard {
                     // One card for a week brief (P139): Your week's title and ··· menu, its Play or recording line,
-                    // its words and sections, then the links at the bottom.
-                    BriefCardsView(brief: shown, showsAttention: false, showsParagraphs: true, topics: topics,
-                                   onPrepareInTopic: onPrepareInTopic, preview: true, weekEmbedded: true,
-                                   weekBelowTitle: weekPlayLine(shown, holdsBrief: holdsBrief, asleep: asleep),
-                                   weekMakeNow: { Task { await todayStore.requestFresh() } }, weekCanMakeNow: canMakeBrief)
+                    // its words and sections, then Read all at the bottom, as the ordinary card has it.
+                    VStack(alignment: .leading, spacing: 14) {
+                        BriefCardsView(brief: shown, showsAttention: false, showsParagraphs: true, topics: topics,
+                                       onPrepareInTopic: onPrepareInTopic, preview: true, weekEmbedded: true,
+                                       weekBelowTitle: weekPlayLine(shown, holdsBrief: holdsBrief, asleep: asleep),
+                                       weekMakeNow: { Task { await todayStore.requestFresh() } }, weekCanMakeNow: canMakeBrief)
+                        Button { readingAll = true } label: {
+                            Text("today.brief.readAll")
+                                .font(.subheadline)
+                                .foregroundStyle(YansuTheme.accent)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("feed.readAll")
+                    }
                 }
             } else {
                 card(shown, entry: entry, holdsBrief: holdsBrief, asleep: asleep, isFolded: isFolded, due: due)

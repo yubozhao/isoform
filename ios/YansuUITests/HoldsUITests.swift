@@ -4,6 +4,7 @@ final class HoldsUITests: XCTestCase {
     override func setUpWithError() throws {
         try super.setUpWithError()
         continueAfterFailure = false
+        throw XCTSkip("Holds were offered on the Tasks tab, which phone-today v1.0.0 rule 19 removed; offered work is Your work on Today.")
     }
 
     func testHoldOfferAndUndoInEnglishLight() { exerciseHold(language: "en", appearance: "Light") }

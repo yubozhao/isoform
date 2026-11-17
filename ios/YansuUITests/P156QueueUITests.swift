@@ -69,12 +69,13 @@ final class P156QueueUITests: XCTestCase {
         }
     }
 
-    /// A Tasks reply the computer did not take in a day: its row says so, with Send again (PROTOCOL.md section 23).
+    /// A reply the computer did not take in a day: Today lists it under Your work, saying so, with Send again
+    /// (PROTOCOL.md section 23; it sat on its Tasks row until the Tasks tab went).
     func testHeldTasksReplyShowsItsLineAndSendAgain() throws {
         for appearance in ["light", "dark"] {
             let app = launch(state: "feed-review", appearance: appearance, extra: [
                 "YANSU_UITEST_CONNECTION_CAUSE": "sleeping", "YANSU_UITEST_KEEP_AWAKE": "off",
-                "YANSU_UITEST_HELD_SEND": "expired", "YANSU_UITEST_TAB": "tasks",
+                "YANSU_UITEST_HELD_SEND": "expired",
             ])
             let line = app.staticTexts["This waited a day, so it wasn't sent."].firstMatch
             XCTAssertTrue(line.waitForExistence(timeout: 20), "the held reply has no line (\(appearance))")
@@ -88,7 +89,7 @@ final class P156QueueUITests: XCTestCase {
         }
     }
 
-    /// Today's Show for a held Tasks reply opens Tasks at that row.
+    /// Today's Show for a held reply scrolls Today to it.
     func testTodayShowOpensTasksAtTheHeldReply() throws {
         let app = launch(state: "feed-review", appearance: "light", extra: [
             "YANSU_UITEST_CONNECTION_CAUSE": "sleeping", "YANSU_UITEST_KEEP_AWAKE": "off",
@@ -97,12 +98,12 @@ final class P156QueueUITests: XCTestCase {
         let show = app.buttons["today.expired.show"].firstMatch
         XCTAssertTrue(show.waitForExistence(timeout: 20), "the Today line is missing")
         show.tap()
-        // The row's identifier is tasks.row.unread.draft.ui-sow while it is new, so match the task id.
+        // The held reply's identifier carries its task id.
         let row = app.descendants(matching: .any).matching(NSPredicate(format: "identifier CONTAINS %@", "draft.ui-sow")).firstMatch
-        XCTAssertTrue(row.waitForExistence(timeout: 10), "Show did not open Tasks at the reply")
+        XCTAssertTrue(row.waitForExistence(timeout: 10), "Today does not list the held reply")
         let line = app.staticTexts["This waited a day, so it wasn't sent."].firstMatch
         XCTAssertTrue(line.waitForExistence(timeout: 5), "the reply's row lost its line")
-        XCTAssertTrue(line.isHittable, "Show did not scroll Tasks to the reply")
+        XCTAssertTrue(line.isHittable, "Show did not scroll Today to the reply")
         app.terminate()
     }
 

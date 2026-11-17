@@ -187,9 +187,10 @@ final class DayOneUITests: XCTestCase {
         XCTAssertTrue(see.isHittable)
         capture(app, "first-read-offers-\(language)-\(appearance)")
         see.tap()
-        let upNext = app.descendants(matching: .any)["tasks.upNext"]
+        // The offers are in Your work on Today now (phone-today rule 19): See them scrolls there.
+        let upNext = app.descendants(matching: .any)["today.yourWork"].firstMatch
         XCTAssertTrue(upNext.waitForExistence(timeout: 15))
-        XCTAssertTrue(app.buttons["tab.tasks"].isSelected)
+        XCTAssertTrue(app.buttons["tab.today"].isSelected)
         XCTAssertTrue(upNext.isHittable)
         capture(app, "first-read-up-next-\(language)-\(appearance)")
         app.terminate()
