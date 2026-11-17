@@ -6,10 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
+
+	"github.com/google/uuid"
 
 	"wails-gui/internal/privacy"
 	"wails-gui/storage"
@@ -51,6 +55,8 @@ type ForgetStep struct {
 
 // ForgetEverythingStatus is the job's saved state.
 type ForgetEverythingStatus struct {
+	// JobID names this run of the job, the same across retries and restarts.
+	JobID      string       `json:"jobId,omitempty"`
 	State      string       `json:"state"`
 	StartedAt  string       `json:"startedAt,omitempty"`
 	FinishedAt string       `json:"finishedAt,omitempty"`
@@ -69,6 +75,7 @@ type forgetEverythingStep struct {
 // still holds.
 var forgetEverythingSteps = []forgetEverythingStep{
 	{"activity", (*App).forgetAllActivitySessions},
+	{"moments", (*App).forgetAllMoments},
 	{"watch", (*App).forgetAllWatchRecordings},
 	{"meetings", (*App).forgetAllMeetingNotes},
 	{"files", (*App).forgetAllFileActivity},
@@ -77,6 +84,7 @@ var forgetEverythingSteps = []forgetEverythingStep{
 	{"messages", func(a *App, _ context.Context) error { return a.ForgetMessages() }},
 	{"voices", func(a *App, _ context.Context) error { return a.ForgetVoices() }},
 	{"chats", (*App).forgetAllChatThreads},
+	{"mainChat", (*App).forgetMainChat},
 	{"handoffs", func(a *App, _ context.Context) error { return a.ForgetWorkOnItHandoff("") }},
 	{"assistantHistory", func(a *App, _ context.Context) error { return a.forgetAssistantHistory() }},
 	{"memory", (*App).forgetAllMemory},
@@ -86,8 +94,13 @@ var forgetEverythingSteps = []forgetEverythingStep{
 	{"people", (*App).forgetAllPeople},
 	{"topics", (*App).forgetAllTopics},
 	{"answers", func(a *App, _ context.Context) error { return a.DeleteAnswers() }},
+	// The briefs and their sealed copies, packages and recordings (the brief
+	// store's own forget, mobile_brief_forget.go).
+	{"briefs", (*App).forgetAllBriefs},
 	{"workProfile", (*App).forgetWorkProfile},
+	{"logs", (*App).forgetDumpsAndLogs},
 	{"agentOfYou", (*App).forgetAgentOfYouProfile},
+	{"phones", (*App).forgetOnPhones},
 }
 
 type forgetEverythingJob struct {
@@ -97,6 +110,10 @@ type forgetEverythingJob struct {
 }
 
 var forgetEverythingRun forgetEverythingJob
+
+// forgetEverythingApp is the app the job runs for, for callbacks such as a
+// phone's confirmation.
+var forgetEverythingApp atomic.Pointer[App]
 
 func forgetEverythingPath() (string, error) {
 	root, err := flavorDataDir()
@@ -144,15 +161,22 @@ func (a *App) GetForgetEverything() ForgetEverythingStatus {
 // StartForgetEverything starts the job, or resumes one that is pending. It
 // returns at once; progress arrives as your-data:forget events.
 func (a *App) StartForgetEverything() (ForgetEverythingStatus, error) {
+	forgetEverythingApp.Store(a)
 	status := loadForgetEverything()
 	if status.State != forgetRunning && status.State != forgetPending {
-		status = ForgetEverythingStatus{State: forgetRunning, StartedAt: mobileTimestamp(time.Now())}
+		now := time.Now()
+		// Builds already running save nothing from before now.
+		if err := forgetCutoff().Set(now); err != nil {
+			return status, err
+		}
+		status = ForgetEverythingStatus{JobID: uuid.NewString(), State: forgetRunning, StartedAt: mobileTimestamp(now)}
 		for _, step := range forgetEverythingSteps {
 			status.Steps = append(status.Steps, ForgetStep{ID: step.id, State: "waiting"})
 		}
 		if err := saveForgetEverything(status); err != nil {
 			return status, err
 		}
+		noteForgetQuiet(status)
 		log.Printf("[forget-everything] started steps=%d", len(status.Steps))
 	}
 	a.runForgetEverythingSoon(0)
@@ -162,7 +186,9 @@ func (a *App) StartForgetEverything() (ForgetEverythingStatus, error) {
 // resumeForgetEverything runs at launch: a job that was running or pending
 // when the app stopped carries on.
 func (a *App) resumeForgetEverything() {
+	forgetEverythingApp.Store(a)
 	status := loadForgetEverything()
+	noteForgetQuiet(status)
 	if status.State == forgetRunning || status.State == forgetPending {
 		log.Printf("[forget-everything] resuming state=%s", status.State)
 		a.runForgetEverythingSoon(0)
@@ -227,6 +253,7 @@ func (a *App) runForgetEverything(ctx context.Context) ForgetEverythingStatus {
 	if err := saveForgetEverything(status); err != nil {
 		log.Printf("[forget-everything] not saved: %v", err)
 	}
+	noteForgetQuiet(status)
 	a.emitBrowserEvent(forgetEverythingEvent, status)
 	return status
 }
@@ -389,10 +416,11 @@ func (a *App) forgetAllKnowledge(_ context.Context) error {
 	}, a.DeleteKnowledgeEntry)
 }
 
-// forgetAllPeople keeps the person's own row, so a call still knows which
-// side is theirs.
-func (a *App) forgetAllPeople(_ context.Context) error {
-	return forgetEach(func() ([]string, error) {
+// forgetAllPeople forgets everyone else, and keeps the person's own row as
+// identity only: the name and the "this is me" link, so a call still knows
+// which side is theirs. Everything learned about them from it goes.
+func (a *App) forgetAllPeople(ctx context.Context) error {
+	if err := forgetEach(func() ([]string, error) {
 		people, err := a.ListPrincipals()
 		ids := make([]string, 0, len(people))
 		for _, p := range people {
@@ -401,19 +429,21 @@ func (a *App) forgetAllPeople(_ context.Context) error {
 			}
 		}
 		return ids, err
-	}, a.DeletePrincipal)
-}
-
-// forgetAllCalendar removes the stored calendar copies, and tells every
-// reader (Today, the brief) through the calendar withdrawal.
-func (a *App) forgetAllCalendar(ctx context.Context) error {
+	}, a.DeletePrincipal); err != nil {
+		return err
+	}
 	if a.store == nil {
 		return errForgetNotReady
 	}
-	if err := a.store.DeleteAllCalendarEvents(ctx); err != nil {
+	selves, err := a.store.ListPrincipalsByKind(ctx, storage.PrincipalKindSelf)
+	if err != nil {
 		return err
 	}
-	publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.Account, ID: "calendar"})
+	for _, self := range selves {
+		if err := a.store.ResetPrincipalToIdentity(ctx, self.ID); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -451,4 +481,63 @@ func (a *App) forgetAllKnowHowDrafts(_ context.Context) error {
 	a.invalidateKnowHowCandidateCacheLocked()
 	a.knowHow.candMu.Unlock()
 	return err
+}
+
+// forgetAllCalendar removes the stored calendar copies, and tells every
+// reader (Today, the brief) through the calendar withdrawal.
+func (a *App) forgetAllCalendar(ctx context.Context) error {
+	if a.store == nil {
+		return errForgetNotReady
+	}
+	if err := a.store.DeleteAllCalendarEvents(ctx); err != nil {
+		return err
+	}
+	publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.Account, ID: "calendar"})
+	return nil
+}
+
+// forgetAllMoments removes the moments made from activity (Activity's own
+// Forget, DeleteActivity, with its topic scrub and withdrawal) and the
+// extracted events, which a session's erase leaves in place.
+func (a *App) forgetAllMoments(_ context.Context) error {
+	if a.activity == nil || a.activity.store == nil {
+		return errForgetNotReady
+	}
+	store := a.activity.store
+	if err := forgetEach(func() ([]string, error) {
+		rows, err := store.GetActivitiesInRange(0, math.MaxInt64)
+		ids := make([]string, 0, len(rows))
+		for _, row := range rows {
+			ids = append(ids, row.ID)
+		}
+		return ids, err
+	}, a.DeleteActivity); err != nil {
+		return err
+	}
+	return forgetEach(func() ([]string, error) {
+		rows, err := store.GetSemanticEventsInRange(0, math.MaxInt64)
+		ids := make([]string, 0, len(rows))
+		for _, row := range rows {
+			ids = append(ids, row.ID)
+		}
+		return ids, err
+	}, store.DeleteSemanticEvent)
+}
+
+// forgetMainChat empties the main chat and keeps it: one empty main chat with
+// the same id. A turn running in it stops first.
+func (a *App) forgetMainChat(ctx context.Context) error {
+	if a.store == nil {
+		return errForgetNotReady
+	}
+	if row, err := a.store.LoadMainSession(ctx); err == nil && row != nil {
+		a.cancelActiveChatTurn(row.LocalID)
+		a.waitForChatTurnEnd(row.LocalID)
+	}
+	id, err := a.store.ClearMainChat(ctx)
+	if err != nil || id == "" {
+		return err
+	}
+	publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.Session, ID: id})
+	return nil
 }

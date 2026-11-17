@@ -518,6 +518,9 @@ func (bridge *mobileBridge) handleAuthorized(w http.ResponseWriter, r *http.Requ
 				return
 			}
 			bridge.serveForgetAnswer(w, mobilePathSegments(path)[1])
+		case "POST /forget-all/*/done":
+			// Any paired phone confirms its own forget; no scope beyond pairing.
+			bridge.serveForgetAllDone(w, r, device, mobilePathSegments(path)[1])
 		case "POST /work/*/answer":
 			if !mobileRequireScope(w, device, mobileScopeBriefFeedback) {
 				return
@@ -573,6 +576,8 @@ func mobileRouteFamily(method, path string) string {
 	}
 	parts := mobilePathSegments(path)
 	switch true {
+	case len(parts) == 3 && parts[0] == "forget-all" && parts[2] == "done" && method == http.MethodPost:
+		return "POST /forget-all/*/done"
 	case len(parts) == 2 && parts[0] == "topics" && method == http.MethodGet:
 		return "GET /topics/*"
 	case len(parts) == 3 && parts[0] == "topics" && parts[2] == "messages" && method == http.MethodPost:

@@ -12,7 +12,11 @@ func forgetEverythingTestSteps(t *testing.T, steps []forgetEverythingStep) {
 	t.Helper()
 	previous := forgetEverythingSteps
 	forgetEverythingSteps = steps
+	// The job's quiet window is process-wide: a job a test runs must not hold
+	// back the saves of the tests after it.
+	previousQuiet := forgetQuietUntil.Load()
 	t.Cleanup(func() {
+		forgetQuietUntil.Store(previousQuiet)
 		forgetEverythingSteps = previous
 		forgetEverythingRun.mu.Lock()
 		if forgetEverythingRun.timer != nil {

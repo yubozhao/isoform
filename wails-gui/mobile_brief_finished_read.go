@@ -550,6 +550,9 @@ func (s *mobileBriefService) sealResult(ctx context.Context, source MobileBriefV
 		return MobileBriefV1{}, mobileBriefWithholding{Reason: mobileBriefWithheldNotReady}, false, false
 	}
 	mobileBriefFinishedReadKeys.Add(1)
+	// The epoch is taken before anything is read, so a privacy change made
+	// while this seal is put together is newer than the seal, never folded in.
+	epoch := mobileBriefPrivacyEpoch.Load()
 	previous, found, err := s.store.loadFinishedRead(source.BriefID)
 	if err != nil {
 		return MobileBriefV1{}, mobileBriefWithholding{Reason: mobileBriefWithheldNotReady}, false, false
@@ -567,7 +570,6 @@ func (s *mobileBriefService) sealResult(ctx context.Context, source MobileBriefV
 		sealedAt = s.store.finishedReadTime(source.BriefID, previous)
 		cited = mobileBriefSealedSources(previous, source)
 	}
-	epoch := mobileBriefPrivacyEpoch.Load()
 	print := s.app.briefPrivacyPrint()
 	day := s.readDay()
 	projectionContext := s.app.mobileBriefSummaryProjection(ctx, source, previous.Fingerprints)
@@ -577,7 +579,7 @@ func (s *mobileBriefService) sealResult(ctx context.Context, source MobileBriefV
 	projected, withheld := s.app.mobileBriefForProjectionWithholding(projectionContext, source, true)
 	brief := s.app.mobileBriefWithCards(projected)
 	brief.Audio = s.finishedReadAudio(ctx, source, brief)
-	if withheld.Transient() || print != s.app.briefPrivacyPrint() || day != s.readDay() {
+	if withheld.Transient() || print != s.app.briefPrivacyPrint() || day != s.readDay() || epoch != mobileBriefPrivacyEpoch.Load() {
 		return brief, withheld, false, false
 	}
 	raw, err := marshalStoredMobileBrief(brief)
@@ -591,6 +593,11 @@ func (s *mobileBriefService) sealResult(ctx context.Context, source MobileBriefV
 	read := mobileBriefFinishedRead{Schema: mobileBriefSealedSchema, Rule: mobileBriefSealRule, Epoch: epoch, Print: print, Source: mobileBriefSourceDigest(source), Day: day, Cites: sealCites(source), SealedAt: sealedAt, MadeAhead: mobileBriefIsAhead(source), Fingerprints: fingerprints, SourceRefs: mobileBriefSealSources(cited), WithheldReason: withheld.Reason, WithheldKind: withheld.SourceKind, Brief: raw}
 	if mobileBriefBeforeSealSave != nil {
 		mobileBriefBeforeSealSave(source.BriefID)
+	}
+	// Nothing is sealed while Forget everything runs or has just finished, or
+	// after a privacy change that came during this seal.
+	if derivedSavesQuiet() || epoch != mobileBriefPrivacyEpoch.Load() {
+		return brief, withheld, false, false
 	}
 	if err := s.store.saveFinishedReadIfCurrent(source.BriefID, read); err != nil {
 		return brief, withheld, false, false

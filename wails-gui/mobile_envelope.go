@@ -96,7 +96,7 @@ func mobileKindAllowed(dir, kind string) bool {
 	case mobileDirD2H:
 		return kind == mobileKindRequest
 	case mobileDirH2D:
-		return kind == mobileKindResponse || kind == mobileKindBrief || kind == mobileKindEvent
+		return kind == mobileKindResponse || kind == mobileKindBrief || kind == mobileKindEvent || kind == mobileKindForgetAll
 	default:
 		return false
 	}

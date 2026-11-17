@@ -282,6 +282,9 @@ func readRawStreamPageSnapshotAt(path string, err error) (streamPageSnapshot, st
 }
 
 func writeStreamPageSnapshot(key streamPageKey, snap streamPageSnapshot) error {
+	if derivedSavesQuiet() {
+		return errForgetQuiet
+	}
 	path, err := streamPageFile(key)
 	return writeStreamPageSnapshotAt(path, err, snap)
 }

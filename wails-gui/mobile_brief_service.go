@@ -1320,6 +1320,19 @@ func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, s
 		counts.EvidenceByKind = mobileBriefEvidenceCounts(brief.Evidence)
 		brief.generationDebug = &counts
 	}
+	// The last check before the save: an explicit privacy action since the
+	// build began (whether or not it gathered its own sources) restarts it, and
+	// nothing is saved while Forget everything runs or has just finished.
+	if s.app != nil && s.app.briefPrivacyPrint() != startPrint {
+		s.patchMu.Unlock()
+		log.Printf("[mobile-brief] %s brief privacy changed before the save; regenerating", slot)
+		return MobileBriefV1{}, errMobileBriefSourcesChanged
+	}
+	if derivedSavesQuiet() {
+		s.patchMu.Unlock()
+		log.Printf("[mobile-brief] %s brief not saved: Forget everything is running", slot)
+		return MobileBriefV1{}, errForgetQuiet
+	}
 	firstReadBriefMu.Lock()
 	// The copy is sealed after patchMu is released (below), so the save does not
 	// announce or seal under the lock.

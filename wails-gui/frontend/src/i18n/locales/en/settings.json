@@ -4066,7 +4066,12 @@
             "topics": "Topics",
             "answers": "Answers",
             "workProfile": "Work profile",
-            "agentOfYou": "Agent of You profile"
+            "agentOfYou": "Agent of You profile",
+            "moments": "Moments",
+            "mainChat": "Chat",
+            "logs": "Logs and probe dumps",
+            "phones": "Your phone and watch",
+            "briefs": "Briefs"
         }
     },
     "aoy": {

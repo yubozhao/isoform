@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -364,4 +365,34 @@ func remapCompactBoundarySummaryID(content string, itemIDMap map[string]string) 
 		return content
 	}
 	return string(encoded)
+}
+
+// ClearMainChat removes every message of the main chat and what hangs off
+// them (chips, topics, open answers and their posts), and keeps the session
+// itself: one empty main chat with the same id (Your data's Forget
+// everything). It is the main chat's own clear, not a delete: the main chat
+// still can't be deleted. It returns the main chat's id, "" when there is none.
+func (s *Store) ClearMainChat(ctx context.Context) (string, error) {
+	var localID string
+	err := s.db.QueryRowContext(ctx, `SELECT local_id FROM sessions WHERE kind = ? LIMIT 1`, SessionKindMain).Scan(&localID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback()
+	for _, q := range []string{
+		`DELETE FROM open_answers WHERE chat_session_id = ?`,
+		`DELETE FROM stream_items WHERE session_local_id = ?`,
+	} {
+		if _, err := tx.ExecContext(ctx, q, localID); err != nil {
+			return "", fmt.Errorf("clear main chat: %w", err)
+		}
+	}
+	return localID, tx.Commit()
 }

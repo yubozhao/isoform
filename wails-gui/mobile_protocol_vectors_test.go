@@ -218,6 +218,15 @@ func buildMobileVectors(t *testing.T) mobileVectorsFile {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Forget everything on the phone (PROTOCOL.md 28): its own h2d kind.
+	forgetPlaintext, err := json.Marshal(mobileForgetAllPlaintext{V: 1, JobID: mobileVectorRequestID, At: "2026-11-16T08:00:00Z"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	forgetAll, err := sealMobileEnvelope(keys.H2D, mobileVectorHubID, mobileVectorDeviceID, mobileDirH2D, 3, mobileKindForgetAll, forgetPlaintext)
+	if err != nil {
+		t.Fatal(err)
+	}
 	noticeSecret, err := hubPrivate.ECDH(devicePrivate.PublicKey())
 	if err != nil {
 		t.Fatal(err)
@@ -269,6 +278,7 @@ func buildMobileVectors(t *testing.T) mobileVectorsFile {
 			{Dir: mobileDirD2H, Seq: 1, Kind: mobileKindRequest, Plaintext: string(requestPlaintext), CT: request.CT},
 			{Dir: mobileDirH2D, Seq: 1, Kind: mobileKindResponse, Plaintext: string(responsePlaintext), CT: response.CT},
 			{Dir: mobileDirH2D, Seq: 2, Kind: mobileKindResponse, Plaintext: string(chatPlaintext), CT: chatResponse.CT},
+			{Dir: mobileDirH2D, Seq: 3, Kind: mobileKindForgetAll, Plaintext: string(forgetPlaintext), CT: forgetAll.CT},
 		},
 		NoticeSecret: mobileVectorText(noticeSecret),
 		KNotice:      mobileVectorText(noticeKey),

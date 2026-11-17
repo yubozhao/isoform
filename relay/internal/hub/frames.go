@@ -104,6 +104,13 @@ type revokeFrame struct {
 	DeviceID string `json:"deviceId"`
 }
 
+// purgeFrame drops everything queued for one of the hub's devices: before a
+// forget_all (PROTOCOL.md 28), nothing older may still reach the phone.
+type purgeFrame struct {
+	T        string `json:"t"`
+	DeviceID string `json:"deviceId"`
+}
+
 // smsAckFrame acknowledges one text reply; the relay deletes it.
 type smsAckFrame struct {
 	T  string `json:"t"`
@@ -227,6 +234,8 @@ func (s *session) apply(t string, data []byte) string {
 		return s.brief(data)
 	case "revoke":
 		return s.revoke(data)
+	case "purge":
+		return s.purge(data)
 	case "grant":
 		return s.grant(data)
 	case "ack":
@@ -375,7 +384,7 @@ func (s *session) outbound(data []byte) string {
 		return "invalid out frame"
 	}
 	env, err := wire.ParseEnvelope(f.Env)
-	if err != nil || env.Hub != s.hubID || (env.Kind != "res" && env.Kind != "event") {
+	if err != nil || env.Hub != s.hubID || (env.Kind != "res" && env.Kind != "event" && env.Kind != "forget_all") {
 		return "invalid out envelope"
 	}
 	pushKind := ""
@@ -505,6 +514,23 @@ func (s *session) revoke(data []byte) string {
 		s.m.Notify.Notify(notify.DeviceKey(f.DeviceID))
 	}
 	return ""
+}
+
+// purge drops the device's queued envelopes, both ways, and its queued
+// pushes. An unknown device is not an error.
+func (s *session) purge(data []byte) string {
+	var f purgeFrame
+	if !decodeFrame(data, &f) || !wire.ValidUUID(f.DeviceID) {
+		return "invalid purge frame"
+	}
+	ctx, cancel := storeContext()
+	defer cancel()
+	switch err := s.m.Store.PurgeDevice(ctx, s.hubID, f.DeviceID); {
+	case err == nil, errors.Is(err, store.ErrNotFound):
+		return ""
+	default:
+		return "device could not be purged"
+	}
 }
 
 // ack deletes the device's requests the hub has consumed. An unknown device is

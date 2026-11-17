@@ -177,11 +177,11 @@ Envelope (JSON; this is what the relay stores and forwards):
 ```
 
 - `dir` is `d2h` (device to hub, key `kD2H`) or `h2d` (hub to device, key `kH2D`).
-- `kind` is `req`, `res`, `brief`, or `event`.
+- `kind` is `req`, `res`, `brief`, `event`, or `forget_all` (h2d only, section 28).
 - `seq` is a uint64 that strictly increases per (device, direction). Senders persist their
   counter and, after a restart, skip ahead by 1000 to cover an unflushed write. Receivers
   persist `lastAccepted` per (device, direction, stream) and reject `seq <= lastAccepted`, where
-  stream is `brief` for kind `brief` and `message` for kinds `req`, `res` and `event`. The two
+  stream is `brief` for kind `brief` and `message` for kinds `req`, `res`, `event` and `forget_all`. The two
   streams share one sender counter (so nonces stay unique) but are checked separately, because
   a stored brief may be fetched after a later response was already accepted.
 - The hub checks `d2h` requests against a replay window instead of `lastAccepted` alone,
@@ -4207,3 +4207,33 @@ Design: phone-settings v1.0.0 rule 12, Your data, Left your devices. `GET /statu
   cut. Attachments are not in the log yet.
 - A hand-off the person forgets on the computer, or whose source is withdrawn, is gone from the
   next read. The phone keeps no copy beyond the screen it shows.
+
+## 28. Forget everything on the phone (v1, 2026-11-16)
+
+The computer's Forget everything (Settings › Your data) reaches every paired phone, and through each phone
+its watch. For each phone, in this order on the hub's relay connection:
+
+1. **`{"t":"purge","deviceId"}`**: the relay drops every ciphertext queued for that pairing: envelopes both
+   ways, stored briefs, uploads, and pushes not yet sent. The pairing stays. A purge for a device of another
+   hub, or an unknown one, changes nothing.
+2. **A sealed h2d envelope of kind `forget_all`**, plaintext `{"v":1,"jobId":"<uuid>","at":"<RFC 3339>"}`
+   (`vectors-v1.json` has one). It travels like a response, on the `message` stream, with no push.
+
+The phone deletes everything it keeps for this computer: saved briefs and their audio, Your work and answers
+waiting to send, recordings and watch audio on their way, cached Today, and the notifications this computer
+delivered. It tells the watch to delete its recordings. It keeps the pairing. Then it confirms with a
+sealed request:
+
+| Route | Scope | Body | Answer |
+|---|---|---|---|
+| `POST /forget-all/{jobId}/done` | any paired phone | `{"idempotencyKey","forgot"?:["briefs","audio","work","answers","chat","topics","today","widget","recordings","watch","notifications"]}` | `200 {"confirmed":true}`; `404` when there's no such job for this phone |
+
+`forgot` says what the phone deleted, for the log only; the computer accepts any values, including ones it
+doesn't know.
+
+- The computer resends steps 1 and 2 each time the relay registers until that phone confirms, so the phone's
+  handler must be idempotent. A repeated confirm answers `200`.
+- The computer's job waits per phone until its confirm. A phone unpaired meanwhile counts as done: nothing
+  is left to forget.
+- A phone that doesn't know the kind (an older build) rejects the envelope and never confirms; the computer
+  shows that phone as still pending.

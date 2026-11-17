@@ -194,7 +194,7 @@ func (s *topicSnapshotStore) RemoveMatching(matches func(topicSnapshotEntry) boo
 }
 
 func (s *topicsService) commitBuiltSnapshot(candidate *topicSnapshot, refresh, manual bool) bool {
-	if s.snapshots == nil {
+	if s.snapshots == nil || derivedSavesQuiet() {
 		return false
 	}
 	s.registrySnapshotMu.Lock()
