@@ -24,7 +24,7 @@ func (a *App) addedTopicCandidates() []topicday.Candidate {
 	added := a.topicsSvc().store.load().Added
 	out := make([]topicday.Candidate, 0, len(added))
 	for _, t := range added {
-		out = append(out, topicday.Candidate{ID: t.ID, Kind: topicday.KindSubject, Name: t.Label, LastSeenAt: t.At})
+		out = append(out, topicday.Candidate{ID: t.ID, Kind: topicday.KindSubject, Name: t.Label, LastSeenAt: t.At, Named: true})
 	}
 	return out
 }
@@ -60,7 +60,7 @@ func (a *App) proposeAddedTopics(ctx context.Context) {
 		if present[c.ID] || !choices.Allowed(c.ID, c.Name, nil) {
 			continue
 		}
-		fresh = append(fresh, topicday.Topic{ID: c.ID, Kind: c.Kind, Name: strings.TrimSpace(c.Name), LastSeenAt: c.LastSeenAt})
+		fresh = append(fresh, topicday.Topic{ID: c.ID, Kind: c.Kind, Name: strings.TrimSpace(c.Name), LastSeenAt: c.LastSeenAt, Named: true})
 	}
 	if len(fresh) == 0 {
 		return

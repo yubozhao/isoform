@@ -252,6 +252,30 @@ func (a *App) buildDailyTopics(ctx context.Context) error {
 // topicsDailyCandidates are the registry's own snapshot: work topics become
 // projects, followed topics become subjects.
 func (a *App) topicsDailyCandidates() []topicday.Candidate {
+	// The topics the person named keep their place in every build (Topics
+	// v1.0.0 rule 32), whatever the registry has.
+	return mergeAddedTopicCandidates(a.topicsDailyRegistryCandidates(), a.addedTopicCandidates())
+}
+
+// mergeAddedTopicCandidates puts the named topics with the registry's,
+// once each: a named topic the registry also has is the named one.
+func mergeAddedTopicCandidates(registry, added []topicday.Candidate) []topicday.Candidate {
+	named := map[string]bool{}
+	out := make([]topicday.Candidate, 0, len(registry)+len(added))
+	for _, c := range added {
+		named[c.ID] = true
+		out = append(out, c)
+	}
+	for _, c := range registry {
+		if !named[c.ID] {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// topicsDailyRegistryCandidates are the registry's topics (or the test hook's).
+func (a *App) topicsDailyRegistryCandidates() []topicday.Candidate {
 	if topicsDailyCandidatesHook != nil {
 		return topicsDailyCandidatesHook(a)
 	}

@@ -60,6 +60,9 @@ type Candidate struct {
 	Next       string // what is open, in a line
 	// Apps are the apps the topic was seen in, for the excluded-apps choice.
 	Apps []string
+	// Named is a topic the person named themselves (Topics v1.0.0 rule 32):
+	// it keeps its place, first, and no cut drops it.
+	Named bool
 }
 
 // Proposal is Isoform's proposed next piece of work for a topic.
@@ -85,6 +88,7 @@ type Topic struct {
 	Latest     string    `json:"latest,omitempty"`
 	Next       string    `json:"next,omitempty"`
 	Apps       []string  `json:"apps,omitempty"`
+	Named      bool      `json:"named,omitempty"`
 	Proposal   *Proposal `json:"proposal,omitempty"`
 }
 
@@ -197,9 +201,16 @@ func Build(ctx context.Context, day string, now time.Time, candidates []Candidat
 		}
 		seen[c.ID] = true
 		topics = append(topics, Topic{ID: c.ID, Kind: c.Kind, Name: name, Why: strings.TrimSpace(c.Why), LastSeenAt: c.LastSeenAt,
-			Latest: strings.TrimSpace(c.Latest), Next: strings.TrimSpace(c.Next), Apps: append([]string(nil), c.Apps...)})
+			Latest: strings.TrimSpace(c.Latest), Next: strings.TrimSpace(c.Next), Apps: append([]string(nil), c.Apps...), Named: c.Named})
 	}
-	sort.SliceStable(topics, func(i, j int) bool { return topics[i].LastSeenAt > topics[j].LastSeenAt })
+	// The topics the person named go first, so the cut never drops them; then
+	// the newest.
+	sort.SliceStable(topics, func(i, j int) bool {
+		if topics[i].Named != topics[j].Named {
+			return topics[i].Named
+		}
+		return topics[i].LastSeenAt > topics[j].LastSeenAt
+	})
 	if len(topics) > MaxTopics {
 		topics = topics[:MaxTopics]
 	}
