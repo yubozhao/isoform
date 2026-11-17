@@ -166,10 +166,10 @@ func (s *Store) Feedback() ([]Feedback, error) {
 }
 
 // NotMine returns the topics the person said are not theirs, by ID and
-// lowercased name, for Choices.Forgotten.
+// lowercased name, for Choices.Forgotten. An undone "not mine" doesn't count.
 func NotMine(feedback []Feedback) map[string]bool {
 	out := map[string]bool{}
-	for _, f := range feedback {
+	for _, f := range Standing(feedback) {
 		if f.Verdict == VerdictNotMine {
 			out[f.TopicID] = true
 			if n := normalize(f.TopicName); n != "" {

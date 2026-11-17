@@ -88,7 +88,7 @@ func (bridge *mobileBridge) serveTopicsDailyAnswer(w http.ResponseWriter, r *htt
 		return
 	}
 	bridge.runReceipted(w, device, key, r.Method+" "+r.URL.Path, func(w http.ResponseWriter) {
-		topic, err := bridge.app.answerDailyTopicProposal(r.Context(), input.TopicID, input.ProposalID, input.Verdict)
+		topic, err := bridge.app.answerDailyTopicProposal(r.Context(), input.TopicID, input.ProposalID, input.Verdict, "")
 		switch {
 		case err == nil:
 			mobileJSON(w, http.StatusOK, topic, "")
