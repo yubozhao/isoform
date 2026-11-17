@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { chatThreadUpdates } from '@/lib/main-chat-view';
 import i18n from '@/i18n';
 import { ComposerVoiceContext } from '@/lib/composer-voice-context';
 import { MainChatPanel, splitMeetingPrep } from './MainChatPanel';
@@ -8,6 +9,11 @@ import type { StreamItem } from '@/types';
 import { MAIN_CHAT_REPORT_TOOL } from '@/lib/stream-helpers';
 import { GroupedStreamList } from '@/components/grouped-stream-list';
 import { MainChatViewContext } from '@/components/main-chat/main-chat-view-context';
+
+// These cover the rollback switch: Isoform's updates back in Chat's thread.
+beforeEach(() => { chatThreadUpdates.shown = true; });
+afterEach(() => { chatThreadUpdates.shown = false; });
+
 
 const fixture = vi.hoisted(() => ({ chips: {} as Record<string, string[]>, items: [] as StreamItem[], waiting: false, stopped: false, lastUserItemId: '', pending: null as null | { text: string; state: 'failed'; context: { sourceKind: string; sourceId: string }; ask?: boolean }, send: vi.fn(async () => 'sent') }));
 vi.mock('@/lib/wails-shim-app', () => ({

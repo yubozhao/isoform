@@ -4,6 +4,7 @@ import { resetPageQueries, TODAY_TOPICS_PENDING_RESYNC_MS } from '@/lib/page-que
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useEffect } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { chatThreadUpdates } from "@/lib/main-chat-view";
 import { createInstance } from "i18next";
 import en from "@/i18n/locales/en/today.json";
 import enChat from "@/i18n/locales/en/chat.json";
@@ -12,6 +13,11 @@ import { todayNextBrief, dayShapeFixture } from "./today-next.fixture";
 import { useMainChatItemPanel } from "@/hooks/useMainChatItemPanel";
 import { resetMainChatWaitingStore } from "@/lib/main-chat-waiting-store";
 import { MarkTodayDoneOpened, type TodayPanelAnswer } from "@/lib/wails-shim-app";
+
+// These cover the rollback switch: Isoform's updates back in Chat's thread.
+beforeEach(() => { chatThreadUpdates.shown = true; });
+afterEach(() => { chatThreadUpdates.shown = false; });
+
 
 vi.mock("@/hooks/useFirstBriefSeen", () => ({ useFirstBriefSeen: () => ({ current: null }) }));
 const mockUseGoalCheckIn = vi.fn((): { checkIn: unknown; refresh: () => void } => ({ checkIn: null, refresh: () => undefined }));

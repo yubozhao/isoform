@@ -2,6 +2,7 @@ import { resetPageQueries } from '@/lib/page-queries';
 import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react';
 import { Profiler, useState } from 'react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { chatThreadUpdates } from '@/lib/main-chat-view';
 import i18n from '@/i18n';
 import en from '@/i18n/locales/en/chat.json';
 import zh from '@/i18n/locales/zh-CN/chat.json';
@@ -14,6 +15,11 @@ import { useSidebarTopics } from '@/hooks/useTodayTopics';
 import type { StreamItem } from '@/types';
 import { MainChatStreamBody } from './main-chat-stream-body';
 import { MainChatTopicBox } from './main-chat-topic-view';
+
+// These cover the rollback switch: Isoform's updates back in Chat's thread.
+beforeEach(() => { chatThreadUpdates.shown = true; });
+afterEach(() => { chatThreadUpdates.shown = false; });
+
 
 const fixture = vi.hoisted(() => ({
     bindings: new Map<string, ReturnType<typeof vi.fn>>(),

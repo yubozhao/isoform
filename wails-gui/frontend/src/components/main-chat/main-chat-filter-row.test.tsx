@@ -1,8 +1,14 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { chatThreadUpdates } from '@/lib/main-chat-view';
 import i18n from '@/i18n';
 import { MainChatFilterRow } from './main-chat-filter-row';
 import type { TodayTopic } from '../today/topics';
+
+// These cover the rollback switch: Isoform's updates back in Chat's thread.
+beforeEach(() => { chatThreadUpdates.shown = true; });
+afterEach(() => { chatThreadUpdates.shown = false; });
+
 
 let width = 768;
 let resize: () => void;

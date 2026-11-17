@@ -4,7 +4,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { useTranslation } from 'react-i18next';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import type { MainChatFilter } from '@/lib/main-chat-view';
+import { chatThreadUpdates, type MainChatFilter } from '@/lib/main-chat-view';
 import { orderedDisplayTopics, topicCards, type TodayTopic } from '@/components/today/topics';
 
 /**
@@ -111,7 +111,7 @@ export function MainChatFilterRow({
                         </DropdownMenu>
                     )}
                 </div>
-                <div ref={hideRef} data-header-hide className="ml-auto flex min-w-0 max-w-[25%] items-center gap-2">
+                {chatThreadUpdates.shown && <div ref={hideRef} data-header-hide className="ml-auto flex min-w-0 max-w-[25%] items-center gap-2">
                     {hideFailed && <span role="alert" className="truncate text-[12px] text-subtle" title={t('failure.save')}>{t('failure.save')}</span>}
                     {filter.kind === 'all' ? (
                         <Button
@@ -127,7 +127,7 @@ export function MainChatFilterRow({
                     ) : (
                         <span className="truncate text-[12.5px] text-muted" title={t('mainChat.view.hiddenWhileFiltered')}>{t('mainChat.view.hiddenWhileFiltered')}</span>
                     )}
-                </div>
+                </div>}
                 <div ref={measureRef} aria-hidden="true" className="pointer-events-none invisible absolute flex h-0 gap-1.5 overflow-hidden">
                     <span className={buttonVariants({ variant: 'ghost', size: 'sm', className: 'shrink-0' })}>{t('mainChat.view.more')}<ChevronDown className="size-3" /></span>
                     {ordered.map(topic => <span key={topic.id} data-topic-measure className={buttonVariants({ variant: 'ghost', size: 'sm', className: 'max-w-[220px] shrink-0 font-medium' })}><span className="truncate">{topic.name}</span></span>)}
