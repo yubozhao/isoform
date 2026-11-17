@@ -4,6 +4,7 @@ final class BrainDumpUITests: XCTestCase {
     override func setUpWithError() throws {
         try super.setUpWithError()
         continueAfterFailure = false
+        throw XCTSkip("The Tasks tab and its task field went (phone-today v1.0.0 rule 19); ask in Chat instead.")
     }
 
     func testBrainDumpEnglishLight() throws { try exercise(language: "en", appearance: "Light") }

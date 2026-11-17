@@ -17,8 +17,9 @@ final class TodayReviewUITests: XCTestCase {
                 app.launchEnvironment["YANSU_UITEST_APPEARANCE"] = appearance.lowercased()
                 app.launchArguments += ["-AppleLanguages", "(\(language))", "-AppleLocale", language, "-AppleInterfaceStyle", appearance]
                 app.launch()
+                // Chips and answer cards are on the brief page (phone-today v1.0.0 rule 2).
+                openBrief(in: app)
                 XCTAssertTrue(app.buttons["brief.chip.0"].waitForExistence(timeout: 15))
-                if readAll { app.buttons["feed.readAll"].tap() }
                 let card = app.buttons[identifier]
                 revealInTapBand(card, in: app, swipes: 12)
                 XCTAssertTrue(card.waitForExistence(timeout: 10))
@@ -42,7 +43,7 @@ final class TodayReviewUITests: XCTestCase {
                 XCTAssertTrue(app.staticTexts["brief.ask.answer"].waitForExistence(timeout: 10))
                 XCTAssertEqual(app.staticTexts["brief.ask.answer"].label, "The project notes are ready for your review.")
                 app.buttons["brief.ask.done"].tap()
-                if readAll { app.navigationBars.buttons.firstMatch.tap() }
+                app.navigationBars.buttons.firstMatch.tap()
                 app.buttons["tab.chat"].tap()
                 let composer = app.descendants(matching: .any)["chat.composer"].firstMatch
                 XCTAssertTrue(composer.waitForExistence(timeout: 10))
@@ -89,6 +90,7 @@ final class TodayReviewUITests: XCTestCase {
         app.launchEnvironment["YANSU_UITEST_TAB"] = "today"
         app.launchEnvironment["YANSU_UITEST_BRIEF_ASK"] = "1"
         app.launch()
+        openBrief(in: app)
         let chip = app.buttons["brief.chip.0"]
         XCTAssertTrue(chip.waitForExistence(timeout: 15))
         chip.tap()
@@ -100,6 +102,8 @@ final class TodayReviewUITests: XCTestCase {
         refresh.tap()
         XCTAssertTrue(app.staticTexts["brief.ask.answer"].waitForExistence(timeout: 15))
         app.buttons["brief.ask.done"].tap()
+        // The brief page hides the tab bar; back on Today it shows again.
+        app.navigationBars.buttons.firstMatch.tap()
         app.buttons["tab.chat"].tap()
         let questions = app.staticTexts.matching(NSPredicate(format: "label == %@", "What changed in the project notes?"))
         let twoQuestions = NSPredicate(format: "count == 2")
@@ -175,9 +179,14 @@ final class TodayReviewUITests: XCTestCase {
             app.launchArguments += ["-AppleLanguages", "(\(language))", "-AppleLocale", language,
                                     "-AppleInterfaceStyle", appearance]
             app.launch()
+            openBrief(in: app)
             let paragraph = app.buttons["brief.paragraph.0"]
             XCTAssertTrue(paragraph.waitForExistence(timeout: 15))
-            paragraph.tap()
+            // A tap shows the paragraph's actions (a second tap hides them); Reply about this opens the sheet.
+            let reply = app.buttons["brief.askAbout.0"].firstMatch
+            if !reply.exists { paragraph.tap() }
+            XCTAssertTrue(reply.waitForExistence(timeout: 5))
+            reply.tap()
             let field = app.descendants(matching: .any)["brief.ask.field"].firstMatch
             XCTAssertTrue(field.waitForExistence(timeout: 10))
             XCTAssertTrue(app.staticTexts["brief.ask.quote"].exists)
@@ -187,21 +196,30 @@ final class TodayReviewUITests: XCTestCase {
             app.buttons["brief.ask.send"].tap()
             let answer = app.staticTexts["brief.ask.answer"]
             XCTAssertTrue(answer.waitForExistence(timeout: 15))
-            XCTAssertEqual(answer.label, "The project notes are ready")
+            // It streams: the first words may already have grown into the whole answer.
+            XCTAssertTrue(answer.label.hasPrefix("The project notes are ready"), answer.label)
             let complete = NSPredicate(format: "label == %@", "The project notes are ready for your review.")
             XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: complete, object: answer)], timeout: 10), .completed)
-            XCTAssertTrue(app.buttons["tab.today"].isSelected || !app.buttons["tab.chat"].isSelected)
+            // The sheet sits over the brief page, which hides the tab bar: Chat never opened.
+            XCTAssertFalse(app.buttons["tab.chat"].exists && app.buttons["tab.chat"].isSelected)
             attachScreenshot(app, named: "today-ask-answer-\(language)-\(appearance)")
             app.buttons["brief.ask.done"].tap()
             XCTAssertTrue(paragraph.waitForExistence(timeout: 5))
+            // The brief page hides the tab bar: back to Today, then Chat.
+            app.navigationBars.buttons.firstMatch.tap()
             app.buttons["tab.chat"].tap()
             XCTAssertTrue(app.staticTexts["The project notes are ready for your review."].waitForExistence(timeout: 10))
             let composer = app.descendants(matching: .any)["chat.composer"].firstMatch
             XCTAssertTrue(composer.waitForExistence(timeout: 5))
             XCTAssertNotEqual(composer.value as? String, "What happened?")
             app.buttons["tab.today"].tap()
+            if !paragraph.waitForExistence(timeout: 3) { openBrief(in: app) }
             XCTAssertTrue(paragraph.waitForExistence(timeout: 5))
-            paragraph.tap()
+            // A tap shows the paragraph's actions (a second tap hides them); Reply about this opens the sheet.
+            let replyAgain = app.buttons["brief.askAbout.0"].firstMatch
+            if !replyAgain.exists { paragraph.tap() }
+            XCTAssertTrue(replyAgain.waitForExistence(timeout: 5))
+            replyAgain.tap()
             XCTAssertTrue(app.staticTexts["brief.ask.answer"].waitForExistence(timeout: 10))
             XCTAssertEqual(app.staticTexts["brief.ask.answer"].label, "The project notes are ready for your review.")
             app.terminate()
@@ -215,9 +233,14 @@ final class TodayReviewUITests: XCTestCase {
             app.launchEnvironment["YANSU_UITEST_APPEARANCE"] = appearance.lowercased()
             app.launchArguments += ["-AppleLanguages", "(\(language))", "-AppleLocale", language, "-AppleInterfaceStyle", appearance]
             app.launch()
+            openBrief(in: app)
             let paragraph = app.buttons["brief.paragraph.0"]
             XCTAssertTrue(paragraph.waitForExistence(timeout: 15))
-            paragraph.tap()
+            // A tap shows the paragraph's actions (a second tap hides them); Reply about this opens the sheet.
+            let reply = app.buttons["brief.askAbout.0"].firstMatch
+            if !reply.exists { paragraph.tap() }
+            XCTAssertTrue(reply.waitForExistence(timeout: 5))
+            reply.tap()
             let field = app.descendants(matching: .any)["brief.ask.field"].firstMatch
             XCTAssertTrue(field.waitForExistence(timeout: 5))
             field.typeText("What happened?")
@@ -239,9 +262,14 @@ final class TodayReviewUITests: XCTestCase {
             app.launchEnvironment["YANSU_UITEST_APPEARANCE"] = appearance.lowercased()
             app.launchArguments += ["-AppleLanguages", "(\(language))", "-AppleLocale", language, "-AppleInterfaceStyle", appearance]
             app.launch()
+            openBrief(in: app)
             let paragraph = app.buttons["brief.paragraph.0"]
             XCTAssertTrue(paragraph.waitForExistence(timeout: 15))
-            paragraph.tap()
+            // A tap shows the paragraph's actions (a second tap hides them); Reply about this opens the sheet.
+            let reply = app.buttons["brief.askAbout.0"].firstMatch
+            if !reply.exists { paragraph.tap() }
+            XCTAssertTrue(reply.waitForExistence(timeout: 5))
+            reply.tap()
             let field = app.descendants(matching: .any)["brief.ask.field"].firstMatch
             XCTAssertTrue(field.waitForExistence(timeout: 5))
             field.typeText("What happened?")
@@ -266,9 +294,14 @@ final class TodayReviewUITests: XCTestCase {
             app.launchEnvironment["YANSU_UITEST_APPEARANCE"] = appearance.lowercased()
             app.launchArguments += ["-AppleLanguages", "(\(language))", "-AppleLocale", language, "-AppleInterfaceStyle", appearance]
             app.launch()
+            openBrief(in: app)
             let paragraph = app.buttons["brief.paragraph.0"]
             XCTAssertTrue(paragraph.waitForExistence(timeout: 15))
-            paragraph.tap()
+            // A tap shows the paragraph's actions (a second tap hides them); Reply about this opens the sheet.
+            let reply = app.buttons["brief.askAbout.0"].firstMatch
+            if !reply.exists { paragraph.tap() }
+            XCTAssertTrue(reply.waitForExistence(timeout: 5))
+            reply.tap()
             let field = app.descendants(matching: .any)["brief.ask.field"].firstMatch
             XCTAssertTrue(field.waitForExistence(timeout: 5))
             field.typeText("What happened?")
@@ -296,9 +329,14 @@ final class TodayReviewUITests: XCTestCase {
             app.launchEnvironment["YANSU_UITEST_APPEARANCE"] = appearance.lowercased()
             app.launchArguments += ["-AppleLanguages", "(\(language))", "-AppleLocale", language, "-AppleInterfaceStyle", appearance]
             app.launch()
+            openBrief(in: app)
             let paragraph = app.buttons["brief.paragraph.0"]
             XCTAssertTrue(paragraph.waitForExistence(timeout: 15))
-            paragraph.tap()
+            // A tap shows the paragraph's actions (a second tap hides them); Reply about this opens the sheet.
+            let reply = app.buttons["brief.askAbout.0"].firstMatch
+            if !reply.exists { paragraph.tap() }
+            XCTAssertTrue(reply.waitForExistence(timeout: 5))
+            reply.tap()
             let field = app.descendants(matching: .any)["brief.ask.field"].firstMatch
             XCTAssertTrue(field.waitForExistence(timeout: 5))
             field.typeText("What happened?")
@@ -374,6 +412,8 @@ final class TodayReviewUITests: XCTestCase {
         notForMe.tap()
         XCTAssertTrue(app.buttons["brief.feedback.undo"].firstMatch.waitForExistence(timeout: 5))
         app.navigationBars.buttons.firstMatch.tap()
+        // Read once, the card folds to its title (phone-today rule 5); a tap unfolds it to Read all.
+        if !read.waitForExistence(timeout: 3) { app.descendants(matching: .any)["feed.brief"].firstMatch.tap() }
         XCTAssertTrue(read.waitForExistence(timeout: 10))
         read.tap()
         let folded = app.descendants(matching: .any)["brief.feedback.folded"].firstMatch
@@ -397,12 +437,13 @@ final class TodayReviewUITests: XCTestCase {
                     app.buttons["feed.readAll"].tap()
                 }
                 let correction = app.buttons[week ? "brief.yourWeek.notRight.learned-focus" : "brief.notRight"].firstMatch
-                for _ in 0..<15 where !correction.isHittable { app.swipeUp() }
-                XCTAssertTrue(correction.isHittable)
+                // Clear of the bottom system zone, where a tap never lands (the week card is long).
+                revealInTapBand(correction, in: app, swipes: 15)
+                XCTAssertTrue(correction.isHittable, app.debugDescription)
                 XCTAssertEqual(correction.label, language == "en" ? "Not quite" : "不太对")
                 correction.tap()
                 let field = app.descendants(matching: .any)["brief.correction.field"].firstMatch
-                XCTAssertTrue(field.waitForExistence(timeout: 5))
+                XCTAssertTrue(field.waitForExistence(timeout: 5), app.debugDescription)
                 field.tap()
                 field.typeText("Not accurate")
                 XCTAssertFalse(app.buttons["tab.today"].exists, "the tab bar must step aside for the correction")
@@ -515,7 +556,8 @@ final class TodayReviewUITests: XCTestCase {
                                     "-AppleInterfaceStyle", appearance]
             app.launch()
             openSettings(app)
-            XCTAssertTrue(app.descendants(matching: .any)["settings.group.notifications"].waitForExistence(timeout: 10))
+            // Notifications is its own page now, opened from its Settings row (phone-settings rule 8).
+            XCTAssertTrue(app.buttons["settings.notifications.open"].firstMatch.waitForExistence(timeout: 10))
             XCTAssertFalse(app.descendants(matching: .any)["settings.group.brief"].exists)
             attachScreenshot(app, named: "b10-settings-\(language)-\(appearance)")
             app.terminate()
@@ -533,7 +575,8 @@ final class TodayReviewUITests: XCTestCase {
                                     "-AppleInterfaceStyle", appearance]
             app.launch()
             openSettings(app)
-            let preferences = app.buttons["settings.notifications.preferences"].firstMatch
+            // Notifications is its own page, opened from its Settings row (phone-settings rule 8).
+            let preferences = app.buttons["settings.notifications.open"].firstMatch
             revealInTapBand(preferences, in: app, swipes: 6)
             XCTAssertTrue(preferences.waitForExistence(timeout: 10))
             preferences.tap()
@@ -594,7 +637,8 @@ final class TodayReviewUITests: XCTestCase {
             XCTAssertTrue(app.descendants(matching: .any)["tasks.thread.draft"].firstMatch.waitForExistence(timeout: 10))
             XCTAssertTrue(app.buttons["tasks.draft.send"].exists)
             XCTAssertTrue(app.buttons["tasks.draft.edit"].exists)
-            XCTAssertTrue(app.buttons["tab.today"].isSelected || !app.buttons["tab.chat"].isSelected)
+            // The sheet sits over the brief page, which hides the tab bar: Chat never opened.
+            XCTAssertFalse(app.buttons["tab.chat"].exists && app.buttons["tab.chat"].isSelected)
             attachScreenshot(app, named: "today-draft-\(language)-\(appearance)")
             app.buttons["today.review.done"].tap()
             let row = app.descendants(matching: .any)["tasks.row.review-ui"].firstMatch
@@ -608,27 +652,11 @@ final class TodayReviewUITests: XCTestCase {
             let done = app.descendants(matching: .any)["today.doneForYou"].firstMatch
             revealInTapBand(done, in: app, swipes: 5)
             XCTAssertTrue(done.waitForExistence(timeout: 10))
-            let next = app.buttons["today.day.next"]
-            let chatTab = app.buttons["tab.chat"]
-            for _ in 0..<8 {
-                if next.isHittable && (!chatTab.exists || next.frame.maxY < chatTab.frame.minY) { break }
-                app.swipeUp()
-            }
-            XCTAssertTrue(next.isHittable)
-            XCTAssertTrue(!chatTab.exists || next.frame.maxY < chatTab.frame.minY)
-            next.tap()
-            XCTAssertTrue(app.descendants(matching: .any)["today.meeting.sheet"].firstMatch.waitForExistence(timeout: 10))
-            XCTAssertTrue(app.staticTexts["Send the launch outline"].waitForExistence(timeout: 10))
-            attachScreenshot(app, named: "today-meeting-\(language)-\(appearance)")
-            app.buttons["today.meeting.done"].tap()
-            let topics = app.descendants(matching: .any)["feed.topics"].firstMatch
-            revealInTapBand(topics, in: app, swipes: 5)
-            XCTAssertTrue(topics.waitForExistence(timeout: 10))
-            attachScreenshot(app, named: "today-day-topics-\(language)-\(appearance)")
-            let past = app.buttons["feed.pastBriefs"]
-            for _ in 0..<8 where !past.isHittable { app.swipeDown() }
-            XCTAssertTrue(past.isHittable)
-            past.tap()
+            // Your day, its meeting sheet and Your topics left Today (phone-today v1.0.0 rule 20); Past briefs is in
+            // the brief card's ··· menu.
+            for _ in 0..<8 where !app.buttons["feed.brief.menu"].firstMatch.isHittable { app.swipeDown() }
+            app.buttons["feed.brief.menu"].firstMatch.tap()
+            app.buttons["feed.pastBriefs"].firstMatch.tap()
             XCTAssertTrue(app.descendants(matching: .any)["pastBriefs.screen"].firstMatch.waitForExistence(timeout: 10))
             XCTAssertFalse(app.buttons["pastBriefs.library"].exists)
             attachScreenshot(app, named: "today-past-briefs-\(language)-\(appearance)")
@@ -720,6 +748,7 @@ final class TodayReviewUITests: XCTestCase {
     }
 
     func testMeetingFailureIsInline() throws {
+        throw XCTSkip("Your day and its meeting sheet left Today (phone-today v1.0.0 rule 20); meeting prep comes through Your work.")
         for (language, appearance) in [("en", "Light"), ("zh-Hans", "Dark")] {
             let app = XCUIApplication()
             app.launchEnvironment["YANSU_UITEST_SETTINGS_STATE"] = "feed-review"
@@ -788,5 +817,15 @@ final class TodayReviewUITests: XCTestCase {
             if element.frame.minY == settled { break }
             settled = element.frame.minY
         }
+    }
+
+    /// The brief's paragraphs and chips are on the brief page, which Read all opens from the Today card
+    /// (phone-today v1.0.0 rule 2).
+    private func openBrief(in app: XCUIApplication) {
+        let read = app.buttons["feed.readAll"].firstMatch
+        // Once read or answered, the card folds to its title (phone-today rule 5); a tap unfolds it.
+        if !read.waitForExistence(timeout: 10) { app.descendants(matching: .any)["feed.brief"].firstMatch.tap() }
+        XCTAssertTrue(read.waitForExistence(timeout: 5))
+        read.tap()
     }
 }

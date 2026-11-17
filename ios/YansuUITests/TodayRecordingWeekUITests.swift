@@ -78,7 +78,8 @@ final class TodayRecordingWeekUITests: XCTestCase {
         let more = ordinary.buttons["More options"].firstMatch
         XCTAssertTrue(more.waitForExistence(timeout: 15))
         more.tap()
-        XCTAssertTrue(ordinary.buttons["Make my brief now"].firstMatch.waitForExistence(timeout: 5), "the brief card's menu has Make my brief now")
+        // The brief card's own words for it (phone-today v1.0.0 rule 2).
+        XCTAssertTrue(ordinary.buttons["Make a new brief now"].firstMatch.waitForExistence(timeout: 5), "the brief card's menu has Make a new brief now")
         ordinary.terminate()
     }
 

@@ -380,6 +380,24 @@ struct FeedView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .environment(\.correctionReveal) { id in proxy.scrollTo(id, anchor: InlineMemoryCorrection.revealAnchor) }
+            .task(id: router.upNextRequest) {
+                // "See them" and anything else that named Up next: Your work holds it now (phone-today rule 19).
+                guard let request = router.upNextRequest else { return }
+                try? await Task.sleep(for: .milliseconds(300))
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) {
+                    proxy.scrollTo("today.yourWork.anchor", anchor: .top)
+                }
+                if router.upNextRequest == request { router.upNextRequest = nil }
+            }
+            .task(id: router.heldTaskRowRequest) {
+                guard let id = router.heldTaskRowRequest else { return }
+                // Today lays out after the tab opens; scroll once it has.
+                try? await Task.sleep(for: .milliseconds(300))
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) {
+                    proxy.scrollTo("task.row.\(id)", anchor: .center)
+                }
+                router.consumeHeldTaskRow(id)
+            }
             .onChange(of: router.pendingTodayDay, initial: true) { _, pending in
                 guard pending, todayStore.snapshot != nil || brief.current != nil else { return }
                 DispatchQueue.main.async {
@@ -485,6 +503,8 @@ struct FeedView: View {
             YourWorkSection(work: work, now: now, onAnswered: foldNewestBrief) {
                 legacyYourWork
             }
+            .id("today.yourWork.anchor")
+            heldReplies
             if work.supported == true {
                 // Tasks waiting on the person that Your work doesn't list stay on Today (review 2026-11-15).
                 todayNeedsYou(YourWork.waitingOutside(tasks.waitingItems, items: work.items), title: String(localized: "Needs you"))
@@ -534,6 +554,46 @@ struct FeedView: View {
             case .task(let taskID): router.showHeldTaskRow(taskID)
             }
         })
+    }
+
+    /// Replies the computer did not take in a day (PROTOCOL.md section 23): each says so, with Send again. They sat on
+    /// their Tasks row until the Tasks tab went (phone-today rule 19); Today's Show scrolls here now.
+    @ViewBuilder
+    private var heldReplies: some View {
+        let held = tasks.expiredDraftSends.compactMap { write in write.todayDraftSend.map { (write, $0) } }
+        if !held.isEmpty {
+            VStack(spacing: 0) {
+                ForEach(Array(held.enumerated()), id: \.element.0.key) { index, pair in
+                    let (write, draft) = pair
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(verbatim: heldTitle(draft.taskID))
+                            .font(.subheadline.weight(.semibold)).foregroundStyle(YansuTheme.ink)
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(String(localized: "This waited a day, so it wasn't sent."))
+                                .font(.footnote).foregroundStyle(YansuTheme.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityIdentifier("tasks.held.line")
+                            Button(String(localized: "Send again")) { Task { await tasks.sendExpiredAgain(write) } }
+                                .buttonStyle(.plain)
+                                .font(.footnote.weight(.semibold)).foregroundStyle(YansuTheme.accent)
+                                .accessibilityIdentifier("tasks.sendAgain.\(draft.taskID)")
+                        }
+                    }
+                    .padding(16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("tasks.held.\(draft.taskID)")
+                    .id("task.row.\(draft.taskID)")
+                    if index < held.count - 1 { Divider().overlay(YansuTheme.borderSubtle).padding(.leading, 16) }
+                }
+            }
+            .background(YansuTheme.surface, in: RoundedRectangle(cornerRadius: 16))
+        }
+    }
+
+    private func heldTitle(_ taskID: String) -> String {
+        let known = (tasks.page?.tasks ?? []) + tasks.waitingItems.compactMap(\.task)
+        return known.first { $0.id == taskID }?.title ?? String(localized: "today.heldReply")
     }
 
     /// The write the phone holds for this Needs you card, if any.
