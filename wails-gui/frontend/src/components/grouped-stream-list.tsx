@@ -8,7 +8,7 @@ import {
     isTodayContextItem,
 } from '@/lib/stream-helpers';
 import { getMainChatProactive, getMainChatStatus } from '@/lib/stream-helpers';
-import { buildMainChatDays, mainChatStreamRows } from '@/lib/main-chat-view';
+import { buildMainChatDays, chatThreadUpdates, mainChatStreamRows } from '@/lib/main-chat-view';
 import { StreamCard } from './stream-card';
 import type { DeliverableActions } from './stream-card';
 import { ProcessingBlock } from './processing-block';
@@ -22,15 +22,21 @@ import type { ExecutorType, GroupedStreamItem, MainChatReportTarget, Turn } from
 export type ToolResultsMap = Map<string, StreamItem>;
 
 /**
- * Which rows a day shows. A day with any row keeps its divider, even when its
- * updates are folded away or withdrawn: a routine-only day (a left-off card
- * folded under a newer brief) or a day whose updates were all withdrawn must
- * not vanish from the stream (R63, 2026-11-05).
+ * Which rows a day shows. With updates shown, a day with any row keeps its
+ * divider, even when its updates are folded away or withdrawn (R63,
+ * 2026-11-05). With them out of Chat, only a day with conversation has a
+ * divider, and no fold or removed-updates line shows.
  */
-export function dayRowsVisibility(day: { items: readonly unknown[]; routine: readonly unknown[]; withdrawn?: number; withheld?: number }, hideRoutine: boolean): { divider: boolean; fold: boolean } {
+export function dayRowsVisibility(
+    day: { items: readonly unknown[]; routine: readonly unknown[]; withdrawn?: number; withheld?: number },
+    hideRoutine: boolean,
+    updatesShown: boolean = chatThreadUpdates.shown,
+): { divider: boolean; fold: boolean; removed: boolean } {
+    if (!updatesShown) return { divider: day.items.length > 0, fold: false, removed: false };
     return {
         divider: day.items.length > 0 || day.routine.length > 0 || (day.withdrawn ?? 0) > 0 || (day.withheld ?? 0) > 0,
         fold: day.routine.length > 0 && !hideRoutine,
+        removed: (day.withdrawn ?? 0) > 0,
     };
 }
 
@@ -260,10 +266,10 @@ export function useStreamListModel(
                 if (day.items.length > 0) lastDayWithRows = index;
             });
             days.forEach((day, index) => {
-                const { divider, fold } = dayRowsVisibility(day, view?.hideRoutine === true);
+                const { divider, fold, removed } = dayRowsVisibility(day, view?.hideRoutine === true);
                 if (!divider) return;
                 rows.push({ type: 'day-divider', key: `day-${day.day}`, day: day.day, today: today ?? '' });
-                if (day.withdrawn > 0) rows.push({ type: 'day-removed', key: `removed-${day.day}`, day: day.day, count: day.withdrawn });
+                if (removed) rows.push({ type: 'day-removed', key: `removed-${day.day}`, day: day.day, count: day.withdrawn });
                 if (fold) {
                     rows.push({ type: 'day-fold', key: `fold-${day.day}`, day: day.day, routine: day.routine, routineCount: day.routineCount });
                 }

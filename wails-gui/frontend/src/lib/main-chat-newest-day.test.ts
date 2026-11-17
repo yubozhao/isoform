@@ -1,9 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, afterEach, beforeEach } from 'vitest';
+import { chatThreadUpdates } from '@/lib/main-chat-view';
 import { renderHook } from '@testing-library/react';
 import type { StreamItem } from '@/types';
 import type { MainChatStreamView } from '@/components/main-chat/main-chat-view-context';
 import { useStreamListModel, dayRowsVisibility } from '@/components/grouped-stream-list';
 import { buildMainChatDays, mainChatStreamRows } from './main-chat-view';
+
+// These cover the rollback switch: Isoform's updates back in Chat's thread.
+beforeEach(() => { chatThreadUpdates.shown = true; });
+afterEach(() => { chatThreadUpdates.shown = false; });
+
 
 // Bo's first page on 2026-11-05 (sessions.db, newest 50 rows): 44 system cards,
 // six of them from 2026-11-04. Every card is a main_chat_proactive system row.

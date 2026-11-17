@@ -296,3 +296,12 @@ export function answerChipIds(items: readonly StreamItem[]): string[] {
         latest.has(item.id) || /[?？]["'”’」』*_\s]*$/.test(item.content ?? '')
     )).map((item) => item.id);
 }
+
+/**
+ * Chat never speaks first (phone-chat v1.0.0 rule 3, computer-chat v1.0.0):
+ * Isoform's own updates stay out of the thread, so it opens on the person's
+ * conversation and the field. `shown` is the rollback switch: true brings back
+ * the day folds, the "removed because their source is gone" lines and the
+ * Hide or Show updates switch.
+ */
+export const chatThreadUpdates = { shown: false };

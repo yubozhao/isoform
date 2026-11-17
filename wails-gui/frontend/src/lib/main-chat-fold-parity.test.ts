@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest';
+import { chatThreadUpdates } from '@/lib/main-chat-view';
 import { renderHook } from '@testing-library/react';
 import { useStreamListModel } from '@/components/grouped-stream-list';
 import { panelRows } from '@/hooks/useMainChatPanel';
@@ -6,6 +7,11 @@ import { buildMainChatDays } from '@/lib/main-chat-view';
 import { MAIN_CHAT_PROACTIVE_TOOL, MAIN_CHAT_REPORT_TOOL, MAIN_CHAT_STATUS_TOOL } from '@/lib/stream-helpers';
 import type { GroupedStreamItem } from '@/lib/stream-helpers';
 import type { StreamItem } from '@/types';
+
+// These cover the rollback switch: Isoform's updates back in Chat's thread.
+beforeEach(() => { chatThreadUpdates.shown = true; });
+afterEach(() => { chatThreadUpdates.shown = false; });
+
 
 vi.mock('@/lib/wails-shim-app', () => ({}));
 
