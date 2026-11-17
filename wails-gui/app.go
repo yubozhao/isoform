@@ -1329,6 +1329,8 @@ func (a *App) startupServices(ctx context.Context) {
 	briefService := a.ensureMobileBriefService()
 	// Enrollment and pacing must be ready before a launch brief can run.
 	a.startEngagement(ctx)
+	// Trouble is checked every minute and said where it belongs.
+	go a.runTroubleWatch(ctx)
 	a.recoverOpenAnswerChecks()
 	if briefService != nil {
 		briefService.Start(ctx)
@@ -1431,6 +1433,8 @@ func (a *App) handleSingletonMessages() {
 
 func (a *App) shutdown(ctx context.Context) {
 	a.handoffShuttingDown.Store(true)
+	// A quit leaves no restart gap in Activity (computer-trouble rule 2).
+	noteTroubleQuit(time.Now())
 	a.shutdownTaskLinks()
 	a.stopFront()
 	// Before any teardown and before telemetry starts its final flush, so the

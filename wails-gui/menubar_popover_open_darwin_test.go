@@ -135,11 +135,10 @@ func TestMenuBarLoadingPlaceholderMakesNoClaims(t *testing.T) {
 	}
 	for _, guard := range []string{
 		"const pending = !!model.loading || !!model.withdrawn || !!model.waitingPending;",
-		"const none = !pending && !failed && model.waiting === 0;",
+		"const none = !pending && !failed && !model.next;",
 		"row.hidden = !!model.loading;",
-		"el('wsec').hidden = pending || failed || none;",
-		"el('more').hidden = pending || failed || model.waiting <= 3;",
-		"el('empty').hidden = !none;",
+		"el('wsec').hidden = pending || failed;",
+		"el('done').hidden = !none;",
 		"hb.disabled = status === 'starting';",
 	} {
 		if !strings.Contains(html, guard) {
@@ -148,5 +147,26 @@ func TestMenuBarLoadingPlaceholderMakesNoClaims(t *testing.T) {
 	}
 	if strings.Contains(html, "Loading") {
 		t.Fatal(`the page says "Loading"`)
+	}
+}
+
+// The popover's Quick chat row opens the same Quick chat as its shortcut,
+// never the old panel session (redesign review on #1132).
+func TestMenuBarQuickChatUsesTheShortcutsOpener(t *testing.T) {
+	source, err := os.ReadFile("menubar_controller_darwin.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(source)
+	start := strings.Index(text, `case "quickChat":`)
+	if start < 0 {
+		t.Fatal("no quickChat command")
+	}
+	block := text[start:]
+	if end := strings.Index(block[1:], "\n\tcase "); end > 0 {
+		block = block[:end+1]
+	}
+	if !strings.Contains(block, "openQuickChat(") || strings.Contains(block, "ShowQuickChatWindow(") {
+		t.Fatalf("quickChat command = %q", block)
 	}
 }

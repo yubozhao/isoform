@@ -14,7 +14,7 @@ import {
 
 pageQueryCache.setActivityGate(waitForAppActive);
 
-const today = ['GetNeedsYou', 'GetTodayDayShape', 'GetTodayBeforeYouTalk', 'GetTodayNews', 'GetEngagementWeekSummary', 'GetMobileBriefHealth', 'GetTodaySuggestion', 'GetTodayQuietLines', 'GetTodayTopics', 'GetLatestBrief', 'GetTopicFinds', 'GetGoalCheckIn', 'GetPortraitTodayCard', 'IsClosedEyesModeEnabled', 'GetWorkList'];
+const today = ['GetNeedsYou', 'GetTodayDayShape', 'GetTodayBeforeYouTalk', 'GetTodayNews', 'GetEngagementWeekSummary', 'GetMobileBriefHealth', 'GetTodaySuggestion', 'GetTodayQuietLines', 'GetTodayTopics', 'GetLatestBrief', 'GetTopicFinds', 'GetGoalCheckIn', 'GetPortraitTodayCard', 'IsClosedEyesModeEnabled', 'GetWorkList', 'GetTrouble'];
 const chat = ['LoadStreamItemsPage', 'GetMainChatOverview', 'ListMainChatWaitingItems', 'ListMainChatAnswerChips'];
 // Every other page's primary reads. Activity's names are the ones its cache
 // facade (timeline/activity-session-cache.ts) reads under; 'Activity:meetings'
@@ -327,6 +327,7 @@ export const GetFirstWeekDay = cached('GetFirstWeekDay');
 export const GetAssistantHistory = cached('GetAssistantHistory');
 export const GetCalendarFirstDay = cached('GetCalendarFirstDay');
 export const GetTodayDayShape = cached('GetTodayDayShape');
+export const GetTrouble = cached('GetTrouble');
 export const GetTodayBeforeYouTalk = cached('GetTodayBeforeYouTalk');
 export const GetTodayNews = cached('GetTodayNews');
 export const GetEngagementWeekSummary = cached('GetEngagementWeekSummary');

@@ -157,6 +157,9 @@ func briefReadyParams(brief MobileBriefV1, manual bool) map[string]string {
 	if manual {
 		params[engagement.BriefRequestParam] = engagement.BriefRequestManual
 	}
+	if line := briefTroubleLine(brief.Missing); line != "" {
+		params[briefTroubleParam] = line
+	}
 	return params
 }
 

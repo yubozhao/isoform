@@ -39,6 +39,10 @@ type MobileBriefV1 struct {
 	FromHistory     bool              `json:"fromHistory"`
 	NarrativeStatus string            `json:"narrativeStatus"` // ok | unavailable | skipped
 	Narrative       []MobileBriefPara `json:"narrative"`
+	// Missing is what this brief couldn't see, when trouble stopped Isoform
+	// (computer-trouble v1.0.0 rule 5): its last line, worded by each reader
+	// ("Nothing after {time} is in this brief: {cause}."). Additive.
+	Missing *MobileBriefMissing `json:"missing,omitempty"`
 	// NarrativeParts splits Narrative into its done and next parts, in order
 	// (mobile_brief_forward.go). Additive: phones read Narrative alone.
 	NarrativeParts []MobileBriefNarrativePart `json:"narrativeParts,omitempty"`
@@ -293,4 +297,10 @@ type MobileBriefScheduleSpec struct {
 	EveryMS    int64  `json:"everyMs,omitempty"`
 	AtMS       int64  `json:"atMs,omitempty"`
 	NextRunAt  int64  `json:"nextRunAt"`
+}
+
+// MobileBriefMissing names the trouble a brief was made under and since when.
+type MobileBriefMissing struct {
+	Kind  string `json:"kind"`
+	Since string `json:"since"`
 }

@@ -1244,6 +1244,9 @@ func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, s
 	brief.Narrative = paragraphs
 	brief.NarrativeStatus = status
 	brief.WeekLead, brief.WeekLeadFacts = weekLead, weekLeadFacts
+	if s.app != nil {
+		brief.Missing = briefMissingFrom(s.app.menuBarTrouble(s.now()))
+	}
 	_, brief.Offers = mobileBriefClosing(brief, language)
 	// Composition can overlap an edit. Retry before later navigation reads
 	// refresh their own topic state.

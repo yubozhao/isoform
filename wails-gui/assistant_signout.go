@@ -101,6 +101,13 @@ func (t *signOutTracker) isConfirmed(assistant string) bool {
 	return ok
 }
 
+// confirmedSince is when the assistant's confirmed sign-out began, or zero.
+func (t *signOutTracker) confirmedSince(assistant string) time.Time {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.confirmed[assistant]
+}
+
 // firstConfirmed returns the first confirmed assistant in order.
 func (t *signOutTracker) firstConfirmed(order []string) (string, bool) {
 	t.mu.Lock()

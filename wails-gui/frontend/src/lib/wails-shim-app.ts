@@ -552,6 +552,19 @@ export const IsClosedEyesModeEnabled = appBinding<[], boolean>(
 export const SetClosedEyesModeEnabled = appBinding<[boolean], void>(
     "SetClosedEyesModeEnabled",
 );
+// computer-trouble v1.0.0: what's wrong now that nobody chose, in order of
+// what each costs (trouble.go). Empty when nothing is.
+export interface TroubleLine {
+    kind: "screen" | "signed_out" | "offline" | "phone";
+    since: string;
+    assistant?: string;
+    fix?: "open_settings" | "sign_in";
+}
+export interface TroubleList {
+    items: TroubleLine[];
+}
+export const GetTrouble = appBinding<[], TroubleList>("GetTrouble");
+export const OpenTroubleFix = appBinding<[string], void>("OpenTroubleFix");
 // Settings › Your data's numbers (your_data_summary.go).
 export interface YourDataSummary {
     retentionDays: number;

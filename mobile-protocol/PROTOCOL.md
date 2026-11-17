@@ -1053,6 +1053,18 @@ One push per stored brief with `notify:true` and one per moment for each device 
 an enabled push token. Retries and leases follow the outbox policy (5 attempts,
 15-minute backoff doubling, 24-hour expiry). A payload over 4096 bytes is never sent.
 
+### 8.3 Trouble on the phone, and what a brief is missing (computer-trouble v1.0.0; 2026-11-16)
+
+- `GET /today` (and so `today_changed`) carries an optional `trouble`:
+  `[{"kind":"screen"|"signed_out","since":"<RFC 3339>","assistant"?}]`, first by rank: what keeps the computer
+  from seeing or briefing that nobody chose. The phone shows the first as one amber line under its date,
+  with no button ("Isoform hasn't seen your computer's screen since {time}. It's fixed on your computer.").
+  `assistantSignOut` stays for older phones. No internet and a phone not checking in are the computer's
+  own lines.
+- A brief made while the screen isn't seen, the assistant is signed out, or there's no internet carries
+  `"missing":{"kind":"screen"|"signed_out"|"offline","since":"<RFC 3339>"}`. Readers end it with "Nothing
+  after {time} is in this brief: {cause}." The brief's notification adds the trouble after its count.
+
 ### 9.1 Three kinds on the redesigned phone (phone redesign B9, 2026-11-15)
 
 Design: phone-map v1.0.0 rules 16 and 17. A phone that reads Your work (`GET /work`, section 26) is

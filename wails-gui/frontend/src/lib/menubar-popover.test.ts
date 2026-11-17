@@ -9,12 +9,14 @@ function page(overrides: Record<string, unknown> = {}, wordOverrides: Record<str
     const words = Object.fromEntries([
         "observing", "paused", "off", "starting", "pause", "resume", "turnOn", "playing",
         "waiting", "seeAll", "empty", "failed", "make", "open", "openShortcut", "update", "restart",
-        "settings", "footerQuit", "onThisMac",
+        "settings", "footerQuit", "onThisMac", "name", "closedEyes", "openEyes", "yes", "no", "openToday",
+        "allDone", "stillAnswer", "quickChat",
     ].map(key => [key, key]));
     Object.assign(words, wordOverrides);
     const model = { language: "en", theme: "paper", words, status: "observing", state: "observing", paused: false,
         waiting: 5, brief: { kind: "ready", id: "brief", title: "brief", meta: "7:00 AM · 0:48", seconds: 48 },
-        items: [{ id: "row", title: "title", detail: "detail" }], label: "Isoform", ...overrides };
+        items: [{ id: "row", title: "title", detail: "detail" }],
+        next: { id: "row", line: "line", title: "title", detail: "detail" }, label: "Isoform", ...overrides };
     const document = new DOMParser().parseFromString(template.replace("/*__MODEL__*/null", JSON.stringify(model)), "text/html");
     const postMessage = vi.fn();
     const host = { webkit: { messageHandlers: { menubar: { postMessage } } } };
@@ -50,17 +52,18 @@ describe("menu bar embedded page", () => {
         expect(postMessage).toHaveBeenCalledTimes(1);
         expect(postMessage).toHaveBeenCalledWith({ command: "close" });
     });
-    // 1.0 layout: the "Show menu" button is retired (right-click shows the
-    // native menu); every remaining control still sends its command.
-    it("keeps waiting navigation, playback, Make my brief now and the footer wired", () => {
+    // Computer redesign: the Next row answers here (Yes, No, Open Today),
+    // Closed Eyes is the first control, and Quick chat has its own row.
+    it("keeps Next, playback, Closed Eyes, Quick chat, Make my brief now and the footer wired", () => {
         const { document, postMessage } = page();
-        for (const selector of [".it", "#br", "#more", "#hb", "#make", "#open", "#settings", "#quit"]) {
+        for (const selector of [".it", "#br", "#yes", "#no", "#openToday", "#qc", "#make", "#open", "#settings", "#quit", "#hb"]) {
             (document.querySelector(selector) as HTMLButtonElement).click();
         }
-        // Pause changes the header at once, which reports its new height.
+        // Closed Eyes changes the header at once, which reports its new height.
         expect(postMessage.mock.calls.map(([message]) => message.command).filter((command) => command !== "resize")).toEqual(
-            ["waiting:row", "play:brief", "waiting", "pause15", "makeHere", "open", "settings", "quit"]);
+            ["today:row", "play:brief", "workYes:row", "workNo:row", "today:row", "quickChat", "makeHere", "open", "settings", "quit", "closedEyes"]);
         expect(document.querySelector("#menu")).toBeNull();
+        expect(document.querySelector("#more")).toBeNull();
     });
     it("reads a brief with no recording instead of playing it", () => {
         const { document, postMessage } = page({ brief: { kind: "read", id: "evening", title: "Read", meta: "7:30 PM" } });
@@ -69,32 +72,38 @@ describe("menu bar embedded page", () => {
     });
     // shell-review v1.0.0 B5: what's saved shows at once; until Isoform
     // knows, the section isn't there. Never placeholders.
-    it("shows saved rows at once and leaves Waiting on you out until it knows", () => {
+    it("shows the saved Next row at once and leaves the section out until it knows", () => {
         const saved = page();
         expect(saved.document.querySelector("#wsec")!.hasAttribute("hidden")).toBe(false);
         expect(saved.document.querySelector(".it")!.textContent).toContain("title");
-        for (const state of [{ loading: true }, { withdrawn: true }, { waitingPending: true }, { error: "failed", items: [] }]) {
+        expect(saved.document.querySelector(".it .ln")!.textContent).toBe("line");
+        for (const state of [{ loading: true }, { withdrawn: true }, { waitingPending: true }, { error: "failed", next: null }]) {
             const { document } = page(state);
             expect(document.querySelector("#wsec")!.hasAttribute("hidden")).toBe(true);
             expect(document.querySelectorAll(".ph, .phb")).toHaveLength(0);
         }
     });
-    // Evening walk B7: Waiting on you is what Tasks › Needs you lists, with no
-    // count; with nothing there, the section isn't shown.
-    it("shows Waiting on you with no count, and leaves it out when Needs you is empty", () => {
-        const listed = page({ waiting: 1 });
-        expect(listed.document.querySelector("#wsec")!.hasAttribute("hidden")).toBe(false);
+    // computer-settings v1.2.0: every slot says what's true. With nothing left
+    // to answer, the slot says so and names the next brief; no count anywhere.
+    it("shows one Next row with no count, and That's everything when nothing is left", () => {
+        const listed = page({ waiting: 4 });
+        expect(listed.document.querySelectorAll(".it")).toHaveLength(1);
         expect(listed.document.querySelector("#count")).toBeNull();
-        expect(listed.document.querySelector("#wsec .sh")!.textContent).toBe("waiting");
-        const none = page({ waiting: 0, items: [] });
-        expect(none.document.querySelector("#wsec")!.hasAttribute("hidden")).toBe(true);
+        expect(listed.document.querySelector("#answerRow")!.hasAttribute("hidden")).toBe(false);
+        expect(listed.document.querySelector("#done")!.hasAttribute("hidden")).toBe(true);
+        const none = page({ waiting: 0, items: [], next: null, nextBrief: "Next brief at 7:00 AM" });
+        expect(none.document.querySelector("#wsec")!.hasAttribute("hidden")).toBe(false);
+        expect(none.document.querySelector("#answerRow")!.hasAttribute("hidden")).toBe(true);
+        expect(none.document.querySelector("#doneText")!.textContent).toBe("allDone");
+        expect(none.document.querySelector("#doneNext")!.textContent).toBe("Next brief at 7:00 AM");
     });
-
-    // Shell review v1.0.2 B7: no count in any state, and one item format whose
-    // first line wraps instead of being cut.
-    it("shows no count in the paused popover, and wraps the item's first line", () => {
-        const paused = page({ waiting: 2, paused: true, status: "paused", state: "paused" });
-        expect(paused.document.querySelector("#wsec .sh")!.textContent).toBe("waiting");
+    // While eyes are closed, the Next row stays answerable and says so; the
+    // item's first line wraps instead of being cut.
+    it("says you can still answer while eyes are closed, and wraps the item's first line", () => {
+        const paused = page({ paused: true, status: "paused", state: "paused" });
+        expect(paused.document.querySelector("#still")!.hasAttribute("hidden")).toBe(false);
+        expect(paused.document.querySelector("#still")!.textContent).toBe("stillAnswer");
+        expect(page().document.querySelector("#still")!.hasAttribute("hidden")).toBe(true);
         const css = template.slice(template.indexOf("<style"), template.indexOf("</style>"));
         const title = css.match(/\.it b \{[^}]*\}/)![0];
         expect(title).not.toMatch(/nowrap|ellipsis|height:56px/);
@@ -129,19 +138,20 @@ describe("menu bar embedded page", () => {
         const { document } = page();
         expect(document.querySelector("#sees")!.textContent).toBe("onThisMac");
     });
-    it("says until when Pause 15 min pauses, in English and Chinese", () => {
-        vi.useFakeTimers();
-        vi.setSystemTime(new Date(2026, 10, 5, 19, 0));
-        try {
-            for (const [language, want] of [["en", "Paused until 7:15 PM"], ["zh-CN", "已暂停至 19:15"]]) {
-                const { document, postMessage } = page({ language }, { pausedUntil: language === "en" ? "Paused until {time}" : "已暂停至 {time}" });
-                (document.getElementById("hb") as HTMLButtonElement).click();
-                expect(postMessage).toHaveBeenCalledWith({ command: "pause15" });
-                expect(document.getElementById("state")!.textContent).toBe(want);
-                expect(document.getElementById("hb")!.textContent).toBe("resume");
-            }
-        } finally {
-            vi.useRealTimers();
-        }
+    // Closed Eyes is the first control: it closes at once, then reads Open
+    // eyes, filled, with its one shortcut shown while eyes are open.
+    it("closes eyes at once from the header and then offers Open eyes, filled", () => {
+        const { document, postMessage } = page({ closedEyesKey: "⌃⌥⌘E" });
+        const hb = document.getElementById("hb") as HTMLButtonElement;
+        expect(hb.textContent).toBe("closedEyes⌃⌥⌘E");
+        hb.click();
+        expect(postMessage).toHaveBeenCalledWith({ command: "closedEyes" });
+        expect(document.getElementById("state")!.textContent).toBe("paused");
+        expect(hb.textContent).toBe("openEyes⌃⌥⌘E");
+        expect(hb.classList.contains("fill")).toBe(true);
+        expect(hb.getAttribute("aria-pressed")).toBe("true");
+        hb.click();
+        expect(postMessage).toHaveBeenCalledWith({ command: "resume" });
+        expect(hb.classList.contains("fill")).toBe(false);
     });
 });

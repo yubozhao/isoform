@@ -72,15 +72,29 @@ static NSAppearance *isoformMenuBarAppearance(NSString *theme) {
 - (void)applyIcon {
     NSDictionary *icon = self.model[@"icon"];
     BOOL dot = [icon[@"dot"] boolValue] && !self.panel.isVisible;
+    // A trouble line is up: a small amber dot, which a template image can't
+    // carry (computer-trouble v1.0.0 rule 4).
+    BOOL trouble = [icon[@"trouble"] boolValue];
     CGFloat alpha = icon ? [icon[@"opacity"] doubleValue] : 1;
     // Keep native template rendering, including dark/high-contrast menu bars.
     NSImage *mark = self.mark;
-    NSImage *image = [NSImage imageWithSize:NSMakeSize(dot ? 25 : 18,18) flipped:NO drawingHandler:^BOOL(NSRect rect) {
+    BOOL wide = dot || trouble;
+    NSImage *image = [NSImage imageWithSize:NSMakeSize(wide ? 25 : 18,18) flipped:NO drawingHandler:^BOOL(NSRect rect) {
         [mark drawInRect:NSMakeRect(0,0,18,18) fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:alpha];
-        if (dot) { [[NSColor blackColor] setFill]; [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(19,11,6,6)] fill]; }
+        if (trouble) {
+            // Not a template: tint the mark with the menu bar's own text
+            // color, then the dot in the design system's color-warning.
+            [[NSColor labelColor] set];
+            NSRectFillUsingOperation(NSMakeRect(0,0,18,18), NSCompositingOperationSourceAtop);
+            BOOL darkBar = [[NSAppearance.currentDrawingAppearance bestMatchFromAppearancesWithNames:@[NSAppearanceNameAqua, NSAppearanceNameDarkAqua]] isEqual:NSAppearanceNameDarkAqua];
+            NSColor *amber = darkBar ? [NSColor colorWithSRGBRed:0xe8/255.0 green:0xa0/255.0 blue:0x66/255.0 alpha:1]
+                                     : [NSColor colorWithSRGBRed:0x9b/255.0 green:0x4f/255.0 blue:0x1d/255.0 alpha:1];
+            [amber setFill];
+            [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(19,11,6,6)] fill];
+        } else if (dot) { [[NSColor blackColor] setFill]; [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(19,11,6,6)] fill]; }
         return YES;
     }];
-    image.template = YES;
+    image.template = !trouble;
     self.item.button.image = image;
     self.item.button.toolTip = self.model[@"state"];
     // "Isoform, observing, 3 waiting on you".

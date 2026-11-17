@@ -22,11 +22,22 @@ button:focus-visible { outline:2px solid var(--color-border-focus); outline-offs
 .dot { width:7px; height:7px; border-radius:99px; background:var(--color-accent); flex:none; margin-left:2px; }
 .paused .dot, .starting .dot { background:none; box-shadow:inset 0 0 0 1.5px var(--color-faint); }
 .off .dot { background:var(--color-warning); }
-#state { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.starting #state { color:var(--color-muted); font-weight:500; }
+#nm { font-weight:600; white-space:nowrap; flex:none; }
+#state { color:var(--color-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.paused #state { color:var(--color-ink); font-weight:500; }
+.nx .ln { display:block; font-size:11px; color:var(--color-subtle); letter-spacing:.02em; margin-bottom:2px; }
+.nx .row { display:flex; gap:6px; margin:0 10px 8px; }
+.nx .row button { height:26px; padding:0 10px; border-radius:7px; font-size:12px; font-weight:500; color:var(--color-muted); background:var(--color-panel-warm); }
+.nx .row button:hover, .nx .row button:focus-visible { color:var(--color-ink); outline:none; }
 #hb { margin-left:auto; height:26px; padding:0 10px; border-radius:7px; font-size:12px; font-weight:500; color:var(--color-muted); white-space:nowrap; }
 #hb:hover:not(:disabled) { background:var(--color-panel-warm); color:var(--color-ink); }
 #hb.acc { color:var(--color-accent); }
+#hb.fill { background:var(--color-solid-btn-bg); color:var(--color-solid-btn-fg); }
+#hb .k { margin-left:6px; font-weight:400; opacity:.7; }
+.nx .still { margin:0 14px 8px; font-size:12px; color:var(--color-muted); }
+.nx .done { margin:6px 14px 10px; }
+.nx .done b { display:block; }
+.nx .done span { font-size:12px; color:var(--color-muted); }
 #hb:disabled { opacity:.4; }
 
 .br { display:flex; align-items:center; gap:11px; min-height:60px; padding:0 14px; border-bottom:1px solid var(--color-border-light); width:100%; }
@@ -79,20 +90,22 @@ button:focus-visible { outline:2px solid var(--color-border-focus); outline-offs
 </style></head><body>
 <div class="pop" id="pop" role="dialog">
 <div class="upd sgn" id="sgn" hidden><span id="sgnText"></span><button id="sgnBtn" type="button"></button></div>
-<header class="hd" id="hd"><span class="mark" aria-hidden="true"></span><span class="dot" aria-hidden="true"></span><span id="state"></span><button id="hb" type="button"></button></header>
+<header class="hd" id="hd"><span class="mark" id="mark" role="img"></span><span id="nm"></span><span class="dot" aria-hidden="true"></span><span id="state"></span><button id="hb" type="button"></button></header>
 <button class="br" id="br" type="button">
   <span class="pl" id="pl"></span>
   <span class="tx"><b id="briefTitle"></b><span class="bar" id="bar" hidden><i id="barFill"></i></span><span class="meta" id="briefMeta"></span></span>
 </button>
-<section id="wsec">
-  <div class="sh"><b id="waiting"></b></div>
+<section id="wsec" class="nx">
   <div id="items"></div>
-  <button id="more" type="button" hidden></button>
+  <p class="still" id="still" hidden></p>
+  <div class="done" id="done" hidden><b id="doneText"></b><span id="doneNext"></span></div>
+  <div class="row" id="answerRow"><button id="yes" type="button"></button><button id="no" type="button"></button><button id="openToday" type="button" style="margin-left:auto"></button></div>
   <p class="note" id="empty" hidden><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></svg><span id="emptyText"></span></p>
   <p class="note" id="failed" role="alert" hidden></p>
 </section>
 <div class="ac">
   <button class="ro" id="make" type="button"><span class="ic"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 4.9L19 9.7l-5.2 1.8L12 16.5l-1.8-5L5 9.7l5.2-1.8z"/><path d="M19 15.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z"/></svg></span><span id="makeText"></span></button>
+  <button class="ro" id="qc" type="button"><span class="ic"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v7a2.5 2.5 0 0 1-2.5 2.5H10l-4 4v-4h0A2.5 2.5 0 0 1 4 13.5z"/></svg></span><span id="qcText"></span><span class="k" id="qcKey"></span></button>
   <button class="ro" id="open" type="button"><span class="ic"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M3 9h18"/></svg></span><span id="openText"></span><span class="k" id="shortcut"></span></button>
   <div class="upd" id="mdl" hidden><span class="ic"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12M6 11l6 6 6-6M5 20h14"/></svg></span><span id="mdlText"></span></div>
   <div class="upd" id="upd" hidden><span class="ic"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12M6 11l6 6 6-6M5 20h14"/></svg></span><span id="updText"></span><button id="restart" type="button"></button></div>
@@ -156,8 +169,9 @@ button:focus-visible { outline:2px solid var(--color-border-focus); outline-offs
             shownItems = null;
             return;
         }
-        const items = (model.items || []).slice(0, 3);
-        const ids = items.map(item => item.id);
+        // Next: the first item to answer on Today, with its place in the
+        // list (computer-settings v1.0.1 rule 8). Open Today shows it there.
+        const items = model.next ? [model.next] : [];
         const before = shownItems;
         if (before && JSON.stringify(before) === JSON.stringify(items)) return;
         const focused = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.id : '';
@@ -167,10 +181,11 @@ button:focus-visible { outline:2px solid var(--color-border-focus); outline-offs
             button.type = 'button'; button.className = 'it'; button.dataset.id = item.id;
             if (before && !before.some(old => old.id === item.id)) button.classList.add('in');
             if (!before) button.classList.add('fade');
+            const line = document.createElement('span'); line.className = 'ln'; line.textContent = item.line;
             const title = document.createElement('b'); title.textContent = item.title;
             const detail = document.createElement('span'); detail.textContent = item.detail;
-            button.append(title, detail); button.title = item.title + '\n' + item.detail;
-            button.onclick = () => send('waiting:' + item.id);
+            button.append(line, title, detail); button.title = item.title + (item.detail ? '\n' + item.detail : '');
+            button.onclick = () => send('today:' + item.id);
             box.append(button);
             if (item.id === focused) button.focus();
         });
@@ -185,38 +200,68 @@ button:focus-visible { outline:2px solid var(--color-border-focus); outline-offs
         const status = model.loading ? 'starting' : model.status;
         el('hd').className = 'hd ' + status;
         el('pop').setAttribute('aria-label', model.label || '');
+        el('nm').textContent = w.name;
+        // The mark always has a label (pass-access v1.0.0 rule 12).
+        el('mark').setAttribute('aria-label', model.markLabel || '');
         el('state').textContent = model.state;
+        // Closed Eyes is the popover's first control (redesign v1.0.0 rule 27).
         const hb = el('hb');
         hb.classList.toggle('acc', status === 'paused' || status === 'off');
-        hb.textContent = status === 'paused' ? w.resume : status === 'off' ? w.turnOn : w.pause;
-        hb.dataset.command = status === 'paused' ? 'resume' : status === 'off' ? 'turnOn' : 'pause15';
+        hb.textContent = status === 'paused' ? w.openEyes : status === 'off' ? w.turnOn : w.closedEyes;
+        // Closed Eyes' one shortcut, on its control (pass-questions v1.0.0).
+        if (status !== 'off' && model.closedEyesKey) {
+            const key = document.createElement('span'); key.className = 'k'; key.textContent = model.closedEyesKey;
+            hb.append(key);
+        }
+        // Closed Eyes on: Open eyes is filled (computer-settings v1.2.0 20b).
+        hb.classList.toggle('fill', status === 'paused');
+        hb.dataset.command = status === 'paused' ? 'resume' : status === 'off' ? 'turnOn' : 'closedEyes';
+        hb.setAttribute('aria-pressed', String(status === 'paused'));
         hb.disabled = status === 'starting';
         renderBrief();
-        el('waiting').textContent = w.waiting;
         const pending = !!model.loading || !!model.withdrawn || !!model.waitingPending;
         const failed = !pending && !!model.error;
-        const none = !pending && !failed && model.waiting === 0;
+        const none = !pending && !failed && !model.next;
         // Nothing in Tasks › Needs you: the section isn't shown (evening walk B7).
-        el('wsec').hidden = pending || failed || none;
+        // Every slot says what's true (computer-settings v1.2.0): with nothing
+        // left to answer, "That's everything for now." and the next brief.
+        el('wsec').hidden = pending || failed;
+        el('answerRow').hidden = none;
+        el('done').hidden = !none;
+        el('doneText').textContent = w.allDone;
+        el('doneNext').textContent = model.nextBrief || '';
+        el('still').hidden = none || status !== 'paused';
+        el('still').textContent = w.stillAnswer;
         renderItems();
         el('items').hidden = none || failed;
-        el('more').hidden = pending || failed || model.waiting <= 3;
-        el('more').replaceChildren(document.createTextNode(fill(w.seeAll, {n: model.waiting})), icon('more'));
-        el('empty').hidden = !none;
+        el('openToday').textContent = w.openToday;
+        el('openToday').dataset.id = model.next ? model.next.id : '';
+        // Yes and No answer Next here; a Yes that hands work to an agent
+        // opens Today on it instead (Go decides), so the sheet is seen first.
+        el('yes').textContent = w.yes;
+        el('no').textContent = w.no;
+        el('yes').dataset.id = el('no').dataset.id = model.next ? model.next.id : '';
+        el('empty').hidden = true;
         el('emptyText').textContent = w.empty;
         el('failed').hidden = !failed;
         el('failed').textContent = failed ? w.failed : '';
         el('makeText').textContent = w.make;
         el('make').hidden = !!model.brief && model.brief.kind === 'sign_in';
         el('make').disabled = !!model.loading || (model.brief && model.brief.kind === 'making');
+        el('qcText').textContent = w.quickChat;
+        el('qcKey').textContent = model.quickChat || '';
         el('openText').textContent = w.open;
         el('shortcut').textContent = w.openShortcut;
         el('mdl').hidden = !model.models;
         el('mdlText').textContent = model.models || '';
         el('sgn').hidden = !model.signOut;
         el('sgnText').textContent = model.signOut ? model.signOut.line : '';
-        el('sgnBtn').textContent = model.signOut ? model.signOut.signIn : '';
-        el('sgnBtn').dataset.command = model.signOut ? 'signIn:' + model.signOut.assistant : '';
+        // Trouble's first row (computer-trouble rule 4): what's wrong, since
+        // when, and its one fix; no button when there's nothing to press.
+        const fix = model.signOut ? (model.signOut.command || (model.signOut.assistant ? 'signIn:' + model.signOut.assistant : '')) : '';
+        el('sgnBtn').textContent = model.signOut && fix ? model.signOut.signIn : '';
+        el('sgnBtn').dataset.command = fix;
+        el('sgnBtn').hidden = !fix;
         el('upd').hidden = !model.update;
         el('updText').textContent = fill(model.updateRestart ? w.updateRestart : w.update, {version: model.update || ''});
         el('restart').textContent = w.restart;
@@ -235,25 +280,17 @@ button:focus-visible { outline:2px solid var(--color-border-focus); outline-offs
     // fills them in place. The header, the brief and the actions stay.
     window.withdrawMenuBar = function () {
         if (!model) return;
-        window.updateMenuBar(Object.assign({}, model, {withdrawn: true, waiting: 0, items: [], error: ''}));
+        window.updateMenuBar(Object.assign({}, model, {withdrawn: true, waiting: 0, items: [], next: null, error: ''}));
     };
 
-    // Mirrors observationMenuClock in observation_menu.go.
-    function wallClock(when, lang) {
-        const h = when.getHours(), m = String(when.getMinutes()).padStart(2, '0');
-        if (lang !== 'zh-CN') return ((h % 12) || 12) + ':' + m + (h < 12 ? ' AM' : ' PM');
-        // zh-CN: 24-hour, no leading zero, no 上午/下午 (shell review v1.0.2 B8).
-        return h + ':' + m;
-    }
-    // Pause and Resume change the header at once; Go's read confirms it.
+    // Closed Eyes and Open eyes change the header at once; Go's read confirms it.
     el('sgnBtn').onclick = () => send(el('sgnBtn').dataset.command);
     el('hb').onclick = () => {
         const command = el('hb').dataset.command;
         send(command);
-        if (!model || (command !== 'pause15' && command !== 'resume')) return;
-        const paused = command === 'pause15';
-        const until = wallClock(new Date(Date.now() + 15 * 60 * 1000), model.language);
-        window.updateMenuBar(Object.assign({}, model, {status: paused ? 'paused' : 'observing', paused, state: paused ? fill(model.words.pausedUntil, {time: until}) : model.words.observing}));
+        if (!model || (command !== 'closedEyes' && command !== 'resume')) return;
+        const paused = command === 'closedEyes';
+        window.updateMenuBar(Object.assign({}, model, {status: paused ? 'paused' : 'observing', paused, state: paused ? model.words.paused : model.words.observing}));
     };
     // Play answers at once: the row shows loading, or paused when this brief
     // is already playing. Today's player confirms it a moment later.
@@ -272,7 +309,10 @@ button:focus-visible { outline:2px solid var(--color-border-focus); outline-offs
         else if (brief.kind === 'read') send('read:' + brief.id);
         else if (brief.kind === 'sign_in') send('signIn:' + brief.id);
     };
-    el('more').onclick = () => send('waiting');
+    el('openToday').onclick = () => { if (el('openToday').dataset.id) send('today:' + el('openToday').dataset.id); };
+    el('yes').onclick = () => { if (el('yes').dataset.id) send('workYes:' + el('yes').dataset.id); };
+    el('no').onclick = () => { if (el('no').dataset.id) send('workNo:' + el('no').dataset.id); };
+    el('qc').onclick = () => send('quickChat');
     el('make').onclick = () => send('makeHere');
     el('open').onclick = () => send('open');
     el('restart').onclick = () => send('restart');

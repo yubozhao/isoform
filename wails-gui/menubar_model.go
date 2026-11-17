@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	goruntime "runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -43,6 +44,9 @@ type menuBarIconState struct {
 	Opacity   float64 `json:"opacity"`
 	Dot       bool    `json:"dot"`
 	Highlight bool    `json:"highlight"`
+	// Trouble puts the small amber dot on the mark while a trouble line is
+	// up (computer-trouble v1.0.0 rule 4).
+	Trouble bool `json:"trouble"`
 }
 
 func (s *menuBarAttention) icon(paused, open bool, ids []string) menuBarIconState {
@@ -76,7 +80,14 @@ var menuBarCopy = map[string]map[string]string{
 	"en": {
 		"open": "Open Isoform", "make": "Make my brief now", "pause15": "Pause for 15 minutes", "resumeMenu": "Resume observing",
 		"settingsMenu": "Settings…", "quit": "Quit Isoform",
-		"observing": "Observing", "paused": "Observing paused", "pausedUntil": "Paused until {time}", "off": "Observing is off", "starting": "Starting…",
+		"observing": "seeing", "paused": "Closed Eyes · every device", "pausedUntil": "Closed Eyes · until {time} · every device", "off": "Observing is off", "starting": "Starting…",
+		"name": "Isoform", "watchListening": "watch listening", "watchNot": "watch not listening", "noWatch": "no watch paired", "closedEyes": "Closed Eyes", "openEyes": "Open eyes",
+		"markListening": "Listening", "markNotListening": "Not listening", "markClosed": "Closed Eyes",
+		"stillAnswer": "You can still answer while eyes are closed.", "allDone": "That's everything for now.", "nextBrief": "Next brief at {time}.",
+		"notSeeing": "not seeing", "openSettings": "Open System Settings", "troubleScreen": "Isoform hasn't seen your screen since {time}.", "troubleScreenWhy": "Screen Recording is off for Isoform.",
+		"troubleSignedOut": "{assistant} has been signed out since {time}, so briefs are shorter and Chat can't answer.", "troublePhone": "Your phone hasn't checked in since {time}. Notifications show here until it does.",
+		"nextItem": "Next · {i} of {n} · {source}", "nextItemNoSource": "Next · {i} of {n}", "openToday": "Open Today", "quickChat": "Quick chat",
+		"yes": "Yes", "no": "No", "source_brief": "Your brief", "source_topic": "Your topics", "source_prep": "Meeting prep", "source_agent": "Your agent",
 		"pause": "Pause 15 min", "resume": "Resume", "turnOn": "Turn on",
 		"morning": "Hear your morning brief", "evening": "Hear your evening brief", "brief": "Hear your brief", "week": "Hear your week",
 		"read":    "Read your brief",
@@ -99,7 +110,14 @@ var menuBarCopy = map[string]map[string]string{
 		"signedOutLine": "{assistant} 已退出登录，所以简报会更简短，聊天也无法回答。",
 		"open":          "打开 Isoform", "make": "立即生成简报", "pause15": "暂停 15 分钟", "resumeMenu": "恢复观察",
 		"settingsMenu": "设置…", "quit": "退出 Isoform",
-		"observing": "观察中", "paused": "观察已暂停", "pausedUntil": "已暂停至 {time}", "off": "观察已关闭", "starting": "正在启动…",
+		"observing": "正在看", "paused": "Closed Eyes · 所有设备", "pausedUntil": "Closed Eyes · 至 {time} · 所有设备", "off": "观察已关闭", "starting": "正在启动…",
+		"name": "Isoform", "watchListening": "手表正在听", "watchNot": "手表没在听", "noWatch": "没有配对手表", "closedEyes": "Closed Eyes", "openEyes": "睁眼",
+		"markListening": "正在听", "markNotListening": "没在听", "markClosed": "Closed Eyes",
+		"stillAnswer": "闭眼时你仍然可以回答。", "allDone": "目前就这些。", "nextBrief": "下一份简报在 {time}。",
+		"notSeeing": "看不到屏幕", "openSettings": "打开系统设置", "troubleScreen": "Isoform 自 {time} 起没能看到你的屏幕。", "troubleScreenWhy": "Isoform 的屏幕录制已关闭。",
+		"troubleSignedOut": "{assistant} 自 {time} 起已退出登录，所以简报会更简短，聊天也无法回答。", "troublePhone": "你的手机自 {time} 起没有联系。在它联系之前，通知会显示在这里。",
+		"nextItem": "下一项 · 第 {i} 项，共 {n} 项 · {source}", "nextItemNoSource": "下一项 · 第 {i} 项，共 {n} 项", "openToday": "打开今天", "quickChat": "快速聊天",
+		"yes": "是", "no": "否", "source_brief": "你的简报", "source_topic": "你的主题", "source_prep": "会议准备", "source_agent": "你的 Agent",
 		"pause": "暂停 15 分钟", "resume": "恢复", "turnOn": "打开",
 		"morning": "收听早间简报", "evening": "收听晚间简报", "brief": "收听简报", "week": "收听你的一周",
 		"read":    "阅读简报",
@@ -157,6 +175,78 @@ func menuBarMenu(lang string, paused bool) []menuBarMenuItem {
 	}
 }
 
+// menuBarNext is the popover's next item to answer: the first of Today's
+// list, with its place in it ("Next · 1 of 4 · Mail").
+type menuBarNext struct {
+	ID     string `json:"id"`
+	Line   string `json:"line"`
+	Title  string `json:"title"`
+	Detail string `json:"detail"`
+	// ToAgent is set when Yes hands work to an agent: the popover's Yes
+	// opens Today on the item instead, so the hand-off sheet is always seen
+	// before anything goes (computer-today rule 7).
+	ToAgent bool `json:"toAgent,omitempty"`
+}
+
+// menuBarNextItem is the first open item of Your work (the shared list, B2)
+// as the popover's Next row, or nil when nothing is open.
+func menuBarNextItem(w map[string]string, list WorkList) *menuBarNext {
+	open := make([]WorkItem, 0, len(list.Items))
+	for _, item := range list.Items {
+		if item.State == workStateOpen {
+			open = append(open, item)
+		}
+	}
+	if len(open) == 0 {
+		return nil
+	}
+	first := open[0]
+	n := fmt.Sprint(len(open))
+	line := menuBarFill(w["nextItemNoSource"], "i", "1", "n", n)
+	if source := w["source_"+first.Source]; source != "" {
+		line = menuBarFill(w["nextItem"], "i", "1", "n", n, "source", source)
+	}
+	return &menuBarNext{ID: first.ID, Line: line, Title: menuBarLine(first.Work.Title), Detail: menuBarLine(first.Work.Text), ToAgent: first.Yes.Does == "agent"}
+}
+
+// menuBarWatch is the watch's word for the state line (computer-settings
+// v1.2.0 rule 5: it never hides the watch's state), read with the waiting
+// list, not on the five-second tick: "noWatch" until a watch has ever sent
+// audio, then "watchListening" within the hour, else "watchNot".
+var menuBarWatch atomic.Value
+
+func menuBarWatchWord(recordings []WatchRecording, now time.Time) string {
+	switch {
+	case len(recordings) == 0:
+		return "noWatch"
+	case watchListeningAt(recordings, now):
+		return "watchListening"
+	default:
+		return "watchNot"
+	}
+}
+
+// menuBarStateLine is the mark's words, then the watch's.
+func menuBarStateLine(w map[string]string, mark string) string {
+	word, _ := menuBarWatch.Load().(string)
+	if word == "" {
+		return mark
+	}
+	return mark + " · " + w[word]
+}
+
+const menuBarWatchListeningWindow = 75 * time.Minute
+
+func watchListeningAt(recordings []WatchRecording, now time.Time) bool {
+	for _, recording := range recordings {
+		started, err := time.Parse(time.RFC3339, recording.StartedAt)
+		if err == nil && now.Sub(started) <= menuBarWatchListeningWindow {
+			return true
+		}
+	}
+	return false
+}
+
 type menuBarWaitingItem struct {
 	ID        string `json:"id"`
 	SessionID string `json:"sessionId"`
@@ -187,6 +277,19 @@ type menuBarView struct {
 	Items      []menuBarWaitingItem `json:"items"`
 	WaitingIDs []string             `json:"-"`
 	Brief      menuBarBrief         `json:"brief"`
+	// Next is the next item to answer on Today (computer-settings v1.0.1
+	// rule 8): its place in the list, its source, its title and one line.
+	Next *menuBarNext `json:"next,omitempty"`
+	// QuickChat is Quick chat's shortcut, as the person set it.
+	QuickChat string `json:"quickChat,omitempty"`
+	// ClosedEyesKey is Closed Eyes' one shortcut, system-wide (pass-questions
+	// v1.0.0 rule 1), shown on the popover's first control.
+	ClosedEyesKey string `json:"closedEyesKey,omitempty"`
+	// MarkLabel is the mark's words for screen readers (pass-access v1.0.0
+	// rule 12): Listening, Not listening or Closed Eyes.
+	MarkLabel string `json:"markLabel,omitempty"`
+	// NextBrief is "Next brief at {time}." for the all-answered slot.
+	NextBrief string `json:"nextBrief,omitempty"`
 	// Update is the downloaded update's version, shown only then.
 	Update string `json:"update,omitempty"`
 	// SignOut is R75's first row: the chosen assistant is confirmed signed out.
@@ -234,6 +337,7 @@ type menuBarWaitingMemory struct {
 	waiting   int
 	ids       []string
 	items     []menuBarWaitingItem
+	next      *menuBarNext
 	readAt    time.Time
 	retryAt   time.Time
 }
@@ -268,6 +372,7 @@ func (m *menuBarWaitingMemory) settle(view *menuBarView, read bool, err error, n
 		m.succeeded, m.held, m.language, m.waiting = true, true, view.Language, view.Waiting
 		m.ids = append([]string(nil), view.WaitingIDs...)
 		m.items = append([]menuBarWaitingItem(nil), view.Items...)
+		m.next = view.Next
 		m.readAt, m.retryAt = now, time.Time{}
 		return
 	}
@@ -275,9 +380,10 @@ func (m *menuBarWaitingMemory) settle(view *menuBarView, read bool, err error, n
 		m.dirty, m.retryAt = true, now.Add(menuBarWaitingRetry)
 	}
 	view.Error, view.WaitingPending = "", false
-	view.Waiting, view.WaitingIDs, view.Items = 0, nil, []menuBarWaitingItem{}
+	view.Waiting, view.WaitingIDs, view.Items, view.Next = 0, nil, []menuBarWaitingItem{}, nil
 	switch {
 	case m.held && m.language == view.Language:
+		view.Next = m.next
 		view.Waiting = m.waiting
 		view.WaitingIDs = append([]string(nil), m.ids...)
 		view.Items = append([]menuBarWaitingItem(nil), m.items...)
@@ -292,7 +398,7 @@ func (m *menuBarWaitingMemory) settle(view *menuBarView, read bool, err error, n
 // withdraw drops the held list after a privacy or source change; the next
 // good read fills it again.
 func (m *menuBarWaitingMemory) withdraw() {
-	m.held, m.waiting, m.ids, m.items = false, 0, nil, nil
+	m.held, m.waiting, m.ids, m.items, m.next = false, 0, nil, nil, nil
 }
 
 func menuBarDuration(seconds float64) string {
@@ -502,9 +608,9 @@ func (a *App) menuBarView(lang string, readWaiting bool) (perfValue menuBarView,
 	view := menuBarView{Language: lang, Theme: currentThemePreference(), Words: w, Paused: paused, Items: []menuBarWaitingItem{}}
 	switch {
 	case paused:
-		view.Status, view.State = "paused", menuBarPausedState(w, lang, doing)
+		view.Status, view.State = "paused", menuBarStateLine(w, menuBarPausedState(w, lang, doing))
 	case observing:
-		view.Status, view.State = "observing", w["observing"]
+		view.Status, view.State = "observing", menuBarStateLine(w, w["observing"])
 	case !menuBarObservationStarted.Load():
 		// Launch starts observing a little after the window: until then
 		// the header says so instead of "Observing is off".
@@ -519,7 +625,15 @@ func (a *App) menuBarView(lang string, readWaiting bool) (perfValue menuBarView,
 		view.UpdateRestart = status.RestartNeeded
 	}
 	view.Models = a.menuBarModels(w)
-	view.SignOut = a.menuBarSignOutRow(routeOrder(loadAIProviderConfig()), w)
+	view.QuickChat = quickChatHotkeyDisplay(currentQuickChatHotkey())
+	view.ClosedEyesKey = closedEyesHotkeyDisplay(goruntime.GOOS)
+	view.MarkLabel = menuBarMarkLabel(w, paused)
+	trouble := a.menuBarTrouble(time.Now())
+	view.SignOut = menuBarTroubleRow(w, lang, trouble)
+	if len(trouble) > 0 && trouble[0].Kind == troubleScreen && view.Status == "observing" {
+		// The state line says "not seeing" while the screen can't be seen.
+		view.State = menuBarStateLine(w, w["notSeeing"])
+	}
 	// The launch preload can run before startup starts the brief service.
 	if svc := a.ensureMobileBriefService(); svc != nil {
 		latest, ok := a.menuBarLatestBrief(svc)
@@ -527,7 +641,11 @@ func (a *App) menuBarView(lang string, readWaiting bool) (perfValue menuBarView,
 		if b, can := svc.(mobileBriefBuilding); can {
 			building = b.Building()
 		}
-		view.Brief = menuBarBriefRow(w, lang, latest, ok, building, a.menuBarBriefHealth(svc, latest, ok), time.Now())
+		health := a.menuBarBriefHealth(svc, latest, ok)
+		view.Brief = menuBarBriefRow(w, lang, latest, ok, building, health, time.Now())
+		if next, err := time.Parse(time.RFC3339, health.NextRunAt); err == nil {
+			view.NextBrief = menuBarFill(w["nextBrief"], "time", observationMenuClock(next.Local(), lang))
+		}
 	} else {
 		view.Brief = menuBarBrief{Kind: "none", Title: w["none"]}
 	}
@@ -545,6 +663,12 @@ func (a *App) menuBarView(lang string, readWaiting bool) (perfValue menuBarView,
 	}
 	view.Items, view.WaitingIDs = menuBarNeedItems(needs.Items, lang)
 	view.Waiting = len(needs.Items)
+	if list, err := a.GetWorkList(); err == nil {
+		view.Next = menuBarNextItem(w, list)
+	}
+	if recordings, err := a.GetWatchRecordings(); err == nil {
+		menuBarWatch.Store(menuBarWatchWord(recordings, time.Now()))
+	}
 	view.Label = menuBarLabel(w, view.State, view.Waiting)
 	return view, nil
 }
@@ -764,6 +888,52 @@ type menuBarSignOut struct {
 	Assistant string `json:"assistant"`
 	Line      string `json:"line"`
 	SignIn    string `json:"signIn"`
+	// Command is what the row's button does ("" when nothing can be
+	// pressed); Kind is the trouble's kind (computer-trouble v1.0.0).
+	Command string `json:"command,omitempty"`
+	Kind    string `json:"kind,omitempty"`
+}
+
+// menuBarTroubleCache holds GetTrouble's last read for a minute: the popover
+// ticks every five seconds, and trouble is checked every minute (computer-
+// trouble v1.0.0 rule 7).
+var menuBarTroubleCache struct {
+	sync.Mutex
+	lines  []TroubleLine
+	readAt time.Time
+}
+
+const menuBarTroubleEvery = time.Minute
+
+func (a *App) menuBarTrouble(now time.Time) []TroubleLine {
+	menuBarTroubleCache.Lock()
+	defer menuBarTroubleCache.Unlock()
+	if menuBarTroubleCache.readAt.IsZero() || now.Sub(menuBarTroubleCache.readAt) >= menuBarTroubleEvery {
+		menuBarTroubleCache.lines, menuBarTroubleCache.readAt = a.troubleLines(now), now
+	}
+	return menuBarTroubleCache.lines
+}
+
+// menuBarTroubleRow is the popover's first row: the first trouble by rule 1,
+// what's wrong and since when, and its one fix (computer-trouble rule 4).
+func menuBarTroubleRow(w map[string]string, lang string, lines []TroubleLine) *menuBarSignOut {
+	if len(lines) == 0 {
+		return nil
+	}
+	first := lines[0]
+	since := ""
+	if at, err := time.Parse(time.RFC3339, first.Since); err == nil {
+		since = observationMenuClock(at.Local(), lang)
+	}
+	switch first.Kind {
+	case troubleScreen:
+		return &menuBarSignOut{Kind: first.Kind, Line: menuBarFill(w["troubleScreen"], "time", since) + " " + w["troubleScreenWhy"], SignIn: w["openSettings"], Command: "openScreenSettings"}
+	case troubleSignedOut:
+		return &menuBarSignOut{Kind: first.Kind, Assistant: first.Assistant, Line: menuBarFill(w["troubleSignedOut"], "assistant", assistantSignOutDisplayName(first.Assistant), "time", since), SignIn: w["signIn"], Command: "signIn:" + first.Assistant}
+	case troublePhone:
+		return &menuBarSignOut{Kind: first.Kind, Line: menuBarFill(w["troublePhone"], "time", since)}
+	}
+	return nil
 }
 
 // menuBarSignOutRow names the first confirmed signed-out assistant in order,
@@ -778,4 +948,69 @@ func (a *App) menuBarSignOutRow(order []string, w map[string]string) *menuBarSig
 		Line:      menuBarFill(w["signedOutLine"], "assistant", assistantSignOutDisplayName(assistant)),
 		SignIn:    w["signIn"],
 	}
+}
+
+// quickChatHotkeyDisplay is Quick chat's shortcut as the popover shows it:
+// "⌥⌥" for double Option, the modifier glyphs and key otherwise, and ""
+// when Quick chat has no shortcut.
+func quickChatHotkeyDisplay(c QuickChatHotkeyConfig) string {
+	switch c.Key {
+	case "", quickChatHotkeyKeyOff:
+		return ""
+	case quickChatHotkeyKeyOptOpt:
+		return "⌥⌥"
+	}
+	var b strings.Builder
+	for _, mod := range []struct {
+		on    bool
+		glyph string
+	}{{c.Ctrl, "⌃"}, {c.Alt, "⌥"}, {c.Shift, "⇧"}, {c.Meta, "⌘"}} {
+		if mod.on {
+			b.WriteString(mod.glyph)
+		}
+	}
+	switch c.Key {
+	case " ":
+		b.WriteString("Space")
+	default:
+		b.WriteString(strings.ToUpper(c.Key))
+	}
+	return b.String()
+}
+
+// menuBarAnswersHere says whether the popover may answer this item itself:
+// only an item the list still has open, and never a Yes that hands work to
+// an agent. Every other case opens Today on it.
+func menuBarAnswersHere(list WorkList, id, action string) bool {
+	for _, item := range list.Items {
+		if item.ID == id {
+			return item.State == workStateOpen && (action != workActionYes || item.Yes.Does != "agent")
+		}
+	}
+	return false
+}
+
+// closedEyesHotkeyDisplay is Closed Eyes' fixed system-wide shortcut
+// (closedEyesHotkeyMatches, matchesClosedEyesHotkey), or "" where there is none.
+func closedEyesHotkeyDisplay(goos string) string {
+	switch goos {
+	case "darwin":
+		return "⌃⌥⌘E"
+	case "windows":
+		return "Ctrl+Alt+Shift+E"
+	default:
+		return ""
+	}
+}
+
+// menuBarMarkLabel is the header mark's label: Closed Eyes while eyes are
+// closed, otherwise whether the watch is listening.
+func menuBarMarkLabel(w map[string]string, paused bool) string {
+	if paused {
+		return w["markClosed"]
+	}
+	if word, _ := menuBarWatch.Load().(string); word == "watchListening" {
+		return w["markListening"]
+	}
+	return w["markNotListening"]
 }
