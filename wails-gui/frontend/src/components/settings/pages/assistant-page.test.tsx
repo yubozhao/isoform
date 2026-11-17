@@ -40,6 +40,11 @@ vi.mock("sonner", () => ({
 }));
 
 
+// Your agents has its own suite; here it only has to come first.
+vi.mock("./your-agents-section", () => ({
+    YourAgentsSection: () => <div data-testid="your-agents" />,
+}));
+
 // The page's account cards have their own suite; here they only show the form they were given.
 vi.mock("@/components/model-accounts-card", () => ({
     ModelAccountsSettings: ({ ownKeyForm }: { ownKeyForm: ReactNode }) => (
@@ -181,6 +186,8 @@ describe("AssistantPage", () => {
         const { container } = render(<AssistantPage />);
         expect(await screen.findByText("API key")).toBeInTheDocument();
         expect(screen.getByTestId("model-accounts")).toBeInTheDocument();
+        // Your agents leads the page (computer-settings v1.0.0 rule 5).
+        expect(screen.getByTestId("your-agents").compareDocumentPosition(screen.getByTestId("model-accounts")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
         // Isoform's own text stays internal: no prompt editors in Settings.
         expect(screen.queryByText("How Isoform works with you")).not.toBeInTheDocument();
         expect(screen.queryByRole("textbox", { name: /talk to you/i })).not.toBeInTheDocument();

@@ -681,7 +681,7 @@ func (r *darwinSystemAudioRecorder) Start() error {
 		log.Printf("[background-audio] system audio permission not granted yet; not asking outside a user request")
 		recordAudioCaptureEvent(AudioCaptureEvent{
 			Source: "system_audio", Kind: "skipped",
-			Message: "system audio permission not granted yet; grant it in Settings > Observation",
+			Message: "system audio permission not granted yet; grant it in Settings > What Isoform sees",
 		})
 		return fmt.Errorf("system audio: %w", errPermissionNotRequested)
 	}

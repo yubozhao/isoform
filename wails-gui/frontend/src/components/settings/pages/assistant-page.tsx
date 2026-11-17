@@ -31,6 +31,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { ModelAccountsSettings } from "@/components/model-accounts-card";
 import { SettingsCard, SettingsSectionHeader } from "@/components/settings/settings-primitives";
 import { SettingsFailureLine, useSettingsFailure } from "@/components/settings/settings-failure";
+import { YourAgentsSection } from "./your-agents-section";
 
 // Non-preset picker entries: the two external-agent backends. The Isoform
 // gateway has been retired, so it is no longer selectable. API providers
@@ -689,7 +690,8 @@ export function AIProviderSettingsCard({
 // ── Assistant page ──
 
 /**
- * Assistant (page id "ai-provider"): who answers, with each agent's model and
+ * Your agents (page id "ai-provider"): each agent's job and Connect an
+ * agent first (computer-settings v1.0.0 rule 5); then who answers, with each agent's model and
  * effort, how much usage is left and which tools are on this Mac, with the
  * user's own API key or model under Advanced. Isoform's own prompts are not
  * editable here. The "subscription" id resolves here.
@@ -698,6 +700,7 @@ export function AssistantPage() {
     const { t } = useTranslation("settings");
     return (
         <div className="flex flex-col gap-6">
+            <YourAgentsSection />
             <ModelAccountsSettings ownKeyForm={<AIProviderSettingsCard flat />} />
             <p className="settings-row-desc">{t("assistantMcp.otherAppsPointer")}</p>
         </div>

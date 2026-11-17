@@ -4312,6 +4312,23 @@
         "save": "Save",
         "lead": "You, as an agent clients can hire at isoform.ai/agents/{{name}}."
     },
+    "yourAgents": {
+        "jobsTitle": "Their jobs",
+        "note": "Isoform passes them the task and what it gets, nothing else.",
+        "forCode": "For code",
+        "forCodeSub": "Work that touches a repository",
+        "forElse": "For everything else",
+        "forElseSub": "Everything you say yes to that isn't code",
+        "notChosen": "Asked at your first Yes",
+        "connectedTitle": "Connected agents",
+        "empty": "No agents yet. Connect one to hand it work.",
+        "connect": "Connect an agent",
+        "disconnect": "Disconnect",
+        "disconnectTitle": "Disconnect {{agent}}?",
+        "disconnectBody": "It stops getting hand-offs at once, and can't use Isoform's tools any more. What it already made stays with it.",
+        "loadFailed": "Couldn't read your agents.",
+        "actionFailed": "That didn't work. Try again."
+    },
     "topicProposals": {
         "title": "Proposals from your topics",
         "description": "Isoform sends your topic names to your own AI to suggest the next piece of work.",

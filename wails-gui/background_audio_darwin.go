@@ -929,11 +929,11 @@ func (r *darwinAudioRecorder) Start() error {
 		if !permissionPromptsAllowed() {
 			// Listening started on its own (launch, unlock): never show the
 			// dialog from here. The user grants it from onboarding or
-			// Settings > Observation, which starts listening again.
+			// Settings > What Isoform sees, which starts listening again.
 			log.Printf("[background-audio] mic permission not determined; not asking outside a user request")
 			recordAudioCaptureEvent(AudioCaptureEvent{
 				Source: "microphone", Kind: "skipped",
-				Message: "microphone permission not granted yet; grant it in Settings > Observation",
+				Message: "microphone permission not granted yet; grant it in Settings > What Isoform sees",
 			})
 			return fmt.Errorf("microphone: %w", errPermissionNotRequested)
 		}
