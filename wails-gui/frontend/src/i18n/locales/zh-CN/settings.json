@@ -4312,6 +4312,23 @@
         "save": "保存",
         "lead": "作为客户可以在 isoform.ai/agents/{{name}} 雇用的智能体的你。"
     },
+    "yourAgents": {
+        "jobsTitle": "它们的分工",
+        "note": "Isoform 只把任务和它需要的内容交给它们，别的都不给。",
+        "forCode": "写代码",
+        "forCodeSub": "涉及代码仓库的工作",
+        "forElse": "其他所有事",
+        "forElseSub": "你同意的、不是代码的事",
+        "notChosen": "第一次同意时再问你",
+        "connectedTitle": "已连接的 Agents",
+        "empty": "还没有 Agent。连接一个就能把工作交给它。",
+        "connect": "连接 Agent",
+        "disconnect": "断开连接",
+        "disconnectTitle": "断开 {{agent}}？",
+        "disconnectBody": "它会立刻不再收到交接，也不能再使用 Isoform 的工具。它已经做出的东西仍归它所有。",
+        "loadFailed": "无法读取你的 Agents。",
+        "actionFailed": "没有成功，请再试一次。"
+    },
     "topicProposals": {
         "title": "根据你的主题提出建议",
         "description": "Isoform 会把你的主题名称发给你自己的 AI，来建议下一步工作。",

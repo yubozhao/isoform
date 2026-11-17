@@ -560,7 +560,7 @@ func (a *App) calendarPeekRead(provider string, events int, at time.Time) {
 func (a *App) calendarPeekNotice() bool {
 	return a.notifyAutomaticDesktop(
 		"Isoform can read web calendars when the computer is idle",
-		"It opens your browser briefly while you are away and closes it again. Turn this off in Settings > Observation.",
+		"It opens your browser briefly while you are away and closes it again. Turn this off in Settings > What Isoform sees.",
 		"settings:activity",
 	) == "desktop"
 }

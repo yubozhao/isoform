@@ -105,7 +105,7 @@ func mobileSeesNotice(job, lang string) (string, string, bool) {
 	if zh {
 		return "为 Isoform 打开" + name[1], "你在手机上点了“打开”。在 设置 › 观察 里打开。", true
 	}
-	return "Turn on " + name[0] + " for Isoform", "You asked from your phone. Turn it on in Settings › Observation.", true
+	return "Turn on " + name[0] + " for Isoform", "You asked from your phone. Turn it on in Settings › What Isoform sees.", true
 }
 
 func (bridge *mobileBridge) serveSeesShow(w http.ResponseWriter, r *http.Request, device mobileDeviceRecord) {
