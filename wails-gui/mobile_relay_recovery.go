@@ -15,6 +15,8 @@ import (
 // startMobileLifecycle observes power events independently of activity capture.
 func (a *App) startMobileLifecycle(ctx context.Context) {
 	activitymon.StartSystemStateObservers()
+	// An awake computer takes a made-ahead brief's push from the relay at its slot.
+	go a.runBriefYields(ctx)
 	changes, unsubscribe := activitymon.SubscribeLifecycle()
 	go func() {
 		defer unsubscribe()

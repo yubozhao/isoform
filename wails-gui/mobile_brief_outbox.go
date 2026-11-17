@@ -32,6 +32,9 @@ type mobileBriefOutboxEntry struct {
 	QueuedAt  string `json:"queuedAt"`
 	HandedAt  string `json:"handedAt,omitempty"`
 	Resent    bool   `json:"resent,omitempty"`
+	// Yielded is set once an awake computer asked the relay to drop this
+	// early brief's scheduled push (mobile_brief_yield.go).
+	Yielded bool `json:"yielded,omitempty"`
 }
 
 type mobileBriefOutboxFile struct {

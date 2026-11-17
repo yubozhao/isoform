@@ -974,6 +974,13 @@ moment with the package as stored, and in any case no later than 2 minutes after
 is pushed once; a newer brief's push replaces an older one's, so an older brief is never pushed after a newer one. A
 brief without written text, or one whose package already has its recording, is pushed with its first package as before.
 
+**The relay's push yields to an awake computer** (notify v1.0.0 rule 2; 2026-11-16). The relay's own push
+for a brief made ahead is for a computer that sleeps through the slot. An awake computer sends
+`{"t":"brief_yield","deviceId"}` up to 90 seconds before the slot, and the relay cancels that device's brief
+pushes not yet sent (the brief itself stays). The computer's `brief_ready` notice then rings in one place,
+the computer or the phone, by section 9.3. A relay that doesn't know the frame refuses it and stays
+connected; the phone may then get both.
+
 **Phone rules** (phone redesign, phone-today rule 7 and phone-brief rule 4):
 
 - A package is shown only after all its parts are verified (section 8.1). For one `briefId`, a version with words or a
@@ -4136,6 +4143,30 @@ day after setup only:
 - Offered work: Yes hands it to your agent (as section 26.1's offered work, with `send:false` and the sheet);
   No takes an offered reason. Not mine and Edit are `400`.
 - `WorkList.dayOne` counts the open day-one items, for "{n} to answer · day one".
+
+### 26.6 Work with an agent: files, Take it back, Ask again (phone-agent v1.2.0 rule 3, v1.2.1; 2026-11-16)
+
+`/status` carries `workAgentActions: true` when these exist.
+
+- An item with an agent (`with_agent`) or back from one names its hand-off in `ref.handoffId`, the id
+  `GET /agents/handoffs/status` uses (27.2). Work sent to a connected agent comes back as `back` once
+  the agent posts its result: `work.text` is its summary.
+- A result carries the files the agent made: `files: [{"id","name","where","readable","bytes"?}]`. The
+  phone says `{where}, on your computer`. `readable` is true for text (Markdown, plain text, CSV, JSON,
+  YAML, a log or a diff) of 256 KB or less: Read it. Anything else is Open on your computer. A file
+  is never sent to the phone unless it is text and the person opens it.
+- `GET /work/{id}/file?file={fileId}` (`brief:read`) answers `200 {"name","text"}`, read-only. `404`
+  for an unknown item or file, `413` over 256 KB, `415` for a file that isn't text.
+- `POST /work/{id}/answer` takes three more actions:
+
+| Action | On | Body | What it does |
+|---|---|---|---|
+| `open_file` | an item with `files` | `"file": "<fileId>"` | Opens the file on the computer: text in TextEdit, anything else shown in Finder. `200` with the item; nothing is kept. `404` for an unknown file. |
+| `take_back` | `with_agent` | none | The same as `POST /agents/handoffs/{id}/take-back`: the agent can't read it any more and a task here stops. The item comes back as offered (`state` `open`) with `takenBack {"agentId","agentName","at","undoUntil"}`, at the top of the list. Kept in the answers ledger. `409` `item_changed` when it is already back or taken back. |
+| `ask_again` | `with_agent` | none | The same as `POST /agents/handoffs/{id}/ask-again`: the agent is offered the work again. The item stays `with_agent`; nothing is kept. `409` `not_taking_work` when Closed Eyes is on. |
+
+- `undo` after `take_back`, until `takenBack.undoUntil`, sends the work to the agent again as the Yes
+  before it said; the item is `with_agent` once more, with a new `ref.handoffId`.
 
 ## 27. Your agents (v1, 2026-11-15)
 

@@ -95,6 +95,19 @@ final class WatchLink: NSObject, WCSessionDelegate, @unchecked Sendable {
         WatchRecordingsModel.shared.show(await forwarder.recordings(), outcome: nil)
     }
 
+    /// Forget everything: the phone's recordings, and the watch's through a transfer that arrives even when the
+    /// watch app isn't running.
+    @MainActor
+    func forgetAll() async {
+        if let forwarder {
+            await forwarder.forgetAll()
+            WatchRecordingsModel.shared.show(await forwarder.recordings(), outcome: nil)
+        }
+        let session = WCSession.default
+        guard WCSession.isSupported(), session.activationState == .activated, session.isPaired, session.isWatchAppInstalled else { return }
+        session.transferUserInfo([WatchRecordingWire.forgetAllKey: true])
+    }
+
     /// Tries again to send a recording the computer refused.
     @MainActor
     func retry(_ id: String) async {

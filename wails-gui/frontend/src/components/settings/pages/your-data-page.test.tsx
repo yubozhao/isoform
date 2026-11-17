@@ -6,7 +6,7 @@ import zh from "@/i18n/locales/zh-CN/settings.json";
 import { YourDataPage } from "./your-data-page";
 
 const mocks = vi.hoisted(() => ({
-    summary: { retentionDays: 30, ignoredApps: 3, handoffsThisWeek: 4, pairedDevices: 1, answers: 12, answersSince: "2026-11-02T17:00:00Z", screenBytes: 2 * 1024 ** 3, audioBytes: 300 * 1024 ** 2, usedBytes: 3 * 1024 ** 3, capBytes: 10 * 1024 ** 3 } as Record<string, number | string>,
+    summary: { retentionDays: 30, ignoredApps: 3, handoffsThisWeek: 4, pairedDevices: 1, answers: 12, answersSince: "2026-11-02T17:00:00Z", screenBytes: 2 * 1024 ** 3, audioBytes: 300 * 1024 ** 2, usedBytes: 3 * 1024 ** 3, capBytes: 10 * 1024 ** 3, messagesNotes: 5, messagesBytes: 2048, watchBytes: 50 * 1024 ** 2, agentsHistoryItems: 4, agentsHistoryBytes: 4096 } as Record<string, number | string>,
     fail: false,
     exportAnswers: vi.fn(async () => true),
     deleteAnswers: vi.fn(async () => {}),
@@ -31,7 +31,7 @@ const row = (key: string) => document.querySelector(`[data-your-data-row=${key}]
 describe("Settings › Your data", () => {
     beforeEach(async () => {
         await i18n.changeLanguage("en");
-        mocks.summary = { retentionDays: 30, ignoredApps: 3, handoffsThisWeek: 4, pairedDevices: 1, answers: 12, answersSince: "2026-11-02T17:00:00Z", screenBytes: 2 * 1024 ** 3, audioBytes: 300 * 1024 ** 2, usedBytes: 3 * 1024 ** 3, capBytes: 10 * 1024 ** 3 };
+        mocks.summary = { retentionDays: 30, ignoredApps: 3, handoffsThisWeek: 4, pairedDevices: 1, answers: 12, answersSince: "2026-11-02T17:00:00Z", screenBytes: 2 * 1024 ** 3, audioBytes: 300 * 1024 ** 2, usedBytes: 3 * 1024 ** 3, capBytes: 10 * 1024 ** 3, messagesNotes: 5, messagesBytes: 2048, watchBytes: 50 * 1024 ** 2, agentsHistoryItems: 4, agentsHistoryBytes: 4096 };
         mocks.fail = false;
     });
 
@@ -44,6 +44,8 @@ describe("Settings › Your data", () => {
         expect(row("calls")).toHaveTextContent("Recorded calls on this computer, you and the other side · kept 30 days · 300");
         expect(row("mail")).toHaveTextContent("Read where they are; not copied · —");
         expect(row("watch")).toHaveTextContent("All day, in hours you can pause · kept until you delete it");
+        expect(row("messages")).toHaveTextContent("5 notes");
+        expect(row("agentsHistory")).toHaveTextContent("4 things learned");
         expect(row("total")).toHaveTextContent("of 10");
         expect(row("total")).toHaveTextContent("When it's full, the oldest goes first.");
         expect(row("answers")).toHaveTextContent("12 answers since November 2");

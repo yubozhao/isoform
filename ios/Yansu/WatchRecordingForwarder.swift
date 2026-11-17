@@ -270,6 +270,11 @@ final class WatchRecordingInbox: @unchecked Sendable {
         }
     }
 
+    /// Removes every part of every recording from the phone.
+    func removeEverything() {
+        for item in pending() { remove(item.info) }
+    }
+
     /// Removes every part of a recording from the phone.
     func removeAll(recordingID: String) {
         for item in pending() where item.info.recordingID == recordingID { remove(item.info) }
@@ -442,6 +447,19 @@ actor WatchRecordingForwarder {
         set(id, .deleted)
         save()
         await flushDeletes()
+    }
+
+    /// Forget everything: every recording's audio and state on this phone. The computer is forgetting its own copy,
+    /// so no delete goes to it.
+    func forgetAll() {
+        inbox.removeEverything()
+        states.removeAll()
+        order.removeAll()
+        details.removeAll()
+        pendingDeletes.removeAll()
+        names.removeAll()
+        save()
+        onStates?(states, names)
     }
 
     /// Tells the computer about deletes it has not heard of. A computer that cannot be reached,

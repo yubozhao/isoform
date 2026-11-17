@@ -15,6 +15,10 @@ enum WorkUITestSeed {
 
     @MainActor static func page(now: Date = Date()) -> WorkPage {
         func at(_ minutes: Double) -> String { RelayTime.format(now.addingTimeInterval(-minutes * 60)) }
+        // Answered today, whatever the clock: just after midnight "10 minutes ago" is yesterday.
+        func today(_ minutes: Double) -> String {
+            RelayTime.format(max(now.addingTimeInterval(-minutes * 60), Calendar.current.startOfDay(for: now)))
+        }
         let tomorrow = RelayTime.format(Calendar.current.startOfDay(for: now.addingTimeInterval(86_400)).addingTimeInterval(7 * 3600))
         var items = [
             WorkItem(id: "work-prep-lena", kind: "done", row: "prep", state: "open",
@@ -55,7 +59,7 @@ enum WorkUITestSeed {
                      source: "brief", first: [WorkFirstPart(text: "From the brief")],
                      noticed: "Priya asked to move Thursday's review.",
                      work: WorkBody(title: "Reply to Priya"),
-                     answer: WorkAnswer(action: "yes", at: at(10), line: "Reply to Priya: in your Mail drafts",
+                     answer: WorkAnswer(action: "yes", at: today(10), line: "Reply to Priya: in your Mail drafts",
                                         undoUntil: tomorrow), createdAt: at(200)),
         ]
         if agents {
@@ -95,7 +99,7 @@ enum WorkUITestSeed {
                 guard item.isOpen else { return item }
                 var answered = item
                 answered.state = "answered"
-                answered.answer = WorkAnswer(action: "yes", at: at(5), line: "\(item.work.title): kept", undoUntil: tomorrow)
+                answered.answer = WorkAnswer(action: "yes", at: today(5), line: "\(item.work.title): kept", undoUntil: tomorrow)
                 return answered
             }
         }

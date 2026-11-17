@@ -104,6 +104,13 @@ type revokeFrame struct {
 	DeviceID string `json:"deviceId"`
 }
 
+// briefYieldFrame drops a device's scheduled brief push: the computer is awake
+// at the slot and decides where the brief rings (PROTOCOL.md 8.2).
+type briefYieldFrame struct {
+	T        string `json:"t"`
+	DeviceID string `json:"deviceId"`
+}
+
 // purgeFrame drops everything queued for one of the hub's devices: before a
 // forget_all (PROTOCOL.md 28), nothing older may still reach the phone.
 type purgeFrame struct {
@@ -234,6 +241,8 @@ func (s *session) apply(t string, data []byte) string {
 		return s.brief(data)
 	case "revoke":
 		return s.revoke(data)
+	case "brief_yield":
+		return s.briefYield(data)
 	case "purge":
 		return s.purge(data)
 	case "grant":
@@ -514,6 +523,23 @@ func (s *session) revoke(data []byte) string {
 		s.m.Notify.Notify(notify.DeviceKey(f.DeviceID))
 	}
 	return ""
+}
+
+// briefYield cancels the device's queued brief pushes. An unknown device is
+// not an error.
+func (s *session) briefYield(data []byte) string {
+	var f briefYieldFrame
+	if !decodeFrame(data, &f) || !wire.ValidUUID(f.DeviceID) {
+		return "invalid brief_yield frame"
+	}
+	ctx, cancel := storeContext()
+	defer cancel()
+	switch err := s.m.Store.YieldBriefPush(ctx, s.hubID, f.DeviceID); {
+	case err == nil, errors.Is(err, store.ErrNotFound):
+		return ""
+	default:
+		return "brief push could not yield"
+	}
 }
 
 // purge drops the device's queued envelopes, both ways, and its queued

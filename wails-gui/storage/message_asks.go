@@ -174,3 +174,10 @@ func (s *Store) DeleteAllMessageAsks(ctx context.Context) (int64, error) {
 	}
 	return res.RowsAffected()
 }
+
+// MessageAsksSize is how many notes of who asked what are kept, and the
+// bytes their words take (Settings › Your data). It reads lengths only.
+func (s *Store) MessageAsksSize(ctx context.Context) (count int, bytes int64, err error) {
+	err = s.db.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(LENGTH(summary) + LENGTH(next_step) + LENGTH(action) + LENGTH(person_name)), 0) FROM message_asks`).Scan(&count, &bytes)
+	return count, bytes, err
+}

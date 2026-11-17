@@ -215,6 +215,23 @@ func storedBody(ctx context.Context, q querier, deviceID, dir string, seq uint64
 	return []byte(body), nil
 }
 
+// YieldBriefPush cancels a device's brief pushes not yet sent: an awake
+// computer rings the brief in one place at its slot (PROTOCOL.md 8.2).
+func (s *Store) YieldBriefPush(ctx context.Context, hubID, deviceID string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err = deviceInHub(ctx, tx, hubID, deviceID); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, "UPDATE push_outbox SET state='cancelled' WHERE device_id=? AND kind=? AND state='queued'", deviceID, push.KindBrief); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 // PurgeDevice drops every ciphertext queued for one of the hub's devices: its
 // envelopes both ways, its stored briefs, its uploads and its pushes not yet
 // sent (PROTOCOL.md 28). The pairing stays.

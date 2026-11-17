@@ -189,8 +189,9 @@ func answersStanding(entries []AnswerRecord) map[string]AnswerRecord {
 		}
 		previous, seen := out[record.ItemID]
 		if record.Action == workActionSend {
-			// A send hands over the Yes before it; the Yes stays the answer.
-			if seen && previous.NotSent {
+			// A send hands over the Yes before it; the Yes stays the answer. An
+			// Undo of a take back sends the Yes again, with new ids.
+			if seen && (previous.NotSent || previous.Action == workActionYes || previous.Action == workActionEdit) {
 				previous.NotSent = false
 				previous.TaskID, previous.HandoffID, previous.AgentID, previous.Removed = record.TaskID, record.HandoffID, record.AgentID, record.Removed
 				out[record.ItemID] = previous

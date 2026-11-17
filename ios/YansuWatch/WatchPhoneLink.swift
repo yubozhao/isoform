@@ -84,6 +84,15 @@ final class WatchPhoneLink: NSObject, WCSessionDelegate, @unchecked Sendable {
         sendUnsent()
     }
 
+    /// Forget everything: delete every recording on the watch and stop sending any.
+    func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
+        guard userInfo[WatchRecordingWire.forgetAllKey] != nil else { return }
+        for transfer in session.outstandingFileTransfers { transfer.cancel() }
+        library.deleteAll()
+        pushSummaries()
+        onChange?()
+    }
+
     func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
         apply(context: applicationContext)
         pushSummaries()
