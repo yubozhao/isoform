@@ -155,7 +155,11 @@ func (a *App) sendPromptWithTodayContext(prompt string, workDir string, model st
 			// A paused draft attached nothing, so it gets no context receipt.
 			posted.Do(func() {
 				a.recordContextEntries(result.Uses, "today_chat", tag)
-				a.postTodayContextCounts(tag, userItem.ID, result.Counts, result.Title, ref.SourceKind)
+				title := result.Title
+				if ref.AboutTitle != "" {
+					title = ref.AboutTitle
+				}
+				a.postTodayContextCounts(tag, userItem.ID, result.Counts, title, ref.SourceKind, ref.AboutID)
 			})
 		}
 		return result.Text + composed
@@ -193,7 +197,7 @@ func (a *App) sendPromptWithTodayContext(prompt string, workDir string, model st
 // receipt also names what the message was attached to, the title the draft
 // already showed, so the thread reads "About: {title}" (phone-chat v1.0.0
 // rule 10, phone-map B10).
-func (a *App) postTodayContextCounts(tag string, userItemID string, counts TodayChatContextCounts, about, aboutKind string) {
+func (a *App) postTodayContextCounts(tag string, userItemID string, counts TodayChatContextCounts, about, aboutKind, aboutID string) {
 	if a == nil || a.store == nil {
 		return
 	}
@@ -205,6 +209,9 @@ func (a *App) postTodayContextCounts(tag string, userItemID string, counts Today
 	if about = strings.TrimSpace(about); about != "" && aboutKind != todayChatPausedKind {
 		receipt["about"] = truncateAtRuneBoundary(about, 400)
 		receipt["aboutKind"] = aboutKind
+		if aboutID != "" {
+			receipt["aboutId"] = aboutID
+		}
 	}
 	turn, _ := json.Marshal(receipt)
 	a.appendMainChatItem(context.Background(), tag, storage.StreamItemRow{

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
@@ -46,6 +47,9 @@ type chatHandoffPayload struct {
 	Kind string `json:"kind,omitempty"`
 	// Status is "" while open, then the person's answer on the card.
 	Status string `json:"status,omitempty"`
+	// Agent and HandedAt say who took it, when the phone handed it over.
+	Agent    string `json:"agent,omitempty"`
+	HandedAt string `json:"handedAt,omitempty"`
 }
 
 const (
@@ -59,6 +63,10 @@ var chatHandoffAnswerMu sync.Mutex
 // ("declined"), or "handed" once the Work on it sheet sent it. An answered
 // card keeps its first answer.
 func (a *App) AnswerChatHandoffCard(itemID, answer string) (string, error) {
+	return a.answerChatHandoffCard(itemID, answer, "", time.Time{})
+}
+
+func (a *App) answerChatHandoffCard(itemID, answer, agent string, at time.Time) (string, error) {
 	if answer != chatHandoffDeclined && answer != chatHandoffHanded {
 		return "", errors.New("answer must be declined or handed")
 	}
@@ -84,6 +92,12 @@ func (a *App) AnswerChatHandoffCard(itemID, answer string) (string, error) {
 		return payload.Status, nil
 	}
 	payload.Status = answer
+	if answer == chatHandoffHanded && agent != "" {
+		payload.Agent = mobileChatClip(agent, chatHandoffGetMax)
+		if !at.IsZero() {
+			payload.HandedAt = mobileTimestamp(at)
+		}
+	}
 	blob, err := json.Marshal(payload)
 	if err != nil {
 		return "", err
@@ -105,7 +119,7 @@ var _ tools.AuthorityDescriber = (*chatHandoffTool)(nil)
 // mainChatHandoffTools hands HandOffWork to a main-chat turn typed on the
 // computer, where its card can be used.
 func (a *App) mainChatHandoffTools(tag string, origin promptOrigin) []tools.Tool {
-	if origin != promptOriginMac || !a.isMainChatSession(context.Background(), tag) {
+	if !chatB10Origin(origin) || !a.isMainChatSession(context.Background(), tag) {
 		return nil
 	}
 	return []tools.Tool{&chatHandoffTool{app: a, tag: tag}}
@@ -252,9 +266,7 @@ func (a *App) injectChatNarrowingContext(tag string, origin promptOrigin) string
 		return ""
 	}
 	work := "When the user asks for work (writing a document, an outline, a plan or an essay, research, code or a fix), do not do it here. Call HandOffWork once with the title, what the agent should do, what done looks like and what it would get. Then reply with only: \"That's work for your agent. Here's what would go:\""
-	switch origin {
-	case promptOriginMac:
-	default:
+	if !chatB10Origin(origin) {
 		work = "When the user asks for work (writing a document, an outline, a plan or an essay, research, code or a fix), do not do it here. Say in one sentence that it is work for their agent and that they can hand it over from Your work on their computer."
 	}
 	return `<chat-scope>

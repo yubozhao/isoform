@@ -122,6 +122,45 @@ enum DuoLayout {
     }
 }
 
+/// A column that never straddles the fold: when it would, it starts just right of it, so every row in it (Your work's
+/// item and its Yes and No) stays on one side (phone-today v1.x on a wide phone).
+struct DuoFoldClearColumn: ViewModifier {
+    let foldX: CGFloat?
+    /// Narrower than this right of the fold, the column stays as it is.
+    var minimumWidth: CGFloat = 300
+    @State private var inset: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        content
+            .padding(.leading, inset)
+            .background(GeometryReader { geometry in
+                Color.clear
+                    .onAppear { update(geometry.frame(in: .named(DuoLayout.coordinateSpaceName))) }
+                    .onChange(of: geometry.frame(in: .named(DuoLayout.coordinateSpaceName))) { _, frame in update(frame) }
+            })
+    }
+
+    private func update(_ frame: CGRect) {
+        let next = DuoLayout.foldClearInset(frame, foldX: foldX, minimumWidth: minimumWidth)
+        if next != inset { inset = next }
+    }
+}
+
+extension DuoLayout {
+    /// How far a column must move right to start clear of the fold; 0 when it doesn't cross it or wouldn't fit.
+    static func foldClearInset(_ frame: CGRect, foldX: CGFloat?, minimumWidth: CGFloat = 300,
+                               clearance: CGFloat = foldClearance) -> CGFloat {
+        guard let foldX, frame.minX < foldX + clearance, frame.maxX > foldX - clearance else { return 0 }
+        let start = foldX + clearance
+        guard frame.maxX - start >= minimumWidth else { return 0 }
+        return start - frame.minX
+    }
+}
+
+extension View {
+    func duoFoldClear(_ foldX: CGFloat?) -> some View { modifier(DuoFoldClearColumn(foldX: foldX)) }
+}
+
 struct DuoFoldSafeControl<Content: View>: View {
     let foldX: CGFloat?
     let windowWidth: CGFloat

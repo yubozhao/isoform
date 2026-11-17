@@ -207,3 +207,16 @@ final class AgentJoinTests: XCTestCase {
         XCTAssertEqual(router.joinCheck?.joinId, "join-7")
     }
 }
+
+// Your work clear of the fold on a wide phone (phone-today v1.x).
+final class DuoFoldClearTests: XCTestCase {
+    func testAColumnAcrossTheFoldStartsRightOfIt() {
+        // Today's pane on the 890-wide layout: 280 to 810, the fold at 445.
+        let pane = CGRect(x: 280, y: 0, width: 530, height: 600)
+        XCTAssertEqual(DuoLayout.foldClearInset(pane, foldX: 445), 181)
+        XCTAssertEqual(DuoLayout.foldClearInset(CGRect(x: 470, y: 0, width: 340, height: 1), foldX: 445), 0, "already clear")
+        XCTAssertEqual(DuoLayout.foldClearInset(pane, foldX: nil), 0, "not a wide phone")
+        XCTAssertEqual(DuoLayout.foldClearInset(CGRect(x: 280, y: 0, width: 400, height: 1), foldX: 445), 0,
+                       "too narrow right of the fold: it stays")
+    }
+}

@@ -6,34 +6,37 @@ final class DuoWideUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    func testWidePanesTaskDetailAndFullScreenLight() throws {
+    /// The Tasks tab went into Your work (phone-today v1.0.0 rule 19): on a wide phone, Today's pane holds it.
+    func testWideTodayYourWorkInTodaysPaneLight() throws {
         try exerciseWideExperience(appearance: nil, suffix: "light")
     }
 
-    func testWidePanesTaskDetailAndFullScreenDark() throws {
+    func testWideTodayYourWorkInTodaysPaneDark() throws {
         try exerciseWideExperience(appearance: "Dark", suffix: "dark")
     }
 
+    /// Today's card shows the brief's first lines; its chips and paragraphs are on the brief, one tap away.
     func testWideTodayBriefChipAndParagraphOpenChat() throws {
         let chipApp = launchWideBrief()
+        openTheBrief(chipApp)
         let chip = chipApp.buttons["brief.chip.0"]
         XCTAssertTrue(chip.waitForExistence(timeout: 15))
         XCTAssertEqual(chip.label, "Review the project notes")
         chip.tap()
-        let filledComposer = chipApp.descendants(matching: .any)["chat.composer"].firstMatch
-        XCTAssertTrue(filledComposer.waitForExistence(timeout: 10))
-        XCTAssertEqual(filledComposer.value as? String, "What changed in the project notes?")
+        // A chip asks its question in Ask about this, over the brief.
+        XCTAssertTrue(chipApp.descendants(matching: .any)["brief.ask.sheet"].firstMatch.waitForExistence(timeout: 10))
+        XCTAssertEqual(chipApp.staticTexts["brief.ask.question"].firstMatch.label, "What changed in the project notes?")
         chipApp.terminate()
 
         let paragraphApp = launchWideBrief()
+        openTheBrief(paragraphApp)
         let paragraph = paragraphApp.buttons["brief.paragraph.0"]
         XCTAssertTrue(paragraph.waitForExistence(timeout: 15))
         paragraph.tap()
-        XCTAssertTrue(paragraphApp.buttons["duo.tab.chat"].waitForExistence(timeout: 10))
-        let emptyComposer = paragraphApp.descendants(matching: .any)["chat.composer"].firstMatch
-        XCTAssertTrue(emptyComposer.waitForExistence(timeout: 10))
-        let value = emptyComposer.value as? String ?? ""
-        XCTAssertTrue(value.isEmpty || value == "Message Isoform")
+        // A paragraph opens Ask about this with the paragraph quoted and the field empty.
+        XCTAssertTrue(paragraphApp.descendants(matching: .any)["brief.ask.sheet"].firstMatch.waitForExistence(timeout: 10))
+        XCTAssertEqual(paragraphApp.staticTexts["brief.ask.quote"].firstMatch.label, "Start with the project notes today.")
+        XCTAssertTrue(paragraphApp.textViews["brief.ask.field"].firstMatch.exists)
         attach(paragraphApp, name: "duo-today-brief-paragraph-chat")
         paragraphApp.terminate()
     }
@@ -54,9 +57,8 @@ final class DuoWideUITests: XCTestCase {
         }
         XCTAssertTrue(chip.waitForExistence(timeout: 10))
         chip.tap()
-        let composer = app.descendants(matching: .any)["chat.composer"].firstMatch
-        XCTAssertTrue(composer.waitForExistence(timeout: 10))
-        XCTAssertEqual(composer.value as? String, "Review the launch plan from this week.")
+        XCTAssertTrue(app.descendants(matching: .any)["brief.ask.sheet"].firstMatch.waitForExistence(timeout: 10))
+        XCTAssertEqual(app.staticTexts["brief.ask.question"].firstMatch.label, "Review the launch plan from this week.")
         attach(app, name: "duo-your-week-open-chip")
         app.terminate()
     }
@@ -88,9 +90,27 @@ final class DuoWideUITests: XCTestCase {
         return app
     }
 
+    /// Past briefs is in the brief card's ··· menu (phone-today v1.0.0).
     func testWideTodayShowsPastBriefsEntry() {
         let app = launchWideToday(state: "feed")
-        XCTAssertTrue(app.buttons["feed.pastBriefs"].waitForExistence(timeout: 15))
+        // The card's menu sits where the emulated wide window can't be tapped, so open the brief, whose header
+        // carries Past briefs too.
+        openTheBrief(app)
+        XCTAssertTrue(app.buttons["brief.pastBriefs"].firstMatch.waitForExistence(timeout: 10))
+    }
+
+    /// Read all on Today's card opens the brief. A relaunch may already be on it (the brief folds after a visit).
+    private func openTheBrief(_ app: XCUIApplication) {
+        let brief = app.scrollViews["brief.view"].firstMatch
+        let readAll = app.buttons["feed.readAll"].firstMatch
+        let card = app.descendants(matching: .any)["feed.brief"].firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 15))
+        if brief.exists { return }
+        // Folded to its title after the first visit: a tap unfolds it, then Read all opens it.
+        if !readAll.waitForExistence(timeout: 3) { card.tap() }
+        XCTAssertTrue(readAll.waitForExistence(timeout: 5))
+        readAll.tap()
+        XCTAssertTrue(brief.waitForExistence(timeout: 10))
     }
 
     func testWideTodayUnpairedLaunchShowsThePairPrompt() throws {
@@ -102,8 +122,9 @@ final class DuoWideUITests: XCTestCase {
 
     private func exerciseWideExperience(appearance: String?, suffix: String) throws {
         let app = XCUIApplication()
-        app.launchEnvironment["YANSU_UITEST_SETTINGS_STATE"] = "tasks-seeded"
-        app.launchEnvironment["YANSU_UITEST_TAB"] = "tasks"
+        app.launchEnvironment["YANSU_UITEST_SETTINGS_STATE"] = "feed-audio"
+        app.launchEnvironment["YANSU_UITEST_WORK"] = "1"
+        app.launchEnvironment["YANSU_UITEST_TAB"] = "feed"
         app.launchEnvironment["YANSU_UITEST_DUO_SIZE"] = "890x626"
         if let appearance {
             app.launchArguments += ["-AppleInterfaceStyle", appearance]
@@ -111,74 +132,25 @@ final class DuoWideUITests: XCTestCase {
         }
         app.launch()
 
-        XCTAssertTrue(app.staticTexts["Run iOS compatibility tests"].waitForExistence(timeout: 15))
-        let tasksBoard = app.descendants(matching: .any)["duo.tasks.board"]
-        XCTAssertTrue(tasksBoard.waitForExistence(timeout: 5))
-        let foldX = tasksBoard.frame.minX + 445
-        let notNow = app.buttons["tasks.offer.notNow"]
-        let doIt = app.buttons["tasks.offer.doIt"]
-        XCTAssertTrue(notNow.waitForExistence(timeout: 5))
-        XCTAssertTrue(doIt.waitForExistence(timeout: 5))
-        XCTAssertGreaterThanOrEqual(notNow.frame.minX, foldX + 16)
-        XCTAssertGreaterThanOrEqual(doIt.frame.minX, foldX + 16)
-        let findMore = app.buttons["tasks.findMore"]
-        let addTask = app.buttons["duo.tasks.add"]
+        let feed = app.descendants(matching: .any)["duo.today.feed"].firstMatch
+        XCTAssertTrue(feed.waitForExistence(timeout: 15))
+        XCTAssertTrue(app.descendants(matching: .any)["today.yourWork"].firstMatch.waitForExistence(timeout: 10))
+        let yes = app.buttons["work.yes"].firstMatch
+        let no = app.buttons["work.no"].firstMatch
+        XCTAssertTrue(yes.waitForExistence(timeout: 5))
+        XCTAssertTrue(no.exists)
+        XCTAssertGreaterThan(yes.frame.minX, feed.frame.minX, "Your work is in Today's pane")
+        // The fold is 445 points into the 890-wide window, and Today's pane starts 280 in (250 + the 30 gutter).
+        // Each item's Yes and No sit right of it, never across.
+        let foldX = feed.frame.minX - 280 + 445
+        XCTAssertGreaterThanOrEqual(yes.frame.minX, foldX + 16 - 0.5)
+        XCTAssertGreaterThanOrEqual(no.frame.minX, foldX + 16 - 0.5)
+        XCTAssertGreaterThanOrEqual(app.descendants(matching: .any)["today.yourWork"].firstMatch.frame.minX, foldX + 16 - 0.5)
         let profile = app.buttons["root.settings"]
-        XCTAssertTrue(findMore.waitForExistence(timeout: 5))
-        XCTAssertTrue(addTask.waitForExistence(timeout: 5))
         XCTAssertTrue(profile.waitForExistence(timeout: 5))
-        XCTAssertFalse(findMore.frame.intersects(addTask.frame))
-        XCTAssertFalse(findMore.frame.intersects(profile.frame))
-        attach(app, name: "duo-tasks-\(suffix)")
-        let runningTask = app.staticTexts["Run iOS compatibility tests"]
-        XCTAssertTrue(runningTask.waitForExistence(timeout: 10))
-        runningTask.tap()
-        XCTAssertTrue(app.descendants(matching: .any)["tasks.detail.steps"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.staticTexts["When it’s done"].exists)
-        XCTAssertTrue(app.buttons["tasks.thread.more"].exists)
-        attach(app, name: "duo-task-detail-\(suffix)")
-
-        let fullScreen = app.buttons["duo.fullScreen.toggle"]
-        XCTAssertTrue(fullScreen.waitForExistence(timeout: 5))
-        fullScreen.tap()
-        XCTAssertTrue(app.descendants(matching: .any)["duo.fullScreen"].waitForExistence(timeout: 5))
-        attach(app, name: "duo-full-screen-\(suffix)")
-        app.buttons["duo.fullScreen.toggle"].tap()
-
-        app.buttons["duo.tab.today"].tap()
-        XCTAssertTrue(app.staticTexts["Your day"].waitForExistence(timeout: 5))
-        attach(app, name: "duo-today-\(suffix)")
-        let todayCard = app.staticTexts["3pm with Maya moved"]
-        XCTAssertTrue(todayCard.waitForExistence(timeout: 5))
-        todayCard.tap()
-        let closeTodayItem = app.buttons["duo.today.item.close"]
-        XCTAssertTrue(closeTodayItem.waitForExistence(timeout: 5))
-        XCTAssertFalse(closeTodayItem.frame.intersects(profile.frame))
-        let selectedItemTitles = app.staticTexts.matching(
-            NSPredicate(format: "label == %@", "3pm with Maya moved")
-        )
-        XCTAssertTrue(selectedItemTitles.element(boundBy: 1).waitForExistence(timeout: 5))
-        attach(app, name: "duo-today-item-\(suffix)")
-        closeTodayItem.tap()
-        XCTAssertFalse(closeTodayItem.exists)
-
-        app.buttons["duo.tab.chat"].tap()
-        XCTAssertTrue(app.staticTexts["Topics"].waitForExistence(timeout: 5))
-        let topic = app.buttons["Halcyon ERP sync"]
-        XCTAssertTrue(topic.waitForExistence(timeout: 10))
-        attach(app, name: "duo-chat-\(suffix)")
-        topic.tap()
-        XCTAssertTrue(app.buttons["duo.chat.thread.close"].waitForExistence(timeout: 10))
-        XCTAssertFalse(app.buttons["duo.chat.thread.close"].frame.intersects(profile.frame))
-        XCTAssertTrue(app.staticTexts["Halcyon ERP sync"].exists)
-        attach(app, name: "duo-chat-thread-\(suffix)")
-        app.buttons["duo.chat.thread.close"].tap()
-
-        app.buttons["duo.tab.tasks"].tap()
-        app.buttons["root.settings"].tap()
-        XCTAssertTrue(app.buttons["settings.done"].waitForExistence(timeout: 5))
-        attach(app, name: "duo-settings-\(suffix)")
-        app.terminate()
+        XCTAssertFalse(yes.frame.intersects(profile.frame))
+        XCTAssertFalse(app.buttons["duo.tab.tasks"].exists, "no Tasks tab")
+        attach(app, name: "duo-today-your-work-\(suffix)")
     }
 
     private func launchWideToday(state: String) -> XCUIApplication {

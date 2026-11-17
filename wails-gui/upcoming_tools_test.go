@@ -500,12 +500,19 @@ func TestUpcomingToolsAreForTheMacOnly(t *testing.T) {
 	rig.app.streams = map[string]context.CancelFunc{}
 	rig.app.runIDByTag = map[string]string{}
 	rig.app.pendingTraceIDs = map[string]string{}
+	// A phone turn also gets HandOffWork and CiteSources when Chat's
+	// phone cards are on (chat_b10_phone.go); CorrectIsoform also needs the
+	// phone to hold chat:correct, which this one does not.
+	phoneTools := 1
+	if chatB10Enabled {
+		phoneTools += 2
+	}
 	for _, tc := range []struct {
 		origin    promptOrigin
 		wantTools int
 		wantText  string
 	}{
-		{promptOriginPhone, 1, "can be changed only on the computer"},
+		{promptOriginPhone, phoneTools, "can be changed only on the computer"},
 		{promptOriginMac, 11, "call UpcomingList"}, // with DraftMessage, HandOffWork, CorrectIsoform and CiteSources
 	} {
 		if err := rig.app.executePrompt("move my weekly update", "", "m", "", main.LocalID, nil, false, false, "", nil, nil, "", "", tc.origin); err != nil {

@@ -578,6 +578,7 @@ export const CloseMainChatSetupSteps = makeNoop("CloseMainChatSetupSteps");
 export const ConfirmActivityStorageLimit = makeNoop("ConfirmActivityStorageLimit");
 export const ConfirmEmailVerification = makeNoop("ConfirmEmailVerification");
 export const ConfirmMobilePairing = makeNoop("ConfirmMobilePairing");
+export const ConfirmMobileScopeRequest = makeNoop("ConfirmMobileScopeRequest");
 export const ConfirmSMSVerification = makeNoop("ConfirmSMSVerification");
 export const CreateContact = makeNoop("CreateContact");
 export const DeclinePlaybookSuggestion = makeNoop("DeclinePlaybookSuggestion");

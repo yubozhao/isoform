@@ -333,8 +333,16 @@ func TestMobileBriefChatUsesTodayContextAndPhoneAuthority(t *testing.T) {
 				}
 				// GoalCreate only, nothing that changes the computer; the
 				// main chat gives no web answers (phone-chat v1.0.0 rule 13).
-				if len(task.ExtraTools) != 1 || task.ExtraTools[0].Name() != goalToolCreate {
-					t.Fatal("brief context granted computer-only tools")
+				// HandOffWork and CiteSources only add a row to the chat (B10).
+				for _, tool := range task.ExtraTools {
+					switch tool.Name() {
+					case goalToolCreate, chatHandoffToolName, chatSourcesToolName:
+					default:
+						t.Fatalf("brief context granted computer-only tool %s", tool.Name())
+					}
+				}
+				if len(task.ExtraTools) == 0 || task.ExtraTools[0].Name() != goalToolCreate {
+					t.Fatal("brief context lost GoalCreate")
 				}
 			case <-time.After(5 * time.Second):
 				t.Fatal("runner did not receive the brief turn")

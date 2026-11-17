@@ -62,7 +62,13 @@ type mobileStatusView struct {
 	TaskThreads      bool `json:"taskThreads,omitempty"`
 	TodayMeetingPrep bool `json:"todayMeetingPrep,omitempty"`
 	// ChatMainSend is true when POST /chats/main/messages sends to the main chat even before the phone lists one (15.5a).
-	ChatMainSend           bool                `json:"chatMainSend,omitempty"`
+	ChatMainSend bool `json:"chatMainSend,omitempty"`
+	// ChatB10 is true when this computer serves Chat's hand-off cards,
+	// corrections with Undo, sources and attached messages (15.10).
+	ChatB10 bool `json:"chatB10,omitempty"`
+	// ScopeRequest is true when a paired phone may ask for chat:correct
+	// without pairing again (10.1).
+	ScopeRequest           bool                `json:"scopeRequest,omitempty"`
 	BriefRelevanceFeedback bool                `json:"briefRelevanceFeedback,omitempty"`
 	BriefAsk               bool                `json:"briefAsk,omitempty"`
 	BriefWeekDecline       bool                `json:"briefWeekDecline,omitempty"`
@@ -462,6 +468,26 @@ func (bridge *mobileBridge) handleAuthorized(w http.ResponseWriter, r *http.Requ
 				return
 			}
 			bridge.serveProactiveCardAction(w, r, device, mobilePathSegments(path)[1])
+		case "POST /chats/*/items/*/handoff":
+			if !chatB10Enabled {
+				mobileJSON(w, http.StatusNotFound, nil, "not found")
+				return
+			}
+			if !mobileRequireScope(w, device, mobileScopeChatWrite) {
+				return
+			}
+			segments := mobilePathSegments(path)
+			bridge.serveChatHandoffAnswer(w, r, device, segments[1], segments[3])
+		case "POST /chats/*/items/*/correction/undo":
+			if !chatB10Enabled {
+				mobileJSON(w, http.StatusNotFound, nil, "not found")
+				return
+			}
+			if !mobileRequireScope(w, device, mobileScopeChatWrite) {
+				return
+			}
+			segments := mobilePathSegments(path)
+			bridge.serveChatCorrectionUndo(w, r, device, segments[1], segments[3])
 		case "POST /memory/*/reject-attribution":
 			if !mobileRequireScope(w, device, mobileScopeMemoryFix) {
 				return
@@ -577,6 +603,11 @@ func (bridge *mobileBridge) handleAuthorized(w http.ResponseWriter, r *http.Requ
 			}
 			segments := mobilePathSegments(path)
 			bridge.serveBriefFeedback(w, r, device, segments[1], segments[3])
+		case "POST /devices/*/scope-request":
+			if !mobileRequireScope(w, device, mobileScopeChatWrite) {
+				return
+			}
+			bridge.serveScopeRequest(w, r, device, mobilePathSegments(path)[1])
 		case "DELETE /devices/*":
 			bridge.serveSelfRevoke(w, device, strings.TrimPrefix(path, "/devices/"))
 		case "POST /notifications/*":
@@ -601,6 +632,8 @@ func mobileRouteFamily(method, path string) string {
 	}
 	parts := mobilePathSegments(path)
 	switch true {
+	case len(parts) == 3 && parts[0] == "devices" && parts[2] == "scope-request" && method == http.MethodPost:
+		return "POST /devices/*/scope-request"
 	case len(parts) == 3 && parts[0] == "forget-all" && parts[2] == "done" && method == http.MethodPost:
 		return "POST /forget-all/*/done"
 	case len(parts) == 2 && parts[0] == "topics" && method == http.MethodGet:
@@ -647,6 +680,10 @@ func mobileRouteFamily(method, path string) string {
 		return "POST /chats/*/permissions/*"
 	case len(parts) == 4 && parts[0] == "chats" && parts[2] == "proactive" && parts[3] == "actions" && method == http.MethodPost:
 		return "POST /chats/*/proactive/actions"
+	case len(parts) == 5 && parts[0] == "chats" && parts[2] == "items" && parts[4] == "handoff" && method == http.MethodPost:
+		return "POST /chats/*/items/*/handoff"
+	case len(parts) == 6 && parts[0] == "chats" && parts[2] == "items" && parts[4] == "correction" && parts[5] == "undo" && method == http.MethodPost:
+		return "POST /chats/*/items/*/correction/undo"
 	case len(parts) == 3 && parts[0] == "memory" && parts[2] == "reject-attribution" && method == http.MethodPost:
 		return "POST /memory/*/reject-attribution"
 	case len(parts) == 4 && parts[0] == "self" && parts[1] == "directives" && parts[3] == "retract" && method == http.MethodPost:
@@ -729,7 +766,7 @@ func mobileRequireScope(w http.ResponseWriter, device mobileDeviceRecord, scope 
 
 func (bridge *mobileBridge) serveStatus(w http.ResponseWriter) {
 	view := mobileStatusView{
-		HubName: mobileHubName(), AppVersion: Version, ProtocolVersion: 1, Topics: true, TopicsDaily: true, TaskThreads: true, BrainDump: true, Recordings: true, OwnerVoice: true, RecordingContext: true, RecordingDetail: true, RecordingMarks: true, Sees: true, FirstRead: true, TodayMeetingPrep: true, ChatMainSend: true, NotificationTest: true, Work: true, WorkSend: true, AgentJoin: true, BriefRelevanceFeedback: true, BriefAsk: true, BriefWeekDecline: true, HandoffStatus: true, WorkAgentActions: true,
+		HubName: mobileHubName(), AppVersion: Version, ProtocolVersion: 1, Topics: true, TopicsDaily: true, TaskThreads: true, BrainDump: true, Recordings: true, OwnerVoice: true, RecordingContext: true, RecordingDetail: true, RecordingMarks: true, Sees: true, FirstRead: true, TodayMeetingPrep: true, ChatMainSend: true, NotificationTest: true, Work: true, WorkSend: true, AgentJoin: true, BriefRelevanceFeedback: true, BriefAsk: true, BriefWeekDecline: true, HandoffStatus: true, WorkAgentActions: true, ChatB10: chatB10Enabled, ScopeRequest: chatB10Enabled,
 		KeepAwake: bridge.keepAwakeSetting(), InstantPush: mobileInstantPushConfigured(),
 		BriefSchedule: []mobileBriefSlotTime{},
 	}
@@ -1074,7 +1111,9 @@ func (bridge *mobileBridge) serveDevices(w http.ResponseWriter) {
 	devices := make([]MobileDeviceView, 0, len(bridge.devices))
 	for _, record := range bridge.devices {
 		if expires, ok := mobileParseTimestamp(record.ExpiresAt); ok && now.Before(expires) {
-			devices = append(devices, record.publicView())
+			view := record.publicView()
+			view.ScopeRequest = bridge.scopeRequestViewLocked(record.DeviceID, now)
+			devices = append(devices, view)
 		}
 	}
 	bridge.mu.Unlock()

@@ -63,6 +63,9 @@ type MobileDeviceView struct {
 	LastSeenAt string   `json:"lastSeenAt"`
 	Scopes     []string `json:"scopes"`
 	Simulator  bool     `json:"simulator,omitempty"`
+	// ScopeRequest is the phone's open or recently declined ask for a scope
+	// (mobile_scope_request.go). Only on views, never stored.
+	ScopeRequest *MobileScopeRequest `json:"scopeRequest,omitempty"`
 }
 
 var (
@@ -75,6 +78,7 @@ var (
 func (record *mobileDeviceRecord) publicView() MobileDeviceView {
 	view := record.MobileDeviceView
 	view.Scopes = append([]string{}, record.Scopes...)
+	view.ScopeRequest = nil
 	return view
 }
 
@@ -164,7 +168,9 @@ func (bridge *mobileBridge) connectionStatus() MobileConnectionStatus {
 	}
 	for _, record := range bridge.devices {
 		if expires, ok := mobileParseTimestamp(record.ExpiresAt); ok && now.Before(expires) {
-			status.Devices = append(status.Devices, record.publicView())
+			view := record.publicView()
+			view.ScopeRequest = bridge.scopeRequestViewLocked(record.DeviceID, now)
+			status.Devices = append(status.Devices, view)
 		}
 	}
 	sort.Slice(status.Devices, func(i, j int) bool {

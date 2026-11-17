@@ -78,8 +78,8 @@ final class ChatAwayUITests: XCTestCase {
         let app = launch(cause: "asleep", phase: "long")
         let thread = app.buttons["chat.away.line"].firstMatch
         XCTAssertTrue(thread.waitForExistence(timeout: 15))
-        XCTAssertTrue(thread.label.hasPrefix("Your computer has been asleep since "), thread.label)
-        XCTAssertTrue(thread.label.hasSuffix(". Isoform answers when it wakes. More"), thread.label)
+        // Every message ran out (a day with no answer), so the line drops its promise and its "since" (chat v1.0.4).
+        XCTAssertEqual(thread.label, "Your computer is asleep. More")
         // A day with no answer: the relay let the messages go. They say so and offer Send again, not Undo.
         XCTAssertEqual(app.buttons.matching(identifier: "chat.message.undo").count, 0)
         XCTAssertEqual(app.buttons.matching(identifier: "chat.message.sendAgain").count, 2)

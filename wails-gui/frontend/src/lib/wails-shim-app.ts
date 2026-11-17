@@ -385,6 +385,13 @@ export interface MobileDeviceView {
     expiresAt: string;
     lastSeenAt: string;
     scopes: string[];
+    scopeRequest?: MobileScopeRequest;
+}
+
+export interface MobileScopeRequest {
+    scopes: string[];
+    state: "waiting" | "declined";
+    at: string;
 }
 
 export interface MobilePendingPairing {
@@ -475,6 +482,9 @@ export const ConfirmMobilePairing = appBinding<
     [string, boolean],
     MobileConnectionStatus
 >("ConfirmMobilePairing");
+export const ConfirmMobileScopeRequest = appBinding<[string, boolean], MobileConnectionStatus>(
+    "ConfirmMobileScopeRequest",
+);
 export const RevokeMobileDevice = appBinding<[string], MobileConnectionStatus>(
     "RevokeMobileDevice",
 );

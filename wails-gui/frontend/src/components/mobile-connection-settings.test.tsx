@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
     disable: vi.fn(),
     generateCode: vi.fn(),
     confirmPairing: vi.fn(),
+    confirmScopeRequest: vi.fn(),
     revoke: vi.fn(),
     resetRemoteAccess: vi.fn(),
     getSchedule: vi.fn(),
@@ -39,6 +40,7 @@ vi.mock("../../wailsjs/go/main/App", () => ({
     DisableMobileConnection: mocks.disable,
     GenerateMobileConnectionCode: mocks.generateCode,
     ConfirmMobilePairing: mocks.confirmPairing,
+    ConfirmMobileScopeRequest: mocks.confirmScopeRequest,
     RevokeMobileDevice: mocks.revoke,
     ResetMobileRemoteAccess: mocks.resetRemoteAccess,
     GetMobileBriefSchedule: mocks.getSchedule,
@@ -484,6 +486,19 @@ describe("MobileConnectionSettings component", () => {
         fireEvent.click(within(dialog).getByRole("button", { name: "Approve" }));
         await waitFor(() => expect(mocks.confirmPairing).toHaveBeenCalledWith("pairing-1", true));
         await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    });
+
+    it("asks before a paired phone saves corrections from Chat, and answers with its device id", async () => {
+        mocks.getStatus.mockResolvedValue({
+            ...connectedStatus,
+            devices: [{ ...phone, scopeRequest: { scopes: ["chat:correct"], state: "waiting", at: "2026-11-16T09:00:00Z" } }],
+        });
+        mocks.confirmScopeRequest.mockResolvedValue(connectedStatus);
+        await renderReady();
+        expect(await screen.findByText("My iPhone asks to save corrections from Chat on this computer.")).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: "Allow" }));
+        await waitFor(() => expect(mocks.confirmScopeRequest).toHaveBeenCalledWith("phone-1", true));
+        await waitFor(() => expect(screen.queryByText("My iPhone asks to save corrections from Chat on this computer.")).not.toBeInTheDocument());
     });
 
     it("declines a pairing, and lets the user defer the decision and reopen it", async () => {

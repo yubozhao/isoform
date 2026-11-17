@@ -129,13 +129,14 @@ func (bridge *mobileBridge) serveBriefChatMessage(w http.ResponseWriter, r *http
 			mobileJSON(w, http.StatusNotFound, nil, "this brief can only be discussed in the chat on your computer")
 			return
 		}
+		bridge.app.notePhoneTurnSender(device)
 		turnID, seq, err := bridge.startBriefChatTurn(row, text, input)
 		if errors.Is(err, errTodayChatItemUnavailable) && !input.Ask && bridge.app.mobileBriefTextStandsAlone(input) {
 			// The brief or card the phone showed moved on, but the person's
 			// words are a question of their own ("Where do I stand on ...?").
 			// They are answered as a plain turn in the same chat, with none of
 			// the old brief's context attached, rather than refused.
-			turnID, seq, err = bridge.startChatTurn(row, text, nil)
+			turnID, seq, err = bridge.startChatTurnWaited(row, text, nil, false)
 		}
 		switch true {
 		case err == nil:

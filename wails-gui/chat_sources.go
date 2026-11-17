@@ -62,7 +62,7 @@ var _ tools.AuthorityDescriber = (*chatSourcesTool)(nil)
 // mainChatSourcesTools hands CiteSources to a main-chat turn typed on the
 // computer, where its line can be shown.
 func (a *App) mainChatSourcesTools(tag string, origin promptOrigin) []tools.Tool {
-	if origin != promptOriginMac || !a.isMainChatSession(context.Background(), tag) {
+	if !chatB10Origin(origin) || !a.isMainChatSession(context.Background(), tag) {
 		return nil
 	}
 	return []tools.Tool{&chatSourcesTool{app: a, tag: tag}}
@@ -225,7 +225,7 @@ func memoryIDFromPath(path string) string {
 // injectChatSourcesContext asks the main chat's model to say where an answer
 // about the person's own life came from.
 func (a *App) injectChatSourcesContext(tag string, origin promptOrigin) string {
-	if origin != promptOriginMac || !a.isMainChatSession(context.Background(), tag) {
+	if !chatB10Origin(origin) || !a.isMainChatSession(context.Background(), tag) {
 		return ""
 	}
 	return `<sources>

@@ -1113,6 +1113,26 @@ older phone keeps "Work finished.".
 | `desk:read`, `decide` | release 2, retired with the Desk (section 13): the hub still accepts them so older phones can pair and keep working, but no route needs them |
 | `chat:read`, `chat:write`, `memory:correct`, `handoff:create` | release 3 (section 15.1) |
 | `brief:feedback`, `offers:read`, `offers:decide`, `goals:read`, `goals:write`, `library:read` | release 4 (section 20.1) |
+| `chat:correct` | a phone's main-chat turns may save a correction (15.10); the one change a phone turn makes on the computer |
+
+### 10.1 Adding chat:correct to a paired phone
+
+`GET /status` includes `"scopeRequest":true` when the computer serves this
+route; older computers omit it and answer 404. A paired phone may ask for
+`chat:correct`, the one scope that can be added without pairing again. Every
+other scope still needs a new pairing.
+
+| Method and path | Scope | Body | Result |
+| --- | --- | --- | --- |
+| `POST /devices/{deviceId}/scope-request` | `chat:write` | `{"idempotencyKey","add":["chat:correct"]}` | 202 `{"state":"waiting"}`; 200 `{"state":"granted","scopes"}` when the phone already holds it; 409 `{"code":"declined"}` within a day of Not now; 403 for another phone's id; 400 for any other scope |
+
+The computer shows the ask in Settings › Phone with Allow and Not now. Allow
+adds `chat:correct` to that device only, saves it with the device and writes
+the decision to the audit log; the relay's copy of the scopes is unchanged,
+since only the computer checks `chat:correct`. `GET /devices` shows each
+device's scopes and, on a device with an open or recently declined ask,
+`scopeRequest` `{"scopes","state":"waiting"|"declined","at"}`. An open ask is
+held in memory: after the computer restarts, the phone asks again.
 
 ## 11. Test vectors
 
@@ -1525,7 +1545,7 @@ when the Mac's store is not ready.
 | `GET /chats?limit=20` | `chat:read` | | `{"chats":[{"id","title","updatedAt","state","kind"}]}`, the main chat first, then newest first; limit 1 to 50 |
 | `POST /chats` | `chat:write` | `{"idempotencyKey","title"}`, title at most 200 bytes (default `New chat`) | 201 `{"id"}` |
 | `GET /chats/{id}?after=<seq>&limit=50` | `chat:read` | | `{"chat":{"id","title","updatedAt","state","kind"},"items":[...],"cursor","hasMore"}` (15.4) |
-| `POST /chats/{id}/messages` | `chat:write` | `{"idempotencyKey","text","queuedAt"?,"undone"?}`, 1 to 16384 bytes after trimming; optional `queuedAt` and `undone` as below | 202 `{"turnId","seq"}`, `seq` being the stored user item (15.5); 409 `{"ok":false,"error":"busy"}` while a turn runs in the chat; 400 for invalid waiting fields |
+| `POST /chats/{id}/messages` | `chat:write` | `{"idempotencyKey","text","queuedAt"?,"undone"?,"about"?}`, 1 to 16384 bytes after trimming; optional `queuedAt` and `undone` as below, `about` as in 15.10 | 202 `{"turnId","seq"}`, `seq` being the stored user item (15.5); 409 `{"ok":false,"error":"busy"}` while a turn runs in the chat; 400 for invalid waiting fields |
 | `POST /chats/main/messages` | `chat:write` | The same body as `POST /chats/{id}/messages`; the `main` alias sends to the computer's main chat when the phone does not list one yet, and the computer makes sure it exists first (15.5a) | 202 as below; 503 if the main chat cannot be prepared; 404 on a computer without `chatMainSend` |
 | `POST /chats/{id}/offer-messages` | `chat:write`, `offers:read` | `{"idempotencyKey","text","offerReferences":[{"id","version"}]}`; same text limit, 1 to 16 references (20.6) | 202 as above; 409 if an idea changed or its sources are no longer readable; 400 for malformed references |
 | `POST /chats/{id}/brief-messages` | `chat:write`, `brief:read` | `{"idempotencyKey","text","briefId","briefVersion","offerId"?,"cardId"?,"cardMessage"?}`; same text limit, `briefVersion` is the delivered `conversationKey`, optional `offerId` is an ID from that brief's `offers`, optional `cardId` an ID from its `cards` with `cardMessage` the card's words as shown | 202 as above (also for a stale `briefVersion` or `cardId` when the brief still has words; see below); main chat only, 404 for another chat; 409 `busy` or `This brief changed. Refresh and try again.`; 400 for malformed references |
@@ -2100,6 +2120,50 @@ so either device turns it on or off for both. `GET /topics-daily`'s `enabled` is
 it on builds today's copy in the background, so the answer may have no topics yet; they come with
 the next read. Turning it off takes the topics' proposals out of Your work (`GET /work`) at once;
 answers already given stay in the ledger (26.2). Setting the state it already has changes nothing.
+
+### 15.10 Chat narrows to your own day (B10)
+
+These additive fields and routes keep protocol version 1. `GET /status` includes
+`"chatB10":true` (optional boolean, omitted when false) when the computer
+serves them; older computers omit it, refuse `about` as an unknown field and
+answer 404 on the routes. Phone turns in the main chat can put a hand-off
+card and a sources line in the thread, as the computer's turns do; a phone Ask
+gets neither. A phone whose pairing holds `chat:correct` may also
+save a correction from its turns: the correction is the person's own note,
+recorded in the answers ledger with surface `phone`, shown as a correction line
+on both devices and undone from either. Without the scope a phone turn changes
+nothing on the computer. Older computers do not know the scope and refuse a
+pairing that asks for it, so a phone asks for it only from a computer that
+reports `chatB10`.
+
+**Items (15.4).** Every field is optional and the item keeps its `text`, so an
+older phone shows the row as text. An item that would not fit the page budget
+falls back to text.
+
+- `kind` `"handoff"`, `handoff` `{"title","detail"?,"done"?,"gets":[{"id","label","ref"?,"removable"}],"status":""|"declined"|"handed","kind":"code"|"else","agent"?:{"name","since"?}}`: a task-like ask, answered with what would go to the person's agent. Nothing runs from it; its item `id` is the card id.
+- `kind` `"correction"`, `correction` `{"where","status":""|"undone"}`: what a correction changed, with Undo. Its item `id` keys the Undo.
+- `kind` `"sources"`, `sources` `[{"kind":"memory"|"person"|...,"id","title","target":{"kind","id"}}]` (at most 4) and `claims` `[{"text","source"}]`: where the answer above came from, and the exact phrases that lean on each source (`source` is an index into `sources`). Each source was read through its own gate when the answer was made.
+- On a user item, `about` `{"kind","id","title"}`: what the message was attached to. `kind` is `item` (a Your work item), `brief` (a brief sentence, id `brief:<briefId>:p<index>`), `topic`, `conversation` or `result`. The title is the computer's, read when the message was sent.
+
+**Sending attached.** `POST /chats/{id}/messages` takes an optional
+`"about":{"kind","id","title"?}` with `kind` `item` or `brief`, in the main chat
+only. The computer ignores `title` and reads the item again by `id` with the
+same gates as the computer's own attached send (Closed Eyes, withdrawn
+sources). An item that is gone or hidden is dropped and the words still go
+unattached: the result is the same 202.
+
+| Method and path | Scope | Body | Result |
+| --- | --- | --- | --- |
+| `POST /chats/{id}/items/{itemId}/handoff` | `chat:write` | `{"idempotencyKey","action":"yes"\|"no","reason"?,"agentId"?,"removed"?}` | 200 `{"item"}` the card as it now stands; 404 the card is gone; 409 `{"code":"item_changed","item"}` already answered; 409 `{"code":"agent_not_connected","item"}` for a yes the computer cannot hand over by itself |
+| `POST /chats/{id}/items/{itemId}/correction/undo` | `chat:write` | `{"idempotencyKey"}` | 200 `{"item"}` the line, now `undone`; 404 the line is gone; 409 `{"code":"item_changed","item"}` already undone |
+
+`{id}` is the main chat's id or `main`. A yes prepares the task from the card's
+own words and sends it to the chosen agent (`agentId`, else the person's
+choice for the card's `kind`) by a task link, the one way that needs no tap on
+the computer; an agent without one answers `agent_not_connected` and the card
+stays open. Undo deletes the note the correction saved and adds the computer's
+"Undone" reply to the thread. Both are journaled in the answers ledger with
+surface `phone`, and replay their first result for a retried key (15.2).
 
 ## 16. Notification controls
 

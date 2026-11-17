@@ -110,11 +110,18 @@ func TestChatScopeNarrowsTheMainChat(t *testing.T) {
 			t.Fatalf("computer context lacks %q: %q", want, mac)
 		}
 	}
+	// A phone turn gets the card too, now that the phone shows it (B10).
 	phone := rig.app.injectChatNarrowingContext(main.LocalID, promptOriginPhone)
-	if !strings.Contains(phone, "No general-assistant answers") || strings.Contains(phone, "HandOffWork") {
+	if !strings.Contains(phone, "No general-assistant answers") || !strings.Contains(phone, "HandOffWork") {
 		t.Fatalf("phone context = %q", phone)
 	}
-	for _, origin := range []promptOrigin{promptOriginPhone, promptOriginPhoneAsk, promptOriginPanelAsk, promptOriginResume} {
+	if got := rig.app.mainChatHandoffTools(main.LocalID, promptOriginPhone); len(got) != 1 {
+		t.Fatalf("a phone turn got %v", got)
+	}
+	if ask := rig.app.injectChatNarrowingContext(main.LocalID, promptOriginPhoneAsk); strings.Contains(ask, "HandOffWork") {
+		t.Fatalf("a phone Ask was offered HandOffWork: %q", ask)
+	}
+	for _, origin := range []promptOrigin{promptOriginPhoneAsk, promptOriginPanelAsk, promptOriginResume} {
 		if got := rig.app.mainChatHandoffTools(main.LocalID, origin); got != nil {
 			t.Fatalf("origin %q got %v", origin, got)
 		}

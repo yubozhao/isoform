@@ -47,8 +47,9 @@ type chatCorrectionPayload struct {
 }
 
 type chatCorrectionTool struct {
-	app *App
-	tag string
+	app     *App
+	surface string
+	tag     string
 }
 
 var _ tools.AuthorityDescriber = (*chatCorrectionTool)(nil)
@@ -58,10 +59,10 @@ var chatCorrectionMu sync.Mutex
 // mainChatCorrectionTools hands CorrectIsoform to a main-chat turn typed on
 // the computer, where its line and Undo can be used.
 func (a *App) mainChatCorrectionTools(tag string, origin promptOrigin) []tools.Tool {
-	if origin != promptOriginMac || !a.isMainChatSession(context.Background(), tag) {
+	if !a.chatCorrectionAllowed(origin) || !a.isMainChatSession(context.Background(), tag) {
 		return nil
 	}
-	return []tools.Tool{&chatCorrectionTool{app: a, tag: tag}}
+	return []tools.Tool{&chatCorrectionTool{app: a, tag: tag, surface: chatAnswerSurface(origin)}}
 }
 
 func (t *chatCorrectionTool) Name() string { return chatCorrectionToolName }
@@ -138,7 +139,7 @@ func (t *chatCorrectionTool) Execute(ctx context.Context, call tools.ToolCall) (
 		Content: "Changed: " + payload.Where + ".",
 	}, "correction") != "" {
 		t.app.mainChatRowsChanged(t.tag)
-		t.app.recordChatCorrection(id, payload)
+		t.app.recordChatCorrection(id, payload, t.surface)
 		return tools.ToolResult{Content: "Saved. The chat shows \"Changed: " + payload.Where + "\" with Undo. Reply in one or two short sentences, in the user's language: say what changed (\"Got it. Halcyon goes with Priya from now on, not Lena.\") and what it reaches, such as tomorrow's brief. Do not repeat the Changed line."}, nil
 	}
 	// Without its line there is no Undo, so the note does not stay.
@@ -184,6 +185,10 @@ func chatCorrectionFromInput(input map[string]any) (chatCorrectionPayload, strin
 // UndoChatCorrection takes back a correction made in Chat: its note is
 // deleted and the line says Undone. An undone line stays undone.
 func (a *App) UndoChatCorrection(itemID string) (string, error) {
+	return a.undoChatCorrection(itemID, "computer")
+}
+
+func (a *App) undoChatCorrection(itemID, surface string) (string, error) {
 	if a == nil || a.store == nil {
 		return "", errors.New("chat is not available")
 	}
@@ -225,7 +230,7 @@ func (a *App) UndoChatCorrection(itemID string) (string, error) {
 		log.Printf("[chat-correction] undo reply not shown for %s", row.ID)
 	}
 	a.mainChatRowsChanged(row.SessionLocalID)
-	if err := a.undoAnswerFor("correction:"+row.ID, answerKindCorrection, "computer"); err != nil {
+	if err := a.undoAnswerFor("correction:"+row.ID, answerKindCorrection, surface); err != nil {
 		log.Printf("[chat-correction] answers ledger undo not recorded: %v", err)
 	}
 	return payload.Status, nil
@@ -234,10 +239,10 @@ func (a *App) UndoChatCorrection(itemID string) (string, error) {
 // recordChatCorrection puts a correction in the answers ledger (design A37):
 // one judgment, with what it says now. A failure is logged and never blocks
 // the correction.
-func (a *App) recordChatCorrection(lineID string, payload chatCorrectionPayload) {
+func (a *App) recordChatCorrection(lineID string, payload chatCorrectionPayload, surface string) {
 	if _, err := a.recordAnswer(AnswerRecord{
 		ItemID: "correction:" + lineID, Kind: answerKindCorrection, Source: answerSourceChat,
-		Title: payload.Where, Action: "edit", Edited: &WorkEdited{After: payload.Statement}, Surface: "computer",
+		Title: payload.Where, Action: "edit", Edited: &WorkEdited{After: payload.Statement}, Surface: surface,
 	}); err != nil {
 		log.Printf("[chat-correction] answers ledger entry not recorded: %v", err)
 	}
@@ -246,7 +251,7 @@ func (a *App) recordChatCorrection(lineID string, payload chatCorrectionPayload)
 // injectChatCorrectionContext tells the main chat's model that a correction
 // is recorded, not only acknowledged.
 func (a *App) injectChatCorrectionContext(tag string, origin promptOrigin) string {
-	if origin != promptOriginMac || !a.isMainChatSession(context.Background(), tag) {
+	if !a.chatCorrectionAllowed(origin) || !a.isMainChatSession(context.Background(), tag) {
 		return ""
 	}
 	return `<corrections>
