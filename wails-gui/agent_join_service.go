@@ -36,6 +36,9 @@ type agentJoinState struct {
 	once   sync.Once
 	svc    *agentjoin.Service
 	fileMu sync.Mutex
+	// phone is the join a phone made (agent_join_phone.go), under phoneMu.
+	phoneMu sync.Mutex
+	phone   *phoneAgentJoin
 	// test seams
 	dir string
 	now func() time.Time
@@ -57,8 +60,11 @@ func (a *App) agentJoinService() *agentjoin.Service {
 	s.once.Do(func() {
 		s.svc = agentjoin.New(agentjoin.Hooks{
 			Allowed: func() error { return a.agentsAllowed() },
-			Changed: a.saveConnectedAgents,
-			Now:     s.now,
+			Changed: func() {
+				a.saveConnectedAgents()
+				a.notePhoneAgentJoinChanged()
+			},
+			Now: s.now,
 		})
 		if agents, err := a.readConnectedAgents(); err != nil {
 			log.Printf("[agents] connected agents not restored: %v", err)
@@ -114,6 +120,8 @@ func (a *App) AnswerAgentJoin(allow bool) error {
 	}
 	agent, err := a.agentJoinService().Answer(allow)
 	if err == nil && agent != nil {
+		// Joined again: Connect again's entry goes (phone-agent v1.2.0 §6).
+		a.clearDisconnectedFor(agent.Name, a.phoneJoinReconnect())
 		log.Printf("[agents] %s joined", agent.ID)
 	}
 	return err

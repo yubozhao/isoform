@@ -118,6 +118,7 @@ struct RootView: View {
                 Task {
                     await environment.push.resumeIfOptedIn()
                     await environment.notifications.refresh()
+                    await environment.noticesRead.poll()
                     await environment.keepAwake.refresh()
                     if router.selectedTab == .today {
                         await environment.tasks.refresh()

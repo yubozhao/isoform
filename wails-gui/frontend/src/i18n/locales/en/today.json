@@ -568,6 +568,12 @@
         "peopleMore_other": "{{names}} and {{count}} others"
     },
     "yourTopics": {
+        "firstBody": "Isoform finds your topics once it has seen two days of your work. The first ones come with tomorrow's morning brief.",
+        "firstStart": "Start one now",
+        "firstField": "What are you working on, or following?",
+        "firstAdd": "Add",
+        "firstHint": "A project, a decision you're weighing, a game, a team. It becomes a topic now, with its first idea in a minute.",
+        "firstAddFailed": "Couldn't add that topic. Try again.",
         "refresh": "Refresh topics",
         "gathering": "Isoform is gathering your topics.",
         "refreshing": "Refreshing your topics...",

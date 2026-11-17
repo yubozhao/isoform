@@ -34,6 +34,8 @@ type mobileStatusView struct {
 	// WorkSend when a Yes can wait for the hand-off sheet's Send (26.1).
 	Work     bool `json:"work,omitempty"`
 	WorkSend bool `json:"workSend,omitempty"`
+	// AgentJoin when a phone can make a join link and check its code (27.4).
+	AgentJoin bool `json:"agentJoin,omitempty"`
 	// WorkAgentActions when results carry files and with-agent work takes
 	// take_back and ask_again (26.6).
 	WorkAgentActions bool `json:"workAgentActions,omitempty"`
@@ -235,6 +237,11 @@ func (bridge *mobileBridge) handleAuthorized(w http.ResponseWriter, r *http.Requ
 			return
 		}
 		bridge.serveAgentHandoff(w, r, device)
+	case "POST /agents/join":
+		if !mobileRequireScope(w, device, mobileScopeHandoff) {
+			return
+		}
+		bridge.serveAgentJoinStart(w, r, device)
 	case "GET /agents/handoffs/status":
 		if !mobileRequireScope(w, device, mobileScopeBriefRead) {
 			return
@@ -521,6 +528,16 @@ func (bridge *mobileBridge) handleAuthorized(w http.ResponseWriter, r *http.Requ
 				return
 			}
 			bridge.serveForgetAnswer(w, mobilePathSegments(path)[1])
+		case "GET /agents/join/*":
+			if !mobileRequireScope(w, device, mobileScopeBriefRead) {
+				return
+			}
+			bridge.serveAgentJoin(w, mobilePathSegments(path)[2])
+		case "POST /agents/join/*/answer":
+			if !mobileRequireScope(w, device, mobileScopeHandoff) {
+				return
+			}
+			bridge.serveAgentJoinAnswer(w, r, device, mobilePathSegments(path)[2])
 		case "POST /forget-all/*/done":
 			// Any paired phone confirms its own forget; no scope beyond pairing.
 			bridge.serveForgetAllDone(w, r, device, mobilePathSegments(path)[1])
@@ -656,6 +673,10 @@ func mobileRouteFamily(method, path string) string {
 		return "POST /offers/*/decline"
 	case len(parts) == 3 && parts[0] == "work" && parts[2] == "answer" && method == http.MethodPost:
 		return "POST /work/*/answer"
+	case len(parts) == 3 && parts[0] == "agents" && parts[1] == "join" && method == http.MethodGet:
+		return "GET /agents/join/*"
+	case len(parts) == 4 && parts[0] == "agents" && parts[1] == "join" && parts[3] == "answer" && method == http.MethodPost:
+		return "POST /agents/join/*/answer"
 	case len(parts) == 3 && parts[0] == "work" && parts[2] == "file" && method == http.MethodGet:
 		return "GET /work/*/file"
 	case len(parts) == 2 && parts[0] == "answers" && method == http.MethodDelete:
@@ -708,7 +729,7 @@ func mobileRequireScope(w http.ResponseWriter, device mobileDeviceRecord, scope 
 
 func (bridge *mobileBridge) serveStatus(w http.ResponseWriter) {
 	view := mobileStatusView{
-		HubName: mobileHubName(), AppVersion: Version, ProtocolVersion: 1, Topics: true, TopicsDaily: true, TaskThreads: true, BrainDump: true, Recordings: true, OwnerVoice: true, RecordingContext: true, RecordingDetail: true, RecordingMarks: true, Sees: true, FirstRead: true, TodayMeetingPrep: true, ChatMainSend: true, NotificationTest: true, Work: true, WorkSend: true, WorkAgentActions: true, BriefRelevanceFeedback: true, BriefAsk: true, BriefWeekDecline: true, HandoffStatus: true,
+		HubName: mobileHubName(), AppVersion: Version, ProtocolVersion: 1, Topics: true, TopicsDaily: true, TaskThreads: true, BrainDump: true, Recordings: true, OwnerVoice: true, RecordingContext: true, RecordingDetail: true, RecordingMarks: true, Sees: true, FirstRead: true, TodayMeetingPrep: true, ChatMainSend: true, NotificationTest: true, Work: true, WorkSend: true, AgentJoin: true, BriefRelevanceFeedback: true, BriefAsk: true, BriefWeekDecline: true, HandoffStatus: true, WorkAgentActions: true,
 		KeepAwake: bridge.keepAwakeSetting(), InstantPush: mobileInstantPushConfigured(),
 		BriefSchedule: []mobileBriefSlotTime{},
 	}
