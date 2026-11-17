@@ -113,8 +113,10 @@ func newMobileRelayClient(origin string, identity mobileHubIdentity, hubName str
 	}
 	// A relay on this computer is reached here, never through its public
 	// address (mobile_relay_local.go). `origin` stays the address phones use.
+	// An address that is already on this computer is left alone: it may be
+	// another relay (Isoform's own remote access runs one on its own port).
 	local := mobileRelayLocalOrigin()
-	if local == normalized {
+	if len(normalized) >= 7 && normalized[:7] == "http://" {
 		local = ""
 	}
 	reach := normalized

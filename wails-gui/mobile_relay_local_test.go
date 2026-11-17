@@ -171,3 +171,13 @@ func TestLocalRelayAddressMustBeThisComputer(t *testing.T) {
 		t.Fatalf("without the setting the client changed: local %q ws %q", client.local, client.wsURL)
 	}
 }
+
+// Isoform's own remote access runs a second relay on its own loopback port. The setting names
+// the relay behind the public address and must not move that other connection.
+func TestLocalRelaySettingLeavesAnotherLoopbackRelayAlone(t *testing.T) {
+	t.Setenv(mobileRelayLocalURLEnv, "http://127.0.0.1:8791")
+	client := testRelayClient(t, "http://127.0.0.1:49512")
+	if client.local != "" || client.hubOrigin() != "http://127.0.0.1:49512" || client.wsURL != "ws://127.0.0.1:49512/v1/hub/ws" {
+		t.Fatalf("a loopback relay was moved: local %q ws %q", client.local, client.wsURL)
+	}
+}
