@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"wails-gui/internal/engagement"
+	"wails-gui/internal/platform/activitymon"
 	"wails-gui/internal/platform/notify"
 	"wails-gui/storage"
 )
@@ -18,6 +19,13 @@ import (
 // from the app being the active application: in front means the user is
 // there, otherwise the phone is the better channel.
 const engagementMacAwayIdle = time.Hour
+
+// The two facts where a notification rings is decided by, read at the moment
+// of deciding (notify v1.0.0 rule 1); tests replace them.
+var (
+	engagementInputIdle    = activitymon.IdleTime
+	engagementScreenLocked = activitymon.IsScreenLocked
+)
 
 // startEngagement builds the Engagement service over the app store, wires
 // the push, desktop and receipt paths, and starts the pacing loop.
@@ -83,10 +91,11 @@ func (a *App) stopEngagement() {
 	a.engagement.Stop()
 }
 
-// engagementPresence reports where the user is: at the Mac when the app is
-// in front, on the phone when a paired device holds the push scope, and
-// reachable by text when a number is subscribed through the relay or Messages
-// on this Mac is set up.
+// engagementPresence reports where the user is (notify v1.0.0 rule 1): at
+// the computer while its screen is unlocked and the last input was under 2
+// minutes ago, in any app; on the phone when a paired device holds the push
+// scope. Only those facts are read, at the moment of deciding, and none is
+// kept.
 func (a *App) engagementPresence(now time.Time) engagement.Presence {
 	p := engagement.Presence{
 		MacIdle:       engagementMacAwayIdle,
@@ -94,20 +103,17 @@ func (a *App) engagementPresence(now time.Time) engagement.Presence {
 		SMSActive:     a.smsChannel().Active(),
 		EmailActive:   a.emailChannel().Active(),
 	}
-	// A Mac whose notifications are off in System Settings cannot show a
-	// toast, so the user counts as away from it and the phone is the channel.
-	if notify.IsAppForeground() && !notificationExplicitlyDenied() {
-		p.MacForeground = true
-		p.MacIdle = 0
+	// A computer whose notifications are off in System Settings cannot show
+	// a toast, so the user counts as away from it and the phone is the
+	// channel. Otherwise the input idle time decides, in whichever app the
+	// input was.
+	if !notificationExplicitlyDenied() {
+		p.MacForeground = notify.IsAppForeground()
+		p.MacIdle = engagementInputIdle()
 	}
-	// The context signals know the real input idle time and the lock state.
-	if a != nil && a.contextSignals != nil {
-		state := a.contextSignals.snapshot()
-		if !state.ObservedAt.IsZero() && !p.MacForeground {
-			p.MacIdle = state.Idle
-		}
-		p.ScreenLocked = state.Locked
-	}
+	p.ScreenLocked = engagementScreenLocked()
+	// With Closed Eyes on, input is not read: an unlocked computer is at it.
+	p.ClosedEyes = a != nil && a.IsClosedEyesModeEnabled()
 	bridge := a.mobileBridgeForUse()
 	if bridge == nil {
 		return p
@@ -290,27 +296,65 @@ func (a *App) engagementDesktop(_ context.Context, row storage.EngagementMomentR
 	if m.Params["_activity_thread"] != "" {
 		spec.Actions = []engagement.Action{{ID: "open"}}
 	}
-	actionID, actionLabel := "", ""
-	if len(spec.Actions) > 0 {
-		actionID = spec.Actions[0].ID
-		actionLabel = text.Actions[actionID]
-	}
 	receipt := func(state, action string) func() {
 		return func() { a.engagementDesktopReceipt(row.ID, state, action) }
 	}
+	// Every action of the kind (notify v1.0.0 B6), and the answer Your work
+	// takes from a notification: Not needed on prep, Useful on finished work.
+	actions := engagementToastActions(spec.Actions, text)
+	item, answerable := a.workItemForNotice(m)
+	answerable = answerable && (item.State == workStateOpen || item.State == workStateBack)
+	if answerable {
+		work := workNoticeAction(m.Kind)
+		actions = append(actions, toastAction{ID: work.ID, Label: work.Label})
+	}
 	title, body := engagementToastCopy(text, a.engagementPresence(time.Now()).ScreenLocked)
 	showDesktopToastWithOptions(title, body, a.notifyIconPath(), engagementClickData(m), toastOptions{
-		ActionLabel: actionLabel,
+		Actions: actions,
+		OnAction: func(action string) {
+			receipt(storage.EngagementReceiptOpened, action)()
+			if answerable {
+				a.answerWorkFromNotification(item.ID, action)
+			}
+		},
 		OnShown:     receipt(storage.EngagementReceiptDelivered, ""),
 		OnOpened:    receipt(storage.EngagementReceiptOpened, ""),
-		OnActed:     receipt(storage.EngagementReceiptOpened, actionID),
 		OnDismissed: receipt(storage.EngagementReceiptDismissed, ""),
 	})
 	return nil
 }
 
-// A deadline can bypass HoldWhileLocked. Only the generic line may reach
-// the desktop toast while the Mac is locked.
+// engagementToastActions are a kind's actions as toast buttons, each with its
+// words; an action without words is left out.
+func engagementToastActions(specActions []engagement.Action, text engagementText) []toastAction {
+	out := make([]toastAction, 0, len(specActions)+1)
+	for _, action := range specActions {
+		if label := strings.TrimSpace(text.Actions[action.ID]); label != "" {
+			out = append(out, toastAction{ID: action.ID, Label: label})
+		}
+	}
+	return out
+}
+
+// answerWorkFromNotification records the answer a notification's button
+// gives, as the phone's notification does (surface "notification").
+func (a *App) answerWorkFromNotification(itemID, action string) {
+	var input WorkAnswerInput
+	switch action {
+	case "not_needed":
+		input = WorkAnswerInput{Action: workActionNo, Reason: "not_needed"}
+	case "useful":
+		input = WorkAnswerInput{Action: workActionUseful}
+	default:
+		return
+	}
+	if _, err := a.answerWork(context.Background(), itemID, input, workAnswerMeta{Surface: workSurfaceNotification}); err != nil {
+		log.Printf("[engagement] the notification's answer was not kept: %v", err)
+	}
+}
+
+// A toast shown while the computer is locked (no phone could be reached, so
+// it waits in Notification Center) carries only the generic line.
 func engagementToastCopy(text engagementText, locked bool) (string, string) {
 	if locked {
 		return text.PushBody, ""

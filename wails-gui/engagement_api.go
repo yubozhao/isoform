@@ -399,7 +399,24 @@ func (bridge *mobileBridge) serveNotificationSettings(w http.ResponseWriter) {
 		mobileJSON(w, http.StatusInternalServerError, nil, "could not read the notification settings")
 		return
 	}
-	mobileJSON(w, http.StatusOK, view, "")
+	mobileJSON(w, http.StatusOK, engagementPhoneSettingsView(view), "")
+}
+
+// engagementPhoneSettingsView keeps the phone's switches to the three kinds
+// (phone-rings v1.0.0 17c: "Three kinds, and nothing else").
+func engagementPhoneSettingsView(view EngagementSettingsView) EngagementSettingsView {
+	byKind := map[string]EngagementKindView{}
+	for _, kind := range view.Kinds {
+		byKind[kind.Kind] = kind
+	}
+	kinds := []EngagementKindView{}
+	for _, kind := range engagement.NotificationKinds() {
+		if found, ok := byKind[string(kind)]; ok {
+			kinds = append(kinds, found)
+		}
+	}
+	view.Kinds = kinds
+	return view
 }
 
 // serveNotificationKind answers POST /notifications/{kind}: one switch, replayed

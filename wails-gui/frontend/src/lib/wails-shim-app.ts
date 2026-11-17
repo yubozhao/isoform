@@ -6436,6 +6436,10 @@ export const RequestAllPermissions = appBinding<[], void>('RequestAllPermissions
 export const GetSetupPermissions = appBinding<[], import('./setup-backend').SetupPermissions>('GetSetupPermissions');
 export const RequestSetupPermissions = appBinding<[string[]], void>('RequestSetupPermissions');
 export const GetSetupVersion = appBinding<[], number>('GetSetupVersion');
+export interface SetupClaim { id: string; text: string; source: 'calendar' | 'mail'; at: number }
+export interface SetupClaims { status: 'ready' | 'nothing'; claims: SetupClaim[] }
+export const BuildSetupClaims = appBinding<[], SetupClaims>('BuildSetupClaims');
+export const ReviseSetupClaim = appBinding<[string, string], void>('ReviseSetupClaim');
 
 export const ResumeModelDownload = appBinding<[id: string], void>('ResumeModelDownload');
 export const GetModelNetworkState = appBinding<[], import('./setup-backend').ModelNetworkState>('GetModelNetworkState');

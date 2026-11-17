@@ -5,8 +5,7 @@ import Foundation
 final class DuoNavigation: ObservableObject {
     @Published private(set) var paths: [DuoTab: [DuoStep]] = [
         .today: [.today],
-        .chat: [.topics],
-        .tasks: [.tasks]
+        .chat: [.topics]
     ]
 
     func path(for tab: DuoTab) -> [DuoStep] {
@@ -24,7 +23,6 @@ final class DuoNavigation: ObservableObject {
         switch tab {
         case .today: root = .today
         case .chat: root = .topics
-        case .tasks: root = .tasks
         }
         paths[tab] = [root] + steps
     }

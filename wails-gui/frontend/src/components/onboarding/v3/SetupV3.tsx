@@ -7,7 +7,9 @@ import { CloseMainChatSetupSteps } from "@/lib/wails-shim-app";
 import { revealMainWindow, setSetupWindowMode } from "../v2/native";
 import { IntroScreen } from "./IntroScreen";
 import { SeesStep } from "./SeesStep";
-import { AgentsStep, RightStep, TodayStep } from "./LaterSteps";
+import { AgentsStep } from "./LaterSteps";
+import { TodayStep } from "./TodayStep";
+import { RightStep } from "./RightStep";
 import { PhoneStep } from "./PhoneStep";
 import {
     resumeStageV3,
@@ -107,7 +109,7 @@ export function SetupV3({ onFinish, onSkip }: { onFinish: () => void; onSkip: ()
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
             if (e.isComposing || e.keyCode === 229 || e.defaultPrevented) return;
-            const target = e.target as HTMLElement | null;
+            const target = e.target instanceof Element ? e.target : null;
             if (target?.closest("input, textarea, button, [contenteditable]")) return;
             if (e.key === "Enter") advance();
             else if (e.key === "Escape") onSkip();

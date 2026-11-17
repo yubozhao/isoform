@@ -138,7 +138,9 @@ func TestMobileNotificationRoutes(t *testing.T) {
 	if err := json.Unmarshal(mobileTestDecodeReply(t, got).Data, &view); err != nil {
 		t.Fatal(err)
 	}
-	if !view.Available || len(view.Kinds) != len(engagement.AllKinds())-len(engagementSilentKinds)-1 || view.QuietStart != "22:00" {
+	// Three kinds, and nothing else, in this order (phone-rings v1.0.0 17c).
+	if !view.Available || len(view.Kinds) != 3 || view.Kinds[0].Kind != "brief_ready" || view.Kinds[1].Kind != "meeting_prep" ||
+		view.Kinds[2].Kind != "work_finished" || view.QuietStart != "22:00" {
 		t.Fatalf("view: %+v", view)
 	}
 

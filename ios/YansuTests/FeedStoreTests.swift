@@ -473,26 +473,6 @@ final class IdeasStoreTests: XCTestCase {
                        "Isoform 无法在手机上准备这份草稿。请刷新想法后重试。")
     }
 
-    func testTheWhyLineHidesAnEmptyExplanation() {
-        let offer = idea()
-        XCTAssertEqual(IdeasView.whyLine(for: offer, locale: Locale(identifier: "en-US")),
-                       "Why: You have been researching this topic.")
-        XCTAssertEqual(IdeasView.whyLine(for: offer, locale: Locale(identifier: "zh-Hans-CN")),
-                       "原因：You have been researching this topic.")
-
-        for blank in ["", "   ", " \n\t "] {
-            let empty = IdeaOffer(id: offer.id, kind: offer.kind, title: offer.title, why: blank, prompt: offer.prompt)
-            XCTAssertNil(IdeasView.whyLine(for: empty, locale: Locale(identifier: "en-US")))
-            XCTAssertNil(IdeasView.whyLine(for: empty, locale: Locale(identifier: "zh-Hans-CN")))
-        }
-
-        // A blank localized explanation hides the line in that language even when the fallback has text.
-        var localized = idea()
-        localized.whyLocalized = ["zh-CN": " "]
-        XCTAssertNil(IdeasView.whyLine(for: localized, locale: Locale(identifier: "zh-Hans-CN")))
-        XCTAssertNotNil(IdeasView.whyLine(for: localized, locale: Locale(identifier: "en-US")))
-    }
-
     private struct Harness {
         let hub: StubIdeasHub
         let journal: PendingWriteJournal

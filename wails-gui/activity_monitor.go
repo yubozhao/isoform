@@ -326,6 +326,9 @@ type activityMonitorState struct {
 	lastMeetingPID    int
 	lastMeetingPaused bool // known lock/observation boundary, not an ordinary call end
 	lastMeetingEndMs  int64
+	// lastCallIdentityWrittenMs is when rememberCallIdentity last wrote the
+	// call identity a relaunch resumes (meeting_identity_persist.go).
+	lastCallIdentityWrittenMs int64
 	// endedMeetingSpanStartMs and endedMeetingSpanEndMs are the time span of
 	// the last call's saved meeting session. Speech the transcriber finishes
 	// after the call's end still says it was captured in the call; when it all
@@ -1035,7 +1038,10 @@ func (a *App) startActivityMonitor() error {
 	go a.runVisualChangeDetection()
 
 	// Start meeting lifecycle watcher. Owns meeting session boundaries
-	// (start / end) independently of speech events or idle timers.
+	// (start / end) independently of speech events or idle timers. A call
+	// that was running when the app last quit keeps its id: the watcher's
+	// first poll sees it again and onMeetingStarted resumes it.
+	restoreCallIdentity(am)
 	am.mu.Lock()
 	am.meetingWatcherCh = make(chan struct{})
 	watcherStop := am.meetingWatcherCh
@@ -1112,6 +1118,7 @@ func (a *App) stopActivityMonitorWithOptions(flushInMeeting bool, discardPending
 	// If we were mid-meeting at shutdown, flush so we don't lose the transcript.
 	if flushInMeeting && wasInMeeting {
 		a.extractSession("shutdown_in_meeting")
+		rememberCallIdentity(am, time.Now())
 	} else if flushInMeeting && wasCandidateActive {
 		a.extractSession("shutdown_meeting_candidate")
 	}
@@ -5096,6 +5103,7 @@ func (a *App) pollMeetingLifecycle(am *activityMonitorState, w *meetingWatcherSt
 
 	result := a.detectActiveMeeting(now)
 	active := result.IsMeeting
+	refreshLiveCallIdentity(am, now)
 
 	am.mu.Lock()
 	currentlyInMeeting := am.inMeeting
@@ -5305,6 +5313,7 @@ func (a *App) onMeetingStarted(am *activityMonitorState, result meetingdetect.Re
 	}
 
 	log.Printf("[meeting-watcher] MEETING_STARTED: %s (%s)", result.MeetingName, result.BundleID)
+	rememberCallIdentity(am, time.Now())
 	// Match the calendar event behind this meeting off the monitor lock.
 	go a.linkMeetingToCalendarEvent(result, time.Now())
 }
@@ -5331,6 +5340,7 @@ func (a *App) onMeetingEnded(am *activityMonitorState) {
 	// early-returns on empty buffer so it's safe even when racing with
 	// stopActivityMonitor's shutdown_in_meeting flush.
 	a.extractSession("meeting_ended")
+	rememberCallIdentity(am, time.Now())
 }
 
 // flushMeetingStateOnEmptyExtract clears the active-meeting state and

@@ -97,7 +97,7 @@ func TestEngagementUnquietRestoresDelivery(t *testing.T) {
 	ctx := context.Background()
 	sends := &quietTestSends{}
 	sends.wire(rig)
-	kind := engagement.KindWorkBlocked
+	kind := engagement.KindMeetingPrep
 	if err := rig.svc.SetKindQuiet(ctx, kind, true); err != nil {
 		t.Fatal(err)
 	}
@@ -608,7 +608,7 @@ func TestEngagementQuietChangeWaitsForInFlightDelivery(t *testing.T) {
 		published.Store(true)
 		return nil
 	}
-	if _, err := rig.svc.Submit(t.Context(), engagement.Moment{Kind: engagement.KindWorkBlocked, SubjectID: "inflight"}); err != nil {
+	if _, err := rig.svc.Submit(t.Context(), engagement.Moment{Kind: engagement.KindMeetingPrep, SubjectID: "inflight"}); err != nil {
 		t.Fatal(err)
 	}
 	passDone := make(chan struct{})
@@ -626,7 +626,7 @@ func TestEngagementQuietChangeWaitsForInFlightDelivery(t *testing.T) {
 		}
 	}
 	changed := make(chan error, 1)
-	go func() { changed <- rig.svc.SetKindQuiet(t.Context(), engagement.KindWorkBlocked, true) }()
+	go func() { changed <- rig.svc.SetKindQuiet(t.Context(), engagement.KindMeetingPrep, true) }()
 	releaseOnce.Do(func() { close(release) })
 	if err := <-changed; err != nil {
 		t.Fatal(err)
@@ -640,7 +640,7 @@ func TestEngagementQuietChangeWaitsForInFlightDelivery(t *testing.T) {
 		t.Error("published on old mode after setter returned")
 		return nil
 	}
-	row, err := rig.svc.Submit(t.Context(), engagement.Moment{Kind: engagement.KindWorkBlocked, SubjectID: "after-change"})
+	row, err := rig.svc.Submit(t.Context(), engagement.Moment{Kind: engagement.KindMeetingPrep, SubjectID: "after-change"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -805,7 +805,7 @@ func TestEngagementReminderQuietIsExplicitAndNotSuggested(t *testing.T) {
 
 func TestEngagementUnquietDoesNotReplayQuietEventAfterRestart(t *testing.T) {
 	rig := newEngagementTestRig(t)
-	kind := engagement.KindBriefMissed
+	kind := engagement.KindMeetingPrep
 	if err := rig.svc.SetKindQuiet(t.Context(), kind, true); err != nil {
 		t.Fatal(err)
 	}

@@ -798,12 +798,8 @@ func (s *engagementService) handle(ctx context.Context, row storage.EngagementMo
 	if s.presence != nil {
 		presence = s.presence(now)
 	}
-	// Non-urgent deliveries wait while the screen is locked.
-	if held := engagement.HoldWhileLocked(m, verdict, presence, now); held.Mode == engagement.ModeHold {
-		_ = s.store.SetEngagementMomentState(ctx, row.ID, storage.EngagementStateScheduled, held.Reason,
-			storage.EngagementMomentRow{UpdatedAt: now.UnixMilli(), Score: score, HoldUntil: held.HoldUntil.UnixMilli()})
-		return
-	}
+	// A locked computer is away: the phone rings (notify v1.0.0 B2). Nothing
+	// waits for the unlock.
 	// A delivery an earlier pass made that the store did not take.
 	s.mu.Lock()
 	earlier, unrecorded := s.unrecorded[row.ID]
@@ -895,16 +891,24 @@ func (s *engagementService) handle(ctx context.Context, row storage.EngagementMo
 		if holdForBudget() {
 			return
 		}
+		// One place rings: the computer while the person is at it, the phone
+		// when away (notify v1.0.0 rule 2). A push that fails falls back to
+		// the computer, so the brief waits in Notification Center.
 		delivered := string(engagement.ChannelChat)
-		for _, channel := range []engagement.Channel{engagement.ChannelDesktop, engagement.ChannelPush} {
-			if sender := s.senderFor(channel); sender != nil {
-				if err := sender(ctx, row, m, verdict, s.render(spec, m)); err == nil {
-					delivered += "+" + string(channel)
-					s.notificationSent(row, m)
-				} else {
-					log.Printf("[engagement] %s delivery failed on %s: %v", row.Kind, channel, err)
-				}
+		channel := engagement.ChannelForKind(spec.Kind, verdict, presence, now)
+		s.logRoute(row, channel, presence)
+		for _, try := range briefReadyChannels(channel) {
+			sender := s.senderFor(try)
+			if sender == nil {
+				continue
 			}
+			if err := sender(ctx, row, m, verdict, s.render(spec, m)); err != nil {
+				log.Printf("[engagement] %s delivery failed on %s: %v", row.Kind, try, err)
+				continue
+			}
+			delivered += "+" + string(try)
+			s.notificationSent(row, m)
+			break
 		}
 		markSent(delivered)
 		return
@@ -952,7 +956,16 @@ func (s *engagementService) handle(ctx context.Context, row storage.EngagementMo
 				storage.EngagementMomentRow{UpdatedAt: now.UnixMilli(), Score: score, HoldUntil: now.Add(engagementRetryDelay).UnixMilli()})
 			return
 		}
-		channels = []engagement.Channel{engagement.ChannelForKind(spec.Kind, verdict, presence, now)}
+		channel := engagement.ChannelForKind(spec.Kind, verdict, presence, now)
+		s.logRoute(row, channel, presence)
+		if channel == engagement.ChannelTodayQuiet {
+			// Finished work at the computer, or with no phone to reach, is
+			// a quiet line on Today, not a notification (notify v1.0.0
+			// rule 4).
+			markSent(string(engagement.ChannelTodayQuiet))
+			return
+		}
+		channels = []engagement.Channel{channel}
 	}
 	if holdForBudget() {
 		return
@@ -1457,4 +1470,33 @@ func (s *engagementService) chatReportRetryAt(kind engagement.Kind, now time.Tim
 		return s.chatReportRetry(kind, now)
 	}
 	return now.Add(engagementRetryDelay)
+}
+
+// briefReadyChannels are the channels the brief's notification tries, in
+// order: the one the router picked, and the computer when a push fails.
+func briefReadyChannels(picked engagement.Channel) []engagement.Channel {
+	switch picked {
+	case engagement.ChannelPush:
+		return []engagement.Channel{engagement.ChannelPush, engagement.ChannelDesktop}
+	case engagement.ChannelNone, engagement.ChannelTodayQuiet:
+		return nil
+	default:
+		return []engagement.Channel{picked}
+	}
+}
+
+// logRoute is the router's one line per decision (notify v1.0.0 proof): the
+// kind, where it rang and why.
+func (s *engagementService) logRoute(row storage.EngagementMomentRow, channel engagement.Channel, p engagement.Presence) {
+	reason := "away"
+	switch {
+	case engagement.AtComputer(p):
+		reason = "at_computer"
+	case p.ScreenLocked:
+		reason = "locked"
+	}
+	if !engagement.AtComputer(p) && !engagement.PhoneReachable(p) {
+		reason += "_no_phone"
+	}
+	log.Printf("[engagement] route kind=%s channel=%s reason=%s", row.Kind, channel, reason)
 }

@@ -531,8 +531,9 @@ func TestEngagementRoutesATimeSensitiveMomentToText(t *testing.T) {
 		PhoneLastSeen: rig.clock,
 		TextAvailable: channel.Available(),
 	}
+	// A text goes only where the person chose it (notify v1.0.0 rule 14).
 	row, err := rig.svc.Submit(ctx, engagement.Moment{
-		Kind: engagement.KindWorkBlocked, SubjectID: "hf-9",
+		Kind: engagement.KindWorkBlocked, SubjectID: "hf-9", Channels: []engagement.Channel{engagement.ChannelText},
 		DueAt: rig.clock.Add(time.Hour), HardDeadline: true,
 		Params: map[string]string{"title": "The Q3 reply to Sam", "question": "your attention."},
 	})

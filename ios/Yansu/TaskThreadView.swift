@@ -24,8 +24,6 @@ struct TaskThreadView: View {
     @State private var renaming = false
     @State private var newTitle = ""
     @State private var showsMade = false
-    @State private var holdSheet: PhoneHoldOffer?
-    @State private var findTimeFailed = false
     @State private var sendHaptics = 0
     /// Send waits five seconds with Undo before anything goes (click rule v1.1.0).
     @State private var sendingSince: Date?
@@ -112,9 +110,6 @@ struct TaskThreadView: View {
             }
         }
         .sheet(isPresented: $showsMade) { madeSheet }
-        .sheet(item: $holdSheet, onDismiss: { Task { _ = await tasks.loadDetail(id: task.id) } }) { offer in
-            HoldSheetView(offer: offer, holds: environment.holds) { holdSheet = nil }
-        }
         .sensoryFeedback(.impact(weight: .light), trigger: sendHaptics)
         .onAppear { if !wide { router.openThreads.insert(presence) } }
         .onDisappear {
@@ -132,9 +127,6 @@ struct TaskThreadView: View {
             guard !isScheduled else { return }
             tasks.markOpened(current)
             _ = await tasks.loadDetail(id: task.id)
-        }
-        .onChange(of: detail?.hold?.id, initial: true) { _, _ in
-            if let hold = detail?.hold { environment.holds.watch(hold) }
         }
         .task { await chat.watchForEvents() }
         .onReceive(chat.$lastTopicTurn) { event in
@@ -180,13 +172,7 @@ struct TaskThreadView: View {
         }
     }
 
-    private var threadTitle: String {
-        guard detail?.origin?.kind == "up_next", let hold = detail?.hold,
-              let start = hold.start, let end = hold.end,
-              let when = PhoneHoldCopy.when(PhoneHoldSlot(start: start, end: end), locale: locale) else { return current.title }
-        return String(format: String(localized: "hold.offer.title", locale: locale), locale: locale,
-                      arguments: [when, hold.title ?? current.title])
-    }
+    private var threadTitle: String { current.title }
 
     private var statusLine: some View {
         let status = TaskThreadCopy.status(task: current, detail: detail, locale: locale)
@@ -262,13 +248,6 @@ struct TaskThreadView: View {
                     eventView(event)
                         .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
                 }
-                if let hold = localHold ?? detail.hold { holdThread(hold, cleanup: detail.holdCleanup == true) }
-                if findTimeFailed {
-                    Text(String(localized: "hold.findTimeFailed"))
-                        .font(.footnote)
-                        .foregroundStyle(YansuTheme.warning)
-                        .accessibilityIdentifier("holds.thread.findTimeFailed")
-                }
                 if showsSteps(detail) { stepsCard(detail) }
                 if let draft = detail.draft { draftCard(draft) }
             }
@@ -305,172 +284,6 @@ struct TaskThreadView: View {
             .padding(.top, 14)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("tasks.thread.stopFailure")
-        }
-    }
-
-    /// A hold the phone queued or let expire for this task; the computer has not seen it.
-    private var localHold: PhoneHoldStatus? {
-        environment.holds.states.values.first {
-            $0.taskId == task.id && [HoldsStore.queuedState, HoldsStore.expiredState].contains($0.state)
-        }
-    }
-
-    private var holdMenu: [String] {
-        let canFindTime = environment.ideas.holdsEnabled && detail != nil && detail?.hold == nil && localHold == nil &&
-            !task.id.hasPrefix("hold.") && ["active", "blocked", "needs_review", "stale"].contains(current.status)
-        return canFindTime ? ["find_time"] : []
-    }
-
-    private func holdLine(_ text: String, color: Color = YansuTheme.secondary) -> some View {
-        Text(text)
-            .font(.footnote)
-            .foregroundStyle(color)
-            .fixedSize(horizontal: false, vertical: true)
-    }
-
-    private func holdButton(_ title: String, id: String, action: @escaping () async -> Void) -> some View {
-        Button(title) { Task { await action() } }
-            .font(.footnote.weight(.semibold))
-            .foregroundStyle(YansuTheme.accent)
-            .disabled(environment.holds.checking.contains(id))
-    }
-
-    @ViewBuilder
-    private func holdThread(_ hold: PhoneHoldStatus, cleanup: Bool) -> some View {
-        let thing = hold.title ?? current.title
-        let when = hold.start.flatMap { start in hold.end.flatMap { PhoneHoldCopy.when(PhoneHoldSlot(start: start, end: $0), locale: locale) } }
-        if hold.state == "pending_write" || hold.state == "checking" || hold.state == HoldsStore.queuedState {
-            HStack {
-                if hold.state == HoldsStore.queuedState {
-                    Text(String(localized: "hold.away"))
-                } else {
-                    TaskProgressRing(progress: nil, reduceMotion: reduceMotion).frame(width: 18, height: 18)
-                    Text(String(localized: "hold.checking"))
-                }
-                Spacer()
-                if hold.canUndoHold {
-                    Button(String(localized: "Undo")) {
-                        Task { _ = await environment.holds.undo(id: hold.id) }
-                    }
-                    .accessibilityIdentifier("holds.thread.undo")
-                }
-            }
-            .font(.footnote)
-            .foregroundStyle(YansuTheme.accent)
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier(hold.state == HoldsStore.queuedState ? "holds.thread.away" : "holds.thread.checking")
-        } else if hold.state == HoldsStore.expiredState {
-            HStack(alignment: .firstTextBaseline) {
-                holdLine(String(localized: "hold.passed"))
-                Spacer()
-                holdButton(String(localized: "hold.otherTimes"), id: hold.id) {
-                    environment.holds.clear(id: hold.id)
-                    await findTime()
-                }
-                .accessibilityIdentifier("holds.thread.otherTimes")
-            }
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("holds.thread.passed")
-        } else if (hold.state == "held" || hold.state == "moved"), let when {
-            VStack(alignment: .leading, spacing: 12) {
-                Text(String(format: String(localized: "hold.checked", locale: locale), locale: locale, arguments: [when, thing]))
-                    .padding(14)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(YansuTheme.surface, in: RoundedRectangle(cornerRadius: 18))
-                    .accessibilityIdentifier("holds.thread.placed")
-                if hold.state == "moved" {
-                    holdLine(String(format: String(localized: "hold.moved", locale: locale), locale: locale, arguments: [when]))
-                } else if current.outcome?.kind != "hold_placed" {
-                    holdLine(String(format: String(localized: "On your calendar: %@.", locale: locale), locale: locale, arguments: [when]))
-                }
-                if cleanup {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text(String(format: String(localized: "hold.cleanup", locale: locale), locale: locale, arguments: [thing]))
-                        HStack(spacing: 16) {
-                            holdButton(String(localized: "hold.remove"), id: hold.id) { await removeHold(hold.id) }
-                                .accessibilityIdentifier("holds.thread.cleanup.remove")
-                            Button(String(localized: "hold.keep")) {
-                                Task { _ = await tasks.act(id: task.id, action: "keep_hold") }
-                            }
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(YansuTheme.secondary)
-                            .accessibilityIdentifier("holds.thread.cleanup.keep")
-                        }
-                    }
-                    .padding(14)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(YansuTheme.surface, in: RoundedRectangle(cornerRadius: 18))
-                    .accessibilityElement(children: .contain)
-                    .accessibilityIdentifier("holds.thread.cleanup")
-                } else {
-                    Text(String(format: String(localized: "hold.saidUpFront", locale: locale), locale: locale, arguments: [thing]))
-                        .padding(14)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(YansuTheme.surface, in: RoundedRectangle(cornerRadius: 18))
-                    holdButton(String(localized: "hold.remove"), id: hold.id) { await removeHold(hold.id) }
-                        .accessibilityIdentifier("holds.thread.remove")
-                }
-                holdFailure(hold.id)
-            }
-            .font(.body)
-            .foregroundStyle(YansuTheme.ink)
-        } else if hold.state == "removed" {
-            VStack(alignment: .leading, spacing: 8) {
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        holdLine(String(localized: "hold.removed"))
-                        if let removedAt = hold.removedAt.flatMap(RelayTime.parse), context.date.timeIntervalSince(removedAt) < 5 {
-                            Text("·").font(.footnote).foregroundStyle(YansuTheme.secondary)
-                            holdButton(String(localized: "Undo"), id: hold.id) {
-                                if await environment.holds.undoRemove(id: hold.id) != nil { _ = await tasks.loadDetail(id: task.id) }
-                            }
-                            .accessibilityIdentifier("holds.thread.undoRemove")
-                        }
-                    }
-                }
-                holdFailure(hold.id)
-            }
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("holds.thread.removed")
-        } else if hold.state == "gone" {
-            holdLine(String(localized: "hold.gone"))
-        } else if hold.state == "failed" {
-            holdLine(String(localized: "hold.failed"), color: YansuTheme.warning)
-                .accessibilityIdentifier("holds.thread.failure")
-        }
-    }
-
-    @ViewBuilder
-    private func holdFailure(_ id: String) -> some View {
-        if let failure = environment.holds.failures[id], let line = PhoneHoldCopy.failure(failure) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                holdLine(line, color: failure == .calendarAccessOff ? YansuTheme.secondary : YansuTheme.warning)
-                if failure.retries {
-                    holdButton(String(localized: "hold.tryAgain"), id: id) {
-                        if case .restore = failure {
-                            if await environment.holds.undoRemove(id: id) != nil { _ = await tasks.loadDetail(id: task.id) }
-                        } else {
-                            await removeHold(id)
-                        }
-                    }
-                    .accessibilityIdentifier("holds.thread.retry")
-                }
-            }
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("holds.thread.failure")
-        }
-    }
-
-    private func removeHold(_ id: String) async {
-        if await environment.holds.remove(id: id) != nil { _ = await tasks.loadDetail(id: task.id) }
-    }
-
-    private func findTime() async {
-        findTimeFailed = false
-        if let offer = await environment.holds.proposal(kind: "task", id: task.id) {
-            holdSheet = offer
-        } else {
-            findTimeFailed = true
         }
     }
 
@@ -745,7 +558,7 @@ struct TaskThreadView: View {
 
     private var moreMenu: some View {
         Menu {
-            ForEach(actions + holdMenu, id: \.self) { action in
+            ForEach(actions, id: \.self) { action in
                 if let title = TaskThreadCopy.menuTitle(action) {
                     Button(role: action == "stop" ? .destructive : nil) { perform(action) } label: {
                         Label(title, systemImage: TaskThreadCopy.menuIcon(action))
@@ -760,7 +573,7 @@ struct TaskThreadView: View {
                 .frame(width: 36, height: 36)
                 .contentShape(Circle())
         }
-        .disabled(actions.isEmpty && holdMenu.isEmpty)
+        .disabled(actions.isEmpty)
         .accessibilityLabel(String(localized: "More"))
         .accessibilityIdentifier("tasks.thread.more")
     }
@@ -774,8 +587,6 @@ struct TaskThreadView: View {
             renaming = true
         case "made":
             showsMade = true
-        case "find_time":
-            Task { await findTime() }
         case "mark_done", "not_now":
             Task {
                 if await tasks.act(id: task.id, action: action), action == "not_now" { close() }

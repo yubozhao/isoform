@@ -16,7 +16,8 @@ func TestEngagementRedactsBeforeStorageAndDelivery(t *testing.T) {
 	rig := newEngagementTestRig(t)
 	ctx := context.Background()
 	params := map[string]string{"title": "Card 4111 1111 1111 1111", "question": "password: secretvalue OTP: 123456"}
-	row, err := rig.svc.Submit(ctx, engagement.Moment{Kind: engagement.KindWorkBlocked, SubjectID: "redact", Params: params})
+	// Routed to the phone, so it rings (notify v1.0.0 B3 keeps blocked work quiet otherwise).
+	row, err := rig.svc.Submit(ctx, engagement.Moment{Kind: engagement.KindWorkBlocked, SubjectID: "redact", Params: params, Channels: []engagement.Channel{engagement.ChannelPush}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +66,7 @@ func TestEngagementRedactsLegacyRowsBeforeDelivery(t *testing.T) {
 	rig := newEngagementTestRig(t)
 	ctx := context.Background()
 	row, err := rig.store.CreateEngagementMoment(ctx, storage.EngagementMomentRow{
-		Kind: string(engagement.KindWorkBlocked), DedupeKey: "legacy:redact", SubjectID: "legacy", CreatedAt: rig.clock.UnixMilli(),
+		Kind: string(engagement.KindWorkFinished), DedupeKey: "legacy:redact", SubjectID: "legacy", CreatedAt: rig.clock.UnixMilli(),
 		Params: `{"title":"Card 4111 1111 1111 1111","question":"your answer."}`,
 	})
 	if err != nil {
@@ -79,11 +80,6 @@ func TestEngagementRedactsLegacyRowsBeforeDelivery(t *testing.T) {
 }
 
 func TestEngagementToastIsGenericWhileLocked(t *testing.T) {
-	m := engagement.Moment{Kind: engagement.KindWorkBlocked, HardDeadline: true, DueAt: time.Now().Add(time.Minute)}
-	v := engagement.Verdict{Mode: engagement.ModeInterrupt, Interruption: engagement.InterruptionTimeSensitive}
-	if got := engagement.HoldWhileLocked(m, v, engagement.Presence{ScreenLocked: true}, time.Now()); got.Mode != engagement.ModeInterrupt {
-		t.Fatal("test must cover the time-sensitive lock bypass")
-	}
 	text := engagementText{PushBody: "Work is waiting on you.", Title: "The private acquisition needs an answer."}
 	title, body := engagementToastCopy(text, true)
 	if title != text.PushBody || body != "" {

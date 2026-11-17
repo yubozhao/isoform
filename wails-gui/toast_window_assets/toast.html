@@ -197,6 +197,21 @@
     transition: border-color 140ms ease, background 140ms ease;
   }
 
+  .actions {
+    flex: 0 0 auto;
+    align-self: center;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .actions:empty { display: none; }
+  /* The first action is the solid button; the rest are outlined. */
+  .actions .action + .action {
+    background: transparent;
+    border-color: var(--border);
+    color: var(--ink);
+  }
+
   .action:hover { opacity: 0.9; }
   .action.empty { display: none; }
 </style>
@@ -230,6 +245,7 @@
     <div class="title" id="title"></div>
     <div class="desc" id="desc"></div>
   </div>
+  <div class="actions" id="actions"></div>
   <button class="action empty" id="action" type="button"></button>
 </div>
 <script>
@@ -263,7 +279,21 @@
   const toastEl = document.getElementById('toast');
   const closeEl = document.getElementById('close');
   const actionEl = document.getElementById('action');
-  if (data.action) {
+  // Every action of the notification's kind, each its own button.
+  const actionsEl = document.getElementById('actions');
+  if (Array.isArray(data.actions) && data.actions.length > 0) {
+    data.actions.forEach(function (a) {
+      const button = document.createElement('button');
+      button.className = 'action';
+      button.type = 'button';
+      button.textContent = a.label || '';
+      button.addEventListener('click', function (e) {
+        e.stopPropagation();
+        send('action:' + a.id);
+      });
+      actionsEl.appendChild(button);
+    });
+  } else if (data.action) {
     actionEl.textContent = data.action;
     actionEl.classList.remove('empty');
     actionEl.addEventListener('click', function (e) {

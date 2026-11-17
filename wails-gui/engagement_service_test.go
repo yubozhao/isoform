@@ -34,7 +34,8 @@ func newEngagementTestRig(t *testing.T) *engagementTestRig {
 		t.Fatal(err)
 	}
 	rig := &engagementTestRig{store: store, clock: time.Date(2026, 10, 12, 10, 0, 0, 0, loc)}
-	rig.presence = engagement.Presence{PhoneRegistered: true, PhoneLastSeen: rig.clock}
+	// Away from the computer, with a phone: the phone rings (notify v1.0.0).
+	rig.presence = engagement.Presence{PhoneRegistered: true, PhoneLastSeen: rig.clock, MacIdle: time.Hour}
 	rig.svc = newEngagementService(store, func(time.Time) engagement.Presence { return rig.presence }, engagementDelivery{
 		Push: func(_ context.Context, _ storage.EngagementMomentRow, _ engagement.Moment, _ engagement.Verdict, text engagementText) error {
 			rig.mu.Lock()
@@ -76,7 +77,9 @@ func TestEngagementServiceDeliversBlockedWorkToThePhone(t *testing.T) {
 	rig := newEngagementTestRig(t)
 	ctx := context.Background()
 	row, err := rig.svc.Submit(ctx, engagement.Moment{
-		Kind: engagement.KindWorkBlocked, SubjectID: "hf-1",
+		// Routed to the phone: blocked work rings only where the person
+		// chose it (notify v1.0.0 B3).
+		Kind: engagement.KindWorkBlocked, SubjectID: "hf-1", Channels: []engagement.Channel{engagement.ChannelPush},
 		DueAt: rig.clock.Add(time.Hour), HardDeadline: true,
 		Params: map[string]string{"title": "The Q3 reply to Sam", "question": "your attention."},
 	})
@@ -112,15 +115,27 @@ func TestEngagementServiceRoutesToTheMacWhenTheUserIsThere(t *testing.T) {
 	rig := newEngagementTestRig(t)
 	ctx := context.Background()
 	rig.presence = engagement.Presence{MacForeground: true, MacIdle: 5 * time.Second, PhoneRegistered: true}
-	if _, err := rig.svc.Submit(ctx, engagement.Moment{Kind: engagement.KindWorkFinished, SubjectID: "h1", Params: map[string]string{"title": "The Q3 outline"}}); err != nil {
+	if _, err := rig.svc.Submit(ctx, engagement.Moment{Kind: engagement.KindMeetingPrep, SubjectID: "ev1", Params: map[string]string{"title": "Design review"}}); err != nil {
 		t.Fatal(err)
 	}
 	rig.svc.Pass(ctx)
 	if len(rig.desktop) != 1 || len(rig.pushed) != 0 {
 		t.Fatalf("desktop=%d push=%d", len(rig.desktop), len(rig.pushed))
 	}
-	if rig.desktop[0].Title != "The Q3 outline is ready to review. Nothing was sent." {
-		t.Fatalf("title = %q", rig.desktop[0].Title)
+	// Finished work at the computer is a quiet line on Today, not a toast
+	// (notify v1.0.0 rule 4); its words are the same wherever it shows.
+	finished := engagement.Moment{Kind: engagement.KindWorkFinished, SubjectID: "h1", Params: map[string]string{"title": "The Q3 outline"}}
+	row, err := rig.svc.Submit(ctx, finished)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rig.svc.Pass(ctx)
+	if stored, _ := rig.store.GetEngagementMoment(ctx, row.ID); stored == nil || stored.Channel != string(engagement.ChannelTodayQuiet) || len(rig.desktop) != 1 || len(rig.pushed) != 0 {
+		t.Fatalf("finished work at the computer = %+v desktop=%d push=%d", stored, len(rig.desktop), len(rig.pushed))
+	}
+	spec, _ := engagement.Spec(engagement.KindWorkFinished)
+	if title := rig.svc.render(spec, finished).Title; title != "The Q3 outline is ready to review. Nothing was sent." {
+		t.Fatalf("title = %q", title)
 	}
 }
 
@@ -152,12 +167,10 @@ func TestEngagementServiceHoldsThroughQuietHoursAndDigests(t *testing.T) {
 	}
 	rig.clock = morning.Add(time.Minute)
 	rig.svc.Pass(ctx)
-	if len(rig.pushed) != 2 || rig.pushed[1].Title != "Pricing sync: 3 decisions, 2 follow-ups." {
-		t.Fatalf("the digest moment goes out at digest time: %+v", rig.pushed)
-	}
+	// At digest time it is a quiet line on Today, never a push (B3).
 	sent, _ := rig.store.GetEngagementMoment(ctx, meeting.ID)
-	if sent.Level != "passive" {
-		t.Fatalf("digest deliveries stay passive: %+v", sent)
+	if len(rig.pushed) != 1 || sent.State != storage.EngagementStateSent || sent.Channel != string(engagement.ChannelTodayQuiet) || sent.Level != "passive" {
+		t.Fatalf("the digest moment at digest time: %+v %+v", sent, rig.pushed)
 	}
 }
 
@@ -165,7 +178,8 @@ func TestEngagementServiceRetriesAfterADeliveryFailure(t *testing.T) {
 	rig := newEngagementTestRig(t)
 	ctx := context.Background()
 	rig.pushError = context.DeadlineExceeded
-	row, _ := rig.svc.Submit(ctx, engagement.Moment{Kind: engagement.KindWorkBlocked, SubjectID: "h3", Params: map[string]string{"title": "The export", "question": "a project code."}})
+	row, _ := rig.svc.Submit(ctx, engagement.Moment{Kind: engagement.KindWorkBlocked, SubjectID: "h3", Channels: []engagement.Channel{engagement.ChannelPush},
+		Params: map[string]string{"title": "The export", "question": "a project code."}})
 	rig.svc.Pass(ctx)
 	got, _ := rig.store.GetEngagementMoment(ctx, row.ID)
 	if got.State != storage.EngagementStateScheduled || got.Reason != "retry" || got.HoldUntil != rig.clock.Add(engagementRetryDelay).UnixMilli() {
@@ -182,14 +196,13 @@ func TestEngagementServiceRetriesAfterADeliveryFailure(t *testing.T) {
 func TestEngagementServiceReceiptsMuteAndPause(t *testing.T) {
 	rig := newEngagementTestRig(t)
 	ctx := context.Background()
-	rig.svc.prefs.Enabled[engagement.KindGoalCheckIn] = true
 	// Without digest times a passive moment is scheduled for right now and
 	// goes out on the next pass; one per local day keeps the daily cap happy.
 	rig.svc.prefs.DigestTimes = nil
 	var ids []string
 	for i := 0; i < engagementAutoPauseMinSent; i++ {
 		rig.clock = rig.clock.Add(24 * time.Hour)
-		m, err := rig.svc.Submit(ctx, engagement.Moment{Kind: engagement.KindGoalCheckIn, SubjectID: "goal", DedupeKey: engagement.DedupeKey(engagement.KindGoalCheckIn, "goal", rig.clock.Format("2006-01-02"))})
+		m, err := rig.svc.Submit(ctx, engagement.Moment{Kind: engagement.KindWorkFinished, SubjectID: "goal", DedupeKey: engagement.DedupeKey(engagement.KindWorkFinished, "goal", rig.clock.Format("2006-01-02"))})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -210,11 +223,11 @@ func TestEngagementServiceReceiptsMuteAndPause(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if !rig.svc.Paused(engagement.KindGoalCheckIn) {
+	if !rig.svc.Paused(engagement.KindWorkFinished) {
 		t.Fatal("a kind with a 65 percent dismiss rate after 20 sends must pause")
 	}
 	rig.clock = rig.clock.Add(24 * time.Hour)
-	paused, _ := rig.svc.Submit(ctx, engagement.Moment{Kind: engagement.KindGoalCheckIn, SubjectID: "goal", DedupeKey: "goal_check_in:goal:paused"})
+	paused, _ := rig.svc.Submit(ctx, engagement.Moment{Kind: engagement.KindWorkFinished, SubjectID: "goal", DedupeKey: "goal_check_in:goal:paused"})
 	rig.svc.Pass(ctx)
 	got, _ := rig.store.GetEngagementMoment(ctx, paused.ID)
 	if got.State != storage.EngagementStateSuppressed || got.Reason != "kind off" {
@@ -225,13 +238,13 @@ func TestEngagementServiceReceiptsMuteAndPause(t *testing.T) {
 		t.Fatal(err)
 	}
 	prefs, _ := rig.store.ListEngagementPrefs(ctx)
-	if len(prefs) != 1 || prefs[0].Kind != "goal_check_in" || prefs[0].Enabled != 0 {
+	if len(prefs) != 1 || prefs[0].Kind != "work_finished" || prefs[0].Enabled != 0 {
 		t.Fatalf("a muted receipt must persist the kind as off: %+v", prefs)
 	}
-	if err := rig.svc.SetKindEnabled(ctx, engagement.KindGoalCheckIn, true); err != nil {
+	if err := rig.svc.SetKindEnabled(ctx, engagement.KindWorkFinished, true); err != nil {
 		t.Fatal(err)
 	}
-	if rig.svc.Paused(engagement.KindGoalCheckIn) {
+	if rig.svc.Paused(engagement.KindWorkFinished) {
 		t.Fatal("turning a kind back on clears its pause")
 	}
 }

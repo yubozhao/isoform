@@ -165,25 +165,6 @@ func (s *PaceState) Record(m Moment, v Verdict, now time.Time) {
 	}
 }
 
-// lockedHold is how long a delivery waits while the screen is locked before
-// the rules look again; the unlock itself is noticed on the next pass.
-const lockedHold = 5 * time.Minute
-
-// HoldWhileLocked turns an interrupting verdict into a hold while the screen
-// is locked, unless the moment is time-sensitive or would expire before the
-// hold ends (a meeting reminder is useless after the meeting starts, so it
-// goes to the phone instead). A held moment is paced again when its time
-// comes, so it goes out on the first pass after the unlock.
-func HoldWhileLocked(m Moment, v Verdict, p Presence, now time.Time) Verdict {
-	if v.Mode != ModeInterrupt || !p.ScreenLocked || v.Interruption == InterruptionTimeSensitive {
-		return v
-	}
-	if !m.ExpiresAt.IsZero() && !m.ExpiresAt.After(now.Add(lockedHold)) {
-		return v
-	}
-	return Verdict{Mode: ModeHold, Interruption: v.Interruption, Reason: "screen locked", HoldUntil: now.Add(lockedHold)}
-}
-
 func nextLocalMidnight(t time.Time) time.Time {
 	return time.Date(t.Year(), t.Month(), t.Day()+1, 0, 0, 0, 0, t.Location())
 }

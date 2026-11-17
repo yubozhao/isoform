@@ -26,10 +26,6 @@ func (s *engagementService) handleDigest(ctx context.Context, rows []storage.Eng
 	if len(rows) == 0 || s.deliver.Digest == nil {
 		return
 	}
-	presence := engagement.Presence{}
-	if s.presence != nil {
-		presence = s.presence(now)
-	}
 	for i := range rows {
 		spec, _ := engagement.Spec(engagement.Kind(rows[i].Kind))
 		fatigue := s.fatigue(ctx, spec.Kind)
@@ -107,10 +103,6 @@ func (s *engagementService) handleDigest(ctx context.Context, rows []storage.Eng
 			continue
 		default:
 			s.handle(ctx, row, now)
-			continue
-		}
-		if held := engagement.HoldWhileLocked(m, verdict, presence, now); held.Mode == engagement.ModeHold {
-			_ = s.store.SetEngagementMomentState(ctx, row.ID, storage.EngagementStateScheduled, held.Reason, storage.EngagementMomentRow{UpdatedAt: now.UnixMilli(), Score: row.Score, HoldUntil: held.HoldUntil.UnixMilli()})
 			continue
 		}
 		if len(items) == engagementDigestLimit {

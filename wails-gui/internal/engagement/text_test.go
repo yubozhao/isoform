@@ -143,31 +143,18 @@ func TestTextMessageFitsAndKeepsTheCodes(t *testing.T) {
 	}
 }
 
-func TestChannelForKindTextsThroughTheRelay(t *testing.T) {
+// No text message or email stands in for a notification (notify v1.0.0 rule
+// 14): with no phone to reach, the computer shows it.
+func TestChannelForKindNeverTextsOrEmails(t *testing.T) {
 	now := at(10, 0)
-	active := Verdict{Mode: ModeInterrupt, Interruption: InterruptionActive}
 	urgent := Verdict{Mode: ModeInterrupt, Interruption: InterruptionTimeSensitive}
-	away := Presence{MacIdle: time.Hour}
-	cases := []struct {
-		name string
-		kind Kind
-		v    Verdict
-		p    Presence
-		want Channel
-	}{
-		{"subscribed, needs you, no phone", KindWorkBlocked, active, Presence{SMSActive: true, MacIdle: time.Hour}, ChannelText},
-		{"subscribed, urgent, no phone", KindCapturePaused, urgent, Presence{SMSActive: true, MacIdle: time.Hour}, ChannelText},
-		{"subscribed, ordinary moment", KindWorkFinished, active, Presence{SMSActive: true, MacIdle: time.Hour}, ChannelNone},
-		{"subscribed, phone can be pushed", KindWorkBlocked, active, Presence{SMSActive: true, PhoneRegistered: true, PhoneLastSeen: now, MacIdle: time.Hour}, ChannelPush},
-		{"subscribed, push failed", KindWorkBlocked, active, Presence{SMSActive: true, PhoneRegistered: true, PushFailed: true, MacIdle: time.Hour}, ChannelText},
-		{"subscribed, at the Mac", KindWorkBlocked, urgent, Presence{SMSActive: true, MacForeground: true}, ChannelDesktop},
-		{"Messages only, needs you but not urgent", KindWorkBlocked, active, Presence{TextAvailable: true, MacIdle: time.Hour}, ChannelNone},
-		{"Messages only, urgent", KindCapturePaused, urgent, Presence{TextAvailable: true, MacIdle: time.Hour}, ChannelText},
-		{"nothing set up", KindWorkBlocked, urgent, away, ChannelNone},
-	}
-	for _, c := range cases {
-		if got := ChannelForKind(c.kind, c.v, c.p, now); got != c.want {
-			t.Errorf("%s: %s, want %s", c.name, got, c.want)
+	for _, p := range []Presence{
+		{SMSActive: true, MacIdle: time.Hour},
+		{TextAvailable: true, MacIdle: time.Hour},
+		{EmailActive: true, MacIdle: time.Hour, PhoneRegistered: true, PushFailed: true},
+	} {
+		if got := ChannelForKind(KindMeetingPrep, urgent, p, now); got != ChannelDesktop {
+			t.Errorf("%+v: %s, want the computer", p, got)
 		}
 	}
 }

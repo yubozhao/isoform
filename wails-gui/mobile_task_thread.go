@@ -814,7 +814,8 @@ func (a *App) mobileTaskThreadDetail(ctx context.Context, entry handoff.Entry, s
 		detail.EffectSteps = mobileTaskEffectSteps(entry.Thread.Steps)
 		detail.Skipped = mobileTaskEffectSteps(entry.Thread.Skipped)
 	}
-	if entry.Thread != nil {
+	// A task's calendar hold reaches the phone only while calendar holds are switched on.
+	if entry.Thread != nil && featureOn(featureCalendarHolds) {
 		for i := len(entry.Thread.Leftovers) - 1; i >= 0; i-- {
 			leftover := entry.Thread.Leftovers[i]
 			if leftover.Kind != handoff.LeftoverCalendarHold {

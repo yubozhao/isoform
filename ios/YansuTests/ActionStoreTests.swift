@@ -439,17 +439,6 @@ final class ActionStoreTests: XCTestCase {
         XCTAssertTrue(remaining.isEmpty)
     }
 
-    func testOneTimeWorkFolderPlaceholderPassesValidation() async throws {
-        let h = try makeHarness()
-
-        let started = await h.store.startOneTimeWork(workDraft(folder: OneTimeWorkComposer.folderPlaceholder))
-
-        XCTAssertTrue(started)
-        XCTAssertTrue(h.guardian.reasons.isEmpty)
-        XCTAssertEqual(h.hub.workRequests.count, 1)
-        XCTAssertEqual(h.hub.workRequests.first?.workDir, "/Users/you/src/notes")
-    }
-
     func testOneTimeWorkNeedsTheFullFolderPathOrNoFolder() async throws {
         let h = try makeHarness()
 

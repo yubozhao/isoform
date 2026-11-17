@@ -120,7 +120,10 @@ func TestMessagesVerificationExpiryAttemptsAndNumberChange(t *testing.T) {
 
 // This is a deterministic routing regression using the real engagement store
 // and sender boundary. The separately tagged device test uses Messages itself.
-func TestUnpairedPhoneRoutesThroughMessagesWithCapsAndPrivateCopy(t *testing.T) {
+// A text goes only where the person chose it (notify v1.0.0 rule 14); when
+// chosen, it keeps the caps, the verified number and the private copy. With no
+// text chosen, it stays on the computer: no text, no push.
+func TestChosenMessagesTextKeepsCapsAndPrivateCopy(t *testing.T) {
 	rig := newEngagementTestRig(t)
 	messages := newTextChannelRig(t)
 	messages.enable(t)
@@ -135,7 +138,7 @@ func TestUnpairedPhoneRoutesThroughMessagesWithCapsAndPrivateCopy(t *testing.T) 
 	ctx := context.Background()
 	submit := func(id string) storage.EngagementMomentRow {
 		t.Helper()
-		row, err := rig.svc.Submit(ctx, engagement.Moment{Kind: engagement.KindWorkBlocked, SubjectID: id, DueAt: rig.clock.Add(time.Hour), HardDeadline: true, ExpiresAt: rig.clock.Add(12 * time.Hour), Params: map[string]string{"title": "The Q3 reply to Sam", "question": "your attention."}})
+		row, err := rig.svc.Submit(ctx, engagement.Moment{Kind: engagement.KindWorkBlocked, SubjectID: id, DueAt: rig.clock.Add(time.Hour), HardDeadline: true, ExpiresAt: rig.clock.Add(12 * time.Hour), Channels: []engagement.Channel{engagement.ChannelText}, Params: map[string]string{"title": "The Q3 reply to Sam", "question": "your attention."}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -187,6 +190,19 @@ func TestUnpairedPhoneRoutesThroughMessagesWithCapsAndPrivateCopy(t *testing.T) 
 	if len(rig.pushed) != 0 || len(rig.desktop) != 0 {
 		t.Fatal("an unpaired phone or away computer received the moment")
 	}
+	rig.clock = rig.clock.Add(2 * time.Hour)
+	unchosen, err := rig.svc.Submit(ctx, engagement.Moment{Kind: engagement.KindWorkBlocked, SubjectID: "unchosen", DueAt: rig.clock.Add(time.Hour), HardDeadline: true, ExpiresAt: rig.clock.Add(12 * time.Hour), Params: map[string]string{"title": "The Q3 reply to Sam", "question": "your attention."}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rig.svc.Pass(ctx)
+	got, _ := rig.store.GetEngagementMoment(ctx, unchosen.ID)
+	if messages.sender.callCount() != 3 || strings.Contains(got.Channel, "text") || len(rig.pushed) != 0 {
+		t.Fatalf("a text stood in for the notification: %+v, texts=%d, pushes=%d", got, messages.sender.callCount(), len(rig.pushed))
+	}
+	if got.Channel != string(engagement.ChannelDesktop) && got.Channel != string(engagement.ChannelTodayQuiet) {
+		t.Fatalf("the moment left the computer: %+v", got)
+	}
 }
 
 func TestMessagesFailuresNeverRetryAutomatically(t *testing.T) {
@@ -207,7 +223,8 @@ func TestMessagesFailuresNeverRetryAutomatically(t *testing.T) {
 			rig.svc.deliver.Text = func(ctx context.Context, _ storage.EngagementMomentRow, _ engagement.Moment, _ engagement.Verdict, text engagementText) error {
 				return messages.ch.SendMoment(ctx, text)
 			}
-			row, err := rig.svc.Submit(context.Background(), engagement.Moment{Kind: engagement.KindWorkBlocked, SubjectID: fmt.Sprint(failure), DueAt: rig.clock.Add(time.Hour), HardDeadline: true})
+			// A text goes only where the person chose it (notify v1.0.0 rule 14).
+			row, err := rig.svc.Submit(context.Background(), engagement.Moment{Kind: engagement.KindWorkBlocked, SubjectID: fmt.Sprint(failure), DueAt: rig.clock.Add(time.Hour), HardDeadline: true, Channels: []engagement.Channel{engagement.ChannelText}})
 			if err != nil {
 				t.Fatal(err)
 			}
