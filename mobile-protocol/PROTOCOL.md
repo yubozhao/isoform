@@ -1094,6 +1094,14 @@ phone also posts the `acted` receipt (14.6) for measurement; a receipt is never 
 Prep the person already answered on a device sends no notice. An older phone gets the notices as
 before, without `workItemId` or the answer action.
 
+Finished work on a phone that reads Your work (phone-agent v1.2.0 rule 10, 2026-11-16): the sealed
+`title` is "Back from {agent}" (the agent the work went to, else "your agent") and `body` is the
+work's one sentence, its result's first sentence, at most 200 characters. The sentence passes the
+same privacy filter as every notice text, and it is left out (an empty `body`) when Closed Eyes is
+on, when any of the run fell in a Closed Eyes period, or when the pause log can't be read. The
+phone shows them as any notice; iOS's own Show Previews decides what the lock screen shows. An
+older phone keeps "Work finished.".
+
 ## 10. Scopes
 
 | Scope | Grants |

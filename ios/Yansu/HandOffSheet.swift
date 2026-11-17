@@ -280,6 +280,8 @@ struct WhoDoesYourWork: View {
         case "connected_computer": return String(localized: "agents.connectedComputer")
         case "on_computer": return String(localized: "agents.onComputer")
         case "by_text": return String(localized: "agents.byText")
+        // Joined, then disconnected within 30 days (PROTOCOL.md 27): kept by name only.
+        case "disconnected": return String(localized: "agents.state.disconnected")
         default: return String(localized: "agents.itsApp")
         }
     }

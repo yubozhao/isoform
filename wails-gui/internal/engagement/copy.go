@@ -18,7 +18,10 @@ import (
 type CopySet struct {
 	PushBody string
 	Sealed   string
-	Text     string
+	// Phone is the sealed title a phone that reads Your work shows in place
+	// of PushBody, when the kind has one (phone-agent v1.2.0 rule 10).
+	Phone string
+	Text  string
 	// EmailSubject and EmailBody are the email templates, only for kinds the
 	// user can have emailed (a playbook's result).
 	EmailSubject string
@@ -67,6 +70,7 @@ var copyCatalog = map[string]map[Kind]CopySet{
 		KindWorkFinished: {
 			PushBody: "Work finished.",
 			Sealed:   "{title} is ready to review. Nothing was sent.",
+			Phone:    "Back from {agent}",
 			Text:     "Isoform: \"{title}\" is ready to review. Nothing was sent.",
 			Actions:  map[string]string{"review": "Review"},
 		},

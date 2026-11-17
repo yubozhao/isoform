@@ -35,6 +35,11 @@ type engagementText struct {
 	PushBody string
 	// Title is the sealed text the phone shows after decrypting.
 	Title string
+	// PhoneTitle and PhoneBody, when set, are what a phone that reads Your
+	// work shows instead: finished work's "Back from {agent}" and its one
+	// sentence.
+	PhoneTitle string
+	PhoneBody  string
 	// Actions maps action ids to labels in the user's language.
 	Actions map[string]string
 	// Category groups the actions for the phone.
@@ -1061,6 +1066,10 @@ func (s *engagementService) render(spec engagement.KindSpec, m engagement.Moment
 		Title:    engagement.Render(set.Sealed, mainChatCopyParams(m.Params, lang)),
 		Actions:  actions,
 		Category: engagementCategory(spec.Kind),
+	}
+	if set.Phone != "" && m.Params[engagementAgentParam] != "" {
+		text.PhoneTitle = engagement.Render(set.Phone, m.Params)
+		text.PhoneBody = m.Params[engagementSentenceParam]
 	}
 	if m.Kind == engagement.KindBriefReady && strings.TrimSpace(m.Params[briefTroubleParam]) != "" {
 		// The brief's notification carries what it's missing (computer-

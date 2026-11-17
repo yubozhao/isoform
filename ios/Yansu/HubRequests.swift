@@ -43,6 +43,8 @@ enum HubRoute: Equatable, Sendable {
     case topicsDaily
     /// A result's readable file (phone-agent v1.2.0 rule 3); `path` is `/work/{id}/file`, already encoded.
     case workFile(path: String, file: String)
+    /// A join the phone made or was asked about (PROTOCOL.md 27.4); `path` is `/agents/join/{id}`.
+    case agentJoin(path: String)
     /// Notices read on any device since a time (PROTOCOL.md 9.4).
     case noticesRead(since: String?)
     /// What each hand-off is doing, in the computer's words (PROTOCOL.md 27.2, With your agents).
@@ -72,7 +74,7 @@ enum HubRoute: Equatable, Sendable {
         case .yourAgent, .recordings, .recordingTranscript, .recordingConversations, .recordingConversation, .watchNotes, .voice: return "GET"
         case .refreshBrief, .write, .briefReceived: return "POST"
         case .forgetAnswer: return "DELETE"
-        case .answers, .agentHandoffs, .topicsDaily, .handoffStatuses, .workFile, .noticesRead: return "GET"
+        case .answers, .agentHandoffs, .topicsDaily, .handoffStatuses, .workFile, .noticesRead, .agentJoin: return "GET"
         case .status, .today, .todayMeetingPrep, .findTime, .findTimeLegacy, .holdProposal, .holdStatus, .todayPart, .latestBrief, .briefList, .brief, .briefPackage, .briefPart, .briefAudio, .briefAskAnswer, .briefCardAskAnswer, .briefWeekDecline, .briefWeekAskAnswer, .chats, .chat, .notifications, .keepAwake, .tasks, .task, .work, .agents, .goals, .goal, .offers, .offersWithHolds,
              .topics, .topic, .privacy: return "GET"
         }
@@ -118,6 +120,7 @@ enum HubRoute: Equatable, Sendable {
         case .handoffStatuses: return "/agents/handoffs/status"
         case .workFile(let path, _): return path
         case .noticesRead: return "/notices/read"
+        case .agentJoin(let path): return path
         case .forgetAnswer(let id): return "/answers/" + (id.addingPercentEncoding(withAllowedCharacters: .alphanumerics.union(CharacterSet(charactersIn: "-._~"))) ?? id)
         case .task(let id): return "/tasks/\(id)"
         case .goals: return "/goals"
@@ -200,7 +203,7 @@ enum HubRoute: Equatable, Sendable {
             var components = URLComponents()
             components.queryItems = [URLQueryItem(name: "since", value: since)]
             return (components.percentEncodedQuery ?? "").replacingOccurrences(of: "+", with: "%2B")
-        case .forgetAnswer, .topicsDaily, .handoffStatuses: return ""
+        case .forgetAnswer, .topicsDaily, .handoffStatuses, .agentJoin: return ""
         case .chats(let limit): return "limit=\(min(max(limit, 1), 50))"
         case .chat(_, let after, let limit):
             // Without `after` the Mac answers with its newest page. `after=0` is the start of the chat.
@@ -223,7 +226,7 @@ enum HubRoute: Equatable, Sendable {
 
     var body: String {
         switch self {
-        case .yourAgent, .recordings, .recordingTranscript, .recordingConversations, .recordingConversation, .watchNotes, .voice, .answers, .forgetAnswer, .agentHandoffs, .topicsDaily, .handoffStatuses, .workFile, .noticesRead: return ""
+        case .yourAgent, .recordings, .recordingTranscript, .recordingConversations, .recordingConversation, .watchNotes, .voice, .answers, .forgetAnswer, .agentHandoffs, .topicsDaily, .handoffStatuses, .workFile, .noticesRead, .agentJoin: return ""
         case .refreshBrief: return "{}"
         case .write(_, let body): return body
         case .briefReceived(_, let version): return "{\"version\":\"\(version)\"}"
@@ -271,6 +274,7 @@ enum HubRoute: Equatable, Sendable {
         case .handoffStatuses: return "agents.handoffs.status"
         case .workFile: return "work.file"
         case .noticesRead: return "notices.read"
+        case .agentJoin: return "agents.join"
         case .goals: return "goals.list"
         case .goal: return "goals.detail"
         case .offers, .offersWithHolds: return "offers.list"
@@ -420,6 +424,8 @@ struct HubStatus: Decodable, Equatable, Sendable {
     var agentHandoffs: Bool? = nil
     /// The computer serves GET and POST /notices/read and sends withdraw pushes (PROTOCOL.md 9.4).
     var noticesRead: Bool? = nil
+    /// The phone can make a join link and check its code (PROTOCOL.md 27.4).
+    var agentJoin: Bool? = nil
 }
 
 struct ObservingPause: Codable, Equatable, Sendable {

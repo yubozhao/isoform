@@ -15,6 +15,10 @@ struct PhoneAgent: Codable, Equatable, Hashable, Identifiable, Sendable {
     var found: Bool? = nil
     var connected: Bool? = nil
     var lastWorkedAt: Double? = nil
+    /// Unix milliseconds: disconnected within 30 days and not connected again (PROTOCOL.md 27.4).
+    var disconnectedAt: Double? = nil
+
+    var isDisconnected: Bool { disconnectedAt != nil && !isConnected }
 
     var isConnected: Bool { connected == true || reach == "connected" || reach == "connected_computer" }
 }
@@ -219,6 +223,7 @@ enum HandOffButton: Equatable {
 /// Settings › Your agents words for one agent (phone-agent v1.2.0 rule 14): Connected or not, and where it runs.
 enum AgentRowWords {
     static func state(_ agent: PhoneAgent) -> String {
+        if agent.isDisconnected { return String(localized: "agents.state.disconnected") }
         let connected = String(localized: agent.isConnected ? "agents.state.connected" : "agents.state.notConnected")
         let place: String
         switch agent.reach {

@@ -51,7 +51,7 @@ struct SettingsView: View {
                         .accessibilityIdentifier("settings.yourData.open")
                         rowDivider
                         NavigationLink {
-                            YourAgentsView(hub: agentsHub, sentHub: sentHub)
+                            YourAgentsView(hub: agentsHub, sentHub: sentHub, joinAPI: joinAPI)
                         } label: {
                             settingsRow(String(localized: "set.agent"), sub: String(localized: "set.agentSub"))
                         }
@@ -398,6 +398,14 @@ struct SettingsView: View {
         if WorkUITestSeed.isOn { return AgentsUITestHub() }
         #endif
         return status?.agentHandoffs == true ? app.hub : nil
+    }
+
+    /// Joins from the phone, on a computer that takes them (PROTOCOL.md 27.4).
+    private var joinAPI: AgentJoinAPI? {
+        #if DEBUG && targetEnvironment(simulator)
+        if WorkUITestSeed.isOn { return AgentJoinUITestHub.shared }
+        #endif
+        return status?.agentJoin == true ? app.hub : nil
     }
 
     private var agentsHub: AgentsHubAPI {

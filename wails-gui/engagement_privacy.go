@@ -179,6 +179,8 @@ func sanitizeEngagementMoment(m engagement.Moment) (engagement.Moment, bool) {
 func sanitizeEngagementText(text engagementText) engagementText {
 	text.PushBody, _ = pii.RedactText(text.PushBody)
 	text.Title, _ = pii.RedactText(text.Title)
+	text.PhoneTitle, _ = pii.RedactText(text.PhoneTitle)
+	text.PhoneBody, _ = pii.RedactText(text.PhoneBody)
 	text.EmailSubject, _ = pii.RedactText(text.EmailSubject)
 	text.EmailBody, _ = pii.RedactText(text.EmailBody)
 	if !engagement.ValidBody(text.Title) {
