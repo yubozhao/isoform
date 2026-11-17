@@ -3126,7 +3126,7 @@ for each declared deliverable and, when the closing message's first sentence fit
 - An opened history item whose body is missing may use the existing `GET /briefs/{id}` (`brief:read`) to fetch the body, subject to the same computer-side privacy checks. The phone checks the returned ID and current pairing before caching it. This does not add a route or capability flag.
 - A registered computer may send the relay `{"t":"goodbye","cause":"sleeping"|"shutting_down"|"closing"}` before sleep, power-off or quit. A sleep goodbye adds `"reason":"battery_floor"|"low_power"|"lid_closed"|"user_sleep"|"unknown"`; power-off and quit omit it. The computer chooses the first matching reason: Low Power Mode is `low_power`; IOKit AppleClamshellState reporting a closed lid is `lid_closed`; an otherwise unexplained sleep with the keep-awake assertion held is `user_sleep`; anything else, including a sleep on battery, is `unknown`. Builds from this change no longer send `battery_floor`; phones keep reading it from older computers. Older computers omit `reason`, so the receiver defaults a missing reason to `unknown`. The relay validates the cause against that authenticated connection, rejects any `reason` outside those five values, stores the last goodbye with its reason (a goodbye without one clears it) and returns optional `goodbyeCause`, `goodbyeAt` and `goodbyeReason` from the existing scoped `GET /v1/presence`. A new registered connection clears the old goodbye; an unannounced disconnect has no cause. Older relays reject the frame, and a relay older than `reason` rejects a frame that carries it; older phones ignore the optional fields. The phone maps `goodbyeReason` to the Chat thread line: `battery_floor` and `low_power` to "went to sleep to save its battery", `lid_closed` to "lid is closed", and `user_sleep`, `unknown` or no reason to "asleep". The phone determines its own network outage and relay failure locally; it never treats the absence of a goodbye as evidence of sleep.
 - Widget snapshot version 3 is a local App Group file, not a new relay payload. The phone publishes its retained brief, waiting count and first destination, next event and schedule, and refreshes the timeline after changes and at midnight. A brief from another day is never displayed as today's. With app lock enabled the published snapshot omits the brief text, item and event. The widget's audio intent executes in the app and uses its pairing-scoped cached player.
-- Sealed notice plaintext may add `destinationKind` (`brief`, `task` or `chat`) and `destinationId`. Both are optional for compatibility; the phone validates them and the current pairing before opening. Brief-ready uses the brief ID, weekly recap uses `source_brief_id`, and work notices use the task ID. Other supported proactive notices use the chat moment ID. A notice without a usable destination follows the older fallback; this does not guarantee that a retained chat page still contains the moment.
+- Sealed notice plaintext may add `destinationKind` (`brief`, `task`, `chat` or `agent_join`, 27.4) and `destinationId`. Both are optional for compatibility; the phone validates them and the current pairing before opening. Brief-ready uses the brief ID, weekly recap uses `source_brief_id`, and work notices use the task ID. Other supported proactive notices use the chat moment ID. A notice without a usable destination follows the older fallback; this does not guarantee that a retained chat page still contains the moment.
 - `GET /status` may advertise `notificationTest`. When present, `POST /notifications/test` (`push` scope) accepts `{idempotencyKey, language}` where language is `en` or `zh-Hans`, and submits a sealed test notice to the requesting paired phone only. The response `{noticeId}` confirms submission to the relay connection, not APNs delivery. The phone reports arrival only when its notification extension authenticates and decrypts that pairing's test notice and records its ID; a timeout is unconfirmed. Older computers omit the capability and can answer 404.
 - A Play request from a brief notice fetches an absent body through the existing brief route, then requests audio. A transient connection failure may leave a protected, pairing-scoped pending Play on the phone for retry when the computer returns. A missing or forbidden brief is not treated as an offline request. The request is removed when playback starts or the pairing is cleared.
 
@@ -4286,6 +4286,35 @@ Design: phone-settings v1.0.0 rule 12, Your data, Left your devices. `GET /statu
   cut. Attachments are not in the log yet.
 - A hand-off the person forgets on the computer, or whose source is withdrawn, is gone from the
   next read. The phone keeps no copy beyond the screen it shows.
+
+### 27.4 Joining from the phone, and Connect again (phone-agent v1.2.0 rules 9 and 11, §6; 2026-11-16)
+
+`/status` carries `agentJoin: true` when these routes exist. The computer holds one open join at a
+time, made on either device; it shows on both, and the first answer wins. A join link works for 10
+minutes.
+
+| Route | Scope | Body | Answer |
+|---|---|---|---|
+| `POST /agents/join` | `handoff:create` | `{"idempotencyKey","reconnect"?}`; `reconnect` names an agent from Connect again | 201 `{"joinId","message","link","expiresAt","local"}`; 400 when `reconnect` isn't an agent disconnected in the last 30 days; 409 `{"code":"not_taking_work"}` while task links are off or Closed Eyes is on, 409 `{"code":"no_address"}` when agents can't reach this computer yet |
+| `GET /agents/join/{joinId}` | `brief:read` | none | 200 the join below; 404 when it isn't this phone's open join |
+| `POST /agents/join/{joinId}/answer` | `handoff:create` | `{"idempotencyKey","answer":"yes"\|"no"}` | 200 the join; 409 (with the join) when no agent is asking; 410 once it ran out |
+
+- `message` is what the person pastes into their agent; `local` is true when the link works only on
+  this computer.
+- The join: `{"joinId","state","expiresAt","agentName"?,"from"?,"toOpen"?,"code"?,"agentId"?}`. `state`
+  is `waiting`, `requested`, `allowed`, `denied` or `expired`. `agentName`, `from` (the device it works
+  on) and `toOpen` (what it may open) come with `requested`, with `code`, the agent's 4-digit check
+  number; `agentId` comes once `allowed`. A join made later on the computer makes this one `expired`.
+- When the agent answers, the phone that made the join gets one sealed notice (14.2) while the link
+  works: kind `agent_join`, category `YANSU_MOMENT`, level `time-sensitive`, title "{agent} is asking
+  to join", body "Check the code in Isoform.", `destinationKind` `agent_join` and `destinationId` the
+  `joinId`, no actions, and `expiresAt` the link's. It finishes the person's own action; it isn't a
+  kind of its own and no other device gets it.
+- Connect again: `GET /agents` entries carry `disconnectedAt` (ms) for an agent the person
+  disconnected in the last 30 days and hasn't connected again. A known agent keeps its entry; an agent
+  that joined under its own name stays listed with `connected: false`, `reach: "disconnected"` and its
+  old `id`. Connect again is `POST /agents/join` with `reconnect` set to that id: the agent joins
+  again, with a new link and a new code, and once allowed the entry clears.
 
 ## 28. Forget everything on the phone (v1, 2026-11-16)
 

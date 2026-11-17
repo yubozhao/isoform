@@ -62,7 +62,8 @@ type YourAgentView struct {
 	// LastWorkedAt is when it last took or finished a hand-off.
 	LastWorkedAt int64 `json:"lastWorkedAt,omitempty"`
 	// DisconnectedAt is set for 30 days after a joined agent was
-	// disconnected and while it isn't connected again.
+	// disconnected and while it isn't connected again: Connect again
+	// (PROTOCOL.md 27.4).
 	DisconnectedAt int64 `json:"disconnectedAt,omitempty"`
 }
 
@@ -172,6 +173,8 @@ func (a *App) yourAgents() YourAgents {
 			out.Agents = append(out.Agents, YourAgentView{ID: c.ID, Name: c.Name, Kind: workonit.KindElse, Reach: agentReachConnected, Connected: true, LastWorkedAt: c.LastSeenAt})
 		}
 	}
+	// An agent that joined under its own name and was disconnected lately
+	// stays listed for Connect again.
 	for _, d := range a.disconnectedAgents() {
 		if d.CatalogID == "" && d.Name != "" && !names[d.Name] {
 			names[d.Name] = true

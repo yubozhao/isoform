@@ -184,7 +184,7 @@ func (n mobileNotice) validateSealed() error {
 	}
 	if n.DestinationKind != "" || n.DestinationID != "" {
 		switch n.DestinationKind {
-		case "brief", "task", "chat":
+		case "brief", "task", "chat", mobileNoticeKindAgentJoin:
 		default:
 			return errMobileNoticeInvalid
 		}

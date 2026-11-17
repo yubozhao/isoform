@@ -43,6 +43,8 @@ enum HubRoute: Equatable, Sendable {
     case topicsDaily
     /// A result's readable file (phone-agent v1.2.0 rule 3); `path` is `/work/{id}/file`, already encoded.
     case workFile(path: String, file: String)
+    /// Notices read on any device since a time (PROTOCOL.md 9.4).
+    case noticesRead(since: String?)
     /// What each hand-off is doing, in the computer's words (PROTOCOL.md 27.2, With your agents).
     case handoffStatuses
     case goals(limit: Int, cursor: String?)
@@ -70,7 +72,7 @@ enum HubRoute: Equatable, Sendable {
         case .yourAgent, .recordings, .recordingTranscript, .recordingConversations, .recordingConversation, .watchNotes, .voice: return "GET"
         case .refreshBrief, .write, .briefReceived: return "POST"
         case .forgetAnswer: return "DELETE"
-        case .answers, .agentHandoffs, .topicsDaily, .handoffStatuses, .workFile: return "GET"
+        case .answers, .agentHandoffs, .topicsDaily, .handoffStatuses, .workFile, .noticesRead: return "GET"
         case .status, .today, .todayMeetingPrep, .findTime, .findTimeLegacy, .holdProposal, .holdStatus, .todayPart, .latestBrief, .briefList, .brief, .briefPackage, .briefPart, .briefAudio, .briefAskAnswer, .briefCardAskAnswer, .briefWeekDecline, .briefWeekAskAnswer, .chats, .chat, .notifications, .keepAwake, .tasks, .task, .work, .agents, .goals, .goal, .offers, .offersWithHolds,
              .topics, .topic, .privacy: return "GET"
         }
@@ -115,6 +117,7 @@ enum HubRoute: Equatable, Sendable {
         case .topicsDaily: return "/topics-daily"
         case .handoffStatuses: return "/agents/handoffs/status"
         case .workFile(let path, _): return path
+        case .noticesRead: return "/notices/read"
         case .forgetAnswer(let id): return "/answers/" + (id.addingPercentEncoding(withAllowedCharacters: .alphanumerics.union(CharacterSet(charactersIn: "-._~"))) ?? id)
         case .task(let id): return "/tasks/\(id)"
         case .goals: return "/goals"
@@ -192,6 +195,11 @@ enum HubRoute: Equatable, Sendable {
             var components = URLComponents()
             components.queryItems = [URLQueryItem(name: "file", value: file)]
             return components.percentEncodedQuery ?? ""
+        case .noticesRead(let since):
+            guard let since, !since.isEmpty else { return "" }
+            var components = URLComponents()
+            components.queryItems = [URLQueryItem(name: "since", value: since)]
+            return (components.percentEncodedQuery ?? "").replacingOccurrences(of: "+", with: "%2B")
         case .forgetAnswer, .topicsDaily, .handoffStatuses: return ""
         case .chats(let limit): return "limit=\(min(max(limit, 1), 50))"
         case .chat(_, let after, let limit):
@@ -215,7 +223,7 @@ enum HubRoute: Equatable, Sendable {
 
     var body: String {
         switch self {
-        case .yourAgent, .recordings, .recordingTranscript, .recordingConversations, .recordingConversation, .watchNotes, .voice, .answers, .forgetAnswer, .agentHandoffs, .topicsDaily, .handoffStatuses, .workFile: return ""
+        case .yourAgent, .recordings, .recordingTranscript, .recordingConversations, .recordingConversation, .watchNotes, .voice, .answers, .forgetAnswer, .agentHandoffs, .topicsDaily, .handoffStatuses, .workFile, .noticesRead: return ""
         case .refreshBrief: return "{}"
         case .write(_, let body): return body
         case .briefReceived(_, let version): return "{\"version\":\"\(version)\"}"
@@ -262,6 +270,7 @@ enum HubRoute: Equatable, Sendable {
         case .topicsDaily: return "topics.daily"
         case .handoffStatuses: return "agents.handoffs.status"
         case .workFile: return "work.file"
+        case .noticesRead: return "notices.read"
         case .goals: return "goals.list"
         case .goal: return "goals.detail"
         case .offers, .offersWithHolds: return "offers.list"
@@ -407,8 +416,10 @@ struct HubStatus: Decodable, Equatable, Sendable {
     var observingPauseUntilEnded: Bool? = nil
     /// The phone can turn Proposals from your topics on and off (PROTOCOL.md 15.9.1).
     var topicsDailySwitch: Bool? = nil
-    /// The computer serves Sent to your agents (PROTOCOL.md 27.2).
+    /// The computer serves Sent to your agents (PROTOCOL.md 27.3).
     var agentHandoffs: Bool? = nil
+    /// The computer serves GET and POST /notices/read and sends withdraw pushes (PROTOCOL.md 9.4).
+    var noticesRead: Bool? = nil
 }
 
 struct ObservingPause: Codable, Equatable, Sendable {

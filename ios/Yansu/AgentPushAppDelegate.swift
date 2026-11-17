@@ -62,6 +62,20 @@ final class AgentPushAppDelegate: NSObject, UIApplicationDelegate, UNUserNotific
         environment.push.receiveRegistrationFailure()
     }
 
+    /// A silent `withdraw` push: notices read on another device leave this one (notify A).
+    func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+                     fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
+        guard let withdraw = NoticeWithdraw.parse(userInfo),
+              let paired = (environment ?? AppEnvironment.shared).vault.current(), paired.hubID == withdraw.hub else {
+            completionHandler(.noData)
+            return
+        }
+        Task {
+            await NoticeWithdraw.withdraw(Set(withdraw.ids))
+            completionHandler(.newData)
+        }
+    }
+
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
                                             willPresent notification: UNNotification,
                                             withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {

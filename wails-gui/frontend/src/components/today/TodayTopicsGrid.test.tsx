@@ -5,6 +5,9 @@ import { reconcileTodayTopics } from "@/hooks/useTodayTopics";
 import { TodayTopicsGrid, topicWhy } from "./TodayTopicsGrid";
 import type { TodayTopic } from "./topics";
 
+const shim = vi.hoisted(() => ({ update: vi.fn() }));
+vi.mock("@/lib/wails-shim-app", async (load) => ({ ...(await load<typeof import("@/lib/wails-shim-app")>()), UpdateUserTopic: shim.update }));
+
 const NOW = new Date(2026, 9, 21, 9, 0);
 const work: TodayTopic = {
     id: "halcyon", name: "Halcyon ERP sync", kind: "work", status: "waiting", pinned: false,
@@ -143,11 +146,12 @@ describe("TodayTopicsGrid (RC 1)", () => {
         expect(screen.getByTestId("today-topics-loading")).toHaveAttribute("aria-busy", "true");
     });
 
-    it.each(["en", "zh-CN"])("shows the gathering message before loading on first run (%s)", async (language) => {
+    it.each(["en", "zh-CN"])("shows when topics come before loading on first run (%s)", async (language) => {
         await i18n.changeLanguage(language);
         renderGrid({ topics: [], status: "loading", refreshing: true, firstRun: true });
-        expect(screen.getByTestId("today-topics-gathering")).toHaveTextContent(
-            language === "en" ? "Isoform is gathering your topics." : "Isoform 正在收集你的话题。",
+        // Topics v1.0.0 rule 29: the first day says when topics come.
+        expect(screen.getByTestId("today-topics-first-day")).toHaveTextContent(
+            language === "en" ? "Isoform finds your topics once it has seen two days of your work." : "Isoform 看过你两天的工作后会找出你的话题。",
         );
         expect(screen.queryByTestId("today-topics-loading")).not.toBeInTheDocument();
         expect(screen.queryByText(/not available/i)).not.toBeInTheDocument();
@@ -211,4 +215,29 @@ describe("TodayTopicsGrid (RC 1)", () => {
 it('omits redacted topics and the chat itself from Today cards', () => {
     renderGrid({ topics: [{ ...work, name: '[REDACTE…' }, { ...followed, name: 'Isoform Main chat' }] });
     expect(screen.queryAllByTestId('today-topic-card')).toHaveLength(0);
+});
+
+describe("Your topics on the first day", () => {
+    // Topics v1.0.0 rules 29 and 30: the first day says when topics come and
+    // offers Add; a named topic is added at once and the list reads again.
+    it("offers Add on the first day and adds the named topic", async () => {
+        shim.update.mockResolvedValue({ topics: [] });
+        const actions = renderGrid({ topics: [], firstRun: true });
+        expect(screen.getByTestId("today-topics-first-day")).toHaveTextContent("Isoform finds your topics once it has seen two days of your work.");
+        expect(screen.queryByRole("alert")).toBeNull();
+        expect(screen.getByTestId("today-topics-first-add")).toBeDisabled();
+        fireEvent.change(screen.getByTestId("today-topics-first-field"), { target: { value: "  Warriors season " } });
+        fireEvent.click(screen.getByTestId("today-topics-first-add"));
+        await waitFor(() => expect(actions.onRetry).toHaveBeenCalledOnce());
+        expect(shim.update).toHaveBeenCalledWith({ id: "", action: "add", label: "Warriors season" });
+        expect(screen.getByTestId("today-topics-first-field")).toHaveValue("");
+    });
+    it("says so when a first-day topic can't be added, and keeps the name", async () => {
+        shim.update.mockRejectedValue(new Error("no"));
+        renderGrid({ topics: [], firstRun: true });
+        fireEvent.change(screen.getByTestId("today-topics-first-field"), { target: { value: "Kitchen remodel" } });
+        fireEvent.click(screen.getByTestId("today-topics-first-add"));
+        expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't add that topic. Try again.");
+        expect(screen.getByTestId("today-topics-first-field")).toHaveValue("Kitchen remodel");
+    });
 });

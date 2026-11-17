@@ -38,6 +38,8 @@ final class AppEnvironment: ObservableObject {
     let ideas: IdeasStore
     let tasks: TasksStore
     let work: WorkStore
+    /// Notices read elsewhere leave this phone; the brief Today shows is read everywhere (notify A).
+    let noticesRead: NoticesReadStore
     let holds: HoldsStore
     let yourAgent: YourAgentStore
     let topics: TopicStore
@@ -248,6 +250,7 @@ final class AppEnvironment: ObservableObject {
                                     return briefStore.hubOnline != false
                                 },
                                 fileURL: journalURL.deletingLastPathComponent().appendingPathComponent("tasks.json"))
+        self.noticesRead = NoticesReadStore(api: hub, defaults: pushDefaults, hubID: { vault.current()?.hubID })
         self.work = WorkStore(hub: workHub ?? hub, isPaired: { pairing.isPaired },
                               canRead: { pairing.paired?.scopes.contains("brief:read") == true },
                               hubID: { vault.current()?.hubID },
@@ -821,6 +824,7 @@ final class AppEnvironment: ObservableObject {
         let ideasCleared = ideas.clearAfterUnpair()
         let tasksCleared = tasks.clearAfterUnpair()
         work.clear()
+        noticesRead.clear()
         let yourAgentCleared = yourAgent.clearAfterUnpair()
         topics.clearAfterUnpair()
         // What the watch heard is kept in memory only; it must not outlive the pairing it came from.

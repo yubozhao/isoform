@@ -80,6 +80,7 @@
 	<array>
 		<string>audio</string>
 		<string>fetch</string>
+		<string>remote-notification</string>
 	</array>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>

@@ -1095,13 +1095,16 @@ describe("TodayPage main chat panel (Claude Design, 2026-10-22: never a drawer t
         expect(pauseMocks.todayTopics).toHaveBeenCalledTimes(1);
     });
 
-    it("shows first-run gathering in the grid and chat panel", async () => {
+    it("shows the first day's topics state in the grid and gathering in the chat panel", async () => {
         width(1200);
         const actual = await vi.importActual<typeof import("@/hooks/useTodayTopics")>("@/hooks/useTodayTopics");
         mockUseTodayTopics.mockImplementation(actual.useTodayTopics);
         pauseMocks.todayTopics.mockResolvedValue({ topics: [], refreshing: false, firstRun: true });
         render(<TodayPage handlers={handlers} />);
-        expect(await screen.findByTestId("today-topics-gathering")).toHaveTextContent("yourTopics.gathering");
+        // Topics v1.0.0 rules 29 and 30: when topics come, and Add, never an error.
+        expect(await screen.findByTestId("today-topics-first-day")).toHaveTextContent("yourTopics.firstBody");
+        expect(screen.getByTestId("today-topics-first-field")).toBeInTheDocument();
+        expect(screen.queryByText("yourTopics.loadFailed")).not.toBeInTheDocument();
         expect(within(panel()).getByTestId("main-chat-panel-topics-gathering")).toHaveTextContent("yourTopics.gathering");
         expect(screen.queryByText(/not available/i)).not.toBeInTheDocument();
     });
@@ -1130,7 +1133,7 @@ describe("TodayPage main chat panel (Claude Design, 2026-10-22: never a drawer t
         render(<TodayPage handlers={handlers} />);
         await act(async () => {});
         expect(screen.queryByTestId("today-topics-empty")).not.toBeInTheDocument();
-        expect(screen.getByTestId("today-topics-gathering")).toBeInTheDocument();
+        expect(screen.getByTestId("today-topics-first-day")).toBeInTheDocument();
         expect(within(panel()).queryByTestId("main-chat-panel-topics-refreshing")).not.toBeInTheDocument();
         await waitFor(() => expect(within(panel()).getByTestId("main-chat-panel-topics-refreshing")).toBeInTheDocument(), { timeout: 1500 });
         const editor = within(panel()).getByRole("textbox");

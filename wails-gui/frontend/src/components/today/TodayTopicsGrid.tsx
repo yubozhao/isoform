@@ -1,10 +1,11 @@
 import { measureToday } from "@/lib/today-telemetry";
 import { useTodaySectionSeen } from "@/hooks/useTodaySectionSeen";
-import { memo, useCallback, useId, useRef } from "react";
+import { memo, useCallback, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AlertCircle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { UpdateUserTopic } from "@/lib/wails-shim-app";
 import { useTopicRefreshIndicator } from "@/hooks/useTopicRefreshIndicator";
 import type { TodayTopicsStatus } from "@/hooks/useTodayTopics";
 import { clockTime, computerClock } from "@/lib/brief-time";
@@ -191,11 +192,7 @@ export function TodayTopicsGrid({
 
     let body: React.ReactNode;
     if (topics.length === 0 && firstRun && status !== "failed") {
-        body = (
-            <p className="rounded-xl border border-border bg-panel px-[18px] py-4 text-[14px] text-ink" data-testid="today-topics-gathering">
-                {tr("yourTopics.gathering")}
-            </p>
-        );
+        body = <TopicsFirstDay tr={tr} onAdded={onRetry} />;
     } else if ((status === "loading" || refreshing) && topics.length === 0) {
         body = (
             <div aria-busy="true" className="grid grid-cols-2 gap-2.5" data-testid="today-topics-loading">
@@ -251,5 +248,54 @@ export function TodayTopicsGrid({
             {refreshFailed && topics.length > 0 && <p role="alert" className="text-[12px] text-muted">{tr("refresh.failed")}{lastUpdatedAt && ` · ${tr("refresh.showing", { time: computerClock(new Date(lastUpdatedAt), i18n.language) })}`} · <button type="button" className="text-accent underline" onClick={() => measureToday("T51", "do", "done", onRetry)}>{tr("refresh.retry")}</button></p>}
             {body}
         </section>
+    );
+}
+
+/**
+ * Your topics on the first day (Topics v1.0.0 rules 29 and 30): when topics
+ * come, and "What are you working on, or following?" with Add. A named topic
+ * is a topic at once, with its first idea in a minute (UpdateUserTopic add).
+ */
+function TopicsFirstDay({ tr, onAdded }: { tr: Translate; onAdded: () => void }) {
+    const [label, setLabel] = useState("");
+    const [busy, setBusy] = useState(false);
+    const [failed, setFailed] = useState(false);
+    const fieldId = useId();
+    const add = async () => {
+        const name = label.trim();
+        if (!name || busy) return;
+        setBusy(true);
+        setFailed(false);
+        try {
+            await measureToday("T59", "do", "done", () => UpdateUserTopic({ id: "", action: "add", label: name }));
+            setLabel("");
+            onAdded();
+        } catch {
+            setFailed(true);
+        } finally {
+            setBusy(false);
+        }
+    };
+    return (
+        <div className="flex flex-col gap-2.5 rounded-xl border border-border bg-panel px-[18px] py-4" data-testid="today-topics-first-day">
+            <p className="text-[14px] text-ink">{tr("yourTopics.firstBody")}</p>
+            <form className="flex flex-col gap-1.5" onSubmit={(event) => { event.preventDefault(); void add(); }}>
+                <label htmlFor={fieldId} className="text-[12.5px] font-medium text-muted">{tr("yourTopics.firstStart")}</label>
+                <div className="flex items-center gap-2">
+                    <input
+                        id={fieldId}
+                        className="min-w-0 flex-1 rounded-md border border-border bg-panel px-2 py-1 text-[13px] text-ink focus:outline-none focus:ring-1 focus:ring-accent"
+                        placeholder={tr("yourTopics.firstField")}
+                        value={label}
+                        maxLength={48}
+                        onChange={(event) => setLabel(event.target.value)}
+                        data-testid="today-topics-first-field"
+                    />
+                    <Button size="sm" type="submit" disabled={busy || !label.trim()} data-testid="today-topics-first-add">{tr("yourTopics.firstAdd")}</Button>
+                </div>
+                <p className="text-[12px] text-muted">{tr("yourTopics.firstHint")}</p>
+                {failed && <p role="alert" className="text-[12.5px] text-copper">{tr("yourTopics.firstAddFailed")}</p>}
+            </form>
+        </div>
     );
 }

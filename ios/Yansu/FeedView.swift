@@ -485,6 +485,8 @@ struct FeedView: View {
                                    canMakeBrief: scopes.contains("brief:refresh"), now: now,
                                    onPastBriefs: { showingPastBriefs = true },
                                    folded: TodayBriefFold.isFolded(current.identifier))
+                    // Shown on Today: read here, so its notice leaves every device (notify A).
+                    .task(id: current.identifier) { await environment.noticesRead.briefShown(current.identifier) }
                 if push.showsPermissionExplanation {
                     NotificationAskCard()
                 }

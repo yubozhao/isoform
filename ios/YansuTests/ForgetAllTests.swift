@@ -101,3 +101,70 @@ final class ForgetAllTests: XCTestCase {
         }
     }
 }
+
+// Read anywhere, cleared everywhere (notify A; PROTOCOL.md 9.4).
+final class NoticesReadTests: XCTestCase {
+    private actor FakeAPI: NoticesReadAPI {
+        var available = true
+        var pages: [NoticeReadList] = []
+        var sinces: [String?] = []
+        var marked: [[String]] = []
+        func setPages(_ value: [NoticeReadList]) { pages = value }
+        func noticesReadAvailable() async throws -> Bool { available }
+        func noticesRead(since: String?) async throws -> NoticeReadList {
+            sinces.append(since)
+            return pages.isEmpty ? NoticeReadList(read: []) : pages.removeFirst()
+        }
+        func markNoticesRead(_ ids: [String]) async throws { marked.append(ids) }
+    }
+
+    private actor Withdrawn {
+        var ids: [Set<String>] = []
+        func add(_ value: Set<String>) { ids.append(value) }
+    }
+
+    func testWithdrawPushParsesAndKeepsOnlySafeIds() {
+        let push: [AnyHashable: Any] = ["aps": ["content-available": 1],
+                                        "yansu": ["kind": "withdraw", "hub": "h1", "ids": ["n-1", "brief:b2", "bad/id"]]]
+        let parsed = NoticeWithdraw.parse(push)
+        XCTAssertEqual(parsed?.hub, "h1")
+        XCTAssertEqual(parsed?.ids, ["n-1", "brief:b2"])
+        XCTAssertNil(NoticeWithdraw.parse(["yansu": ["kind": "brief_ready", "id": "x"]]))
+    }
+
+    func testANotificationStandsForItsNoticeIdAndItsBrief() {
+        XCTAssertEqual(NoticeWithdraw.ids(of: ["yansu": ["kind": "meeting_prep", "id": "n-7"]]), ["n-7"])
+        XCTAssertEqual(NoticeWithdraw.ids(of: ["yansu": ["kind": "brief"], "localBriefID": "b9"]), ["brief:b9"])
+        XCTAssertEqual(HubRoute.noticesRead(since: "2026-11-16T08:00:00+01:00").query, "since=2026-11-16T08:00:00%2B01:00")
+        XCTAssertEqual(HubRoute.noticesRead(since: nil).query, "")
+        XCTAssertEqual(HubRoute.noticesRead(since: nil).path, "/notices/read")
+    }
+
+    @MainActor
+    func testPollWithdrawsWhatWasReadAndStartsTheNextPollAfterIt() async {
+        let api = FakeAPI()
+        await api.setPages([NoticeReadList(read: [NoticeReadEntry(id: "n-1", at: "2026-11-16T08:00:00Z"),
+                                                  NoticeReadEntry(id: "brief:b2", at: "2026-11-16T08:05:00Z")])])
+        let withdrawn = Withdrawn()
+        let defaults = UserDefaults(suiteName: "notices-read-\(UUID().uuidString)")!
+        let store = NoticesReadStore(api: api, defaults: defaults, hubID: { "h1" }, withdraw: { await withdrawn.add($0) })
+        await store.poll()
+        await store.poll()
+        let sinces = await api.sinces
+        XCTAssertEqual(sinces, [nil, "2026-11-16T08:05:00Z"])
+        let ids = await withdrawn.ids
+        XCTAssertEqual(ids.first, ["n-1", "brief:b2"])
+    }
+
+    @MainActor
+    func testTodayShowingTheBriefMarksItReadOnce() async {
+        let api = FakeAPI()
+        let withdrawn = Withdrawn()
+        let store = NoticesReadStore(api: api, defaults: UserDefaults(suiteName: "notices-read-\(UUID().uuidString)")!,
+                                     hubID: { "h1" }, withdraw: { await withdrawn.add($0) })
+        await store.briefShown("b2")
+        await store.briefShown("b2")
+        let marked = await api.marked
+        XCTAssertEqual(marked, [["brief:b2"]])
+    }
+}

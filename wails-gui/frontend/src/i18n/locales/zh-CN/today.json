@@ -568,6 +568,12 @@
         "peopleMore_other": "{{names}} 等 {{count}} 人"
     },
     "yourTopics": {
+        "firstBody": "Isoform 看过你两天的工作后会找出你的话题。第一批会随明天的晨间简报一起出现。",
+        "firstStart": "现在就开始一个",
+        "firstField": "你在做什么，或者在关注什么？",
+        "firstAdd": "添加",
+        "firstHint": "一个项目、一个你在权衡的决定、一场比赛、一支队伍。它会立刻成为一个话题，一分钟内给出第一个想法。",
+        "firstAddFailed": "没能添加这个话题。请再试一次。",
         "refresh": "刷新话题",
         "gathering": "Isoform 正在收集你的话题。",
         "refreshing": "正在更新你的话题...",
