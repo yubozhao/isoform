@@ -587,10 +587,16 @@ actor HubChannel {
     /// Called each time an answer or event from the computer arrives. The channel is the one place that hears the
     /// computer, so whatever waits for the computer to be back (queued chat messages) listens here.
     private var heardFromComputer: (@Sendable () -> Void)?
+    /// Called for each `forget_all` envelope: the computer asks this phone to forget everything it keeps for it.
+    private var forgetAll: (@Sendable (ForgetAllJob) -> Void)?
 
     init(vault: PairingVault, relay: HubTransport = RelayClient.shared) {
         self.vault = vault
         self.relay = relay
+    }
+
+    func onForgetAll(_ handler: @escaping @Sendable (ForgetAllJob) -> Void) {
+        forgetAll = handler
     }
 
     func onHeardFromComputer(_ handler: @escaping @Sendable () -> Void) {
@@ -969,7 +975,7 @@ actor HubChannel {
     private func accept(_ envelope: RelayEnvelope, context: SessionContext, after cursor: UInt64) -> Receipt {
         guard envelope.v == RelayCrypto.protocolVersion, envelope.dir == "h2d",
               envelope.hub == context.hubID, envelope.dev == context.deviceID,
-              envelope.kind == "res" || envelope.kind == "event",
+              envelope.kind == "res" || envelope.kind == "event" || envelope.kind == "forget_all",
               envelope.seq > 0, envelope.seq <= RelayCrypto.maxSequence else { return .skipped }
         guard envelope.seq > cursor else { return .skipped }
         guard let ct = try? RelayCrypto.base64URLDecode(envelope.ct),
@@ -989,6 +995,11 @@ actor HubChannel {
             return .notSaved
         }
         heardFromComputer?()
+        if envelope.kind == "forget_all" {
+            // Acted on once it is saved; a resent job deletes again and confirms again.
+            if let job = try? JSONDecoder().decode(ForgetAllJob.self, from: plaintext), job.isValid { forgetAll?(job) }
+            return .saved
+        }
         if envelope.kind == "event" {
             receiveEvent(plaintext)
             return .saved

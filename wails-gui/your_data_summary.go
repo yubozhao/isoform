@@ -1,6 +1,9 @@
 package main
 
 import (
+	"context"
+	"io/fs"
+	"path/filepath"
 	"time"
 
 	"wails-gui/internal/pii"
@@ -32,6 +35,16 @@ type YourDataSummary struct {
 	AudioBytes  int64 `json:"audioBytes"`
 	UsedBytes   int64 `json:"usedBytes"`
 	CapBytes    int64 `json:"capBytes"`
+	// MessagesNotes and MessagesBytes are the Messages notes kept (who asked
+	// what, what you promised) and what their words take.
+	MessagesNotes int   `json:"messagesNotes"`
+	MessagesBytes int64 `json:"messagesBytes"`
+	// WatchBytes is what the watch's recordings take on this computer.
+	WatchBytes int64 `json:"watchBytes"`
+	// AgentsHistoryItems and AgentsHistoryBytes are what was learned from your
+	// agents' own history (beliefs and know-how) and the scan's saved view.
+	AgentsHistoryItems int   `json:"agentsHistoryItems"`
+	AgentsHistoryBytes int64 `json:"agentsHistoryBytes"`
 }
 
 const yourDataWeek = 7 * 24 * time.Hour
@@ -69,5 +82,33 @@ func (a *App) GetYourDataSummary() (perfValue YourDataSummary, perfErr error) {
 	if status, err := a.GetMobileConnectionStatus(); err == nil {
 		out.PairedDevices = len(status.Devices)
 	}
+	if a.store != nil {
+		if count, bytes, err := a.store.MessageAsksSize(context.Background()); err == nil {
+			out.MessagesNotes, out.MessagesBytes = count, bytes
+		}
+	}
+	if dir := mobileStateDirectoryOrEmpty(); dir != "" {
+		out.WatchBytes = yourDataDirBytes(filepath.Join(dir, "recordings"))
+	}
+	beliefs, knowHow := a.assistantHistoryCounts()
+	out.AgentsHistoryItems = beliefs + knowHow
+	if path := assistantHistoryCachePath(); path != "" {
+		out.AgentsHistoryBytes = yourDataDirBytes(filepath.Dir(path))
+	}
 	return out, nil
+}
+
+// yourDataDirBytes is what the files under dir take; a missing folder is 0.
+func yourDataDirBytes(dir string) int64 {
+	var total int64
+	_ = filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		if info, err := d.Info(); err == nil {
+			total += info.Size()
+		}
+		return nil
+	})
+	return total
 }

@@ -52,8 +52,12 @@ type WorkItem struct {
 	Request *WorkRequest `json:"request,omitempty"`
 	// ExpiresAt is when a request ends by itself.
 	ExpiresAt string `json:"expiresAt,omitempty"`
-	CreatedAt string `json:"createdAt"`
-	Order     int    `json:"order"`
+	// Files are the files an agent made with its result (26.6).
+	Files []WorkFile `json:"files,omitempty"`
+	// TakenBack is set on work the person took back from its agent.
+	TakenBack *WorkTakenBack `json:"takenBack,omitempty"`
+	CreatedAt string         `json:"createdAt"`
+	Order     int            `json:"order"`
 }
 
 // WorkRequest is who asks whom, and what a Yes would move.
@@ -292,7 +296,8 @@ func (a *App) buildWorkList(ctx context.Context, now time.Time) (WorkList, error
 		return rest[i].CreatedAt > rest[j].CreatedAt
 	})
 	open := 0
-	for _, item := range append(brief, rest...) {
+	// Work taken back from an agent is offered again at the top.
+	for _, item := range workTakenBackFirst(append(brief, rest...)) {
 		if item.State == workStateOpen {
 			if open >= workOpenPerDay {
 				continue

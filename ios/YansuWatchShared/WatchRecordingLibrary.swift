@@ -182,6 +182,17 @@ final class WatchRecordingLibrary: @unchecked Sendable {
     /// Removes a recording and every file of it from the watch. A recording still running is
     /// left alone: it is stopped first.
     @discardableResult
+    /// Forget everything: every recording and its audio, a running one included.
+    func deleteAll() {
+        lock.withLock {
+            for entry in entries {
+                for part in entry.parts { try? fileManager.removeItem(at: directory.appendingPathComponent(part.fileName)) }
+            }
+            entries.removeAll()
+            saveLocked()
+        }
+    }
+
     func delete(recordingID: String) -> Bool {
         lock.withLock { deleteLocked(recordingID) }
     }

@@ -34,7 +34,10 @@ type mobileStatusView struct {
 	// WorkSend when a Yes can wait for the hand-off sheet's Send (26.1).
 	Work     bool `json:"work,omitempty"`
 	WorkSend bool `json:"workSend,omitempty"`
-	Topics   bool `json:"topics,omitempty"`
+	// WorkAgentActions when results carry files and with-agent work takes
+	// take_back and ask_again (26.6).
+	WorkAgentActions bool `json:"workAgentActions,omitempty"`
+	Topics           bool `json:"topics,omitempty"`
 	// TopicsDaily is true when this computer serves the daily topics (15.9).
 	TopicsDaily bool `json:"topicsDaily,omitempty"`
 	BrainDump   bool `json:"brainDump,omitempty"`
@@ -526,6 +529,11 @@ func (bridge *mobileBridge) handleAuthorized(w http.ResponseWriter, r *http.Requ
 				return
 			}
 			bridge.serveWorkAnswer(w, r, device, mobilePathSegments(path)[1])
+		case "GET /work/*/file":
+			if !mobileRequireScope(w, device, mobileScopeBriefRead) {
+				return
+			}
+			bridge.serveWorkFile(w, r, device, mobilePathSegments(path)[1])
 		case "POST /tasks/*/actions":
 			if !mobileRequireScope(w, device, mobileScopeHandoff) {
 				return
@@ -648,6 +656,8 @@ func mobileRouteFamily(method, path string) string {
 		return "POST /offers/*/decline"
 	case len(parts) == 3 && parts[0] == "work" && parts[2] == "answer" && method == http.MethodPost:
 		return "POST /work/*/answer"
+	case len(parts) == 3 && parts[0] == "work" && parts[2] == "file" && method == http.MethodGet:
+		return "GET /work/*/file"
 	case len(parts) == 2 && parts[0] == "answers" && method == http.MethodDelete:
 		return "DELETE /answers/*"
 	}
@@ -698,7 +708,7 @@ func mobileRequireScope(w http.ResponseWriter, device mobileDeviceRecord, scope 
 
 func (bridge *mobileBridge) serveStatus(w http.ResponseWriter) {
 	view := mobileStatusView{
-		HubName: mobileHubName(), AppVersion: Version, ProtocolVersion: 1, Topics: true, TopicsDaily: true, TaskThreads: true, BrainDump: true, Recordings: true, OwnerVoice: true, RecordingContext: true, RecordingDetail: true, RecordingMarks: true, Sees: true, FirstRead: true, TodayMeetingPrep: true, ChatMainSend: true, NotificationTest: true, Work: true, WorkSend: true, BriefRelevanceFeedback: true, BriefAsk: true, BriefWeekDecline: true, HandoffStatus: true,
+		HubName: mobileHubName(), AppVersion: Version, ProtocolVersion: 1, Topics: true, TopicsDaily: true, TaskThreads: true, BrainDump: true, Recordings: true, OwnerVoice: true, RecordingContext: true, RecordingDetail: true, RecordingMarks: true, Sees: true, FirstRead: true, TodayMeetingPrep: true, ChatMainSend: true, NotificationTest: true, Work: true, WorkSend: true, WorkAgentActions: true, BriefRelevanceFeedback: true, BriefAsk: true, BriefWeekDecline: true, HandoffStatus: true,
 		KeepAwake: bridge.keepAwakeSetting(), InstantPush: mobileInstantPushConfigured(),
 		BriefSchedule: []mobileBriefSlotTime{},
 	}

@@ -218,6 +218,8 @@ extension WatchRecordingWire {
     static let maxSummaries = 30
     /// A message the phone sends when the person taps Sync now: queue everything again.
     static let syncMessageKey = "syncRecordings"
+    /// Sent with transferUserInfo when the computer forgets everything: the watch deletes every recording it holds.
+    static let forgetAllKey = "forgetAllRecordings"
 
     /// The application context the watch sends: what it still holds, newest first.
     /// What the watch is doing right now, for the phone's "Your watch" card.

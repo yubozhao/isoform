@@ -1,6 +1,7 @@
 import Combine
 import Foundation
 import UIKit
+import UserNotifications
 
 @MainActor
 final class AppEnvironment: ObservableObject {
@@ -542,6 +543,12 @@ final class AppEnvironment: ObservableObject {
     }
 
     func launch() {
+        // Forget everything from the computer (forget_all) may arrive on any poll from here on.
+        Task { [weak self, hub] in
+            await hub.onForgetAll { job in
+                Task { @MainActor [weak self] in await self?.forgetEverything(job) }
+            }
+        }
         KeychainMigration.runIfNeeded()
         LegacyPurge.runIfNeeded(LegacyPurge.appTargets)
         vault.reconcileNoticeSecrets()
@@ -776,6 +783,25 @@ final class AppEnvironment: ObservableObject {
                                                 withIntermediateDirectories: true)
         try JSONEncoder().encode(state).write(
             to: hubStateURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    }
+
+    /// Forget everything for this computer (the `forget_all` envelope): deletes what the phone keeps, tells the watch
+    /// to delete its recordings, keeps the pairing, then confirms. Nil from the erase leaves the job unconfirmed, so
+    /// the computer asks again.
+    @discardableResult
+    func forgetEverything(_ job: ForgetAllJob, api: ForgetAllAPI? = nil) async -> Bool {
+        await ForgetAllRunner.run(job, erase: { await self.eraseForComputer() }, api: api ?? hub)
+    }
+
+    /// Everything this phone keeps for the paired computer, gone: the briefs and their audio, Your work and the
+    /// answers waiting to send, chat, topics, Today, the widget, recordings here and on the watch, and the
+    /// notifications this computer delivered. The pairing stays.
+    func eraseForComputer() async -> [ForgetAllPart]? {
+        let cleared = clearLocalState()
+        UNUserNotificationCenter.current().removeAllDeliveredNotifications()
+        UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
+        await WatchLink.shared.forgetAll()
+        return cleared ? ForgetAllPart.allCases : nil
     }
 
     @discardableResult

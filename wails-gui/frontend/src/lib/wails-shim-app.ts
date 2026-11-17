@@ -564,6 +564,11 @@ export interface YourDataSummary {
     audioBytes: number;
     usedBytes: number;
     capBytes: number;
+    messagesNotes?: number;
+    messagesBytes?: number;
+    watchBytes?: number;
+    agentsHistoryItems?: number;
+    agentsHistoryBytes?: number;
 }
 export const GetYourDataSummary = appBinding<[], YourDataSummary>("GetYourDataSummary");
 // Saves Your answers to a file the person picks; false when cancelled.

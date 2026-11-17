@@ -118,6 +118,7 @@ func (bridge *mobileBridge) serveWorkAnswer(w http.ResponseWriter, r *http.Reque
 		AgentID        string   `json:"agentId,omitempty"`
 		Send           *bool    `json:"send,omitempty"`
 		RecordID       string   `json:"recordId,omitempty"`
+		File           string   `json:"file,omitempty"`
 		Surface        string   `json:"surface,omitempty"`
 		AnsweredAt     string   `json:"answeredAt,omitempty"`
 		QueuedAt       string   `json:"queuedAt,omitempty"`
@@ -146,17 +147,19 @@ func (bridge *mobileBridge) serveWorkAnswer(w http.ResponseWriter, r *http.Reque
 	}
 	bridge.runReceipted(w, device, key, r.Method+" "+r.URL.Path, func(w http.ResponseWriter) {
 		item, err := bridge.app.answerWork(r.Context(), id,
-			WorkAnswerInput{Action: input.Action, Reason: input.Reason, Before: input.Before, After: input.After, Removed: input.Removed, AgentID: input.AgentID, Send: input.Send, RecordID: input.RecordID},
+			WorkAnswerInput{Action: input.Action, Reason: input.Reason, Before: input.Before, After: input.After, Removed: input.Removed, AgentID: input.AgentID, Send: input.Send, RecordID: input.RecordID, File: input.File},
 			workAnswerMeta{Surface: surface, DeviceID: device.DeviceID, Seq: input.Seq})
 		switch {
 		case err == nil:
 			mobileJSON(w, http.StatusOK, map[string]any{"item": item}, "")
-		case errors.Is(err, errWorkItemGone):
+		case errors.Is(err, errWorkItemGone), errors.Is(err, errWorkFileUnknown):
 			mobileJSON(w, http.StatusNotFound, nil, err.Error())
 		case errors.Is(err, errWorkItemChanged):
 			mobileJSON(w, http.StatusConflict, map[string]any{"code": "item_changed", "item": item}, err.Error())
 		case errors.Is(err, errWorkAgentAway):
 			mobileJSON(w, http.StatusConflict, map[string]any{"code": "agent_not_connected", "item": item}, err.Error())
+		case errors.Is(err, errWorkNotTakingNow):
+			mobileJSON(w, http.StatusConflict, map[string]any{"code": "not_taking_work", "item": item}, err.Error())
 		case errors.Is(err, errWorkUndoClosed):
 			mobileJSON(w, http.StatusConflict, map[string]any{"code": "undo_closed", "item": item}, err.Error())
 		case errors.Is(err, errWorkAnswerInvalid):

@@ -69,9 +69,9 @@ export function YourDataPage({ onOpenPage }: { onOpenPage?: OpenSettingsPage } =
         { key: "screen", title: t("yourData.screen"), description: line(summary ? t("yourData.screenSub", { count: summary.ignoredApps }) : t("yourData.screenSubPlain"), kept, size(summary?.screenBytes)), control: change("storage") },
         { key: "calls", title: t("yourData.calls"), description: line(t("yourData.callsSub"), kept, size(summary?.audioBytes)), control: change("storage") },
         { key: "mail", title: t("yourData.mail"), description: line(t("yourData.mailSub"), t("yourData.noSize")) },
-        { key: "messages", title: t("yourData.messages"), description: t("yourData.messagesSub"), control: change("activity") },
-        { key: "watch", title: t("yourData.watch"), description: line(t("yourData.watchSub"), t("yourData.keptUntilDeleted")) },
-        { key: "agentsHistory", title: t("yourData.agentsHistory"), description: t("yourData.agentsHistorySub") },
+        { key: "messages", title: t("yourData.messages"), description: line(t("yourData.messagesSub"), summary?.messagesNotes ? t("yourData.notes", { count: summary.messagesNotes }) : undefined, size(summary?.messagesBytes)), control: change("activity") },
+        { key: "watch", title: t("yourData.watch"), description: line(t("yourData.watchSub"), t("yourData.keptUntilDeleted"), size(summary?.watchBytes)) },
+        { key: "agentsHistory", title: t("yourData.agentsHistory"), description: line(t("yourData.agentsHistorySub"), summary?.agentsHistoryItems ? t("yourData.learned", { count: summary.agentsHistoryItems }) : undefined, size(summary?.agentsHistoryBytes)) },
     ];
 
     return (

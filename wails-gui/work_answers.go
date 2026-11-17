@@ -38,6 +38,8 @@ type WorkAnswerInput struct {
 	// made from the computer's own sheet (an agent that hasn't joined: a deep
 	// link or a copy into its app). Nothing is sent again.
 	RecordID string `json:"recordId,omitempty"`
+	// File names a result's file for open_file (26.6).
+	File string `json:"file,omitempty"`
 }
 
 // workAgentKnown says whether an agent id may take a hand-off: one of the
@@ -194,9 +196,37 @@ func (a *App) answerWork(ctx context.Context, id string, input WorkAnswerInput, 
 			return item, err
 		}
 		record.Undoes, record.UndoUntil = undone.EntryID, ""
+		if undone.Action == workActionTakeBack {
+			// Undo of a take back sends the work to the agent again, as the
+			// Yes before it said.
+			return a.undoWorkTakeBack(ctx, item, answers, record, meta)
+		}
 		if _, err := ledger.append(record); err != nil {
 			return item, err
 		}
+	case workActionTakeBack:
+		standing, answered := answersStanding(answers)[id]
+		taken, err := a.takeWorkBack(item, standing, answered)
+		if err != nil {
+			return item, err
+		}
+		record.HandoffID, record.TaskID, record.AgentID = taken, item.Ref.TaskID, standing.AgentID
+		if _, err := ledger.append(record); err != nil {
+			return item, err
+		}
+	case workActionAskAgain:
+		standing, answered := answersStanding(answers)[id]
+		if err := a.askWorkAgain(item, standing, answered); err != nil {
+			return item, err
+		}
+		a.emitBrowserEvent(workAnsweredEvent, id)
+		return a.workAnswerItemNow(ctx, item), nil
+	case workActionOpenFile:
+		// Not an answer: the file opens on this computer and nothing is kept.
+		if err := a.openWorkFile(item, input.File); err != nil {
+			return item, err
+		}
+		return item, nil
 	case workActionYes, workActionNo, workActionNotMine, workActionEdit:
 		if item.State != workStateOpen {
 			return item, errWorkItemChanged
@@ -307,7 +337,7 @@ func (a *App) answerWork(ctx context.Context, id string, input WorkAnswerInput, 
 	default:
 		return item, errWorkAnswerInvalid
 	}
-	if input.Action != workActionUndo && input.Action != workActionSend {
+	if input.Action != workActionUndo && input.Action != workActionSend && input.Action != workActionTakeBack {
 		noteProposalAnswered(workJudgmentKind(item), id, input.Action == workActionYes || input.Action == workActionEdit || input.Action == workActionUseful)
 	}
 	a.emitBrowserEvent(workAnsweredEvent, id)
@@ -486,7 +516,7 @@ func (a *App) handOffWork(item WorkItem, text, agentID, surface string) (workSen
 		return workSent{}, err
 	}
 	a.keepWorkOnItHandoff(workonit.Handoff{ID: taskID, SourceKind: workonit.SourceWorkItem, SourceID: item.ID, Kind: workonit.KindOf(in),
-		AgentID: local, Method: workonit.MethodLocalTask, Text: text, SentAt: time.Now().UnixMilli(), Surface: surface})
+		AgentID: local, Method: workonit.MethodLocalTask, Text: text, SentAt: time.Now().UnixMilli(), Surface: surface, TaskID: taskID})
 	return workSent{TaskID: taskID, AgentID: local}, nil
 }
 
@@ -703,20 +733,56 @@ func workFind(list WorkList, id string) (WorkItem, bool) {
 // Yes that started a task, from that task.
 func (a *App) applyWorkAnswers(items []WorkItem) []WorkItem {
 	answers := a.answersLedger().standing()
+	var results map[string]TaskLinkResult
+	// back marks work a connected agent answered as back, with its files.
+	back := func(item *WorkItem, record AnswerRecord) {
+		if record.HandoffID == "" {
+			return
+		}
+		item.Ref.HandoffID = record.HandoffID
+		if results == nil {
+			results = a.workLinkResults()
+		}
+		if r, ok := results[record.HandoffID]; ok && item.State == workStateWithAgent {
+			item.State, item.Kind, item.Row = workStateBack, workKindResult, "result"
+			item.Work.Text = r.Summary
+			item.Files = a.workResultFiles(r.LinkID, r.Files)
+		}
+	}
 	for i := range items {
 		item := &items[i]
 		record, ok := answers[item.ID]
 		if !ok {
 			continue
 		}
+		if record.Action == workActionTakeBack {
+			// Taken back from its agent: offered again (phone-agent v1.2.1).
+			name := "your agent"
+			if record.AgentID != "" {
+				name = a.workAgentName(record.AgentID)
+			}
+			item.TakenBack = &WorkTakenBack{AgentID: record.AgentID, AgentName: name, At: record.At, UndoUntil: record.UndoUntil}
+			item.State, item.Answer, item.Agent, item.Files = workStateOpen, nil, nil, nil
+			if item.Kind == workKindResult {
+				item.Kind, item.Row, item.Work.Text = workKindOffered, "offered", ""
+			}
+			continue
+		}
 		answer := &WorkAnswer{Action: record.Action, Reason: record.Reason, Edited: record.Edited, At: record.At,
 			Surface: record.Surface, UndoUntil: record.UndoUntil, NotSent: record.NotSent}
+		sentOut := record.Action == workActionYes || record.Action == workActionEdit || workResultJudgment(record.Action)
 		switch item.Source {
 		case workSourceTopic:
 			// The topic store holds the state; the log adds where and why.
 			if item.Answer != nil && !workResultJudgment(record.Action) {
 				answer.Line = item.Answer.Line
 				item.Answer = answer
+			}
+			if sentOut {
+				if item.Agent != nil && record.AgentID != "" {
+					item.Agent.Name = a.workAgentName(record.AgentID)
+				}
+				back(item, record)
 			}
 		case workSourcePrep:
 			item.Answer, item.State = answer, workStateAnswered
@@ -738,14 +804,16 @@ func (a *App) applyWorkAnswers(items []WorkItem) []WorkItem {
 		case workSourceBrief, workSourceDayOne:
 			item.Answer = answer
 			item.State = workStateAnswered
-			if record.HandoffID != "" && (record.Action == workActionYes || record.Action == workActionEdit) {
+			if record.HandoffID != "" && sentOut {
 				// With a connected agent: its result comes back through the
-				// task's results (B5).
+				// task's results (B5), with any files it made.
 				item.State = workStateWithAgent
 				item.Agent = &WorkAgent{Name: a.workAgentName(record.AgentID), Since: record.At}
+				back(item, record)
 			}
-			if record.TaskID != "" && (record.Action == workActionYes || record.Action == workActionEdit || workResultJudgment(record.Action)) {
-				item.Ref.TaskID = record.TaskID
+			if record.TaskID != "" && sentOut {
+				// A local task's hand-off shares its id.
+				item.Ref.TaskID, item.Ref.HandoffID = record.TaskID, record.TaskID
 				item.State = workStateWithAgent
 				name := "your agent"
 				if record.AgentID != "" {
