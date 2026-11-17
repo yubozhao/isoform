@@ -341,6 +341,10 @@ func (a *App) answerWork(ctx context.Context, id string, input WorkAnswerInput, 
 		noteProposalAnswered(workJudgmentKind(item), id, input.Action == workActionYes || input.Action == workActionEdit || input.Action == workActionUseful)
 	}
 	a.emitBrowserEvent(workAnsweredEvent, id)
+	if input.Action != workActionUndo {
+		// Answered anywhere: its notification goes everywhere (notify B7).
+		a.noteWorkItemRead(item, now)
+	}
 	after, err := a.buildWorkList(ctx, time.Now())
 	if err != nil {
 		return item, nil

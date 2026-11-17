@@ -215,6 +215,23 @@ func storedBody(ctx context.Context, q querier, deviceID, dir string, seq uint64
 	return []byte(body), nil
 }
 
+// AddWithdraw queues a withdraw push for one of the hub's devices: the person
+// read these notices somewhere else (PROTOCOL.md 9.4).
+func (s *Store) AddWithdraw(ctx context.Context, hubID, deviceID string, ids []string, now time.Time) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err = deviceInHub(ctx, tx, hubID, deviceID); err != nil {
+		return err
+	}
+	if err = push.EnqueueWithdraw(ctx, tx, deviceID, ids, now); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 // YieldBriefPush cancels a device's brief pushes not yet sent: an awake
 // computer rings the brief in one place at its slot (PROTOCOL.md 8.2).
 func (s *Store) YieldBriefPush(ctx context.Context, hubID, deviceID string) error {

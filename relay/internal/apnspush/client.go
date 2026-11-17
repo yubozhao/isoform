@@ -198,6 +198,30 @@ type notification struct {
 	Yansu yansuPayload `json:"yansu"`
 }
 
+// withdrawNotification is the background push that takes delivered
+// notifications away (PROTOCOL.md 9.4): no alert, only the ids.
+type withdrawNotification struct {
+	Aps struct {
+		ContentAvailable int `json:"content-available"`
+	} `json:"aps"`
+	Yansu struct {
+		Kind string   `json:"kind"`
+		Hub  string   `json:"hub"`
+		IDs  []string `json:"ids"`
+	} `json:"yansu"`
+}
+
+func withdrawPayloadFor(claim push.Claim) (withdrawNotification, error) {
+	ids := push.WithdrawIDs(claim.Notice.CT)
+	if !push.ValidWithdrawIDs(ids) {
+		return withdrawNotification{}, push.ErrInvalidNotice
+	}
+	var n withdrawNotification
+	n.Aps.ContentAvailable = 1
+	n.Yansu.Kind, n.Yansu.Hub, n.Yansu.IDs = push.KindWithdraw, claim.HubID, ids
+	return n, nil
+}
+
 type pushGrantAps struct {
 	ContentAvailable int `json:"content-available"`
 }
@@ -353,9 +377,21 @@ func (c *Client) Send(ctx context.Context, claim push.Claim) (push.Outcome, erro
 	if claim.Environment != c.config.Environment {
 		return push.Permanent, errors.New("push registration does not match the APNs environment")
 	}
-	payload, err := notificationFor(claim)
-	if err != nil {
-		return push.Permanent, err
+	var payload any
+	pushType, priority, collapse := apns2.PushTypeAlert, priorityFor(claim), collapseFor(claim)
+	if claim.Kind == push.KindWithdraw {
+		withdraw, err := withdrawPayloadFor(claim)
+		if err != nil {
+			return push.Permanent, err
+		}
+		// A background push: no alert, low priority, never collapsed.
+		payload, pushType, priority, collapse = withdraw, apns2.PushTypeBackground, apns2.PriorityLow, ""
+	} else {
+		alert, err := notificationFor(claim)
+		if err != nil {
+			return push.Permanent, err
+		}
+		payload = alert
 	}
 	if encoded, err := json.Marshal(payload); err != nil || len(encoded) > push.MaxPayloadBytes {
 		return push.Permanent, errPayloadTooLarge
@@ -364,9 +400,9 @@ func (c *Client) Send(ctx context.Context, claim push.Claim) (push.Outcome, erro
 		DeviceToken: claim.Token,
 		Topic:       c.config.Topic,
 		ApnsID:      claim.NotificationID,
-		CollapseID:  collapseFor(claim),
-		Priority:    priorityFor(claim),
-		PushType:    apns2.PushTypeAlert,
+		CollapseID:  collapse,
+		Priority:    priority,
+		PushType:    pushType,
 		Expiration:  claim.ExpiresAt,
 		Payload:     payload,
 	})

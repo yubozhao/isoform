@@ -104,6 +104,14 @@ type revokeFrame struct {
 	DeviceID string `json:"deviceId"`
 }
 
+// withdrawFrame asks for a background push that takes delivered
+// notifications away from a device (PROTOCOL.md 9.4).
+type withdrawFrame struct {
+	T        string   `json:"t"`
+	DeviceID string   `json:"deviceId"`
+	IDs      []string `json:"ids"`
+}
+
 // briefYieldFrame drops a device's scheduled brief push: the computer is awake
 // at the slot and decides where the brief rings (PROTOCOL.md 8.2).
 type briefYieldFrame struct {
@@ -241,6 +249,8 @@ func (s *session) apply(t string, data []byte) string {
 		return s.brief(data)
 	case "revoke":
 		return s.revoke(data)
+	case "withdraw":
+		return s.withdraw(data)
 	case "brief_yield":
 		return s.briefYield(data)
 	case "purge":
@@ -523,6 +533,23 @@ func (s *session) revoke(data []byte) string {
 		s.m.Notify.Notify(notify.DeviceKey(f.DeviceID))
 	}
 	return ""
+}
+
+// withdraw queues a background push with notice ids the person read
+// elsewhere. An unknown device is not an error: it may have just unpaired.
+func (s *session) withdraw(data []byte) string {
+	var f withdrawFrame
+	if !decodeFrame(data, &f) || !wire.ValidUUID(f.DeviceID) || !push.ValidWithdrawIDs(f.IDs) {
+		return "invalid withdraw frame"
+	}
+	ctx, cancel := storeContext()
+	defer cancel()
+	switch err := s.m.Store.AddWithdraw(ctx, s.hubID, f.DeviceID, f.IDs, s.m.Now()); {
+	case err == nil, errors.Is(err, store.ErrNotFound):
+		return ""
+	default:
+		return "withdraw could not be queued"
+	}
 }
 
 // briefYield cancels the device's queued brief pushes. An unknown device is

@@ -1148,6 +1148,7 @@ export const SetYourAgent = makeNoop("SetYourAgent");
 export const ConnectAgentHere = makeNoop("ConnectAgentHere");
 export const DisconnectAgentHere = makeNoop("DisconnectAgentHere");
 export const GetWorkOnItHandoffs = makeNoop("GetWorkOnItHandoffs");
+export const MarkBriefRead = makeNoop("MarkBriefRead");
 export const ForgetWorkOnItHandoff = makeNoop("ForgetWorkOnItHandoff");
 export const StartAgentJoin = makeNoop("StartAgentJoin");
 export const GetAgentJoin = makeNoop("GetAgentJoin");

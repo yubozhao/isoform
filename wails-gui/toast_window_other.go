@@ -34,3 +34,6 @@ func showDesktopToastWithOptions(title, body, iconPath, clickData string, option
 		go options.OnShown()
 	}
 }
+
+// closeDesktopToastsTagged has nothing to take away: the system shows these.
+func closeDesktopToastsTagged([]string) {}

@@ -164,6 +164,11 @@ func (h *Handler) push(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case push.KindMoment:
+	case push.KindWithdraw:
+		if input.Notice.ID != "" || input.Notice.Moment != "" || !push.ValidWithdrawIDs(push.WithdrawIDs(input.Notice.CT)) {
+			http.Error(w, "invalid notice", http.StatusBadRequest)
+			return
+		}
 	default:
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
@@ -179,6 +184,9 @@ func (h *Handler) push(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var pushNotice push.Notice
+	if input.Kind == push.KindWithdraw {
+		pushNotice = push.Notice{CT: input.Notice.CT}
+	}
 	if input.Kind == push.KindMoment {
 		pushNotice = push.Notice{
 			ID: input.Notice.ID, CT: input.Notice.CT, Moment: input.Notice.Moment,

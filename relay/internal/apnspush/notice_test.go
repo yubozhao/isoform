@@ -198,3 +198,15 @@ func TestMomentRequestHeadersAndBodyFollowTheNotice(t *testing.T) {
 		t.Fatal("request not observed")
 	}
 }
+
+// A withdraw is a background push with only the ids (PROTOCOL.md 9.4).
+func TestWithdrawPayloadIsBackgroundWithTheIDs(t *testing.T) {
+	ids := "7c9e6679-7425-40de-944b-e07fc1f90ae7 brief:2026-11-15-evening"
+	n, err := withdrawPayloadFor(push.Claim{Kind: push.KindWithdraw, HubID: "7c9e6679-7425-40de-944b-e07fc1f90ae8", Notice: push.Notice{CT: ids}})
+	if err != nil || n.Aps.ContentAvailable != 1 || n.Yansu.Kind != "withdraw" || len(n.Yansu.IDs) != 2 || n.Yansu.IDs[1] != "brief:2026-11-15-evening" {
+		t.Fatalf("withdraw = %+v %v", n, err)
+	}
+	if _, err := withdrawPayloadFor(push.Claim{Kind: push.KindWithdraw, Notice: push.Notice{CT: "nope nope"}}); err == nil {
+		t.Fatal("bad ids made a payload")
+	}
+}

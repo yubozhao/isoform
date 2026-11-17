@@ -631,6 +631,39 @@ func handleToastResume(id string) {
 	inst.timer = time.AfterFunc(inst.remaining, func() { handleToastClose(id) })
 }
 
+// closeDesktopToastsTagged takes away the toasts about these notices, shown
+// or waiting (notify v1.0.0 rule 8: read anywhere, gone everywhere). A closed
+// toast reports nothing: it was read somewhere else.
+func closeDesktopToastsTagged(tags []string) {
+	want := map[string]bool{}
+	for _, tag := range tags {
+		if tag != "" {
+			want[tag] = true
+		}
+	}
+	if len(want) == 0 {
+		return
+	}
+	toastState.mu.Lock()
+	pending := toastState.pending[:0:len(toastState.pending)]
+	for _, req := range toastState.pending {
+		if !want[req.options.Tag] {
+			pending = append(pending, req)
+		}
+	}
+	toastState.pending = pending
+	var visible []string
+	for _, inst := range toastState.visible {
+		if want[inst.options.Tag] {
+			visible = append(visible, inst.id)
+		}
+	}
+	toastState.mu.Unlock()
+	for _, id := range visible {
+		handleToastClose(id)
+	}
+}
+
 func handleToastClose(id string) {
 	closeToast(id, false)
 }

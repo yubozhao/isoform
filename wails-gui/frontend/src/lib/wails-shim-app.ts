@@ -4159,6 +4159,8 @@ export const SetYourAgent = appBinding<[WorkOnItKind, string], YourAgents>("SetY
 export const ConnectAgentHere = appBinding<[string], YourAgents>("ConnectAgentHere");
 export const DisconnectAgentHere = appBinding<[string], YourAgents>("DisconnectAgentHere");
 export const GetWorkOnItHandoffs = appBinding<[], WorkOnItHandoff[]>("GetWorkOnItHandoffs");
+// The person opened this brief on the computer: its notification leaves the phone too (notify v1.0.0 B7).
+export const MarkBriefRead = appBinding<[string], void>("MarkBriefRead");
 export const ForgetWorkOnItHandoff = appBinding<[string], void>("ForgetWorkOnItHandoff");
 export const GetWorkOnItAgents = appBinding<[], WorkOnItAgentView[]>("GetWorkOnItAgents");
 export const UndoChatCorrection = appBinding<[string], string>("UndoChatCorrection");
