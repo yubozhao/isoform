@@ -30,6 +30,11 @@ final class YourWorkUITests: XCTestCase {
         XCTAssertTrue(app.otherElements["work.upNext"].firstMatch.waitForExistence(timeout: 5))
         XCTAssertTrue(app.otherElements["work.withAgent"].firstMatch.exists)
         XCTAssertTrue(app.otherElements["work.doneToday"].firstMatch.exists)
+        // What still waits on you ranks above what's done (hub 2026-11-16).
+        let needsYou = app.otherElements["today.needsYou"].firstMatch
+        if needsYou.exists {
+            XCTAssertLessThan(needsYou.frame.minY, app.otherElements["work.doneToday"].firstMatch.frame.minY)
+        }
         attachScreenshot(app, named: "today-2-up-next-agent-done")
     }
 
@@ -79,6 +84,11 @@ final class YourWorkUITests: XCTestCase {
         readIt.tap()
         XCTAssertTrue(app.staticTexts["work.file.text"].firstMatch.waitForExistence(timeout: 10))
         attachScreenshot(app, named: "agents-3-read-it")
+        app.buttons["work.file.done"].firstMatch.tap()
+        // A request that ran out shows a plain mark in Done today, not the green done check.
+        let ranOut = app.descendants(matching: .any)["work.done.ranOut"].firstMatch
+        for _ in 0..<6 where !(ranOut.exists && ranOut.isHittable) { app.swipeUp() }
+        XCTAssertTrue(ranOut.exists)
     }
 
     func testNoAsksForAnOptionalReasonAndTheBriefFoldsButStays() throws {

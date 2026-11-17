@@ -871,7 +871,8 @@ extension AppEnvironment {
         if state == "feed-no-history", ProcessInfo.processInfo.environment["YANSU_UITEST_KEEP_PLACEHOLDER"] != "1" {
             TodayBriefPlaceholder.reset(hubID: "settings-ui-hub")
         }
-        // Each UI-test launch starts with the brief unfolded (phone-today rule 5 keeps the fold per brief).
+        // Each UI-test launch starts with the brief unfolded (phone-today rule 5 keeps the fold per brief), the same
+        // reset #1147 carries.
         UserDefaults.standard.removeObject(forKey: "today.briefFolded")
         if ProcessInfo.processInfo.environment["YANSU_UITEST_RESET_AWAKE_OFFER"] == "1" {
             UserDefaults.standard.removeObject(forKey: "today.keepAwakeOfferDismissed")

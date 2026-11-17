@@ -502,17 +502,18 @@ struct FeedView: View {
                                        snapshot: todayStore.snapshot, now: now)
             }
             // Your work: the one list, under the brief. It loads on its own and never moves the brief (rank 2).
-            YourWorkSection(work: work, now: now, onAnswered: foldNewestBrief) {
+            // Tasks waiting on the person that Your work doesn't list stay on Today (review 2026-11-15), above Done today.
+            YourWorkSection(work: work, now: now, onAnswered: foldNewestBrief,
+                            waiting: work.supported == true
+                                ? AnyView(todayNeedsYou(YourWork.waitingOutside(tasks.waitingItems, items: work.items),
+                                                        title: String(localized: "Needs you")))
+                                : nil) {
                 legacyYourWork
             }
             // On a wide phone, Your work starts right of the fold: no item's Yes and No sit across it.
             .duoFoldClear(foldX)
             .id("today.yourWork.anchor")
             heldReplies
-            if work.supported == true {
-                // Tasks waiting on the person that Your work doesn't list stay on Today (review 2026-11-15).
-                todayNeedsYou(YourWork.waitingOutside(tasks.waitingItems, items: work.items), title: String(localized: "Needs you"))
-            }
             if let notice = actions.todayNotice { NoticeBanner(message: notice, dismiss: { actions.todayNotice = nil }) }
             if let notice = feed.todayNotice { NoticeBanner(message: notice, dismiss: { feed.todayNotice = nil }) }
             todayPendingWrites

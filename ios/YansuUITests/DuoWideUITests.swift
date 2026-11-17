@@ -33,7 +33,11 @@ final class DuoWideUITests: XCTestCase {
         let paragraph = paragraphApp.buttons["brief.paragraph.0"]
         XCTAssertTrue(paragraph.waitForExistence(timeout: 15))
         paragraph.tap()
-        // A paragraph opens Ask about this with the paragraph quoted and the field empty.
+        // A tap shows the paragraph's actions; Reply about this opens Ask about this with the paragraph quoted and the
+        // field empty.
+        let reply = paragraphApp.buttons["brief.askAbout.0"].firstMatch
+        XCTAssertTrue(reply.waitForExistence(timeout: 5))
+        reply.tap()
         XCTAssertTrue(paragraphApp.descendants(matching: .any)["brief.ask.sheet"].firstMatch.waitForExistence(timeout: 10))
         XCTAssertEqual(paragraphApp.staticTexts["brief.ask.quote"].firstMatch.label, "Start with the project notes today.")
         XCTAssertTrue(paragraphApp.textViews["brief.ask.field"].firstMatch.exists)
@@ -93,10 +97,12 @@ final class DuoWideUITests: XCTestCase {
     /// Past briefs is in the brief card's ··· menu (phone-today v1.0.0).
     func testWideTodayShowsPastBriefsEntry() {
         let app = launchWideToday(state: "feed")
-        // The card's menu sits where the emulated wide window can't be tapped, so open the brief, whose header
-        // carries Past briefs too.
-        openTheBrief(app)
-        XCTAssertTrue(app.buttons["brief.pastBriefs"].firstMatch.waitForExistence(timeout: 10))
+        // The brief page's Past briefs link went (phone-brief rule 14); the card's ··· menu holds it. The emulated wide
+        // window draws the menu past the simulator's screen, where it can't be tapped, so this checks the menu is
+        // there; opening Past briefs from it is covered on a phone-width screen (BriefScreensUITests, SmokeUITests).
+        let menu = app.buttons["feed.brief.menu"].firstMatch
+        XCTAssertTrue(menu.waitForExistence(timeout: 15))
+        XCTAssertEqual(menu.label, "More options")
     }
 
     /// Read all on Today's card opens the brief. A relaunch may already be on it (the brief folds after a visit).

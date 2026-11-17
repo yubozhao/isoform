@@ -372,12 +372,15 @@ struct WorkDoneLine: View {
     var undo: () -> Void
 
     var body: some View {
+        let ranOut = item.answer?.action == "ran_out"
         HStack(alignment: .center, spacing: 10) {
-            Image(systemName: "checkmark")
+            // A request that ran out moved nothing: a plain mark, not the green done check (phone-agent v1.2.0 rule 2).
+            Image(systemName: ranOut ? "minus" : "checkmark")
                 .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(YansuTheme.success)
+                .foregroundStyle(ranOut ? YansuTheme.secondary : YansuTheme.success)
                 .frame(width: 20, height: 20)
-                .background(YansuTheme.successWash, in: Circle())
+                .background(ranOut ? YansuTheme.surfaceWarm : YansuTheme.successWash, in: Circle())
+                .accessibilityIdentifier(ranOut ? "work.done.ranOut" : "work.done.check")
             Group {
                 if item.answer?.waits == true {
                     Text(verbatim: item.answer?.line ?? item.work.title)

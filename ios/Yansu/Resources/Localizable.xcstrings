@@ -1,6 +1,7 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "data.voiceSub" : {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"One sample"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"一段样本"}}}},
     "join.noAddress" : {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Agents can't reach your computer yet. Turn on its address in Isoform on your computer, then try again."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"智能体还无法连接到你的电脑。先在电脑上的 Isoform 中打开它的地址，然后再试。"}}}},
     "join.title" : {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Connect an agent"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"连接智能体"}}}},
     "join.again.title" : {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Connect %@ again"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"重新连接 %@"}}}},
@@ -227,7 +228,7 @@
     "work.count" : {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"%d to answer"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"%d 项待回答"}}}},
     "work.allAnswered" : {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"all answered"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"都已回答"}}}},
     "work.upNext" : {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Up next"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"接下来"}}}},
-    "work.withAgent" : {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"With your agent"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"在你的智能体那里"}}}},
+    "work.withAgent" : {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"With your agents"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"在你的智能体那里"}}}},
     "work.doneToday" : {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Done today"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"今天已完成"}}}},
     "work.kind.draft" : {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Draft"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"草稿"}}}},
     "work.kind.prep" : {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Prep"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"准备"}}}},
@@ -595,7 +596,7 @@
     "Couldn't open this conversation.": {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Couldn't open this conversation."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"\u65e0\u6cd5\u6253\u5f00\u8fd9\u6bb5\u5bf9\u8bdd\u3002"}}}},
     "Talk about this works after Isoform updates on your computer.": {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Talk about this works after Isoform updates on your computer."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"\u5728\u4f60\u7684\u7535\u8111\u4e0a\u66f4\u65b0 Isoform \u540e\uff0c\u624d\u80fd\u804a\u804a\u8fd9\u4efd\u7b80\u62a5\u3002"}}}},
     "Paired with %@": {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Paired with %@"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"已与 %@ 配对"}}}},
-    "Version %@. Briefs are end to end encrypted.": {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Version %@. Briefs are end to end encrypted."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"版本 %@。简报经过端到端加密。"}}}},
+    "Version %@. Briefs are end-to-end encrypted.": {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Version %@. Briefs are end-to-end encrypted."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"版本 %@。简报经过端到端加密。"}}}},
     "Show %@ more": {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Show %@ more"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"再显示 %@ 项"}}}},
     "Last touch: %@": {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Last touch: %@"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"最近接触：%@"}}}},
     "Due: %@": {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Due: %@"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"截止：%@"}}}},

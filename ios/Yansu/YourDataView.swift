@@ -75,6 +75,8 @@ struct YourDataView: View {
     let answersHub: AnswersHubAPI
     /// The hand-off log, when the computer serves it; without it the row says where the log is.
     var sentHub: AgentsHubAPI? = nil
+    /// Your voice's page, when the computer keeps a voice sample from this phone (rule 12).
+    var voicePage: AnyView? = nil
     var openSees: () -> Void
     @ObservedObject private var watchRecordings = WatchRecordingsModel.shared
 
@@ -95,6 +97,16 @@ struct YourDataView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("data.answers")
+                    if let voicePage {
+                        Divider().overlay(YansuTheme.borderSubtle)
+                        NavigationLink {
+                            voicePage
+                        } label: {
+                            row(String(localized: "set.voice"), sub: String(localized: "data.voiceSub"), chevron: true)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("data.voice")
+                    }
                 }
                 group(String(localized: "data.phone")) {
                     row(String(localized: "data.today"), sub: String(localized: "data.todaySub"))
@@ -102,8 +114,10 @@ struct YourDataView: View {
                     row(String(localized: "Past briefs"), sub: String(localized: "data.pastSub"))
                     if watchRecordings.worthShowing {
                         Divider().overlay(YansuTheme.borderSubtle)
-                        row(String(localized: "data.watchAudio"), sub: String(localized: "data.watchAudioSub"),
-                            trailing: WatchRecordingsCopy.summary(watchRecordings.rows))
+                        // How much is on its way sits under the title, so neither is cut short.
+                        row(String(localized: "data.watchAudio"),
+                            sub: [String(localized: "data.watchAudioSub"), WatchRecordingsCopy.summary(watchRecordings.rows)]
+                                .filter { !$0.isEmpty }.joined(separator: " · "))
                     }
                 }
                 group(String(localized: "data.left")) {
