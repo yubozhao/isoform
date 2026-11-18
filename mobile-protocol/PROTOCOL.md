@@ -3544,6 +3544,13 @@ another 5xx) switches to the other path once per request, and the path that work
 While the direct tunnel is still opening, the relay serves. Relay requests carry
 `skip_zrok_interstitial: 1`, which a zrok public share needs to pass requests through.
 
+Whether the phone must pair again is the pinned relay's answer to its own bearer, never the direct
+path's: a 401 from the relay means pair again even while the direct path answers everything, and a
+401 on the direct path refuses only that path's grant. A refresh served by the direct path therefore
+asks the relay `GET /v1/presence` with the pairing bearer; 401 keeps "pair again", any other answer
+from the relay (2xx, or 403 for a missing scope) clears it, and no answer leaves it as it was. Today's
+line and Settings' Pair again read this one signal.
+
 ## 22. Calendar holds on the phone (H2 placeholder)
 
 The `hold` and `remove_hold` mobile actions are reserved for H2 and are not

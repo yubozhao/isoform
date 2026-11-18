@@ -238,6 +238,31 @@ struct SettingsView: View {
                                 .foregroundStyle(YansuTheme.secondary)
                                 .accessibilityIdentifier("settings.computerState")
                         }
+                        if brief.repairNeeded {
+                            // Today's amber line and this one read the same signal, the relay's answer to this
+                            // phone's credential, so they never disagree (phone-settings rule 2: Pair again only
+                            // when needed).
+                            VStack(alignment: .leading, spacing: 12) {
+                                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                    Image(systemName: "exclamationmark.triangle")
+                                        .font(.subheadline)
+                                        .foregroundStyle(YansuTheme.warning)
+                                    Text("setup.lost")
+                                        .font(.subheadline)
+                                        .foregroundStyle(YansuTheme.ink)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                                Button(String(localized: "set.pairAgain")) {
+                                    pairing.prepareToPair()
+                                    showPairing = true
+                                }
+                                .buttonStyle(YansuPrimaryButtonStyle())
+                                .disabled(unpairing)
+                                .accessibilityIdentifier("settings.repair")
+                            }
+                            .accessibilityElement(children: .contain)
+                            .accessibilityIdentifier("settings.pairingLost")
+                        }
                         if let value = keepAwake.on {
                             Toggle(isOn: Binding(get: { keepAwake.on ?? value }, set: { enabled in
                                 Task { await keepAwake.set(enabled) }

@@ -144,8 +144,10 @@ final class BriefStore: ObservableObject {
         let currentGeneration = generation
         isRefreshing = true
         defer { if generation == currentGeneration { isRefreshing = false } }
+        var route = SessionRoute.relay
         do {
-            let session = try vault.session()
+            var session = try vault.session()
+            route = session.route
             do {
                 let presence = try await relay.presence(session.credentials)
                 guard generation == currentGeneration else { return }
@@ -154,18 +156,32 @@ final class BriefStore: ObservableObject {
                 guard generation == currentGeneration else { return }
                 hubOnline = RemoteStatus.offline(for: error, remote: vault.isRemote)
             }
-            let latest = try await relay.latestBrief(session.credentials)
+            let latest: RelayBriefRecord?
+            do {
+                latest = try await relay.latestBrief(session.credentials)
+            } catch let error where session.route == .direct && SessionContext.isPathFailure(error)
+                        && vault.switchRoute(after: session) {
+                // The direct path failed on the way (its tunnel, or its own grant): the relay serves the read.
+                session = try vault.session()
+                route = session.route
+                latest = try await relay.latestBrief(session.credentials)
+            }
             guard generation == currentGeneration else { return }
             if let record = latest {
                 try accept(record, session: session)
             }
             guard generation == currentGeneration else { return }
             lastRefreshFailed = false
-            repairNeeded = false
+            if session.route == .relay {
+                repairNeeded = false
+            } else if let refused = await relayRefusesCredential(otherThan: session) {
+                guard generation == currentGeneration else { return }
+                repairNeeded = refused
+            }
         } catch let error as RelayClientError {
             guard generation == currentGeneration else { return }
             hubOnline = RemoteStatus.offline(for: error, remote: vault.isRemote)
-            handleRelayError(error)
+            handleRelayError(error, route: route)
         } catch BriefOpenError.unreadable {
             guard generation == currentGeneration else { return }
             repairNeeded = true
@@ -604,15 +620,41 @@ final class BriefStore: ObservableObject {
         return sequence > heldSequence
     }
 
-    private func handleRelayError(_ error: RelayClientError) {
+    /// Whether pairing again is needed is the pinned relay's answer to this phone's own credential (PROTOCOL.md
+    /// 21.4). A refusal on the direct path is that path's grant, which the phone asks the computer for again; it
+    /// never means pairing again.
+    private func handleRelayError(_ error: RelayClientError, route: SessionRoute = .relay) {
         switch error {
         case .unauthorized, .forbidden:
+            guard route == .relay else {
+                lastRefreshFailed = true
+                return
+            }
             repairNeeded = true
             notice = error.localizedDescription
         case .rateLimited:
             lastRefreshFailed = true
         default:
             lastRefreshFailed = true
+        }
+    }
+
+    /// Asked when the direct path served a refresh: success there says nothing about the relay, which still
+    /// carries pushes, background reads and uploads. Bo's phone, Nov 16 to 17: the relay refused its credential
+    /// while the direct path answered everything, so Today said to pair again on some launches and Settings
+    /// never did. True when the relay refuses the credential, false when it knows it (a missing scope still
+    /// proves that), nil when the relay could not be asked.
+    private func relayRefusesCredential(otherThan session: SessionContext) async -> Bool? {
+        guard let relaySession = vault.otherSession(than: session), relaySession.route == .relay else { return nil }
+        do {
+            _ = try await relay.presence(relaySession.credentials)
+            return false
+        } catch RelayClientError.unauthorized {
+            return true
+        } catch RelayClientError.forbidden {
+            return false
+        } catch {
+            return nil
         }
     }
 
