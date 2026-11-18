@@ -230,6 +230,9 @@ enum WatchRecordingsCopy {
         case .relayFull:
             return String(localized: "Too many recordings are waiting for your computer. They stay on this phone and go as it takes them.",
                           comment: "Shown above the watch recordings list when the relay keeps no more of this phone's recordings")
+        case .pairAgain:
+            return String(localized: "Open Settings and choose Pair again. Your recordings stay on this phone until then.",
+                          comment: "Shown above the watch recordings list when the relay no longer accepts this phone's pairing")
         }
     }
 
