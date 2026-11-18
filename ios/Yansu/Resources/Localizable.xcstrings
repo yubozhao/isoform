@@ -114,6 +114,7 @@
     "set.online" : {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Online · heard from it just now"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"在线 · 刚刚有回应"}}}},
     "set.asleep" : {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Asleep since %@ · answers wait on this phone"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"自 %@ 起睡眠 · 回答会先留在这部手机上"}}}},
     "set.cantReach" : {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Can't reach it · last heard %@"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"连不上 · 上次联系于 %@"}}}},
+    "set.pairAgain" : {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Pair again"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"重新配对"}}}},
     "set.awake" : {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Keep it awake while it's plugged in"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"接通电源时保持唤醒"}}}},
     "set.awakeSub" : {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"So this phone can reach it"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"这样这部手机就能连上它"}}}},
     "set.closed" : {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Closed Eyes"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"Closed Eyes"}}}},
