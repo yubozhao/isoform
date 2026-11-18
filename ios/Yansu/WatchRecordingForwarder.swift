@@ -339,6 +339,9 @@ actor WatchRecordingForwarder {
         /// The relay holds as many of this phone's recordings as it keeps and takes no more
         /// until the computer has fetched some. Parts stay on the phone.
         case relayFull
+        /// The relay no longer knows this phone's pairing (it answered 401). Parts stay on the
+        /// phone and go up with the new credentials once the person has paired again.
+        case pairAgain
     }
 
     /// How soon a pass that could not finish is tried again while the app runs.
@@ -608,6 +611,10 @@ actor WatchRecordingForwarder {
                 // The computer answered, and could not take this part now (it could not fetch
                 // it yet). The other parts are not held back by it.
                 unfinished = true
+            } catch RelayClientError.unauthorized {
+                // The relay refused this phone's credentials: no part can go up until the phone
+                // is paired again. Nothing is counted against the part; the audio stays.
+                return .pairAgain
             } catch RelayClientError.rateLimited {
                 // The relay keeps no more of this phone's recordings until the computer fetched
                 // some. Said as it is, so a full relay never looks like a sleeping computer.

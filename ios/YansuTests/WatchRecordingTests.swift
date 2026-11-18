@@ -1562,6 +1562,32 @@ final class WatchRecordingForwarderTests: XCTestCase {
 }
 
 extension WatchRecordingForwarderTests {
+    /// The relay refused this phone's credentials (2026-11-16 to 11-17: every upload got 401 and
+    /// the Watch tab only said it was waiting). The phone says to pair again, keeps the audio,
+    /// counts nothing against the part, and sends it once the relay accepts the phone again.
+    func testARefusedPairingIsSaidAndThePartGoesAfterPairingAgain() async throws {
+        let hub = StubRecordingHub()
+        let uploads = StubUploads()
+        let (inbox, forwarder) = make(hub, uploads)
+        let id = WatchRecordingWire.newRecordingID()
+        let info = try await deliver(inbox, forwarder, id: id, part: 0, last: true, audio: "audio")
+        uploads.error = RelayClientError.unauthorized
+        var outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .pairAgain)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: inbox.audioURL(info).path))
+        XCTAssertEqual(inbox.pending().first?.refusals, 0, "a refused pairing is not a refusal of the part")
+        let due = await forwarder.nextRetry()
+        XCTAssertEqual(due, clock.now.addingTimeInterval(WatchRecordingForwarder.waitingRetrySeconds))
+        XCTAssertNotNil(WatchRecordingsCopy.waiting(.pairAgain, anyOnPhone: true))
+        XCTAssertNotEqual(WatchRecordingsCopy.waiting(.pairAgain, anyOnPhone: true),
+                          WatchRecordingsCopy.waiting(.waiting, anyOnPhone: true))
+
+        uploads.error = nil
+        outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .drained)
+        XCTAssertTrue(inbox.pending().isEmpty)
+    }
+
     /// An upload that goes on in the background is asked about again with the same id and the
     /// same bytes, and the parts behind it are not held back.
     func testAnUploadStillInFlightKeepsItsIDAndDoesNotHoldTheOthersBack() async throws {
