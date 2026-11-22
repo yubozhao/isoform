@@ -95,4 +95,59 @@ describe('Your answers', () => {
         await waitFor(() => expect(binding('ForgetAnswer')).toHaveBeenCalledWith('e1'));
         await waitFor(() => expect(screen.queryByText('Book the venue')).toBeNull());
     });
+
+    // redesign-activity v1.0.0 rule 10 and redesign v1.0.0 rule 28: a No shows
+    // its reason in words, never the ledger's code; free words show as typed.
+    it('says a reason in words, not its code', async () => {
+        binding('GetAnswers').mockResolvedValue({ answers: [
+            { id: 'a1', item: 'w1', kind: 'work', title: 'Reply to Sam', action: 'no', reason: 'not_useful', at: today(9), surface: 'computer' },
+            { id: 'a2', item: 'w2', kind: 'work', title: 'Prep for Lena', action: 'no', reason: 'wrong_facts', at: today(8), surface: 'phone' },
+            { id: 'a3', item: 'portrait', kind: 'portrait', title: 'In one line', action: 'no', note: 'Not a runner', at: yesterday, surface: 'computer' },
+        ] });
+        await act(async () => {
+            render(<ActivityAnswers />);
+        });
+        await screen.findByText('Reply to Sam');
+        expect(screen.getByText(enActivity.ans.reason.not_useful)).toBeInTheDocument();
+        expect(screen.getByText(enActivity.ans.reason.wrong_facts)).toBeInTheDocument();
+        expect(screen.getByText('Not a runner')).toBeInTheDocument();
+        expect(screen.queryByText('not_useful')).toBeNull();
+        expect(screen.queryByText('wrong_facts')).toBeNull();
+    });
+
+    // redesign-activity v1.0.0 rule 10: Undo on today's answers, until the
+    // next brief, only where the ledger says it can still be taken back.
+    it("offers Undo only where it can be taken back, and takes it back as Today's Undo does", async () => {
+        binding('GetAnswers').mockResolvedValue({ answers: [
+            { id: 'a1', item: 'w1', kind: 'work', title: 'Reply to Sam', action: 'yes', at: today(9), surface: 'computer', canUndo: true },
+            { id: 'a2', item: 'belief:m1', kind: 'belief', title: 'Prefers mornings', action: 'yes', at: today(8), surface: 'computer' },
+        ] });
+        binding('UndoWork').mockResolvedValue({});
+        await act(async () => {
+            render(<ActivityAnswers />);
+        });
+        await screen.findByText('Reply to Sam');
+        expect(screen.queryByRole('button', { name: 'Undo: Prefers mornings' })).toBeNull();
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: 'Undo: Reply to Sam' }));
+        });
+        expect(binding('UndoWork')).toHaveBeenCalledWith('w1');
+        await waitFor(() => expect(binding('GetAnswers').mock.calls.length).toBeGreaterThanOrEqual(2));
+    });
+
+    it('says so when Undo fails, and keeps the answer', async () => {
+        binding('GetAnswers').mockResolvedValue({ answers: [
+            { id: 'a1', item: 'w1', kind: 'work', title: 'Reply to Sam', action: 'yes', at: today(9), surface: 'computer', canUndo: true },
+        ] });
+        binding('UndoWork').mockRejectedValue(new Error('closed'));
+        await act(async () => {
+            render(<ActivityAnswers />);
+        });
+        await screen.findByText('Reply to Sam');
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: 'Undo: Reply to Sam' }));
+        });
+        expect(await screen.findByText(enActivity.ans.undoFailed)).toBeInTheDocument();
+        expect(screen.getByText('Reply to Sam')).toBeInTheDocument();
+    });
 });

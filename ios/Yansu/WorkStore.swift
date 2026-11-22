@@ -10,8 +10,8 @@ protocol WorkHubAPI: Sendable {
 }
 
 extension HubChannel: WorkHubAPI {
-    func workAvailable() async throws -> Bool { try await status().work == true }
-    func workSendAvailable() async throws -> Bool { try await status().workSend == true }
+    func workAvailable() async throws -> Bool { try await abilities().work == true }
+    func workSendAvailable() async throws -> Bool { try await abilities().workSend == true }
 
     func work() async throws -> WorkPage {
         try await perform(.work).payload(WorkPage.self)

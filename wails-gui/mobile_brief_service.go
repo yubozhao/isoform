@@ -1099,6 +1099,8 @@ func (s *mobileBriefService) generateWithMetadata(ctx context.Context, slot, rea
 func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, slot, reason string, generation *MobileBriefGeneration, onStored func(MobileBriefV1)) (MobileBriefV1, error) {
 	useEpoch := s.app.contextUseEpoch()
 	asOf := s.now()
+	// The calls that write this brief count in its See them entry.
+	ctx, briefScope := withBriefCallScope(ctx)
 	// A scheduled brief runs the hourly activity work it reads once, early,
 	// so it covers the last hour too. A brief asked for does not wait.
 	if s.app != nil {
@@ -1298,8 +1300,14 @@ func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, s
 	// spoken (design R74 v1.0.1).
 	brief.Narrative = mobileBriefTrimParagraphs(brief.Narrative)
 	if s.app != nil && !mobileBriefStaticEmpty(brief) {
+		// "Your agents:" is Isoform's own words, never the writer's
+		// (brief-agents v1.0.0): added once the writer's text is final and
+		// before the voice is made from it, so its sentence marks line up.
+		s.app.appendBriefAgentsParagraph(&brief, windowStart, slot, language, s.location)
 		s.app.appendOpenAnswerBriefParagraph(ctx, &brief, windowStart, asOf, language)
 	}
+	// Each source says its kind, for "In this brief" (brief_sources.go).
+	s.app.mobileBriefWithSourceGroups(&brief)
 	// The part counts follow the final narrative, so they are set last.
 	brief = mobileBriefWithNarrativeParts(brief)
 	// A stored copy with written words is kept over a build with no words, and a
@@ -1362,6 +1370,9 @@ func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, s
 	if err != nil {
 		firstReadBriefMu.Unlock()
 		return MobileBriefV1{}, err
+	}
+	if briefScope.calls() > 0 && s.app != nil {
+		s.app.recordBriefCall(brief, asOf)
 	}
 	// Delivery projects timing from the run ledger, so record a scheduled
 	// completion only after the brief is saved and before its first projection.

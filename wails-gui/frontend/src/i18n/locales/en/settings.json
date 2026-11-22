@@ -1,4 +1,117 @@
 {
+    "given": {
+        "title": "What {{assistant}} was given, this week",
+        "sub": "By name and time, never the text. Each entry is kept as long as what it came from.",
+        "sense": "Making sense of your day",
+        "briefs": "Briefs",
+        "answers": "Answers in Chat",
+        "proposals": "Proposals from your topics",
+        "times_one": "{{n}} time",
+        "times_other": "{{n}} times",
+        "from": "From: {{sources}}",
+        "fromQuestion": "From: your question",
+        "join": ", ",
+        "screen_one": "text on your screen, about every minute while you worked",
+        "screen_other": "text on your screen, about every {{m}} minutes while you worked",
+        "wechat_one": "{{k}} WeChat window, as a picture",
+        "wechat_other": "{{k}} WeChat windows, as pictures",
+        "calls_one": "{{count}} call",
+        "calls_other": "{{count}} calls",
+        "messages_one": "{{count}} Messages conversation",
+        "messages_other": "{{count}} Messages conversations",
+        "watch": "your watch · {{title}}, {{length}}",
+        "stretch": "{{date}}, {{from}} to {{to}}",
+        "briefAt": "{{date}}, {{time}}",
+        "question": "“{{question}}”",
+        "open": "Open ›",
+        "done": "Done",
+        "failed": "Couldn't read what {{assistant}} was given.",
+        "foot": "Forget something in Activity, and its entries here go with it. What {{assistant}}'s provider keeps after each call is set by its own terms.",
+        "hourRow": "{{hour}} · {{group}} · {{times}}",
+        "sawThatHour": "what Isoform saw that hour",
+        "held_one": "And {{count}} more time, for suggestions, counted by the hour.",
+        "held_other": "And {{count}} more times, for suggestions, counted by the hour.",
+        "kinds": {
+            "mail": "Mail",
+            "calendar": "Calendar",
+            "screen": "Screen",
+            "call": "Calls and meetings",
+            "watch": "Your watch",
+            "messages": "Messages",
+            "wechat": "WeChat windows",
+            "memory": "About you",
+            "knowledge": "How you do things",
+            "people": "Who you know",
+            "activity": "Activity",
+            "goals": "Your goals",
+            "chat": "Chat",
+            "web": "The web",
+            "topic_names": "your topic names",
+            "agents_history": "Your agents' history",
+            "work": "Your work",
+            "files": "Files"
+        },
+        "counts": {
+            "mail_one": "Mail (1 thread)",
+            "mail_other": "Mail ({{count}} threads)",
+            "calendar_one": "Calendar (1 event)",
+            "calendar_other": "Calendar ({{count}} events)",
+            "screen_one": "Screen (1 stretch)",
+            "screen_other": "Screen ({{count}} stretches)",
+            "call_one": "Calls and meetings (1 call)",
+            "call_other": "Calls and meetings ({{count}} calls)",
+            "watch_one": "Your watch (1 hour)",
+            "watch_other": "Your watch ({{count}} hours)",
+            "messages_one": "Messages (1 conversation)",
+            "messages_other": "Messages ({{count}} conversations)",
+            "wechat_one": "WeChat windows (1 window)",
+            "wechat_other": "WeChat windows ({{count}} windows)",
+            "memory_one": "About you (1 note)",
+            "memory_other": "About you ({{count}} notes)",
+            "knowledge_one": "How you do things (1 entry)",
+            "knowledge_other": "How you do things ({{count}} entries)",
+            "people_one": "Who you know (1 person)",
+            "people_other": "Who you know ({{count}} people)",
+            "activity_one": "Activity (1 moment)",
+            "activity_other": "Activity ({{count}} moments)",
+            "goals_one": "Your goals (1 goal)",
+            "goals_other": "Your goals ({{count}} goals)",
+            "chat_one": "Chat (1 message)",
+            "chat_other": "Chat ({{count}} messages)",
+            "web_one": "The web (1 page)",
+            "web_other": "The web ({{count}} pages)",
+            "topic_names_one": "your topic names (1 topic)",
+            "topic_names_other": "your topic names ({{count}} topics)",
+            "agents_history_one": "Your agents' history (1 session)",
+            "agents_history_other": "Your agents' history ({{count}} sessions)",
+            "work_one": "Your work (1 item)",
+            "work_other": "Your work ({{count}} items)",
+            "files_one": "Files (1 file)",
+            "files_other": "Files ({{count}} files)"
+        },
+        "passes": {
+            "purpose": "What your work is for",
+            "work_profile": "Your work profile",
+            "questions": "Questions Isoform suggests",
+            "self_dream": "Isoform's overnight review of what it knows",
+            "weekly": "Your week, summed up",
+            "recent": "Your last few days, summed up"
+        },
+        "minutes": "{{m}} min",
+        "hoursMinutes": "{{h}} h {{m}} min",
+        "hoursOnly": "{{h}} h",
+        "watchHour": "your watch · {{hour}}, {{length}} of talk",
+        "when": "{{date}}, {{time}}",
+        "passRow": "{{name}} · {{times}} · From: summaries Isoform already wrote",
+        "passNote": "These read summaries, not single moments. Forget everything removes them, and they go as those summaries age out."
+    },
+    "see": {
+        "learning": "Learning about you",
+        "made_one": "Made: {{n}} claim to check",
+        "made_other": "Made: {{n}} claims to check",
+        "work": "Work made for you",
+        "byHour": "Counted by the hour, so Forget on one thing doesn't remove these yet."
+    },
     "settingRead": {
         "failed": "Couldn't read this setting.",
         "retry": "Try again"
@@ -23,7 +136,6 @@
         "connectFailed": "Couldn't connect. Check that the assistant's command-line app is installed.",
         "revokeFailed": "Couldn't finish revoking access.",
         "privacy": "Connect registers the command above and gives that assistant its own read-only access. It replaces any earlier Isoform registration. Isoform's privacy settings apply to every request. Revoke stops access immediately.",
-        "otherAppsPointer": "Connect Isoform to Claude Code or Codex in Settings › Other AI apps.",
         "loading": "Checking connections...",
         "retry": "Try again"
     },
@@ -481,7 +593,7 @@
             },
             "answer_ready": {
                 "label": "Answers you asked for",
-                "description": "When something you asked about has an answer. Turning it off keeps them in Chat."
+                "description": "When something you asked about has an answer."
             },
             "commitment_slipping": {
                 "label": "Commitments slipping",
@@ -587,7 +699,7 @@
             "stillBlocked": "Notifications are still off. Turn them on for Isoform in System Settings, then come back here.",
             "failed": "Could not ask macOS for permission. Try again."
         },
-        "advancedHint": "Quiet hours, limits and where each notification is sent",
+        "advancedHint": "Where each notification is sent",
         "channels": {
             "title": "Where notifications go",
             "description": "Isoform tries these in order and uses the first one that can reach you. If none can, it waits and tries again a little later.",
@@ -787,10 +899,6 @@
         "searchPlaceholder": "Search settings",
         "noResults": "No matching settings",
         "sections": {
-            "personalAi": {
-                "heading": "Personal AI",
-                "explanation": "How Isoform thinks, what it notices and remembers, how it uses your apps and what stays private."
-            },
             "extensions": {
                 "heading": "Extensions",
                 "explanation": "Optional add-ons that give Isoform more skills, tools and places to reach you."
@@ -802,21 +910,10 @@
         "soon": "Reservations open"
     },
     "pages": {
-        "overview": {
-            "label": "Overview",
-            "title": "How Isoform works for you",
-            "subtitle": "Your whole setup in a few sentences; change anything right here or open its page for the details.",
-            "keywords": "overview, summary, setup, at a glance, how Isoform works, worth a look, leave it, pause for 1 hour, resume observing"
-        },
-        "general": {
-            "label": "General",
-            "subtitle": "Choose how Isoform starts and looks, which language it uses, and your keyboard shortcuts.",
-            "keywords": "start at login, open at login, launch, startup, appearance, theme, dark mode, light mode, match system, color, language, system default, English, Chinese, Quick Chat, read aloud, voice, voices, speech, keyboard shortcuts, hotkeys, shortcut, vim, send message, tool steps, tool calls"
-        },
         "notifications": {
             "label": "Briefs and notifications",
-            "subtitle": "Choose what Isoform tells you about and when it should stay quiet.",
-            "keywords": "alerts, reminders, quiet hours, do not disturb, interruptions, daily limit, digest, blocked work, work finished, brief ready, paused, observing paused, computer notifications, permission, phone, text message, SMS, where notifications go, last 30 days, this week, spoke up, noisy, ignored, show on Today, quiet line, check-ins"
+            "subtitle": "What Isoform brings you on its own: the brief, proposals from your topics, and three kinds of notification.",
+            "keywords": "alerts, reminders, quiet hours, do not disturb, interruptions, daily limit, digest, blocked work, work finished, brief ready, paused, observing paused, computer notifications, permission, phone, text message, SMS, where notifications go, last 30 days, this week, spoke up, noisy, ignored, show on Today, quiet line, check-ins, daily brief, morning brief, evening brief, written summary, brief times, podcast feed, proposals, topics, read aloud, voice, voices, speech, Hear it, read notifications aloud, announce finished automations"
         },
         "ai-provider": {
             "label": "Your agents",
@@ -825,33 +922,18 @@
         },
         "activity": {
             "label": "What Isoform sees",
-            "subtitle": "Every source on one page, and off means nothing from it is kept.",
-            "keywords": "pause, pause observing, screen, watch my screen, screen recording, capture, activity, listen, listening, background listening, microphone, system audio, computer audio, meetings, record meetings, meeting recording, capture status, shortcut, hotkey, calendars, reminders, clipboard, copy, copied"
-        },
-        "memory": {
-            "label": "Learning and memory",
-            "subtitle": "Choose what Isoform learns, review the changes it suggests, import memories from other AI tools and see what it knows.",
-            "keywords": "memory, memories, what Isoform learns, about you, people, contacts, profile, personal context, timeline, know-how, playbooks, import, Claude Code, Codex, Cursor, changes waiting for you, changes to review, learn by comparison, prediction confidence, chat context preview, search index, embeddings, Ollama, OpenAI"
-        },
-        "security": {
-            "label": "Privacy",
-            "subtitle": "Choose which apps Isoform ignores, how long it keeps recordings and what it shares.",
-            "keywords": "privacy, ignored apps, protected apps, hidden apps, blur, password managers, sensitive apps, voice input, dictation, apps Isoform does not listen to, not listened to, retention, keep recordings, delete recordings, permissions, security, screen recording, accessibility, microphone, messages, contacts, notifications, diagnostic data, telemetry"
-        },
-        "storage": {
-            "label": "Storage",
-            "subtitle": "See how much space Isoform uses on this computer and choose how much it may keep.",
-            "keywords": "storage, disk space, space used, storage limit, screenshots, call recordings, audio, database, free up space, clean up, compress, shrink, delete old screenshots, keep screenshots, models, model downloads, speech recognition, voice models, download sources"
+            "subtitle": "Every source, on one page. Off means nothing from it is kept.",
+            "keywords": "pause, pause observing, screen, watch my screen, screen recording, capture, activity, listen, listening, background listening, microphone, system audio, computer audio, meetings, record meetings, meeting recording, capture status, shortcut, hotkey, calendars, reminders, clipboard, copy, copied, ignored apps, protected apps, hidden apps, password managers, sensitive apps, apps Isoform does not listen to, permissions, accessibility"
         },
         "iphone": {
             "label": "Your phone",
             "subtitle": "Pair your phone to stay in touch with this computer when you are away.",
-            "keywords": "phone, mobile, pair, pairing, QR code, connection, disconnect, your phones, daily brief, morning brief, evening brief, server address, relay, what each phone can do, access, written summary"
+            "keywords": "phone, mobile, pair, pairing, QR code, connection, disconnect, your phones, server address, relay, what each phone can do, access"
         },
-        "skills": {
-            "label": "Skills",
-            "subtitle": "Add ready-made know-how that teaches Isoform new kinds of tasks.",
-            "keywords": "skills, skill library, ClawHub, browse, install, uninstall, GitHub, folder, agent skills, other AI tools, where skills are stored"
+        "your-watch": {
+            "label": "Your watch",
+            "subtitle": "What your watch adds to what it hears, the same switches as on your phone.",
+            "keywords": "watch, Apple Watch, wrist, notes, long talks, heart rate, place, area, location, phone in touch, paired"
         },
         "mcp": {
             "label": "Tool servers",
@@ -870,23 +952,13 @@
         },
         "about": {
             "label": "About",
-            "subtitle": "Version, updates and the details support asks for.",
-            "keywords": "about, version, updates, check for updates, release notes, restart, support, help, email, Discord, support report, copy report, what the support report includes, troubleshooting, run setup again, onboarding, setup, tutorial, build, support logs, release notes, updates"
+            "subtitle": "Your name, how Isoform starts and looks, its version and updates, and help.",
+            "keywords": "about, version, updates, check for updates, release notes, restart, support, help, email, Discord, support report, copy report, what the support report includes, troubleshooting, run setup again, onboarding, setup, tutorial, build, support logs, release notes, updates, your name, name, profile, account, identity, open at login, start at login, launch, startup, language, system default, English, Chinese, appearance, theme, dark mode, light mode, match system, install updates automatically, check now, models, privacy model, search model, send feedback, diagnostic data, telemetry, usage counts, model downloads, speech recognition, voice models, download sources, mirrors"
         },
         "plugins": {
             "label": "Plugins",
             "subtitle": "Choose which built-in features Isoform uses.",
             "keywords": "plugins, built in, features, switches, enable, disable, sources, tools"
-        },
-        "profile": {
-            "label": "Profile",
-            "subtitle": "The name Isoform uses for you.",
-            "keywords": "profile, name, account, identity"
-        },
-        "appearance": {
-            "label": "Appearance",
-            "subtitle": "Theme and reading width on this computer.",
-            "keywords": "reading width, centered, full, wide, theme, dark, light"
         },
         "your-agent": {
             "label": "Agent of You",
@@ -902,149 +974,11 @@
         "your-data": {
             "label": "Your data",
             "subtitle": "Everything Isoform keeps is on this computer.",
-            "keywords": "retention, delete, privacy, kept, export, voice"
+            "keywords": "retention, delete, privacy, kept, export, voice, keep recordings, delete recordings, keep screenshots, delete old screenshots, storage, disk space, space used, storage limit, screenshots, call recordings, audio, database, keep time, how long"
         }
     },
     "overview": {
-        "loading": "Checking your setup...",
-        "changeFailed": "Couldn't change this.",
-        "listSeparator": ", ",
-        "listLastSeparator": " and ",
-        "sentences": "{{first}} <second/>",
-        "labels": {
-            "sees": "Sees",
-            "speaksUp": "Notifications",
-            "thinksWith": "Your agents",
-            "remembers": "Remembers",
-            "keeps": "Keeps",
-            "briefs": "Briefs",
-            "ignores": "Ignores"
-        },
-        "worth": {
-            "title": "Worth a look",
-            "titleDone": "Worth a look",
-            "leave": "Leave it",
-            "left": "Left as it is.",
-            "noisy": {
-                "title_one": "“{{kind}}” was sent {{count}} time in 30 days, and you acted on none",
-                "title_other": "“{{kind}}” was sent {{count}} times in 30 days, and you acted on none",
-                "detail": "Show it as a quiet line on Today instead of a notification.",
-                "action": "Make it quiet",
-                "done": "Moved to a quiet line on Today."
-            },
-            "phone": {
-                "title": "Your phone can only reach this computer on the same network",
-                "detail": "The connection uses a local address. Away from home, briefs wait until you are back.",
-                "titleRemoteOff": "Remote access is off, so your phone can only reach this computer on the same network",
-                "detailRemoteOff": {
-                    "saved_relay": "Open Phone settings and choose Use remote access.",
-                    "environment_relay": "A setting on this computer points Isoform to another connection server. Quit Isoform and open it again without it.",
-                    "build_relay": "This version of Isoform always uses its own connection server.",
-                    "disabled": "A setting on this computer turns remote access off. Quit Isoform and open it again without it."
-                },
-                "action": "Fix the connection",
-                "done": "Opened Phone settings."
-            },
-            "phoneRemote": {
-                "title": "Remote access is not running",
-                "detail": "Your phone cannot reach this computer from other networks until it starts again. Isoform keeps retrying.",
-                "action": "Open Phone settings",
-                "done": "Opened Phone settings."
-            },
-            "assistant": {
-                "title": "{{assistant}} has used all of its {{window}}",
-                "titleNoWindow": "{{assistant}} has no usage left",
-                "resets": "It resets {{when}}.",
-                "others_one": "{{others}} keeps answering until then.",
-                "others_other": "{{others}} keep answering until then.",
-                "action": "Open Assistant",
-                "done": "Opened Assistant."
-            }
-        },
-        "sees": {
-            "watching": "Isoform is <b>watching</b> {{sources}}. Private browser windows and ignored apps stay out.",
-            "nothing": "Isoform is <b>not watching or listening</b>: Watch my screen and Listen are off.",
-            "screenBlocked": "Isoform <b>can't see your screen</b> until your computer allows it.",
-            "allow": "Allow",
-            "pausedUntil": "Isoform is <b>paused until {{time}}</b>, not watching or listening.",
-            "paused": "Isoform is <b>paused</b>, not watching or listening until you resume.",
-            "sources": {
-                "screen": "your screen",
-                "microphone": "your microphone",
-                "calls": "your calls"
-            },
-            "pause": "Pause for 1 hour",
-            "resume": "Resume observing",
-            "link": "Observation"
-        },
-        "speaksUp": {
-            "lead": "It speaks up",
-            "levelLabel": "How much Isoform speaks up",
-            "detail": "— {{clauses}}.",
-            "clauseSeparator": ", ",
-            "limit_one": "up to {{count}} time a day",
-            "limit_other": "up to {{count}} times a day",
-            "noLimit": "with no daily limit",
-            "quiet": "quiet {{start}} to {{end}}",
-            "noQuiet": "with no quiet hours",
-            "on": "and can reach you on {{channels}}",
-            "channels": {
-                "desktop": "this computer",
-                "push": "your phone",
-                "text": "text messages",
-                "email": "email for playbook results"
-            },
-            "offDetail": "— never about what it notices. Results of what you scheduled and Today still show.",
-            "link": "Notifications"
-        },
-        "thinksWith": {
-            "one": "{{first}} answers.",
-            "many": "{{first}} answers first, then {{rest}}.",
-            "thenSeparator": ", then ",
-            "left": "{{assistant}} has <b>{{percent}}%</b> of its {{window}} left.",
-            "leftNoWindow": "{{assistant}} has <b>{{percent}}%</b> of its usage limit left.",
-            "none": "No assistant is set up yet.",
-            "link": "Assistant"
-        },
-        "remembers": {
-            "learns": "It learns {{things}}. Nothing starts work on its own.",
-            "learnsNothing": "Learning is turned off. Nothing starts work on its own.",
-            "things": {
-                "events": "your activity",
-                "memory": "things about you",
-                "knowledge": "reusable know-how",
-                "sop": "playbooks"
-            },
-            "waiting_one": "{{count}} thing it learned is waiting for you to confirm.",
-            "waiting_other": "{{count}} things it learned are waiting for you to confirm.",
-            "nothingWaiting": "Nothing it learned is waiting for you to confirm.",
-            "review": "Review",
-            "link": "Learning and memory"
-        },
-        "keeps": {
-            "lead": "Recordings are stored on this computer for",
-            "detail": ", up to {{limit}} in all, {{used}} used.",
-            "usage": "{{used}} of {{limit}} used",
-            "link": "Storage",
-            "detailNothingUsed": ", up to {{limit}} in all.",
-            "detailNoLimit": ", as long as space allows."
-        },
-        "briefs": {
-            "adaptive": "Your brief comes around {{morning}} and {{evening}}, timed to when you start and finish.",
-            "fixed": "Your brief comes at {{morning}} and {{evening}}.",
-            "off": "Your brief is turned off.",
-            "phone": "It reaches {{name}}, last seen {{when}}.",
-            "noPhone": "No phone is paired, so it shows only on this computer.",
-            "link": "Phone"
-        },
-        "ignores": {
-            "none": "No apps are ignored yet. Password managers are always hidden.",
-            "some": "Isoform ignores {{apps}}. Password managers are always hidden.",
-            "more_one": "{{count}} more",
-            "more_other": "{{count}} more",
-            "add": "Add a private app"
-        },
-        "futureChannels": "Text messages and phone calls are on the way."
+        "changeFailed": "Couldn't change this."
     },
     "advanced": {
         "label": "Advanced"
@@ -1125,6 +1059,7 @@
         "activity-pipeline": "Activity processing",
         "shadow-agent": "Shadow learning",
         "purpose-map": "Priorities",
+        "memory-debug": "Memory and search",
         "perf-analysis": "App health",
         "audio-capture": "Audio capture",
         "notification-tests": "Notification checks",
@@ -1413,7 +1348,7 @@
         "updateAvailableNoVersion": "A new version is available",
         "updateAvailableDescription": "Isoform checks the download, then restarts on this computer. Your data stays in place.",
         "releaseNotes": "Release notes",
-        "advancedHint": "Help, setup and what the support report includes",
+        "advancedHint": "Models and their downloads, setup, and what the support report and diagnostic data include",
         "supportReport": {
             "title": "Support report",
             "description": "Copies a short report on how Isoform is running. Paste it into your email or Discord message so the team can find the problem faster.",
@@ -1434,7 +1369,14 @@
             "title": "Email support",
             "description": "Write to bo@isoform.ai. Your mail app opens a draft with your version.",
             "openFailed": "Couldn't open your email app. Write to bo@isoform.ai."
-        }
+        },
+        "yourName": "Your name · used in your briefs and in hand-offs to your agents",
+        "openAtLogin": "Open at login",
+        "autoUpdate": "Install updates automatically",
+        "updateReady": "{{version}} is ready · <restart>Restart now</restart>",
+        "helpTitle": "Help and Send feedback",
+        "models": "On this computer: models for privacy and for finding things · {{size}}",
+        "modelsShort": "Privacy and search models need {{size}} free · {{free}} free now"
     },
     "onboarding": {
         "title": "Run setup again",
@@ -1574,8 +1516,6 @@
     "autoSpeak": {
         "cardTitle": "Read aloud",
         "cardDescription": "Isoform can speak with a voice that runs on this computer. The voice for your language downloads the first time you turn one of these on.",
-        "chatTitle": "Read chat replies aloud",
-        "chatDescription": "Speak each reply in the chat you are viewing when it finishes.",
         "automationTitle": "Announce finished automations",
         "automationDescription": "Say a short notice when an automation finishes in the background.",
         "automationDoneSpeech": "Automation {{name}} finished.",
@@ -1613,9 +1553,6 @@
         "storageCapFailedToast": "Failed to update storage cap: {{error}}"
     },
     "privacy": {
-        "advanced": {
-            "hint": "System permissions and what diagnostic data includes"
-        },
         "ignoredApps": {
             "title": "Apps Isoform ignores",
             "description": "Keep private apps out of what Isoform sees and hears. Add an app here when you use it for something you would rather keep to yourself.",
@@ -1668,10 +1605,7 @@
             "saveFailed": "Couldn't change this."
         },
         "permissions": {
-            "title": "System permissions",
-            "description": "What your computer lets Isoform use. This list only shows access; turn watching and listening on or off on the Observation page.",
-            "usedFor": "Used for {{purpose}}.",
-            "usedForTurnedOff": "Used for {{purpose}}. Turned off on the Observation page."
+            "usedFor": "Used for {{purpose}}."
         },
         "voices": {
             "title": "Voice memory",
@@ -1747,61 +1681,9 @@
             "updatedToast": "Screenshot time limit updated",
             "failedToast": "Couldn't change how long screenshots are kept.",
             "readFailed": "Couldn't read how long screenshots are kept."
-        },
-        "cleanup": {
-            "title": "Free up space",
-            "description": "See exactly what Isoform can remove or shrink. Nothing changes until you confirm.",
-            "check": "Check",
-            "checking": "Checking…",
-            "checkAgain": "Check again",
-            "nothingToFree": "Nothing to free up right now.",
-            "unlinkedScreenshots": "Screenshots no activity refers to",
-            "unlinkedRecordings": "Call recordings no activity refers to",
-            "expiredSessions": "Recordings older than {{period}}, with their text",
-            "expiredScreenshots": "Screenshots older than {{period}}",
-            "overLimitScreenshots": "Oldest screenshots over the storage limit",
-            "overLimitRecordings": "Oldest call recordings over the storage limit",
-            "shrinkScreenshots": "Store older screenshots smaller",
-            "compressRecordings": "Compress call recordings",
-            "databaseSpace": "Unused space in the database",
-            "removeDetail_one": "{{n}} file, {{size}}",
-            "removeDetail_other": "{{n}} files, {{size}}",
-            "removeDetailRange_one": "{{n}} file, {{size}}, {{from}} to {{to}}",
-            "removeDetailRange_other": "{{n}} files, {{size}}, {{from}} to {{to}}",
-            "convertDetail_one": "{{n}} file, {{before}} to about {{after}}",
-            "convertDetail_other": "{{n}} files, {{before}} to about {{after}}",
-            "sessionsDetail_one": "{{n}} recording, {{size}}, {{from}} to {{to}}",
-            "sessionsDetail_other": "{{n}} recordings, {{size}}, {{from}} to {{to}}",
-            "databaseDetail": "{{size}}, given back when this computer is next locked, with enough free disk, at most every 12 hours",
-            "textStays": "Removed screenshots and recordings keep their activity text, summaries and transcripts.",
-            "needsFFmpeg": "Call recordings can be compressed once Isoform's audio tools are installed.",
-            "total": "Frees about {{size}} now: from {{before}} to about {{after}}.",
-            "databaseLater": "The database can give back about {{size}} more later.",
-            "limitUnreachable": "The storage limit cannot be reached: {{kept}} stays however much is removed, so nothing is removed for it.",
-            "confirm": "Free up {{size}}",
-            "cancel": "Cancel",
-            "confirmTitle": "Free up {{size}}?",
-            "confirmDescription": "Isoform removes and shrinks the files listed. Removed screenshots and recordings cannot be brought back, and shrinking and compressing cannot be undone; the activity text stays.",
-            "confirmAction": "Free up space",
-            "phase": {
-                "unlinked": "Removing files no activity refers to",
-                "database": "Tidying the database",
-                "expired": "Removing older screenshots",
-                "limit": "Making room under the storage limit",
-                "shrink": "Storing older screenshots smaller ({{done}} of {{total}})",
-                "compress": "Compressing call recordings ({{done}} of {{total}})"
-            },
-            "runningNote": "You can keep using Isoform while this runs.",
-            "done": "Freed {{size}}. Isoform now uses {{after}}.",
-            "doneDatabase": "The database gives back its unused space the next time this computer is locked.",
-            "checkFailed": "Couldn't check what can be freed.",
-            "startFailed": "Couldn't start freeing up space."
         }
     },
     "permissions": {
-        "checking": "Checking permissions…",
-        "unavailable": "Permission status unavailable.",
-        "noneRequired": "No additional permissions required on this platform. You're all set.",
         "checkFailedToast": "Failed to check platform permissions",
         "grantedToast": "{{label}} permission granted.",
         "stillNotGrantedToast": "{{label}} is still not allowed. Allow Isoform in your system settings, then come back here to refresh.",
@@ -1845,9 +1727,6 @@
             "contacts": {
                 "label": "Contacts",
                 "usedFor": "recognizing the people you work with",
-                "importNote": "Review consent and choose contacts on the Who you know page.",
-                "vcardNote": "Import a vCard (.vcf) file on the Who you know page.",
-                "vcardLabel": "Import a vCard",
                 "windowsNote": "Windows does not share contacts with apps. Import a vCard (.vcf) file on the Who you know page instead."
             },
             "calendars": {
@@ -2062,52 +1941,35 @@
         }
     },
     "keybindings": {
-        "vim": {
-            "readonlyHint": "Vim keys use standard letters and can't be changed.",
-            "title": "Vim-style navigation",
-            "description": "Scroll the chat with j and k and jump with gg and G while you are not typing.",
-            "showKeys": "Show the Vim keys",
-            "hideKeys": "Hide the Vim keys",
-            "offReason": "Turn on Vim-style navigation to use these keys."
-        },
-        "resetAll": "Reset all shortcuts",
         "resetTooltip": "Reset to default",
         "recordPlaceholder": "Press a shortcut...",
         "toasts": {
             "conflict": "Conflicts with \"{{action}}\". Choose a different shortcut.",
-            "shortcutUpdated": "Shortcut updated",
-            "shortcutResetSingle": "Shortcut reset to default",
-            "shortcutResetAll": "All shortcuts reset to defaults",
-            "modifierRequired": "Global shortcuts need at least one modifier (Cmd/Ctrl/Alt/Shift).",
-            "applyFailed": "Couldn't apply shortcut: {{error}}"
+            "modifierRequired": "Global shortcuts need at least one modifier (Cmd/Ctrl/Alt/Shift)."
         },
         "commands": {
             "command-palette": {
-                "label": "Search and commands",
-                "description": "Search Isoform and run commands"
+                "label": "Find",
+                "description": "Find anything in Isoform"
             },
             "toggle-sidebar": {
                 "label": "Show or hide the sidebar",
                 "description": "Make more room for the chat, or bring the sidebar back"
             },
             "open-settings": {
-                "label": "Open settings",
-                "description": "Open this Settings window"
-            },
-            "new-chat": {
-                "label": "New chat",
-                "description": "Start a new conversation"
+                "label": "Settings",
+                "description": "Open Settings"
             },
             "replay-onboarding": {
                 "label": "Run setup again",
                 "description": "Open first-run setup again"
             },
             "quick-chat-global": {
-                "label": "Quick Chat",
-                "description": "Summon the Quick Chat Spotlight from any app"
+                "label": "Quick chat",
+                "description": "Open Quick chat from any app"
             },
             "send-prompt": {
-                "label": "Send message",
+                "label": "Send",
                 "description": "Send what you typed in the chat box"
             },
             "vim-scroll-down": {
@@ -2147,35 +2009,31 @@
                 "description": "Move the cursor to the chat box"
             },
             "pause-observing": {
-                "label": "Pause observing until resumed",
-                "description": "Pause or resume observing from any app. Observation stays paused until you resume it; the menu-bar pause lasts one hour."
-            },
-            "pause-observing-one-hour": {
-                "label": "Pause observing for one hour",
-                "description": "Pause observing for one hour or resume it from any app on this computer."
+                "label": "Closed Eyes",
+                "description": "Stop or start observing from any app on this computer"
             },
             "keyboard-shortcuts": {
                 "label": "Keyboard shortcuts",
                 "description": "Open keyboard shortcuts"
             },
             "go-today": {
-                "label": "Go to Today",
+                "label": "Today",
                 "description": "Open Today"
             },
             "go-chat": {
-                "label": "Go to Chat",
+                "label": "Chat",
                 "description": "Open Chat"
             },
             "go-agents": {
-                "label": "Go to Agents",
+                "label": "Agents",
                 "description": "Open your agents and the work they have"
             },
             "go-activity": {
-                "label": "Go to Activity",
+                "label": "Activity",
                 "description": "Open Activity"
             },
             "go-you": {
-                "label": "Go to You",
+                "label": "You",
                 "description": "Open what Isoform knows about you"
             },
             "zoom-in": {
@@ -2191,8 +2049,6 @@
                 "description": "Set this window back to 100%"
             }
         },
-        "title": "Keyboard shortcuts",
-        "description": "These work while Isoform is the app in front. Click a shortcut, then press the keys you want instead.",
         "quickChat": {
             "title": "Quick Chat shortcut",
             "description": "Choose how to open Quick Chat from any app.",
@@ -2205,11 +2061,54 @@
                 "altSpace": "Alt and Space",
                 "windowsShiftSpace": "Windows, Shift and Space"
             }
+        }
+    },
+    "keys": {
+        "title": "Keyboard shortcuts",
+        "anywhere": "Anywhere on this computer",
+        "inApp": "In Isoform",
+        "onItem": "On an item in Your work",
+        "brief": "The brief",
+        "chat": "In Chat",
+        "always": "always this one",
+        "hear": "Hear it, or pause",
+        "newLine": "New line",
+        "vim": "Vim keys in Chat",
+        "vimSub": "j and k to scroll, i to type, outside the box",
+        "focusNote": "Y, N, M and E work only on the item in focus, so typing anywhere else never answers it.",
+        "clash": "Already used by {{row}}.",
+        "recording": "Press the new keys, or Escape to keep {{keys}}.",
+        "change": "Change",
+        "done": "Done",
+        "rowLabel": "{{name}}, {{keys}}, Change",
+        "fixedRowLabel": "{{name}}, {{keys}}",
+        "item": {
+            "move": "Move",
+            "yes": "Yes",
+            "no": "No",
+            "notMine": "Not mine",
+            "edit": "Edit",
+            "undo": "Undo"
         },
-        "resetAllConfirm": {
-            "title": "Reset all shortcuts?",
-            "description": "Every shortcut in this list goes back to its default. Your Quick Chat shortcut stays as it is.",
-            "confirm": "Reset shortcuts"
+        "spoken": {
+            "command": "Command",
+            "control": "Control",
+            "option": "Option",
+            "alt": "Alt",
+            "shift": "Shift",
+            "windows": "Windows",
+            "space": "Space",
+            "enter": "Return",
+            "escape": "Escape",
+            "up": "Up Arrow",
+            "down": "Down Arrow",
+            "left": "Left Arrow",
+            "right": "Right Arrow",
+            "backspace": "Delete",
+            "delete": "Forward Delete",
+            "tab": "Tab",
+            "optionTwice": "Option twice",
+            "off": "Off"
         }
     },
     "activityPipeline": {
@@ -2454,111 +2353,6 @@
         "promptImportSuccess": "Imported from {{provider}}.",
         "promptImportNone": "No memories were imported.",
         "retry": "Try again"
-    },
-    "skillHub": {
-        "clawhub": {
-            "cardTitle": "Browse the skill library",
-            "cardDescription": "Search ClawHub, a public library of skills, or paste a link to one. Skills you add are turned on right away.",
-            "searchPlaceholder": "calendar, github, or https://clawhub.ai/...",
-            "search": "Search",
-            "browse": "Browse",
-            "install": "Install",
-            "installed": "Installed",
-            "openOnTitle": "Open {{url}} on ClawHub",
-            "openOnAria": "Open on ClawHub"
-        },
-        "github": {
-            "cardTitle": "Install from GitHub",
-            "cardDescription": "Paste a public repository link, or use <0>owner/repo</0>, <1>owner/repo@ref</1> or <2>owner/repo#sub/dir</2>.",
-            "placeholder": "anthropics/skills, owner/repo@v1, or https://github.com/...",
-            "install": "Install",
-            "warning": "Skills from GitHub are not reviewed by anyone. Install only from people you trust, because a skill's instructions guide what Isoform does on this computer."
-        },
-        "folder": {
-            "cardTitle": "Install from a folder",
-            "cardDescription": "Pick a folder that contains a <0>SKILL.md</0> file, such as a skill you wrote yourself. Isoform keeps its own copy, so the skill keeps working if you move the original.",
-            "chooseButton": "Choose folder"
-        },
-        "installed": {
-            "title": "Your skills",
-            "description": "Isoform reaches for a skill when a task calls for it. Turn a skill off to stop using it, or open it to choose where it applies.",
-            "refresh": "Refresh",
-            "loading": "Loading skills...",
-            "empty": "You have no skills yet. Browse the skill library, or copy skills from your other AI tools.",
-            "version": "v{{version}}",
-            "detailsAria": "Details for {{name}}",
-            "emptyAction": "Add a skill",
-            "toggleAria": "Use {{name}}",
-            "useIn": "Use in",
-            "useInHint": "Choose where Isoform may use this skill.",
-            "useInOffReason": "Turn the skill on to choose where it is used.",
-            "uninstallConfirm": {
-                "title": "Uninstall {{name}}?",
-                "description": "Isoform stops using this skill and deletes its copy of the skill folder. You can add it again later.",
-                "confirm": "Uninstall"
-            },
-            "uninstall": "Uninstall",
-            "uninstallAria": "Uninstall {{name}}"
-        },
-        "domains": {
-            "chat": "Chat",
-            "project": "Projects",
-            "automation": "Scheduled"
-        },
-        "sourceLabels": {
-            "clawhub": "ClawHub",
-            "github": "GitHub",
-            "local": "Folder",
-            "agentDirs": "Other AI tool"
-        },
-        "toasts": {
-            "loadFailed": "Couldn't read your skills.",
-            "searchFailed": "Couldn't search ClawHub. Check your internet connection.",
-            "installed": "{{name}} installed and enabled",
-            "installedFromGitHub": "{{name}} installed from GitHub",
-            "installedFromFolder": "{{name}} installed from folder",
-            "installFailed": "Couldn't install {{name}}.",
-            "githubInstallFailed": "Couldn't install {{name}}.",
-            "localInstallFailed": "Couldn't install this skill.",
-            "uninstalled": "{{name}} uninstalled",
-            "uninstallFailed": "Couldn't uninstall {{name}}.",
-            "updateFailed": "Couldn't change {{name}}.",
-            "updateAreasFailed": "Couldn't change {{name}}.",
-            "openFolderFailed": "Couldn't open the folder."
-        },
-        "discover": {
-            "title": "Found in your other AI tools",
-            "description": "Copy skills you already use in Claude Code, Codex, Cursor, Gemini, Goose and similar tools. Isoform keeps its own copy, so the originals stay as they are.",
-            "searchPlaceholder": "Search skills in your other AI tools",
-            "search": "Search",
-            "scan": "Look for skills",
-            "noMatch": "No skills found in your other AI tools.",
-            "install": "Install",
-            "installed": "Installed",
-            "discoveryFailed": "Couldn't read skills from your other AI tools.",
-            "installedFrom": "{{name}} installed from {{source}}",
-            "installFailed": "Couldn't install {{name}}."
-        },
-        "advancedHint": "Install from GitHub or a folder, and where each skill is stored",
-        "tabs": {
-            "label": "Skills",
-            "installed": "Installed",
-            "add": "Add"
-        },
-        "security": {
-            "clean": "Checked, no issues found",
-            "suspicious": "Flagged as suspicious",
-            "malicious": "Blocked as harmful",
-            "none": "Not checked",
-            "unknown": "Safety check unclear"
-        },
-        "files": {
-            "title": "Where skills are stored",
-            "description": "Each skill is a folder in Isoform's own skills folder, separate from your other AI tools. The safety check comes from the skill library's review.",
-            "empty": "No skills installed yet.",
-            "safety": "Safety check: {{status}}",
-            "openFolder": "Open folder"
-        }
     },
     "connectors": {
         "common": {
@@ -3088,36 +2882,11 @@
         "comparison": {
             "confidenceNeedsComparison": "Turn on Learn by comparison to use this."
         },
-        "import": {
-            "title": "Import memories from your other AI tools",
-            "description": "Bring in what Claude Code, Codex and Cursor already keep about you, so Isoform does not have to learn it again. You choose which files to add.",
-            "button": "Choose what to import"
-        },
-        "knows": {
-            "title": "What Isoform knows",
-            "description": "Read, correct or delete anything Isoform learned. Each opens in the main window.",
-            "open": "Open",
-            "memoryTitle": "About you",
-            "memoryDescription": "What Isoform remembers about you and your work.",
-            "openMemory": "Open About you",
-            "peopleTitle": "Who you know",
-            "peopleDescription": "People Isoform recognized in your messages, meetings and calls.",
-            "openPeople": "Open Who you know",
-            "profileTitle": "Your card",
-            "profileDescription": "Your name, and how Isoform recognizes your own messages and voice.",
-            "openProfile": "Open your card"
-        },
         "contacts": {
             "title": "Recognize people from your Contacts",
             "description": "Choose which contacts to import on the Who you know page, after reviewing what Isoform reads.",
-            "openPeople": "Choose in Who you know",
-            "allow": "Allow",
-            "grantedToast": "Isoform can now use your Contacts.",
-            "notGranted": "Contacts access is still off. Turn it on for Isoform in System Settings, then come back here.",
-            "failed": "Could not ask for Contacts access. Try again."
-        },
-        "advancedHint": "Learn by comparison, chat context preview, search index",
-        "advancedHintPlain": "Learn by comparison"
+            "openPeople": "Choose in Who you know"
+        }
     },
     "general": {
         "startAtLogin": {
@@ -3138,16 +2907,6 @@
             "system": "System default",
             "english": "English",
             "chinese": "简体中文"
-        },
-        "advancedHint": "Keyboard shortcuts, read aloud and voices, tool steps in chat",
-        "toolSteps": {
-            "title": "Show tool steps in chat",
-            "description": "Show each tool Isoform used, and what it returned, under its reply. Turn this on when you want to check how it reached an answer."
-        },
-        "readingWidth": {
-            "title": "Reading width",
-            "centered": "Centered",
-            "full": "Full"
         }
     },
     "toolsOnThisMac": {
@@ -3181,15 +2940,6 @@
     },
     "observation": {
         "pausedReason": "Observing is paused. Resume it to change this.",
-        "pause": {
-            "title": "Pause observing",
-            "description": "Isoform stops watching your screen and listening until you turn this off or restart Isoform. Use it for a private call or anything you would rather it did not see.",
-            "paused": "Paused. Isoform is not watching or listening right now.",
-            "shortcutTitle": "Keyboard shortcut",
-            "shortcutDescription": "Pause or resume observing from any app on this computer. See Keyboard shortcuts for the pause duration.",
-            "loadFailed": "Couldn't read this setting.",
-            "toggleFailed": "Couldn't change this."
-        },
         "watch": {
             "title": "Watch my screen",
             "description": "Isoform looks at the apps and windows you use, and keeps the text you type in them, so it can learn how you work and help at the right moment. It also reads the history of Chrome and other Chromium browsers on this computer (not Safari, never private windows), so the sites you visit most and what you searched for can appear in your brief. Password fields, private windows and the apps you ignore stay out. Turn this off if you would rather it never sees your screen.",
@@ -3253,31 +3003,10 @@
                 "microphone_paused": "Turned off with Use the microphone. System audio can still be heard."
             }
         },
-        "related": {
-            "title": "On the Privacy page",
-            "description": "These live with the other choices about what stays private.",
-            "ignoredAppsTitle": "Apps Isoform does not listen to",
-            "ignoredAppsDescription": "For example dictation tools, so what you dictate outside calls does not become a transcript. Calls are recorded whole while Record meetings automatically is on.",
-            "retentionTitle": "Keep recordings for",
-            "retentionDays_one": "Kept for {{count}} day now.",
-            "retentionDays_other": "Kept for {{count}} days now.",
-            "retentionUnlimited": "Kept until the storage limit is full.",
-            "open": "Open Privacy"
-        },
         "advanced": {
             "hint": "Capture status, apps Isoform does not listen to and how long recordings are kept"
         },
         "calendars": {
-            "holds": {
-                "offerTitle": "Offer to hold time",
-                "offerDescription": "When something needs your time, Isoform suggests a block. It goes on your calendar only when you press Hold.",
-                "calendarTitle": "Holds go to",
-                "calendarDescription": "Pick a calendar people you work with can see, so they know you're busy.",
-                "noCalendar": "No writable calendar",
-                "chooseCalendar": "Choose a calendar",
-                "browserOnly": "Your {{account}} calendar is only in your browser. Add it in Calendar › Settings › Accounts to hold time on it.",
-                "changeFailed": "Couldn't change this."
-            },
             "title": "Calendars Isoform can see",
             "description": "Isoform reads the calendars on this computer and the web calendars you open in your browser, so it can prepare you for meetings and plan your day. Events are kept on this computer; what a task needs is sent to the AI you chose and to your paired phone.",
             "needsAccess": "Your computer has not given Isoform access to your calendars yet. Allow it below.",
@@ -3394,11 +3123,6 @@
                 "action": "Forget",
                 "failed": "Couldn't forget this."
             }
-        },
-        "clipboard": {
-            "title": "Note what I copy",
-            "description": "A copy is a good sign of what you are about to do. Isoform notes what kind of thing you copied and in which app and, where macOS lets it read the copy, a short preview with personal details, codes, recovery phrases, single words such as passwords and anything labelled as a secret removed. Nothing is noted from password managers, copies apps mark as passwords, private browser windows, Isoform itself or the apps you protect. Safari does not mark its private windows, so from Safari only the kind of copy is noted, never a preview.",
-            "toggleFailed": "Couldn't change this."
         },
         "files": {
             "title": "Recent files",
@@ -3543,27 +3267,27 @@
             },
             "triage-memory": {
                 "name": "Learn memories",
-                "description": "Finds useful personal context in observed activity."
+                "description": "Learns what you are focused on, the tools you use and how you like to work. When off, About you stops changing from what Isoform sees. Your AI reads what Isoform sees to do this."
             },
             "triage-knowledge": {
                 "name": "Learn knowledge",
-                "description": "Finds reusable knowledge in observed work."
+                "description": "Saves useful details, such as how you fixed an error or set something up, so Isoform can reuse them later. When off, nothing new is saved here. Your AI reads what Isoform sees to do this."
             },
             "triage-shadow": {
                 "name": "Learn by comparison",
-                "description": "Compares isolated practice runs with how you work."
+                "description": "Isoform quietly guesses how you would handle a task, compares its guess with what you actually did and learns from the difference. It never acts for you. When off, it stops making new guesses and keeps what it already learned. Your AI reads what Isoform sees to do this."
             },
             "triage-sop": {
                 "name": "Learn playbooks",
-                "description": "Finds repeatable steps that could become a playbook."
+                "description": "Turns tasks you repeat the same way into step-by-step playbooks you can run, edit and share. When off, no new playbooks are made. Your AI reads what Isoform sees to do this."
             },
             "triage-events": {
                 "name": "Recognize events",
-                "description": "Finds notable events in observed activity."
+                "description": "Groups what you do across apps into moments on your Activity timeline. To read WeChat, it sends a cropped screenshot of the open chat to your AI. When off, no new moments are added."
             },
             "shadow-confidence": {
                 "name": "Adjust prediction confidence",
-                "description": "Uses comparisons to improve confidence in predictions."
+                "description": "After enough comparisons, Isoform adjusts how sure it is about its guesses. This never lets Isoform act on its own."
             },
             "work-pattern-profile": {
                 "name": "Work pattern context",
@@ -3575,11 +3299,11 @@
             },
             "memory-dream-llm": {
                 "name": "AI memory review",
-                "description": "Uses AI to help review and consolidate memories."
+                "description": "Sends saved memories to your AI to review and consolidate them."
             },
             "topic-finds": {
                 "name": "Topic finds",
-                "description": "Looks for new information about topics you follow. Turning this off pauses searches and keeps saved topics, finds and search history."
+                "description": "Looks for new information about topics you follow. Turning this off pauses searches and keeps saved topics, finds and search history. Your topic names and search words made from your interests go to your AI's web search."
             },
             "auto-speak": {
                 "name": "Read replies aloud",
@@ -3840,7 +3564,12 @@
         "appMenu": {
             "about": "About Isoform",
             "check": "Check for updates…",
-            "settings": "Settings…"
+            "settings": "Settings…",
+            "restart": "Restart to Update",
+            "help": "Help",
+            "shortcuts": "Keyboard Shortcuts",
+            "isoformHelp": "Isoform Help",
+            "feedback": "Send Feedback…"
         },
         "legalUnavailable": "Privacy, terms and open source license documents are not included in this build yet.",
         "close": "Close",
@@ -4004,9 +3733,9 @@
         "change": "Change",
         "leaves": "What leaves this computer",
         "agents": "Your agents",
-        "agentsSub_one": "Only what each task's What it gets lists · {{count}} task this week",
-        "agentsSub_other": "Only what each task's What it gets lists · {{count}} tasks this week",
-        "agentsSubPlain": "Only what each task's What it gets lists",
+        "agentsSub_one": "Only what each hand-off's What went lists · this week {{count}}: {{counts}}",
+        "agentsSub_other": "Only what each hand-off's What went lists · this week {{count}}: {{counts}}",
+        "agentsSubPlain": "Only what each hand-off's What went lists",
         "devices": "Your phone and watch",
         "devicesSub": "Today's items, briefs and results, sealed through the relay, which can't read them",
         "devicesNone": "No phone paired, so nothing goes to one",
@@ -4021,7 +3750,6 @@
         "messages": "Messages",
         "messagesSub": "Notes of who asked what and what you promised, not the messages · two weeks or less",
         "agentsHistory": "Your agents' history",
-        "agentsHistorySub": "Off for every agent until you turn it on",
         "noSize": "—",
         "total": "{{used}} of {{cap}}. When it's full, the oldest goes first.",
         "yours": "Yours",
@@ -4043,7 +3771,7 @@
         "deleteFailed": "Couldn't delete your answers.",
         "forgetTitle": "Forget everything",
         "forget": "Forget everything…",
-        "forgetSub": "Removes everything Isoform keeps about you, on this computer and from Agent of You. Settings, your phone pairing and the app stay.",
+        "forgetSub": "Asks first, with what it removes",
         "forgetButton": "Forget everything…",
         "forgetConfirmTitle": "Forget everything?",
         "forgetConfirm": "Isoform removes your screen and calls, watch hours, meeting notes, mail and calendar copies, Messages notes, voices, chats, hand-offs, memory, know-how, people, topics, answers, your work profile and your Agent of You profile. This can't be undone. It keeps going if you quit.",
@@ -4080,8 +3808,21 @@
             "mainChat": "Chat",
             "logs": "Logs and probe dumps",
             "phones": "Your phone and watch",
-            "briefs": "Briefs"
-        }
+            "briefs": "Briefs",
+            "assistantCalls": "What your assistant was given"
+        },
+        "off": "Off",
+        "turnOn": "Turn on",
+        "agentsHistoryOnSub": "Your Claude Code and Codex sessions on this computer",
+        "agentOwn": "the AI you chose",
+        "agentCount": "{{agent}} {{count}}",
+        "aoy": "Agent of You",
+        "aoySub_one": "The {{count}} claim Agent of You can say",
+        "aoySub_other": "The {{count}} claims Agent of You can say",
+        "switchReadFailed": "Couldn't read whether this is on.",
+        "aoyReadFailed": "Couldn't read what Agent of You was sent.",
+        "changeTitle": "How long Isoform keeps things",
+        "changeSub": "Keep times and the space Isoform may use on this computer. When it's full, the oldest goes first."
     },
     "aoy": {
         "aoy": "Agent of You",
@@ -4312,27 +4053,127 @@
         "save": "Save",
         "lead": "You, as an agent clients can hire at isoform.ai/agents/{{name}}."
     },
+    "yourAI": {
+        "title": "Your AI",
+        "lead": "{{assistant}} reads your day and writes your briefs and answers.",
+        "alsoAgent": "{{app}} · also your agent for {{job}}",
+        "jobCode": "code",
+        "jobElse": "everything else",
+        "finding": {
+            "title": "Finding things in what Isoform keeps",
+            "here": "on this computer",
+            "ollamaHere": "Ollama on this computer",
+            "ollamaAt": "Ollama at {{address}}",
+            "openai": "OpenAI",
+            "change": "Change",
+            "choice": {
+                "local": "On this computer",
+                "ollama": "Ollama",
+                "openai": "OpenAI"
+            },
+            "keyLabel": "OpenAI key",
+            "keySaved": "A key is saved; leave empty to keep it",
+            "leaves": "Sends text to OpenAI; see What leaves.",
+            "addressLabel": "Ollama address",
+            "save": "Save",
+            "cancel": "Cancel",
+            "failed": "That didn't work. Try again."
+        },
+        "overnight": {
+            "title": "Overnight review of what it knows",
+            "line": "Reads your saved memories with {{assistant}} and proposes changes for you to check.",
+            "yourAI": "Your AI",
+            "failed": "That didn't work. Try again.",
+            "readFailed": "Couldn't read whether this is on."
+        }
+    },
     "yourAgents": {
-        "jobsTitle": "Their jobs",
+        "jobsTitle": "Your jobs",
+        "change": "Change",
+        "noneChosen": "None connected yet. A yes on offered work goes to the agent you use.",
+        "takesOver": "{{current}} does your {{kind}} work now. {{agent}} takes over; {{current}} stays connected.",
+        "kindCode": "code",
+        "kindElse": "other",
         "note": "Isoform passes them the task and what it gets, nothing else.",
         "forCode": "For code",
         "forCodeSub": "Work that touches a repository",
         "forElse": "For everything else",
         "forElseSub": "Everything you say yes to that isn't code",
-        "notChosen": "Asked at your first Yes",
-        "connectedTitle": "Connected agents",
+        "otherTitle": "Other agents",
         "empty": "No agents yet. Connect one to hand it work.",
+        "stateWhere": "{{state}} · {{where}}",
         "connect": "Connect an agent",
         "disconnect": "Disconnect",
         "disconnectTitle": "Disconnect {{agent}}?",
         "disconnectBody": "It stops getting hand-offs at once, and can't use Isoform's tools any more. What it already made stays with it.",
         "loadFailed": "Couldn't read your agents.",
-        "actionFailed": "That didn't work. Try again."
+        "actionFailed": "That didn't work. Try again.",
+        "learnOff": "Learn from it: off",
+        "learnOn": "Learn from it: on",
+        "learnOnlyHere": "Learn from it: only on this computer"
     },
     "topicProposals": {
         "title": "Proposals from your topics",
-        "description": "Isoform sends your topic names to your own AI to suggest the next piece of work.",
+        "description": "Topics offer their next piece of work in Your work. To write it, your topic names and what Isoform noted about each go to {{assistant}}.",
         "toggleFailed": "Couldn't change this. Try again.",
-        "loadFailed": "Couldn't read this setting."
+        "loadFailed": "Couldn't read this setting.",
+        "yourAI": "the AI you chose"
+    },
+    "sees": {
+        "screen": "Screen",
+        "screenSub": "What's on screen and your history in Chrome and browsers like it, with the apps you exclude left out",
+        "calls": "Calls and meetings",
+        "callsSub": "What you say and your recorded calls, transcribed on this computer",
+        "mailCalRem": "Mail, calendar and reminders",
+        "mailCalRemSub": "Your accounts on this computer, read where they are",
+        "messages": "Messages",
+        "messagesSub": "Your iMessage and text conversations with people you know, on this computer",
+        "messagesAsk": "Isoform reads your conversations with people you know, to know who's waiting on you and what you promised. It keeps them on this computer, and {{assistant}} reads them as it reads your screen. It needs Full Disk Access, which you give in System Settings.",
+        "openSystem": "Open System Settings",
+        "notNow": "Not now",
+        "needsFda": "Needs Full Disk Access",
+        "needsFdaOff": "Needs Full Disk Access · asked when you turn it on",
+        "watch": "Your watch",
+        "watchSub": "Talk it hears while on your wrist, by the hour",
+        "watchOff": "Off. Tap the mark on your watch to start listening.",
+        "noWatch": "No watch with Isoform yet. Put Isoform on your watch from your phone.",
+        "watchOffFailed": "Couldn't turn listening off. Your watch is still listening.",
+        "agentsHistory": "Your agents' history",
+        "agentsHistorySub": "What Claude Code and Codex did on this computer",
+        "needsAccess": "Needs access",
+        "readFailed": "Couldn't read whether this is on",
+        "closedEyesOn": "Closed Eyes is on. Nothing is seen or kept until you open them.",
+        "open": "Open {{source}}",
+        "back": "What Isoform sees",
+        "speechSpaceFailed": "Couldn't read whether speech recognition is on this computer.",
+        "wechatPic": "WeChat windows as pictures, when their text can't be read · sent to {{assistant}}",
+        "wechatPicWaiting": "Pictures wait until the privacy model, which masks pictures of your screen, is on this computer.",
+        "wechatPicFailed": "Couldn't change this."
+    },
+    "watch": {
+        "phoneQuiet": "Your phone hasn't been in touch since {{time}}, so nothing from your watch has come since. Open Isoform on your phone to send it.",
+        "offPending": "Waiting to reach your watch · your phone was last in touch at {{time}}. Anything it hears until then is deleted when it arrives."
+    },
+    "yourWatch": {
+        "readFailed": "Couldn't read your watch's settings.",
+        "pairingUnknown": "Couldn't tell yet whether your phone has a watch with Isoform.",
+        "changeFailed": "Couldn't change this. Your watch keeps its setting.",
+        "stateHeard": "Listening · last heard {{time}}",
+        "stateListening": "Listening · nothing heard yet",
+        "offPendingNever": "Waiting to reach your watch · your phone hasn't been in touch yet. Anything it hears until then is deleted when it arrives.",
+        "notes": {
+            "title": "Notes for long talks",
+            "description": "Over 5 minutes: a note, and what you said you'd do"
+        },
+        "heartRate": {
+            "title": "Heart rate",
+            "description": "Adds \"heart rate raised\" beside what was said. Never the numbers.",
+            "interim": "Your watch adds it when its own Heart rate switch is on too."
+        },
+        "place": {
+            "title": "Place",
+            "description": "Adds the area, like \"Mission District\". Never the address.",
+            "interim": "Your watch adds it when its own Place switch is on too."
+        }
     }
 }

@@ -128,7 +128,7 @@ func (s *Store) ListReminders(ctx context.Context, includeClosed bool) ([]Remind
 		query += ` WHERE deleted_at = 0 AND completed_at = 0`
 	}
 	query += ` ORDER BY (deleted_at = 0 AND completed_at = 0) DESC, due_at = 0, due_at ASC, updated_at DESC, uid ASC`
-	rows, err := s.db.QueryContext(ctx, query)
+	rows, err := s.committedReader().QueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("list reminders: %w", err)
 	}

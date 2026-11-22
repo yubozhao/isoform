@@ -18,7 +18,7 @@ extension TodayHubAPI {
 extension HubChannel: TodayHubAPI {
     func meetingPrep(id: String) async throws -> TodayMeetingPrep {
         guard !id.isEmpty, id.utf8.count <= 2048 else { throw HubRequestError.invalidIdentifier }
-        guard try await status().todayMeetingPrep == true else {
+        guard try await abilities().todayMeetingPrep == true else {
             throw HubRequestError.rejected(status: 404, message: "")
         }
         return try await perform(.todayMeetingPrep(id: id)).payload(TodayMeetingPrep.self)

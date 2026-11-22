@@ -16,6 +16,8 @@ const smsResponseLimit = 64 << 10
 // smsHTTPClient calls the relay's text routes. Like the attachment client it
 // follows the WebSocket's proxy settings and never follows a redirect, so the
 // hub credential goes to the configured relay only.
+//
+//isoform:destination text_relay
 var smsHTTPClient = &http.Client{
 	Transport: &http.Transport{Proxy: http.ProxyFromEnvironment},
 	CheckRedirect: func(*http.Request, []*http.Request) error {
@@ -27,6 +29,8 @@ var smsHTTPClient = &http.Client{
 // 18.2) and decodes the status object. A refusal becomes an *smsError with
 // the relay's code; an unreachable relay is smsErrOffline. Neither the number
 // nor a text body is ever logged here.
+//
+//isoform:destination text_relay
 func (c *mobileRelayClient) smsCall(ctx context.Context, method, path string, body any) (smsRelayStatus, error) {
 	var reader io.Reader
 	if body != nil {

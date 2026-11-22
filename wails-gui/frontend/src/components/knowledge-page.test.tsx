@@ -1586,6 +1586,13 @@ describe('design review v1.0.0 (Thursday)', () => {
         expect(mocks.toast).not.toHaveBeenCalled();
     });
 
+    it('offers no playbook actions while playbooks are off', async () => {
+        (globalThis as Record<string, unknown>).__isoformFeatureSwitchesForTest = { automations: true, playbooks: false, proactiveVoice: true, calendarHolds: true };
+        mocks.getCandidate.mockResolvedValue(null);
+        await renderPage();
+        expect(screen.queryByRole('button', { name: 'Generate from recent work' })).toBeNull();
+    });
+
     it('W1: Generate says it drafts into Tasks › Up next; a failure has Try again', async () => {
         mocks.getCandidate.mockResolvedValue(null);
         mocks.generateRange.mockRejectedValueOnce(new Error('busy'));

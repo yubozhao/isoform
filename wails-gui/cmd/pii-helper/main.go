@@ -50,7 +50,12 @@ func main() {
 			writeResponse(response{Error: fmt.Sprintf("decode request: %v", err)})
 			continue
 		}
-		writeResponse(response{Detections: detector.Detect(req.Observations)})
+		detections := detector.Detect(req.Observations)
+		if !detector.IsReady() {
+			writeResponse(response{Error: "privacy inference failed"})
+			return
+		}
+		writeResponse(response{Detections: detections})
 	}
 	if err := scanner.Err(); err != nil {
 		fmt.Fprintf(os.Stderr, "read request: %v\n", err)

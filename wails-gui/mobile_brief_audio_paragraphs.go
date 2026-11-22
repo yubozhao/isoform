@@ -165,7 +165,9 @@ func mobileBriefParagraphStarts(brief MobileBriefV1, lang string, segments []str
 	}
 	speak := func(paragraph MobileBriefPara) string {
 		fitted := normalizeBriefText(strings.TrimSpace(paragraph.Text), lang, mobileBriefTextReference(brief), false)
-		return strings.TrimSpace(speechDisplayText(mobileBriefParagraphSpeech(brief, MobileBriefPara{Text: fitted, Refs: paragraph.Refs}, lang), lang))
+		// The same words the voice read (mobileBriefSpeech): clocks said as
+		// words, so a paragraph with a clock is still found and timed.
+		return strings.TrimSpace(speechDisplayText(mobileBriefSpokenClocks(mobileBriefParagraphSpeech(brief, MobileBriefPara{Text: fitted, Refs: paragraph.Refs}, lang), lang), lang))
 	}
 	var candidates []written
 	for i, paragraph := range brief.Narrative {

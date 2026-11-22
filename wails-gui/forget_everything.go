@@ -101,6 +101,9 @@ var forgetEverythingSteps = []forgetEverythingStep{
 	{"logs", (*App).forgetDumpsAndLogs},
 	{"agentOfYou", (*App).forgetAgentOfYouProfile},
 	{"phones", (*App).forgetOnPhones},
+	// What the assistant was given (See them): last, so no step above
+	// records an entry after it.
+	{"assistantCalls", (*App).forgetAllAssistantCalls},
 }
 
 type forgetEverythingJob struct {

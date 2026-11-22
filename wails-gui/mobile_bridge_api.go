@@ -53,6 +53,17 @@ type mobileStatusView struct {
 	RecordingDetail bool `json:"recordingDetail,omitempty"`
 	// RecordingMarks is true when POST /recordings takes the moments the wearer marked in a part (24.9).
 	RecordingMarks bool `json:"recordingMarks,omitempty"`
+	// RecordingRelay is true when the computer fetches a part from the relay named in upload.relay (24.2).
+	RecordingRelay bool `json:"recordingRelay,omitempty"`
+	// RecordingAhead is true when POST /recordings takes a part told ahead of its upload (24.2a).
+	RecordingAhead bool `json:"recordingAhead,omitempty"`
+	// RecordingPasses is true when POST /recordings/passes takes what the phone's recording passes came to (24.2b).
+	RecordingPasses bool `json:"recordingPasses,omitempty"`
+	// RecordingPassRestarts is true when a pass record may carry "restarted" (24.2b).
+	RecordingPassRestarts bool `json:"recordingPassRestarts,omitempty"`
+	// RecordingInWakeSend lets the phone send pieces itself in a background wake, and says a pass
+	// record may carry "sentInWake" (24.2b). False, the phone hands every piece to its system as before.
+	RecordingInWakeSend bool `json:"recordingInWakeSend,omitempty"`
 	// NoticesRead is true when GET and POST /notices/read carry the notices
 	// read anywhere (9.4).
 	NoticesRead bool `json:"noticesRead,omitempty"`
@@ -340,7 +351,15 @@ func (bridge *mobileBridge) handleAuthorized(w http.ResponseWriter, r *http.Requ
 		if !mobileRequireScope(w, device, mobileScopeChatWrite) {
 			return
 		}
+		// Written before anything else: a request that then waits or is cut
+		// off still shows it reached this computer.
+		log.Printf("[recordings] a part request arrived")
 		bridge.serveRecordingPost(w, r, device)
+	case "POST /recordings/passes":
+		if !mobileRequireScope(w, device, mobileScopeChatWrite) {
+			return
+		}
+		bridge.serveRecordingPasses(w, r)
 	case "GET /recordings":
 		if !mobileRequireScope(w, device, mobileScopeChatWrite) {
 			return
@@ -370,7 +389,7 @@ func (bridge *mobileBridge) handleAuthorized(w http.ResponseWriter, r *http.Requ
 		if !mobileRequireScope(w, device, mobileScopeBriefRead) {
 			return
 		}
-		bridge.serveSees(w)
+		bridge.serveSees(w, r)
 	case "POST /privacy/show":
 		if !mobileRequireScope(w, device, mobileScopeBriefRead) {
 			return
@@ -779,7 +798,7 @@ func mobileRequireScope(w http.ResponseWriter, device mobileDeviceRecord, scope 
 
 func (bridge *mobileBridge) serveStatus(w http.ResponseWriter) {
 	view := mobileStatusView{
-		HubName: mobileHubName(), AppVersion: Version, ProtocolVersion: 1, Topics: true, TopicsDaily: true, TaskThreads: true, BrainDump: true, Recordings: true, OwnerVoice: true, RecordingContext: true, RecordingDetail: true, RecordingMarks: true, Sees: true, FirstRead: true, TodayMeetingPrep: true, ChatMainSend: true, NotificationTest: true, Work: true, WorkSend: true, BriefRelevanceFeedback: true, BriefAsk: true, BriefWeekDecline: true, HandoffStatus: true, WorkAgentActions: true, AgentJoin: true, ChatB10: chatB10Enabled, ScopeRequest: chatB10Enabled,
+		HubName: mobileHubName(), AppVersion: Version, ProtocolVersion: 1, Topics: true, TopicsDaily: true, TaskThreads: true, BrainDump: true, Recordings: true, OwnerVoice: true, RecordingContext: true, RecordingDetail: true, RecordingMarks: true, RecordingRelay: true, RecordingAhead: true, RecordingPasses: true, RecordingPassRestarts: true, RecordingInWakeSend: recordingInWakeSendEnabled, Sees: true, FirstRead: true, TodayMeetingPrep: true, ChatMainSend: true, NotificationTest: true, Work: true, WorkSend: true, BriefRelevanceFeedback: true, BriefAsk: true, BriefWeekDecline: true, HandoffStatus: true, WorkAgentActions: true, AgentJoin: true, ChatB10: chatB10Enabled, ScopeRequest: chatB10Enabled,
 		KeepAwake: bridge.keepAwakeSetting(), InstantPush: mobileInstantPushConfigured(), NoticesRead: true,
 		BriefSchedule: []mobileBriefSlotTime{},
 	}

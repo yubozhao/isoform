@@ -677,3 +677,46 @@ func TestRequestWaitsForASleepingComputerForADay(t *testing.T) {
 		t.Fatalf("a request older than a day was still deliverable: %d %v", len(entries), err)
 	}
 }
+
+// A device stored before the paired column existed takes 0: a grant may still
+// replace its bearer, as before. A device a pairing approval creates is marked.
+func TestOpenMigratesLegacyDevicesAsNotPairedHere(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy-devices.sqlite")
+	legacy, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = legacy.Exec(`CREATE TABLE devices (
+		id TEXT PRIMARY KEY,
+		hub_id TEXT NOT NULL,
+		bearer_hash TEXT NOT NULL UNIQUE,
+		scopes TEXT NOT NULL,
+		created_at INTEGER NOT NULL,
+		expires_at INTEGER NOT NULL,
+		last_seen_at INTEGER NOT NULL DEFAULT 0
+	);
+	INSERT INTO devices(id,hub_id,bearer_hash,scopes,created_at,expires_at,last_seen_at)
+	VALUES('legacy-device','legacy-hub','` + strings.Repeat("a", 64) + `','["presence:read"]',1,9999999999999,0);`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := legacy.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	var paired int
+	if err := s.db.QueryRow(`SELECT paired FROM devices WHERE id='legacy-device'`).Scan(&paired); err != nil {
+		t.Fatal(err)
+	}
+	if paired != 0 {
+		t.Fatalf("legacy device paired %d, want 0", paired)
+	}
+	replacement := Device{ID: "legacy-device", BearerHash: strings.Repeat("b", 64), Scopes: []string{"presence:read"}, ExpiresAt: time.Now().Add(time.Hour)}
+	if err := s.GrantDevice(context.Background(), "legacy-hub", replacement, time.Now()); err != nil {
+		t.Fatalf("a grant over a legacy device: %v", err)
+	}
+}

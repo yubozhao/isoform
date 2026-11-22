@@ -3,22 +3,15 @@ import {
     Database,
     Eye,
     EyeOff,
-    Palette,
     Bell,
     Blocks,
-    Brain,
     Cpu,
-    HardDrive,
-    Info,
     LifeBuoy,
     MessagesSquare,
-    Package,
     Puzzle,
     Server,
-    Settings,
-    User,
-    ShieldCheck,
     Smartphone,
+    Watch,
     Sparkles,
 } from "lucide-react";
 import {
@@ -40,8 +33,6 @@ import {
 
 export const SETTINGS_SECTION_IDS = [
     "basics",
-    "personal-ai",
-    "app",
     "extensions",
     "help",
 ] as const;
@@ -55,16 +46,9 @@ export const SETTINGS_PAGE_IDS = [
     "ai-provider",
     "your-agent",
     "iphone",
+    "your-watch",
     "notifications",
-    "memory",
-    "security",
-    "storage",
-    "overview",
-    "general",
-    "profile",
-    "appearance",
     "plugins",
-    "skills",
     "mcp",
     "chat-apps",
     "use-yansu-anywhere",
@@ -97,14 +81,37 @@ export const LEGACY_SETTINGS_TOPIC_IDS = [
     "support",
     "text-messages",
     "phone-calls",
+    // Pages that went in settings batch D1 (answers v1.0.0 T2, settings
+    // v1.0.0 r10). Their ids stay so old links still land somewhere that is.
+    "overview",
+    "general",
+    "profile",
+    "appearance",
+    "skills",
+    // Pages that went in settings batch D2 (answers v1.0.0 T2, computer-data
+    // v1.0.0 rules 2-3).
+    "security",
+    "storage",
+    // Learning and memory went in settings batch D3. App.tsx sends `memory`
+    // to You › About you first (opensYouPage); if it reaches Settings it
+    // opens What Isoform sees.
+    "memory",
     ...CHAT_APP_IDS,
 ] as const;
 
 export type LegacySettingsTopic = (typeof LEGACY_SETTINGS_TOPIC_IDS)[number];
 
-/** Legacy ids whose content now sits under its page's Advanced section:
- *  they open that page with Advanced expanded. */
-const LEGACY_TOPICS_UNDER_ADVANCED: readonly LegacySettingsTopic[] = ["keybindings", "read-aloud"];
+/** Settings has no Keyboard page (computer-keys v1.0.0 r5): the old
+ *  `keybindings` link opens the Keyboard shortcuts sheet instead. */
+export function opensKeysSheet(id: string | null | undefined): boolean {
+    return id === "keybindings";
+}
+
+/** Learning and memory went (settings batch D3): what it linked to lives in
+ *  You, so the old `memory` link opens You › About you instead of Settings. */
+export function opensYouPage(id: string | null | undefined): boolean {
+    return id === "memory";
+}
 
 /** Every id openSettings() accepts: a page, a legacy alias or a Developer
  *  tools page. */
@@ -146,7 +153,7 @@ export interface SettingsPageEntry {
     /** settings-namespace key of the sidebar label and page title. */
     labelKey: string;
     /** settings-namespace key of a page title that differs from the sidebar
-     *  label (Overview reads "How Isoform works for you"). */
+     *  label (Agent of You reads "Agent of You" with its own title key). */
     titleKey?: string;
     /** settings-namespace key of the one plain-language sentence under the
      *  page title that says what the page is for. */
@@ -160,19 +167,16 @@ export interface SettingsPageEntry {
     comingSoon?: boolean;
 }
 
-// The first section is computer-settings v1.0.0 rule 1's order: What Isoform
-// sees (page id "activity"), Closed Eyes, Your data, Your agents ("ai-provider"),
-// Agent of You ("your-agent", computer-settings v1.1.0 rule 1), Your
-// phone ("iphone") and Briefs and notifications ("notifications"). The pages
-// that rule doesn't name keep their place under it.
+// The first section is computer-conformance-answers v1.0.0 G1's order: What
+// Isoform sees (page id "activity"), Closed Eyes, Your data, Your agents
+// ("ai-provider"), Agent of You ("your-agent"), Your phone ("iphone") and
+// Briefs and notifications ("notifications"); About ("about") ends the list.
+// Your AI and Your watch come in other batches. Other AI apps goes in a later
+// batch and keeps its place until then. Plugins, Tool servers and Chat apps stay until the switches only they
+// hold, which send data off the computer, have homes (Settings owner,
+// batch D1).
 export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     { id: "basics" },
-    {
-        id: "personal-ai",
-        headingKey: "nav.sections.personalAi.heading",
-        explanationKey: "nav.sections.personalAi.explanation",
-    },
-    { id: "app", dividerBefore: true },
     {
         id: "extensions",
         headingKey: "nav.sections.extensions.heading",
@@ -200,31 +204,27 @@ function page(
 }
 
 export const SETTINGS_PAGES: readonly SettingsPageEntry[] = [
-    page("activity", "basics", Eye),
+    page("activity", "basics", Eye, ["overview", "phone-calls", "memory"]),
     page("closed-eyes", "basics", EyeOff),
-    page("your-data", "basics", Database),
-    page("ai-provider", "basics", Cpu, ["subscription"]),
+    page("your-data", "basics", Database, ["security", "storage"]),
+    page("ai-provider", "basics", Cpu, ["subscription", "skills"]),
     { ...page("your-agent", "basics", Sparkles), titleKey: "pages.your-agent.title", comingSoon: true },
     page("iphone", "basics", Smartphone),
-    page("notifications", "basics", Bell),
-    page("memory", "personal-ai", Brain),
-    page("security", "personal-ai", ShieldCheck),
-    page("storage", "personal-ai", HardDrive),
-    { ...page("overview", "app", Info, ["text-messages", "phone-calls"]), titleKey: "pages.overview.title" },
-    page("general", "app", Settings, [
-        "language",
-        "read-aloud",
-        "keybindings",
-        "account",
-    ]),
-    page("profile", "app", User),
-    page("appearance", "app", Palette),
+    page("your-watch", "basics", Watch),
+    page("notifications", "basics", Bell, ["text-messages", "read-aloud"]),
     page("plugins", "extensions", Puzzle),
-    page("skills", "extensions", Package),
     page("mcp", "extensions", Server),
     page("chat-apps", "extensions", MessagesSquare, CHAT_APP_IDS),
     page("use-yansu-anywhere", "extensions", Blocks),
-    page("about", "help", LifeBuoy, ["support"]),
+    page("about", "help", LifeBuoy, [
+        "support",
+        "general",
+        "profile",
+        "appearance",
+        "language",
+        "keybindings",
+        "account",
+    ]),
 ];
 
 /** Settings opens on What Isoform sees (computer-settings v1.0.0 rule 1). */
@@ -273,11 +273,7 @@ function resolvePage(id: string | null | undefined): ResolvedSettingsTopic {
     const owner = SETTINGS_PAGES.find((entry) =>
         (entry.aliases as readonly string[]).includes(id),
     );
-    if (owner) {
-        return (LEGACY_TOPICS_UNDER_ADVANCED as readonly string[]).includes(id)
-            ? { page: owner.id, revealAdvanced: true }
-            : { page: owner.id };
-    }
+    if (owner) return { page: owner.id };
     if (isDevToolsTopicId(id)) return { page: id };
     return { page: DEFAULT_SETTINGS_PAGE };
 }
@@ -285,9 +281,10 @@ function resolvePage(id: string | null | undefined): ResolvedSettingsTopic {
 /**
  * Maps any id a caller may pass to openSettings() to the page that shows it.
  * Registered pages and Developer tools pages map to themselves, legacy ids map
- * to the page that absorbed them (a chat app keeps its id as the drill-in,
- * and Keyboard shortcuts and Read aloud open General with Advanced
- * expanded), and anything unknown falls back to What Isoform sees. `options` can ask
+ * to the page that absorbed them (a chat app keeps its id as the drill-in;
+ * App.tsx sends `keybindings` to the
+ * Keyboard shortcuts sheet first, see opensKeysSheet), and anything unknown
+ * falls back to What Isoform sees. `options` can ask
  * for Advanced expanded and an anchor to scroll to.
  */
 export function resolveSettingsTopic(

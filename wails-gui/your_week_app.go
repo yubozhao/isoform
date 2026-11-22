@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"sort"
 	"strings"
 	"sync"
@@ -21,49 +20,6 @@ import (
 // week. Every read names those identities again through their own gates: a
 // withdrawn source leaves the card at once.
 const yourWeekSnapshotKey = "your_week.snapshot.v1:"
-
-type YourWeekEntry struct {
-	BriefID  string            `json:"briefId,omitempty"`
-	TimeZone string            `json:"timeZone,omitempty"`
-	Week     *MobileBriefWeek  `json:"week,omitempty"`
-	Cards    []MobileBriefCard `json:"cards"`
-}
-
-func (a *App) GetYourWeekForDate(dateISO string) (perfValue YourWeekEntry, perfErr error) {
-	defer logPageBinding("GetYourWeekForDate", time.Now(), &perfValue)
-	requested, err := time.Parse("2006-01-02", dateISO)
-	if err != nil || requested.Format("2006-01-02") != dateISO {
-		return YourWeekEntry{}, fmt.Errorf("invalid date")
-	}
-	if a == nil || a.IsClosedEyesModeEnabled() {
-		return YourWeekEntry{Cards: []MobileBriefCard{}}, nil
-	}
-	service, ok := a.ensureMobileBriefService().(*mobileBriefService)
-	if !ok || service == nil || service.store == nil {
-		return YourWeekEntry{Cards: []MobileBriefCard{}}, nil
-	}
-	ctx := context.Background()
-	for _, stored := range service.store.briefs() {
-		if mobileBriefDisplaySlot(stored, defaultMobileBriefSettings()) != mobileBriefSlotEvening {
-			continue
-		}
-		start, end, _, _, ok := a.yourWeekResolvedWindow(ctx, stored)
-		if !ok || dateISO < start.Format("2006-01-02") || dateISO > end.Format("2006-01-02") {
-			continue
-		}
-		delivered := a.mobileBriefWithCards(a.mobileBriefForDelivery(stored))
-		if delivered.YourWeek == nil {
-			continue
-		}
-		return YourWeekEntry{
-			BriefID:  delivered.BriefID,
-			TimeZone: delivered.Timezone,
-			Week:     delivered.YourWeek,
-			Cards:    delivered.Cards,
-		}, nil
-	}
-	return YourWeekEntry{Cards: []MobileBriefCard{}}, nil
-}
 
 type yourWeekSnapshot struct {
 	Version               int                        `json:"version"`

@@ -151,7 +151,10 @@ func (a *App) runPersonResearch(p storage.PrincipalRow, additionalContext string
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), personResearchTimeout)
+	givenCtx, given, _ := withLearningScope(context.Background(), "about")
+	given.add("people", p.ID, 1)
+	defer a.finishAssistantCall(given)
+	ctx, cancel := context.WithTimeout(givenCtx, personResearchTimeout)
 	defer cancel()
 
 	seed := a.buildResearchSeed(ctx, p, additionalContext)

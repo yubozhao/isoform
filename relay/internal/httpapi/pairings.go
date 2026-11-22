@@ -51,13 +51,11 @@ func (h *Handler) claimPairing(w http.ResponseWriter, r *http.Request, pairingID
 		return
 	}
 	now := h.Now()
-	if allowed, retry := h.limits.Allow("claim:pairing:"+pairingID, claimAttempts, claimWindow, now); !allowed {
-		setRetryAfter(w, retry)
+	if !h.allow(w, r, "claim_pairing", pairingID, claimAttempts, claimWindow, now) {
 		reply(w, http.StatusTooManyRequests, nil, "Too many claim attempts")
 		return
 	}
-	if allowed, retry := h.limits.Allow("claim:ip:"+clientIP(r), claimAttempts, claimWindow, now); !allowed {
-		setRetryAfter(w, retry)
+	if !h.allow(w, r, "claim_address", clientIP(r), claimAttempts, claimWindow, now) {
 		reply(w, http.StatusTooManyRequests, nil, "Too many claim attempts")
 		return
 	}

@@ -29,7 +29,7 @@ func (a *App) engagementJourneyMomentForDelivery(ctx context.Context, m engageme
 		if err == nil && !planned.After(now) {
 			m.Params = map[string]string{"stage": "welcome", "first_brief": ""}
 		}
-		// The day-0 welcome names the assistant history the first brief used.
+		// The day-0 welcome names only sources with a current saved choice.
 		// Pass 1 is local and quick; if it is not ready in time the welcome
 		// keeps its usual text.
 		if key := assistantHistoryHistoryKey(a.assistantHistoryAssistantsWithin(assistantHistoryWelcomeWait)); key != "" {

@@ -186,9 +186,7 @@ func TestMobileBriefNoticedWithdrawalEveryReader(t *testing.T) {
 			}
 			switch change {
 			case "not-now":
-				if err := app.DismissNoticed(noticedTestDay, items[0].ID); err != nil {
-					t.Fatal(err)
-				}
+				seedNoticedDismissal(t, app, items[0])
 			case "delete":
 				if err := app.activity.store.DeleteActivity(items[0].MomentID); err != nil {
 					t.Fatal(err)
@@ -312,9 +310,7 @@ func TestMobileBriefNoticedOldJSONAndMCP(t *testing.T) {
 	if len(got.Items) != 1 || got.Items[0].Source != mobileBriefNoticedSource || got.Items[0].Title == nil || got.Items[0].Title.Text != items[0].Text {
 		t.Fatalf("MCP readable control: %+v", got)
 	}
-	if err := app.DismissNoticed(date, items[0].ID); err != nil {
-		t.Fatal(err)
-	}
+	seedNoticedDismissal(t, app, items[0])
 	got = callMCPReadTest(t, app, "brief_today", map[string]any{})
 	if len(got.Items) != 0 || got.Withheld != 1 {
 		t.Fatalf("MCP withdrawal: %+v", got)
@@ -342,9 +338,7 @@ func TestMobileBriefNoticedPhonePushAndQueuedWithdrawal(t *testing.T) {
 	if err != nil || unchanged.Env.Seq != queued.Env.Seq {
 		t.Fatalf("unchanged phone revision changed: %d -> %d, %v", queued.Env.Seq, unchanged.Env.Seq, err)
 	}
-	if err := app.DismissNoticed(noticedTestDay, items[0].ID); err != nil {
-		t.Fatal(err)
-	}
+	seedNoticedDismissal(t, app, items[0])
 	bridge.briefDeliveryMu.Lock()
 	refreshed, err := bridge.refreshPendingBrief(queued)
 	bridge.briefDeliveryMu.Unlock()
@@ -406,9 +400,7 @@ func TestMobileBriefNoticedLookupReadsEachDayOncePerPass(t *testing.T) {
 	if calls != 2 {
 		t.Fatalf("GetDayNoticed calls = %d, want 2", calls)
 	}
-	if err := app.DismissNoticed(dates[0], items[0].ID); err != nil {
-		t.Fatal(err)
-	}
+	seedNoticedDismissal(t, app, items[0])
 	if _, ok := newMobileBriefNoticedLookup(app).suggestion(dates[0] + "/" + items[0].ID); ok {
 		t.Fatal("next pass admitted a withdrawn suggestion")
 	}

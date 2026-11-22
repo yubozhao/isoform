@@ -295,58 +295,6 @@ func TestEnsureDailySummary_PastDayRules(t *testing.T) {
 	}
 }
 
-func TestEnsureWeeklySummary_Rules(t *testing.T) {
-	now := time.Date(2026, 10, 20, 12, 0, 0, 0, time.Local) // Tuesday
-	thisMonday := mondayOf(now)
-	lastMonday := thisMonday.AddDate(0, 0, -7)
-
-	cases := []struct {
-		name        string
-		weekMonday  time.Time
-		seedCache   bool
-		isPartial   bool
-		createdAt   time.Time
-		seedSession bool
-		wantStatus  string
-		wantCalls   int
-	}{
-		{name: "current week missing generates", weekMonday: thisMonday, seedSession: true, wantStatus: autoStatusRefreshing, wantCalls: 1},
-		{name: "current week fresh is ready", weekMonday: thisMonday, seedCache: true, createdAt: now.Add(-1 * time.Hour), seedSession: true, wantStatus: autoStatusReady, wantCalls: 0},
-		{name: "current week stale refreshes", weekMonday: thisMonday, seedCache: true, createdAt: now.Add(-7 * time.Hour), seedSession: true, wantStatus: autoStatusRefreshing, wantCalls: 1},
-		{name: "past week complete is ready", weekMonday: lastMonday, seedCache: true, createdAt: lastMonday.Add(5 * 24 * time.Hour), seedSession: true, wantStatus: autoStatusReady, wantCalls: 0},
-		{name: "past week partial regenerates", weekMonday: lastMonday, seedCache: true, isPartial: true, createdAt: lastMonday.Add(5 * 24 * time.Hour), seedSession: true, wantStatus: autoStatusRefreshing, wantCalls: 1},
-		{name: "past week missing generates", weekMonday: lastMonday, seedSession: true, wantStatus: autoStatusRefreshing, wantCalls: 1},
-		{name: "week without activity does nothing", weekMonday: lastMonday, wantStatus: autoStatusUnavailable, wantCalls: 0},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			app, recorder, _ := newAutoSummaryTestApp(t, now)
-			if tc.seedSession {
-				seedActivitySummaryI18nSession(t, app.activity.store, "auto-week-"+tc.name, tc.weekMonday.Format("2006-01-02"), 11, []string{"Code"})
-			}
-			if tc.seedCache {
-				seedAutoSummaryCache(t, app.activity.store, tc.weekMonday.Format("2006-01-02")+"/week", "weekly", tc.isPartial, tc.createdAt)
-			}
-			data, err := app.EnsureWeeklySummary(tc.weekMonday.Format("2006-01-02"))
-			if err != nil {
-				t.Fatalf("EnsureWeeklySummary: %v", err)
-			}
-			if data.AutoStatus != tc.wantStatus {
-				t.Fatalf("AutoStatus = %q, want %q", data.AutoStatus, tc.wantStatus)
-			}
-			waitFor(t, 2*time.Second, "generation to drain", func() bool { return autoSummaryIdle(app) })
-			if got := recorder.totalCalls(); got != tc.wantCalls {
-				t.Fatalf("generator calls = %d, want %d", got, tc.wantCalls)
-			}
-			if tc.wantCalls > 0 {
-				if calls := recorder.weeklyCalls(); len(calls) != 1 || calls[0] != tc.weekMonday.Format("2006-01-02") {
-					t.Fatalf("weekly generator calls = %v, want exactly [%s]", calls, tc.weekMonday.Format("2006-01-02"))
-				}
-			}
-		})
-	}
-}
-
 func TestEnsureDailySummary_ConcurrentCallsStartOneGeneration(t *testing.T) {
 	now := time.Date(2026, 10, 20, 12, 0, 0, 0, time.Local)
 	today := now.Format("2006-01-02")

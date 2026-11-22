@@ -62,7 +62,7 @@ func (s *Store) SaveCronJob(ctx context.Context, job CronJobRow) error {
 // LoadCronJob returns a single cron job by ID.
 func (s *Store) LoadCronJob(ctx context.Context, id string) (*CronJobRow, error) {
 	var job CronJobRow
-	err := s.db.QueryRowContext(ctx, `
+	err := s.committedReader().QueryRowContext(ctx, `
 		SELECT id, name, description, enabled, schedule_kind, schedule_config, schedule_evidence,
 			target_kind, target_config, delete_after_run, retry_policy,
 			next_run_at, last_run_at, last_run_status, last_error,
@@ -80,7 +80,7 @@ func (s *Store) LoadCronJob(ctx context.Context, id string) (*CronJobRow, error)
 
 // ListCronJobs returns all cron jobs ordered by sort_order then creation time.
 func (s *Store) ListCronJobs(ctx context.Context) ([]CronJobRow, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.committedReader().QueryContext(ctx, `
 		SELECT id, name, description, enabled, schedule_kind, schedule_config, schedule_evidence,
 			target_kind, target_config, delete_after_run, retry_policy,
 			next_run_at, last_run_at, last_run_status, last_error,
@@ -215,7 +215,7 @@ func (s *Store) AttachLogsToLatestRunningCronRun(ctx context.Context, jobID, ses
 }
 
 func (s *Store) ListCronRuns(ctx context.Context, jobID string, limit int) ([]CronRunRow, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.committedReader().QueryContext(ctx, `
 		SELECT id, job_id, started_at, finished_at, status, trigger_kind, error, duration_ms, result_summary, session_tag, item_sort_start, notify_result, candidate_backends, backend, fallback_from, backend_reason, model, actions_started
 		FROM cron_runs WHERE job_id = ? ORDER BY started_at DESC LIMIT ?
 	`, jobID, limit)
@@ -258,7 +258,7 @@ func (s *Store) LoadStreamItemsForCronRun(ctx context.Context, sessionTag string
 		args = []any{sessionTag, sortStart}
 	}
 
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.committedReader().QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -279,7 +279,7 @@ func (s *Store) LoadStreamItemsForCronRun(ctx context.Context, sessionTag string
 // immediately after the given run (same job), or -1 if no such run exists.
 func (s *Store) GetNextCronRunSortStart(ctx context.Context, jobID, runID string, startedAt int64) (int, error) {
 	var sortStart int
-	err := s.db.QueryRowContext(ctx, `
+	err := s.committedReader().QueryRowContext(ctx, `
 		SELECT item_sort_start FROM cron_runs
 		WHERE job_id = ? AND started_at > ? AND item_sort_start >= 0
 		ORDER BY started_at ASC LIMIT 1
@@ -309,7 +309,7 @@ func (s *Store) ListCronRunsByDateRange(ctx context.Context, startMs, endMs int6
 		query += " LIMIT ?"
 		args = append(args, limit)
 	}
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.committedReader().QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

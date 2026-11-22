@@ -98,6 +98,7 @@ func Update(ctx context.Context, currentVersion string, force bool) (*UpdateResu
 	return result, nil
 }
 
+//isoform:destination metadata
 func getLatestRelease(ctx context.Context) (*Release, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", releasesURL, nil)
 	if err != nil {
@@ -136,6 +137,7 @@ func getBinaryName() string {
 	return fmt.Sprintf("yansu-%s-%s%s", runtime.GOOS, runtime.GOARCH, ext)
 }
 
+//isoform:destination metadata
 func downloadBinary(ctx context.Context, url string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {

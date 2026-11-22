@@ -240,7 +240,7 @@ extension HubChannel: ChatHubAPI {
     /// One /status for the whole pass, then one ask-answer per card (Nov 14: two requests per card, five cards at
     /// a time, every one answered 409).
     func answeredBriefCards(reference: ChatBriefReference, cards: [(id: String, message: String)]) async -> Set<String> {
-        guard !cards.isEmpty, (try? await status().briefAsk) == true else { return [] }
+        guard !cards.isEmpty, (try? await abilities().briefAsk) == true else { return [] }
         return await BriefAnsweredCards.collect(cards) { id, message in
             let route = HubRoute.briefCardAskAnswer(id: reference.briefId, version: reference.briefVersion,
                                                     cardID: id, message: message)
@@ -249,11 +249,11 @@ extension HubChannel: ChatHubAPI {
     }
 
     func supportsMainChatSend() async -> Bool {
-        (try? await status().chatMainSend) == true
+        (try? await abilities().chatMainSend) == true
     }
 
     func savedBriefAsk(reference: ChatBriefReference) async throws -> SavedBriefAsk? {
-        guard try await status().briefAsk == true else { return nil }
+        guard try await abilities().briefAsk == true else { return nil }
         let route: HubRoute
         if let paragraph = reference.paragraph, let text = reference.paragraphText {
             route = .briefAskAnswer(id: reference.briefId, version: reference.briefVersion,
@@ -311,7 +311,7 @@ extension HubChannel: ChatHubAPI {
         guard Identifiers.isSafePathID(reference.briefId), !reference.briefVersion.isEmpty else {
             throw HubRequestError.invalidIdentifier
         }
-        if reference.ask == true, try await status().briefAsk != true {
+        if reference.ask == true, try await abilities().briefAsk != true {
             throw HubRequestError.rejected(status: 404, message: "")
         }
         return try await chatWrite(chatPath(chatID, "brief-messages"),
@@ -376,7 +376,7 @@ extension HubChannel: ChatHubAPI {
     }
 
     func stopBriefAsk(chatID: String, turnID: String, idempotencyKey: String) async throws -> Bool {
-        guard Identifiers.isSafePathID(turnID), try await status().briefAsk == true else {
+        guard Identifiers.isSafePathID(turnID), try await abilities().briefAsk == true else {
             throw HubRequestError.rejected(status: 404, message: "")
         }
         let result = try await chatWrite(chatPath(chatID, "cancel"),

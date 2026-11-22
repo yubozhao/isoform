@@ -9,6 +9,8 @@ import (
 // backend API calls and file downloads. It replaces bare http.DefaultClient
 // usage which has no timeout and can hang goroutines indefinitely when a
 // server stalls.
+//
+//isoform:destination chat_bridges,metadata
 var httpClientWithTimeout = func() *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.TLSHandshakeTimeout = 10 * time.Second

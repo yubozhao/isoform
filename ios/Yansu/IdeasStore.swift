@@ -90,7 +90,7 @@ extension IdeasHubAPI {
 }
 
 extension HubChannel: IdeasHubAPI {
-    func supportsHolds() async throws -> Bool { try await status().holds == true }
+    func supportsHolds() async throws -> Bool { try await abilities().holds == true }
     func offers(includeHolds: Bool) async throws -> IdeasPage {
         try await perform(includeHolds ? .offersWithHolds : .offers).payload(IdeasPage.self)
     }

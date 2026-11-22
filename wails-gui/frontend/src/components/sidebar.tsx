@@ -1,31 +1,13 @@
-import { useAboutInfo } from "@/hooks/use-about-info";
-import { UpdateReadyCard } from "@/components/update-ready-card";
 import { warmLazyPages } from "@/lib/lazy-pages";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import {
-    Activity,
-    Bot,
-    ChevronsUpDown,
-    Keyboard,
-    LifeBuoy,
-    Settings,
-    User,
-} from "lucide-react";
+import { Activity, Bot, User } from "lucide-react";
 import { TodayIcon } from "@/assets/icons/TodayIcon";
 import { ChatBubbleIcon } from "@/assets/icons/ChatBubbleIcon";
 import { LogoWithFontIcon } from "@/assets/icons/LogoWithFontIcon";
 import { MarkMotion } from "@/components/mark-motion/MarkMotion";
-import { ObservingStatus } from "@/components/observing-status";
 import { SidebarFoot } from "@/components/sidebar-foot";
 import { CollapseIcon } from "@/assets/icons/CollapseIcon";
-import { useUserProfile } from "@/hooks/useUserProfile";
-import {
-    Popover,
-    PopoverTrigger,
-    PopoverContent,
-} from "@/components/ui/popover";
-import { Avatar } from "@/components/ui/avatar";
 import { isMac } from "@/lib/platform";
 import { prefetchPage } from "@/lib/page-queries";
 import {
@@ -68,19 +50,12 @@ interface SidebarProps {
     onToggleCollapse: () => void;
     shortcutFor?: (actionId: string) => string | undefined;
     onOpenSettings: () => void;
-    onOpenProfile?: () => void;
-    onOpenShortcuts?: () => void;
-    onOpenHelp?: () => void;
-    onOpenObservationSettings?: () => void;
     /** Settings › Your phone: the phone line opens it. */
     onOpenPhoneSettings?: () => void;
-    updateReady?: boolean;
     /** What Today has to answer: the count on Today, from 1. */
     waitingCount?: number;
-    /** Requests between your agents waiting for your Yes: the count on Agents. */
+    /** Requests between your agents waiting for your yes: the count on Agents. */
     agentsWaiting?: number;
-    /** An unread reply or question waits in Chat: a copper dot on Chat. */
-    chatUnread?: boolean;
     onOpenToday: () => void;
     onOpenMainChat: () => void;
     onOpenAgents: () => void;
@@ -105,15 +80,9 @@ export function Sidebar({
     onToggleCollapse,
     shortcutFor,
     onOpenSettings,
-    onOpenProfile,
-    onOpenShortcuts,
-    onOpenHelp,
-    onOpenObservationSettings,
     onOpenPhoneSettings,
-    updateReady: updateReadyFromProps = false,
     waitingCount = 0,
     agentsWaiting = 0,
-    chatUnread = false,
     onOpenToday,
     onOpenMainChat,
     onOpenAgents,
@@ -125,18 +94,7 @@ export function Sidebar({
     isStaging,
     appMode,
 }: SidebarProps) {
-    const { info: aboutInfo } = useAboutInfo();
-    const [updateDismissed, setUpdateDismissed] = useState(false);
-    const updateDownloaded = aboutInfo?.update.status === "update-downloaded";
-    const updateReady = updateDownloaded || updateReadyFromProps;
     const { t } = useTranslation("app");
-    const { profile } = useUserProfile();
-    const [userPopoverOpen, setUserPopoverOpen] = useState(false);
-
-    // The name Isoform calls the user (People "self"), or a plain "You"
-    // until they give one.
-    const displayName =
-        profile?.display_name || profile?.name || t("sidebar.you");
 
     // Chat is one thread (computer-map §3 item 7): the Chat place is selected
     // whenever the chat view shows the main chat, from the first frame.
@@ -181,12 +139,11 @@ export function Sidebar({
         page: string;
         badge?: number;
         badgeLabel?: string;
-        dot?: boolean;
         warmLazy?: boolean;
     };
     const places: Place[] = [
         { key: "today", label: t("sidebar.today"), Icon: TodayIcon, onClick: onOpenToday, active: appMode === "today", page: "today", badge: waitingCount, badgeLabel: t("sidebar.toAnswer", { count: waitingCount }) },
-        { key: "chat", label: t("sidebar.mainChat"), Icon: ChatBubbleIcon, onClick: onOpenMainChat, active: isOnMainChat, page: "chat", dot: chatUnread },
+        { key: "chat", label: t("sidebar.mainChat"), Icon: ChatBubbleIcon, onClick: onOpenMainChat, active: isOnMainChat, page: "chat" },
         { key: "agents", label: t("sidebar.agents"), Icon: Bot, onClick: onOpenAgents, active: appMode === "agents", page: "agents", badge: agentsWaiting, badgeLabel: t("sidebar.agentsWaiting", { count: agentsWaiting }) },
         { key: "activity", label: t("sidebar.activity"), Icon: Activity, onClick: onOpenActivity, active: appMode === "activity", page: "activity", warmLazy: true },
         { key: "you", label: t("sidebar.you"), Icon: User, onClick: () => onOpenYou(), active: youOpen, page: "about-you" },
@@ -206,7 +163,7 @@ export function Sidebar({
                         : "text-muted hover:bg-surface-hover"
                 }`}
                 aria-current={place.active ? "page" : undefined}
-                aria-label={count > 0 && place.badgeLabel ? t("sidebar.rowWaiting", { label: place.label, state: place.badgeLabel }) : place.dot ? t("sidebar.rowUnread", { label: place.label }) : undefined}
+                aria-label={count > 0 && place.badgeLabel ? t("sidebar.rowWaiting", { label: place.label, state: place.badgeLabel }) : undefined}
                 onClick={place.onClick}
                 onMouseEnter={place.warmLazy ? warmLazyPages : undefined}
                 style={{ animationDelay: `${delay}ms` }}
@@ -215,7 +172,6 @@ export function Sidebar({
                 <place.Icon className="size-[15px] shrink-0" />
                 <span className="flex-1 min-w-0 text-left truncate">{place.label}</span>
                 {count > 0 && <span role="img" title={place.badgeLabel} aria-label={place.badgeLabel} className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-warning-bg text-warning text-[11px] font-semibold">{count}</span>}
-                {place.dot && <span role="img" aria-label={t("sidebar.unread")} data-chat-dot className="size-1.5 shrink-0 rounded-full bg-copper mr-1" />}
             </Button>
         );
     };
@@ -268,15 +224,19 @@ export function Sidebar({
                             <Button variant="quiet" size="icon" className="shrink-0 mb-2" aria-label={t("sidebar.show")} title={shortcutFor?.("toggle-sidebar") ? t("sidebar.showWithKey", { key: shortcutFor("toggle-sidebar") }) : t("sidebar.show")} onClick={onToggleCollapse}>
                                 <MarkMotion size={19} needsCount={waitingCount} pageKey={markPageKey} />
                             </Button>
-                            {places.map((place, index) => (
-                                <Button key={place.key} variant="quiet" size="icon" className={`relative shrink-0 transition-none ${place.active ? "bg-surface-active" : ""}`} aria-label={place.badge ? t("sidebar.railWithCount", { place: place.label, detail: place.badgeLabel }) : place.dot ? t("sidebar.rowUnread", { label: place.label }) : place.label} aria-current={place.active ? "page" : undefined} title={place.badge ? place.badgeLabel : place.label} onClick={place.onClick} onMouseEnter={place.warmLazy ? warmLazyPages : undefined} {...warm(place.page)} data-rail-index={index} data-sidebar-place={place.key}>
+                            {places.map((place, index) => {
+                                // Hover names the place and its key (computer-window rule 4).
+                                const key = shortcutFor?.(`go-${place.key}`);
+                                const name = place.badge ? t("sidebar.railWithCount", { place: place.label, detail: place.badgeLabel }) : place.label;
+                                return (
+                                <Button key={place.key} variant="quiet" size="icon" className={`relative shrink-0 transition-none ${place.active ? "bg-surface-active" : ""}`} aria-label={name} aria-current={place.active ? "page" : undefined} title={key ? t("sidebar.railHover", { name, key }) : name} onClick={place.onClick} onMouseEnter={place.warmLazy ? warmLazyPages : undefined} {...warm(place.page)} data-rail-index={index} data-sidebar-place={place.key}>
                                     <span className="relative inline-flex size-[15px]">
                                         <place.Icon className="size-[15px]" />
                                         {place.badge ? <span role="img" className="absolute -right-2 -top-2 inline-flex items-center justify-center h-4 min-w-4 rounded-full bg-waiting-badge text-waiting-badge-fg px-0.5 text-[9px] leading-none font-medium" aria-label={place.badgeLabel}>{place.badge > 9 ? t("sidebar.waitingOverflow") : place.badge}</span> : null}
-                                        {place.dot ? <span role="img" aria-label={t("sidebar.unread")} className="absolute -right-1 -top-1 size-1.5 rounded-full bg-copper" /> : null}
                                     </span>
                                 </Button>
-                            ))}
+                                );
+                            })}
                             <div className="flex-1 min-h-0" />
                         </div>
                     ) : <>
@@ -325,108 +285,11 @@ export function Sidebar({
                     <div className="flex-1 min-h-0" />
 
                     </>}
-                    <div hidden={collapsed}>
-                        <UpdateReadyCard
-                            visible={updateDownloaded && !aboutInfo?.later && !updateDismissed}
-                            version={aboutInfo?.update.version ?? ""}
-                            restartNeeded={aboutInfo?.update.restart_needed ?? false}
-                            onLater={() => setUpdateDismissed(true)}
-                        />
-                    </div>
-                    <ObservingStatus collapsed={collapsed} onOpenSettings={onOpenObservationSettings} />
                     {foot}
 
-                    {/* Bottom user area */}
-                    <div className="shrink-0 h-[52px] py-2 flex items-center px-3 w-full">
-                        <Popover
-                            modal={false}
-                            open={userPopoverOpen}
-                            onOpenChange={setUserPopoverOpen}
-                        >
-                            <PopoverTrigger asChild>
-                                <Button variant="quiet" size={collapsed ? "icon" : "sm"} title={displayName} aria-label={t("userMenu.account", { name: displayName })} onMouseEnter={warmLazyPages} className={`group/user flex items-center rounded-lg hover:bg-surface-hover transition-colors cursor-pointer ${collapsed ? "size-8 p-0 justify-center" : "h-10 w-full gap-2.5 px-2 py-1.5"}`}>
-                                    <Avatar
-                                        src={null}
-                                        fallback={displayName}
-                                        className={`${collapsed ? "size-7" : "h-[26px] w-[26px]"} text-[11px] shrink-0`}
-                                    />
-                                    {!collapsed && <><span className="flex-1 min-w-0 text-left">
-                                        <span className="text-[13px] font-medium text-ink transition-colors truncate block">
-                                            {displayName}
-                                        </span>
-                                        {updateReady && <span className="block text-[11.5px] text-muted">{t("userMenu.updateReady")}</span>}
-                                    </span><ChevronsUpDown className="size-3.5 text-muted shrink-0" /></>}
-                                </Button>
-                            </PopoverTrigger>
-                            <PopoverContent
-                                side="top"
-                                align="start"
-                                sideOffset={8}
-                                avoidCollisions={false}
-                                collisionPadding={12}
-                                className="w-[320px] max-h-[var(--radix-popover-content-available-height)] overflow-y-auto rounded-xl border-border-strong p-1.5 shadow-card"
-                                onOpenAutoFocus={(e) => e.preventDefault()}
-                            >
-                                <UserPopoverMenu
-                                    displayName={displayName}
-                                    shortcutFor={shortcutFor}
-                                    onOpenSettings={() => {
-                                        setUserPopoverOpen(false);
-                                        onOpenSettings();
-                                    }}
-                                    onOpenProfile={() => { setUserPopoverOpen(false); onOpenProfile?.(); }}
-                                    onOpenShortcuts={() => { setUserPopoverOpen(false); onOpenShortcuts?.(); }}
-                                    onOpenHelp={() => { setUserPopoverOpen(false); onOpenHelp?.(); }}
-                                />
-                            </PopoverContent>
-                        </Popover>
-                    </div>
                 </div>
 
             </aside>
         </>
     );
-}
-
-function PopoverMenuItem({ icon: Icon, label, description, shortcut, onClick, warmPage }: {
-    icon: React.ComponentType<{ className?: string }>;
-    label: string;
-    description?: string;
-    shortcut?: string;
-    onClick?: () => void;
-    /** Hover/focus starts this page's primary reads (see lib/page-queries). */
-    warmPage?: string;
-}) {
-    return <Button variant="quiet" size="sm" className="w-full h-auto justify-start gap-2.5 px-2.5 py-[7px] text-[13px] font-normal" onClick={onClick}
-        onPointerEnter={warmPage ? () => prefetchPage(warmPage) : undefined}
-        onFocus={warmPage ? () => prefetchPage(warmPage) : undefined}>
-        <Icon className="size-4 shrink-0 text-muted" />
-        <span className="min-w-0 text-left"><span className="block">{label}</span>{description && <span title={description} className="block truncate text-[11.5px] text-muted font-normal leading-tight">{description}</span>}</span>
-        {shortcut && <span className="ml-auto text-[11.5px] text-muted">{shortcut}</span>}
-    </Button>;
-}
-
-/** The account menu: your name, Settings, Keyboard shortcuts, and Help and
- *  feedback. About you, How you do things and Who you know are sidebar rows
- *  now, and Library is gone (sidebar handoff 1.0.0, section 2). */
-export function UserPopoverMenu({ displayName, shortcutFor, onOpenSettings, onOpenProfile, onOpenShortcuts, onOpenHelp }: {
-    displayName: string;
-    shortcutFor?: (actionId: string) => string | undefined;
-    onOpenSettings: () => void;
-    onOpenActivity?: () => void;
-    onOpenProfile?: () => void;
-    onOpenShortcuts?: () => void;
-    onOpenHelp?: () => void;
-}) {
-    const { t } = useTranslation("app");
-    return <>
-        <Button variant="quiet" size="sm" className="w-full h-auto justify-start gap-2.5 px-2.5 py-2 text-[13px] font-medium" aria-label={displayName} onClick={onOpenProfile}
-            onPointerEnter={() => prefetchPage('settings')} onFocus={() => prefetchPage('settings')}>
-            <Avatar fallback={displayName} size="md" /><span className="truncate">{displayName}</span>
-        </Button>
-        <div className="mx-1.5 my-1 h-px bg-border-subtle" />
-        <PopoverMenuItem icon={Settings} label={t("userMenu.settings")} shortcut={shortcutFor?.("open-settings")} onClick={onOpenSettings} warmPage="settings" />
-        <PopoverMenuItem icon={Keyboard} label={t("userMenu.shortcuts")} shortcut={shortcutFor?.("keyboard-shortcuts")} onClick={onOpenShortcuts} warmPage="settings" />
-        <PopoverMenuItem icon={LifeBuoy} label={t("userMenu.help")} onClick={onOpenHelp} warmPage="settings" />
-    </>;
 }

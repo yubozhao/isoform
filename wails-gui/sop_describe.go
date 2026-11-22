@@ -44,6 +44,11 @@ type sopActivityMatchResponse struct {
 // Async: progress via sop:author-status, result via sop:updated. Returns an
 // error immediately when the author is busy. Wails binding.
 func (a *App) GenerateSOPFromDescription(description string) error {
+	// Playbooks, SOPs and goals are off unless their switch is on
+	// (feature_switches.go).
+	if !featureOn(featurePlaybooks) {
+		return errFeatureOff(featurePlaybooks)
+	}
 	description = strings.TrimSpace(description)
 	if description == "" {
 		return fmt.Errorf("description is empty")
@@ -118,6 +123,13 @@ func (a *App) matchActivitiesForDescription(ctx context.Context, description str
 	}
 	if len(acts) > sopDescribeMaxCandidates {
 		acts = acts[:sopDescribeMaxCandidates]
+	}
+	ctx, given, opened := withLearningScope(ctx, "about")
+	if opened {
+		defer a.finishAssistantCall(given)
+	}
+	for _, act := range acts {
+		given.add("activity", act.ID, 1)
 	}
 	var sources sopSeedSources
 	for _, activity := range acts {

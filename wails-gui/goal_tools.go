@@ -38,6 +38,9 @@ var _ tools.AuthorityDescriber = (*goalCreateTool)(nil)
 
 // goalTools returns the goal tool for one main-chat turn.
 func (a *App) goalTools(tag string) []tools.Tool {
+	if !featureOn(featurePlaybooks) {
+		return nil
+	}
 	return []tools.Tool{&goalCreateTool{app: a, tag: tag, now: time.Now}}
 }
 
@@ -157,7 +160,7 @@ func goalToolError(text string) tools.ToolResult {
 // chat's model how a goal is made: refine it with the user first, then add
 // it with GoalCreate.
 func (a *App) injectGoalToolsContext(tag string) string {
-	if !a.isMainChatSession(context.Background(), tag) {
+	if !featureOn(featurePlaybooks) || !a.isMainChatSession(context.Background(), tag) {
 		return ""
 	}
 	return `<goal-tools>

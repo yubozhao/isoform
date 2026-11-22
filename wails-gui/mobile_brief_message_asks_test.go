@@ -20,6 +20,9 @@ func TestMessageAskReachesTheBriefAndEveryGateHoldsIt(t *testing.T) {
 	app := newPrivacyReadTestApp(t)
 	now := mobileBriefTestDay(18, 0)
 	ctx := context.Background()
+	if err := app.store.SetUIState(ctx, permissionUIStateKey(messagesPermissionKey), "true"); err != nil {
+		t.Fatal(err)
+	}
 	priya, err := app.store.CreatePrincipal(ctx, storage.PrincipalRow{Kind: storage.PrincipalKindContact, DisplayName: "Priya"})
 	if err != nil {
 		t.Fatal(err)

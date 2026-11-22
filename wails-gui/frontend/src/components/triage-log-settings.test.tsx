@@ -1,7 +1,6 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "@/i18n";
-import type { useKeybindings } from "@/hooks/useKeybindings";
 import { SettingsPage } from "./settings-page";
 
 const bridge = vi.hoisted(() => ({
@@ -26,12 +25,7 @@ function openLearningDecisions() {
         <SettingsPage
             onClose={vi.fn()}
             onReplayOnboarding={vi.fn()}
-            vimMode={false}
-            onVimModeChange={vi.fn()}
-            keybindings={{} as ReturnType<typeof useKeybindings>}
-            onOpenMemory={vi.fn()}
             onOpenPeople={vi.fn()}
-            onOpenProfile={vi.fn()}
             devToolsUnlocked
             initialTopic="triage"
         />,

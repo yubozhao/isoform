@@ -109,9 +109,10 @@ func knowledgeProvenanceHash(doc okfDocument) string {
 // knowledgeGenerationProvenance captures all note summaries supplied to the
 // extraction model, not just the note selected for an update.
 type knowledgeGenerationProvenance struct {
-	sources  []string
-	apps     []string
-	complete bool
+	historyAgents []string
+	sources       []string
+	apps          []string
+	complete      bool
 }
 
 func newKnowledgeGenerationProvenance() knowledgeGenerationProvenance {

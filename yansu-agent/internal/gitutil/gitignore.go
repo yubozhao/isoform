@@ -11,6 +11,8 @@ import (
 
 // IsTrackedByGit checks if a path is already tracked by Git
 // Returns true if the path is tracked, false otherwise
+//
+//isoform:destination local
 func IsTrackedByGit(projectRoot, relativePath string) bool {
 	cmd := exec.Command("git", "ls-files", relativePath)
 	hideConsoleWindow(cmd)

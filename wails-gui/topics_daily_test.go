@@ -32,10 +32,13 @@ func dailyTopicsTestApp(t *testing.T) (*App, *memoryTranslationFakeRunner, *time
 }
 
 // The copy is built once a day: a day of hourly checks, and a restart, call the
-// model once. Off by default, it calls nothing.
+// model once. With the switch off, it calls nothing.
 func TestDailyTopicsBuildOnceADay(t *testing.T) {
 	app, runner, clock := dailyTopicsTestApp(t)
 	ctx := context.Background()
+	if err := app.store.SetUIState(ctx, topicsDailyEnabledKey, "false"); err != nil {
+		t.Fatal(err)
+	}
 	for hour := 0; hour < 3; hour++ {
 		app.maybeBuildDailyTopics(ctx, "tick")
 	}
@@ -209,5 +212,61 @@ func TestDailyTopicsForThePhoneFilterAgainOnTheWayOut(t *testing.T) {
 	bridge.serveTopicsDaily(w, httptest.NewRequest(http.MethodGet, "/topics-daily", nil))
 	if strings.Contains(w.Body.String(), "Tide tables") {
 		t.Fatal("Closed Eyes let a topic leave the computer")
+	}
+}
+
+// Off means no new proposals; the ones already offered stay until answered
+// (computer-settings v1.3.0 rule 5). Turning it off keeps today's open
+// proposals in the view, in Your work and on the phone, and they can still be
+// answered; an answered one leaves, and tomorrow brings nothing.
+func TestDailyTopicsOffKeepsOfferedProposalsUntilAnswered(t *testing.T) {
+	app, runner, clock := dailyTopicsTestApp(t)
+	ctx := context.Background()
+	if err := app.store.SetUIState(ctx, topicsDailyEnabledKey, "true"); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.buildDailyTopics(ctx); err != nil {
+		t.Fatal(err)
+	}
+	on, _ := app.GetDailyTopics()
+	if len(on.Topics) != 2 || on.Topics[1].Proposal == nil {
+		t.Fatalf("on = %+v", on.Topics)
+	}
+	tide := on.Topics[1]
+	if _, err := app.AnswerDailyTopicProposal(tide.ID, tide.Proposal.ID, topicday.VerdictNo); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := app.store.SetUIState(ctx, topicsDailyEnabledKey, "false"); err != nil {
+		t.Fatal(err)
+	}
+	off, err := app.GetDailyTopics()
+	if err != nil || off.Enabled || len(off.Topics) != 1 || off.Topics[0].ID != "t1" {
+		t.Fatalf("off kept %+v (%v); want only the open Harbor proposal", off.Topics, err)
+	}
+	if items := app.workTopicItems(ctx); len(items) != 1 || items[0].Ref.TopicID != "t1" {
+		t.Fatalf("Your work while off = %+v; want the open Harbor proposal", items)
+	}
+	phone, _ := app.dailyTopicsForPhone(ctx)
+	if phone.Enabled || len(phone.Topics) != 1 {
+		t.Fatalf("the phone while off = %+v", phone)
+	}
+
+	harbor := off.Topics[0]
+	if _, err := app.AnswerDailyTopicProposal(harbor.ID, harbor.Proposal.ID, topicday.VerdictNo); err != nil {
+		t.Fatalf("an offered proposal couldn't be answered while off: %v", err)
+	}
+	if after, _ := app.GetDailyTopics(); len(after.Topics) != 0 {
+		t.Fatalf("an answered proposal stayed while off: %+v", after.Topics)
+	}
+
+	calls := runner.calls
+	*clock = clock.Add(24 * time.Hour)
+	app.maybeBuildDailyTopics(ctx, "tick")
+	if runner.calls != calls {
+		t.Fatal("a new copy was built while off")
+	}
+	if next, _ := app.GetDailyTopics(); len(next.Topics) != 0 {
+		t.Fatalf("yesterday's copy showed while off: %+v", next.Topics)
 	}
 }

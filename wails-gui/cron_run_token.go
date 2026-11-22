@@ -32,6 +32,10 @@ func (a *App) issueAgentRunScope(ctx context.Context, input *agent.TaskInput) (c
 	if api == nil && !input.NoTools {
 		return nil, nil, errors.New("run credential issuer unavailable")
 	}
+	// Every routed call counts once against the work that made it, for See
+	// them (assistant_call_record.go); a call outside any piece of work is
+	// recorded on its own.
+	a.noteRoutedAssistantCall(ctx, input)
 	// The credential has a maximum age without changing the runner's own
 	// timeout rules (external runners apply their default to unbounded turns).
 	ctx, cancelRun := context.WithCancel(ctx)

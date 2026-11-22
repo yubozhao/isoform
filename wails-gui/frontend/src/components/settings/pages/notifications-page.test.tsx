@@ -32,6 +32,16 @@ vi.mock("@/lib/platform", async (importOriginal) => ({
     },
 }));
 
+// The proposals switch and the brief's schedule have their own tests
+// (topic-proposals-card.test.tsx, brief-schedule-card.test.tsx); here they
+// are stand-ins so the page's order can be checked.
+vi.mock("./topic-proposals-card", () => ({
+    TopicProposalsCard: () => <section data-testid="proposals-card" />,
+}));
+vi.mock("@/components/brief-schedule-card", () => ({
+    BriefScheduleCard: () => <section data-testid="brief-schedule-card" />,
+}));
+
 // The wailsjs path and the shim resolve to the same module, so one mock covers both imports.
 vi.mock("@/lib/wails-shim-app", () => ({
     GetEngagementSettings: mocks.getSettings,
@@ -45,6 +55,11 @@ vi.mock("@/lib/wails-shim-app", () => ({
     GetTextChannelStatus: mocks.getTextStatus,
     GetSMSChannelStatus: mocks.getSMSStatus,
     GetEmailChannelStatus: mocks.getEmailStatus,
+    GetAutoSpeakAutomationEnabled: vi.fn(async () => false),
+    SetAutoSpeakAutomationEnabled: vi.fn(async () => undefined),
+    GetAutoSpeakNotificationsEnabled: vi.fn(async () => false),
+    SetAutoSpeakNotificationsEnabled: vi.fn(async () => undefined),
+    GetTtsModelStatus: vi.fn(async () => ({ zh: false, en: true })),
 }));
 
 vi.mock("../../../../wailsjs/runtime/runtime", () => ({
@@ -195,6 +210,18 @@ describe("NotificationsPage", () => {
         expect(screen.queryByText(LATE_NOTE)).not.toBeInTheDocument();
     });
 
+    it("puts Proposals from your topics first, then the brief's schedule, then notifications (computer-settings v1.3.0 rule 1)", async () => {
+        const { container } = render(<NotificationsPage />);
+        await waitFor(() => expect(mocks.getSettings).toHaveBeenCalled());
+        const sections = Array.from(container.querySelectorAll("[data-testid]")).map((node) => node.getAttribute("data-testid"));
+        expect(sections.slice(0, 2)).toEqual(["proposals-card", "brief-schedule-card"]);
+        expect(pageSource.indexOf("<TopicProposalsCard")).toBeLessThan(pageSource.indexOf("<BriefScheduleCard"));
+        expect(pageSource.indexOf("<BriefScheduleCard")).toBeLessThan(pageSource.indexOf("<NotificationsSettings"));
+        expect(en.pages.notifications.subtitle).toBe(
+            "What Isoform brings you on its own: the brief, proposals from your topics, and three kinds of notification.",
+        );
+    });
+
     it("opens with the cards, no second introduction, and keeps channel details under Advanced", async () => {
         await renderPage();
         // The page header's subtitle is the one explanation; the page adds no intro of its own.
@@ -203,20 +230,28 @@ describe("NotificationsPage", () => {
         expect(zh.proactiveNotifications).not.toHaveProperty("intro");
         expect(screen.queryByText("Allow notifications on this computer")).not.toBeInTheDocument();
         expect(
-            screen.getByRole("button", { name: /Quiet hours, limits and where each notification is sent/ }),
+            screen.getByRole("button", { name: /Where each notification is sent/ }),
         ).toBeInTheDocument();
         expect(screen.queryByText("Where notifications go")).not.toBeInTheDocument();
-        expect(screen.queryByLabelText("Quiet hours start")).not.toBeInTheDocument();
         expect(mocks.getMobileStatus).not.toHaveBeenCalled();
     });
 
-    it("keeps quiet hours and limits under Advanced, sharing the page's one read", async () => {
+    it("shows quiet hours and limits with the rest, out of Advanced, sharing the page's one read (answers v1.0.0 T2)", async () => {
         await renderPage();
-        openAdvanced();
         expect(await screen.findByRole("heading", { name: "Quiet hours and limits" })).toBeInTheDocument();
         expect(screen.getByLabelText("Quiet hours start")).toHaveValue("22:00");
         expect(screen.getByLabelText("Interruptions a day")).toHaveValue(6);
         expect(mocks.getSettings).toHaveBeenCalledTimes(1);
+    });
+
+    it("holds the voice for Hear it and no switch for reading Chat's answers aloud (answers v1.0.0 T2)", async () => {
+        await renderPage();
+        expect(await screen.findByRole("heading", { name: "Read aloud" })).toBeInTheDocument();
+        expect(await screen.findByText("English voice")).toBeInTheDocument();
+        expect(screen.getByText("Read notifications aloud")).toBeInTheDocument();
+        expect(screen.queryByText("Read chat replies aloud")).not.toBeInTheDocument();
+        // Automations are behind their switch (answers v1.2.0 AG12): kept, not shown.
+        expect(screen.queryByText("Announce finished automations")).not.toBeInTheDocument();
     });
 
     it("rechecks a preloaded permission view when its background refresh publishes", async () => {

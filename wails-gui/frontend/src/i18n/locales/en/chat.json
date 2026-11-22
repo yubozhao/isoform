@@ -574,12 +574,9 @@
         },
         "view": {
             "title": "Chat",
-            "filterLabel": "Show",
-            "everything": "All",
-            "hideUpdates": "Hide updates",
-            "showUpdates": "Show updates",
-            "hiddenWhileFiltered": "Updates hidden while filtered",
-            "hideFailed": "Could not save that. Try again.",
+            "sub": "About your own day, and setting Isoform straight.",
+            "field": "Ask about your day, or correct Isoform",
+            "askTopicPlaceholder": "Ask about {{topic}}",
             "summaryTitle": "In your chat today",
             "summarySeparator": " · ",
             "summaryConversations_one": "{{count}} with you",
@@ -590,7 +587,6 @@
             "summaryRoutine_other": "{{count}} routine, folded",
             "summaryFailed": "Could not count what your chat holds today.",
             "retry": "Try again",
-            "showEverything": "Show everything",
             "today": "Today",
             "yesterday": "Yesterday",
             "foldSummary_one": "{{count}} update from Isoform",
@@ -602,14 +598,8 @@
             "briefOpenFailed": "Couldn't open this brief.",
             "topicTags": "Topics",
             "chipsLabel": "Prepared requests",
-            "notePrepared": "Prepared for you. Nothing is sent until you press Send.",
-            "notePreparedAnswer": "Prepared from the answer above. Nothing is sent until you press Send.",
-            "detachTopic": "Remove {{name}} from the box",
-            "topicChecking": "Checking this topic...",
-            "topicBusy": "Isoform is still answering in your chat. Stop it, or send about this topic when it finishes.",
             "scope": "Choose chat scope",
             "wholeChat": "Whole chat",
-            "more": "More",
             "itemPanel": "Item",
             "briefLoadFailed": "Could not load this brief."
         },
@@ -684,7 +674,15 @@
             "memory": "your notes",
             "person": "Who you know",
             "from": "From {{source}} · {{title}} ›",
-            "aria": "Source: {{source}}, {{title}}"
+            "aria": "Source: {{source}}, {{title}}",
+            "activity": "your screen",
+            "call": "a call",
+            "watch": "your watch",
+            "mail": "your mail",
+            "calendar": "your calendar",
+            "brief": "your brief",
+            "fromAt": "From {{source}} · {{title}}, {{time}} ›",
+            "ariaAt": "Source: {{source}}, {{title}}, {{time}}"
         }
     },
     "setup": {
@@ -794,7 +792,12 @@
         "tool": "tool",
         "aboutScreen": "About: what's on screen · {{app}}, {{title}}",
         "aboutScreenApp": "About: what's on screen · {{app}}",
-        "removeScreen": "Don't send what's on screen"
+        "removeScreen": "Don't send what's on screen",
+        "ready": "Ready · made at {{time}}",
+        "open": "Open",
+        "openInChat": "Open in Chat",
+        "readyFailed": "Couldn't check your ready work.",
+        "readyOpenFailed": "Couldn't open it."
     },
     "stream": {
         "openProject": "Open a project to get started.",
@@ -869,6 +872,7 @@
     },
     "about": {
         "item": "About: {{title}}",
-        "brief": "About your brief: “{{sentence}}”"
+        "brief": "About your brief: “{{sentence}}”",
+        "remove": "Take {{title}} off this message"
     }
 }

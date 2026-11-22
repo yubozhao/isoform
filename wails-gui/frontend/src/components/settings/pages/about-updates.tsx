@@ -2,7 +2,7 @@ import { LogoIcon } from "@/assets/icons/LogoIcon";
 import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { useTranslation } from "react-i18next";
+import { Trans, useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { SettingsPlaceholderRows } from "@/components/settings/settings-failure";
 import { formatBytes } from "@/components/settings/settings-format";
@@ -113,12 +113,9 @@ export function AboutUpdates() {
                 : t("aboutPolish.upToDate");
             break;
         case "update-downloaded":
-            statusLine = t(
-                info.update.restart_needed
-                    ? "aboutPolish.readyRestart"
-                    : "aboutPolish.ready",
-                { version: info.update.version },
-            );
+            // Shown as "{version} is ready · Restart now" below (answers
+            // v1.0.0 S3): with the sidebar card gone, this is the one place
+            // on screen that says an update is ready.
             break;
         case "update-available":
             statusLine = t("aboutPolish.available", {
@@ -149,20 +146,6 @@ export function AboutUpdates() {
                             })}
                         </p>
                     </div>
-                    {ready && (
-                        <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={busy || restarting}
-                            onClick={() => void perform(restart)}
-                        >
-                            {t(
-                                restarting
-                                    ? "aboutPolish.restarting"
-                                    : "aboutPolish.restart",
-                            )}
-                        </Button>
-                    )}
                     <Button
                         size="sm"
                         variant="outline"
@@ -182,13 +165,38 @@ export function AboutUpdates() {
                         {t(
                             checking
                                 ? "aboutPolish.checkingButton"
-                                : "aboutPolish.check",
+                                : "about.checkNow",
                         )}
                     </Button>
                 </div>
-                <p role="status" className="text-[12.5px] text-muted">
-                    {statusLine}
-                </p>
+                {ready ? (
+                    <p role="status" className="text-[12.5px] text-ink" data-testid="about-update-ready">
+                        {restarting ? (
+                            t("aboutPolish.restarting")
+                        ) : (
+                            <Trans
+                                t={t}
+                                i18nKey="about.updateReady"
+                                values={{ version: info.update.version }}
+                                components={{
+                                    restart: (
+                                        <Button
+                                            size="sm"
+                                            variant="link"
+                                            className="h-auto p-0 text-[12.5px]"
+                                            disabled={busy}
+                                            onClick={() => void perform(restart)}
+                                        />
+                                    ),
+                                }}
+                            />
+                        )}
+                    </p>
+                ) : (
+                    <p role="status" className="text-[12.5px] text-muted">
+                        {statusLine}
+                    </p>
+                )}
                 {rollbackNotice && (
                     <p className="text-[12.5px] text-muted">{rollbackNotice}</p>
                 )}
@@ -231,7 +239,7 @@ export function AboutUpdates() {
                             void perform(() => SetBackgroundUpdates(value))
                         }
                     />
-                    {t("aboutPolish.background")}
+                    {t("about.autoUpdate")}
                 </label>
             </section>
             {error && (

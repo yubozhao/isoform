@@ -1,4 +1,4 @@
-import type { AgentEvent, Suggestion, StreamEvent } from "./types";
+import type { AgentEvent, ReadyItem, Suggestion, StreamEvent } from "./types";
 import type { StreamItemData } from "@/types";
 
 /**
@@ -196,6 +196,53 @@ export async function fetchSpotlightSnapshot(sessionLocalId: string): Promise<{ 
     const res = await fetch(await url(`/api/spotlight/snapshot?sessionLocalId=${encodeURIComponent(sessionLocalId)}`), { headers: await headers() });
     if (!res.ok) throw new Error("spotlight history unavailable");
     return await res.json() as { items: StreamItemData[]; sequence: number; streaming: boolean; runId?: string; sessionId?: string; permission?: AgentEvent };
+}
+
+/**
+ * fetchReady matches what the person typed against work Isoform already
+ * made (ready work first). The words go in a POST body, never a URL. A
+ * failed read throws: it is shown with Try again, never as "nothing there".
+ */
+export async function fetchReady(text: string, signal?: AbortSignal): Promise<ReadyItem | null> {
+    const res = await fetch(await url("/api/spotlight/ready"), {
+        method: "POST",
+        headers: await headers({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ text }),
+        signal,
+    });
+    if (!res.ok) throw new Error("ready work unavailable");
+    const body = await res.json() as { item?: ReadyItem | null };
+    return body.item ?? null;
+}
+
+/**
+ * openReady opens a made item in Isoform: in Today, or in Chat with the item
+ * attached and the typed words in the box. Throws when it could not open.
+ */
+export async function openReady(id: string, text: string, inChat: boolean): Promise<void> {
+    const res = await fetch(await url("/api/spotlight/ready/open"), {
+        method: "POST",
+        headers: await headers({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ id, text, inChat }),
+    });
+    if (!res.ok) throw new Error("ready work could not be opened");
+}
+
+/**
+ * workOnIt runs one of the hand-off card's or the Work on it sheet's
+ * bindings in Isoform (quick_chat_handoff.go), so both open in this panel,
+ * over the app you're in. A refusal throws with Isoform's own words (the
+ * sheet tells Closed Eyes apart by them).
+ */
+export async function workOnIt<T = unknown>(op: string, args: Record<string, unknown> = {}): Promise<T> {
+    const res = await fetch(await url("/api/spotlight/work-on-it"), {
+        method: "POST",
+        headers: await headers({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ op, ...args }),
+    });
+    const body = await res.json().catch(() => ({})) as { result?: T; error?: string };
+    if (!res.ok) throw new Error(body.error || "work on it unavailable");
+    return body.result as T;
 }
 
 export async function dismiss(): Promise<void> {

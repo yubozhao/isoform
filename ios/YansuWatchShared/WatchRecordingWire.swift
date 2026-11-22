@@ -162,10 +162,23 @@ extension WatchRecordingWire {
         return Date(timeIntervalSince1970: since)
     }
 
+    /// Heart rate and Place as the person chose them on the computer or the phone (PROTOCOL.md
+    /// 24.15). A field is left out while nobody has chosen: the watch's own switch decides
+    /// then, as it does with an older computer.
+    static let choicesKey = "contextChoices"
+
+    static func choices(fromContext context: [String: Any]) -> WatchContextChoices? {
+        guard context[contextVersionKey] as? Int == version, let raw = context[choicesKey] as? [String: Bool] else { return nil }
+        let choices = WatchContextChoices(heartRate: raw["heartRate"], place: raw["place"])
+        return choices.isEmpty ? nil : choices
+    }
+
     static func context(_ states: [String: WatchRecordingRemoteState], names: [String: [String]] = [:],
-                        pause: WatchPause? = nil, pauseSerial: Int = 0, listenOff: Date? = nil) -> [String: Any] {
+                        pause: WatchPause? = nil, pauseSerial: Int = 0, listenOff: Date? = nil,
+                        choices: WatchContextChoices? = nil) -> [String: Any] {
         var context: [String: Any] = [contextVersionKey: version, contextKey: states.mapValues(\.rawValue)]
         if let listenOff { context[listenOffKey] = listenOff.timeIntervalSince1970 }
+        if let choices, !choices.isEmpty { context[choicesKey] = choices.raw }
         if pauseSerial > 0 { context[pauseSerialKey] = pauseSerial }
         if let pause {
             var raw: [String: Double] = [:]
@@ -331,5 +344,37 @@ enum WatchLiveStatus: String, Equatable, Sendable {
         if recording { return waitingForMicrophone ? .waitingForMicrophone : .recording }
         if microphoneDenied { return .microphoneOff }
         return stoppedToday ? .stoppedToday : .notRecording
+    }
+}
+
+/// The person's choice for Heart rate and Place, one for the computer, the phone and the watch
+/// (PROTOCOL.md 24.15). Nil for a field nobody has chosen, or that is not spoken of.
+struct WatchContextChoices: Equatable, Sendable {
+    var heartRate: Bool?
+    var place: Bool?
+
+    init(heartRate: Bool? = nil, place: Bool? = nil) {
+        self.heartRate = heartRate
+        self.place = place
+    }
+
+    var isEmpty: Bool { heartRate == nil && place == nil }
+
+    var raw: [String: Bool] {
+        var raw: [String: Bool] = [:]
+        if let heartRate { raw["heartRate"] = heartRate }
+        if let place { raw["place"] = place }
+        return raw
+    }
+
+    /// The wearer changed a switch on the watch: the phone carries it to the computer.
+    static let requestKey = "contextChoice"
+
+    var userInfo: [String: Any] { [Self.requestKey: raw] }
+
+    init?(userInfo: [String: Any]) {
+        guard let raw = userInfo[Self.requestKey] as? [String: Bool] else { return nil }
+        self.init(heartRate: raw["heartRate"], place: raw["place"])
+        if isEmpty { return nil }
     }
 }

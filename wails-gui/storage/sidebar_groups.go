@@ -224,7 +224,7 @@ func (s *Store) ReorderSidebarGroupItems(ctx context.Context, groupID string, it
 
 // LoadAllSidebarGroups loads all sidebar groups with their items, ordered by sort_order.
 func (s *Store) LoadAllSidebarGroups(ctx context.Context) ([]SidebarGroupRow, map[string][]SidebarGroupItemRow, error) {
-	groupRows, err := s.db.QueryContext(ctx, `
+	groupRows, err := s.committedReader().QueryContext(ctx, `
 		SELECT id, name, sort_order, collapsed, created_at, updated_at
 		FROM sidebar_groups
 		ORDER BY sort_order ASC`)
@@ -247,7 +247,7 @@ func (s *Store) LoadAllSidebarGroups(ctx context.Context) ([]SidebarGroupRow, ma
 		return nil, nil, fmt.Errorf("iterate sidebar groups: %w", err)
 	}
 
-	itemRows, err := s.db.QueryContext(ctx, `
+	itemRows, err := s.committedReader().QueryContext(ctx, `
 		SELECT id, group_id, item_type, ref_id, sort_order, added_at
 		FROM sidebar_group_items
 		ORDER BY sort_order ASC`)

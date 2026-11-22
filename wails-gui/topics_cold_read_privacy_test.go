@@ -116,14 +116,7 @@ func TestTodayColdPrivacyBudgetIncludesPauseHistory(t *testing.T) {
 		t.Fatal("readable source lost its work topic")
 	}
 	// Snapshot reads must not wait for the store used by source proofs.
-	revision, err := a.store.ReadRevision(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	release, err := a.store.LockReadRevision(t.Context(), revision)
-	if err != nil {
-		t.Fatal(err)
-	}
+	release := blockStateStoreReads(t, a.store)
 	defer release()
 	type result struct {
 		response TodayTopicsView

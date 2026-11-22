@@ -13,6 +13,8 @@ export function usePermissions() {
     const { t } = useTranslation(['onboarding', 'settings']);
     const [permissions, setPermissions] = useState<PlatformPermissions | null>(null);
     const [loading, setLoading] = useState(false);
+    // The last read failed: shown as "Couldn't read", never as off.
+    const [readFailed, setReadFailed] = useState(false);
     // The key being requested right now. macOS shows one dialog per request,
     // so a second click waits until the first prompt is answered: it is
     // ignored here and the Go side serializes requests as well.
@@ -24,8 +26,10 @@ export function usePermissions() {
         try {
             const next = await GetPlatformPermissions();
             setPermissions(next);
+            setReadFailed(false);
             return next;
         } catch (error) {
+            setReadFailed(true);
             const message = error instanceof Error ? error.message : String(error);
             toast.error(`${t('settings:permissions.checkFailedToast')}: ${message}`);
             return null;
@@ -76,7 +80,7 @@ export function usePermissions() {
         requestingRef.current = true;
         setRequestingKey(item.key);
         // Every key the Go side reports has a label in both locales
-        // (privacy-page.test.tsx checks this).
+        // (permission-copy.test.ts checks this).
         const localizedLabel = t(
             `settings:permissions.items.${item.key}.label` as never,
         ) as string;
@@ -118,6 +122,7 @@ export function usePermissions() {
     return {
         permissions,
         loading,
+        readFailed,
         refresh,
         requestPermission,
         requestingKey,

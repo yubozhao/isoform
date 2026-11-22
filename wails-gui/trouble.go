@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"log"
 	"sort"
 	"sync"
 	"time"
@@ -33,6 +35,9 @@ type TroubleLine struct {
 	Since     string `json:"since"`
 	Assistant string `json:"assistant,omitempty"`
 	Fix       string `json:"fix,omitempty"`
+	// Never is set on the screen's trouble when Isoform has never had Screen
+	// Recording: "hasn't seen your screen yet", with no since (design S8).
+	Never bool `json:"never,omitempty"`
 }
 
 // TroubleList is GetTrouble's answer: what is wrong now, ranked by rule 1.
@@ -82,6 +87,45 @@ func troubleScreenOff(items []PermissionItem) bool {
 	return false
 }
 
+// troubleScreenGrantedKey is set the first time a check sees Screen
+// Recording granted and never cleared, so the screen's trouble can say
+// "since {time}" only to someone whose screen Isoform has seen.
+const troubleScreenGrantedKey = "isoform.screen.grantedOnce"
+
+// troubleScreenGranted is true when Isoform has Screen Recording now.
+func troubleScreenGranted(items []PermissionItem) bool {
+	for _, item := range items {
+		if troubleScreenKeys[item.Key] && item.Granted {
+			return true
+		}
+	}
+	return false
+}
+
+// troubleScreenNever reads whether Screen Recording was never granted,
+// recording the grant the first time it is seen. A failed read keeps the
+// "since" form: Isoform doesn't claim what it doesn't know.
+func (a *App) troubleScreenNever(items []PermissionItem) bool {
+	if a == nil || a.store == nil {
+		return false
+	}
+	ctx := context.Background()
+	if troubleScreenGranted(items) {
+		if done, err := a.store.GetUIState(ctx, troubleScreenGrantedKey); err != nil || done != "true" {
+			if err := a.store.SetUIState(ctx, troubleScreenGrantedKey, "true"); err != nil {
+				log.Printf("[trouble] saving the screen grant: %v", err)
+			}
+		}
+		return false
+	}
+	done, err := a.store.GetUIState(ctx, troubleScreenGrantedKey)
+	if err != nil {
+		log.Printf("[trouble] reading the screen grant: %v", err)
+		return false
+	}
+	return done != "true"
+}
+
 // troubleScreenKeys are the permission keys that let Isoform see the screen.
 var troubleScreenKeys = map[string]bool{"screen_recording": true, "screen_capture": true, "pipewire": true}
 
@@ -128,8 +172,12 @@ func (a *App) troubleLines(now time.Time) []TroubleLine {
 	if a.IsClosedEyesModeEnabled() {
 		// Closed Eyes is a choice: the screen being unseen then isn't trouble.
 		troubleFirstSeen.at(troubleScreen, false, now)
-	} else if at := troubleFirstSeen.at(troubleScreen, troubleScreenOff(a.troublePermissionItems()), now); !at.IsZero() {
-		out = append(out, TroubleLine{Kind: troubleScreen, Since: at.UTC().Format(time.RFC3339), Fix: troubleFixOpenSettings})
+	} else {
+		items := a.troublePermissionItems()
+		never := a.troubleScreenNever(items)
+		if at := troubleFirstSeen.at(troubleScreen, troubleScreenOff(items), now); !at.IsZero() {
+			out = append(out, TroubleLine{Kind: troubleScreen, Since: at.UTC().Format(time.RFC3339), Fix: troubleFixOpenSettings, Never: never})
+		}
 	}
 	if assistant, ok := a.signOut.firstConfirmed(routeOrder(loadAIProviderConfig())); ok {
 		since := a.signOut.confirmedSince(assistant)

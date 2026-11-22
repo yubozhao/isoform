@@ -6,6 +6,7 @@ require (
 	github.com/Microsoft/go-winio v0.6.2
 	github.com/aymanbagabas/go-pty v0.2.2
 	github.com/bwmarrin/discordgo v0.29.0
+	github.com/creack/pty v1.1.24
 	github.com/energye/systray v1.0.3
 	github.com/go-ole/go-ole v1.3.0
 	github.com/google/uuid v1.6.0
@@ -46,7 +47,6 @@ require (
 	github.com/bep/debounce v1.2.1 // indirect
 	github.com/bmatcuk/doublestar/v4 v4.6.1 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
-	github.com/creack/pty v1.1.24 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/go-shiori/dom v0.0.0-20230515143342-73569d674e1c // indirect
 	github.com/goccy/go-json v0.10.5 // indirect

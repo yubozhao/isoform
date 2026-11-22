@@ -161,12 +161,12 @@ extension RecordingHubAPI {
 
 extension HubChannel {
     func recordingConversations() async throws -> WatchConversationsAnswer? {
-        guard try await status().recordingConversations == true else { return nil }
+        guard try await abilities().recordingConversations == true else { return nil }
         return try await perform(.recordingConversations).payload(WatchConversationsAnswer.self)
     }
 
     func recordingConversation(id: String) async throws -> WatchConversationDetail? {
-        guard !id.isEmpty, id.count <= 120, try await status().recordingConversations == true else { return nil }
+        guard !id.isEmpty, id.count <= 120, try await abilities().recordingConversations == true else { return nil }
         return try await perform(.recordingConversation(id: id)).payload(WatchConversationDetail.self)
     }
 
@@ -186,7 +186,7 @@ extension HubChannel {
     }
 
     func answerSpeaker(conversation: String, speaker: String, answer: String, name: String) async throws -> WatchConversation? {
-        guard try await status().recordingSpeakers == true else { return nil }
+        guard try await abilities().recordingSpeakers == true else { return nil }
         let body = try JSONEncoder().encode(["conversationId": conversation, "speaker": speaker, "answer": answer, "name": name])
         return try await perform(.write(path: "/recordings/conversation/speaker", body: String(decoding: body, as: UTF8.self)))
             .payload(WatchConversation.self)
@@ -194,6 +194,26 @@ extension HubChannel {
 
     func setWatchNotes(_ on: Bool) async throws -> Bool {
         try await perform(.write(path: "/settings/watch-notes", body: "{\"on\":\(on)}")).payload(WatchNotesSetting.self).on
+    }
+
+    func watchContextChoices() async throws -> WatchContextSettingsAnswer? {
+        let status = try await status()
+        guard let heartRate = status.watchHeartRate, let place = status.watchPlace else { return nil }
+        return WatchContextSettingsAnswer(heartRate: heartRate, place: place)
+    }
+
+    func setWatchHeartRate(_ on: Bool) async throws -> Bool {
+        try await perform(.write(path: "/settings/watch-heart-rate", body: "{\"on\":\(on)}")).payload(WatchNotesSetting.self).on
+    }
+
+    func setWatchPlace(_ on: Bool) async throws -> Bool {
+        try await perform(.write(path: "/settings/watch-place", body: "{\"on\":\(on)}")).payload(WatchNotesSetting.self).on
+    }
+
+    func reportWatchPairing(_ paired: Bool) async throws -> Bool {
+        guard try await status().watchPairing == true else { return false }
+        _ = try await perform(.write(path: "/watch/pairing", body: "{\"paired\":\(paired)}"))
+        return true
     }
 }
 
@@ -220,12 +240,22 @@ struct WatchNow: Equatable, Sendable {
 
 enum WatchTabCopy {
     /// The watch's state in one word and one line. `pauseUntil` is when a pause ends by itself.
+    /// `since` is when the watch came into its state, as this phone saw it.
     static func now(connection: WatchConnection, status: WatchLiveStatus?, pauseUntil: Date?, lastHeard: Date?,
+                    since: Date? = nil, now: Date = Date(), calendar: Calendar = .current,
                     locale: Locale = .current) -> WatchNow {
+        // "9:40 AM", "7:15 PM yesterday", or the day and the time.
+        let when = since.map { sinceText($0, now: now, calendar: calendar, locale: locale) }
         switch connection {
         case .appMissing:
             return WatchNow(kind: .setUp, word: String(localized: "Put Isoform on your watch"),
                             line: String(localized: "Your Apple Watch is paired with this phone. Isoform isn't on it yet."))
+        case .appAway:
+            // Only what is known: it was there, and it does not answer now. What was recorded
+            // stays where it is, and the rest of the page stays as it was.
+            let heard = lastHeard.map { String(localized: "Last heard \(clock($0, locale: locale)).") + " " } ?? ""
+            return WatchNow(kind: .unknown, word: String(localized: "Your watch isn't answering"),
+                            line: heard + String(localized: "After an update Isoform comes back on your watch by itself. If it doesn't, install it from the Watch app on this phone."))
         case .ready(reachable: false) where status == .recording || status == nil:
             let heard = lastHeard.map { String(localized: "Last heard \(clock($0, locale: locale)).") + " " } ?? ""
             return WatchNow(kind: .notNear, word: String(localized: "Not near this phone"),
@@ -237,26 +267,49 @@ enum WatchTabCopy {
         case .recording:
             return WatchNow(kind: .listening, word: String(localized: "Listening"), line: String(localized: "On your wrist"))
         case .waitingForMicrophone:
+            let lead = when.map { String(localized: "A call has the microphone, since \($0).") } ?? String(localized: "A call has the microphone.")
             return WatchNow(kind: .notListening, word: String(localized: "Not listening"),
-                            line: String(localized: "A call has the microphone. It listens again by itself after."))
+                            line: lead + " " + String(localized: "It listens again by itself after."))
         case .pausedOnComputer, .pausedOnWatch:
             let word = pauseUntil.map { String(localized: "Closed Eyes until \(clock($0, locale: locale))") } ?? String(localized: "Closed Eyes")
             var line = String(localized: "Nothing is heard or kept, on every device.")
             if status == .pausedOnComputer { line += " " + String(localized: "Closed Eyes on your computer") + "." }
             return WatchNow(kind: .closedEyes, word: word, line: line)
         case .stoppedToday:
-            return WatchNow(kind: .offToday, word: String(localized: "Off for today"),
-                            line: String(localized: "You held the mark to stop. Tap the mark on your watch to listen again."))
+            // The watch's own hold (watch-off-phone v1.0.0 rule 4); it says when.
+            let line = when.map { String(localized: "You held the mark to stop, at \($0). It listens again tomorrow.") }
+                ?? String(localized: "You held the mark to stop. It listens again tomorrow.")
+            return WatchNow(kind: .offToday, word: String(localized: "Off for today"), line: line)
         case .microphoneOff:
             return WatchNow(kind: .notListening, word: String(localized: "Not listening"),
                             line: String(localized: "Allow the microphone on your watch"))
         case .notRecording:
+            // Why it stopped is not known to the phone yet: it says since when (rule 8).
+            let lead = when.map { String(localized: "Since \($0).") + " " } ?? ""
             return WatchNow(kind: .notListening, word: String(localized: "Not listening"),
-                            line: String(localized: "Tap the mark on your watch to listen."))
+                            line: lead + String(localized: "Tap the mark on your watch to listen."))
         case nil:
             return WatchNow(kind: .unknown, word: String(localized: "Your watch"),
                             line: String(localized: "Open Isoform on your watch to start"))
         }
+    }
+
+    /// "9:40 AM" today, "7:15 PM yesterday", else the day and the time.
+    static func sinceText(_ date: Date, now: Date = Date(), calendar: Calendar = .current, locale: Locale = .current) -> String {
+        let time = clock(date, locale: locale, timeZone: calendar.timeZone)
+        if calendar.isDate(date, inSameDayAs: now) { return time }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now), calendar.isDate(date, inSameDayAs: yesterday) {
+            return String(localized: "\(time) yesterday")
+        }
+        var style = Date.FormatStyle(date: .abbreviated, time: .omitted)
+        style.locale = locale
+        style.timeZone = calendar.timeZone
+        return date.formatted(style) + ", " + time
+    }
+
+    /// "49 min of talk · waiting for your computer": an hour the computer has not named yet.
+    static func waitingRow(_ row: WatchRecordingRow) -> String {
+        String(localized: "\(duration(Int(row.durationSeconds))) of talk · waiting for your computer")
     }
 
     static func clock(_ date: Date, locale: Locale = .current, timeZone: TimeZone = .current) -> String {
@@ -375,6 +428,10 @@ final class WatchTabModel: ObservableObject {
     @Published var notesOn: Bool?
     /// "Listen on your watch": false while the phone's off holds; nil when the computer has no such setting.
     @Published var listening: Bool?
+    /// Heart rate and Place as the computer has them; nil when it has no such settings (an
+    /// older computer: the watch's own switches decide and the phone shows none).
+    @Published var heartRateOn: Bool?
+    @Published var placeOn: Bool?
 
     /// Shows what the computer answered. No answer (a computer that does not serve conversations)
     /// drops what was shown before: it may have come from another computer.
@@ -391,6 +448,8 @@ final class WatchTabModel: ObservableObject {
         failed = false
         notesOn = nil
         listening = nil
+        heartRateOn = nil
+        placeOn = nil
     }
 
     func split(now: Date = Date(), calendar: Calendar = .current) -> (today: [WatchConversation], earlier: [WatchConversationDay]) {
@@ -423,6 +482,39 @@ final class WatchTabModel: ObservableObject {
         }
         if let setting = try? await WatchLink.shared.notesSetting() { notesOn = setting }
         listening = await WatchLink.shared.listeningAllowed()
+        show(await WatchLink.shared.contextSettings())
+    }
+
+    private func show(_ settings: WatchContextSettingsAnswer?) {
+        heartRateOn = settings?.heartRate.on
+        placeOn = settings?.place.on
+        if placeOn == true { UserDefaults.standard.set(Date(), forKey: Self.placeLastOnKey) }
+    }
+
+    /// When Place was last seen on, kept across launches.
+    static let placeLastOnKey = "watch.place.lastOn"
+
+    /// Whether Your data names Apple under "Left your devices": while Place is on, and for a
+    /// week after it was last on. With Place on, the watch asks Apple to name the area of a
+    /// position rounded to about a kilometer (design's data.appleArea).
+    var namesAppleForTheArea: Bool { Self.namesApple(placeOn: placeOn, lastOn: UserDefaults.standard.object(forKey: Self.placeLastOnKey) as? Date) }
+
+    nonisolated static func namesApple(placeOn: Bool?, lastOn: Date?, now: Date = Date()) -> Bool {
+        if placeOn == true { return true }
+        guard let lastOn else { return false }
+        return now.timeIntervalSince(lastOn) < 7 * 24 * 3600
+    }
+
+    func setHeartRate(_ on: Bool) async {
+        let before = heartRateOn
+        heartRateOn = on
+        if let settings = await WatchLink.shared.setContext(heartRate: on) { show(settings) } else { heartRateOn = before }
+    }
+
+    func setPlace(_ on: Bool) async {
+        let before = placeOn
+        placeOn = on
+        if let settings = await WatchLink.shared.setContext(place: on) { show(settings) } else { placeOn = before }
     }
 
     /// The phone can only turn listening off. It returns false when the computer could not be told.

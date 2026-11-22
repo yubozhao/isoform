@@ -46,18 +46,19 @@ func settingsSources(t *testing.T) map[string]string {
 }
 
 func TestSettingsPage_PermissionHintText(t *testing.T) {
-	// The full permission list lives on Privacy > Advanced. Each item must
-	// still be wired to the per-item request handler from usePermissions;
-	// the tip text wording is left to UX, so only the wiring is asserted.
-	path := filepath.Join("frontend", "src", "components", "settings", "pages", "privacy-page.tsx")
+	// Each source on What Isoform sees shows its own permission (Privacy's
+	// full list went in settings batch D2). Its grants must still be wired to
+	// the per-item request handler from usePermissions; the tip text wording
+	// is left to UX, so only the wiring is asserted.
+	path := filepath.Join("frontend", "src", "components", "settings", "pages", "observation-page.tsx")
 	source, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("failed to read privacy page source: %v", err)
+		t.Fatalf("failed to read What Isoform sees source: %v", err)
 	}
 	text := string(source)
 	for _, token := range []string{"usePermissions", "requestPermission("} {
 		if !strings.Contains(text, token) {
-			t.Fatalf("privacy page should use %q for permission actions", token)
+			t.Fatalf("What Isoform sees should use %q for permission actions", token)
 		}
 	}
 }

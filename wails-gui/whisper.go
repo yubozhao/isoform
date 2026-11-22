@@ -40,6 +40,7 @@ type VoiceInputStatus struct {
 // whisperState tracks voice-input readiness plus the loaded ASR engine.
 // Name retained for cross-file compatibility; the engine itself is sherpa-onnx.
 type whisperState struct {
+	initMu       sync.Mutex
 	mu           sync.Mutex
 	ready        bool
 	readyCh      chan struct{} // closed when ready; use select instead of polling
@@ -125,20 +126,25 @@ func (a *App) prewarmVoiceInput() {
 	}
 }
 
-// InitVoiceInput ensures the speech engine is ready: downloads model assets if
-// missing, then loads the in-process recognizer. Called lazily on first voice
+// InitVoiceInput verifies installed assets and loads the in-process recognizer. Called lazily on first voice
 // input attempt; emits progress events to the frontend.
 func (a *App) InitVoiceInput() error {
+	return a.initVoiceInput(false, a.loadVoiceInput)
+}
+
+func (a *App) initVoiceInput(wait bool, load func() (asr.Transcriber, error)) error {
 	whisper := a.ensureWhisperState()
+	if wait {
+		whisper.initMu.Lock()
+	} else if !whisper.initMu.TryLock() {
+		return fmt.Errorf("voice input is already initializing")
+	}
+	defer whisper.initMu.Unlock()
 
 	whisper.mu.Lock()
 	if whisper.ready {
 		whisper.mu.Unlock()
 		return nil
-	}
-	if whisper.initializing {
-		whisper.mu.Unlock()
-		return fmt.Errorf("voice input is already initializing")
 	}
 	whisper.initializing = true
 	whisper.phase = whisperPhaseIdle
@@ -157,34 +163,12 @@ func (a *App) InitVoiceInput() error {
 		a.emitVoiceStatus()
 	}()
 
-	whisper.mu.Lock()
-	whisper.phase = whisperPhaseDownloading
-	whisper.mu.Unlock()
-	a.emitVoiceStatus()
-
-	if err := ensureSherpaAssets(context.Background(), defaultSherpaPaths(), func(asset string, downloaded, total int64, bytesPerSec float64) {
-		a.emitVoiceEvent("download", fmt.Sprintf("Downloading %s...", asset))
-		if a.ctx != nil {
-			a.emitBrowserEvent("voice:download-progress", map[string]any{
-				"fileName":    asset,
-				"downloaded":  downloaded,
-				"total":       total,
-				"bytesPerSec": bytesPerSec,
-			})
-		}
-	}); err != nil {
-		whisper.mu.Lock()
-		whisper.err = err
-		whisper.mu.Unlock()
-		return fmt.Errorf("sherpa-onnx assets: %w", err)
-	}
-
-	transcriber, err := initSherpaTranscriber(a.currentUILanguage())
+	transcriber, err := load()
 	if err != nil {
 		whisper.mu.Lock()
 		whisper.err = err
 		whisper.mu.Unlock()
-		return fmt.Errorf("sherpa-onnx: %w", err)
+		return err
 	}
 
 	whisper.mu.Lock()
@@ -205,6 +189,56 @@ func (a *App) InitVoiceInput() error {
 	go cleanupLegacyWhisperData()
 
 	return nil
+}
+
+// initInstalledVoiceInput is for arrival only. Wait for both model jobs before
+// entering voice initialization, without invoking dictation's asset setup.
+func (a *App) initInstalledVoiceInput() error {
+	if err := requireInstalledSherpaAssets(defaultSherpaPaths()); err != nil {
+		return err
+	}
+	return a.initVoiceInput(true, a.openVoiceInput)
+}
+
+// loadVoiceInput runs dictation's normal asset setup before opening the engine.
+func (a *App) loadVoiceInput() (asr.Transcriber, error) {
+	if err := ensureSherpaAssets(context.Background(), defaultSherpaPaths(), a.voiceDownloadProgress); err != nil {
+		return nil, fmt.Errorf("sherpa-onnx assets: %w", err)
+	}
+	a.setVoiceInputPhase(whisperPhaseIdle)
+	return a.openVoiceInput()
+}
+
+func (a *App) setVoiceInputPhase(phase whisperPhase) {
+	whisper := a.ensureWhisperState()
+	whisper.mu.Lock()
+	changed := whisper.phase != phase
+	whisper.phase = phase
+	whisper.mu.Unlock()
+	if changed {
+		a.emitVoiceStatus()
+	}
+}
+
+func (a *App) voiceDownloadProgress(asset string, downloaded, total int64, bytesPerSec float64) {
+	a.setVoiceInputPhase(whisperPhaseDownloading)
+	a.emitVoiceEvent("download", fmt.Sprintf("Downloading %s...", asset))
+	if a.ctx != nil {
+		a.emitBrowserEvent("voice:download-progress", map[string]any{
+			"fileName":    asset,
+			"downloaded":  downloaded,
+			"total":       total,
+			"bytesPerSec": bytesPerSec,
+		})
+	}
+}
+
+func (a *App) openVoiceInput() (asr.Transcriber, error) {
+	transcriber, err := initSherpaTranscriber(a.currentUILanguage())
+	if err != nil {
+		return nil, fmt.Errorf("sherpa-onnx: %w", err)
+	}
+	return transcriber, nil
 }
 
 func (a *App) ensureVoiceInputReady() error {

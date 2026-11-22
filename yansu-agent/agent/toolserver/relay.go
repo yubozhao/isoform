@@ -15,6 +15,8 @@ import (
 
 // Relay is the hidden tool-shim's complete implementation. It carries opaque
 // MCP messages and has no tools or authority policy of its own.
+//
+//isoform:destination local
 func Relay(ctx context.Context, ticketPath string, stdin io.Reader, stdout io.Writer) error {
 	raw, err := readPrivateFile(ticketPath)
 	if err != nil {

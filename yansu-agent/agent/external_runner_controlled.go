@@ -468,6 +468,7 @@ func (d *controlledAttemptDeadline) stop() {
 	d.cancel(context.Canceled)
 }
 
+//isoform:destination assistant,agents_handoff
 func (r *ExternalAgentRunner) executeControlled(ctx context.Context, input *TaskInput, callback StreamCallback) (runID string, retErr error) {
 	if ok, reason := r.RoutingEligibility(input); !ok {
 		return "", errors.New(reason)
@@ -806,6 +807,8 @@ const healthProbePrompt = "Reply with OK."
 // ProbeHealth starts the CLI with the controlled profile, verifies its init
 // against a tool server with no tools and stops it there. It runs no task and
 // never unlocks the server, so nothing can act.
+//
+//isoform:destination metadata
 func (r *ExternalAgentRunner) ProbeHealth(ctx context.Context) error {
 	input := &TaskInput{Prompt: healthProbePrompt, NoTools: true}
 	if ok, reason := r.RoutingEligibility(input); !ok {

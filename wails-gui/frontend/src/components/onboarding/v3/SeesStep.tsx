@@ -11,9 +11,7 @@ import {
 import { RequestPermission } from "../../../../wailsjs/go/main/App";
 import { EventsOn } from "../../../../wailsjs/runtime/runtime";
 import type { SetupPermissions } from "@/lib/setup-backend";
-import { useTelemetryPreference } from "@/hooks/useTelemetryPreference";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
 import { setMenuBarMark } from "../v2/native";
 import { SEES_V3_ROWS, type SeesRow } from "./steps";
 import { ModelsLine } from "./ModelsLine";
@@ -21,6 +19,8 @@ import { ModelsLine } from "./ModelsLine";
 // Step 1 · What Isoform sees (computer setup v1.0.0 rule 4): one row per
 // permission with what it gives; Allow… asks that row's macOS prompts, one
 // at a time, and nothing else. Messages and agents' history are never asked.
+// Usage counts are not asked here (setup-answers answer 2): they live in
+// Settings › Your data, off until turned on.
 
 export type SeesRowState = "off" | "asking" | "on" | "denied" | "later";
 
@@ -46,8 +46,6 @@ export function SeesStep() {
     const [perms, setPerms] = useState<SetupPermissions | null>(null);
     const [asking, setAsking] = useState<SeesRow["id"] | null>(null);
     const [failed, setFailed] = useState<"permissions" | "relaunch" | null>(null);
-    const telemetry = useTelemetryPreference();
-    const [usageFailed, setUsageFailed] = useState(false);
     const askingRef = useRef<SeesRow["id"] | null>(null);
 
     const read = useCallback(async () => {
@@ -151,6 +149,7 @@ export function SeesStep() {
                             <div>
                                 <p className="sv3-strong">{t(`setup.rows.${row.id}.name` as const)}</p>
                                 <p className="sv3-quiet">{t(`setup.rows.${row.id}.line` as const)}</p>
+                                {row.id === "microphone" && <ModelsLine micOn={state === "on"} />}
                             </div>
                             {state === "on" ? (
                                 <span className="sv3-allowed">
@@ -182,7 +181,6 @@ export function SeesStep() {
                     );
                 })}
             </ul>
-            <ModelsLine micOn={states[SEES_V3_ROWS.findIndex((r) => r.id === "microphone")] === "on"} />
             <p className="sv3-quiet" data-testid="setup-v3-so-far">
                 {t("setup.soFar", { what })}
             </p>
@@ -191,20 +189,6 @@ export function SeesStep() {
                     {failed === "relaunch" ? t("v2.sees.reopenFailed") : t("v2.sees.failed")}
                 </p>
             )}
-            <label className="sv3-usage">
-                <span className="sv3-quiet">{t("v2.notices.usage")}</span>
-                <span className="sv3-usage-switch">
-                    {usageFailed ? t("v2.notices.usageSaveFailed") : t("v2.notices.usageSwitch")}
-                    <Switch
-                        checked={telemetry.enabled}
-                        disabled={telemetry.loading}
-                        onCheckedChange={(on) => {
-                            setUsageFailed(false);
-                            Promise.resolve(telemetry.setEnabled(on)).catch(() => setUsageFailed(true));
-                        }}
-                    />
-                </span>
-            </label>
         </div>
     );
 }

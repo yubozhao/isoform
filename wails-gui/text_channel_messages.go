@@ -175,6 +175,8 @@ func messagesErrorCode(output string) string {
 // runMessagesScript runs one script with osascript under a 10 second timeout.
 // The parent context's error wins over the classification, so a cancelled
 // caller never falls back to SMS.
+//
+//isoform:destination text_messages
 func runMessagesScript(ctx context.Context, script string) error {
 	if !nativeprompt.Allowed() && messagesOsascriptPath == "/usr/bin/osascript" {
 		return messagesFailure{kind: messagesNotAllowed}

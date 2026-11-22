@@ -8,6 +8,7 @@ package main
 // result comes back through the task, to Your work and the Agents page.
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -88,42 +89,65 @@ func (a *App) DisconnectAgentHere(agentID string) (YourAgents, error) {
 	if err := a.store.SetUIState(context.Background(), agentHereKeyPre+agentID, ""); err != nil {
 		return YourAgents{}, err
 	}
+	// It fades in Your agents for 30 days with Connect again, as a joined
+	// agent does (computer-agents v1.1.0 13c rule 9).
+	known, _ := workonit.AgentByID(agentID)
+	a.keepDisconnectedAgent(disconnectedAgent{ID: agentID, Name: known.Name, CatalogID: agentID, DisconnectedAt: a.agentJoinClock().UnixMilli()})
 	return a.yourAgents(), nil
 }
 
 // agentConnectedHere reports a coding agent connected on this computer.
-func (a *App) agentConnectedHere(agentID string) bool {
+func (a *App) agentConnectedHere(agentID string) (bool, error) {
+	here, _, err := a.agentConnectedHereAt(agentID)
+	return here, err
+}
+
+// agentConnectedHereAt is agentConnectedHere with when it was connected (the
+// setting holds the time in ms; 0 when an older value doesn't say).
+func (a *App) agentConnectedHereAt(agentID string) (bool, int64, error) {
 	if a == nil || a.store == nil || agentHereBackend(agentID) == "" {
-		return false
+		return false, 0, nil
 	}
-	value, err := a.store.GetUIState(context.Background(), agentHereKeyPre+agentID)
-	return err == nil && strings.TrimSpace(value) != ""
+	value, err := a.yourAgentsUIState(agentHereKeyPre + agentID)
+	if err != nil {
+		return false, 0, err
+	}
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return false, 0, nil
+	}
+	at, _ := strconv.ParseInt(value, 10, 64)
+	return true, at, nil
 }
 
 // startAgentHereTask saves the hand-off as a task pinned to the agent and
 // starts it. A task that can't start is removed.
 func (a *App) startAgentHereTask(task workonit.Task, agentID string) (string, error) {
 	if a.handoffStore == nil {
-		return "", errTaskStoreNotReady
+		return "", fmt.Errorf("%w: %w", errAgentHereNotStarted, errTaskStoreNotReady)
 	}
-	title := dailyTopicTaskTitle(handoffFirstLine(task.Text))
+	title := dailyTopicTaskTitle(cmp.Or(task.Title, handoffFirstLine(task.Text)))
 	input, err := validateCreateTask(CreateTaskInput{Title: title, Brief: task.Text})
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("%w: %w", errAgentHereNotStarted, err)
 	}
 	now := time.Now().UnixMilli()
-	entry := newTaskEntryFrom(input, handoff.SourceDesktop, &handoff.Origin{Kind: "work-on-it", Label: agentID}, "hf_"+workOnItID(), now)
+	taskID := "hf_" + workOnItID()
+	if task.SourceKind == agentRequestSource {
+		taskID = "hf_" + task.ID
+	}
+	entry := newTaskEntryFrom(input, handoff.SourceDesktop, &handoff.Origin{Kind: "work-on-it", Label: agentID}, taskID, now)
 	entry.Backend = agentHereBackend(agentID)
 	saved, err := a.handoffStore.Save(entry)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("%w: %w", errAgentHereNotStarted, err)
 	}
 	a.emitBrowserEvent("handoff:created", map[string]any{"id": saved.ID, "title": saved.Title})
 	if err := agentHereTaskStart(a, saved.ID); err != nil {
 		if removed, cleanupErr := a.handoffStore.DeleteIfUnchanged(saved); cleanupErr == nil && removed {
 			a.emitBrowserEvent("handoff:updated", map[string]any{"id": saved.ID})
 		}
-		return "", fmt.Errorf("%w: %v", errAgentHereNotStarted, err)
+		return "", fmt.Errorf("%w: %w", errAgentHereNotStarted, err)
 	}
 	return saved.ID, nil
 }

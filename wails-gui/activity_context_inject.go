@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -323,7 +324,9 @@ func (a *App) generateRecentActivitySummary() string {
 		len(recent), len(windowTitles), len(ocrKeywords), userName != "", activityContextLookbackHours)
 
 	prompt := buildRecentActivityPrompt(recent, windowTitles, ocrKeywords, userName)
-	out, err := a.callHaikuForSummary(prompt)
+	givenCtx, given := withPassScope(context.Background(), passRecent)
+	out, err := a.callHaikuForSummaryContext(givenCtx, prompt)
+	a.finishAssistantCall(given)
 	if err != nil {
 		log.Printf("[activity-context] haiku: %v", err)
 		return ""

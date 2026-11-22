@@ -110,7 +110,7 @@ vi.mock('@/hooks/useUserProfile', () => ({ useUserProfile: () => ({ profile: nul
 vi.mock('@/hooks/useEnvironmentSwitch', () => ({ useEnvironmentSwitch: () => ({}) }));
 vi.mock('@/hooks/useDevToolsUnlock', () => ({ useDevToolsUnlock: () => false }));
 vi.mock('@/hooks/useTheme', () => ({ useTheme: () => ({ terminalTheme: {} }) }));
-vi.mock('@/hooks/useKeybindings', () => ({ useKeybindings: () => ({ getCombo: fixture.noop, findMatchingAction: () => null }) }));
+vi.mock('@/hooks/useKeybindings', () => ({ PAGE_KEYS: ['today', 'chat', 'agents', 'activity', 'you'], useKeybindings: () => ({ getCombo: fixture.noop, findMatchingAction: () => null }) }));
 vi.mock('@/hooks/useSidebarResize', () => ({ useSidebarResize: () => ({ sidebarWidth: 240 }) }));
 vi.mock('@/hooks/useResizable', () => ({ useResizable: () => ({ size: 288 }) }));
 vi.mock('@/hooks/useSidebarGroups', () => ({ useSidebarGroups: () => ({}) }));
@@ -150,7 +150,7 @@ vi.mock('@/components/stream-body', () => ({ StreamBody: (props: any) => {
 vi.mock('@/components/sidebar', () => ({ Sidebar: (props: any) => {
     fixture.sidebarProps = props;
     return null;
-}, UserPopoverMenu: () => null }));
+} }));
 vi.mock('@/components/ui/avatar', () => ({ Avatar: () => null }));
 vi.mock('@/components/composer', () => ({ Composer: (props: any) => {
     fixture.composerProps = props;
@@ -535,15 +535,17 @@ describe('App main-chat report wiring', () => {
         expect(binding('OpenExternalURL')).toHaveBeenCalledWith('/System/Applications/Mail.app');
     });
 
-    it('gives the main chat filters outside the scroll area without the retired summary', async () => {
+    it('gives the main chat its header outside the scroll area without the retired summary', async () => {
         await mountApp();
-        // Chat review v1.0.5 removes the summary; the filters remain.
+        // Chat review v1.0.5 removes the summary; the header (title, sub-line) remains.
         await waitFor(() => expect(fixture.streamProps).toEqual(expect.objectContaining({
             toolbar: expect.anything(),
             mainChatView: expect.objectContaining({ hideRoutine: false, onFillChip: expect.any(Function) }),
         })));
         expect(screen.queryByTestId('main-chat-summary')).toBeNull();
         expect(screen.getByTestId('stream')).toBeInTheDocument();
+        // The field says what Chat is for (computer-chat v1.0.0 rule 2).
+        expect(fixture.composerProps!.placeholder).toBe('Ask about your day, or correct Isoform');
     });
 
     it('sends an empty-chat suggestion pill or an answer chip at once, leaving nothing in the box (Chat K4)', async () => {
@@ -555,43 +557,6 @@ describe('App main-chat report wiring', () => {
         act(() => (fixture.streamProps as any).mainChatView.onFillChip('Hold 3:00 to 4:30 for the memo'));
         expect(fixture.sendImmediate).toHaveBeenLastCalledWith('Hold 3:00 to 4:30 for the memo');
         expect(fixture.replacePrompt).not.toHaveBeenCalled();
-    });
-
-    it('keeps Stop and the queued messages with the box while a topic is attached', async () => {
-        const project = projectFixture();
-        Object.assign(project.workspaces[0].sessions[0], { streaming: true });
-        fixture.initialProjects = [project];
-        fixture.queuedMessages = [{ prompt: 'Then draft the memo', images: [], files: [] }];
-        fixture.handleCancel.mockClear();
-        fixture.removeQueued.mockClear();
-        binding('GetTodayTopics').mockResolvedValue([{ id: 'halcyon', kind: 'project', name: 'Halcyon ERP sync', status: 'moving' }]);
-        binding('IsClosedEyesModeEnabled').mockResolvedValue(false);
-        binding('ListMainChatTopicItems').mockResolvedValue({ items: [], hasMore: false, nextCursor: '' });
-        try {
-            await mountApp();
-            expect(fixture.composerProps!.queuedMessages).toEqual(fixture.queuedMessages);
-            fireEvent.click(await screen.findByRole('button', { name: 'Halcyon ERP sync' }));
-            const box = await screen.findByTestId('main-chat-topic-box');
-            // The queue stays in view and Stop takes Send's place.
-            expect(within(box).getByTestId('queued-messages')).toHaveTextContent('Then draft the memo');
-            expect(screen.getByTestId('main-chat-topic-note')).toHaveTextContent(i18n.t('chat:mainChat.view.topicBusy'));
-            fireEvent.click(within(box).getByRole('button', { name: i18n.t('app:composer.actions.stopStreamingQueued', { count: 1 }) }));
-            expect(fixture.handleCancel).toHaveBeenCalledTimes(1);
-            // A topic send waits while the reply runs.
-            const input = within(box).getByRole('textbox');
-            fireEvent.change(input, { target: { value: 'About Halcyon' } });
-            fireEvent.keyDown(input, { key: 'Enter' });
-            expect(binding('SendMainChatWithTopic')).not.toHaveBeenCalled();
-            expect(input).toHaveValue('About Halcyon');
-            // Back to Everything: the plain box still holds the same queue.
-            fireEvent.click(screen.getByRole('button', { name: i18n.t('chat:mainChat.view.everything') }));
-            await screen.findByTestId('stream');
-            expect(screen.queryByTestId('main-chat-topic-box')).toBeNull();
-            expect(fixture.composerProps!.queuedMessages).toEqual([{ prompt: 'Then draft the memo', images: [], files: [] }]);
-            expect(fixture.removeQueued).not.toHaveBeenCalled();
-        } finally {
-            fixture.queuedMessages = [];
-        }
     });
 
     it('uses localized error feedback when the App Mail binding rejects', async () => {

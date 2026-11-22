@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"sort"
 	"strings"
 	"time"
@@ -16,6 +17,36 @@ import (
 // Isoform saw in a stretch of time, by time and source, newest first. Each
 // row carries what Forget needs; GetActivityForgetPreview says what goes with
 // a row before ForgetActivityFeedRow removes it.
+
+// ActivityFeedBasis names the consent that let Isoform have a row (hub class
+// rule, 2026-11-21): every row carries one, set here and never by the
+// screen, and a row without one is neither recorded nor shown. Setting is a
+// stable key the page turns into words; Agent is set only where the consent
+// is per agent.
+type ActivityFeedBasis struct {
+	Setting string `json:"setting"`
+	Agent   string `json:"agent,omitempty"`
+}
+
+// The consent records a row can stand on.
+const (
+	// basisScreen: Settings, What Isoform sees, Watch my screen is on.
+	basisScreen = "screen"
+	// basisYes: the person's Yes on Your work handed the work over.
+	basisYes = "yes"
+	// basisWatch: the person recorded on a paired watch or phone. A
+	// recording keeps the basis it was made under after the device unpairs.
+	basisWatch = "watch"
+	// basisClosedEyes: Isoform's own record of a pause; it holds nothing seen.
+	basisClosedEyes = "closed_eyes"
+	// basisAssistant: the assistant Isoform thinks with; a trouble gap
+	// where it was signed out or unreachable holds nothing seen.
+	basisAssistant = "assistant"
+	// basisLearn: Learn from it is on for an agent (no rows yet, C4).
+	basisLearn = "learn"
+	// basisMessages: Messages Isoform can see is on (no rows yet, C5).
+	basisMessages = "messages"
+)
 
 // ActivityFeedRow is one thing Isoform saw or did. Kind is "screen" (a
 // moment), "watch" (a conversation the watch or phone heard), "agent" (a
@@ -48,13 +79,30 @@ type ActivityFeedRow struct {
 	// "signed_out", "offline" or "restarted". Ongoing is true while it lasts.
 	Cause   string `json:"cause,omitempty"`
 	Ongoing bool   `json:"ongoing,omitempty"`
+	// Basis is the consent that let Isoform have the row. Required.
+	Basis ActivityFeedBasis `json:"basis"`
+	// Watch conversation rows (kind "watch", Conversation true): ID is the
+	// conversation's, Title its name. Speakers are who spoke, "you" first,
+	// then the names the person gave; OtherVoices counts the voices with no
+	// name. Marks counts the moments marked in it; HasNote says it has notes.
+	// No words of the transcript travel in a row.
+	Conversation bool     `json:"conversation,omitempty"`
+	Speakers     []string `json:"speakers,omitempty"`
+	OtherVoices  int      `json:"otherVoices,omitempty"`
+	Marks        int      `json:"marks,omitempty"`
+	HasNote      bool     `json:"hasNote,omitempty"`
 }
 
 // ActivityForgetItem is one thing that goes when a row is forgotten. Kind is
 // "topic" (the row leaves that topic), "goal" (a goal made from it),
 // "screen" (raw screen capture of a stretch), "moment" (another moment
 // whose capture shares that stretch), "words" (a transcript), "audio",
-// "copies" (the phone's and the watch's copies) or "notes".
+// "copies" (the phone's and the watch's copies), "notes" (a watch
+// conversation's notes), "followup" (a follow-up made from them, kept in
+// Your work), "claim" (something Isoform thinks about you, read from those
+// words), "conversation" (another conversation in the same hours) or
+// "agent_work" (work sent to an agent from it: it stays with the agent and
+// is not counted).
 type ActivityForgetItem struct {
 	Kind    string `json:"kind"`
 	Title   string `json:"title,omitempty"`
@@ -94,8 +142,8 @@ func (a *App) GetActivityFeed(startMs, endMs int64) (perfValue []ActivityFeedRow
 	if handoffs, err := a.GetWorkOnItHandoffs(); err == nil {
 		rows = append(rows, activityFeedHandoffRows(handoffs, a.workOnItOutcomes(), startMs, endMs, time.Now().UnixMilli())...)
 	}
-	if recordings, err := a.GetWatchRecordings(); err == nil {
-		rows = append(rows, activityFeedWatchRows(recordings, startMs, endMs)...)
+	if watch, err := a.activityFeedWatch(startMs, endMs); err == nil {
+		rows = append(rows, watch...)
 	}
 	if pauses, err := a.observationPauses(); err == nil {
 		rows = append(rows, activityFeedClosedRows(pauses, startMs, endMs, time.Now().UnixMilli())...)
@@ -103,8 +151,27 @@ func (a *App) GetActivityFeed(startMs, endMs int64) (perfValue []ActivityFeedRow
 	if stretches, err := a.troubleStretches(startMs, endMs); err == nil {
 		rows = append(rows, activityFeedTroubleRows(stretches, startMs, endMs, time.Now().UnixMilli())...)
 	}
+	rows = activityFeedWithBasis(rows)
 	sortActivityFeed(rows)
 	return rows, nil
+}
+
+// activityFeedWithBasis drops every row that names no consent and logs how
+// many of each kind went, never what they held.
+func activityFeedWithBasis(rows []ActivityFeedRow) []ActivityFeedRow {
+	kept := rows[:0]
+	dropped := map[string]int{}
+	for _, row := range rows {
+		if strings.TrimSpace(row.Basis.Setting) == "" {
+			dropped[row.Kind]++
+			continue
+		}
+		kept = append(kept, row)
+	}
+	for kind, n := range dropped {
+		log.Printf("[activity] %d %s rows had no consent record and were left out", n, kind)
+	}
+	return kept
 }
 
 func sortActivityFeed(rows []ActivityFeedRow) {
@@ -120,35 +187,12 @@ func activityFeedMomentRows(moments []ActivityView) []ActivityFeedRow {
 	out := make([]ActivityFeedRow, 0, len(moments))
 	for _, m := range moments {
 		row := ActivityFeedRow{ID: m.ID, Kind: "screen", StartMs: m.StartMs, EndMs: m.EndMs, Title: strings.TrimSpace(m.Title),
-			Detail: strings.TrimSpace(m.Description), ActiveMs: m.ActiveMs, InProgress: m.InProgress, Withheld: m.ActionsWithheld}
+			Detail: strings.TrimSpace(m.Description), ActiveMs: m.ActiveMs, InProgress: m.InProgress, Withheld: m.ActionsWithheld,
+			Basis: ActivityFeedBasis{Setting: basisScreen}}
 		if len(m.Apps) > 0 {
 			row.App = m.Apps[0].AppName
 		}
 		out = append(out, row)
-	}
-	return out
-}
-
-func activityFeedWatchRows(recordings []WatchRecording, startMs, endMs int64) []ActivityFeedRow {
-	out := []ActivityFeedRow{}
-	for _, rec := range recordings {
-		if rec.State == mobileRecordingDeleted {
-			continue
-		}
-		started, err := time.Parse(time.RFC3339, rec.StartedAt)
-		if err != nil {
-			continue
-		}
-		at := started.UnixMilli()
-		if at < startMs || at >= endMs {
-			continue
-		}
-		device := "watch"
-		if rec.Source == "phone" {
-			device = "phone"
-		}
-		out = append(out, ActivityFeedRow{ID: rec.ID, Kind: "watch", StartMs: at, EndMs: at + int64(rec.DurationSeconds*1000),
-			Words: rec.Words, Device: device, RecordingID: rec.ID})
 	}
 	return out
 }
@@ -182,7 +226,7 @@ func activityFeedHandoffRows(handoffs []workonit.Handoff, records map[string]wor
 		}
 		title := strings.TrimSpace(strings.SplitN(strings.TrimSpace(h.Text), "\n", 2)[0])
 		row := ActivityFeedRow{ID: h.ID, Kind: "handoff", StartMs: h.SentAt, EndMs: h.SentAt, App: name,
-			Title: truncateRunes(title, 140), Surface: h.Surface, Outcome: "sent"}
+			Title: truncateRunes(title, 140), Surface: h.Surface, Outcome: "sent", Basis: ActivityFeedBasis{Setting: basisYes}}
 		if r, ok := records[h.ID]; ok {
 			switch r.Status {
 			case workonit.StatusDone:
@@ -216,9 +260,26 @@ func activityFeedTroubleRows(stretches []TroubleStretch, startMs, endMs, nowMs i
 		if e <= s {
 			continue
 		}
-		out = append(out, ActivityFeedRow{Kind: "trouble", StartMs: s, EndMs: e, Cause: t.Cause, Ongoing: ongoing && end <= endMs})
+		out = append(out, ActivityFeedRow{Kind: "trouble", StartMs: s, EndMs: e, Cause: t.Cause, Ongoing: ongoing && end <= endMs,
+			Basis: ActivityFeedBasis{Setting: troubleBasis(t.Cause)}})
 	}
 	return out
+}
+
+// troubleBasis is the source that stopped: the screen when Isoform could not
+// watch it (or was not running), the assistant when it was signed out or
+// unreachable, the watch when the phone went quiet. An unknown cause has no basis, so the row is left out.
+func troubleBasis(cause string) string {
+	switch cause {
+	case troubleScreen, troubleRestarted:
+		return basisScreen
+	case troubleSignedOut, troubleOffline:
+		return basisAssistant
+	case troublePhone:
+		return basisWatch
+	default:
+		return ""
+	}
 }
 
 // activityFeedClosedRows clips each Closed Eyes stretch to the window. One
@@ -234,7 +295,7 @@ func activityFeedClosedRows(pauses []observationPause, startMs, endMs, nowMs int
 		if e <= s {
 			continue
 		}
-		out = append(out, ActivityFeedRow{Kind: "closed", StartMs: s, EndMs: e})
+		out = append(out, ActivityFeedRow{Kind: "closed", StartMs: s, EndMs: e, Basis: ActivityFeedBasis{Setting: basisClosedEyes}})
 	}
 	return out
 }
@@ -253,6 +314,9 @@ func (a *App) activityFeedAgentRows(ctx context.Context, startMs, endMs int64) (
 		if err := rows.Scan(&row.ID, &row.StartMs, &row.EndMs, &row.ActiveMs, &row.App); err != nil {
 			return nil, err
 		}
+		// Seen on the screen while the agent worked: the Screen consent,
+		// not Learn from it (#1371).
+		row.Basis = ActivityFeedBasis{Setting: basisScreen, Agent: row.App}
 		out = append(out, row)
 	}
 	return out, rows.Err()
@@ -289,24 +353,11 @@ func (a *App) GetActivityForgetPreview(kind, id string) (ActivityForgetPreview, 
 		}
 		preview.Goes = append(preview.Goes, goals...)
 	case "watch":
-		store := a.watchRecordingStore()
-		if store == nil {
-			return preview, errWatchRecordingNotFound
+		plan, err := a.watchForgetPlanFor(id)
+		if err != nil {
+			return preview, err
 		}
-		rec, ok := store.get(id, "")
-		if !ok || rec.State == mobileRecordingDeleted {
-			return preview, errWatchRecordingNotFound
-		}
-		if rec.Words > 0 {
-			preview.Goes = append(preview.Goes, ActivityForgetItem{Kind: "words"})
-		}
-		if !rec.AudioRemoved {
-			preview.Goes = append(preview.Goes, ActivityForgetItem{Kind: "audio"})
-		}
-		if rec.SessionID != "" {
-			preview.Goes = append(preview.Goes, ActivityForgetItem{Kind: "notes"})
-		}
-		preview.Goes = append(preview.Goes, ActivityForgetItem{Kind: "copies"})
+		preview.Title, preview.Goes = plan.title, plan.goes
 	case "handoff":
 		handoffs, err := a.GetWorkOnItHandoffs()
 		if err != nil {
@@ -355,10 +406,12 @@ func (a *App) ForgetActivityFeedRow(kind, id string) error {
 			if err := a.activity.store.eraseSessionCapture(session); err != nil {
 				return err
 			}
+			a.forgetAssistantCallsForSession(session)
 		}
+		a.forgetAssistantCallsForSource("activity", id)
 		return a.DeleteActivity(id)
 	case "watch":
-		return a.DeleteWatchRecording(id)
+		return a.forgetWatchRow(id)
 	case "handoff":
 		// Isoform's record of the hand-off goes; what the agent made stays
 		// with the agent (computer-activity v1.2.0 rule 3).
@@ -375,6 +428,7 @@ func (a *App) ForgetActivityFeedRow(kind, id string) error {
 			if err := a.activity.store.eraseSessionCapture(s.ID); err != nil {
 				return err
 			}
+			a.forgetAssistantCallsForSession(s.ID)
 		}
 		if a.ctx != nil {
 			a.emitBrowserEvent("activity:activities-updated")

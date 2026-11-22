@@ -680,6 +680,18 @@ func (a *App) SaveUIState(key, value string) error {
 	if a.store == nil {
 		return fmt.Errorf("UI state storage unavailable")
 	}
+	if choice := a.contextChoice(key); choice != nil {
+		if value != "" && value != "off" && value != "on" {
+			return fmt.Errorf("invalid watch setting")
+		}
+		choice.mu.Lock()
+		defer choice.mu.Unlock()
+		if err := a.store.SetUIState(context.Background(), key, value); err != nil {
+			return err
+		}
+		choice.publish(value == "off")
+		return nil
+	}
 	if key == onboardingStateKey {
 		if err := a.noteFirstWeekOnboarding(context.Background(), value); err != nil {
 			return err
@@ -703,6 +715,9 @@ func (a *App) SaveUIState(key, value string) error {
 		a.engagement.nudge()
 	}
 	if key == onboardingStateKey {
+		if onboardingStateDone(value) {
+			a.startAssistantHistoryScan(false)
+		}
 		// First paint may have happened during onboarding. Recheck the durable
 		// completion state, retaining the original service and paint gates.
 		a.resumePageFirstReads()

@@ -361,6 +361,10 @@ func (s *ActivityStore) SemanticSearchSessions(ctx context.Context, query string
 		return nil, nil
 	}
 
+	return s.searchEmbeddedSessions(ctx, query, limit, embedder, func(text string) string { return truncateText(text, 200) })
+}
+
+func (s *ActivityStore) searchEmbeddedSessions(ctx context.Context, query string, limit int, embedder EmbeddingProvider, snippet func(string) string) ([]ActivitySemanticResult, error) {
 	// Embed the query
 	queryVec, err := embedder.EmbedQuery(ctx, query)
 	if err != nil {
@@ -371,7 +375,7 @@ func (s *ActivityStore) SemanticSearchSessions(ctx context.Context, query string
 	// frames may have been embedded before privacy gating existed and must
 	// not be retrievable via semantic search. ("dismissed" is the normal
 	// triage-complete state and is deliberately NOT excluded.)
-	rows, err := s.db.Query(`
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT f.id, f.session_id, f.frame_time, f.text, f.embedding
 		FROM activity_ocr_frames f
 		JOIN activity_sessions s ON f.session_id = s.id
@@ -395,7 +399,7 @@ func (s *ActivityStore) SemanticSearchSessions(ctx context.Context, query string
 		var sessionID, text, embJSON string
 		var frameTime float64
 		if err := rows.Scan(&id, &sessionID, &frameTime, &text, &embJSON); err != nil {
-			continue
+			return nil, err
 		}
 
 		var emb []float64
@@ -412,6 +416,10 @@ func (s *ActivityStore) SemanticSearchSessions(ctx context.Context, query string
 				score:     score,
 			})
 		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	// Sort by score descending
@@ -442,7 +450,7 @@ func (s *ActivityStore) SemanticSearchSessions(ctx context.Context, query string
 		}
 		if c.score > agg.bestScore {
 			agg.bestScore = c.score
-			agg.bestText = truncateText(c.text, 200)
+			agg.bestText = snippet(c.text)
 			agg.bestFrame = c.frameTime
 		}
 	}

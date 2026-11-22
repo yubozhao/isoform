@@ -42,6 +42,23 @@ describe('Today draft in the composer', () => {
         expect(screen.getByRole('textbox')).toHaveAttribute('placeholder', 'Ask about your day, a project or a person...');
     });
 
+    it('shows the About chip with × and Backspace taking it off, and the topic placeholder (T11)', () => {
+        const onRemove = vi.fn();
+        const { props, view } = mount();
+        view.rerender(<Composer {...props} prompt="" placeholder="Ask about Halcyon import" about={{ title: 'Halcyon import', onRemove }} />);
+        expect(screen.getByTestId('composer-about-chip')).toHaveTextContent('About: Halcyon import');
+        expect(screen.getByRole('textbox')).toHaveAttribute('placeholder', 'Ask about Halcyon import');
+        fireEvent.click(screen.getByRole('button', { name: 'Take Halcyon import off this message' }));
+        expect(onRemove).toHaveBeenCalledTimes(1);
+        fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Backspace' });
+        expect(onRemove).toHaveBeenCalledTimes(2);
+        expect(props.onKeyDown).not.toHaveBeenCalled();
+        // With words in the field, Backspace edits them.
+        view.rerender(<Composer {...props} prompt="What" about={{ title: 'Halcyon import', onRemove }} />);
+        fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Backspace' });
+        expect(onRemove).toHaveBeenCalledTimes(2);
+    });
+
     it('shows one tertiary context line before sending and leaves the named draft editable', () => {
         const { props, view } = mount({ status: 'ready', counts: { memories: 3, activities: 2, people: 1 } });
         const line = screen.getByText('Isoform adds what it knows about this: 3 memories, 2 activities, 1 person');

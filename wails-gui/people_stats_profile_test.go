@@ -317,15 +317,33 @@ func seedPeopleProfileContextFiles(tb testing.TB) {
 }
 
 func peopleProfileStorageDB(store *storage.Store) *sql.DB {
-	field := reflect.ValueOf(store).Elem().FieldByName("db")
+	return peopleProfileStorageField(store, "db")
+}
+
+func setPeopleProfileStorageDB(store *storage.Store, db *sql.DB) {
+	setPeopleProfileStorageField(store, "db", db)
+}
+
+// The store's read pool (streamReadDB) serves UI-state reads, so a probe
+// counts reads on it as well as on the writer.
+func peopleProfileStorageReadDB(store *storage.Store) *sql.DB {
+	return peopleProfileStorageField(store, "streamReadDB")
+}
+
+func setPeopleProfileStorageReadDB(store *storage.Store, db *sql.DB) {
+	setPeopleProfileStorageField(store, "streamReadDB", db)
+}
+
+func peopleProfileStorageField(store *storage.Store, name string) *sql.DB {
+	field := reflect.ValueOf(store).Elem().FieldByName(name)
 	if !field.IsValid() || field.Kind() != reflect.Ptr {
 		panic("storage.Store database field unavailable")
 	}
 	return *(**sql.DB)(unsafe.Pointer(field.UnsafeAddr()))
 }
 
-func setPeopleProfileStorageDB(store *storage.Store, db *sql.DB) {
-	field := reflect.ValueOf(store).Elem().FieldByName("db")
+func setPeopleProfileStorageField(store *storage.Store, name string, db *sql.DB) {
+	field := reflect.ValueOf(store).Elem().FieldByName(name)
 	if !field.IsValid() || field.Kind() != reflect.Ptr {
 		panic("storage.Store database field unavailable")
 	}
@@ -617,9 +635,14 @@ func instrumentPeopleUIStateReads(t *testing.T, app *App) *peopleUIStateReadProb
 	instrumented := sql.OpenDB(peopleUIStateCountingConnector{driver: original.Driver(), path: path, database: "state", probe: probe})
 	instrumented.SetMaxOpenConns(1)
 	setPeopleProfileStorageDB(app.store, instrumented)
+	originalRead := peopleProfileStorageReadDB(app.store)
+	instrumentedRead := sql.OpenDB(peopleUIStateCountingConnector{driver: original.Driver(), path: path, database: "state", probe: probe})
+	setPeopleProfileStorageReadDB(app.store, instrumentedRead)
 	t.Cleanup(func() {
 		setPeopleProfileStorageDB(app.store, original)
+		setPeopleProfileStorageReadDB(app.store, originalRead)
 		_ = instrumented.Close()
+		_ = instrumentedRead.Close()
 	})
 	return probe
 }
@@ -664,6 +687,11 @@ func instrumentPeopleProfileQueries(t *testing.T, app *App, timings *peopleSQLTi
 		instrumentedActivityWriter.SetMaxOpenConns(1)
 	}
 	setPeopleProfileStorageDB(app.store, instrumentedState)
+	stateReadDB := peopleProfileStorageReadDB(app.store)
+	instrumentedStateRead := sql.OpenDB(peopleUIStateCountingConnector{
+		driver: stateDB.Driver(), path: statePath, database: "state", probe: probe, timings: timings,
+	})
+	setPeopleProfileStorageReadDB(app.store, instrumentedStateRead)
 	if separateActivityReader {
 		activityStore.readDB = instrumentedActivity
 		activityStore.db = instrumentedActivityWriter
@@ -673,6 +701,8 @@ func instrumentPeopleProfileQueries(t *testing.T, app *App, timings *peopleSQLTi
 	}
 	t.Cleanup(func() {
 		setPeopleProfileStorageDB(app.store, stateDB)
+		setPeopleProfileStorageReadDB(app.store, stateReadDB)
+		_ = instrumentedStateRead.Close()
 		activityStore.db = activityWriterDB
 		activityStore.readDB = activityReadDB
 		activityStore.readWriter = activityReadWriter

@@ -35,7 +35,8 @@ func permissionUIStateKey(permKey string) string {
 // turns them on. Recent files is one until a real Mac confirms that
 // Spotlight never shows Isoform a folder macOS has not opened to it.
 var permissionsOffByDefault = map[string]bool{
-	filesPermissionKey: true,
+	filesPermissionKey:    true,
+	messagesPermissionKey: true,
 }
 
 // isPermissionEnabled reads the stored toggle state for a permission.
@@ -46,6 +47,16 @@ func (a *App) isPermissionEnabled(key string) bool {
 }
 
 func (a *App) isPermissionEnabledContext(ctx context.Context, key string) bool {
+	if key == messagesPermissionKey {
+		on, err := a.messagesSwitchRead(ctx)
+		if err != nil {
+			if err != errSettingsDefaultsUnavailable {
+				log.Printf("[permissions] read Messages switch: %v", err)
+			}
+			return false
+		}
+		return on
+	}
 	if a.store == nil {
 		return !permissionsOffByDefault[key]
 	}
@@ -54,6 +65,26 @@ func (a *App) isPermissionEnabledContext(ctx context.Context, key string) bool {
 		return !permissionsOffByDefault[key]
 	}
 	return val != "false"
+}
+
+// messagesSwitchRead is the stored Messages switch, its default when nothing
+// is stored, or the read error.
+func (a *App) messagesSwitchRead(ctx context.Context) (bool, error) {
+	if a.settingsDefaultsHeldOff.Load() {
+		return false, errSettingsDefaultsUnavailable
+	}
+	if a.store == nil {
+		return false, fmt.Errorf("storage is not ready")
+	}
+	// Off the writer connection, so a busy background job can't stall it.
+	value, found, err := a.store.LookupUIState(ctx, permissionUIStateKey(messagesPermissionKey))
+	if err != nil {
+		return false, err
+	}
+	if !found {
+		return a.legacySettingsDefaults.Load() || !permissionsOffByDefault[messagesPermissionKey], nil
+	}
+	return value != "false", nil
 }
 
 func (a *App) GetPlatformPermissions() (perfValue PlatformPermissions) {
@@ -164,6 +195,9 @@ func (a *App) OpenPermissionSettingsFromRect(key string, rect PermissionSourceRe
 
 // SetPermissionEnabled toggles a permission on or off (only for toggleable permissions).
 func (a *App) SetPermissionEnabled(key string, enabled bool) error {
+	if key == messagesPermissionKey && a.settingsDefaultsHeldOff.Load() {
+		return errSettingsDefaultsUnavailable
+	}
 	a.clearPageSnapshots()
 	defer a.clearPageSnapshots()
 	perms := getPlatformPermissions()

@@ -40,6 +40,9 @@ export interface TodayActionHandlers {
     /** Opens the main chat with an action's request in the composer, unsent:
      *  news, the day's summary and the brief's cards (backlog item 64). */
     onStartChat: (prompt: string, context: TodayChatContextRef, options?: TodayChatStartOptions) => void;
+    /** "Ask about {topic} ›": opens Chat with the topic attached, an empty
+     *  field and nothing sent (computer-conformance-answers v1.2.0 T11). */
+    onAskAboutTopic?: (topic: { id: string; name: string }) => void;
     /** "Talk about this brief": Isoform speaks first in the main chat, and the
      *  brief goes with the user's answer. Resolves false when it cannot. */
     onOpenBriefConversation?: (briefId: string) => Promise<boolean>;
@@ -66,6 +69,8 @@ export interface TodayActionHandlers {
     onBriefMeeting?: (meeting: import("@/lib/wails-shim-app").TodayBeforeYouTalk, text: string) => void;
     onOpenMeetingNotes?: (sessionId: string) => void;
     onOpenActivity: () => void;
+    /** Agents, for Your work's "Connect an agent ›" (computer-today v1.1.0 rule 3). */
+    onOpenAgents?: () => void;
     /** Opens Activity on a suggestion's day, with its editable field or draft. */
     onOpenActivitySuggestion?: (target: import("@/lib/wails-shim-app").MobileBriefActivityTarget) => void;
     onOpenPeople: (personId?: string) => void;

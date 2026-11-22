@@ -179,8 +179,11 @@ func (a *app) ResizeMode(mode string) {
 		return
 	}
 	target := struct{ w, h int }{pillWidth, pillHeight}
-	if mode == "conversation" {
+	switch mode {
+	case "conversation":
 		target.w, target.h = conversationWidth, conversationHeight
+	case "ready":
+		target.h = pillHeight + readyExtraHeight
 	}
 
 	a.mu.Lock()

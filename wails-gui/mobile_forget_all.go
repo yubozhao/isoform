@@ -180,15 +180,20 @@ func (bridge *mobileBridge) sendForgetAll(jobID, deviceID string, now time.Time)
 	if err != nil {
 		return err
 	}
+	// Numbered and sent in one step (bridge.sendOrder); released before the job
+	// file's lock is taken.
+	bridge.sendOrder.Lock()
 	bridge.mu.Lock()
 	record := bridge.devices[deviceID]
 	if bridge.stopped || bridge.identity == nil || bridge.client == nil || record == nil {
 		bridge.mu.Unlock()
+		bridge.sendOrder.Unlock()
 		return errForgetAllOffline
 	}
 	keys, err := bridge.sessionKeysLocked(record)
 	if err != nil {
 		bridge.mu.Unlock()
+		bridge.sendOrder.Unlock()
 		return err
 	}
 	record.SendSeq++
@@ -196,6 +201,7 @@ func (bridge *mobileBridge) sendForgetAll(jobID, deviceID string, now time.Time)
 	if err != nil {
 		record.SendSeq--
 		bridge.mu.Unlock()
+		bridge.sendOrder.Unlock()
 		return err
 	}
 	if err := bridge.persistDevicesLocked(); err != nil {
@@ -203,10 +209,12 @@ func (bridge *mobileBridge) sendForgetAll(jobID, deviceID string, now time.Time)
 	}
 	client := bridge.client
 	bridge.mu.Unlock()
-	if err := client.send(map[string]any{"t": "purge", "deviceId": deviceID}); err != nil {
-		return err
+	err = client.send(map[string]any{"t": "purge", "deviceId": deviceID})
+	if err == nil {
+		err = client.send(mobileEventFrame{T: "out", Env: env})
 	}
-	if err := client.send(mobileEventFrame{T: "out", Env: env}); err != nil {
+	bridge.sendOrder.Unlock()
+	if err != nil {
 		return err
 	}
 	mobileForgetAllMu.Lock()

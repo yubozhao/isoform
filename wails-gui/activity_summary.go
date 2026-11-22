@@ -67,7 +67,7 @@ type WeeklySummaryData struct {
 	AISummary         string         `json:"aiSummary"`
 	AISummaryStatus   string         `json:"aiSummaryStatus"`
 	AISummaryLanguage string         `json:"aiSummaryLanguage"` // see DailySummaryData.AISummaryLanguage
-	AutoStatus        string         `json:"autoStatus"`        // "ready"|"refreshing"|"unavailable"; set only by EnsureWeeklySummary
+	AutoStatus        string         `json:"autoStatus"`        // Retained for weekly summary response compatibility.
 	DailyStats        []DayStatBrief `json:"dailyStats"`
 	TotalActiveMs     int64          `json:"totalActiveMs"`
 	DailyAvgMs        int64          `json:"dailyAvgMs"`
@@ -874,7 +874,12 @@ func (a *App) generateMomentsViaAgent(sessions []ActivitySessionRow) []MomentDat
 	titlesBySession := a.topWindowTitlesPerSession(asc)
 
 	prompt := redactActivityModelText(buildMomentsPrompt(asc, titlesBySession, responseLanguageInstruction(a.currentUILanguageName())))
-	raw, err := a.runEphemeralHaiku(prompt, 60*time.Second)
+	ctx, given, _ := withLearningScope(context.Background(), "sense")
+	for _, s := range asc {
+		given.add(activitySessionSourceKind(s), s.ID, 1)
+	}
+	raw, err := a.runEphemeralClaudeModelContext(ctx, prompt, a.lightTaskModel(), 60*time.Second)
+	a.finishAssistantCall(given)
 	if err != nil {
 		log.Printf("[activity-summary] moments agent call failed: %v", err)
 		return nil
@@ -1475,7 +1480,12 @@ func (a *App) runGenerateDailySummary(dateStr string) error {
 	prompt = a.withNoticedRequest(prompt, dateStr)
 
 	// Call stronger model for daily summary — runs once per day, quality matters.
-	summary, err := a.callRichModelForSummary(prompt)
+	givenCtx, given, _ := withLearningScope(context.Background(), "sense")
+	for _, s := range data.modelSessions {
+		given.add(activitySessionSourceKind(s), s.ID, 1)
+	}
+	summary, err := a.callRichModelForSummaryContext(givenCtx, prompt)
+	a.finishAssistantCall(given)
 	if err != nil {
 		log.Printf("[activity-summary] AI generation failed for %s: %v", dateStr, err)
 		if a.ctx != nil {
@@ -1703,7 +1713,9 @@ func (a *App) GenerateWeeklySummary(dateStr string) error {
 	}
 
 	prompt := buildWeeklySummaryPrompt(data, responseLanguageInstruction(a.currentUILanguageName()))
-	summary, err := a.callHaikuForSummary(prompt)
+	givenCtx, given := withPassScope(context.Background(), passWeekly)
+	summary, err := a.callHaikuForSummaryContext(givenCtx, prompt)
+	a.finishAssistantCall(given)
 	if err != nil {
 		return err
 	}
@@ -1978,11 +1990,23 @@ func (a *App) callHaikuForSummary(prompt string) (string, error) {
 	return a.runEphemeralHaiku(redactActivityModelText(prompt), 60*time.Second)
 }
 
+// callHaikuForSummaryContext is callHaikuForSummary on ctx, which carries
+// the See them scope of the pass.
+func (a *App) callHaikuForSummaryContext(ctx context.Context, prompt string) (string, error) {
+	return a.runEphemeralClaudeModelContext(ctx, redactActivityModelText(prompt), a.lightTaskModel(), 60*time.Second)
+}
+
 // callRichModelForSummary uses the chat-tier model (Sonnet by default) for
 // daily/weekly summaries since they run once per day with rich input and
 // quality matters more than latency.
 func (a *App) callRichModelForSummary(prompt string) (string, error) {
-	return a.runEphemeralClaudeModel(redactActivityModelText(prompt), a.chatTaskModel(), 120*time.Second)
+	return a.callRichModelForSummaryContext(context.Background(), prompt)
+}
+
+// callRichModelForSummaryContext is callRichModelForSummary on ctx, which
+// carries the See them scope of what the summary reads.
+func (a *App) callRichModelForSummaryContext(ctx context.Context, prompt string) (string, error) {
+	return a.runEphemeralClaudeModelContext(ctx, redactActivityModelText(prompt), a.chatTaskModel(), 120*time.Second)
 }
 
 // ──────────────────────────────────────────────

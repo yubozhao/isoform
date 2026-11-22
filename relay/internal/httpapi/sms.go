@@ -99,8 +99,7 @@ func (h *Handler) authHub(w http.ResponseWriter, r *http.Request, limitKey strin
 		reply(w, http.StatusInternalServerError, nil, "Unable to authenticate hub")
 		return "", false
 	}
-	if allowed, retry := h.limits.Allow(limitKey+hubID, perMinute, time.Minute, h.Now()); !allowed {
-		setRetryAfter(w, retry)
+	if !h.allow(w, r, limitKey, hubID, perMinute, time.Minute, h.Now()) {
 		reply(w, http.StatusTooManyRequests, nil, "Too many requests")
 		return "", false
 	}
@@ -113,7 +112,7 @@ func (h *Handler) smsHub(w http.ResponseWriter, r *http.Request) (string, bool) 
 		reply(w, http.StatusServiceUnavailable, map[string]string{"code": "not_configured"}, "Text messages are not configured on this relay")
 		return "", false
 	}
-	return h.authHub(w, r, "sms:hub:", smsHubRequestsPerMinute)
+	return h.authHub(w, r, "sms_hub", smsHubRequestsPerMinute)
 }
 
 // smsContext bounds a text route, which may wait on the provider.
@@ -134,13 +133,13 @@ func (h *Handler) smsSubscription(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		status, err := h.SMS.Status(ctx, hubID)
 		if err != nil {
-			smsFailure(w, err)
+			h.smsFailure(w, r, err)
 			return
 		}
 		reply(w, http.StatusOK, viewSMSStatus(status), "")
 	case http.MethodDelete:
 		if err := h.SMS.Unsubscribe(ctx, hubID); err != nil {
-			smsFailure(w, err)
+			h.smsFailure(w, r, err)
 			return
 		}
 		reply(w, http.StatusOK, viewSMSStatus(sms.Status{State: "none", DailyCap: h.SMS.Config.DailyCap, MonthlyCap: h.SMS.Config.MonthlyCap}), "")
@@ -155,14 +154,13 @@ func (h *Handler) smsSubscription(w http.ResponseWriter, r *http.Request) {
 			smsRefuse(w, http.StatusBadRequest, "invalid_request", "Unsupported language")
 			return
 		}
-		if allowed, retry := h.limits.Allow("sms:verify:addr:"+addressBlock(clientIP(r)), smsVerificationsPerAddress, smsVerificationWindow, h.Now()); !allowed {
-			setRetryAfter(w, retry)
+		if !h.allow(w, r, "sms_verify_address", addressBlock(clientIP(r)), smsVerificationsPerAddress, smsVerificationWindow, h.Now()) {
 			smsRefuse(w, http.StatusTooManyRequests, "too_many", "Too many verification texts")
 			return
 		}
 		status, err := h.SMS.StartVerification(ctx, hubID, body.Number, body.Lang)
 		if err != nil {
-			smsFailure(w, err)
+			h.smsFailure(w, r, err)
 			return
 		}
 		reply(w, http.StatusOK, viewSMSStatus(status), "")
@@ -180,7 +178,7 @@ func (h *Handler) smsEnable(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	status, err := h.SMS.Enable(ctx, hubID)
 	if err != nil {
-		smsFailure(w, err)
+		h.smsFailure(w, r, err)
 		return
 	}
 	reply(w, http.StatusOK, viewSMSStatus(status), "")
@@ -204,7 +202,7 @@ func (h *Handler) smsConfirm(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	status, err := h.SMS.Confirm(ctx, hubID, body.Code)
 	if err != nil {
-		smsFailure(w, err)
+		h.smsFailure(w, r, err)
 		return
 	}
 	reply(w, http.StatusOK, viewSMSStatus(status), "")
@@ -225,7 +223,7 @@ func (h *Handler) smsSend(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	status, err := h.SMS.Send(ctx, hubID, body.Body)
 	if err != nil {
-		smsFailure(w, err)
+		h.smsFailure(w, r, err)
 		return
 	}
 	reply(w, http.StatusOK, viewSMSStatus(status), "")
@@ -246,8 +244,7 @@ func (h *Handler) smsInbound(w http.ResponseWriter, r *http.Request) {
 	switch err := h.SMS.HandleInbound(ctx, r); {
 	case err == nil:
 	case errors.Is(err, sms.ErrBadSignature):
-		if allowed, retry := h.limits.Allow("sms:webhook:bad:"+addressBlock(clientIP(r)), smsBadWebhooksPerAddress, time.Minute, h.Now()); !allowed {
-			setRetryAfter(w, retry)
+		if !h.allow(w, r, "sms_bad_webhooks", addressBlock(clientIP(r)), smsBadWebhooksPerAddress, time.Minute, h.Now()) {
 			reply(w, http.StatusTooManyRequests, nil, "Too many requests")
 			return
 		}
@@ -275,7 +272,7 @@ func smsRefuse(w http.ResponseWriter, status int, code, message string) {
 }
 
 // smsFailure maps a service error to its status and code.
-func smsFailure(w http.ResponseWriter, err error) {
+func (h *Handler) smsFailure(w http.ResponseWriter, r *http.Request, err error) {
 	var retry *sms.RetryError
 	if errors.As(err, &retry) {
 		setRetryAfter(w, retry.Wait)
@@ -298,8 +295,10 @@ func smsFailure(w http.ResponseWriter, err error) {
 	case errors.Is(err, sms.ErrCodeSpent):
 		smsRefuse(w, http.StatusGone, "code_spent", err.Error())
 	case errors.Is(err, sms.ErrQuota):
+		h.logLimitError(w, r, err)
 		smsRefuse(w, http.StatusTooManyRequests, "quota", err.Error())
 	case errors.Is(err, sms.ErrTooMany):
+		h.logLimitError(w, r, err)
 		smsRefuse(w, http.StatusTooManyRequests, "too_many", err.Error())
 	case errors.Is(err, sms.ErrBusy):
 		smsRefuse(w, http.StatusServiceUnavailable, "busy", err.Error())

@@ -420,11 +420,13 @@ type setupFinishPlay struct {
 	Callout                string
 }
 
-// setupV3EnvVar turns on computer setup v1.0.0 (docs/computer-setup-build-2026-11-15.md)
-// until every step is built; setup v2 stays the default meanwhile.
+// setupV3EnvVar is the rollback switch for computer setup v1.0.0
+// (docs/computer-setup-build-2026-11-15.md), the default first-run setup since
+// 2026-11-21: ISOFORM_SETUP_V3=0 brings back setup v2. Any other value, or none,
+// runs v3.
 const setupV3EnvVar = "ISOFORM_SETUP_V3"
 
-func setupV3Enabled() bool { return os.Getenv(setupV3EnvVar) == "1" }
+func setupV3Enabled() bool { return os.Getenv(setupV3EnvVar) != "0" }
 
 // setupWindowSize is the setup window's content size for the setup that runs.
 func setupWindowSize() (float64, float64) {
@@ -435,7 +437,7 @@ func setupWindowSize() (float64, float64) {
 }
 
 // GetSetupVersion tells the frontend which first-run setup to show: 3 for
-// computer setup v1.0.0, 2 for setup v2.
+// computer setup v1.0.0 (the default), 2 for setup v2 (ISOFORM_SETUP_V3=0).
 func (a *App) GetSetupVersion() int {
 	if setupV3Enabled() {
 		return 3

@@ -9,7 +9,6 @@ struct ChatTabView: View {
     @EnvironmentObject private var router: NotificationRouter
     @EnvironmentObject private var environment: AppEnvironment
     var showsProactiveSheet = true
-    @State private var showsSees = false
 
     private var chatScopeGranted: Bool {
         SettingsView.allowsChat(pairing.paired?.scopes ?? [])
@@ -36,10 +35,6 @@ struct ChatTabView: View {
             } else if let mainChatID {
                 ChatView(chatID: mainChatID, usesTabTitle: true)
                     .id(mainChatID)
-                    .safeAreaInset(edge: .top, spacing: 0) {
-                        // What Isoform is doing, only while true (Phone Threads §5).
-                        IsoformPresenceLine(presence: chat.activity)
-                    }
             } else {
                 // Paired with no main chat listed yet: the composer is still here, and a send goes to the computer's
                 // main chat (PROTOCOL.md 15.5a).
@@ -52,17 +47,8 @@ struct ChatTabView: View {
         }
         .navigationTitle(String(localized: "Chat"))
         .navigationBarTitleDisplayMode(.large)
-        .toolbar {
-            if pairing.isPaired {
-                ToolbarItem(placement: .topBarTrailing) {
-                    IsoformMarkButton(working: chat.activity?.isFresh() == true) { showsSees = true }
-                }
-            }
-        }
-        .sheet(isPresented: $showsSees) {
-            IsoformSeesSheet(hub: environment.seesHub)
-                .presentationDragIndicator(.visible)
-        }
+        // Chat's title is the word alone, in both layouts; What Isoform sees opens from Settings › Your data
+        // (phone-duo v1.1.0 rules 1 and 4).
         .sheet(item: Binding(
             get: { showsProactiveSheet ? chat.selectedProactive : nil },
             set: { if $0 == nil { chat.closeProactiveItem() } }

@@ -42,6 +42,7 @@ type yourAgentClient struct {
 	http *http.Client
 }
 
+//isoform:destination agent_of_you
 func newYourAgentClient(override string) *yourAgentClient {
 	base := strings.TrimRight(strings.TrimSpace(override), "/")
 	if base == "" {
@@ -201,6 +202,8 @@ func (c *yourAgentClient) release(ctx context.Context, hub, token string) error 
 
 // do sends one request with the 3 second timeout. Network failures and 5xx
 // answers are errYourAgentOffline; every other status is returned to the caller.
+//
+//isoform:destination agent_of_you
 func (c *yourAgentClient) do(ctx context.Context, method, path string, payload any, bearer string) (int, []byte, error) {
 	var reader io.Reader
 	if payload != nil {

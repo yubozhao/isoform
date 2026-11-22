@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import i18n from '@/i18n';
-import { Sidebar, UserPopoverMenu } from './sidebar';
+import { Sidebar } from './sidebar';
 import { STANDALONE_CHAT_PROJECT_ID } from '@/lib/stream-helpers';
 import { resetPageQueries } from '@/lib/page-queries';
 import type { Project, Session } from '@/types';
@@ -24,7 +24,6 @@ vi.mock('@/lib/wails-shim-app', () => new Proxy({}, {
 }));
 vi.mock('../../wailsjs/runtime/runtime', () => ({ EventsOn: () => () => {} }));
 vi.mock('@/hooks/useUserProfile', () => ({ useUserProfile: () => ({ profile: null, loading: false }) }));
-vi.mock('@/components/observing-status', () => ({ ObservingStatus: () => null }));
 
 function buildProjects(sessions: Session[]): Project[] {
     return [{
@@ -97,14 +96,5 @@ describe('You row prefetch', () => {
         await vi.waitFor(() => {
             for (const name of ['GetAboutYou', 'GetMemoryEntries', 'GetMemoryStatus', 'GetAboutYouPortrait']) expect(fixture.calls).toContain(name);
         });
-    });
-});
-
-describe('account menu prefetch', () => {
-    it('pointerenter on Settings starts its page reads', async () => {
-        const noop = () => {};
-        render(<UserPopoverMenu displayName="You" onOpenSettings={noop} />);
-        fireEvent.pointerEnter(screen.getByRole('button', { name: /Settings/ }));
-        await vi.waitFor(() => expect(fixture.calls).toContain('GetSettingsOverview'));
     });
 });

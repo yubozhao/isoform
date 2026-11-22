@@ -4,6 +4,7 @@ package main
 
 import (
 	"encoding/json"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -20,25 +21,11 @@ func TestMenuBarWaitingClickSurvivesQueueChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Waiting on you lists Tasks › Needs you in its order (evening walk B7), so
-	// the clicked row is added last and falls below the three visible rows.
+	// A chat row's id is validated against the chat, not its display rank.
 	for i, id := range []string{"older-a", "older-b", "older-c", "chosen"} {
 		card := mainChatProactive{MomentID: id, Kind: "waiting_on_reply", State: "pending", Headline: "Someone is waiting on your reply.", Body: "Halcyon"}
 		if _, err := app.store.AppendStreamItem(t.Context(), main.LocalID, storage.StreamItemRow{ID: id, Kind: "system", ToolName: mainChatProactiveTool, ToolInput: mainChatViewPayload(t, card), CreatedAt: time.Now().Add(time.Duration(i) * time.Second).UnixMilli()}); err != nil {
 			t.Fatal(err)
-		}
-	}
-	needs, err := app.GetNeedsYou(0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	items, ids := menuBarNeedItems(needs.Items, "en")
-	if len(ids) != 4 {
-		t.Fatalf("needs ids %v", ids)
-	}
-	for _, item := range items {
-		if item.ID == "chosen" {
-			t.Fatal("fixture must move the clicked row below the three visible rows")
 		}
 	}
 	menuBarPresentation.Lock()
@@ -233,19 +220,11 @@ func TestMenuBarMakeBriefAlwaysAnswers(t *testing.T) {
 // whole view once in the background, with no click: the waiting list and the
 // brief row are ready before the first open.
 func TestMenuBarLaunchPreloadBuildsViewWithoutClick(t *testing.T) {
-	app := mainChatTestApp(t)
+	// The brief's offered work is open in Your work, so Next and the count
+	// show it before the first click.
+	app, _ := workAnswersTestApp(t)
 	if app.ctx != nil {
 		t.Fatal("fixture must not have a native runtime")
-	}
-	main, err := app.ensureMainChat(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	// A waiting_on_reply card is what Tasks › Needs you lists, so Waiting on you
-	// shows it (evening walk B7).
-	card := mainChatProactive{MomentID: "waiting-at-launch", Kind: "waiting_on_reply", State: "pending", Headline: "Someone is waiting on your reply.", Body: "Halcyon", Localized: map[string]mainChatProactiveCopy{"en": {Headline: "Someone is waiting on your reply."}, "zh-CN": {Headline: "有人在等你回复。"}}}
-	if _, err := app.store.AppendStreamItem(t.Context(), main.LocalID, storage.StreamItemRow{ID: "waiting-at-launch", Kind: "system", ToolName: mainChatProactiveTool, ToolInput: mainChatViewPayload(t, card), CreatedAt: time.Now().UnixMilli()}); err != nil {
-		t.Fatal(err)
 	}
 	previousApp, previousReady := menuBarApp, menuBarReady.Load()
 	menuBarApp = app
@@ -273,10 +252,10 @@ func TestMenuBarLaunchPreloadBuildsViewWithoutClick(t *testing.T) {
 		shownIDs := append([]string(nil), menuBarPresentation.presentedIDs...)
 		menuBarPresentation.Unlock()
 		if done {
-			if !held.held || held.waiting != 1 || len(held.items) != 1 || held.items[0].ID != "waiting-at-launch" {
-				t.Fatalf("preload did not hold the waiting list: %+v", held)
+			if !held.held || held.waiting == 0 || held.next == nil || held.next.ID != held.ids[0] || !slices.Contains(held.ids, workTestPrepID) {
+				t.Fatalf("preload did not hold the work list: %+v", held)
 			}
-			if len(shownIDs) == 0 || shownIDs[0] != "waiting-at-launch" {
+			if !slices.Contains(shownIDs, workTestPrepID) {
 				t.Fatalf("preload did not present the waiting ids: %v", shownIDs)
 			}
 			break

@@ -76,7 +76,9 @@ func (a *App) holdSettings(store holdEventStore, granted bool) (HoldSettings, er
 	if err != nil {
 		return out, err
 	}
-	out.OfferHolds = value != "false"
+	// Holds are off unless their switch is on (feature_switches.go): no offer,
+	// no proposal, nothing on the phone.
+	out.OfferHolds = featureOn(featureCalendarHolds) && value != "false"
 	if !granted {
 		return out, nil
 	}

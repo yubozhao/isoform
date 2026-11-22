@@ -385,7 +385,7 @@ func (r *StorageRotator) PlanCleanup() (StorageCleanupPlan, error) {
 					bytes += f.size
 					removed[sn.ID] = true
 					projected -= snapshotProjectedSize(snapshotMedia{
-						ID: sn.ID, Timestamp: sn.Timestamp, RelPath: sn.FilePath, Size: sn.SizeBytes,
+						ID: sn.ID, Timestamp: sn.Timestamp, RelPath: sn.FilePath, Size: sn.SizeBytes, PrivacyHeld: sn.PrivacyHeld,
 						Width: sn.Width, Height: sn.Height, Tier: sn.StorageTier, OCRStatus: sess.OCRStatus,
 					}, coldBefore)
 				}

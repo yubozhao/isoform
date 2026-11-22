@@ -70,7 +70,7 @@ func (s *Store) MobileChat(ctx context.Context, id string) (MobileChatRow, bool,
 // LoadStreamItemsAfter returns up to limit items whose sort order is greater
 // than afterSortOrder, oldest first. HasMore reports whether more rows follow.
 func (s *Store) LoadStreamItemsAfter(ctx context.Context, sessionLocalID string, afterSortOrder, limit int) (StreamItemPage, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.committedReader().QueryContext(ctx, `
 		SELECT id, session_local_id, kind, content, tool_name, tool_input, tool_use_id, run_id, session_id, sort_order, created_at, images, automation_context, files
 		FROM stream_items WHERE session_local_id = ? AND sort_order > ?
 		ORDER BY sort_order ASC LIMIT ?

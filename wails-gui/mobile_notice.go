@@ -410,6 +410,8 @@ func (bridge *mobileBridge) publishMobileNotice(n mobileNotice, devices []mobile
 	if err != nil {
 		return err
 	}
+	bridge.sendOrder.Lock()
+	defer bridge.sendOrder.Unlock()
 	bridge.mu.Lock()
 	if bridge.stopped || bridge.identity == nil || bridge.client == nil {
 		bridge.mu.Unlock()

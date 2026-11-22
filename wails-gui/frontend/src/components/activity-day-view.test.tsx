@@ -3,6 +3,7 @@ import { resetPageQueries } from '@/lib/page-queries';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import i18n from '@/i18n';
+import enActivity from '@/i18n/locales/en/activity.json';
 import type { ActivityOutcome, ActivityThreadView, ActivityView, MeetingNotesView } from '@/lib/wails-shim-app';
 import type { CronRunWithJobName } from './timeline/useCalendarData';
 import { toast } from 'sonner';
@@ -168,14 +169,7 @@ function renderDay(overrides: Partial<Parameters<typeof ActivityDayView>[0]> = {
             searchQuery=""
             bridgePort={4242}
             dailyData={dailyData()}
-            dayLoading={false}
             automationRuns={[run()]}
-            knowledge={[]}
-            memoryEntries={[]}
-            hourRange={{ start: 6, end: 23 }}
-            maxHourly={55}
-            reloadDailySummary={vi.fn().mockResolvedValue(undefined)}
-            onOpenSession={vi.fn()}
             onOpenRunDetail={vi.fn()}
             // These tests cover the list As recorded shows: today's What you
             // worked on, unchanged. Stitched by work has its own file.
@@ -216,11 +210,17 @@ describe('Activity Day view', () => {
         await i18n.changeLanguage('en');
     });
 
-    it('renders the digest, the numbers line and the merged day list', async () => {
+    // computer-conformance-answers A4: Your day is the record only.
+    it('renders Your day as the feed with no summary, numbers line, details or noticed, then the merged day list', async () => {
+        binding('GetDayNoticed').mockResolvedValue([{ id: 's', kind: 'follow_up', text: 'Fixture notice', why: '', momentId: 'x', momentTitle: 'X', momentStartMs: 0 }]);
         renderDay();
-        expect(await screen.findByText('Your day')).toBeInTheDocument();
-        expect(screen.getByText(/You drafted the Halcyon studio guide/)).toBeInTheDocument();
-        expect(screen.getByText('2h 5m active · most of it in Claude and Safari')).toBeInTheDocument();
+        expect(await screen.findByTestId('activity-feed')).toBeInTheDocument();
+        expect(screen.queryByText(/You drafted the Halcyon studio guide/)).not.toBeInTheDocument();
+        expect(screen.queryByText(/2h 5m active/)).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Details' })).not.toBeInTheDocument();
+        expect(screen.queryByText('Fixture notice')).not.toBeInTheDocument();
+        expect(binding('GetDayNoticed')).not.toHaveBeenCalled();
+        expect(binding('GenerateDailySummary')).not.toHaveBeenCalled();
         expect(screen.getByText('What you worked on')).toBeInTheDocument();
         // Activities, meetings and scheduled runs share one list.
         expect(await screen.findByText('Drafting the Halcyon studio guide')).toBeInTheDocument();
@@ -229,14 +229,47 @@ describe('Activity Day view', () => {
         expect(screen.getByText('Sent the weekly recap to the team.')).toBeInTheDocument();
     });
 
-    it('keeps the Details disclosure collapsed until asked', async () => {
-        renderDay();
-        await screen.findByText('Your day');
-        expect(screen.queryByText('Activity by hour')).not.toBeInTheDocument();
-        expect(screen.queryByText('Top applications')).not.toBeInTheDocument();
-        fireEvent.click(screen.getByRole('button', { name: 'Details' }));
-        expect(screen.getByText('Activity by hour')).toBeInTheDocument();
-        expect(screen.getByText('Top applications')).toBeInTheDocument();
+    // Conformance answers v1.1.0 P1 (AC9): agent runs the screen saw are the
+    // Screen tab's own rows, after yours, and not counted as your work.
+    it("lists the day's screen-seen agent runs in What you worked on, apart from your rows", async () => {
+        binding('GetActivityFeed').mockResolvedValue([
+            { id: 'run-1', kind: 'agent', startMs: DAY.getTime() + 15 * 3_600_000, endMs: DAY.getTime() + 15.5 * 3_600_000, activeMs: 1_200_000, app: 'Claude', basis: { setting: 'screen', agent: 'Claude' } },
+            { id: 'm-1', kind: 'screen', startMs: DAY.getTime() + 9 * 3_600_000, endMs: DAY.getTime() + 9.5 * 3_600_000, title: 'Feed screen row', basis: { setting: 'screen' } },
+        ]);
+        renderDay({ section: 'workedOn' });
+        const runs = await screen.findByTestId('worked-on-agent-runs');
+        expect(within(runs).getByText('Screen · Claude')).toBeInTheDocument();
+        expect(within(runs).getByText('Claude working on its own · not counted as your work')).toBeInTheDocument();
+        expect(within(runs).queryByText('Feed screen row')).toBeNull();
+        expect(runs.querySelector('[data-feed-dot]')!.className).toMatch(/\bbg-app-indigo-text\b/);
+        // After your own rows, and not one of them.
+        const own = await screen.findByText('Drafting the Halcyon studio guide');
+        expect(own.compareDocumentPosition(runs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        expect(runs.contains(own)).toBe(false);
+    });
+
+    it('says when the agent runs could not be read, with Try again', async () => {
+        binding('GetActivityFeed').mockRejectedValueOnce(new Error('timeout')).mockResolvedValueOnce([
+            { id: 'run-1', kind: 'agent', startMs: DAY.getTime(), endMs: DAY.getTime() + 60_000, activeMs: 60_000, app: 'Codex', basis: { setting: 'screen', agent: 'Codex' } },
+        ]);
+        renderDay({ section: 'workedOn' });
+        const runs = await screen.findByTestId('worked-on-agent-runs');
+        expect(within(runs).getByText(enActivity.day.agentRunsFailed)).toBeInTheDocument();
+        fireEvent.click(within(runs).getByRole('button', { name: 'Try again' }));
+        expect(await within(runs).findByText('Screen · Codex')).toBeInTheDocument();
+    });
+
+    it('shows no agent runs on a day without them', async () => {
+        renderDay({ section: 'workedOn' });
+        await screen.findByText('Drafting the Halcyon studio guide');
+        expect(screen.queryByTestId('worked-on-agent-runs')).toBeNull();
+    });
+
+    it('shows only the feed on the Your day section', async () => {
+        renderDay({ section: 'yourDay' });
+        expect(await screen.findByTestId('activity-feed')).toBeInTheDocument();
+        expect(screen.queryByText('What you worked on')).not.toBeInTheDocument();
+        expect(screen.queryByText('Drafting the Halcyon studio guide')).not.toBeInTheDocument();
     });
 
     it('shows no run counts, keyword chips, link reasons or comparison stats', async () => {
@@ -299,159 +332,6 @@ describe('Activity Day view', () => {
         renderDay();
         fireEvent.click((await screen.findByText('Halcyon studio review')).closest('button')!);
         expect(screen.getByTestId('meeting-notes-card')).toHaveTextContent('Halcyon studio review');
-    });
-
-    it('lists what Isoform learned and opens entries in place', async () => {
-        renderDay({
-            knowledge: [{ id: 'k1', title: 'Postgres JSONB gotcha', date: '2026-10-19T10:00:00Z', content: 'Use jsonb_path_ops.' }],
-            memoryEntries: [{ id: 'm1', title: 'Prefers pnpm', content: 'Use pnpm, not npm.', modTime: DAY_START }],
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } as any);
-        expect(await screen.findByText('What it learned')).toBeInTheDocument();
-        expect(screen.getByText('Postgres JSONB gotcha')).toBeInTheDocument();
-        expect(screen.getByText('How you do things')).toBeInTheDocument();
-        expect(screen.getByText('Prefers pnpm')).toBeInTheDocument();
-        expect(screen.getByText('About you')).toBeInTheDocument();
-        fireEvent.click(screen.getByText('Postgres JSONB gotcha').closest('button')!);
-        expect(screen.getByTestId('entry-detail')).toHaveTextContent('Use jsonb_path_ops.');
-    });
-
-    it('groups what it learned by destination, one row per belief, newest first, 20 then Show more', async () => {
-        const memoryEntries = Array.from({ length: 23 }, (_, i) => ({ id: `m${i}`, title: `Belief number ${i}`, content: 'x', modTime: DAY_START + i * 60_000 }));
-        memoryEntries.push({ id: 'dup', title: 'belief  number 22', content: 'x', modTime: DAY_START });
-        renderDay({
-            section: 'learned',
-            knowledge: [{ id: 'k1', title: 'Postgres JSONB gotcha: use jsonb_path_ops for containment queries on large tables.', date: '2026-10-19T10:00:00Z', content: 'x' }],
-            memoryEntries,
-        } as never);
-        const about = await screen.findByText('About you');
-        const how = screen.getByText('How you do things');
-        expect(about.compareDocumentPosition(how) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-        expect(screen.getByText('Postgres JSONB gotcha: use jsonb_path_ops for containment queries on large tables.')).toBeInTheDocument();
-        const rows = screen.getAllByText(/^belief\s+number \d+$/i);
-        expect(rows).toHaveLength(20);
-        expect(rows[0]).toHaveTextContent('Belief number 22');
-        expect(screen.queryByText('Belief number 2')).not.toBeInTheDocument();
-        fireEvent.click(screen.getByRole('button', { name: 'Show more' }));
-        expect(screen.getAllByText(/^belief\s+number \d+$/i)).toHaveLength(23);
-        expect(screen.getByText('Belief number 0')).toBeInTheDocument();
-        expect(screen.queryByRole('button', { name: 'Show more' })).not.toBeInTheDocument();
-    });
-
-    it('shows an opened belief sentence once when the row already says it', async () => {
-        const content = '# Memory\n## Memory Points\n- I prefer pnpm.\n';
-        binding('GetAboutYou').mockResolvedValue({ beliefs: [{ id: 'm1', area: 'work', source: 'activity', sourceAt: DAY_START, status: 'inferred' }] });
-        renderDay({ section: 'learned', memoryEntries: [{ id: 'm1', title: 'I prefer pnpm.', content, modTime: DAY_START }] as never });
-        fireEvent.click((await screen.findByText('I prefer pnpm.')).closest('button')!);
-        expect(await screen.findByText('In About you › Work')).toBeInTheDocument();
-        expect(screen.getAllByText('I prefer pnpm.')).toHaveLength(1);
-        expect(screen.getByRole('button', { name: 'Forget' })).toBeInTheDocument();
-    });
-
-    it('opens a belief with its readable source, location and review actions', async () => {
-        const time = new Date(2026, 9, 19, 13, 47).getTime();
-        const content = '# Memory\n- **Type**: Isoform Memory\n- **Time**: 2026-11-02T21:47:34Z\n- **Source**: assistant-history\n- **Dimension**: user_insight\n\n## Memory Points\n- I prefer pnpm.\n';
-        binding('GetAboutYou').mockResolvedValue({ beliefs: [{ id: 'm1', area: 'work', source: 'assistant-history', sourceAssistant: 'claude', sourceAt: time, status: 'inferred' }] });
-        binding('ConfirmMemoryEntry').mockResolvedValue({ id: 'm1', content });
-        renderDay({ section: 'learned', memoryEntries: [{ id: 'm1', title: 'Prefers pnpm', content, modTime: DAY_START }] as never });
-        fireEvent.click((await screen.findByText('Prefers pnpm')).closest('button')!);
-        expect(await screen.findByText('From your Claude Code history · 1:47 PM')).toBeInTheDocument();
-        expect(screen.getByText('In About you › Work')).toBeInTheDocument();
-        expect(screen.getByText('I prefer pnpm.')).toBeInTheDocument();
-        expect(screen.queryByText(/assistant-history|user_insight|Isoform Memory|Memory Points|2026-11-02T21:47:34Z/)).not.toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Not quite' })).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Forget' })).toBeInTheDocument();
-        fireEvent.click(screen.getByRole('button', { name: 'That’s me' }));
-        await waitFor(() => expect(binding('ConfirmMemoryEntry')).toHaveBeenCalledWith('m1'));
-        expect(await screen.findByText('Confirmed. Isoform treats this as fact now.')).toBeInTheDocument();
-    });
-
-    it('keeps Not quite and Forget in place with undo', async () => {
-        const content = '# Memory\n\n## Memory Points\n- I prefer pnpm.\n';
-        binding('GetAboutYou').mockResolvedValue({ beliefs: [{ id: 'm1', area: 'work', source: 'activity', status: 'inferred' }] });
-        binding('NotQuiteMemoryEntry').mockResolvedValue(123);
-        binding('UndoNotQuiteMemoryEntry').mockResolvedValue(undefined);
-        renderDay({ section: 'learned', memoryEntries: [{ id: 'm1', title: 'Prefers pnpm', content, modTime: DAY_START }] as never });
-        fireEvent.click((await screen.findByText('Prefers pnpm')).closest('button')!);
-        fireEvent.click(await screen.findByRole('button', { name: 'Not quite' }));
-        expect(screen.getByRole('textbox')).toBeInTheDocument();
-        fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-        await waitFor(() => expect(binding('NotQuiteMemoryEntry')).toHaveBeenCalledWith('m1'));
-        fireEvent.click(await screen.findByRole('button', { name: 'Undo' }));
-        await waitFor(() => expect(binding('UndoNotQuiteMemoryEntry')).toHaveBeenCalledWith('m1', 123));
-        fireEvent.click(await screen.findByRole('button', { name: 'Forget' }));
-        expect(screen.getAllByText(/Forgetting in/).length).toBeGreaterThan(0);
-        fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
-        expect(await screen.findByRole('button', { name: 'Forget' })).toBeInTheDocument();
-        expect(binding('ForgetMemoryEntry')).not.toHaveBeenCalled();
-    });
-
-    it('shows belief-source read failures in place and retries', async () => {
-        binding('GetAboutYou').mockRejectedValueOnce(new Error('unavailable')).mockResolvedValue({ beliefs: [{ id: 'm1', area: 'work', source: 'activity', status: 'inferred' }] });
-        renderDay({ section: 'learned', memoryEntries: [{ id: 'm1', title: 'Prefers pnpm', content: '- I prefer pnpm.', modTime: DAY_START }] as never });
-        fireEvent.click((await screen.findByText('Prefers pnpm')).closest('button')!);
-        expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't load this belief.");
-        fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
-        expect(await screen.findByText('From your activity · 9:00 AM')).toBeInTheDocument();
-    });
-
-    it('names a legacy source as activity with its learned time and no codes', async () => {
-        const learned = new Date(2026, 9, 19, 13, 47).getTime();
-        binding('GetAboutYou').mockResolvedValue({ beliefs: [{ id: 'm1', area: 'work', source: 'legacy-internal-code', firstLearnedAt: learned, status: 'inferred' }] });
-        renderDay({ section: 'learned', memoryEntries: [{ id: 'm1', title: 'Prefers pnpm', content: '- I prefer pnpm.', modTime: DAY_START }] as never });
-        fireEvent.click((await screen.findByText('Prefers pnpm')).closest('button')!);
-        expect(await screen.findByText('From your activity · 1:47 PM')).toBeInTheDocument();
-        expect(screen.queryByText(/legacy-internal-code/)).not.toBeInTheDocument();
-        expect(screen.getByText('In About you › Work')).toBeInTheDocument();
-    });
-
-    it('localizes the belief source, destination and actions', async () => {
-        await i18n.changeLanguage('zh-CN');
-        binding('GetAboutYou').mockResolvedValue({ beliefs: [{ id: 'm1', area: 'work', source: 'assistant-history', sourceAssistant: 'codex', status: 'inferred' }] });
-        renderDay({ section: 'learned', memoryEntries: [{ id: 'm1', title: 'Prefers pnpm', content: '- I prefer pnpm.', modTime: DAY_START }] as never });
-        fireEvent.click((await screen.findByText('Prefers pnpm')).closest('button')!);
-        expect(await screen.findByText(/^来自你的 Codex 历史记录 · /)).toBeInTheDocument();
-        expect(screen.getByText('在关于你 › 工作')).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: '不太对' })).toBeInTheDocument();
-    });
-
-    it('opens a legacy belief that is not in About you with its source in words, its place and the review actions', async () => {
-        binding('GetAboutYou').mockResolvedValue({ beliefs: [] });
-        renderDay({ section: 'learned', memoryEntries: [{ id: 'old', title: 'Writes tests first', content: '- I write the test first.', modTime: DAY_START, area: 'work' }] as never });
-        fireEvent.click((await screen.findByText('Writes tests first')).closest('button')!);
-        expect(await screen.findByText(/^From your activity · /)).toBeInTheDocument();
-        expect(screen.getByText(/^In About you › /)).toBeInTheDocument();
-        for (const name of ['That’s me', 'Not quite', 'Forget']) {
-            expect(screen.getByRole('button', { name })).toBeInTheDocument();
-        }
-        expect(document.body.textContent).not.toMatch(/\d{4}-\d{2}-\d{2}T|assistant-history|inferred/);
-    });
-
-    it("says the day isn't written yet, with Write it", async () => {
-        binding('GenerateDailySummary').mockResolvedValue('');
-        const reload = vi.fn().mockResolvedValue(undefined);
-        renderDay({
-            dailyData: dailyData({ aiSummary: '', aiSummaryStatus: 'none' }),
-            reloadDailySummary: reload,
-        });
-        const button = await screen.findByRole('button', { name: 'Write it' });
-        expect(screen.getByText("This day isn't written yet.")).toBeInTheDocument();
-        expect(screen.queryByText('Write summary')).not.toBeInTheDocument();
-        fireEvent.click(button);
-        await waitFor(() => expect(binding('GenerateDailySummary')).toHaveBeenCalledWith('2026-10-19'));
-        await waitFor(() => expect(reload).toHaveBeenCalled());
-    });
-
-    it('shows a quiet empty state when the day has nothing', async () => {
-        binding('GetActivitiesInRange').mockResolvedValue([]);
-        binding('GetRecentMeetingNotes').mockResolvedValue([]);
-        renderDay({
-            dailyData: null,
-            automationRuns: [],
-        });
-        expect(await screen.findByText('Nothing recorded for this day.')).toBeInTheDocument();
-        expect(screen.queryByText('Your day')).not.toBeInTheDocument();
-        expect(screen.queryByText('What you worked on')).not.toBeInTheDocument();
     });
 
     // First run 1.0: an empty What you worked on today says when it fills;
@@ -962,17 +842,6 @@ describe('Activity Day view — threads', () => {
         );
     });
 
-    it("opens a threaded moment from a suggestion's moment link", async () => {
-        binding('GetDayNoticed').mockResolvedValue([
-            { id: 's2', kind: 'follow_up', momentId: 'brief', momentTitle: 'Fix morning briefing generation', momentStartMs: brief.startMs, text: 'Follow up on the brief fix', why: '' },
-        ]);
-        renderDay({ automationRuns: [] });
-        expect(await screen.findByText('Isoform: brief fix, workers')).toBeInTheDocument();
-        expect(screen.queryByRole('button', { name: 'Delete from history' })).not.toBeInTheDocument();
-        fireEvent.click(await screen.findByText(/From .* · Fix morning briefing generation/));
-        expect(await screen.findByRole('button', { name: 'Delete from history' })).toBeInTheDocument();
-    });
-
     it('moves a moment into its own thread through Not right', async () => {
         renderDay({ automationRuns: [] });
         fireEvent.click((await screen.findByText('Isoform: brief fix, workers')).closest('button')!);
@@ -1099,130 +968,5 @@ describe('Activity Day view — Chat about this', () => {
         renderDay({ onStartChat: vi.fn() });
         await openRow();
         expect(screen.getByRole('button', { name: '聊聊这个' })).toBeInTheDocument();
-    });
-});
-
-describe.each([undefined, 'yourDay'] as const)('Activity Day view — the summary writes itself (section: %s)', (section) => {
-    beforeEach(async () => {
-        resetActivitySessionCache();
-        fixture.bindings.forEach((mock) => mock.mockReset().mockResolvedValue([]));
-        fixture.listeners.clear();
-        resetTodayChatDrafts();
-        binding('GetActivitiesInRange').mockResolvedValue([activity()]);
-        binding('GetRecentMeetingNotes').mockResolvedValue([]);
-        await i18n.changeLanguage('en');
-    });
-
-    it('says Isoform is writing the day instead of asking the user to', async () => {
-        renderDay({ section, dailyData: dailyData({ aiSummary: '', aiSummaryStatus: 'none', autoStatus: 'refreshing' }) });
-        expect(await screen.findByText('Writing your day...')).toBeInTheDocument();
-        expect(screen.queryByRole('button', { name: 'Write it' })).not.toBeInTheDocument();
-    });
-
-    it('keeps the cached summary readable while it is refreshed', async () => {
-        renderDay({ section, dailyData: dailyData({ autoStatus: 'refreshing' }) });
-        expect(await screen.findByText(/You drafted the Halcyon studio guide/)).toBeInTheDocument();
-        expect(screen.getByText('Writing a newer version…')).toBeInTheDocument();
-    });
-
-    it('keeps the cached summary readable when the day opens while it is refreshed', async () => {
-        const props = { date: DAY, searchQuery: '', bridgePort: 4242, dayLoading: false, automationRuns: [], knowledge: [], memoryEntries: [], hourRange: { start: 6, end: 23 }, maxHourly: 55, reloadDailySummary: vi.fn(), onOpenSession: vi.fn(), onOpenRunDetail: vi.fn(), section };
-        const view = render(<ActivityDayView {...props} dailyData={null} dayLoading />);
-        view.rerender(<ActivityDayView {...props} dailyData={dailyData({ autoStatus: 'refreshing' })} />);
-        expect(await screen.findByText(/You drafted the Halcyon studio guide/)).toBeInTheDocument();
-        expect(screen.getByText('Writing a newer version…')).toBeInTheDocument();
-        expect(screen.queryByText('Writing your day...')).not.toBeInTheDocument();
-    });
-
-    it('offers Write it only when there is no summary and none is being made', async () => {
-        const { unmount } = renderDay({ section, dailyData: dailyData({ aiSummary: '', aiSummaryStatus: 'none', autoStatus: 'unavailable' }) });
-        expect(await screen.findByRole('button', { name: 'Write it' })).toBeInTheDocument();
-        expect(screen.queryByText('Writing your day...')).not.toBeInTheDocument();
-        unmount();
-        renderDay({ section, dailyData: dailyData({ autoStatus: 'ready' }) });
-        expect(await screen.findByText(/You drafted the Halcyon studio guide/)).toBeInTheDocument();
-        expect(screen.queryByRole('button', { name: 'Write it' })).not.toBeInTheDocument();
-        expect(screen.queryByText('Writing your day...')).not.toBeInTheDocument();
-    });
-
-    it("keeps Go's own run quiet even when its generating event arrives", async () => {
-        renderDay({ section, dailyData: dailyData({ autoStatus: 'refreshing' }) });
-        expect(await screen.findByText(/You drafted the Halcyon studio guide/)).toBeInTheDocument();
-        // The background run fires the same event a user's click does.
-        act(() => fixture.listeners.get('activity:summary-generating')?.forEach((fn) => fn('2026-10-19')));
-        expect(screen.getByText('Writing a newer version…')).toBeInTheDocument();
-        expect(screen.queryByText(/Regenerating/)).not.toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Copy' })).toBeEnabled();
-        expect(screen.getByRole('button', { name: 'Write it again' })).toBeDisabled();
-    });
-
-    it('holds the old day while writing, then swaps it once with a timestamp and one write action', async () => {
-        const view = renderDay({ section, dailyData: dailyData({ autoStatus: 'ready' }) });
-        expect(await screen.findByText(/You drafted the Halcyon studio guide/)).toBeInTheDocument();
-        expect(screen.getByText('Written at 9:00 AM. Later work may not be in it.')).toBeInTheDocument();
-        expect(screen.getAllByRole('button', { name: 'Write it again' })).toHaveLength(1);
-        view.rerender(<ActivityDayView date={DAY} searchQuery="" bridgePort={4242} dailyData={dailyData({ aiSummary: 'You reviewed the newer work.', autoStatus: 'refreshing' })} dayLoading={false} automationRuns={[]} knowledge={[]} memoryEntries={[]} hourRange={{start: 6, end: 23}} maxHourly={55} reloadDailySummary={vi.fn()} onOpenSession={vi.fn()} onOpenRunDetail={vi.fn()} section={section} />);
-        expect(screen.getByText(/You drafted the Halcyon studio guide/)).toBeInTheDocument();
-        expect(screen.queryByText('You reviewed the newer work.')).not.toBeInTheDocument();
-        expect(screen.getByText('Writing a newer version…')).toBeInTheDocument();
-        view.rerender(<ActivityDayView date={DAY} searchQuery="" bridgePort={4242} dailyData={dailyData({ aiSummary: 'You reviewed the newer work.', autoStatus: 'ready' })} dayLoading={false} automationRuns={[]} knowledge={[]} memoryEntries={[]} hourRange={{start: 6, end: 23}} maxHourly={55} reloadDailySummary={vi.fn()} onOpenSession={vi.fn()} onOpenRunDetail={vi.fn()} section={section} />);
-        expect(screen.getByText('You reviewed the newer work.')).toBeInTheDocument();
-        expect(screen.queryByText(/You drafted the Halcyon studio guide/)).not.toBeInTheDocument();
-    });
-
-    it('shows a generation failure in place', async () => {
-        binding('GenerateDailySummary').mockRejectedValue(new Error('failed'));
-        renderDay({ section, dailyData: dailyData({ autoStatus: 'ready' }) });
-        fireEvent.click(await screen.findByRole('button', { name: 'Write it again' }));
-        expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't write your day. Try again.");
-        expect(toast.error).not.toHaveBeenCalled();
-    });
-
-    it('translates the writing line into Chinese', async () => {
-        await i18n.changeLanguage('zh-CN');
-        renderDay({ section, dailyData: dailyData({ aiSummary: '', aiSummaryStatus: 'none', autoStatus: 'refreshing' }) });
-        expect(await screen.findByText('正在写你的这一天……')).toBeInTheDocument();
-    });
-});
-
-describe('Activity Day view — Isoform noticed', () => {
-    beforeEach(async () => {
-        resetActivitySessionCache();
-        fixture.bindings.forEach((mock) => mock.mockReset().mockResolvedValue([]));
-        fixture.listeners.clear();
-        resetTodayChatDrafts();
-        binding('GetActivitiesInRange').mockResolvedValue([activity()]);
-        binding('GetRecentMeetingNotes').mockResolvedValue([]);
-        binding('GetDayNoticed').mockResolvedValue([
-            {
-                id: 's1', kind: 'routine', momentId: 'activity-1', momentTitle: 'Drafting the Halcyon studio guide', momentStartMs: DAY_START,
-                text: 'Weekly Halcyon review', why: 'Same steps as last week.',
-                routine: { name: 'Weekly Halcyon review', when: '', steps: ['Open the studio guide', 'Check welcome details'], will: [], wont: [] },
-            },
-        ]);
-        await i18n.changeLanguage('en');
-    });
-
-    it('passes the brief focus to the routine draft on the requested day', async () => {
-        const onNoticedFocusConsumed = vi.fn();
-        const focus = { date: '2026-10-19', suggestionId: 's1', action: 'routine' as const };
-        renderDay({ noticedFocus: focus, onNoticedFocusConsumed });
-        expect(await screen.findByRole('dialog')).toBeInTheDocument();
-        expect(screen.getByDisplayValue('Weekly Halcyon review')).toBeInTheDocument();
-        expect(onNoticedFocusConsumed).toHaveBeenCalledWith(focus);
-        expect(binding('SaveNoticedRoutine')).not.toHaveBeenCalled();
-    });
-
-    it('sits under Your day and its moment link opens the moment in What you worked on', async () => {
-        renderDay();
-        const box = await screen.findByText('Isoform noticed');
-        const yourDay = screen.getByText('Your day');
-        const workedOn = screen.getByText('What you worked on');
-        expect(yourDay.compareDocumentPosition(box) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-        expect(box.compareDocumentPosition(workedOn) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-        expect(screen.queryByRole('button', { name: 'Not right' })).not.toBeInTheDocument();
-        fireEvent.click(screen.getByText(/From .* · Drafting the Halcyon studio guide/));
-        expect(await screen.findByRole('button', { name: 'Not right' })).toBeInTheDocument();
-        expect(binding('GetDayNoticed')).toHaveBeenCalledWith('2026-10-19');
     });
 });

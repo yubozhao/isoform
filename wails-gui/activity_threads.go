@@ -402,8 +402,15 @@ func (a *App) runActivityThreadPass(ctx context.Context, day int64, allowModel b
 		}
 		var prompt string
 		prompt, aliases = buildThreadPrompt(in)
-		callCtx, cancel := context.WithTimeout(ctx, activityThreadCallLimit)
+		learnCtx, given, opened := withLearningScope(ctx, "sense")
+		for _, moment := range in.Moments {
+			given.add("activity", moment.ID, 1)
+		}
+		callCtx, cancel := context.WithTimeout(learnCtx, activityThreadCallLimit)
 		raw, callErr := a.runActivityThreadPrompt(callCtx, prompt)
+		if opened {
+			a.finishAssistantCall(given)
+		}
 		cancel()
 		modelRan = true
 		if callErr != nil {

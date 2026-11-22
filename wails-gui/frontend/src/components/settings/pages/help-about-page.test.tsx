@@ -6,7 +6,7 @@ import {
     waitFor,
     within,
 } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AboutInfo } from "@/lib/wails-shim-app";
 
 const mocks = vi.hoisted(() => ({
@@ -19,6 +19,13 @@ const mocks = vi.hoisted(() => ({
     saveLogs: vi.fn(),
     openFolder: vi.fn(),
     openURL: vi.fn(),
+    getStartAtLogin: vi.fn(),
+    modelChoices: vi.fn(),
+    planModels: vi.fn(),
+    getTelemetry: vi.fn(),
+    setTelemetry: vi.fn(),
+    getRisky: vi.fn(),
+    setRisky: vi.fn(),
     handlers: {} as Record<string, (payload: unknown) => void>,
 }));
 vi.mock("@/lib/wails-shim-app", () => ({
@@ -32,6 +39,22 @@ vi.mock("@/lib/wails-shim-app", () => ({
     OpenDataFolder: mocks.openFolder,
     OpenExternalURL: mocks.openURL,
     GetPerfSnapshot: vi.fn(),
+    GetStartAtLogin: mocks.getStartAtLogin,
+    SetStartAtLogin: vi.fn(async () => undefined),
+    EnsureSelfProfile: vi.fn(async () => undefined),
+    GetUserProfile: vi.fn(async () => ({ name: "Bo", display_name: "Bo" })),
+    GetModelChoices: mocks.modelChoices,
+    PlanSetupModelDownload: mocks.planModels,
+    GetTelemetryTier: mocks.getTelemetry,
+    SetTelemetryTier: mocks.setTelemetry,
+    GetAskBeforeRiskyCommands: mocks.getRisky,
+    SetAskBeforeRiskyCommands: mocks.setRisky,
+}));
+vi.mock("@/components/onboarding/models-panel", () => ({
+    ModelsPanel: () => <div data-testid="about-models-panel" />,
+}));
+vi.mock("@/hooks/useTheme", () => ({
+    useTheme: () => ({ preference: "system", setPreference: vi.fn() }),
 }));
 vi.mock("../../../../wailsjs/runtime/runtime", () => ({
     EventsOn: vi.fn((name: string, handler: (payload: unknown) => void) => {
@@ -42,9 +65,28 @@ vi.mock("../../../../wailsjs/runtime/runtime", () => ({
     }),
 }));
 import i18n from "@/i18n";
+import en from "@/i18n/locales/en/settings.json";
 import { HelpAboutPage } from "./help-about-page";
 
 let info: AboutInfo;
+const model = (id: string, job: string, sizeBytes: number) => ({
+    id, job, displayName: id, line: "", evidence: "", sizeBytes, files: [], sources: [],
+    licence: { name: "", url: "" }, recommended: true, languages: [], downloaded: false,
+});
+const modelChoices = {
+    jobs: [
+        { job: "privacy", chosenId: "pii", alternatives: [model("pii", "privacy", 400e6)], locked: true },
+        { job: "memory", chosenId: "embed", alternatives: [model("embed", "memory", 600e6)], locked: true },
+        { job: "live", chosenId: "asr", alternatives: [model("asr", "live", 2e9)], locked: false },
+    ],
+    totalBytesToDownload: 0,
+    freeBytes: 50e9,
+    modelsFolder: "",
+};
+const emptyPlan = {
+    planId: "", choices: {}, requiredBytes: 0, items: [] as unknown[], totalBytes: 0,
+    freeBytes: 50e9, enoughSpace: true, modelsFolder: "",
+};
 async function status(update: AboutInfo["update"]) {
     info = { ...info, update };
     await act(async () => {
@@ -78,6 +120,13 @@ describe("Settings About", () => {
         mocks.check.mockResolvedValue({ available: false });
         mocks.restart.mockResolvedValue(undefined);
         mocks.download.mockResolvedValue(undefined);
+        mocks.getStartAtLogin.mockResolvedValue(true);
+        mocks.modelChoices.mockResolvedValue(modelChoices);
+        mocks.planModels.mockResolvedValue({ ...emptyPlan });
+        mocks.getTelemetry.mockResolvedValue("detailed");
+        mocks.setTelemetry.mockResolvedValue(undefined);
+        mocks.getRisky.mockResolvedValue(false);
+        mocks.setRisky.mockResolvedValue(undefined);
         mocks.background.mockImplementation(async (enabled) => {
             info = { ...info, backgroundUpdates: enabled };
         });
@@ -209,7 +258,7 @@ describe("Settings About", () => {
             await screen.findByText(/Up to date. Checked today at/),
         ).toBeInTheDocument();
         fireEvent.click(
-            screen.getByRole("button", { name: "Check for updates" }),
+            screen.getByRole("button", { name: "Check now" }),
         );
         await waitFor(() => expect(mocks.check).toHaveBeenCalledOnce());
         await status({ status: "checking" });
@@ -237,19 +286,17 @@ describe("Settings About", () => {
         expect(
             screen.getByText("Version 0.1.301"),
         ).toBeInTheDocument();
-        expect(
-            screen.getByText(/installs when you quit/),
-        ).toBeInTheDocument();
+        // With the sidebar card gone (answers v1.0.0 S3), About is the one
+        // place that says an update is ready: "{version} is ready · Restart now".
+        expect(screen.getByTestId("about-update-ready")).toHaveTextContent(
+            "0.1.302 is ready · Restart now",
+        );
         fireEvent.click(
             screen.getByRole("button", { name: "Restart now" }),
         );
-        expect(
-            screen.getByRole("button", { name: "Restarting…" }),
-        ).toBeDisabled();
+        expect(screen.getByTestId("about-update-ready")).toHaveTextContent("Restarting…");
         await waitFor(() => expect(mocks.restart).toHaveBeenCalledOnce());
-        expect(
-            screen.getByRole("button", { name: "Restarting…" }),
-        ).toBeDisabled();
+        expect(screen.queryByRole("button", { name: "Restart now" })).not.toBeInTheDocument();
     });
     it("persists the background switch and keeps failures visible and retryable", async () => {
         render(<HelpAboutPage onReplayOnboarding={vi.fn()} />);
@@ -262,13 +309,13 @@ describe("Settings About", () => {
         await waitFor(() => expect(toggle).not.toBeChecked());
         mocks.check.mockRejectedValue(new Error("network"));
         fireEvent.click(
-            screen.getByRole("button", { name: "Check for updates" }),
+            screen.getByRole("button", { name: "Check now" }),
         );
         expect(await screen.findByRole("alert")).toHaveTextContent(
             "This action could not finish",
         );
         expect(
-            screen.getByRole("button", { name: "Check for updates" }),
+            screen.getByRole("button", { name: "Check now" }),
         ).toBeEnabled();
     });
     it("explains the release-only rule without claiming staging is up to date", async () => {
@@ -280,7 +327,7 @@ describe("Settings About", () => {
             ),
         ).toBeInTheDocument();
         expect(
-            screen.getByRole("button", { name: "Check for updates" }),
+            screen.getByRole("button", { name: "Check now" }),
         ).toBeDisabled();
         expect(mocks.check).not.toHaveBeenCalled();
     });
@@ -363,11 +410,130 @@ describe("Settings About", () => {
         ).toBeInTheDocument();
         expect(
             screen.getByRole("switch", {
-                name: "在后台下载更新，并在退出 Isoform 时安装。",
+                name: "自动安装更新",
             }),
         ).toBeChecked();
         expect(
             screen.getByRole("button", { name: "保存支持日志" }),
         ).toBeInTheDocument();
+    });
+
+    describe("About's rows (answers v1.0.0 T2, v1.2.0 S11)", () => {
+        const platform = navigator.platform;
+        beforeEach(() => {
+            Object.defineProperty(navigator, "platform", { value: "MacIntel", configurable: true });
+        });
+        afterEach(() => {
+            Object.defineProperty(navigator, "platform", { value: platform, configurable: true });
+        });
+
+        it("holds Your name, Open at login, Language, Appearance, Version and updates, the models, then Help, in that order and in the design's words", async () => {
+            const { container } = render(<HelpAboutPage onReplayOnboarding={vi.fn()} />);
+            await screen.findByText("Isoform for your computer");
+            await screen.findByRole("switch", { name: "Open at login" });
+            await screen.findByText(/On this computer: models for privacy and for finding things · /);
+            const words = [
+                "Your name · used in your briefs and in hand-offs to your agents",
+                "Open at login",
+                "Language",
+                "Appearance",
+                "Isoform for your computer",
+                "Install updates automatically",
+                "On this computer: models for privacy and for finding things · 1.0 GB",
+                "Help and Send feedback",
+            ];
+            const text = container.textContent ?? "";
+            const at = words.map((word) => text.indexOf(word));
+            expect(at.every((index) => index >= 0)).toBe(true);
+            expect([...at].sort((a, b) => a - b)).toEqual(at);
+            expect(screen.getByRole("switch", { name: "Open at login" })).toBeChecked();
+            expect(screen.getByRole("switch", { name: "Install updates automatically" })).toBeChecked();
+            expect(screen.getByRole("button", { name: "Check now" })).toBeInTheDocument();
+            expect(screen.queryByText("Reading width")).not.toBeInTheDocument();
+        });
+
+        it("says what the privacy and search models wait for when they are short of disk", async () => {
+            mocks.planModels.mockResolvedValue({
+                ...emptyPlan,
+                items: [{ id: "pii" }, { id: "embed" }],
+                totalBytes: 1e9,
+                freeBytes: 200e6,
+                enoughSpace: false,
+            });
+            render(<HelpAboutPage onReplayOnboarding={vi.fn()} />);
+            expect(await screen.findByTestId("about-models-short")).toHaveTextContent(
+                /^Privacy and search models need 1(\.0)? GB free · 200 MB free now$/,
+            );
+            // Planned without the speech jobs: only privacy and memory count.
+            expect(mocks.planModels).toHaveBeenCalledWith(
+                expect.anything(),
+                ["live", "speakerPack", "afterCall", "voice"],
+            );
+        });
+
+        it("shows a failed models read as an error with Try again, never an empty line", async () => {
+            mocks.modelChoices.mockRejectedValueOnce(new Error("down"));
+            render(<HelpAboutPage onReplayOnboarding={vi.fn()} />);
+            const models = await screen.findByTestId("about-models");
+            await waitFor(() => expect(models).toHaveTextContent("Couldn't read this setting."));
+            fireEvent.click(within(models).getByRole("button", { name: "Try again" }));
+            expect(await screen.findByText(/On this computer: models for privacy and for finding things/)).toBeInTheDocument();
+        });
+
+        it("shows a failed Open at login read as an error with Try again, never a false Off", async () => {
+            mocks.getStartAtLogin.mockRejectedValueOnce(new Error("down"));
+            render(<HelpAboutPage onReplayOnboarding={vi.fn()} />);
+            expect(await screen.findAllByText("Couldn't read this setting.")).not.toHaveLength(0);
+            expect(screen.queryByRole("switch", { name: "Open at login" })).not.toBeInTheDocument();
+        });
+
+        it("shows a downloaded update as '{version} is ready · Restart now' and restarts on the click", async () => {
+            info.update = { status: "update-downloaded", version: "1.2.0" };
+            render(<HelpAboutPage onReplayOnboarding={vi.fn()} />);
+            expect(await screen.findByTestId("about-update-ready")).toHaveTextContent("1.2.0 is ready · Restart now");
+            fireEvent.click(screen.getByRole("button", { name: "Restart now" }));
+            await waitFor(() => expect(mocks.restart).toHaveBeenCalledOnce());
+        });
+    });
+
+    describe("what came from Privacy and Storage (settings batch D2)", () => {
+        it("keeps Share diagnostic data under Help, with its saved value, and changes it through the same binding", async () => {
+            mocks.getTelemetry.mockResolvedValue("off");
+            const { container } = render(<HelpAboutPage onReplayOnboarding={vi.fn()} />);
+            const share = await screen.findByRole("switch", { name: "Share diagnostic data" });
+            await waitFor(() => expect(share).not.toBeChecked());
+            const text = container.textContent ?? "";
+            expect(text.indexOf("Help and Send feedback")).toBeLessThan(text.indexOf("Share diagnostic data"));
+            fireEvent.click(share);
+            await waitFor(() => expect(mocks.setTelemetry).toHaveBeenCalledWith("detailed"));
+        });
+
+        it("shows a failed diagnostic data read with Try again, never a false Off", async () => {
+            mocks.getTelemetry.mockRejectedValueOnce(new Error("down"));
+            render(<HelpAboutPage onReplayOnboarding={vi.fn()} />);
+            await screen.findByText("Isoform for your computer");
+            await waitFor(() => expect(screen.queryByRole("switch", { name: "Share diagnostic data" })).not.toBeInTheDocument());
+            expect(screen.getAllByText("Couldn't read this setting.").length).toBeGreaterThan(0);
+        });
+
+        it("keeps Ask before risky commands under Advanced with its saved value, saving through the same binding (Chat still runs commands)", async () => {
+            mocks.getRisky.mockResolvedValue(true);
+            render(<HelpAboutPage onReplayOnboarding={vi.fn()} />);
+            await screen.findByText("Isoform for your computer");
+            fireEvent.click(screen.getByRole("button", { name: /Advanced/ }));
+            const risky = await screen.findByRole("switch", { name: en.privacy.riskyCommands.title });
+            await waitFor(() => expect(risky).toBeChecked());
+            fireEvent.click(risky);
+            await waitFor(() => expect(mocks.setRisky).toHaveBeenCalledWith(false));
+        });
+
+        it("keeps the models panel and what diagnostic data includes under Advanced", async () => {
+            render(<HelpAboutPage onReplayOnboarding={vi.fn()} />);
+            await screen.findByText("Isoform for your computer");
+            expect(screen.queryByTestId("about-models-panel")).not.toBeInTheDocument();
+            fireEvent.click(screen.getByRole("button", { name: /Advanced/ }));
+            expect(screen.getByTestId("about-models-panel")).toBeInTheDocument();
+            expect(screen.getByText("What diagnostic data includes")).toBeInTheDocument();
+        });
     });
 });

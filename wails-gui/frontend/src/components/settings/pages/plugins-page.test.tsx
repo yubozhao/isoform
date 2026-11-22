@@ -11,6 +11,8 @@ import { PluginsPage } from "./plugins-page";
 const bindings = vi.hoisted(() => ({ list: vi.fn(), set: vi.fn(), error: vi.fn() }));
 
 // These are component tests with stubbed bindings, not integration tests.
+// Covered by its own tests (self-updates-settings).
+vi.mock("@/components/self-updates-settings", () => ({ SelfUpdatesSettings: () => <div data-testid="self-updates" /> }));
 vi.mock("../../../../wailsjs/go/main/App", () => ({
     ListPlugins: bindings.list,
     SetBuiltinOn: bindings.set,
@@ -64,6 +66,38 @@ describe("PluginsPage", () => {
             expect(within(calendarRow).getByText(text)).toBeInTheDocument();
         }
         expect(screen.queryByRole("button", { name: /Add plugin|Install|Update|Remove/i })).not.toBeInTheDocument();
+    });
+
+    it.each(["en", "zh-CN"] as const)("says what each learning switch sends to the assistant, in %s (settings batch D3: Plugins is their visible home)", async (language) => {
+        await i18n.changeLanguage(language);
+        const ids = ["triage-events", "triage-memory", "triage-knowledge", "triage-sop", "triage-shadow", "memory-dream-llm", "topic-finds"];
+        bindings.list.mockResolvedValue(ids.map((id) => plugin(id, true)));
+        render(<PluginsPage />);
+        const locale = (language === "en" ? enSettings : zhSettings).plugins.builtins as Record<string, { description: string }>;
+        for (const id of ids) {
+            expect(await screen.findByText(locale[id].description)).toBeInTheDocument();
+        }
+        // Topic finds sends topic names and interest search words (docs/destinations.md L5).
+        expect(locale["topic-finds"].description).toContain(language === "en" ? "Your topic names and search words made from your interests go to your AI's web search." : "你的话题名称和根据你的兴趣生成的搜索词会发送给你的 AI 用于网页搜索。");
+        const events = locale["triage-events"].description;
+        expect(events).toContain(language === "en" ? "sends a cropped screenshot of the open chat to your AI" : "裁剪截图发送给你的 AI");
+        for (const id of ["triage-memory", "triage-knowledge", "triage-sop", "triage-shadow", "memory-dream-llm", "topic-finds"]) {
+            expect(locale[id].description, id).toMatch(/your AI|你的 AI/i);
+        }
+    });
+
+    it("shows Self Dream's proposals under the switches, beside memory-dream (settings batch D3)", async () => {
+        render(<PluginsPage />);
+        expect(await screen.findByRole("switch", { name: "Web calendars" })).toBeInTheDocument();
+        expect(screen.getByTestId("self-updates")).toBeInTheDocument();
+    });
+
+    it("lists no Read chat replies aloud switch, which no longer does anything, and leaves its value alone", async () => {
+        bindings.list.mockResolvedValue([...rows(), plugin("auto-speak", true)]);
+        render(<PluginsPage />);
+        expect(await screen.findByRole("switch", { name: "Web calendars" })).toBeInTheDocument();
+        expect(screen.queryByText(enSettings.plugins.builtins["auto-speak"].name)).not.toBeInTheDocument();
+        expect(bindings.set).not.toHaveBeenCalled();
     });
 
     it("calls the switch binding and displays its refreshed dependent states", async () => {

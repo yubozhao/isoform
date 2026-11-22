@@ -19,7 +19,7 @@ const technical = new Set([
     'settings.notifications.windowPopRepro.description', 'settings.notifications.windowPopRepro.armedBody',
     'settings.audioCapture.suspension.desktop_locked', 'settings.observation.reminders.description',
     'settings.observation.reminders.readingOff', 'settings.observation.mail.description',
-    'settings.observation.clipboard.description', 'settings.observation.files.description',
+    'settings.observation.files.description',
     'settings.observation.files.notAvailable', 'settings.plugins.builtins.reminders-sync.description',
 ]);
 

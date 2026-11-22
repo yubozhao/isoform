@@ -1,56 +1,34 @@
 package main
 
 import (
-	"encoding/json"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
 
-func TestObservingMenuStatesMatchSidebar(t *testing.T) {
-	for _, lang := range []string{"en", "zh-CN"} {
-		data, err := os.ReadFile(filepath.Join("frontend", "src", "i18n", "locales", lang, "app.json"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		var catalog struct {
-			Observing map[string]string `json:"observingStatus"`
-		}
-		// The catalog includes nested descriptions; decode the state strings only.
-		var raw map[string]json.RawMessage
-		if err := json.Unmarshal(data, &raw); err != nil {
-			t.Fatal(err)
-		}
-		var values map[string]json.RawMessage
-		if err := json.Unmarshal(raw["observingStatus"], &values); err != nil {
-			t.Fatal(err)
-		}
-		catalog.Observing = map[string]string{}
-		for _, key := range []string{"label", "notObserving", "paused", "pausedUntil"} {
-			var value string
-			if err := json.Unmarshal(values[key], &value); err != nil {
-				t.Fatal(err)
-			}
-			catalog.Observing[key] = value
-		}
-		until := time.Date(2026, 10, 22, 15, 15, 0, 0, time.Local)
+// The sidebar's observing row, whose words this once matched, left with
+// design S3/A5 (#1388). The menu bar keeps its own state words; this guards
+// them in both languages.
+func TestObservingMenuStatesSayTheState(t *testing.T) {
+	until := time.Date(2026, 10, 22, 15, 15, 0, 0, time.Local)
+	want := map[string][4]string{
+		"en":    {"Observing in background", "Not observing", "Observing paused", "Observing paused until 3:15 PM"},
+		"zh-CN": {"后台观察中", "未在观察", "观察已暂停", "观察已暂停至 15:15"},
+	}
+	for lang, words := range want {
 		cases := []struct {
 			view   DoingNow
 			active bool
-			key    string
-			want   string
 		}{
-			{DoingNow{Kind: doingNowWatching}, true, "label", ""},
-			{DoingNow{Kind: doingNowWorking}, false, "notObserving", ""},
-			{DoingNow{Kind: doingNowPaused}, true, "paused", ""},
-			{DoingNow{Kind: doingNowPaused, PausedUntil: until.UnixMilli()}, true, "pausedUntil", map[string]string{"en": "3:15 PM", "zh-CN": "15:15"}[lang]},
+			{DoingNow{Kind: doingNowWatching}, true},
+			{DoingNow{Kind: doingNowWorking}, false},
+			{DoingNow{Kind: doingNowPaused}, true},
+			{DoingNow{Kind: doingNowPaused, PausedUntil: until.UnixMilli()}, true},
 		}
-		for _, tc := range cases {
-			want := strings.ReplaceAll(catalog.Observing[tc.key], "{{time}}", tc.want)
-			if got := observingMenuText(tc.view, tc.active, lang); got != want {
-				t.Errorf("%s %s: got %q, want %q", lang, tc.key, got, want)
+		for i, tc := range cases {
+			if got := observingMenuText(tc.view, tc.active, lang); got != words[i] {
+				t.Errorf("%s case %d: got %q, want %q", lang, i, got, words[i])
 			}
 		}
 	}

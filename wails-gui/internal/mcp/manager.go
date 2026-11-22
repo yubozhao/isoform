@@ -271,6 +271,7 @@ func (m *Manager) startManagedClient(ctx context.Context, spec Spec) error {
 	}
 }
 
+//isoform:destination mcp_servers
 func (m *Manager) startStdioManagedClient(ctx context.Context, spec Spec) error {
 	cmd := m.buildCommand(spec)
 	stdin, err := cmd.StdinPipe()
@@ -371,6 +372,7 @@ func (m *Manager) startStdioManagedClient(ctx context.Context, spec Spec) error 
 	return nil
 }
 
+//isoform:destination mcp_servers
 func (m *Manager) startStreamableHTTPManagedClient(ctx context.Context, spec Spec) error {
 	var opts []transport.StreamableHTTPCOption
 	if len(spec.Headers) > 0 {

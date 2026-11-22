@@ -302,6 +302,8 @@ func (a *App) awaitAssistantGateway() (baseURL string, models func(context.Conte
 // testAssistantCall sends one token through the gateway to the assistant's
 // own subscription, the way chat reaches it. It prefers the light model so
 // the test barely touches the plan.
+//
+//isoform:destination metadata
 func (a *App) testAssistantCall(id string) (code, detail string) {
 	base, models, reload := a.awaitAssistantGateway()
 	if base == "" || models == nil {

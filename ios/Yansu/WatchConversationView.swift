@@ -40,6 +40,8 @@ struct WatchConversationView: View {
         .background(YansuTheme.background)
         .navigationTitle(WatchTabCopy.title(conversation))
         .navigationBarTitleDisplayMode(.inline)
+        // On the open wide phone it opens in the right pane: Full screen at the bar's trailing end.
+        .toolbar { ToolbarItem(placement: .topBarTrailing) { DuoFullScreenButton() } }
         .task { await load() }
         .alert(String(localized: "Who is this?"), isPresented: Binding(get: { naming != nil }, set: { if !$0 { naming = nil } })) {
             TextField(String(localized: "Name"), text: $typedName)

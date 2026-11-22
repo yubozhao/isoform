@@ -125,3 +125,41 @@ func TestTaskForcedBackendNeverGuesses(t *testing.T) {
 		t.Fatal("nil entry")
 	}
 }
+
+// TestUnreadSettingNeverRoutesAsNotConnected: when Your agents' settings
+// can't be read in time, a Yes for an agent connected here fails with the
+// read error; it never starts, never goes another way, and Settings gets the
+// error, not "not connected" (hub review of #1385).
+func TestUnreadSettingNeverRoutesAsNotConnected(t *testing.T) {
+	app, started := newAgentHereTestApp(t, true)
+	if _, err := app.ConnectAgentHere("codex"); err != nil {
+		t.Fatal(err)
+	}
+	in := briefInput()
+	in.Kind = workonit.KindCode
+	prepared, err := app.PrepareWorkOnIt(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, _ := app.GetWorkOnItHandoffs()
+	app.yourAgentsReadHook = func(string) (string, error) { return "", errYourAgentsUnread }
+	if _, err := app.SendWorkOnIt(prepared.TaskID, "codex", workonit.MethodConnected); !errors.Is(err, errYourAgentsUnread) {
+		t.Fatalf("send with the setting unread: %v", err)
+	}
+	if len(*started) != 0 {
+		t.Fatalf("a task started: %v", *started)
+	}
+	if after, _ := app.GetWorkOnItHandoffs(); len(after) != len(before) {
+		t.Fatalf("a hand-off was recorded: %d then %d", len(before), len(after))
+	}
+	if _, err := app.GetYourAgents(); !errors.Is(err, errYourAgentsUnread) {
+		t.Fatalf("GetYourAgents with the setting unread: %v", err)
+	}
+	if _, err := app.PrepareWorkOnIt(in); !errors.Is(err, errYourAgentsUnread) {
+		t.Fatalf("prepare with the setting unread: %v", err)
+	}
+	app.yourAgentsReadHook = nil
+	if _, err := app.GetYourAgents(); err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+}

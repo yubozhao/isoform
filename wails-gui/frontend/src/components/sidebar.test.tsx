@@ -1,6 +1,4 @@
-import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } from "@testing-library/react";
-import { useState } from "react";
-import { ProfilePage } from "./settings/pages/profile-page";
+import { cleanup, fireEvent, render, renderHook, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "@/i18n";
 import en from "@/i18n/locales/en/app.json";
@@ -25,9 +23,6 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/hooks/useUserProfile", () => ({
     useUserProfile: () => ({ profile: mocks.profile, loading: false }),
     refreshUserProfile: mocks.refreshUserProfile,
-}));
-vi.mock("@/components/observing-status", () => ({
-    ObservingStatus: () => <button aria-label="Background observing status">Observing in background</button>,
 }));
 vi.mock("@/lib/wails-shim-app", () => ({
     GetAboutInfo: vi.fn(async () => mocks.about),
@@ -148,16 +143,19 @@ describe("Sidebar: five places (computer-map v1.0.0 §2)", () => {
         expect(document.querySelector("[aria-current=page]")).toHaveAttribute("data-sidebar-place", "agents");
     });
 
-    it("counts only on Today and Agents, never 0, and puts the unread dot on Chat", () => {
+    // Design S1 (conformance answers v1.0.0): no Chat dot; counts only on
+    // Today and Agents. S4: Agents reads "{n} waiting for your yes".
+    it("counts only on Today and Agents, never 0, and has no dot on Chat", () => {
         renderSidebar({ waitingCount: 0, agentsWaiting: 0 });
         expect(screen.queryByText("0")).toBeNull();
-        expect(document.querySelector("[data-chat-dot]")).toBeNull();
         cleanup();
-        renderSidebar({ waitingCount: 3, agentsWaiting: 2, chatUnread: true });
+        renderSidebar({ waitingCount: 3, agentsWaiting: 2 });
         const place = (key: string) => document.querySelector(`[data-sidebar-place=${key}]`) as HTMLElement;
         expect(within(place("today")).getByLabelText(i18n.t("app:sidebar.toAnswer", { count: 3 }))).toHaveTextContent("3");
         expect(within(place("agents")).getByLabelText(i18n.t("app:sidebar.agentsWaiting", { count: 2 }))).toHaveTextContent("2");
-        expect(place("chat").querySelector("[data-chat-dot]")).not.toBeNull();
+        expect(en.sidebar.agentsWaiting).toBe("{{count}} waiting for your yes");
+        expect(place("chat").querySelector("[role=img]")).toBeNull();
+        expect(sidebarSource).not.toMatch(/data-chat-dot|chatUnread|bg-copper/);
         expect(place("chat")).toHaveAttribute("data-main-chat-row");
         for (const key of ["chat", "activity", "you"]) expect(place(key).textContent).not.toMatch(/\d/);
     });
@@ -223,15 +221,20 @@ describe("Sidebar: five places (computer-map v1.0.0 §2)", () => {
         expect(screen.getByRole("img", { name: en.sidebar.pose.listening })).toBeInTheDocument();
     });
 
-    it("keeps the update card above observing and the account status after Later", async () => {
+    // Design S3 and A5: the update card, the observing row and the profile
+    // pop-up leave the sidebar. Its foot is the phone, the watch, Closed Eyes
+    // and Settings (computer-map §2.2).
+    it("ends with the phone, the watch, Closed Eyes and Settings, and nothing else", () => {
         mocks.about = { update: { status: "update-downloaded", version: "0.1.302" }, later: false };
         renderSidebar();
-        const card = await screen.findByRole("region", { name: "Update ready" });
-        const observing = screen.getByRole("button", { name: /^Background observing/ });
-        expect(card.compareDocumentPosition(observing) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-        fireEvent.click(screen.getByRole("button", { name: "Later" }));
-        await waitFor(() => expect(screen.queryByRole("region", { name: "Update ready" })).not.toBeInTheDocument());
-        expect(screen.getByText(en.userMenu.updateReady)).toBeInTheDocument();
+        expect(screen.queryByRole("region", { name: "Update ready" })).toBeNull();
+        expect(screen.queryByRole("button", { name: /^Background observing/ })).toBeNull();
+        expect(screen.queryByText("Alex")).toBeNull();
+        expect(document.querySelector(".group\\/user")).toBeNull();
+        const foot = document.querySelector<HTMLElement>("[data-sidebar-foot]")!;
+        expect(foot.nextElementSibling).toBeNull();
+        expect(within(foot).getByText(en.userMenu.settings)).toBeInTheDocument();
+        expect(sidebarSource).not.toMatch(/UpdateReadyCard|ObservingStatus|UserPopoverMenu|Popover/);
     });
 
     it("uses the board widths", () => {
@@ -242,44 +245,14 @@ describe("Sidebar: five places (computer-map v1.0.0 §2)", () => {
         expect(screen.getByTitle(en.sidebar.show)).toBeInTheDocument();
     });
 
-    it("shows the user's name at the bottom left, or You until there is one", () => {
-        const { unmount } = renderSidebar();
-        expect(screen.getByText("Alex")).toBeInTheDocument();
-        unmount();
-        mocks.profile = null;
-        renderSidebar();
-        expect(within(document.querySelector<HTMLElement>(".group\\/user")!).getByText(en.sidebar.you)).toBeInTheDocument();
-    });
-
-    it("changes the name from the bottom-left menu", async () => {
-        function AccountProfileHarness() {
-            const [profileOpen, setProfileOpen] = useState(false);
-            return <>
-                <Sidebar {...baseProps()} onOpenProfile={() => setProfileOpen(true)} />
-                {profileOpen && <ProfilePage />}
-            </>;
-        }
-        render(<AccountProfileHarness />);
-        fireEvent.click(screen.getByText("Alex"));
-        fireEvent.click(screen.getByRole("button", { name: "Alex" }));
-        const input = await screen.findByLabelText(en.userMenu.nameLabel);
-        expect(input).toHaveValue("Alex");
-        mocks.ensureSelf.mockImplementationOnce(async () => {
-            mocks.profile = { ...mocks.profile, display_name: "Alex User" };
-            return {};
-        });
-        fireEvent.change(input, { target: { value: "  Alex User " } });
-        await act(async () => fireEvent.click(screen.getByText(en.userMenu.saveName)));
-        expect(mocks.ensureSelf).toHaveBeenCalledWith("Alex User", []);
-    });
-
-    it("keeps the account menu to the name, Settings, Keyboard shortcuts and Help", () => {
-        const { props } = renderSidebar({ onOpenProfile: vi.fn(), onOpenShortcuts: vi.fn(), onOpenHelp: vi.fn() });
-        fireEvent.click(screen.getByText("Alex"));
-        const menu = screen.getByRole("button", { name: "Alex" }).parentElement!;
-        expect(within(menu).getAllByRole("button").map((item) => item.textContent?.replace(/(?:Ctrl ,|⌘,|Ctrl \/|⌘\/)$/, ""))).toEqual(["AAlex", en.userMenu.settings, en.userMenu.shortcuts, en.userMenu.help]);
-        fireEvent.click(screen.getByText(en.userMenu.help));
-        expect(props.onOpenHelp).toHaveBeenCalledOnce();
+    // computer-window v1.0.0 rule 4: each rail icon names its place and key on hover.
+    it("names each rail icon and its key on hover", () => {
+        const keys: Record<string, string> = { "go-today": "⌘1", "go-chat": "⌘2", "go-agents": "⌘3", "go-activity": "⌘4", "go-you": "⌘5" };
+        renderSidebar({ collapsed: true, waitingCount: 2, shortcutFor: (id: string) => keys[id] });
+        const rail = (key: string) => document.querySelector(`[data-rail-index][data-sidebar-place=${key}]`) as HTMLElement;
+        expect(rail("chat")).toHaveAttribute("title", "Chat · ⌘2");
+        expect(rail("today")).toHaveAttribute("title", "Today, 2 to answer · ⌘1");
+        expect(rail("today")).toHaveAccessibleName("Today, 2 to answer");
     });
 
     it("keeps both locales in step and has no left-edge accent bar", () => {
@@ -329,18 +302,18 @@ describe("Sidebar accessibility", () => {
     beforeEach(async () => { await i18n.changeLanguage("en"); });
 
     it.each([false, true])("has no axe violations, open or folded (folded: %s)", async (collapsed) => {
-        renderSidebar({ collapsed, waitingCount: 4, chatUnread: true });
+        renderSidebar({ collapsed, waitingCount: 4 });
         expect(await axeViolations(document.querySelector("aside")!)).toEqual([]);
     });
 
     it.each([false, true])("reads counts and states as words, not just a badge or a dot (folded: %s)", (collapsed) => {
-        renderSidebar({ collapsed, waitingCount: 4, chatUnread: true });
+        renderSidebar({ collapsed, waitingCount: 4 });
         expect(screen.getByRole("button", { name: "Today, 4 to answer" })).toBeInTheDocument();
-        expect(screen.getByRole("button", { name: "Chat, unread" })).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Chat" })).toBeInTheDocument();
     });
 
     it("names every button", () => {
-        renderSidebar({ waitingCount: 1, chatUnread: true });
+        renderSidebar({ waitingCount: 1 });
         const unnamed = screen.getAllByRole("button").filter((b) => !(b.getAttribute("aria-label") || b.textContent || "").trim());
         expect(unnamed.map((b) => b.outerHTML.replace(/ class="[^"]*"/g, "").slice(0, 240))).toEqual([]);
     });

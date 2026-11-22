@@ -492,7 +492,7 @@ func (s *Store) OpenAnswerSourceTurn(ctx context.Context, id string) (sessionID,
 }
 
 func (s *Store) ListOpenAnswers(ctx context.Context) ([]OpenAnswerRow, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+openAnswerColumns+` FROM open_answers WHERE state = 'open' ORDER BY created_at, id`)
+	rows, err := s.committedReader().QueryContext(ctx, `SELECT `+openAnswerColumns+` FROM open_answers WHERE state = 'open' ORDER BY created_at, id`)
 	if err != nil {
 		return nil, err
 	}
@@ -509,7 +509,7 @@ func (s *Store) ListOpenAnswers(ctx context.Context) ([]OpenAnswerRow, error) {
 }
 
 func (s *Store) GetOpenAnswer(ctx context.Context, id string) (OpenAnswerRow, error) {
-	return scanOpenAnswer(s.db.QueryRowContext(ctx, `SELECT `+openAnswerColumns+` FROM open_answers WHERE id = ?`, id))
+	return scanOpenAnswer(s.committedReader().QueryRowContext(ctx, `SELECT `+openAnswerColumns+` FROM open_answers WHERE id = ?`, id))
 }
 
 // ChangeOpenAnswer applies only to an open record. It returns sql.ErrNoRows if
@@ -551,7 +551,7 @@ func (s *Store) RestoreOpenAnswerSchedule(ctx context.Context, prev OpenAnswerRo
 
 func (s *Store) IsCurrentOpenAnswerChangeTurn(ctx context.Context, sessionID, userID, runID string) (bool, error) {
 	var current bool
-	err := s.db.QueryRowContext(ctx, `SELECT EXISTS (
+	err := s.committedReader().QueryRowContext(ctx, `SELECT EXISTS (
 		SELECT 1 FROM stream_items u
 		JOIN sessions s ON s.local_id=u.session_local_id AND s.kind='main'
 		WHERE u.id=? AND u.session_local_id=? AND u.kind='user' AND u.tool_name='' AND u.run_id=?

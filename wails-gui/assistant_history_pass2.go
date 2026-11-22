@@ -79,10 +79,12 @@ type assistantHistoryBelief struct {
 	At        time.Time
 	// SessionsAt are the times of every session that shows the belief, so
 	// the portrait counts each one on its own day.
+	Agents     []string
 	SessionsAt []time.Time
 }
 
 type assistantHistoryKnowHow struct {
+	Agents    []string
 	Title     string
 	Takeaway  string
 	Kind      string
@@ -94,7 +96,7 @@ type assistantHistoryKnowHow struct {
 // assistantHistoryExcerpt builds the session text for the prompt, newest
 // session first numbered S1, within a size budget. It returns the sessions it
 // included, in the same order as the numbers.
-func assistantHistoryExcerpt(sessions []assistantHistorySession, budget int) (string, []assistantHistorySession) {
+func (a *App) assistantHistoryExcerpt(ctx context.Context, sessions []assistantHistorySession, budget int) (string, []assistantHistorySession, error) {
 	var blocks []string
 	var included []assistantHistorySession
 	used := 0
@@ -102,7 +104,10 @@ func assistantHistoryExcerpt(sessions []assistantHistorySession, budget int) (st
 		if len(included) == assistantHistoryExcerptSess {
 			break
 		}
-		turns := readAssistantHistoryTurns(session)
+		var turns []assistantHistoryTurn
+		if err := a.withHistorySource(ctx, session.Assistant, func() { turns = readAssistantHistoryTurns(session) }); err != nil {
+			return "", nil, err
+		}
 		if len(turns) == 0 {
 			continue
 		}
@@ -128,7 +133,7 @@ func assistantHistoryExcerpt(sessions []assistantHistorySession, budget int) (st
 		blocks = append(blocks, block)
 		included = append(included, session)
 	}
-	return strings.Join(blocks, "\n\n"), included
+	return strings.Join(blocks, "\n\n"), included, nil
 }
 
 // assistantHistoryLabel is the assistant's name as the person knows it.
@@ -266,7 +271,11 @@ func buildAssistantHistoryUpdate(reply assistantHistoryReply, included []assista
 		seen := map[int]bool{}
 		for _, n := range append([]int{item.Session}, item.Sessions...) {
 			other, ok := sessionAt(n)
-			if !ok || seen[n] || other.Assistant != session.Assistant {
+			if !ok || seen[n] {
+				continue
+			}
+			belief.Agents = knowledgeProvenanceUnion(belief.Agents, []string{other.Assistant})
+			if other.Assistant != session.Assistant {
 				continue
 			}
 			seen[n] = true
@@ -294,14 +303,18 @@ func buildAssistantHistoryUpdate(reply assistantHistoryReply, included []assista
 			if instructionsName == "" {
 				continue
 			}
-			out.KnowHow = append(out.KnowHow, assistantHistoryKnowHow{Title: title, Takeaway: takeaway, Kind: kind, Source: assistantHistoryClaudeMd, Assistant: "", At: instructionsAt})
+			var agents []string
+			for _, s := range included {
+				agents = knowledgeProvenanceUnion(agents, []string{s.Assistant})
+			}
+			out.KnowHow = append(out.KnowHow, assistantHistoryKnowHow{Agents: agents, Title: title, Takeaway: takeaway, Kind: kind, Source: assistantHistoryClaudeMd, Assistant: "", At: instructionsAt})
 			continue
 		}
 		session, ok := sessionAt(item.Session)
 		if !ok {
 			continue
 		}
-		out.KnowHow = append(out.KnowHow, assistantHistoryKnowHow{Title: title, Takeaway: takeaway, Kind: kind, Source: assistantHistorySource, Assistant: session.Assistant, At: session.At})
+		out.KnowHow = append(out.KnowHow, assistantHistoryKnowHow{Title: title, Takeaway: takeaway, Kind: kind, Source: assistantHistorySource, Agents: []string{session.Assistant}, Assistant: session.Assistant, At: session.At})
 	}
 	return out
 }
@@ -309,12 +322,35 @@ func buildAssistantHistoryUpdate(reply assistantHistoryReply, included []assista
 // runAssistantHistoryProject makes the one model call for a project and
 // returns the checked update. An empty excerpt makes no call.
 func (a *App) runAssistantHistoryProject(ctx context.Context, project HistoryProject, sessions []assistantHistorySession, languageName string) (assistantHistoryProjectUpdate, bool, error) {
-	excerpt, included := assistantHistoryExcerpt(sessions, assistantHistoryExcerptRune)
+	excerpt, included, err := a.assistantHistoryExcerpt(ctx, sessions, assistantHistoryExcerptRune)
+	if err != nil {
+		return assistantHistoryProjectUpdate{}, false, err
+	}
 	if excerpt == "" {
 		return assistantHistoryProjectUpdate{}, false, nil
 	}
+	// Keep dispatch in the same read interval as its final consent check.
+	// A withdrawal cancels the worker before waiting for an in-flight call.
+	historySourceMu.RLock()
+	defer historySourceMu.RUnlock()
+	settings, err := readLearnFromIt()
+	if err != nil {
+		return assistantHistoryProjectUpdate{}, false, err
+	}
+	allowed := settings.allowedSources()
+	for _, s := range included {
+		if !allowed[s.Assistant] {
+			return assistantHistoryProjectUpdate{}, false, nil
+		}
+	}
+	if ctx.Err() != nil || a.IsClosedEyesModeEnabled() {
+		return assistantHistoryProjectUpdate{}, false, ctx.Err()
+	}
 	name, instructions, instructionsAt := readAssistantHistoryInstructions(project.Path)
-	prompt := buildAssistantHistoryPrompt(project.Name, excerpt, name, instructions, languageName, a.assistantHistoryKnownBeliefs(project))
+	prompt := buildAssistantHistoryPrompt(project.Name, excerpt, name, instructions, languageName, a.assistantHistoryKnownBeliefs(project, allowed))
+	if ctx.Err() != nil || a.IsClosedEyesModeEnabled() {
+		return assistantHistoryProjectUpdate{}, false, ctx.Err()
+	}
 	raw, err := assistantHistoryModelCall(ctx, a, prompt)
 	if err != nil {
 		return assistantHistoryProjectUpdate{}, true, err
@@ -330,7 +366,7 @@ func (a *App) runAssistantHistoryProject(ctx context.Context, project HistoryPro
 // prompt lists, newest first. Only beliefs this pass learned from the same
 // project are listed, each read through the same source check and the same
 // text check as a reply.
-func (a *App) assistantHistoryKnownBeliefs(project HistoryProject) []string {
+func (a *App) assistantHistoryKnownBeliefs(project HistoryProject, allowed map[string]bool) []string {
 	entries, err := a.GetMemoryEntries()
 	if err != nil {
 		return nil
@@ -344,6 +380,18 @@ func (a *App) assistantHistoryKnownBeliefs(project HistoryProject) []string {
 			continue
 		}
 		if assistantHistoryStoredBeliefOf(entry).project != project.Name || !a.memorySourceAllowsRead(entry.Content) {
+			continue
+		}
+		doc, ok := parseOKFDocument(entry.Content)
+		if !ok {
+			continue
+		}
+		names := historyAgentsForExistingRecord(doc.Frontmatter)
+		permitted := true
+		for _, name := range names {
+			permitted = permitted && allowed[name]
+		}
+		if !permitted {
 			continue
 		}
 		text := checkedAssistantHistoryText(beliefInSecondPerson(entry.Title), 240)
@@ -385,10 +433,11 @@ func (a *App) storeAssistantHistoryBeliefs(project HistoryProject, beliefs []ass
 			continue
 		}
 		belief.Text = beliefInSecondPerson(belief.Text)
+		agents := knowledgeProvenanceUnion(belief.Agents, []string{belief.Assistant})
 		stamps := assistantHistoryBeliefStamps(belief)
 		if match, ok := matchAssistantHistoryBelief(stored, belief.Text); ok {
 			if match.id != "" && match.project == project.Name && match.assistant == belief.Assistant {
-				a.strengthenAssistantHistoryBelief(match.id, stamps)
+				a.strengthenAssistantHistoryBelief(match.id, stamps, agents)
 			}
 			continue
 		}
@@ -401,6 +450,7 @@ func (a *App) storeAssistantHistoryBeliefs(project HistoryProject, beliefs []ass
 			"dimension":          normalizeMemoryDimension(""),
 			"area":               classifyMemoryArea(belief.Text, ""),
 			"history_assistant":  belief.Assistant,
+			"historyAgents":      agents,
 			"history_session_at": okfTimestamp(belief.At),
 			"history_project":    project.Name,
 		}
@@ -478,7 +528,7 @@ func assistantHistoryBeliefStamps(belief assistantHistoryBelief) []string {
 // strengthenAssistantHistoryBelief adds session times to a stored history
 // belief through the memory writer, so Forget, the person's edits and version
 // history apply as for any other write.
-func (a *App) strengthenAssistantHistoryBelief(id string, stamps []string) {
+func (a *App) strengthenAssistantHistoryBelief(id string, stamps, agents []string) {
 	if len(stamps) == 0 {
 		return
 	}
@@ -490,7 +540,24 @@ func (a *App) strengthenAssistantHistoryBelief(id string, stamps []string) {
 	if err != nil {
 		return
 	}
-	merged, ok := mergeHistorySessionStamps(string(current), stamps)
+	merge := func(content string) (string, bool) {
+		next, changed := mergeHistorySessionStamps(content, stamps)
+		if !changed {
+			next = content
+		}
+		doc, ok := parseOKFDocument(next)
+		if !ok {
+			return content, false
+		}
+		prior := historyAgentsForExistingRecord(doc.Frontmatter)
+		merged := knowledgeProvenanceUnion(prior, agents)
+		if len(merged) == len(prior) && len(okfStringSlice(doc.Frontmatter, "historyAgents")) > 0 {
+			return next, changed
+		}
+		doc.Frontmatter["historyAgents"] = merged
+		return renderOKFDocument(doc.Frontmatter, doc.Body), true
+	}
+	merged, ok := merge(string(current))
 	if !ok || learnedHidden(string(current)) || isUserEditedMemory(string(current)) {
 		return
 	}
@@ -498,7 +565,7 @@ func (a *App) strengthenAssistantHistoryBelief(id string, stamps []string) {
 		if learnedHidden(latest) || isUserEditedMemory(latest) {
 			return latest
 		}
-		next, _ := mergeHistorySessionStamps(latest, stamps)
+		next, _ := merge(latest)
 		return next
 	}); err != nil && !errors.Is(err, errMemoryForgotten) {
 		log.Printf("[assistant-history] belief not strengthened: %v", err)
@@ -529,13 +596,16 @@ func (a *App) storeAssistantHistoryKnowHow(project HistoryProject, items []assis
 		if _, err := os.Stat(path); err == nil {
 			continue
 		}
-		if _, ok := relearnKnowHowWithProvenance(dir, item.Title, id, KnowHowMoment{At: item.At.UnixMilli(), Assistant: item.Assistant}, []string{item.Takeaway}, item.Source, nil); ok {
+		evidence := newKnowledgeGenerationProvenance()
+		evidence.historyAgents = knowledgeProvenanceUnion(item.Agents, []string{item.Assistant})
+		if _, ok := relearnKnowHowWithEvidence(dir, item.Title, id, KnowHowMoment{At: item.At.UnixMilli(), Assistant: item.Assistant}, []string{item.Takeaway}, item.Source, nil, evidence); ok {
 			a.markMemoryDirty("assistant-history-relearned")
 			continue
 		}
 		content := buildOKFKnowledgeMarkdown(id, item.Title, item.Takeaway, now, item.Source, []string{project.Name}, nil, []string{item.Takeaway}, item.Kind)
 		if doc, ok := parseOKFDocument(content); ok {
 			doc.Frontmatter["scope"] = "mine"
+			doc.Frontmatter["historyAgents"] = evidence.historyAgents
 			doc.Frontmatter["history_session_at"] = okfTimestamp(item.At)
 			if item.Assistant != "" {
 				doc.Frontmatter["history_assistant"] = item.Assistant

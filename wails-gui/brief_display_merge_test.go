@@ -81,14 +81,7 @@ func TestBriefDisplayLocaleInheritsRequestCancellation(t *testing.T) {
 
 func TestBriefCardsMergeLocaleHonorsCanceledRequest(t *testing.T) {
 	app, store := newLinkTestApp(t)
-	revision, err := store.ReadRevision(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	release, err := store.LockReadRevision(t.Context(), revision)
-	if err != nil {
-		t.Fatal(err)
-	}
+	release := blockStateStoreReads(t, store)
 	defer release()
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()

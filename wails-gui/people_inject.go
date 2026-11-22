@@ -25,24 +25,35 @@ const (
 // so the block only appears when relevant (keeping the prompt prefix stable
 // for caching on unrelated turns).
 func (a *App) injectPeopleContext(query string) string {
+	content, err := a.readPeopleContext(context.Background(), query)
+	if err != nil {
+		return "The people context could not be read."
+	}
+	return content
+}
+
+func (a *App) readPeopleContext(ctx context.Context, query string) (string, error) {
 	if a == nil || a.IsClosedEyesModeEnabled() {
-		return ""
+		return "", nil
 	}
 	store, err := a.requireStore()
 	if err != nil {
-		return ""
+		return "", err
 	}
 	q := strings.ToLower(strings.TrimSpace(query))
 	if q == "" {
-		return ""
+		return "", nil
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	principals, err := store.ListPrincipals(ctx)
-	if err != nil || len(principals) == 0 {
-		return ""
+	if err != nil {
+		return "", err
+	}
+	if len(principals) == 0 {
+		return "", nil
 	}
 
 	type match struct {
@@ -56,7 +67,7 @@ func (a *App) injectPeopleContext(query string) string {
 	var matches []match
 	for _, p := range principals {
 		if ctx.Err() != nil {
-			return ""
+			return "", ctx.Err()
 		}
 		candidates := append([]string{p.DisplayName}, p.Aliases...)
 		best := 0
@@ -71,12 +82,19 @@ func (a *App) injectPeopleContext(query string) string {
 				}
 			}
 		}
-		if best > 0 && a.peopleProfileAllowsModelRead(ctx, p, nil) {
+		if best == 0 {
+			continue
+		}
+		allowed, err := a.peopleProfileRead(ctx, p, nil)
+		if err != nil {
+			return "", err
+		}
+		if allowed {
 			matches = append(matches, match{p: p, hitLen: best})
 		}
 	}
 	if len(matches) == 0 {
-		return ""
+		return "", nil
 	}
 	// Most specific (longest matched name) first, then cap.
 	sort.SliceStable(matches, func(i, j int) bool { return matches[i].hitLen > matches[j].hitLen })
@@ -88,13 +106,20 @@ func (a *App) injectPeopleContext(query string) string {
 	sb.WriteString("<people-context>\n")
 	sb.WriteString("People from the user's Isoform People list who are named in this message. This IS your knowledge of them — answer identity/relationship questions directly from here. Do NOT run Bash/sqlite to re-derive this from the database.\n\n")
 	for _, m := range matches {
+		notes, err := a.personCorrectionNotes(ctx, m.p.ID)
+		if err != nil {
+			return "", err
+		}
 		a.writePersonBlock(ctx, &sb, store, m.p)
+		if notes != "" {
+			sb.WriteString("- User corrections: " + redactActivityModelText(notes) + "\n")
+		}
 		if sb.Len() > peopleInjectMaxChars {
 			break
 		}
 	}
 	sb.WriteString("</people-context>\n\n")
-	return sb.String()
+	return sb.String(), ctx.Err()
 }
 
 // Observed identity text is derived content too. A curated/imported profile
@@ -103,12 +128,17 @@ func (a *App) injectPeopleContext(query string) string {
 // peopleProfileAllowsModelRead evaluates the profile lineage gate once per
 // person per read generation when a cache is shared.
 func (a *App) peopleProfileAllowsModelRead(ctx context.Context, p storage.PrincipalRow, cache *peopleReadGateCache) bool {
+	allowed, _ := a.peopleProfileRead(ctx, p, cache)
+	return allowed
+}
+
+func (a *App) peopleProfileRead(ctx context.Context, p storage.PrincipalRow, cache *peopleReadGateCache) (bool, error) {
 	if a == nil || a.store == nil || ctx.Err() != nil || a.IsClosedEyesModeEnabled() || personResearchAppProtected(p.CreatedFrom) {
-		return false
+		return false, ctx.Err()
 	}
 	if cache != nil {
 		if ok, seen := cache.profile[p.ID]; seen {
-			return ok
+			return ok, nil
 		}
 	}
 	sightings, err := a.principalSessionSightingsCached(ctx, p.ID, cache)
@@ -116,7 +146,10 @@ func (a *App) peopleProfileAllowsModelRead(ctx context.Context, p storage.Princi
 	if cache != nil && err == nil {
 		cache.profile[p.ID] = ok
 	}
-	return ok
+	if err != nil {
+		return false, err
+	}
+	return ok, ctx.Err()
 }
 
 // Retained merge sources use this same gate with their original lineage.
@@ -303,4 +336,28 @@ func (a *App) peopleHandlesForModel(ctx context.Context, store *storage.Store, p
 		out = append(out, h)
 	}
 	return out, nil
+}
+
+// personCorrectionNotes reads the current, active memory files so editing or
+// forgetting a note also changes what the profile shows.
+func (a *App) personCorrectionNotes(ctx context.Context, id string) (string, error) {
+	snapshot, err := a.memoryExternalSnapshot()
+	if err != nil {
+		return "", err
+	}
+	allow, err := a.memoryReadFilterContext(ctx)
+	if err != nil {
+		return "", err
+	}
+	var notes []string
+	for i, dep := range snapshot.readDependencies() {
+		if dep.correctionPerson != id {
+			continue
+		}
+		entry := snapshot.entries[i]
+		if entry.inUse && allow(entry.raw.ID, entry.raw.Content) {
+			notes = append(notes, strings.TrimSpace(stripMemoryFrontmatter(entry.raw.Content)))
+		}
+	}
+	return strings.Join(notes, "\n"), ctx.Err()
 }

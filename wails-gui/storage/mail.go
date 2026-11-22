@@ -110,7 +110,7 @@ func (s *Store) UpsertMailMessages(ctx context.Context, rows []MailMessageRow, n
 
 // ListMailMessages returns the messages at or after since, newest first.
 func (s *Store) ListMailMessages(ctx context.Context, since int64) ([]MailMessageRow, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+mailColumns+` FROM mail_messages WHERE at >= ? ORDER BY at DESC, id ASC`, since)
+	rows, err := s.committedReader().QueryContext(ctx, `SELECT `+mailColumns+` FROM mail_messages WHERE at >= ? ORDER BY at DESC, id ASC`, since)
 	if err != nil {
 		return nil, fmt.Errorf("list mail messages: %w", err)
 	}

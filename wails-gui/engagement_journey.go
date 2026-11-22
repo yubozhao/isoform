@@ -53,9 +53,6 @@ func (a *App) noteFirstWeekOnboarding(ctx context.Context, raw string) error {
 	if err := a.store.SetUIState(ctx, firstWeekInstallKey, now.Format(time.RFC3339Nano)); err != nil {
 		return err
 	}
-	// Setup has finished: read the assistant history now, in the background,
-	// so the first brief and the welcome can use it.
-	a.startAssistantHistoryScan(true)
 	a.scheduleFirstBrief(ctx, now)
 	return nil
 }

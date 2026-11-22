@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { formatTimeFromMs, formatTimeRangeFromMs } from './timeline/useCalendarData';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import i18n from '@/i18n';
@@ -80,14 +80,7 @@ function dayElement(overrides: Partial<Parameters<typeof ActivityDayView>[0]> = 
             searchQuery=""
             bridgePort={4242}
             dailyData={null}
-            dayLoading={false}
             automationRuns={[]}
-            knowledge={[]}
-            memoryEntries={[]}
-            hourRange={{ start: 6, end: 23 }}
-            maxHourly={0}
-            reloadDailySummary={vi.fn().mockResolvedValue(undefined)}
-            onOpenSession={vi.fn()}
             onOpenRunDetail={vi.fn()}
             section="workedOn"
             {...overrides}
@@ -669,31 +662,27 @@ describe('Stitched by work: the page', () => {
 });
 
 describe('Stitched by work: Pick up where you left off', () => {
-    it('sits on top of Stitched and with the other Isoform noticed items', async () => {
-        binding('GetDayNoticed').mockResolvedValue([
-            { id: 's1', kind: 'follow_up', momentId: 'a1', momentTitle: 'Reviewing ERP connector v0.3', momentStartMs: activities[0].startMs, text: 'Reply to the ERP review', why: '' },
-        ]);
+    // Isoform noticed left Activity (A4): the pick-up lives on Stitched only.
+    it('sits on top of Stitched, and Your day shows no pick-up', async () => {
         renderDay();
         const prompt = await screen.findByTestId('stitched-pick-up');
         expect(within(prompt).getByText('Pick up where you left off: Writing Halcyon launch memo.')).toBeInTheDocument();
         expect(within(prompt).getByText('You stepped away at 12:55 PM, after 47 min.')).toBeInTheDocument();
-        const { unmount } = renderDay({ section: 'yourDay' });
-        const noticed = await screen.findByTestId('noticed-pick-up');
-        expect(noticed.closest('ul')).toHaveTextContent('Reply to the ERP review');
-        // Activity review v1.0.3 #4: the stretch runs back across the 8-minute
-        // hop to 12:00 PM, and the meta does not repeat the thread name.
-        expect(within(noticed).getByText('From 12:00 PM')).toBeInTheDocument();
-        expect(within(noticed).getAllByText(/Writing Halcyon launch memo/)).toHaveLength(1);
-        unmount();
+        cleanup();
+        renderDay({ section: 'yourDay' });
+        expect(await screen.findByTestId('activity-feed')).toBeInTheDocument();
+        expect(screen.queryByTestId('noticed-pick-up')).toBeNull();
+        expect(screen.queryByTestId('stitched-pick-up')).toBeNull();
+        expect(binding('GetDayNoticed')).not.toHaveBeenCalled();
     });
 
     it('Show where you left off focuses the thread and sends nothing', async () => {
         const onSectionChange = vi.fn();
         const onWorkedOnViewChange = vi.fn();
         const onStartChat = vi.fn();
-        renderDay({ section: 'yourDay', onSectionChange, onWorkedOnViewChange, onStartChat, workedOnView: 'recorded' });
-        const noticed = await screen.findByTestId('noticed-pick-up');
-        fireEvent.click(within(noticed).getByRole('button', { name: 'Show where you left off' }));
+        renderDay({ onSectionChange, onWorkedOnViewChange, onStartChat, workedOnView: 'stitched' });
+        const prompt = await screen.findByTestId('stitched-pick-up');
+        fireEvent.click(within(prompt).getByRole('button', { name: 'Show where you left off' }));
         expect(onSectionChange).toHaveBeenCalledWith('workedOn');
         expect(onWorkedOnViewChange).toHaveBeenCalledWith('stitched');
         expect(onStartChat).not.toHaveBeenCalled();
@@ -714,9 +703,10 @@ describe('Stitched by work: Pick up where you left off', () => {
         const prompt = await screen.findByTestId('stitched-pick-up');
         fireEvent.click(within(prompt).getByRole('button', { name: 'Not now' }));
         expect(screen.queryByTestId('stitched-pick-up')).toBeNull();
-        renderDay({ section: 'yourDay' });
-        await screen.findByText('Your day');
-        expect(screen.queryByTestId('noticed-pick-up')).toBeNull();
+        cleanup();
+        renderDay();
+        await screen.findByText('Work threads');
+        expect(screen.queryByTestId('stitched-pick-up')).toBeNull();
     });
 
     it('stays off the Stitched view while the search hides its thread', async () => {
@@ -880,7 +870,7 @@ describe('Stitched cleanup: row policy and story', () => {
         await screen.findByText('8 pieces of work');
         expect(document.querySelectorAll('[data-thread-lane]')).toHaveLength(8);
         expect(document.querySelectorAll('[data-aggregate-lane]')).toHaveLength(2);
-        expect(onCountsChange).toHaveBeenLastCalledWith({ workedOn: 8, learned: 0 });
+        expect(onCountsChange).toHaveBeenLastCalledWith({ workedOn: 8 });
         const title = within(lane('work-0')).getByText('OpenClaw cleanup');
         expect(title).toHaveClass('break-words');
         expect(title).toHaveAttribute('title', dense.threads[0].title);
@@ -919,7 +909,7 @@ describe('Stitched cleanup: row policy and story', () => {
         expect(await screen.findByText('0 pieces of work')).toBeInTheDocument();
         expect(screen.getByText('Short moments · 12 min in all')).toBeInTheDocument();
         expect(document.querySelectorAll('[data-thread-lane]')).toHaveLength(0);
-        expect(onCountsChange).toHaveBeenLastCalledWith({ workedOn: 0, learned: 0 });
+        expect(onCountsChange).toHaveBeenLastCalledWith({ workedOn: 0 });
         expect(screen.queryByTestId('stitched-pick-up')).toBeNull();
     });
 
@@ -986,12 +976,12 @@ describe('Stitched cleanup: caller and boundary guards', () => {
         }
     });
 
-    it('keeps the resume thread first even when its card lives under Isoform noticed', async () => {
+    it('keeps the resume thread first, with its card on Stitched, when the sections stack', async () => {
         renderDay({ section: undefined });
         await screen.findByText('Work threads');
         expect(document.querySelector('[data-thread-lane]')).toHaveAttribute('data-thread-lane', 'mer');
-        expect(screen.queryByTestId('stitched-pick-up')).toBeNull();
-        expect(screen.getByTestId('noticed-pick-up')).toBeInTheDocument();
+        expect(screen.getByTestId('stitched-pick-up')).toBeInTheDocument();
+        expect(screen.queryByTestId('noticed-pick-up')).toBeNull();
     });
 
     it('lists exactly three overflow threads with their total active minutes', async () => {

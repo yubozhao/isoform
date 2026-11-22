@@ -4,9 +4,12 @@ import (
 	"context"
 	"crypto/ecdh"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -463,4 +466,68 @@ func signGatewayRequest(t *testing.T, request *http.Request, hubKey, gatewayKey 
 	request.Header.Set("Isoform-Hub-Key", base64.RawURLEncoding.EncodeToString(hubPub))
 	request.Header.Set("Isoform-Timestamp", timestamp)
 	request.Header.Set("Isoform-Signature", signature)
+}
+
+func TestGatewayLimitLogs(t *testing.T) {
+	gatewayKey, hubKey := testPrivateKey(t), testPrivateKey(t)
+	hubPub := pushgatewayauth.PublicKeyString(hubKey)
+	claim := validClaim()
+	key, err := pushgatewayauth.DeriveGrantKey(gatewayKey.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim.GatewayGrant, err = pushgatewayauth.NewGrant(key, claim.Environment, claim.Token, claim.HubID, hubPub, time.Now().Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pushBody, err := json.Marshal(gatewayRequestForTest(claim))
+	if err != nil {
+		t.Fatal(err)
+	}
+	registerBody, err := json.Marshal(registerRequest{Token: claim.Token, Environment: claim.Environment, HubID: claim.HubID, HubPub: hubPub})
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256([]byte(claim.Token))
+	tokenKey := hex.EncodeToString(digest[:])
+	for _, tc := range []struct {
+		name, path, subject string
+		cap                 int
+	}{
+		{"push_address", "/v1/push", "127.0.0.1", 120},
+		{"push_token", "/v1/push", tokenKey, 30},
+		{"push_hub", "/v1/push", hex.EncodeToString(hubKey.PublicKey().Bytes()), 600},
+		{"register_address", "/v1/register", "127.0.0.1", 10},
+		{"register_token", "/v1/register", tokenKey, 5},
+		{"provider_cooldown", "/v1/push", "", 0},
+		{"provider_cooldown", "/v1/register", "", 0},
+	} {
+		t.Run(tc.name+tc.path, func(t *testing.T) {
+			h := New("development", &recordingSender{err: &apnspush.ProviderCooldownError{}}, gatewayKey)
+			for range tc.cap {
+				h.limits.Allow(tc.name+":"+tc.subject, tc.cap, time.Hour, h.now())
+			}
+			body := pushBody
+			if tc.path == "/v1/register" {
+				body = registerBody
+			}
+			req := httptest.NewRequest("POST", tc.path, strings.NewReader(string(body)))
+			req.RemoteAddr = "127.0.0.1:1234"
+			signGatewayRequest(t, req, hubKey, gatewayKey, body, h.now(), "")
+			rec := httptest.NewRecorder()
+			previous := log.Writer()
+			var logs strings.Builder
+			log.SetOutput(&logs)
+			defer log.SetOutput(previous)
+			h.ServeHTTP(rec, req)
+			want := "status=429 limit=" + tc.name
+			if tc.cap > 0 {
+				want += fmt.Sprintf(" count=%d cap=%d", tc.cap, tc.cap)
+			}
+			want += " route=" + tc.path + "\n"
+			if rec.Code != 429 || !strings.HasSuffix(logs.String(), want) || strings.Count(logs.String(), "\n") != 1 {
+				t.Fatalf("status %d, log %q, want 429 with %q", rec.Code, logs.String(), want)
+			}
+		})
+	}
 }

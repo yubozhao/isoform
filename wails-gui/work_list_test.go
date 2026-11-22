@@ -268,3 +268,47 @@ func TestWorkListOfferedItemsSayTheirKind(t *testing.T) {
 		t.Fatalf("topic kinds = %v, want t1 code and t2 else", kinds)
 	}
 }
+
+// A prep offer for a meeting that has begun is not offered at 3 PM for a 2 PM
+// meeting (Bo's Duo, 2026-11-18): the brief stays sealed, but Your work leaves
+// it out once the meeting starts, at build and at read time.
+func TestWorkListDropsAPrepOfferOnceItsMeetingBegins(t *testing.T) {
+	app, _, _ := dailyTopicsTestApp(t)
+	brief := workTestBrief()
+	brief.Offers[0].Refs = []string{"cal-1"}
+	brief.Sections.Meetings = []MobileBriefItem{{ID: "m1", Title: "Therapist", Status: "upcoming", Kind: "meeting",
+		At: "2026-11-14T14:00:00Z", Refs: []string{"cal-1"}}}
+	app.mobileBriefSvc = &workTestBriefSource{mobileTestBriefSource{brief: brief}}
+	ctx := context.Background()
+
+	before, err := app.buildWorkList(ctx, mustParseWorkTime(t, "2026-11-14T13:00:00Z"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(before.Items) < 2 || before.Items[0].ID != "brief:2026-11-14-morning:offer:o1" || before.Items[0].ExpiresAt != "2026-11-14T14:00:00Z" {
+		t.Fatalf("before the meeting the prep offer leads and ends at its start: %+v", before.Items)
+	}
+	// The snapshot built at 1 PM, read at 3 PM.
+	read := workListDropEnded(before, mustParseWorkTime(t, "2026-11-14T15:00:00Z"))
+	if len(read.Items) != len(before.Items)-1 || read.Items[0].ID != "brief:2026-11-14-morning:offer:o2" || read.Items[0].Order != 0 ||
+		read.ToAnswer != before.ToAnswer-1 || read.Version == before.Version {
+		t.Fatalf("read after the meeting began: %+v", read)
+	}
+	after, err := app.buildWorkList(ctx, mustParseWorkTime(t, "2026-11-14T15:00:00Z"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range after.Items {
+		if item.ID == "brief:2026-11-14-morning:offer:o1" {
+			t.Fatalf("a rebuild after the meeting began still offers prep: %+v", item)
+		}
+	}
+	// A plan offer has no end, and a meeting already on ends at its end.
+	if !workBriefPrepEnds(brief.Offers[1], brief.Sections).IsZero() {
+		t.Fatal("a plan offer got an end")
+	}
+	brief.Sections.Meetings[0].Status, brief.Sections.Meetings[0].EndAt = "now", "2026-11-14T15:00:00Z"
+	if got := workBriefPrepEnds(brief.Offers[0], brief.Sections); !got.Equal(mustParseWorkTime(t, "2026-11-14T15:00:00Z")) {
+		t.Fatalf("a meeting on now ends at %v", got)
+	}
+}

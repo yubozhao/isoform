@@ -194,6 +194,7 @@ func (d *helperDetector) Detect(observations []ocr.TextObservation) []DetectionR
 	}
 	if resp.Error != "" {
 		log.Printf("[pii] helper detect failed: %s", resp.Error)
+		d.markUnhealthyLocked()
 		return nil
 	}
 	return resp.Detections

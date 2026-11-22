@@ -773,6 +773,8 @@ func runPurposeExtractionModel(
 		return result, errors.New("Purpose extraction model is unavailable")
 	}
 	var raw strings.Builder
+	ctx, given := withPassScope(ctx, passPurpose)
+	defer finishPassScope(given)
 	_, err = runner.ExecuteTask(ctx, &agent.TaskInput{
 		Priority:          agent.PriorityBackground,
 		BackendHint:       agent.BackendHintLearning,

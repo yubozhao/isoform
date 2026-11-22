@@ -86,6 +86,8 @@ func isOrphanedSpotlightHelper(
 // newSpotlightSupervisor returns a supervisor that has not yet spawned
 // anything. Call Start to launch. yansuHostPort is the port the host
 // bridge is listening on; the spotlight forwards it to its frontend.
+//
+//isoform:destination local
 func newSpotlightSupervisor(yansuHostPort int) *spotlightSupervisor {
 	return &spotlightSupervisor{
 		httpc:         &http.Client{Timeout: 1500 * time.Millisecond},
@@ -247,6 +249,8 @@ func spotlightWebviewOrigin(goos string, assetPort int) string {
 
 // Stop sends a /quit signal to the helper, waits briefly, then kills.
 // Safe to call when not started.
+//
+//isoform:destination local
 func (s *spotlightSupervisor) Stop() {
 	s.mu.Lock()
 	cmd := s.cmd
@@ -298,6 +302,8 @@ func (s *spotlightSupervisor) Stop() {
 // foreground-app context. Returns ErrSpotlightUnavailable when the
 // helper isn't installed, or when it doesn't become ready within a
 // short grace window.
+//
+//isoform:destination local
 func (s *spotlightSupervisor) Show(bundleID, appName, windowTitle string) error {
 	s.mu.Lock()
 	running := s.cmd != nil
@@ -361,6 +367,8 @@ func (s *spotlightSupervisor) Show(bundleID, appName, windowTitle string) error 
 
 // Hide signals the helper to dismiss the pill (or conversation) window.
 // Best-effort: errors are logged, not returned.
+//
+//isoform:destination local
 func (s *spotlightSupervisor) Hide() {
 	s.mu.Lock()
 	port := s.port
@@ -391,6 +399,8 @@ var ErrSpotlightUnavailable = errors.New("spotlight helper not available")
 // when healthy and its webview origin is known. Logs and gives up
 // otherwise — Show will simply return ErrSpotlightUnavailable until a
 // future health probe succeeds.
+//
+//isoform:destination local
 func (s *spotlightSupervisor) waitForReady(ctx context.Context) {
 	deadline := time.Now().Add(8 * time.Second)
 	for time.Now().Before(deadline) {

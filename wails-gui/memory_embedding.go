@@ -12,7 +12,6 @@ import (
 	"math"
 	"math/rand"
 	"net/http"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -60,6 +59,7 @@ const (
 )
 
 type openaiProvider struct {
+	store    *MemoryStore // nil for a transient Settings connection test
 	apiKey   string
 	baseURL  string
 	model    string
@@ -90,6 +90,7 @@ type embeddingErrorDetail struct {
 	Code    string `json:"code"`
 }
 
+//isoform:destination embeddings_api,local
 func newOpenAIProvider(provName, apiKey, baseURL, model string) *openaiProvider {
 	if baseURL == "" {
 		baseURL = embeddingDefaultBaseURL
@@ -105,7 +106,7 @@ func newOpenAIProvider(provName, apiKey, baseURL, model string) *openaiProvider 
 		apiKey:   apiKey,
 		baseURL:  baseURL,
 		model:    model,
-		client:   &http.Client{Timeout: embeddingBatchTimeout},
+		client:   &http.Client{Timeout: embeddingBatchTimeout, CheckRedirect: stopFindingRedirect},
 		provKey:  provKey,
 		provName: provName,
 	}
@@ -180,6 +181,7 @@ func (p *openaiProvider) embedBatchWithRetry(ctx context.Context, texts []string
 	return nil, lastErr
 }
 
+//isoform:destination embeddings_api,local
 func (p *openaiProvider) embedBatchRaw(ctx context.Context, texts []string) ([][]float64, error) {
 	reqBody := embeddingRequest{
 		Model: p.model,
@@ -198,6 +200,13 @@ func (p *openaiProvider) embedBatchRaw(ctx context.Context, texts []string) ([][
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+p.apiKey)
 
+	if p.store != nil {
+		findingSendMu.RLock()
+		defer findingSendMu.RUnlock()
+		if err := p.authorizeFindingCall(ctx); err != nil {
+			return nil, err
+		}
+	}
 	resp, err := p.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("embedding request: %w", err)
@@ -212,7 +221,6 @@ func (p *openaiProvider) embedBatchRaw(ctx context.Context, texts []string) ([][
 	if resp.StatusCode != http.StatusOK {
 		return nil, &embeddingAPIError{
 			StatusCode: resp.StatusCode,
-			Body:       string(respBody),
 		}
 	}
 
@@ -221,8 +229,7 @@ func (p *openaiProvider) embedBatchRaw(ctx context.Context, texts []string) ([][
 		return nil, fmt.Errorf("parse response: %w", err)
 	}
 	if embResp.Error != nil {
-		return nil, fmt.Errorf("API error: %s (type: %s, code: %s)",
-			embResp.Error.Message, embResp.Error.Type, embResp.Error.Code)
+		return nil, fmt.Errorf("embedding service reported an error")
 	}
 
 	if len(embResp.Data) != len(texts) {
@@ -245,11 +252,10 @@ func (p *openaiProvider) embedBatchRaw(ctx context.Context, texts []string) ([][
 
 type embeddingAPIError struct {
 	StatusCode int
-	Body       string
 }
 
 func (e *embeddingAPIError) Error() string {
-	return fmt.Sprintf("embedding API error (status %d): %s", e.StatusCode, e.Body)
+	return fmt.Sprintf("embedding API error (status %d)", e.StatusCode)
 }
 
 // isRetryableError returns true for transient errors (rate-limit, 5xx).
@@ -263,33 +269,20 @@ func isRetryableError(err error) bool {
 
 // ── Provider resolution ─────────────────────────────────────────────────
 
-// resolveEmbeddingProvider creates an EmbeddingProvider from config + env vars.
-// Priority: explicit config > OpenAI env vars > local ONNX > Ollama > FTS-only.
-// onProgress is an optional callback for download progress reporting (local ONNX only).
+// A missing OpenAI credential uses the same on-device search as the default.
 func resolveEmbeddingProvider(configDir string, cfg MemoryStoreConfig, onProgress downloadProgressFn) EmbeddingProvider {
-	provider := cfg.Provider
-	apiKey := cfg.APIKey
+	provider := cfg.effectiveFindingProvider()
 	baseURL := cfg.BaseURL
 	model := cfg.Model
 
-	// Auto-detect from environment if not explicitly configured
-	if apiKey == "" {
-		apiKey = os.Getenv("OPENAI_API_KEY")
-	}
-	if baseURL == "" {
-		baseURL = os.Getenv("OPENAI_BASE_URL")
-	}
-	if provider == "" && apiKey != "" {
-		provider = "openai"
-	}
-
-	switch provider {
-	case "openai":
-		if apiKey == "" {
-			log.Printf("[memory] openai provider requested but no API key found")
+	if (provider == "ollama" || provider == "openai") && baseURL != "" {
+		if _, err := findingURL(baseURL); err != nil {
 			return nil
 		}
-		return newOpenAIProvider("openai", apiKey, baseURL, model)
+	}
+	switch provider {
+	case "openai":
+		return newOpenAIProvider("openai", strings.TrimSpace(cfg.APIKey), baseURL, model)
 	case "ollama":
 		ollamaURL := baseURL
 		if ollamaURL == "" {
@@ -316,9 +309,6 @@ func resolveEmbeddingProvider(configDir string, cfg MemoryStoreConfig, onProgres
 		return p
 	case "none":
 		return nil
-	case "":
-		// Auto-detect: try local ONNX first, then Ollama
-		return tryAutoDetect(configDir, onProgress)
 	default:
 		log.Printf("[memory] unknown embedding provider: %s, falling back to FTS-only", provider)
 		return nil
@@ -329,11 +319,13 @@ func resolveEmbeddingProvider(configDir string, cfg MemoryStoreConfig, onProgres
 
 // detectOllama checks if Ollama is running at the given base URL.
 // The base URL should be the OpenAI-compatible endpoint (e.g. http://localhost:11434/v1).
+//
+//isoform:destination embeddings_api,local
 func detectOllama(baseURL string) bool {
 	// Ollama's native API is at the root, not /v1
 	rootURL := strings.TrimSuffix(strings.TrimRight(baseURL, "/"), "/v1")
 
-	client := &http.Client{Timeout: ollamaDetectTimeout}
+	client := &http.Client{Timeout: ollamaDetectTimeout, CheckRedirect: stopFindingRedirect}
 	resp, err := client.Get(rootURL + "/api/tags")
 	if err != nil {
 		return false
@@ -351,10 +343,12 @@ type ollamaModel struct {
 }
 
 // ollamaHasModel checks if a specific model is already pulled in Ollama.
+//
+//isoform:destination embeddings_api,local
 func ollamaHasModel(baseURL, model string) bool {
 	rootURL := strings.TrimSuffix(strings.TrimRight(baseURL, "/"), "/v1")
 
-	client := &http.Client{Timeout: ollamaDetectTimeout}
+	client := &http.Client{Timeout: ollamaDetectTimeout, CheckRedirect: stopFindingRedirect}
 	resp, err := client.Get(rootURL + "/api/tags")
 	if err != nil {
 		return false
@@ -384,29 +378,6 @@ func ensureOllamaModel(baseURL, model string) bool {
 		return false
 	}
 	return true
-}
-
-// tryAutoDetect attempts to set up an embedding provider with zero configuration.
-// Priority: local ONNX model > Ollama > nil (FTS-only).
-func tryAutoDetect(configDir string, onProgress downloadProgressFn) EmbeddingProvider {
-	// 1. Try the local ONNX model when setup has installed its assets.
-	p, err := newLocalONNXProvider(configDir, onProgress)
-	if err == nil {
-		return p
-	}
-	log.Printf("[memory] local ONNX auto-detect failed: %v, trying Ollama...", err)
-
-	// 2. Try Ollama
-	if detectOllama(ollamaDefaultBaseURL) {
-		log.Printf("[memory] auto-detected Ollama at %s", ollamaDefaultBaseURL)
-		if !ensureOllamaModel(ollamaDefaultBaseURL, ollamaDefaultModel) {
-			return nil
-		}
-		return newOpenAIProvider("ollama", "ollama", ollamaDefaultBaseURL, ollamaDefaultModel)
-	}
-
-	log.Printf("[memory] no embedding provider available, using FTS-only")
-	return nil
 }
 
 // computeProviderKey creates a stable hash for provider config change detection.

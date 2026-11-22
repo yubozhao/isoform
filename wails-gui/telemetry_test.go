@@ -41,9 +41,13 @@ func newRecordingTelemetry(t *testing.T) (*PostHogTelemetry, *recordingPostHogCl
 	}
 	t.Cleanup(func() { os.RemoveAll(home) })
 	t.Setenv("HOME", home)
+	telemetryTierMu.Lock()
+	previous := telemetryTier
+	telemetryTier = TelemetryTierDetailed
+	telemetryTierMu.Unlock()
 	t.Cleanup(func() {
 		telemetryTierMu.Lock()
-		telemetryTier = ""
+		telemetryTier = previous
 		telemetryTierMu.Unlock()
 	})
 	client := &recordingPostHogClient{}
@@ -71,7 +75,12 @@ func TestTelemetrySendsNothingWhenDiagnosticDataIsOff(t *testing.T) {
 	telemetryTierMu.Lock()
 	telemetryTier = ""
 	telemetryTierMu.Unlock()
-	loadTelemetryTierFromDisk()
+	store, err := openStartupStorage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	app.restoreSettingsDefaults(context.Background(), store)
 	telemetry.Capture("iphone.paired", nil)
 	if got := client.count(); got != 0 {
 		t.Fatalf("diagnostic data off after reload sent %d messages, want 0", got)

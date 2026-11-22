@@ -795,12 +795,7 @@ func (a *App) expandSpotlightToMain(sessionLocalID string) {
 	if a.ctx == nil {
 		return
 	}
-	// Surface the main window. WindowShow + WindowUnminimise mirrors
-	// the singleton-focus path so we don't miss the case where the
-	// user had Yansu minimised when they invoked the spotlight.
-	switchToRegularApp() // no-op on non-darwin
-	runtime.WindowShow(a.ctx)
-	runtime.WindowUnminimise(a.ctx)
+	a.showMainWindowFromSpotlight()
 
 	// Notify the React side. App.tsx listens for this and (a) refreshes
 	// projects so a fresh spotlight session shows up in the sidebar,
@@ -813,6 +808,15 @@ func (a *App) expandSpotlightToMain(sessionLocalID string) {
 	// Tear down the spotlight panel's in-memory state — the panel is
 	// going away and the next /show should start fresh.
 	a.dismissSpotlight()
+}
+
+// showMainWindowFromSpotlight surfaces the main window. WindowShow +
+// WindowUnminimise mirrors the singleton-focus path so we don't miss the
+// case where the user had Isoform minimised when they invoked the spotlight.
+func (a *App) showMainWindowFromSpotlight() {
+	switchToRegularApp() // no-op on non-darwin
+	runtime.WindowShow(a.ctx)
+	runtime.WindowUnminimise(a.ctx)
 }
 
 // jsonEncodeOrEmpty marshals v; on error returns "{}" so the SSE

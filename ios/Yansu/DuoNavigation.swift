@@ -5,6 +5,7 @@ import Foundation
 final class DuoNavigation: ObservableObject {
     @Published private(set) var paths: [DuoTab: [DuoStep]] = [
         .today: [.today],
+        .watch: [],
         .chat: [.topics]
     ]
 
@@ -22,6 +23,10 @@ final class DuoNavigation: ObservableObject {
         let root: DuoStep
         switch tab {
         case .today: root = .today
+        // The Watch page pushes its own screens; the wide layout keeps no path for it.
+        case .watch:
+            paths[tab] = []
+            return
         case .chat: root = .topics
         }
         paths[tab] = [root] + steps

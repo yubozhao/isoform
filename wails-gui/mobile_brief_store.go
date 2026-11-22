@@ -233,18 +233,26 @@ func (s *mobileBriefStore) load(briefID string) (MobileBriefV1, bool) {
 	if s.dir == "" || !mobileBriefIDPattern.MatchString(briefID) {
 		return MobileBriefV1{}, false
 	}
-	data, err := os.ReadFile(filepath.Join(s.dir, briefID+".json"))
-	if err != nil {
-		return MobileBriefV1{}, false
-	}
-	var brief MobileBriefV1
-	if err := unmarshalStoredMobileBrief(data, &brief); err != nil {
-		return MobileBriefV1{}, false
-	}
-	if brief.BriefID != briefID {
+	brief, err := s.readBriefFile(briefID + ".json")
+	if err != nil || brief.BriefID != briefID {
 		return MobileBriefV1{}, false
 	}
 	return brief, true
+}
+
+// readBriefFile preserves I/O and decoding errors for writes that rely on
+// this read. Its callers supply a validated brief filename or the Today file.
+func (s *mobileBriefStore) readBriefFile(name string) (MobileBriefV1, error) {
+	var brief MobileBriefV1
+	if s.dir == "" {
+		return brief, errMobileBriefStateUnavailable
+	}
+	data, err := os.ReadFile(filepath.Join(s.dir, name))
+	if err != nil {
+		return brief, err
+	}
+	err = unmarshalStoredMobileBrief(data, &brief)
+	return brief, err
 }
 
 // mobileBriefBuiltExt is the build's own copy of a brief. Only a build writes

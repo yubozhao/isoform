@@ -1266,4 +1266,37 @@ describe('Send again after no answer came back', () => {
         expect(calls.plain.mock.calls[0][0]).toBe('What is on today?');
         expect(calls.persist.mock.calls.every((call) => call[1].id === 'user-1')).toBe(true);
     });
+
+    it('Ask about a topic: the chip stays with an empty field, nothing is sent until the person types, and it goes with the message (T11)', async () => {
+        const { hook, main } = mount();
+        const topic = { sourceKind: 'topic', sourceId: 'halcyon' };
+        act(() => hook.result.current.attachAbout(main.localId, topic, { title: 'Halcyon import', placeholder: 'Ask about Halcyon import' }));
+        expect(hook.result.current.prompt).toBe('');
+        expect(hook.result.current.about).toEqual({ title: 'Halcyon import', placeholder: 'Ask about Halcyon import' });
+        // Empty: Send does nothing.
+        await act(async () => hook.result.current.sendPrompt());
+        expect(calls.today).not.toHaveBeenCalled();
+        expect(calls.plain).not.toHaveBeenCalled();
+        // Typing, then clearing, keeps the chip.
+        act(() => hook.result.current.setPrompt('W'));
+        act(() => hook.result.current.setPrompt(''));
+        expect(hook.result.current.about?.title).toBe('Halcyon import');
+        act(() => hook.result.current.setPrompt('What is left on it?'));
+        await act(async () => hook.result.current.sendPrompt());
+        expect(calls.today).toHaveBeenCalledTimes(1);
+        expect(calls.today.mock.calls[0][0]).toBe('What is left on it?');
+        expect(calls.today.mock.calls[0].at(-1)).toEqual(topic);
+        expect(hook.result.current.about).toBeUndefined();
+    });
+
+    it('taking the chip off sends the words without the topic (T11)', async () => {
+        const { hook, main } = mount();
+        act(() => hook.result.current.attachAbout(main.localId, { sourceKind: 'topic', sourceId: 'halcyon' }, { title: 'Halcyon import' }));
+        act(() => hook.result.current.detachAbout());
+        expect(hook.result.current.about).toBeUndefined();
+        act(() => hook.result.current.setPrompt('Just a question.'));
+        await act(async () => hook.result.current.sendPrompt());
+        expect(calls.today).not.toHaveBeenCalled();
+        expect(calls.plain).toHaveBeenCalledTimes(1);
+    });
 });

@@ -224,7 +224,7 @@ struct NotificationSettingsView: View {
         testingDelivery = true
         defer { testingDelivery = false }
         do {
-            guard try await app.hub.status().notificationTest == true else {
+            guard try await app.hub.abilities().notificationTest == true else {
                 deliveryMessage = String(localized: "notifications.deliveryUnsupported")
                 return
             }

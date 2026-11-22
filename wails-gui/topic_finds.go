@@ -73,7 +73,8 @@ type TopicFind struct {
 // TopicFindsView is Today's "New on your topics" section.
 type TopicFindsView struct {
 	Enabled bool `json:"enabled"`
-	// Status: off | unconfigured | no_topics | finding | ready | none | error.
+	// Status: off | unconfigured | no_topics | finding | ready | none | error
+	// | paused (Find new under Closed Eyes).
 	Status string      `json:"status"`
 	Items  []TopicFind `json:"items"`
 	// Topics are the top interests the search covers, for the line under
@@ -470,6 +471,11 @@ func (a *App) startTopicFinds(reason string) (string, error) {
 	if !state.enabled() {
 		return "off", nil
 	}
+	if !a.topicSearchMayLeave() {
+		// Closed Eyes stops every topic search, Find new too: the labels are
+		// what the person has been looking at (docs/destinations.md).
+		return "paused", nil
+	}
 	if reason == "daily" && state.Finds.StartedOn == svc.now().In(time.Local).Format("2006-01-02") {
 		return "running", nil
 	}
@@ -659,10 +665,20 @@ func (a *App) maybeStartDailyTopicFinds(trigger string) {
 
 // topicLabelsMayLeave reports whether what the user has been looking at
 // may go to a web search on its own schedule: observing is not paused and
-// "Watch my screen" is on. A search the user starts with Find new does not
-// ask this.
+// "Watch my screen" is on. A search the user starts with Find new asks
+// topicSearchMayLeave instead.
 func (a *App) topicLabelsMayLeave() bool {
-	return !a.IsClosedEyesModeEnabled() && a.screenWatchingEnabled()
+	return a.topicSearchMayLeave() && a.screenWatchingEnabled()
+}
+
+// topicSearchMayLeave reports whether any topic or Daily News search may
+// send its words now: never while observing is paused (Closed Eyes), however
+// it was started. It is asked when a search starts and again just before
+// the words are sent, so a search started before Closed Eyes doesn't go
+// after it. Chat's SearchWeb doesn't ask it: that is a question the person
+// typed and sent, and asking still works under Closed Eyes.
+func (a *App) topicSearchMayLeave() bool {
+	return !a.IsClosedEyesModeEnabled()
 }
 
 // dailyTopicSearchAllowed reports whether the automatic daily search may
@@ -1197,6 +1213,8 @@ func (a *App) FindNewOnTopics() (TopicFindsView, error) {
 	switch status {
 	case "started", "running":
 		view.Status = "finding"
+	case "paused":
+		view.Status = "paused"
 	default:
 	}
 	return view, nil

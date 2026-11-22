@@ -80,7 +80,7 @@ func (s *Store) SaveProject(ctx context.Context, p ProjectRow) error {
 
 // LoadProjects returns all saved projects ordered by sort_order (then creation time as tiebreaker).
 func (s *Store) LoadProjects(ctx context.Context) ([]ProjectRow, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.committedReader().QueryContext(ctx, `
 		SELECT id, name, path, organization, product, is_yansu_project, active_session_id, active_workspace_id, sort_order, setup_command, created_at, updated_at
 		FROM projects WHERE hidden = 0 ORDER BY sort_order ASC, created_at ASC
 	`)
@@ -163,7 +163,7 @@ func (s *Store) UpdateProjectSetupCommand(ctx context.Context, projectID, comman
 // GetProjectSetupCommand returns the setup_command for a project.
 func (s *Store) GetProjectSetupCommand(ctx context.Context, projectID string) (string, error) {
 	var cmd string
-	err := s.db.QueryRowContext(ctx,
+	err := s.committedReader().QueryRowContext(ctx,
 		"SELECT setup_command FROM projects WHERE id = ?", projectID,
 	).Scan(&cmd)
 	return cmd, err
@@ -195,7 +195,7 @@ func (s *Store) UpdateProjectSortOrders(ctx context.Context, ids []string) error
 // including hidden projects. Returns sql.ErrNoRows if not found.
 func (s *Store) LoadProjectByPath(ctx context.Context, path string) (ProjectRow, error) {
 	var p ProjectRow
-	err := s.db.QueryRowContext(ctx, `
+	err := s.committedReader().QueryRowContext(ctx, `
 		SELECT id, name, path, organization, product, is_yansu_project, active_session_id, active_workspace_id, sort_order, setup_command, hidden, created_at, updated_at
 		FROM projects WHERE path = ?
 	`, path).Scan(&p.ID, &p.Name, &p.Path, &p.Organization, &p.Product, &p.IsYansuProject, &p.ActiveSessionID, &p.ActiveWorkspaceID, &p.SortOrder, &p.SetupCommand, &p.Hidden, &p.CreatedAt, &p.UpdatedAt)

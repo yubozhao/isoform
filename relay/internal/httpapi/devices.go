@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"time"
 
@@ -107,7 +108,7 @@ func (h *Handler) postRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if env.Hub != device.HubID || env.Dev != device.ID {
-		reply(w, http.StatusForbidden, nil, "Envelope does not belong to this device")
+		refuse(w, r, http.StatusForbidden, "Envelope does not belong to this device")
 		return
 	}
 	body, err := env.Canonical()
@@ -120,12 +121,16 @@ func (h *Handler) postRequest(w http.ResponseWriter, r *http.Request) {
 	case err == nil:
 	case errors.Is(err, store.ErrQueueFull):
 		setRetryAfter(w, time.Minute)
+		h.logLimitError(w, r, err)
 		reply(w, http.StatusTooManyRequests, nil, "Request queue is full")
 		return
 	case errors.Is(err, store.ErrConflict):
 		reply(w, http.StatusConflict, nil, "Sequence number already used for different content")
 		return
 	default:
+		// The cause, never the request: on 2026-11-20 one phone request ended 500
+		// and the log could not say whether the phone had gone or the store failed.
+		log.Print(queueFailureLine(err))
 		reply(w, http.StatusInternalServerError, nil, "Unable to queue request")
 		return
 	}
@@ -159,13 +164,14 @@ func (h *Handler) responses(w http.ResponseWriter, r *http.Request) {
 		}
 		wait = min(time.Duration(parsed)*time.Second, longPollMax)
 	}
-	deadline := time.Now().Add(wait)
+	began := time.Now()
+	deadline := began.Add(wait)
 	for {
 		changed, cancel := h.Notify.Watch(notify.DeviceKey(device.ID))
 		envelopes, err := h.Store.ResponsesSince(r.Context(), device.ID, after, h.Now(), responsePageSize)
 		if errors.Is(err, store.ErrUnauthorized) {
 			cancel()
-			reply(w, http.StatusUnauthorized, nil, "Device authentication required")
+			refuse(w, r, http.StatusUnauthorized, "Device authentication required")
 			return
 		}
 		if err != nil {
@@ -176,6 +182,9 @@ func (h *Handler) responses(w http.ResponseWriter, r *http.Request) {
 		remaining := time.Until(deadline)
 		if len(envelopes) > 0 || remaining <= 0 {
 			cancel()
+			if len(envelopes) > 0 {
+				log.Print(answerPollLine(time.Since(began), len(envelopes), false))
+			}
 			reply(w, http.StatusOK, map[string]any{"envelopes": envelopes}, "")
 			return
 		}
@@ -186,6 +195,7 @@ func (h *Handler) responses(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			timer.Stop()
 			cancel()
+			log.Print(answerPollLine(time.Since(began), 0, true))
 			return
 		}
 		timer.Stop()
@@ -226,7 +236,7 @@ func (h *Handler) unpair(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case err == nil:
 	case errors.Is(err, store.ErrNotFound):
-		reply(w, http.StatusUnauthorized, nil, "Device authentication required")
+		refuse(w, r, http.StatusUnauthorized, "Device authentication required")
 		return
 	default:
 		reply(w, http.StatusInternalServerError, nil, "Unable to unpair device")

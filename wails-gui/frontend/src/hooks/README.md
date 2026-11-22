@@ -25,7 +25,7 @@ Custom React hooks for the Yansu Wails desktop application. Each hook encapsulat
 | `useProductTelemetry.ts` | Anonymous foreground activity through the backend telemetry gate |
 | `useFirstBriefSeen.ts` | Counts the first brief entering the focused viewport without content |
 | `useTheme.tsx` | Theme context provider and `useTheme` hook |
-| `useShowToolSteps.ts` | Persists tool input/result visibility independently of debug mode via Settings > General > Advanced > Show tool steps in chat |
+| `useShowToolSteps.ts` | Tool input/result visibility in chat: always off since its Settings switch went in settings batch D1 (answers v1.0.0 T2); a saved value is ignored |
 | `useVoiceInput.ts` | Whisper-based voice recording and transcription |
 | `useInsightNotification.ts` | Desktop notifications for new knowledge/memory insights from the activity/memory pipeline |
 | `useSidebarGroups.ts` | CRUD and reorder operations for sidebar groups and their items |
@@ -114,12 +114,10 @@ const { welcomeRef, chatRef } = useComposerDockSlide(isEmptySession);
 
 ### `useShowToolSteps`
 
-Toggles raw rendering of tool calls and their results in the chat stream. The switch is Show tool steps in chat, under Settings > General > Advanced, and the value is persisted to `localStorage` under `yansu.show-tool-steps`, independently of the debug-mode preference. Migration preserves an explicit stored on/off choice and records `yansu.show-tool-steps-migrated`. The previous build removed the new key on off, so a missing key cannot distinguish a prior explicit off from never configured. It therefore defaults to off even when `yansu.debug-mode-tools` is on; users with only the legacy flag must enable tool steps explicitly. Off now persists as `0` and the legacy debug preference stays unchanged. Broadcasts a `yansu:show-tool-steps-changed` window event so all mounted instances stay in sync without requiring a React Context.
+Whether chat shows raw tool calls and their results. Its Settings switch (Show tool steps in chat) went in settings batch D1 (computer-conformance-answers v1.0.0 T2), so the hook always returns the default, off, and ignores any value saved under `yansu.show-tool-steps`.
 
 ```ts
-const [enabled, setEnabled] = useShowToolSteps();
-// enabled: boolean — whether tool input/result details are available
-// setEnabled: (next: boolean) => void
+const [enabled] = useShowToolSteps(); // always false
 ```
 
 ---

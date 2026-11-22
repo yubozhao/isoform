@@ -2,7 +2,6 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import i18n from '@/i18n';
 import { SettingsPage } from './settings-page';
-import type { useKeybindings } from '@/hooks/useKeybindings';
 
 vi.mock('@/lib/wails-shim-app', () => new Proxy({}, {
     has: () => true,
@@ -15,9 +14,7 @@ beforeEach(async () => { localStorage.clear(); await i18n.changeLanguage('en'); 
 describe.each(['paper', 'onedark'])('AX parser selection in %s', (theme) => {
     it('switches the parser mode and disables Probe while it runs', async () => {
         document.documentElement.dataset.theme = theme;
-        render(<SettingsPage onClose={vi.fn()} onReplayOnboarding={vi.fn()} vimMode={false}
-            onVimModeChange={vi.fn()} keybindings={{} as ReturnType<typeof useKeybindings>}
-            onOpenMemory={vi.fn()} onOpenPeople={vi.fn()} onOpenProfile={vi.fn()} initialTopic="ax-parser" devToolsUnlocked />);
+        render(<SettingsPage onClose={vi.fn()} onReplayOnboarding={vi.fn()} onOpenPeople={vi.fn()} initialTopic="ax-parser" devToolsUnlocked />);
         const group = await screen.findByRole('radiogroup', { name: i18n.t('settings:axParser.modeLabel') });
         const choices = within(group).getAllByRole('radio');
         expect(choices[0]).toBeChecked();

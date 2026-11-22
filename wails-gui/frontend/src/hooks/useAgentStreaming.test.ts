@@ -50,7 +50,6 @@ vi.mock("../../wailsjs/go/main/App", () => ({
     ),
     UpdateSessionClaudeID: vi.fn(async () => {}),
 }));
-vi.mock("../lib/tts-player", () => ({ maybeAutoSpeak: vi.fn() }));
 
 // One turn as emitAgentEvent stamps it: every event has its own event_id, and
 // the rows it builds carry the backend's item_id (and item_seq for text).

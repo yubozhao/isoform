@@ -34,8 +34,12 @@ func (a *App) answerDailyTopicProposal(ctx context.Context, topicID, proposalID,
 	default:
 		return DailyTopicView{}, errors.New("the answer must be yes, no or not_mine")
 	}
-	if !a.topicsDailyEnabled(ctx) {
-		return DailyTopicView{}, errDailyTopicNotAllowed
+	// A proposal already offered can be answered after the switch is off: it
+	// stays in Your work until answered (computer-settings v1.3.0 rule 5).
+	// Only a proposed one can be answered, which dailyTopicProposal and the
+	// state check below hold to. A switch that can't be read refuses.
+	if _, err := a.topicsDailyEnabled(ctx); err != nil {
+		return DailyTopicView{}, err
 	}
 	store, err := a.topicsDailyStore()
 	if err != nil {

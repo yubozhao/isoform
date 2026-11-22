@@ -104,7 +104,7 @@ type ImportedContactCard struct {
 }
 
 func (s *Store) ListImportedContactCards(ctx context.Context) ([]ImportedContactCard, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT external_ref,payload FROM imported_contact_cards ORDER BY external_ref`)
+	rows, err := s.committedReader().QueryContext(ctx, `SELECT external_ref,payload FROM imported_contact_cards ORDER BY external_ref`)
 	if err != nil {
 		return nil, err
 	}

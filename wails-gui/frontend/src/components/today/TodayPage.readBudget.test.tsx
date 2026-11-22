@@ -127,9 +127,9 @@ describe('Today read budget', () => {
         expect(total(fixture.calls), JSON.stringify(counts(fixture.calls))).toBeLessThanOrEqual(MEMORY_UPDATED_READ_BUDGET);
     });
 
-    it('re-reads only the goal check-in after agency:updated', async () => {
+    it('reads nothing after agency:updated: the goal check-in left Today (computer-map rule 8)', async () => {
         await mountToday();
         await emit('agency:updated');
-        expect(counts(fixture.calls)).toEqual({ GetGoalCheckIn: 1 });
+        expect(counts(fixture.calls)).toEqual({});
     });
 });

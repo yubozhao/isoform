@@ -14,6 +14,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"isoform-relay/internal/limit"
 	"isoform-relay/internal/store"
 )
 
@@ -150,10 +151,10 @@ func (s *Service) StartVerification(ctx context.Context, hubID, rawAddress, lang
 		return Status{}, ErrInvalidAddress
 	}
 	addressHash := s.Vault.HashAddress(address)
-	if err := s.take(ctx, "codes:hub:"+hubID, codesPerHub, codesPerHubWindow, ErrTooMany); err != nil {
+	if err := s.take(ctx, "codes:hub:"+hubID, codesPerHub, codesPerHubWindow, limit.Full("email_codes_hub", codesPerHub, ErrTooMany)); err != nil {
 		return Status{}, err
 	}
-	if err := s.take(ctx, "codes:address:"+addressHash, codesPerAddress, codesPerAddressWindow, ErrTooMany); err != nil {
+	if err := s.take(ctx, "codes:address:"+addressHash, codesPerAddress, codesPerAddressWindow, limit.Full("email_codes_address", codesPerAddress, ErrTooMany)); err != nil {
 		return Status{}, err
 	}
 	if err := s.take(ctx, "codes:all", s.Config.CodesPerHour, capWindow, ErrBusy); err != nil {
@@ -250,7 +251,7 @@ func (s *Service) Send(ctx context.Context, hubID, subject, text string) (Status
 	case errors.Is(err, store.ErrNotFound):
 		return Status{}, ErrNotActive
 	case errors.Is(err, store.ErrQuota):
-		return Status{}, ErrQuota
+		return Status{}, &limit.Refusal{Name: "email_daily", Count: int64(usage.DayCount), Cap: int64(s.Config.DailyCap), Err: ErrQuota}
 	default:
 		return Status{}, err
 	}

@@ -15,6 +15,8 @@ interface ConfirmDialogProps {
     title: string;
     description: React.ReactNode;
     confirmLabel?: string;
+    /** The dismiss button's words; Cancel when not given. */
+    cancelLabel?: string;
     onConfirm: () => void;
     variant?: 'danger' | 'default';
     /** Override the default 400px width when the description needs more
@@ -39,6 +41,7 @@ export function ConfirmDialog({
     title,
     description,
     confirmLabel,
+    cancelLabel,
     onConfirm,
     variant = 'default',
     widthClass = 'w-[400px]',
@@ -76,7 +79,7 @@ export function ConfirmDialog({
                         className="px-3 py-1.5 rounded-md text-xs font-medium text-ink bg-border/50 hover:bg-border transition-colors"
                         onClick={() => onOpenChange(false)}
                     >
-                        {t('cancel')}
+                        {cancelLabel ?? t('cancel')}
                     </button>
                     <button
                         className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${

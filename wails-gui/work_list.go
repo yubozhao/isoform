@@ -62,9 +62,11 @@ type WorkItem struct {
 
 // WorkRequest is who asks whom, and what a Yes would move.
 type WorkRequest struct {
-	From  WorkAgentRef `json:"from"`
-	To    WorkAgentRef `json:"to"`
-	Moves string       `json:"moves,omitempty"`
+	From       WorkAgentRef `json:"from"`
+	To         WorkAgentRef `json:"to"`
+	Moves      string       `json:"moves,omitempty"`
+	SendError  string       `json:"sendError,omitempty"`
+	SendReason string       `json:"sendReason,omitempty"`
 }
 
 // WorkAgentRef names an agent.
@@ -214,6 +216,9 @@ var (
 	workReasonsOffered = []string{"already_done", "not_now", "not_useful", "myself"}
 	workReasonsDone    = []string{"not_needed", "wrong_facts", "not_how_id_say", "myself"}
 	workReasonsClaim   = []string{"was_true_once", "only_sometimes", "not_at_all"}
+	// workReasonsResult are what a Not useful on a result may say (phone-agent
+	// v1.0.0 rule 17, computer-today v1.1.0 rule 5).
+	workReasonsResult = []string{"wrong_facts", "missed_point", "myself"}
 )
 
 // GetWorkList returns Your work from its snapshot.
@@ -234,7 +239,8 @@ func (a *App) workListNow() (WorkList, error) {
 	if err != nil {
 		return list, err
 	}
-	return workListWordedAt(list, time.Now()), nil
+	now := time.Now()
+	return workListWordedAt(workListDropEnded(list, now), now), nil
 }
 
 // workListWordedAt fills the text of each day and clock part for the
@@ -287,8 +293,16 @@ func workDayWord(at, now time.Time) string {
 // top of the rest, at most workOpenPerDay open.
 func (a *App) buildWorkList(ctx context.Context, now time.Time) (WorkList, error) {
 	list := WorkList{V: 1, GeneratedAt: mobileTimestamp(now), Items: []WorkItem{}}
-	brief := a.applyWorkAnswers(a.workBriefItems(ctx))
+	phone, havePhone := a.workBriefPhone(ctx)
+	var briefItems []WorkItem
+	if havePhone {
+		briefItems = workBriefItemsFrom(phone, now)
+	}
+	brief := a.applyWorkAnswers(briefItems)
 	rest := a.applyWorkAnswers(append(append(append(append(a.workTopicItems(ctx), a.workPrepItems(now)...), a.workResultItems(now, brief)...), a.workRequestItems(now)...), a.workDayOneItems(ctx, now)...))
+	if havePhone {
+		workPlaceBriefAgentItems(phone, brief, rest)
+	}
 	sort.SliceStable(rest, func(i, j int) bool {
 		if (rest[i].State == workStateBack) != (rest[j].State == workStateBack) {
 			return rest[i].State == workStateBack
@@ -353,36 +367,62 @@ func workListVersion(list WorkList) string {
 }
 
 // workBriefItems are the current brief's offers, read from its phone package
-// so both devices judge exactly what the phone shows.
-func (a *App) workBriefItems(ctx context.Context) []WorkItem {
+// so both devices judge exactly what the phone shows. A prep offer leaves the
+// list once its meeting has begun (or ended, for one that was on when the
+// brief was made): the brief stays sealed, but Your work is judged now.
+func (a *App) workBriefItems(ctx context.Context, now time.Time) []WorkItem {
+	phone, ok := a.workBriefPhone(ctx)
+	if !ok {
+		return nil
+	}
+	return workBriefItemsFrom(phone, now)
+}
+
+// workBriefPhoneDoc is what Your work reads of the current brief's phone
+// package.
+type workBriefPhoneDoc struct {
+	BriefID   string              `json:"briefId"`
+	AsOf      string              `json:"asOf"`
+	Offers    []MobileBriefOffer  `json:"offers"`
+	Narrative []MobileBriefPara   `json:"narrative"`
+	Sections  MobileBriefSections `json:"sections"`
+	Evidence  []MobileBriefRef    `json:"evidence"`
+}
+
+// workBriefPhone reads the current brief's phone package.
+func (a *App) workBriefPhone(ctx context.Context) (workBriefPhoneDoc, bool) {
+	var phone workBriefPhoneDoc
 	svc := a.mobileBriefSource()
 	if svc == nil {
-		return nil
+		return phone, false
 	}
 	current, ok := currentMobileBrief(svc)
 	if !ok {
-		return nil
+		return phone, false
 	}
 	packager, ok := svc.(mobileBriefPackagerContext)
 	if !ok {
-		return nil
+		return phone, false
 	}
 	pkg, ok := packager.BriefPackageContext(ctx, current.BriefID)
 	if !ok {
-		return nil
-	}
-	var phone struct {
-		BriefID   string             `json:"briefId"`
-		AsOf      string             `json:"asOf"`
-		Offers    []MobileBriefOffer `json:"offers"`
-		Narrative []MobileBriefPara  `json:"narrative"`
+		return phone, false
 	}
 	if json.Unmarshal(pkg.Bytes, &phone) != nil || phone.BriefID != current.BriefID {
-		return nil
+		return workBriefPhoneDoc{}, false
 	}
+	return phone, true
+}
+
+// workBriefItemsFrom are the brief's offers as items.
+func workBriefItemsFrom(phone workBriefPhoneDoc, now time.Time) []WorkItem {
 	items := make([]WorkItem, 0, len(phone.Offers))
 	for _, offer := range phone.Offers {
 		if offer.ID == "" || offer.Label == "" {
+			continue
+		}
+		ends := workBriefPrepEnds(offer, phone.Sections)
+		if !ends.IsZero() && !now.Before(ends) {
 			continue
 		}
 		row := "offered"
@@ -402,10 +442,81 @@ func (a *App) workBriefItems(ctx context.Context) []WorkItem {
 			First:   []WorkTextPart{{Text: offer.Label}, {Text: "from the brief", Ref: "brief:" + phone.BriefID, Key: "from_brief"}},
 			Noticed: noticed, Work: WorkBody{Title: offer.Label},
 			Yes:     WorkYes{Does: "agent", Line: workYesAgentLine},
-			Reasons: workReasonsOffered, CreatedAt: phone.AsOf,
+			Reasons: workReasonsOffered, CreatedAt: phone.AsOf, ExpiresAt: mobileOptionalTimestamp(ends),
 		})
 	}
 	return items
+}
+
+// workBriefPrepEnds is when a prep offer stops making sense: its meeting's
+// start, or the end of one that was already on when the brief was made. Zero
+// for any other offer.
+func workBriefPrepEnds(offer MobileBriefOffer, sections MobileBriefSections) time.Time {
+	if offer.Kind != "prepare" || len(offer.Refs) == 0 {
+		return time.Time{}
+	}
+	refs := map[string]bool{}
+	for _, ref := range offer.Refs {
+		refs[ref] = true
+	}
+	var ends time.Time
+	for _, items := range [][]MobileBriefItem{sections.Meetings, sections.DayAhead, sections.Schedules, sections.Plan,
+		sections.Decide, sections.Review, sections.WaitingOnYou, sections.Commitments, sections.Noticed} {
+		for _, item := range items {
+			if item.Status != "upcoming" && item.Status != "now" {
+				continue
+			}
+			shared := false
+			for _, ref := range item.Refs {
+				shared = shared || refs[ref]
+			}
+			if !shared {
+				continue
+			}
+			at := mobileBriefParseTime(item.At)
+			if item.Status == "now" {
+				at = mobileBriefParseTime(item.EndAt)
+			}
+			if !at.IsZero() && (ends.IsZero() || at.Before(ends)) {
+				ends = at
+			}
+		}
+	}
+	return ends
+}
+
+// workListDropEnded leaves out, at read time, the brief's open offers whose
+// moment has passed since the snapshot was built (a prep offer for a meeting
+// that has begun), and recounts the list.
+func workListDropEnded(list WorkList, now time.Time) WorkList {
+	out := list
+	out.Items, out.ToAnswer, out.BackFromAgents, out.DayOne = []WorkItem{}, 0, 0, 0
+	dropped := false
+	for _, item := range list.Items {
+		if item.Source == workSourceBrief && item.State == workStateOpen && item.ExpiresAt != "" {
+			if ends := mobileBriefParseTime(item.ExpiresAt); !ends.IsZero() && !now.Before(ends) {
+				dropped = true
+				continue
+			}
+		}
+		item.Order = len(out.Items)
+		out.Items = append(out.Items, item)
+		switch item.State {
+		case workStateOpen:
+			out.ToAnswer++
+			if item.Source == workSourceDayOne {
+				out.DayOne++
+			}
+		case workStateBack:
+			out.ToAnswer++
+			out.BackFromAgents++
+		}
+	}
+	if !dropped {
+		return list
+	}
+	out.Version = workListVersion(out)
+	return out
 }
 
 // workOfferParagraph is the first paragraph that cites one of the offer's
@@ -439,11 +550,12 @@ func workTopicProposalID(topicID, proposalID string) string {
 	return "topic:" + topicID + ":" + proposalID
 }
 
-// workTopicItems are the daily topics' proposals, as the phone may see them,
-// while Proposals from your topics is on.
+// workTopicItems are the daily topics' proposals, as the phone may see them:
+// the day's copy while Proposals from your topics is on, and only the ones
+// already offered and not answered while it's off.
 func (a *App) workTopicItems(ctx context.Context) []WorkItem {
 	view, err := a.dailyTopicsForPhone(ctx)
-	if err != nil || !view.Enabled {
+	if err != nil || len(view.Topics) == 0 {
 		return nil
 	}
 	created := ""
@@ -498,8 +610,7 @@ func (a *App) workTopicItems(ctx context.Context) []WorkItem {
 			item.Answer = &WorkAnswer{Action: "yes", At: since, Line: p.Title + ": with your agent"}
 			item.Agent = &WorkAgent{Name: "your agent", Since: since}
 		case "done", "failed":
-			item.State, item.Kind, item.Row = workStateBack, workKindResult, "result"
-			item.Work.Text = p.Result
+			workMarkBack(&item, p.Result, nil)
 			item.Answer = &WorkAnswer{Action: "yes", Line: p.Title + ": back from your agent"}
 		case "declined":
 			item.State = workStateAnswered
@@ -573,6 +684,7 @@ func (a *App) workResultItems(now time.Time, held []WorkItem) []WorkItem {
 	}
 	day := now.In(time.Local).Format("2006-01-02")
 	items := []WorkItem{}
+	var links map[string]TaskLinkResult
 	for _, entry := range entries {
 		if owned[entry.ID] || entry.Thread != nil && entry.Thread.Origin != nil && (entry.Thread.Origin.Kind == topicsDailyTaskOrigin || entry.Thread.Origin.Kind == workBriefTaskOrigin) {
 			continue
@@ -586,14 +698,28 @@ func (a *App) workResultItems(now time.Time, held []WorkItem) []WorkItem {
 		if finished.Format("2006-01-02") != day || title == "" {
 			continue
 		}
-		items = append(items, WorkItem{
-			ID: workResultID(entry.ID), Kind: workKindResult, Row: "result", State: workStateBack, Source: workSourceAgent,
-			Ref:     WorkRef{HandoffID: entry.ID, TaskID: entry.ID},
-			First:   []WorkTextPart{{Text: "Back from your agent", Key: "back_from_agent"}, {Key: "clock", At: mobileTimestamp(finished)}},
-			Noticed: title + " is ready.", Work: WorkBody{Title: title, Text: result},
-			Yes:     WorkYes{Does: "open", Line: "Was it useful?"},
-			Reasons: []string{}, CreatedAt: mobileTimestamp(finished),
-		})
+		item := WorkItem{
+			ID: workResultID(entry.ID), Source: workSourceAgent,
+			Ref:       WorkRef{HandoffID: entry.ID, TaskID: entry.ID},
+			First:     []WorkTextPart{{Text: "Back from your agent", Key: "back_from_agent"}, {Key: "clock", At: mobileTimestamp(finished)}},
+			Work:      WorkBody{Title: title},
+			Yes:       WorkYes{Does: "open", Line: "Was it useful?"},
+			CreatedAt: mobileTimestamp(finished),
+		}
+		// A local task's hand-off shares its id, so an agent that posted its
+		// result with files is found by it.
+		if links == nil {
+			links = a.workLinkResults()
+		}
+		var files []WorkFile
+		if r, ok := links[entry.ID]; ok {
+			if strings.TrimSpace(result) == "" {
+				result = r.Summary
+			}
+			files = a.workResultFiles(r.LinkID, r.Files)
+		}
+		workMarkBack(&item, result, files)
+		items = append(items, item)
 	}
 	sort.SliceStable(items, func(i, j int) bool { return items[i].CreatedAt > items[j].CreatedAt })
 	if len(items) > workResultsPerDay {
@@ -603,3 +729,59 @@ func (a *App) workResultItems(now time.Time, held []WorkItem) []WorkItem {
 }
 
 func workResultID(handoffID string) string { return "result:" + handoffID }
+
+// workPlaceBriefAgentItems puts up to two results the brief's "Your agents:"
+// paragraph names under it (brief-agents rule 5): each carries the brief and
+// the paragraph in its ref, so the brief in full shows it there, and it is
+// the same item as in Your work, so one answer counts in both (rule 6). They
+// count toward the brief's five items: the brief's own offers come first.
+func workPlaceBriefAgentItems(phone workBriefPhoneDoc, lists ...[]WorkItem) {
+	index, named := briefAgentsParagraphIndex(MobileBriefV1{Narrative: phone.Narrative, Evidence: phone.Evidence})
+	if index < 0 {
+		return
+	}
+	room := briefAgentItemsMax
+	offers := 0
+	for _, items := range lists {
+		for _, item := range items {
+			if item.Ref.BriefID == phone.BriefID && item.Ref.OfferID != "" && !named[item.Ref.HandoffID] {
+				offers++
+			}
+		}
+	}
+	if left := briefItemsMax - offers; left < room {
+		room = left
+	}
+	for _, items := range lists {
+		for i := range items {
+			item := &items[i]
+			if room <= 0 {
+				return
+			}
+			if item.Ref.HandoffID == "" || !named[item.Ref.HandoffID] || item.Kind != workKindResult {
+				continue
+			}
+			at := index
+			item.Ref.BriefID, item.Ref.Paragraph = phone.BriefID, &at
+			room--
+		}
+	}
+}
+
+// workMarkBack makes an item a result back from its agent (computer-today
+// v1.1.0 rules 4 and 5, phone-agent v1.0.0 rules 16 and 17): noticed is the
+// one sentence of what it made, work.text the whole summary for the grey box
+// (Read it all), files the files it made, and reasons what a Not useful may
+// say. With no summary the sentence says the work is ready.
+func workMarkBack(item *WorkItem, summary string, files []WorkFile) {
+	item.State, item.Kind, item.Row = workStateBack, workKindResult, "result"
+	summary = strings.TrimSpace(summary)
+	item.Work.Text = summary
+	if sentence := engagementFirstSentence(summary); sentence != "" {
+		item.Noticed = sentence
+	} else if title := strings.TrimSpace(item.Work.Title); title != "" {
+		item.Noticed = title + " is ready."
+	}
+	item.Files = files
+	item.Reasons = workReasonsResult
+}

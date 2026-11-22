@@ -1,10 +1,10 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { render, renderHook, screen } from '@testing-library/react';
 import type { StreamItem } from '@/types';
 import type { MainChatStreamView } from './main-chat-view-context';
 import { dayRowsVisibility, useStreamListModel } from '@/components/grouped-stream-list';
 import { chatThreadUpdates } from '@/lib/main-chat-view';
-import { MainChatFilterRow } from './main-chat-filter-row';
+import { MainChatHeader } from './main-chat-header';
 import en from '@/i18n/locales/en/chat.json';
 
 // Chat never speaks first (phone-chat v1.0.0 rule 3, computer-chat v1.0.0):
@@ -51,8 +51,9 @@ describe("Isoform's updates stay out of Chat's thread", () => {
     });
 
     it('has no Hide or Show updates switch in the header', () => {
-        render(<MainChatFilterRow filter={{ kind: 'all' }} onFilter={vi.fn()} topics={[]} hideRoutine={false} routineCount={4} hideBusy={false} hideFailed={false} onToggleHide={vi.fn()} />);
+        render(<MainChatHeader />);
         expect(screen.queryByTestId('main-chat-hide-routine')).toBeNull();
-        expect(screen.queryByText(en.mainChat.view.hideUpdates)).toBeNull();
+        expect(screen.queryByRole('button')).toBeNull();
+        expect(screen.getByRole('heading', { name: en.mainChat.view.title })).toBeInTheDocument();
     });
 });

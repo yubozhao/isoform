@@ -40,7 +40,7 @@ import {
 import { ConfidenceBar } from '@/components/about-you/belief-status';
 import {
     BeliefChip,
-    NotQuiteField,
+    ClaimEditField,
     ReviewOutcome,
     answerWhen,
     answeredStatus,
@@ -705,7 +705,7 @@ export function MemoryDetail({
             )}
 
             <div className="flex flex-col gap-2.5 border-t border-border-subtle pt-3.5">
-                {review && asking && <NotQuiteField item={answerItem} review={review} />}
+                {review && asking && <ClaimEditField item={answerItem} review={review} />}
                 {review && answered && <ReviewOutcome item={answerItem} review={review} />}
                 {/* Later: when the person answered, and what Isoform does with it. */}
                 {!asking && !answered && status === 'confirmed' && (belief?.confirmedAt ?? 0) > 0 && (
@@ -720,14 +720,20 @@ export function MemoryDetail({
                     </p>
                 )}
                 <div className="flex flex-wrap gap-2">
+                    {/* The same answers as the claim's line: Yes, No, Edit (redesign v1.0.0 section 1). */}
                     {review && !answered && !asking && status !== 'confirmed' && (
                         <Button size="sm" onClick={() => void review.confirm(entry.id, status === 'not_quite')}>
-                            {t('aboutYou.review.confirm')}
+                            {t('aboutYou.review.yes')}
                         </Button>
                     )}
                     {review && !answered && !asking && status !== 'not_quite' && (
-                        <Button size="sm" variant="secondary" onClick={() => review.ask(entry.id)}>
-                            {t('aboutYou.review.notQuite')}
+                        <Button size="sm" variant="secondary" onClick={() => void review.answerNotQuite(entry.id, '')}>
+                            {t('aboutYou.review.no')}
+                        </Button>
+                    )}
+                    {review && !answered && !asking && (
+                        <Button size="sm" variant="outline" onClick={() => review.ask(entry.id)}>
+                            {t('aboutYou.review.edit')}
                         </Button>
                     )}
                     <Button size="sm" variant="secondary" onClick={() => startEdit(points[0]?.id ?? null)} disabled={saving || active !== null}>

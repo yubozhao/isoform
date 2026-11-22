@@ -7,15 +7,14 @@ const template = readFileSync(resolve(process.cwd(), "../menubar_window_assets/p
 function page(overrides: Record<string, unknown> = {}, wordOverrides: Record<string, string> = {}) {
     // The 1.0 page's model (menubar_model.go menuBarView): words echo their keys.
     const words = Object.fromEntries([
-        "observing", "paused", "off", "starting", "pause", "resume", "turnOn", "playing",
-        "waiting", "seeAll", "empty", "failed", "make", "open", "openShortcut", "update", "restart",
+        "observing", "paused", "playing",
+        "failed", "make", "open", "openShortcut", "update", "restart",
         "settings", "footerQuit", "onThisMac", "name", "closedEyes", "openEyes", "yes", "no", "openToday",
         "allDone", "stillAnswer", "quickChat",
     ].map(key => [key, key]));
     Object.assign(words, wordOverrides);
     const model = { language: "en", theme: "paper", words, status: "observing", state: "observing", paused: false,
         waiting: 5, brief: { kind: "ready", id: "brief", title: "brief", meta: "7:00 AM · 0:48", seconds: 48 },
-        items: [{ id: "row", title: "title", detail: "detail" }],
         next: { id: "row", line: "line", title: "title", detail: "detail" }, label: "Isoform", ...overrides };
     const document = new DOMParser().parseFromString(template.replace("/*__MODEL__*/null", JSON.stringify(model)), "text/html");
     const postMessage = vi.fn();
@@ -64,6 +63,8 @@ describe("menu bar embedded page", () => {
             ["today:row", "play:brief", "workYes:row", "workNo:row", "today:row", "quickChat", "makeHere", "open", "settings", "quit", "closedEyes"]);
         expect(document.querySelector("#menu")).toBeNull();
         expect(document.querySelector("#more")).toBeNull();
+        expect(document.querySelector("#empty")).toBeNull();
+        expect(template).not.toMatch(/#more|\.sh \{|seeAll|i-more/);
     });
     it("reads a brief with no recording instead of playing it", () => {
         const { document, postMessage } = page({ brief: { kind: "read", id: "evening", title: "Read", meta: "7:30 PM" } });
@@ -91,7 +92,7 @@ describe("menu bar embedded page", () => {
         expect(listed.document.querySelector("#count")).toBeNull();
         expect(listed.document.querySelector("#answerRow")!.hasAttribute("hidden")).toBe(false);
         expect(listed.document.querySelector("#done")!.hasAttribute("hidden")).toBe(true);
-        const none = page({ waiting: 0, items: [], next: null, nextBrief: "Next brief at 7:00 AM" });
+        const none = page({ waiting: 0, next: null, nextBrief: "Next brief at 7:00 AM" });
         expect(none.document.querySelector("#wsec")!.hasAttribute("hidden")).toBe(false);
         expect(none.document.querySelector("#answerRow")!.hasAttribute("hidden")).toBe(true);
         expect(none.document.querySelector("#doneText")!.textContent).toBe("allDone");
@@ -110,6 +111,18 @@ describe("menu bar embedded page", () => {
         expect(css).not.toMatch(/\.it \{ height:/);
     });
 
+    // computer-settings v1.2.0 20d: the first day's brief row is a clock,
+    // "Your first brief" and "at {time}", and does nothing when clicked.
+    it("shows the first day's brief row with a clock and its time", () => {
+        const { document, postMessage } = page({ brief: { kind: "first", title: "Your first brief", meta: "at 7:30 PM" } });
+        const row = document.querySelector("#br") as HTMLButtonElement;
+        expect(row.disabled).toBe(true);
+        expect(document.querySelector("#briefTitle")!.textContent).toBe("Your first brief");
+        expect(document.querySelector("#briefMeta")!.textContent).toBe("at 7:30 PM");
+        expect(document.querySelector("#pl circle")).not.toBeNull();
+        row.click();
+        expect(postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ command: expect.stringMatching(/^(play|read):/) }));
+    });
     it("shows no brief placeholder before the first read", () => {
         const { document } = page({ loading: true });
         expect(document.querySelector("#br")!.hasAttribute("hidden")).toBe(true);
@@ -140,6 +153,19 @@ describe("menu bar embedded page", () => {
     });
     // Closed Eyes is the first control: it closes at once, then reads Open
     // eyes, filled, with its one shortcut shown while eyes are open.
+    // Design S8: no Turn on; Closed Eyes is the first control whatever the
+    // screen's state, and works before that state is known.
+    it("offers Closed Eyes, never Turn on, when the screen isn't seen", () => {
+        for (const status of ["not_seeing", "screen_off", "starting"]) {
+            const { document, postMessage } = page({ status, state: "watch listening" });
+            const hb = document.getElementById("hb") as HTMLButtonElement;
+            expect(hb.textContent).toBe("closedEyes");
+            expect(hb.disabled).toBe(false);
+            hb.click();
+            expect(postMessage).toHaveBeenCalledWith({ command: "closedEyes" });
+        }
+        expect(template).not.toMatch(/turnOn/);
+    });
     it("closes eyes at once from the header and then offers Open eyes, filled", () => {
         const { document, postMessage } = page({ closedEyesKey: "⌃⌥⌘E" });
         const hb = document.getElementById("hb") as HTMLButtonElement;

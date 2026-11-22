@@ -20,7 +20,7 @@
 // which generates uppercase `App.{d.ts,js}`. Importing "App" here used
 // to resolve on macOS (case-insensitive FS) but broke the Linux build
 // (case-sensitive FS) with "Could not resolve" during vite build.
-import { transcribeAudio, initVoiceInput } from "../api/yansu";
+import { transcribeAudio, initVoiceInput, workOnIt } from "../api/yansu";
 
 // wailsBinding invokes a Wails-injected app binding (window.go.main.app.X)
 // directly, so the macOS native build needs no generated wailsjs/ files.
@@ -265,7 +265,6 @@ export const DownloadUpdate = makeNoop("DownloadUpdate");
 export const EnsureDailySummary = makeNoop("EnsureDailySummary");
 export const EnsureProjectStructure = makeNoop("EnsureProjectStructure");
 export const EnsureTranscriptChatMessage = makeNoop("EnsureTranscriptChatMessage");
-export const EnsureWeeklySummary = makeNoop("EnsureWeeklySummary");
 export const FetchProjectContext = makeNoop("FetchProjectContext");
 export const GenerateAutomationName = makeNoop("GenerateAutomationName");
 export const GenerateDailySummary = makeNoop("GenerateDailySummary");
@@ -411,7 +410,8 @@ export const Login = makeNoop("Login");
 export const Logout = makeNoop("Logout");
 export const MergeWorkspace = makeNoop("MergeWorkspace");
 export const MoveActivityToThread = makeNoop("MoveActivityToThread");
-export const NativeClipboardSetText = makeNoop("NativeClipboardSetText");
+// The hand-off card and its sheet run in the panel (quick_chat_handoff.go).
+export const NativeClipboardSetText = (text: string) => workOnIt<void>("copy", { text });
 export const NextProjectSortOrder = makeNoop("NextProjectSortOrder");
 export const NotifyUser = makeNoop("NotifyUser");
 export const OpenAutomationDeliverable = makeNoop("OpenAutomationDeliverable");
@@ -591,9 +591,6 @@ export const CancelActivityReminder = makeNoop("CancelActivityReminder");
 export const CorrectActivity = makeNoop("CorrectActivity");
 export const GetActivityReminderChoices = makeNoop("GetActivityReminderChoices");
 export const GetDayNoticed = makeNoop("GetDayNoticed");
-export const DismissNoticed = makeNoop("DismissNoticed");
-export const UndoDismissNoticed = makeNoop("UndoDismissNoticed");
-export const SaveNoticedRoutine = makeNoop("SaveNoticedRoutine");
 export const DeleteHandoff = makeNoop("DeleteHandoff");
 export const DeletePersonResearch = makeNoop("DeletePersonResearch");
 export const DeletePrincipal = makeNoop("DeletePrincipal");
@@ -662,7 +659,10 @@ export const GetLarkAccountStatus = makeNoop("GetLarkAccountStatus");
 export const GetLarkCliStatus = makeNoop("GetLarkCliStatus");
 export const GetLatestBrief = makeNoop("GetLatestBrief");
 export const GetTodayBriefByID = makeNoop("GetTodayBriefByID");
+export const GetFindingProvider = makeNoop("GetFindingProvider");
+export const SetFindingProvider = makeNoop("SetFindingProvider");
 export const GetYourDataSummary = makeNoop("GetYourDataSummary");
+export const GetAssistantGiven = makeNoop("GetAssistantGiven");
 export const ListPastBriefs = makeNoop("ListPastBriefs");
 export const FindAnything = makeNoop("FindAnything");
 export const NoteFindSearch = makeNoop("NoteFindSearch");
@@ -672,7 +672,6 @@ export const ForgetFound = makeNoop("ForgetFound");
 export const GetWorkList = makeNoop("GetWorkList");
 export const AnswerWork = makeNoop("AnswerWork");
 export const UndoWork = makeNoop("UndoWork");
-export const GetYourWeekForDate = makeNoop("GetYourWeekForDate");
 export const GetMailOverview = makeNoop("GetMailOverview");
 export const GetMainChat = makeNoop("GetMainChat");
 export const GetMainChatSetup = makeNoop("GetMainChatSetup");
@@ -1055,6 +1054,16 @@ export const GetAssistantHistory = makeNoop("GetAssistantHistory");
 export const RefreshAssistantHistory = makeNoop("RefreshAssistantHistory");
 export const GetReadAssistantHistory = makeNoop("GetReadAssistantHistory");
 export const SetReadAssistantHistory = makeNoop("SetReadAssistantHistory");
+export const GetWatchSettings = makeNoop("GetWatchSettings");
+export const SetWatchNotes = makeNoop("SetWatchNotes");
+export const SetWatchHeartRate = makeNoop("SetWatchHeartRate");
+export const SetWatchPlace = makeNoop("SetWatchPlace");
+export const SetWatchListeningOff = makeNoop("SetWatchListeningOff");
+export const GetWatchPhoneQuiet = makeNoop("GetWatchPhoneQuiet");
+export const GetWatchListening = makeNoop("GetWatchListening");
+export const TurnOffWatchListening = makeNoop("TurnOffWatchListening");
+export const GetActivityVision = makeNoop("GetActivityVision");
+export const SetActivityVisionEnabled = makeNoop("SetActivityVisionEnabled");
 export const GetCalendarFirstDay = makeNoop("GetCalendarFirstDay");
 export const GetWatchedToday = makeNoop("GetWatchedToday");
 export const PrepareTaskSuggestion = makeNoop("PrepareTaskSuggestion");
@@ -1135,14 +1144,21 @@ export const SetPeopleLeftOut = makeNoop("SetPeopleLeftOut");
 export const ForgetMessages = makeNoop("ForgetMessages");
 export const GetFrontStatus = makeNoop("GetFrontStatus");
 export const SetFrontEnabled = makeNoop("SetFrontEnabled");
-export const GetWorkOnItEnabled = makeNoop("GetWorkOnItEnabled");
+// The hand-off card and its sheet run in the panel (quick_chat_handoff.go).
+export const GetWorkOnItEnabled = () => workOnIt<boolean>("enabled");
 export const SetWorkOnItEnabled = makeNoop("SetWorkOnItEnabled");
-export const PrepareWorkOnIt = makeNoop("PrepareWorkOnIt");
-export const SendWorkOnIt = makeNoop("SendWorkOnIt");
-export const SetWorkOnItHandle = makeNoop("SetWorkOnItHandle");
-export const GetYourAgents = makeNoop("GetYourAgents");
-export const GetWorkOnItAgents = makeNoop("GetWorkOnItAgents");
-export const AnswerChatHandoffCard = makeNoop("AnswerChatHandoffCard");
+// The hand-off card and its sheet run in the panel (quick_chat_handoff.go).
+export const PrepareWorkOnIt = (input: unknown) => workOnIt("prepare", { input });
+// The hand-off card and its sheet run in the panel (quick_chat_handoff.go).
+export const SendWorkOnIt = (taskId: string, agentId: string, method: string) => workOnIt("send", { taskId, agentId, method });
+// The hand-off card and its sheet run in the panel (quick_chat_handoff.go).
+export const SetWorkOnItHandle = (agentId: string, handle: string) => workOnIt<void>("handle", { agentId, handle });
+// The hand-off card and its sheet run in the panel (quick_chat_handoff.go).
+export const GetYourAgents = () => workOnIt("your_agents");
+// The hand-off card and its sheet run in the panel (quick_chat_handoff.go).
+export const GetWorkOnItAgents = () => workOnIt("agents");
+// The hand-off card and its sheet run in the panel (quick_chat_handoff.go).
+export const AnswerChatHandoffCard = (itemId: string, answer: string) => workOnIt<string>("answer_card", { itemId, answer });
 export const UndoChatCorrection = makeNoop("UndoChatCorrection");
 export const SetYourAgent = makeNoop("SetYourAgent");
 export const ConnectAgentHere = makeNoop("ConnectAgentHere");
@@ -1167,6 +1183,8 @@ export const DeleteWatchRecording = makeNoop("DeleteWatchRecording");
 export const CorrectActivityPerson = makeNoop("CorrectActivityPerson");
 export const CorrectBriefPerson = makeNoop("CorrectBriefPerson");
 export const GetWatchConversations = makeNoop("GetWatchConversations");
+export const GetWatchConversationForgetPreview = makeNoop("GetWatchConversationForgetPreview");
+export const ForgetWatchConversation = makeNoop("ForgetWatchConversation");
 export const GetWatchLane = makeNoop("GetWatchLane");
 export const GetActivityFeed = makeNoop("GetActivityFeed");
 export const GetActivityForgetPreview = makeNoop("GetActivityForgetPreview");
@@ -1182,3 +1200,18 @@ export const RequestSetupPermissions = makeNoop("RequestSetupPermissions");
 export const GetSetupVersion = makeNoop("GetSetupVersion");
 export const BuildSetupClaims = makeNoop("BuildSetupClaims");
 export const ReviseSetupClaim = makeNoop("ReviseSetupClaim");
+export const GetLearnFromIt = makeNoop("GetLearnFromIt");
+export const SetLearnFromIt = makeNoop("SetLearnFromIt");
+export const OpenAgentApp = makeNoop("OpenAgentApp");
+export const GetUsefulHandoffs = makeNoop("GetUsefulHandoffs");
+export const SendAgentRequestAgain = makeNoop("SendAgentRequestAgain");
+
+export const GetActivityRowDetails = makeNoop("GetActivityRowDetails");
+export const OpenActivityRow = makeNoop("OpenActivityRow");
+export const NotThisTopic = makeNoop("NotThisTopic");
+
+export const GetWhy = makeNoop("GetWhy");
+export const NotMineMemoryEntry = makeNoop("NotMineMemoryEntry");
+export const NotThis = makeNoop("NotThis");
+
+export const GetActivityWatchRows = makeNoop("GetActivityWatchRows");

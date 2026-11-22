@@ -23,6 +23,15 @@ struct RootView: View {
     /// The keyboard is on screen. Only the Chat tab reads it: at accessibility sizes the bar steps aside there (P162).
     @State private var keyboardShown = false
 
+    /// "890x626" or "852x393" from the UI tests; anything else is no test size.
+    static func duoUITestSize(_ text: String?) -> CGSize? {
+        switch text {
+        case "890x626": return CGSize(width: 890, height: 626)
+        case "852x393": return CGSize(width: 852, height: 393)
+        default: return nil
+        }
+    }
+
     static func tabTitle(_ tab: NotificationRouter.Tab, locale: Locale) -> String {
         let copy = ChatPresentationLanguage(locale: locale)
         switch tab {
@@ -184,9 +193,12 @@ struct RootView: View {
 
     private var tabs: some View {
         GeometryReader { geometry in
-            let hasDuoUITestSize = ProcessInfo.processInfo.environment["YANSU_UITEST_DUO_SIZE"] == "890x626"
-            let layoutWidth = hasDuoUITestSize ? 890 : geometry.size.width
-            let layoutHeight = hasDuoUITestSize ? 626 : geometry.size.height
+            // UI tests lay the wide phone out in a window of a given size: "890x626" is the open
+            // Duo, "852x393" an iPhone on its side, where both panes and the rail are on screen.
+            let duoUITestSize = Self.duoUITestSize(ProcessInfo.processInfo.environment["YANSU_UITEST_DUO_SIZE"])
+            let hasDuoUITestSize = duoUITestSize != nil
+            let layoutWidth = duoUITestSize?.width ?? geometry.size.width
+            let layoutHeight = duoUITestSize?.height ?? geometry.size.height
             let metrics = DuoLayout.metrics(
                 width: layoutWidth,
                 height: layoutHeight,
@@ -199,6 +211,9 @@ struct RootView: View {
                             .environmentObject(environment.chat)
                             .frame(width: layoutWidth, height: layoutHeight)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                            // An iPhone on its side is as wide as the test window only edge to
+                            // edge, so the window starts at the screen's edge there.
+                            .ignoresSafeArea(.container, edges: layoutHeight < 500 ? .horizontal : [])
                     } else {
                         DuoWideRootView(navigation: duoNavigation, metrics: metrics)
                             .environmentObject(environment.chat)
@@ -232,8 +247,8 @@ struct RootView: View {
                 .tag(NotificationRouter.Tab.today)
                 .toolbar(.hidden, for: .tabBar)
 
-                // Watch is a tab only while this phone has an Apple Watch paired.
-                if watchRecordings.connection.hasWatch {
+                // Watch is a tab while this phone has a watch paired, or had one and the system has not said yet.
+                if watchRecordings.showsWatchTab {
                     NavigationStack {
                         WatchTabView(recordings: watchRecordings)
                             .navigationBarTitleDisplayMode(.large)
@@ -278,7 +293,7 @@ struct RootView: View {
             }
         .toolbar(.hidden, for: .tabBar)
         // The watch was unpaired while its tab was open: the tab is gone, so Today shows.
-        .onChange(of: watchRecordings.connection.hasWatch) { _, hasWatch in
+        .onChange(of: watchRecordings.showsWatchTab) { _, hasWatch in
             if !hasWatch, router.selectedTab == .watch { router.selectedTab = .today }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {

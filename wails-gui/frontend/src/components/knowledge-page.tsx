@@ -50,6 +50,7 @@ import { PlaybookCards, type PlaybookRunState } from '@/components/playbooks/Pla
 import { PlaybookPageActions } from '@/components/playbooks/PlaybookPageActions';
 import { listConfirmedPlaybooks } from '@/components/playbooks/playbook-lists';
 import { usePlaybookLibrary } from '@/components/playbooks/usePlaybookLibrary';
+import { useFeatureSwitches } from '@/hooks/useFeatureSwitches';
 import { GenerateSOPFromDescription, RefreshDerivedView, RunPlaybookNow, type SopEntry, type SopRunResult } from '@/lib/wails-shim-app';
 import {
     KNOW_HOW_KINDS,
@@ -188,6 +189,7 @@ export function KnowledgePage({
     // Confirmed playbooks ("Isoform can do these for you") and the one open in
     // the main column. Drafts never reach this page.
     const library = usePlaybookLibrary();
+    const features = useFeatureSwitches();
     const [selectedPlaybookId, setSelectedPlaybookId] = useState<string | null>(null);
     const [handledPlaybookSignal, setHandledPlaybookSignal] = useState(0);
     const [handledBackSignal, setHandledBackSignal] = useState(backSignal);
@@ -1076,7 +1078,7 @@ export function KnowledgePage({
                 <div className="flex flex-col gap-[26px] px-10 pt-9 pb-14">
                     <div className="flex flex-wrap items-start justify-between gap-4">
                         <KnowHowHeader cards={ready ? ideaHeads : null} />
-                        <PlaybookPageActions authorStatus={library.authorStatus} onOpenPlaybook={setSelectedPlaybookId} />
+                        {features.playbooks && <PlaybookPageActions authorStatus={library.authorStatus} onOpenPlaybook={setSelectedPlaybookId} />}
                     </div>
                     {/* A failed read keeps what is on screen; only a first read that fails says so (W21). */}
                     {library.loadFailed && selectedPlaybookId && (

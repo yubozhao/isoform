@@ -53,7 +53,6 @@ import { toast } from "sonner";
 import { notifyToast } from "@/lib/notify";
 import { LongToastTestButton } from "@/components/notification-test-toast";
 import { isWailsEnvironment } from "@/lib/browser-bridge";
-import type { useKeybindings } from "@/hooks/useKeybindings";
 import { getFileManagerName } from "@/lib/platform";
 import { PurposeMapDebugSettings } from "@/components/purpose-map-debug-settings";
 import { SettingsCard, SettingsRow } from "@/components/settings/settings-primitives";
@@ -85,22 +84,17 @@ import {
     type SettingsOpenOptions,
     type SettingsTopic,
 } from "@/components/settings/settings-registry";
-import { OverviewPage } from "@/components/settings/pages/overview-page";
-import { ProfilePage } from "@/components/settings/pages/profile-page";
-import { GeneralPage, AppearanceSettings } from "@/components/settings/pages/general-page";
 import { NotificationsPage } from "@/components/settings/pages/notifications-page";
 import { AssistantPage } from "@/components/settings/pages/assistant-page";
 import { ObservationPage } from "@/components/settings/pages/observation-page";
 import { ClosedEyesPage } from "@/components/settings/pages/closed-eyes-page";
 import { YourDataPage } from "@/components/settings/pages/your-data-page";
-import { LearningMemoryPage } from "@/components/settings/pages/learning-memory-page";
-import { PrivacyPage } from "@/components/settings/pages/privacy-page";
-import { StoragePage } from "@/components/settings/pages/storage-page";
+import { MemoryDebugPage } from "@/components/settings/pages/memory-debug-page";
 import { IPhonePage } from "@/components/settings/pages/iphone-page";
+import { YourWatchPage } from "@/components/settings/pages/your-watch-page";
 import { AgentOfYouPage } from "@/components/settings/pages/agent-of-you/agent-of-you-page";
 import { useAoyHeader } from "@/components/settings/pages/agent-of-you/aoy-shared";
 import { PluginsPage } from "@/components/settings/pages/plugins-page";
-import { SkillsPage } from "@/components/settings/pages/skills-page";
 import { ToolServersPage } from "@/components/settings/pages/tool-servers-page";
 import { ChatAppsPage } from "@/components/settings/pages/chat-apps-page";
 import { OtherAIAppsPage } from "@/components/settings/pages/other-ai-apps-page";
@@ -123,10 +117,8 @@ const isSuccessStatus = (s?: string): boolean =>
 interface SettingsPageProps {
     onClose: () => void;
     onReplayOnboarding: () => void;
-    vimMode: boolean;
-    onVimModeChange: (enabled: boolean) => void;
     /** Page to open on, from a deep link. Without one, Settings opens on
-     *  Overview. Legacy ids are resolved through the registry
+     *  What Isoform sees. Legacy ids are resolved through the registry
      *  (resolveSettingsTopic). */
     initialTopic?: SettingsTopic;
     /** How that deep link opens the page: with Advanced expanded, or
@@ -134,16 +126,13 @@ interface SettingsPageProps {
      *  openSettings() call, so asking again for the page already open (after
      *  the person moved away or collapsed Advanced) still navigates. */
     initialOptions?: SettingsOpenOptions;
-    keybindings: ReturnType<typeof useKeybindings>;
     /** Developer tools on/off (useDevToolsUnlock): on by default in staging
      *  and dev builds, and Cmd/Ctrl+Shift+Option+D turns them on or off in
      *  any build. Shows the Developer tools group below About. */
     devToolsUnlocked?: boolean;
-    /** Learning and memory > See what Isoform knows. Each closes Settings and
-     *  opens the Memory page, the Who you know page, or Who you know on your own card. */
-    onOpenMemory: () => void;
+    /** What Isoform sees › Messages' Contacts row: closes Settings and opens
+     *  Who you know. */
     onOpenPeople: () => void;
-    onOpenProfile: () => void;
     /** False while the dialog is closed (the content is retained after the
      *  first open): window-level listeners pause until it shows again. */
     active?: boolean;
@@ -198,15 +187,10 @@ function initialDestination(
 export function SettingsPage({
     onClose,
     onReplayOnboarding,
-    vimMode,
-    onVimModeChange,
     initialTopic,
     initialOptions,
-    keybindings,
     devToolsUnlocked = false,
-    onOpenMemory,
     onOpenPeople,
-    onOpenProfile,
     onJumpToActivity,
     active = true,
 }: SettingsPageProps) {
@@ -216,7 +200,7 @@ export function SettingsPage({
     );
     const showDevTools = devToolsUnlocked;
     // A Developer tools page (remembered from earlier, or a deep link) falls
-    // back to Overview while Developer tools are off.
+    // back to What Isoform sees while Developer tools are off.
     const activePage: SettingsDestination =
         !showDevTools && isDevToolsTopicId(destination.page) ? DEFAULT_SETTINGS_PAGE : destination.page;
 
@@ -294,56 +278,30 @@ export function SettingsPage({
 
     const renderPage = () => {
         switch (activePage) {
-            case "overview":
-                return <OverviewPage onOpenPage={selectPage} active={active} />;
-            case "profile":
-                return <ProfilePage />;
-            case "general":
-                return (
-                    <GeneralPage
-                        keybindings={keybindings}
-                        vimMode={vimMode}
-                        onVimModeChange={onVimModeChange}
-                    />
-                );
             case "notifications":
                 return <NotificationsPage onOpenPage={selectPage} />;
             case "ai-provider":
                 return <AssistantPage />;
             case "activity":
-                return <ObservationPage onOpenPage={selectPage} />;
+                return <ObservationPage onOpenPage={selectPage} anchor={destination.anchor} anchorKey={destination} onOpenPeople={onOpenPeople} />;
             case "closed-eyes":
                 return <ClosedEyesPage />;
             case "your-data":
                 return <YourDataPage onOpenPage={selectPage} />;
-            case "memory":
-                return (
-                    <LearningMemoryPage
-                        onOpenMemory={onOpenMemory}
-                        onOpenPeople={onOpenPeople}
-                        onOpenProfile={onOpenProfile}
-                    />
-                );
-            case "security":
-                return <PrivacyPage onOpenPage={selectPage} onOpenPeople={onOpenPeople} />;
-            case "storage":
-                return <StoragePage />;
             case "iphone":
-                return <IPhonePage onOpenPage={selectPage} />;
+                return <IPhonePage />;
+            case "your-watch":
+                return <YourWatchPage />;
             case "your-agent":
                 return <AgentOfYouPage />;
             case "plugins":
                 return <PluginsPage />;
-            case "skills":
-                return <SkillsPage />;
             case "mcp":
                 return <ToolServersPage />;
             case "chat-apps":
                 return <ChatAppsPage selectedApp={destination.chatApp} onSelectApp={selectChatApp} />;
             case "use-yansu-anywhere":
                 return <OtherAIAppsPage />;
-            case "appearance":
-                return <AppearanceSettings readingWidth />;
             case "about":
                 return <HelpAboutPage onReplayOnboarding={onReplayOnboarding} />;
             // ── Developer tools ──
@@ -351,6 +309,8 @@ export function SettingsPage({
                 return <TriageLogSettings />;
             case "activity-pipeline":
                 return <ActivityPipelineSettings onJumpToActivity={onJumpToActivity} />;
+            case "memory-debug":
+                return <MemoryDebugPage />;
             case "purpose-map":
                 return <PurposeMapDebugSettings />;
             case "perf-analysis":

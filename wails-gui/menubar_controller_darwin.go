@@ -178,12 +178,12 @@ func (a *App) preloadMenuBarView(ctx context.Context) {
 }
 
 // menuBarPreloadView is the page a click shows before Go's first read: our
-// popover in its "Starting…" state with the saved theme, the short menu and
+// popover with only what Isoform knows (the watch's part, design S8) with the saved theme, the short menu and
 // placeholders, and no personal content.
 func menuBarPreloadView(lang string) menuBarView {
 	w := menuBarWords(lang)
-	return menuBarView{Language: lang, Theme: currentThemePreference(), Words: w, Status: "starting", State: w["starting"], Items: []menuBarWaitingItem{},
-		Menu: menuBarMenu(lang, false), Icon: menuBarIconState{Opacity: 1}, Label: menuBarLabel(w, w["starting"], 0), Loading: true}
+	return menuBarView{Language: lang, Theme: currentThemePreference(), Words: w, Status: "starting", State: menuBarStateLine(w, ""),
+		Menu: menuBarMenu(lang, false), Icon: menuBarIconState{Opacity: 1}, Label: menuBarLabel(w, menuBarStateLine(w, ""), 0), Loading: true}
 }
 
 // preloadMenuBarPopover loads the popover page once the status item exists,
@@ -282,10 +282,6 @@ func (a *App) runMenuBarCommand(command string) error {
 	case "sees":
 		a.showFromMenuBar()
 		a.emitBrowserEvent("menubar:sees")
-	case "turnOn":
-		// Observing is off: Settings at the section that holds Observing.
-		a.showFromMenuBar()
-		a.emitBrowserEvent("settings:open", "activity")
 	case "restart":
 		return a.RestartToUpdate()
 	case "signIn:claude-code", "signIn:codex":
@@ -319,15 +315,15 @@ func (a *App) runMenuBarCommand(command string) error {
 		}
 		a.showFromMenuBar()
 		a.emitBrowserEvent("menubar:make-brief", status, result.NextAllowedAt)
-	case "pause60":
+	case "closedEyes15", "closedEyes60":
+		// The right-click menu's lengths (design S2): eyes close for 15
+		// minutes or an hour, on every device, then open on their own.
 		menuBarToggleActivityMu.Lock()
 		defer menuBarToggleActivityMu.Unlock()
-		if a.IsClosedEyesModeEnabled() {
-			return a.ResumeObservation()
+		if command == "closedEyes15" {
+			return a.PauseObservationFor(15)
 		}
 		return a.PauseObservationFor(60)
-	case "pause15":
-		return a.PauseObservationFor(15)
 	case "closedEyes":
 		// The popover's first control (redesign v1.0.0 rule 27): eyes close
 		// until the person opens them, on every device.
@@ -386,7 +382,9 @@ func (a *App) runMenuBarCommand(command string) error {
 			a.emitBrowserEvent("menubar:open-today", strings.TrimPrefix(command, "today:"))
 			return nil
 		}
-		if strings.HasPrefix(command, "waiting:"+menuBarNeedNoChat) {
+		// The popover no longer lists Needs you; menubar:needs stays until
+		// the Agents owner repoints it to Today.
+		if strings.HasPrefix(command, "waiting:need:") {
 			a.showFromMenuBar()
 			a.emitBrowserEvent("menubar:needs")
 			return nil

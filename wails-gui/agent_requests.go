@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"wails-gui/internal/workonit"
 )
 
 // Your agents asking each other (phone-agent v1.2.0 rules 1 and 2,
@@ -21,7 +23,10 @@ import (
 // read their answers through the functions below.
 
 const (
-	agentRequestsFile = "requests.json"
+	agentRequestUnconfirmed = "delivery unconfirmed"
+	agentRequestUnavailable = "target unavailable"
+	agentRequestSource      = "agent_request"
+	agentRequestsFile       = "requests.json"
 	// agentRequestWait is how long a request waits for the person.
 	agentRequestWait = 24 * time.Hour
 	// agentRequestKeep is how long a request is kept after it ends.
@@ -35,10 +40,14 @@ const (
 
 // AgentRequest is one agent's request to another, waiting on the person.
 type AgentRequest struct {
-	ID        string `json:"id"`
-	From      string `json:"from"`
-	To        string `json:"to"`
-	HandoffID string `json:"handoffId,omitempty"`
+	ID              string `json:"id"`
+	From            string `json:"from"`
+	To              string `json:"to"`
+	HandoffID       string `json:"handoffId,omitempty"`
+	TargetHandoffID string `json:"targetHandoffId,omitempty"`
+	TargetTaskID    string `json:"targetTaskId,omitempty"`
+	SendError       string `json:"sendError,omitempty"`
+	SendReason      string `json:"sendReason,omitempty"`
 	// Sentence is what is asked, in the asking agent's words; Moves is what
 	// a Yes would move.
 	Sentence   string `json:"sentence"`
@@ -50,9 +59,11 @@ type AgentRequest struct {
 }
 
 var (
-	agentRequestsMu      sync.Mutex
-	errAgentRequestInput = errors.New("a request needs two agents and a sentence")
-	errAgentRequestOver  = errors.New("this request was answered or ran out")
+	agentRequestsMu          sync.Mutex
+	agentRequestSending      sync.Map // reserved hand-off IDs currently being delivered
+	errAgentRequestNotFailed = errors.New("this request has no failed delivery to send again")
+	errAgentRequestInput     = errors.New("a request needs two agents and a sentence")
+	errAgentRequestOver      = errors.New("this request was answered or ran out")
 )
 
 func agentRequestsPath() (string, error) {
@@ -168,8 +179,7 @@ func (a *App) agentRequestAnswer(id string) (string, time.Time) {
 	return r.Answer, time.UnixMilli(r.AnsweredAt)
 }
 
-// answerAgentRequest records the person's Yes or No.
-func (a *App) answerAgentRequest(id, answer string, now time.Time) error {
+func updateAgentRequest(id string, now time.Time, change func(*AgentRequest) error) error {
 	agentRequestsMu.Lock()
 	defer agentRequestsMu.Unlock()
 	list, err := readAgentRequestsLocked()
@@ -180,19 +190,136 @@ func (a *App) answerAgentRequest(id, answer string, now time.Time) error {
 		if list[i].ID != id {
 			continue
 		}
-		if list[i].Answer != "" || list[i].ExpiresAt <= now.UnixMilli() {
-			return errAgentRequestOver
+		if err := change(&list[i]); err != nil {
+			return err
 		}
-		list[i].Answer, list[i].AnsweredAt = answer, now.UnixMilli()
 		return writeAgentRequestsLocked(list, now)
 	}
 	return errWorkItemGone
 }
 
+// Reserve the delivery id with the Yes before sending. A retry cannot start
+// a second task, and an interrupted delivery cannot claim the target has it.
+func (a *App) answerAgentRequest(id, answer, surface string, now time.Time) error {
+	if answer == agentRequestYes {
+		return a.sendAgentRequest(id, surface, now, false)
+	}
+	return updateAgentRequest(id, now, func(r *AgentRequest) error {
+		if r.Answer != "" || r.ExpiresAt <= now.UnixMilli() {
+			return errAgentRequestOver
+		}
+		r.Answer, r.AnsweredAt = answer, now.UnixMilli()
+		return nil
+	})
+}
+
+// SendAgentRequestAgain retries the original approved payload from Your work.
+func (a *App) SendAgentRequestAgain(requestID string) error {
+	return a.sendAgentRequest(strings.TrimPrefix(requestID, "request:"), workSurfaceComputer, time.Now(), true)
+}
+
+func (a *App) sendAgentRequest(id, surface string, now time.Time, again bool) error {
+	var request AgentRequest
+	handoffID := workOnItID()
+	err := updateAgentRequest(id, now, func(r *AgentRequest) error {
+		if again {
+			if r.ExpiresAt <= now.UnixMilli() || !a.agentRequestSendFailed(*r) {
+				return errAgentRequestNotFailed
+			}
+		} else {
+			if r.Answer != "" || r.ExpiresAt <= now.UnixMilli() {
+				return errAgentRequestOver
+			}
+			r.Answer, r.AnsweredAt = agentRequestYes, now.UnixMilli()
+		}
+		r.TargetHandoffID, r.SendError, r.SendReason = handoffID, agentRequestUnconfirmed, ""
+		if agentHereBackend(r.To) != "" {
+			r.TargetTaskID = "hf_" + handoffID
+		}
+		agentRequestSending.Store(handoffID, true)
+		request = *r
+		return nil
+	})
+	defer agentRequestSending.Delete(handoffID)
+	if err != nil {
+		return err
+	}
+	task := workonit.Task{ID: request.TargetHandoffID, SourceKind: agentRequestSource, SourceID: id, Kind: workonit.KindElse, Title: request.Sentence, Text: request.Moves, PreparedAt: now}
+	if agentHereBackend(request.To) != "" {
+		task.Kind = workonit.KindCode
+	}
+	taskID, sendErr := a.deliverConnectedTask(task, request.To, request.TargetHandoffID, surface)
+	reason := agentRequestSendReason(request.To, sendErr)
+	err = updateAgentRequest(id, now, func(r *AgentRequest) error {
+		if sendErr != nil {
+			r.SendError, r.SendReason = agentRequestUnavailable, reason
+			r.TargetHandoffID, r.TargetTaskID = "", ""
+		} else {
+			r.TargetTaskID = taskID
+			r.SendError = ""
+		}
+		return nil
+	})
+	if again {
+		a.touchDerivedViews(derivedWorkList)
+		if err == nil {
+			return sendErr
+		}
+	}
+	return err
+}
+
+func agentRequestSendReason(target string, err error) string {
+	switch true {
+	case errors.Is(err, errAgentHereSignedOut):
+		return "signed_out"
+	case errors.Is(err, errWorkOnItClosedEyes), errors.Is(err, errTaskLinksClosedEyes):
+		return "closed_eyes"
+	case errors.Is(err, errAgentNotConnected), errors.Is(err, errWorkOnItNoMethod):
+		return "disconnected"
+	case errors.Is(err, errAgentHereNotStarted):
+		if signedIn, probeErr := agentHereSignedIn(agentHereBackend(target)); probeErr == nil && !signedIn {
+			return "signed_out"
+		}
+		return "not_running"
+	default:
+		return ""
+	}
+}
+
+// A reservation can survive a restart on either side of delivery. Check the
+// pinned task, scoped result or inbox receipt before offering another send.
+func (a *App) agentRequestSendFailed(r AgentRequest) bool {
+	if r.Answer != agentRequestYes {
+		return false
+	}
+	switch r.SendError {
+	case agentRequestUnavailable:
+		return true
+	case agentRequestUnconfirmed:
+		if _, sending := agentRequestSending.Load(r.TargetHandoffID); sending {
+			return false
+		}
+		if r.TargetTaskID != "" {
+			if a.handoffStore == nil {
+				return false
+			}
+			_, err := a.handoffStore.Get(r.TargetTaskID)
+			return os.IsNotExist(err)
+		}
+		if _, found, err := a.agentRequestResult(r); found || err != nil {
+			return false
+		}
+		item, ok := a.agentInboxService().Find(r.TargetHandoffID)
+		return !ok || item.AgentID != r.To || item.SourceID != r.ID
+	default:
+		return false
+	}
+}
+
 func workRequestID(id string) string { return "request:" + id }
 
-// workRequestItems are the requests waiting on the person, and the ones that
-// ran out today (Done today: "… ran out · nothing moved").
+// workRequestItems keeps a failed Yes open until the request expires.
 func (a *App) workRequestItems(now time.Time) []WorkItem {
 	agentRequestsMu.Lock()
 	list, err := readAgentRequestsLocked()
@@ -203,11 +330,12 @@ func (a *App) workRequestItems(now time.Time) []WorkItem {
 	sort.SliceStable(list, func(i, j int) bool { return list[i].CreatedAt > list[j].CreatedAt })
 	items := []WorkItem{}
 	for _, r := range list {
-		ranOut := r.Answer == "" && r.ExpiresAt <= now.UnixMilli()
+		failed := a.agentRequestSendFailed(r)
+		ranOut := (r.Answer == "" || failed) && r.ExpiresAt <= now.UnixMilli()
 		if ranOut && now.Sub(time.UnixMilli(r.ExpiresAt)) > 24*time.Hour {
 			continue
 		}
-		if r.Answer != "" && now.Sub(time.UnixMilli(r.AnsweredAt)) > 24*time.Hour {
+		if !failed && r.Answer != "" && !now.Before(time.UnixMilli(r.AnsweredAt).Add(agentRequestWait)) {
 			continue
 		}
 		from, to := a.workAgentName(r.From), a.workAgentName(r.To)
@@ -222,10 +350,27 @@ func (a *App) workRequestItems(now time.Time) []WorkItem {
 			Request:   &WorkRequest{From: WorkAgentRef{AgentID: r.From, Name: from}, To: WorkAgentRef{AgentID: r.To, Name: to}, Moves: r.Moves},
 			ExpiresAt: mobileTimestamp(time.UnixMilli(r.ExpiresAt)), CreatedAt: mobileTimestamp(time.UnixMilli(r.CreatedAt)),
 		}
+		action := r.Answer
 		if ranOut {
+			action = agentRequestRanOut
+		}
+		switch action {
+		case agentRequestRanOut:
 			item.State = workStateAnswered
 			item.Answer = &WorkAnswer{Action: agentRequestRanOut, At: item.ExpiresAt,
 				Line: from + "'s request to " + to + " ran out · nothing moved"}
+		case agentRequestYes, agentRequestNo:
+			item.Answer = &WorkAnswer{Action: r.Answer, At: mobileTimestamp(time.UnixMilli(r.AnsweredAt))}
+			if failed {
+				item.Request.SendError, item.Request.SendReason = agentRequestUnavailable, r.SendReason
+			} else {
+				item.State = workStateAnswered
+				verb := "allowed"
+				if r.Answer == agentRequestNo {
+					verb = "declined"
+				}
+				item.Answer.Line = from + "'s request to " + to + ": " + verb
+			}
 		}
 		items = append(items, item)
 	}

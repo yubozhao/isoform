@@ -137,6 +137,7 @@ func (w *frontCTWatch) ownKeys() (map[string]bool, error) {
 	return known, nil
 }
 
+//isoform:destination metadata
 func (w *frontCTWatch) lookup(ctx context.Context) ([]frontCTIssuance, error) {
 	api := w.api
 	if api == "" {

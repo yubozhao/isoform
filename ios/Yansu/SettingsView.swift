@@ -18,7 +18,6 @@ struct SettingsView: View {
     @State private var confirmUnpair = false
     @State private var confirmForgetPairing = false
     @State private var confirmDeleteCache = false
-    @State private var showsSees = false
     @State private var unpairFailed = false
     @State private var removePairingFailed = false
     @State private var noticeDetailsMissing = false
@@ -49,7 +48,7 @@ struct SettingsView: View {
                                          voicePage: status?.ownerVoice == true && Self.allowsOwnerVoice(pairing.paired?.scopes ?? [])
                                             ? AnyView(OwnerVoiceView(hub: app.hub, session: { [vault = app.vault] in try vault.session() }))
                                             : nil,
-                                         openSees: { showsSees = true })
+                                         seesHub: app.seesHub)
                         } label: {
                             settingsRow(String(localized: "set.data"), sub: String(localized: "set.dataSub"))
                         }
@@ -78,7 +77,7 @@ struct SettingsView: View {
                     }
                     // Apple Watch opens the Watch tab (phone-settings v1.0.0 rule 7). Shown only while a watch is
                     // paired; with none, nothing about a watch shows.
-                    if watchRecordings.connection.hasWatch {
+                    if watchRecordings.showsWatchTab {
                         rowDivider
                         Button {
                             app.router.selectedTab = .watch
@@ -152,9 +151,6 @@ struct SettingsView: View {
             Task { await loadStatus() }
         }
         .onChange(of: faceIDToOpen) { _, _ in app.refreshWidget() }
-        .sheet(isPresented: $showsSees) {
-            IsoformSeesSheet(hub: app.seesHub)
-        }
         .sheet(isPresented: $showPairing, onDismiss: { pairing.cancel() }) {
             PairingView()
         }

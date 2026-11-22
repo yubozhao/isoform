@@ -14,6 +14,7 @@ const expectedLabels = [
     "App reading",
     "Learning decisions",
     "Priorities",
+    "Memory and search",
     "Browser preview",
     "Notification checks",
     "App health",
@@ -32,6 +33,7 @@ const expectedChineseLabels = [
     "应用读取",
     "学习决策",
     "优先事项",
+    "记忆与搜索",
     "浏览器预览",
     "通知检查",
     "应用运行状态",
@@ -52,7 +54,7 @@ describe("Developer tools content", () => {
             "testing",
             "health",
         ]);
-        expect(DEV_TOOLS_TOPIC_IDS).toHaveLength(8);
+        expect(DEV_TOOLS_TOPIC_IDS).toHaveLength(9);
         expect(new Set(DEV_TOOLS_TOPIC_IDS).size).toBe(DEV_TOOLS_TOPIC_IDS.length);
         expect(DEV_TOOLS_TOPIC_IDS as string[]).not.toContain("agency-runtime");
         expect(DEV_TOOLS_TOPIC_IDS as string[]).not.toContain("handoff-monitor");
@@ -159,11 +161,11 @@ describe("Developer tools content", () => {
             catalogColParser: "Reading method",
             unsupportedSectionTitle: "Tested but not readable",
         });
-        // Chat context left Developer tools: Show tool steps is on General
-        // and the preview on Learning and memory.
+        // Chat context left Developer tools: the preview is on Learning and
+        // memory, and Show tool steps went (answers v1.0.0 T2).
         expect(enSettings.topics).not.toHaveProperty("debug");
         expect(enSettings.debug).not.toHaveProperty("toolRawTitle");
-        expect(enSettings.general.toolSteps.title).toBe("Show tool steps in chat");
+        expect(enSettings.general).not.toHaveProperty("toolSteps");
         expect(enSettings.debug.memoryContext).toMatchObject({
             title: "Preview chat context",
             queryLabel: "Chat message",

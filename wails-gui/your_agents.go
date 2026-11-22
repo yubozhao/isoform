@@ -45,14 +45,17 @@ var (
 	errYourAgentBadKind  = errors.New("unknown kind of work")
 	errYourAgentWrongFor = errors.New("that agent is not for this kind of work")
 	errWorkOnItNoHandoff = errors.New("unknown hand-off")
+	// errYourAgentsUnread: a Your agents setting couldn't be read in time.
+	errYourAgentsUnread = errors.New("your agents could not be read; try again")
 )
 
 // YourAgentView is one agent in Your agents.
 type YourAgentView struct {
-	ID    string `json:"id"`
-	Name  string `json:"name"`
-	Kind  string `json:"kind"`
-	Reach string `json:"reach"`
+	LearnFromIt bool   `json:"learnFromIt"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Kind        string `json:"kind"`
+	Reach       string `json:"reach"`
 	// Found is true when the agent's app or command is on this computer.
 	Found     bool `json:"found"`
 	Connected bool `json:"connected"`
@@ -65,6 +68,12 @@ type YourAgentView struct {
 	// disconnected and while it isn't connected again: Connect again
 	// (PROTOCOL.md 27.4).
 	DisconnectedAt int64 `json:"disconnectedAt,omitempty"`
+	// ConnectedAt is when it was connected: here, the one click's time; a
+	// joined agent, when it joined (its card's "Connected {date}").
+	ConnectedAt int64 `json:"connectedAt,omitempty"`
+	// Opens is true when Open {agent} has somewhere to go: its app here,
+	// its site, or its sign-in in Terminal for a command-line agent.
+	Opens bool `json:"opens,omitempty"`
 }
 
 // YourAgents is the two choices and every agent Isoform knows how to reach.
@@ -75,9 +84,9 @@ type YourAgents struct {
 }
 
 // GetYourAgents is the setting and the list, for Settings, the Agents page
-// and the phone.
+// and the phone. A setting that can't be read is an error, never "unset".
 func (a *App) GetYourAgents() (YourAgents, error) {
-	return a.yourAgents(), nil
+	return a.readYourAgents()
 }
 
 // SetYourAgent picks the agent for one kind of work. An empty id clears it.
@@ -101,31 +110,76 @@ func (a *App) SetYourAgent(kind, agentID string) (YourAgents, error) {
 	if err := a.store.SetUIState(context.Background(), yourAgentKeyPre+kind, agentID); err != nil {
 		return YourAgents{}, err
 	}
-	return a.yourAgents(), nil
+	return a.readYourAgents()
 }
 
-// yourAgentChoice is the agent picked for a kind of work, or "".
-func (a *App) yourAgentChoice(kind string) string {
+// yourAgentChoice is the agent picked for a kind of work, or "". A read that
+// fails or runs out of time is an error: work must not route as if nothing
+// were picked.
+func (a *App) yourAgentChoice(kind string) (string, error) {
 	if a == nil || a.store == nil {
-		return ""
+		return "", nil
 	}
-	value, err := a.store.GetUIState(context.Background(), yourAgentKeyPre+kind)
+	value, err := a.yourAgentsUIState(yourAgentKeyPre + kind)
 	if err != nil {
-		return ""
+		return "", err
 	}
 	id := strings.TrimSpace(value)
 	if agent, ok := workonit.AgentByID(id); !ok || agent.Kind != kind {
-		return ""
+		return "", nil
 	}
-	return id
+	return id, nil
 }
 
+// yourAgentsReadWait bounds one read of Your agents' settings.
+const yourAgentsReadWait = 2 * time.Second
+
+// yourAgentsUIState reads one of Your agents' settings on the store's read
+// connection, never the single writer connection background jobs hold for
+// long stretches: Settings › Your agents read ten keys there with no deadline
+// and stayed empty while a job held it (2026-11-21). A read that can't finish
+// in time returns errYourAgentsUnread, never an empty value, so nothing
+// routes work as if an agent weren't picked or connected.
+func (a *App) yourAgentsUIState(key string) (string, error) {
+	if a.yourAgentsReadHook != nil {
+		return a.yourAgentsReadHook(key)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), yourAgentsReadWait)
+	defer cancel()
+	value, err := a.store.GetStreamPageUIState(ctx, key)
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", errYourAgentsUnread, err)
+	}
+	return value, nil
+}
+
+// yourAgents is readYourAgents for callers that only show it; an unread
+// setting shows as unset there.
 func (a *App) yourAgents() YourAgents {
+	out, _ := a.readYourAgents()
+	return out
+}
+
+// readYourAgents is the setting and the list, with the first setting that
+// couldn't be read.
+func (a *App) readYourAgents() (YourAgents, error) {
+	var firstErr error
+	keep := func(err error) {
+		if err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	choice := func(kind string) string {
+		id, err := a.yourAgentChoice(kind)
+		keep(err)
+		return id
+	}
 	s := a.workOnIt()
 	connected := a.yourAgentConnections()
+	joinedAt := a.yourAgentJoinedAt()
 	lastWorked := a.yourAgentLastWorked()
 	out := YourAgents{
-		Choices: map[string]string{workonit.KindCode: a.yourAgentChoice(workonit.KindCode), workonit.KindElse: a.yourAgentChoice(workonit.KindElse)},
+		Choices: map[string]string{workonit.KindCode: choice(workonit.KindCode), workonit.KindElse: choice(workonit.KindElse)},
 		Agents:  []YourAgentView{},
 	}
 	left := map[string]int64{}
@@ -138,15 +192,25 @@ func (a *App) yourAgents() YourAgents {
 			left[key] = d.DisconnectedAt
 		}
 	}
+	consent, consentErr := readLearnFromIt()
+	keep(consentErr)
 	for _, agent := range workonit.Catalog() {
 		found := s.agentFound(agent)
 		seen, isConnected := connected[agent.ID]
 		if seen > lastWorked[agent.ID] {
 			lastWorked[agent.ID] = seen
 		}
-		here := a.agentConnectedHere(agent.ID)
+		here, hereAt, err := a.agentConnectedHereAt(agent.ID)
+		keep(err)
 		isConnected = isConnected || here
-		view := YourAgentView{ID: agent.ID, Name: agent.Name, Kind: agent.Kind, Found: found, Connected: isConnected, ConnectedHere: here, LastWorkedAt: lastWorked[agent.ID]}
+		view := YourAgentView{ID: agent.ID, Name: agent.Name, Kind: agent.Kind, Found: found, Connected: isConnected, ConnectedHere: here, LastWorkedAt: lastWorked[agent.ID], Opens: agentOpenable(agent, found)}
+		view.LearnFromIt = historySources[agent.ID] != "" && consentErr == nil && consent.Choices[agent.ID].On
+		switch {
+		case here && hereAt > 0:
+			view.ConnectedAt = hereAt
+		case isConnected:
+			view.ConnectedAt = joinedAt[agent.ID]
+		}
 		if !isConnected {
 			view.DisconnectedAt = left[agent.ID]
 		}
@@ -170,7 +234,7 @@ func (a *App) yourAgents() YourAgents {
 	for _, c := range a.GetConnectedAgents() {
 		if c.CatalogID == "" {
 			names[c.Name] = true
-			out.Agents = append(out.Agents, YourAgentView{ID: c.ID, Name: c.Name, Kind: workonit.KindElse, Reach: agentReachConnected, Connected: true, LastWorkedAt: c.LastSeenAt})
+			out.Agents = append(out.Agents, YourAgentView{ID: c.ID, Name: c.Name, Kind: workonit.KindElse, Reach: agentReachConnected, Connected: true, LastWorkedAt: c.LastSeenAt, ConnectedAt: c.JoinedAt})
 		}
 	}
 	// An agent that joined under its own name and was disconnected lately
@@ -181,7 +245,7 @@ func (a *App) yourAgents() YourAgents {
 			out.Agents = append(out.Agents, YourAgentView{ID: d.ID, Name: d.Name, Kind: workonit.KindElse, Reach: agentReachDisconnected, DisconnectedAt: d.DisconnectedAt})
 		}
 	}
-	return out
+	return out, firstErr
 }
 
 // yourAgentConnections are the known agents joined to this Isoform
@@ -191,6 +255,17 @@ func (a *App) yourAgentConnections() map[string]int64 {
 	for _, c := range a.GetConnectedAgents() {
 		if c.CatalogID != "" && c.LastSeenAt >= out[c.CatalogID] {
 			out[c.CatalogID] = c.LastSeenAt
+		}
+	}
+	return out
+}
+
+// yourAgentJoinedAt is, per known agent, when its newest join was made.
+func (a *App) yourAgentJoinedAt() map[string]int64 {
+	out := map[string]int64{}
+	for _, c := range a.GetConnectedAgents() {
+		if c.CatalogID != "" && c.JoinedAt > out[c.CatalogID] {
+			out[c.CatalogID] = c.JoinedAt
 		}
 	}
 	return out

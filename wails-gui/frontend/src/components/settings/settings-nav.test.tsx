@@ -8,7 +8,7 @@ function renderNav(props: Partial<Parameters<typeof SettingsNav>[0]> = {}) {
     const onSelect = vi.fn();
     const result = render(
         <div className="settings-surface">
-            <SettingsNav activePage="general" onSelect={onSelect} showDevTools={false} {...props} />
+            <SettingsNav activePage="about" onSelect={onSelect} showDevTools={false} {...props} />
         </div>,
     );
     return { ...result, onSelect };
@@ -44,26 +44,26 @@ describe("SettingsNav", () => {
     it("groups pages under explained headings with Extensions collapsed", () => {
         renderNav();
 
-        for (const label of ["What Isoform sees", "Closed Eyes", "Your agents", "Your phone", "Briefs and notifications", "Overview", "General", "Learning and memory", "Privacy", "About"]) {
+        for (const label of ["What Isoform sees", "Closed Eyes", "Your agents", "Your phone", "Briefs and notifications", "About"]) {
             expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
         }
-        expect(screen.getByText("Personal AI")).toBeInTheDocument();
-        expect(
-            screen.getByText(
-                "How Isoform thinks, what it notices and remembers, how it uses your apps and what stays private.",
-            ),
-        ).toBeInTheDocument();
+        // Settings batch D3: Learning and memory, and its Personal AI heading, went.
+        expect(screen.queryByText("Personal AI")).not.toBeInTheDocument();
 
         const extensions = screen.getByRole("button", { name: /Extensions/ });
         expect(extensions).toHaveAttribute("aria-expanded", "false");
         expect(extensions).toHaveTextContent(
             "Optional add-ons that give Isoform more skills, tools and places to reach you.",
         );
-        expect(screen.queryByRole("button", { name: "Skills" })).not.toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "Other AI apps" })).not.toBeInTheDocument();
 
         fireEvent.click(extensions);
-        for (const label of ["Plugins", "Skills", "Tool servers", "Chat apps", "Other AI apps"]) {
+        for (const label of ["Plugins", "Tool servers", "Chat apps", "Other AI apps"]) {
             expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
+        }
+        // Settings batch D1 (answers v1.0.0 T2, settings v1.0.0 r10): these went.
+        for (const label of ["Overview", "General", "Profile", "Appearance", "Skills", "Privacy", "Storage", "Learning and memory"]) {
+            expect(screen.queryByRole("button", { name: label })).not.toBeInTheDocument();
         }
     });
 
@@ -74,9 +74,9 @@ describe("SettingsNav", () => {
     });
 
     it("marks the active row with data-active only", () => {
-        renderNav({ activePage: "memory" });
-        expect(screen.getByRole("button", { name: "Learning and memory" })).toHaveAttribute("data-active", "true");
-        expect(screen.getByRole("button", { name: "General" })).toHaveAttribute("data-active", "false");
+        renderNav({ activePage: "your-data" });
+        expect(screen.getByRole("button", { name: "Your data" })).toHaveAttribute("data-active", "true");
+        expect(screen.getByRole("button", { name: "About" })).toHaveAttribute("data-active", "false");
         // CLAUDE.md rule 12: no left-edge tree lines or accent bars.
         expect(componentSource).not.toMatch(/border-l\b|border-l-|w-0\.5|w-\[2px\]/);
     });
@@ -87,14 +87,14 @@ describe("SettingsNav", () => {
 
         fireEvent.change(search, { target: { value: "theme" } });
         expect(screen.queryByText("Personal AI")).not.toBeInTheDocument();
-        expect(screen.getByRole("button", { name: "General" })).toBeInTheDocument();
-        expect(screen.queryByRole("button", { name: "Privacy" })).not.toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "About" })).toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "Your data" })).not.toBeInTheDocument();
 
-        fireEvent.change(search, { target: { value: "mcp" } });
+        fireEvent.change(search, { target: { value: "release notes" } });
         fireEvent.keyDown(search, { key: "Enter" });
-        // "mcp" matched the page's description, not its name, so the page
-        // opens with Advanced expanded.
-        expect(onSelect).toHaveBeenCalledWith("mcp", { advanced: true });
+        // "release notes" matched the page's keywords, not its name, so the
+        // page opens with Advanced expanded.
+        expect(onSelect).toHaveBeenCalledWith("about", { advanced: true });
         expect(search).toHaveValue("");
     });
 

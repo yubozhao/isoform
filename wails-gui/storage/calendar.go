@@ -229,7 +229,7 @@ func (s *Store) ListCalendarEvents(ctx context.Context, from, to int64, includeD
 		query += ` AND deleted_at = 0`
 	}
 	query += ` ORDER BY start_at ASC, title ASC`
-	rows, err := s.db.QueryContext(ctx, query, to, from)
+	rows, err := s.committedReader().QueryContext(ctx, query, to, from)
 	if err != nil {
 		return nil, fmt.Errorf("list calendar events: %w", err)
 	}
@@ -250,7 +250,7 @@ func (s *Store) ListCalendarEvents(ctx context.Context, from, to int64, includeD
 
 // GetCalendarEvent loads one event with its attendees.
 func (s *Store) GetCalendarEvent(ctx context.Context, id string) (CalendarEventRow, bool, error) {
-	row, err := scanCalendarEvent(s.db.QueryRowContext(ctx, `SELECT `+calendarEventColumns+` FROM calendar_events WHERE id = ?`, id))
+	row, err := scanCalendarEvent(s.committedReader().QueryRowContext(ctx, `SELECT `+calendarEventColumns+` FROM calendar_events WHERE id = ?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return CalendarEventRow{}, false, nil
 	}
@@ -266,7 +266,7 @@ func (s *Store) GetCalendarEvent(ctx context.Context, id string) (CalendarEventR
 
 // ListCalendarEventsForSession returns the events linked to a meeting session.
 func (s *Store) ListCalendarEventsForSession(ctx context.Context, sessionID string) ([]CalendarEventRow, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+calendarEventColumns+` FROM calendar_events WHERE session_id = ? ORDER BY start_at ASC`, strings.TrimSpace(sessionID))
+	rows, err := s.committedReader().QueryContext(ctx, `SELECT `+calendarEventColumns+` FROM calendar_events WHERE session_id = ? ORDER BY start_at ASC`, strings.TrimSpace(sessionID))
 	if err != nil {
 		return nil, err
 	}
@@ -329,7 +329,7 @@ func (s *Store) attachCalendarAttendees(ctx context.Context, events []CalendarEv
 	// An address the calendar reported as the current user on any event is
 	// the person on every event: rows stored before the sync marked a second
 	// account's address read it as a guest.
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.committedReader().QueryContext(ctx, `
 		SELECT event_id, email, name, role, status, me, CASE WHEN me = 1 THEN '' ELSE principal_id END
 		FROM (SELECT a.*, CASE WHEN a.is_me != 0 OR (a.email != '' AND lower(a.email) IN (`+ownCalendarEmailsSQL+`)) THEN 1 ELSE 0 END AS me
 		      FROM calendar_event_attendees a WHERE a.event_id IN (`+strings.Join(placeholders, ",")+`))
@@ -398,7 +398,7 @@ func (s *Store) TouchCalendarSourceRead(ctx context.Context, id string, at int64
 
 // ListCalendarSources returns every known source, EventKit accounts first.
 func (s *Store) ListCalendarSources(ctx context.Context) ([]CalendarSourceRow, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.committedReader().QueryContext(ctx, `
 		SELECT id, kind, provider, title, detected_by, calendars, first_seen_at, last_seen_at, last_read_at
 		FROM calendar_sources ORDER BY kind ASC, provider ASC, id ASC
 	`)
@@ -466,7 +466,7 @@ func (s *Store) SaveMeetingFollowup(ctx context.Context, row MeetingFollowupRow)
 // GetMeetingFollowup loads the extraction for a session.
 func (s *Store) GetMeetingFollowup(ctx context.Context, sessionID string) (MeetingFollowupRow, bool, error) {
 	var row MeetingFollowupRow
-	err := s.db.QueryRowContext(ctx, `
+	err := s.committedReader().QueryRowContext(ctx, `
 		SELECT session_id, event_id, title, decisions_json, followups_json, created_at
 		FROM meeting_followups WHERE session_id = ?
 	`, strings.TrimSpace(sessionID)).Scan(&row.SessionID, &row.EventID, &row.Title, &row.DecisionsJSON, &row.FollowupsJSON, &row.CreatedAt)

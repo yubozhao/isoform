@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
+	"slices"
 	"time"
 
 	"isoform-relay/internal/notify"
@@ -508,6 +510,9 @@ func (s *session) grant(data []byte) string {
 	device := store.Device{ID: f.DeviceID, BearerHash: f.BearerHash, Scopes: f.Scopes, ExpiresAt: expires}
 	switch err = s.m.Store.GrantDevice(ctx, s.hubID, device, now); {
 	case err == nil:
+	case errors.Is(err, store.ErrPairedHere):
+		log.Printf("hub %s grant refused for device %s: it was paired on this relay and holds another key", wire.Short(s.hubID), wire.Short(f.DeviceID))
+		return "device was paired on this relay"
 	case errors.Is(err, store.ErrConflict):
 		return "device cannot be granted"
 	default:
@@ -586,8 +591,13 @@ func (s *session) purge(data []byte) string {
 	}
 }
 
-// ack deletes the device's requests the hub has consumed. An unknown device is
-// not an error: it may have removed itself while the frame was in flight.
+// ack deletes the device's requests the hub has consumed: the acknowledged one
+// and those this connection handed over before it. The hub serves a device's
+// requests in the order it was handed them, so nothing handed over after the
+// acknowledged request has been served yet, whatever its number, and it stays
+// until its own acknowledgement. An acknowledgement of a number this connection
+// did not hand over deletes nothing. An unknown device is not an error: it may
+// have removed itself while the frame was in flight.
 func (s *session) ack(data []byte) string {
 	var f ackFrame
 	if !decodeFrame(data, &f) || !wire.ValidUUID(f.DeviceID) || f.UpTo == nil || *f.UpTo > wire.MaxSeq {
@@ -595,9 +605,16 @@ func (s *session) ack(data []byte) string {
 	}
 	ctx, cancel := storeContext()
 	defer cancel()
-	if err := s.m.Store.AckRequests(ctx, s.hubID, f.DeviceID, *f.UpTo); err != nil && !errors.Is(err, store.ErrNotFound) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	at := slices.Index(s.sent[f.DeviceID], *f.UpTo)
+	if at < 0 {
+		return ""
+	}
+	if err := s.m.Store.AckRequestSeqs(ctx, s.hubID, f.DeviceID, s.sent[f.DeviceID][:at+1]); err != nil && !errors.Is(err, store.ErrNotFound) {
 		return "acknowledgement could not be stored"
 	}
+	s.sent[f.DeviceID] = slices.Clone(s.sent[f.DeviceID][at+1:])
 	return ""
 }
 

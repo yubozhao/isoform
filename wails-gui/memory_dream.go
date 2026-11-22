@@ -912,7 +912,12 @@ func (s *MemoryDreamService) runL3Merge(
 		provenances = append(provenances, memoryReadCapturedProvenance(filepath.Join(configDirOrFallback(), "memory"), source.ID, source.Content))
 	}
 	prompt := buildL3Prompt(cluster)
-	raw, err := s.app.runLearningClaudeModel(prompt, s.app.lightTaskModel(), 60*time.Second)
+	givenCtx, given, _ := withLearningScope(context.Background(), "about")
+	for _, source := range cluster {
+		given.add("memory", source.ID, 1)
+	}
+	raw, err := s.app.runLearningClaudeModelContext(givenCtx, prompt, s.app.lightTaskModel(), 60*time.Second)
+	s.app.finishAssistantCall(given)
 	if err != nil {
 		logMemoryDreamError("merge_model", "", err)
 		return nil

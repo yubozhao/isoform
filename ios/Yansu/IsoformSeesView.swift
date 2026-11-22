@@ -29,6 +29,9 @@ struct MobileSees: Decodable, Equatable, Sendable {
 
     let sources: [Source]
     var assistant: String? = nil
+    /// True while Agent of You acts without the person's review: the one exception to "Only with your tap"
+    /// (phone-duo v1.1.0). Older computers omit it and the exception line stays hidden.
+    var agentOfYouReviewOff: Bool? = nil
 }
 
 struct MobileSeesShowRequest: Encodable, Sendable {
@@ -99,9 +102,16 @@ enum IsoformSeesCopy {
         default: return String(localized: "sees.leaves.ai.isoform")
         }
     }
+
+    /// "Isoform doesn't send, delete or accept anything until you tap.", with its one exception while it is so.
+    static func tapLine(agentOfYouReviewOff: Bool?) -> String {
+        let line = String(localized: "sees.tap.line")
+        guard agentOfYouReviewOff == true else { return line }
+        return line + " " + String(localized: "sees.tap.exception")
+    }
 }
 
-/// Isoform's mark in Chat's header. Its eye blinks while Isoform works on something; a tap opens What Isoform sees.
+/// Isoform's mark. Its eye blinks while Isoform works on something. Chat no longer has it (phone-duo v1.1.0 rule 4).
 struct IsoformMarkButton: View {
     let working: Bool
     let action: () -> Void
@@ -135,7 +145,8 @@ struct IsoformMarkButton: View {
     }
 }
 
-/// The line under Chat's title while Isoform works: "Writing the reply to Priya…". Only while true.
+/// The line at the end of the conversation while Isoform works, where the reply will appear: "Writing the reply to
+/// Priya…". Only while true, in both layouts (phone-duo v1.1.0 rule 5).
 struct IsoformPresenceLine: View {
     let presence: MobilePresence?
     @Environment(\.locale) private var locale
@@ -152,10 +163,8 @@ struct IsoformPresenceLine: View {
                         .lineLimit(1)
                 }
                 .foregroundStyle(YansuTheme.accent)
-                .padding(.horizontal, YansuTheme.gutter)
-                .padding(.vertical, 6)
+                .padding(.vertical, 4)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(YansuTheme.background)
                 .transition(.opacity)
                 .accessibilityIdentifier("chat.presence")
             }
@@ -163,62 +172,55 @@ struct IsoformPresenceLine: View {
     }
 }
 
-/// What Isoform sees, on your computer, by job: on, or what you lose and Turn on.
-struct IsoformSeesSheet: View {
+/// What Isoform sees, on your computer, by job: on, or what you lose and Turn on. A page inside Settings › Your data,
+/// the one place it opens from in both layouts (phone-duo v1.1.0 rules 1 and 3).
+struct IsoformSeesPage: View {
     let hub: SeesHubAPI?
-    @Environment(\.dismiss) private var dismiss
     @State private var sees: MobileSees?
     @State private var failed = false
     @State private var sent: Set<String> = []
     @State private var sending: Set<String> = []
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text(String(localized: "sees.subtitle"))
-                        .font(.subheadline)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(String(localized: "sees.subtitle"))
+                    .font(.subheadline)
+                    .foregroundStyle(YansuTheme.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.bottom, 8)
+                if let sees {
+                    group(rows: sees.sources.map { AnyView(row($0, assistant: sees.assistant)) })
+                        .accessibilityIdentifier("sees.sources")
+                    header(String(localized: "sees.leaves.title"))
+                    group(rows: [
+                        AnyView(note("arrow.up.right", IsoformSeesCopy.aiLine(sees.assistant))),
+                        AnyView(note("lock", String(localized: "sees.leaves.phone"))),
+                        AnyView(note("shield", String(localized: "sees.leaves.kept")))
+                    ])
+                    header(String(localized: "sees.tap.title"))
+                    group(rows: [AnyView(note("hand.raised",
+                                              IsoformSeesCopy.tapLine(agentOfYouReviewOff: sees.agentOfYouReviewOff)))])
+                    Text(String(localized: "sees.foot"))
+                        .font(.footnote)
                         .foregroundStyle(YansuTheme.secondary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.bottom, 8)
-                    if let sees {
-                        group(rows: sees.sources.map { AnyView(row($0, assistant: sees.assistant)) })
-                            .accessibilityIdentifier("sees.sources")
-                        header(String(localized: "sees.leaves.title"))
-                        group(rows: [
-                            AnyView(note("arrow.up.right", IsoformSeesCopy.aiLine(sees.assistant))),
-                            AnyView(note("lock", String(localized: "sees.leaves.phone"))),
-                            AnyView(note("shield", String(localized: "sees.leaves.never")))
-                        ])
-                        header(String(localized: "sees.tap.title"))
-                        group(rows: [AnyView(note("hand.raised", String(localized: "sees.tap.line")))])
-                        Text(String(localized: "sees.foot"))
-                            .font(.footnote)
-                            .foregroundStyle(YansuTheme.secondary)
-                            .padding(.horizontal, 4)
-                            .padding(.top, 4)
-                    } else if failed {
-                        NoticeBanner(message: String(localized: "Couldn't reach your computer"))
-                    } else {
-                        RoundedRectangle(cornerRadius: 18).fill(YansuTheme.surface).frame(height: 420)
-                            .accessibilityHidden(true)
-                    }
-                }
-                .padding(.horizontal, YansuTheme.gutter)
-                .padding(.bottom, 24)
-            }
-            .background(YansuTheme.background.ignoresSafeArea())
-            .navigationTitle(String(localized: "What Isoform sees"))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(String(localized: "Done")) { dismiss() }
-                        .accessibilityIdentifier("sees.done")
+                        .padding(.horizontal, 4)
+                        .padding(.top, 4)
+                } else if failed {
+                    NoticeBanner(message: String(localized: "Couldn't reach your computer"))
+                } else {
+                    RoundedRectangle(cornerRadius: 18).fill(YansuTheme.surface).frame(height: 420)
+                        .accessibilityHidden(true)
                 }
             }
-            .task { await load() }
+            .padding(.horizontal, YansuTheme.gutter)
+            .padding(.bottom, 24)
         }
-        .accessibilityIdentifier("sees.sheet")
+        .background(YansuTheme.background.ignoresSafeArea())
+        .navigationTitle(String(localized: "What Isoform sees"))
+        .navigationBarTitleDisplayMode(.inline)
+        .task { await load() }
+        .accessibilityIdentifier("sees.page")
     }
 
     private func load() async {

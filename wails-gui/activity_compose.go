@@ -230,6 +230,11 @@ func (c *ActivityTriager) composeRun(ctx context.Context, run ActivityTimelineRu
 	if item == nil {
 		return changed, err
 	}
+	ctx, given, opened := withLearningScope(ctx, "work")
+	if opened && c.app != nil {
+		defer c.app.finishAssistantCall(given)
+	}
+	given.addSessions(item.run.SessionIDs)
 	prompt := buildComposerPrompt(item.candidates, item.run, item.summary, item.transition, c.composerLanguageInstruction())
 	if prompt != "" {
 		prompt += c.composerNamingCorrections()

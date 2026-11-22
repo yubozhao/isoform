@@ -32,10 +32,30 @@ const (
 	chatSourceClaimMax = 300
 )
 
+// Source kinds. memory and person are the first two; the others are what the
+// model read of the person's day. A phone build that predates a kind skips it.
+const (
+	chatSourceMemory   = "memory"
+	chatSourcePerson   = "person"
+	chatSourceActivity = "activity"
+	chatSourceCall     = "call"
+	chatSourceWatch    = "watch"
+)
+
+// Targets a source opens beyond the report targets: an Activity session, and
+// the watch's conversations in Activity.
+const (
+	mainChatTargetActivity = "activity"
+	mainChatTargetWatch    = "watch"
+)
+
 type chatSource struct {
-	Kind   string         `json:"kind"`
-	ID     string         `json:"id"`
-	Title  string         `json:"title"`
+	Kind  string `json:"kind"`
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	// At is when the source happened (unix ms), for the chip's time; zero
+	// for a note or a person. Optional, so an older reader ignores it.
+	At     int64          `json:"at,omitempty"`
 	Target mainChatTarget `json:"target"`
 }
 
@@ -71,7 +91,7 @@ func (a *App) mainChatSourcesTools(tag string, origin promptOrigin) []tools.Tool
 func (t *chatSourcesTool) Name() string { return chatSourcesToolName }
 
 func (t *chatSourcesTool) Description() string {
-	return "After answering a question about the user's own life, say which sources the answer leans on: the ref of each (memory:<id> or person:<id>, exactly as the context printed it) and the exact phrase in your answer that comes from it. Call it once, after the answer, and then stop."
+	return "After answering a question about the user's own life, say which sources the answer read: the ref of each (memory:<id>, person:<id> or activity:<session id>, exactly as the context or a read printed it) and the exact phrase in your answer that comes from it. Call it once, after the answer, and then stop."
 }
 
 func (t *chatSourcesTool) JSONSchema() map[string]any {
@@ -84,7 +104,7 @@ func (t *chatSourcesTool) JSONSchema() map[string]any {
 				"items": map[string]any{
 					"type": "object",
 					"properties": map[string]any{
-						"ref":   map[string]any{"type": "string", "description": "The source's ref as printed in the context: memory:<id> or person:<id>."},
+						"ref":   map[string]any{"type": "string", "description": "The source's ref as printed: memory:<id>, person:<id>, or activity:<session id> for an Activity session, call or watch recording read with an activity tool or the activity CLI."},
 						"claim": map[string]any{"type": "string", "description": "The exact phrase in your answer that comes from this source."},
 					},
 					"required": []any{"ref"},
@@ -191,7 +211,11 @@ func (a *App) resolveChatSource(ctx context.Context, ref string) (chatSource, bo
 	}
 	switch kind {
 	case "memory":
-		entry, err := a.memoryEntryForExternalRead(id)
+		policy, err := a.mcpReadPrivacy(ctx)
+		if err != nil {
+			return chatSource{}, false
+		}
+		entry, err := a.filteredExternalMemory(id, policy.chatMemoryAllowed)
 		if err != nil || entry.ID != id {
 			return chatSource{}, false
 		}
@@ -213,8 +237,96 @@ func (a *App) resolveChatSource(ctx context.Context, ref string) (chatSource, bo
 			return chatSource{}, false
 		}
 		return chatSource{Kind: "person", ID: id, Title: name, Target: mainChatTarget{Kind: "person", ID: id}}, true
+	case chatSourceActivity:
+		return a.resolveActivityChatSource(ctx, id)
 	}
 	return chatSource{}, false
+}
+
+// resolveActivityChatSource reads an Activity session through the gate every
+// model read of a whole session goes through, the activity CLI's
+// (activitySessionForExternalRead): Closed Eyes, protected rows, sensitive
+// and excluded apps, private windows, people Isoform may not read. A call is
+// named by its meeting app, a watch recording by the conversation the
+// computer named, any other session by its first app that is not sensitive.
+// A screen session in a mail or messaging app is never cited: mail stays out
+// of chat (the app check RecentActivity uses, without its per-event identity
+// rule, which no watch recording's events can meet).
+func (a *App) resolveActivityChatSource(ctx context.Context, id string) (chatSource, bool) {
+	if a.activity == nil || a.activity.store == nil {
+		return chatSource{}, false
+	}
+	store := a.activity.store
+	session, err := store.GetSessionByID(id)
+	if err != nil || session == nil || session.ID != id || !a.activitySessionAllowsModelRead(store, *session) {
+		return chatSource{}, false
+	}
+	policy, err := a.mcpReadPrivacy(ctx)
+	if err != nil {
+		return chatSource{}, false
+	}
+	if allowed, err := policy.chatSessionAllowed(*session); err != nil || !allowed {
+		return chatSource{}, false
+	}
+	if conv, ok := a.watchConversationOfSession(id); ok {
+		return chatSource{Kind: chatSourceWatch, ID: conv.ID, Title: conv.Name, At: conv.StartAt,
+			Target: mainChatTarget{Kind: mainChatTargetWatch, ID: conv.ID}}, true
+	}
+	target := mainChatTarget{Kind: mainChatTargetActivity, ID: id}
+	if session.IsMeeting {
+		title := strings.TrimSpace(redactActivityModelText(pii.DisplayText(session.MeetingApp)))
+		if title == "" || len(pii.FilterSensitiveAppNames([]string{session.MeetingApp})) == 0 {
+			return chatSource{}, false
+		}
+		return chatSource{Kind: chatSourceCall, ID: id, Title: title, At: session.StartTime, Target: target}, true
+	}
+	var apps []string
+	if err := json.Unmarshal([]byte(scrubSensitiveAppNames(session.AppNames)), &apps); err != nil {
+		return chatSource{}, false
+	}
+	for _, app := range apps {
+		if title := strings.TrimSpace(redactActivityModelText(app)); title != "" {
+			return chatSource{Kind: chatSourceActivity, ID: id, Title: title, At: session.StartTime, Target: target}, true
+		}
+	}
+	return chatSource{}, false
+}
+
+// watchConversationOfSession is the named watch conversation a recording's
+// session holds: the one with the most words when the hour holds several.
+// A recording that is not transcribed, deleted, or past the days the watch
+// lists has none, and neither has a conversation not yet named.
+func (a *App) watchConversationOfSession(sessionID string) (WatchConversation, bool) {
+	store := a.watchRecordingStore()
+	if store == nil {
+		return WatchConversation{}, false
+	}
+	recordings, err := store.all()
+	if err != nil {
+		return WatchConversation{}, false
+	}
+	recordingID := ""
+	for _, rec := range recordings {
+		if rec.SessionID == sessionID && rec.State == mobileRecordingTranscribed {
+			recordingID = rec.ID
+			break
+		}
+	}
+	if recordingID == "" {
+		return WatchConversation{}, false
+	}
+	convs, err := a.watchConversationsOf(store)
+	if err != nil {
+		return WatchConversation{}, false
+	}
+	var best WatchConversation
+	for _, conv := range convs {
+		if containsString(conv.RecordingIDs, recordingID) && strings.TrimSpace(conv.Name) != "" && conv.Words > best.Words {
+			best = conv
+		}
+	}
+	best.Name = strings.TrimSpace(best.Name)
+	return best, best.ID != ""
 }
 
 // memoryIDFromPath is a memory file's id: "memory-123.md" is "memory-123".
@@ -229,7 +341,7 @@ func (a *App) injectChatSourcesContext(tag string, origin promptOrigin) string {
 		return ""
 	}
 	return `<sources>
-When you answer a question about the user's own life from a note or a person in the context (each has a ref, such as ref=memory:memory-123 or Ref: person:p_1), write your answer first, then call CiteSources once with the refs it leans on and the exact phrase in your answer that comes from each, then stop. Cite only refs printed in this conversation's context. Skip it for small talk and for answers that use no source.
+When you answer a question about the user's own life from what Isoform saw, write your answer first, then call CiteSources once with one ref per thing the answer read (at most 4) and the exact phrase in your answer that comes from each, then stop. Refs: a note or a person in the context (ref=memory:memory-123, Ref: person:p_1); an Activity session, call or watch recording you read with an activity tool (it prints ref=activity:<id>) or the activity CLI (activity:<the session's id>). Cite only refs printed in this conversation. When you say you did not see something ("I didn't see anything about hiring from Priya this week"), say what you did see instead and cite that. Skip it for small talk and for answers that read no source.
 </sources>
 
 `

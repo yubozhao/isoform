@@ -118,7 +118,7 @@ function Corner() {
             <Sidebar
                 projects={[]} activeProjectId={null} collapsed={collapsed} width={232}
                 onToggleCollapse={noop} onOpenSearch={noop} onOpenSettings={noop}
-                waitingCount={waiting} chatUnread={false}
+                waitingCount={waiting}
                 onOpenActivity={noop} onOpenKnowledge={noop} onOpenMemory={noop} onOpenPeople={noop}
                 onOpenToday={noop} onOpenTasks={noop} tasksOpen appMode={'tasks'}
                 onOpenMainChat={noop} onSwitchSession={noop} onCloseSession={noop} onTogglePin={noop}

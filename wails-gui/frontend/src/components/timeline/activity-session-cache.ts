@@ -70,23 +70,18 @@ export let lastActivityDate: Date | undefined;
 export function rememberActivityDate(date: Date) { lastActivityDate = date; }
 
 // The page remounts on every open (App's activityNonce), so its UI state —
-// day/week scope, timeline filters, scroll offsets — lives here instead and a
+// timeline filters, scroll offsets — lives here instead and a
 // plain revisit restores it. Deep links (a session/date/highlight jump) start
 // fresh: the page reads nothing from here when one arrives. Privacy sweeps
 // (the clear=true invalidations) drop it with the data.
-export type ActivityScope = 'day' | 'week';
 export interface ActivityTimelineFilters { searchText: string; timePreset: string; customStart: string; customEnd: string; selectedApps: string[] | null }
-let rememberedScope: ActivityScope | undefined;
 let rememberedFilters: ActivityTimelineFilters | undefined;
 const rememberedScroll = new Map<string, number>();
-export function rememberActivityScope(scope: ActivityScope) { rememberedScope = scope; }
-export function lastActivityScope(): ActivityScope | undefined { return rememberedScope; }
 export function rememberTimelineFilters(filters: ActivityTimelineFilters) { rememberedFilters = filters; }
 export function lastTimelineFilters(): ActivityTimelineFilters | undefined { return rememberedFilters; }
 export function rememberActivityScroll(key: string, top: number) { rememberedScroll.set(key, top); }
 export function lastActivityScroll(key: string): number | undefined { return rememberedScroll.get(key); }
 function clearRememberedActivityUi() {
-    rememberedScope = undefined;
     rememberedFilters = undefined;
     rememberedScroll.clear();
 }

@@ -389,6 +389,7 @@ func (d *glinerDetector) infer(words []wordSpan) []detectedSpan {
 	inputIDsTensor, err := ort.NewTensor(ort.NewShape(1, seqLen), inputIDs)
 	if err != nil {
 		log.Printf("[pii] input_ids tensor: %v", err)
+		d.unhealthy = true
 		return nil
 	}
 	defer inputIDsTensor.Destroy()
@@ -396,6 +397,7 @@ func (d *glinerDetector) infer(words []wordSpan) []detectedSpan {
 	attMaskTensor, err := ort.NewTensor(ort.NewShape(1, seqLen), attentionMask)
 	if err != nil {
 		log.Printf("[pii] attention_mask tensor: %v", err)
+		d.unhealthy = true
 		return nil
 	}
 	defer attMaskTensor.Destroy()
@@ -403,6 +405,7 @@ func (d *glinerDetector) infer(words []wordSpan) []detectedSpan {
 	wordsMaskTensor, err := ort.NewTensor(ort.NewShape(1, seqLen), wordsMask)
 	if err != nil {
 		log.Printf("[pii] words_mask tensor: %v", err)
+		d.unhealthy = true
 		return nil
 	}
 	defer wordsMaskTensor.Destroy()
@@ -410,6 +413,7 @@ func (d *glinerDetector) infer(words []wordSpan) []detectedSpan {
 	textLenTensor, err := ort.NewTensor(ort.NewShape(1, 1), textLengths)
 	if err != nil {
 		log.Printf("[pii] text_lengths tensor: %v", err)
+		d.unhealthy = true
 		return nil
 	}
 	defer textLenTensor.Destroy()
@@ -417,6 +421,7 @@ func (d *glinerDetector) infer(words []wordSpan) []detectedSpan {
 	spanIdxTensor, err := ort.NewTensor(ort.NewShape(1, int64(numSpans), 2), spanIdx)
 	if err != nil {
 		log.Printf("[pii] span_idx tensor: %v", err)
+		d.unhealthy = true
 		return nil
 	}
 	defer spanIdxTensor.Destroy()
@@ -424,6 +429,7 @@ func (d *glinerDetector) infer(words []wordSpan) []detectedSpan {
 	spanMaskTensor, err := ort.NewTensor(ort.NewShape(1, int64(numSpans)), spanMask)
 	if err != nil {
 		log.Printf("[pii] span_mask tensor: %v", err)
+		d.unhealthy = true
 		return nil
 	}
 	defer spanMaskTensor.Destroy()
@@ -434,6 +440,7 @@ func (d *glinerDetector) infer(words []wordSpan) []detectedSpan {
 	outputTensor, err := ort.NewEmptyTensor[float32](outputShape)
 	if err != nil {
 		log.Printf("[pii] output tensor: %v", err)
+		d.unhealthy = true
 		return nil
 	}
 	defer outputTensor.Destroy()

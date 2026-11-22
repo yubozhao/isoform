@@ -4,20 +4,12 @@ import { pageQueryCache } from '@/lib/query-cache';
 import { activeInterval } from '@/lib/app-activity';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-    SetMainChatHideRoutine,
-} from '@/lib/wails-shim-app';
-import {
-    MAIN_CHAT_FILTER_ALL,
-    normalizeMainChatFilter,
     answerChipIds,
     localDayKey,
     toMainChatOverview,
-    type MainChatFilter,
     type MainChatOverview,
 } from '@/lib/main-chat-view';
 import { useTodayTopics } from '@/hooks/useTodayTopics';
-import { useTopicChat } from '@/hooks/useTopicChat';
-import type { TodayTopic } from '@/components/today/topics';
 import { clockContextKey } from '@/lib/brief-time';
 import type { StreamItem } from '@/types';
 import { useMainChatWaiting as useMainChatWaitingState } from '@/lib/main-chat-waiting-store';
@@ -187,37 +179,13 @@ function useToday(): string {
     return today.day;
 }
 
-/** A topic box's words; prepared when a click put them there. */
-export interface TopicDraft {
-    text: string;
-    prepared: boolean;
-}
-
 /**
- * The main chat's view (RC 2 D1): the filter (All, a work topic), today's
- * numbers, prepared chips under the
- * latest answer, the topic's rows and box, and one draft per topic. Nothing
- * here sends, creates or changes a chat row; only "Hide folded updates" is
- * kept, as a view preference on this computer.
+ * The main chat's view: today's numbers, prepared chips under the latest
+ * answer, and the topic names its rows are tagged with. Chat is one thread
+ * (computer-chat v1.0.0 rule 2): there is no filter or topic view. Nothing
+ * here sends, creates or changes a chat row.
  */
 export function useMainChatView({ enabled, items }: { enabled: boolean; items: readonly StreamItem[] | null }) {
-    const [filter, setFilterState] = useState<MainChatFilter>(MAIN_CHAT_FILTER_ALL);
-    const [detached, setDetached] = useState(false);
-    const [drafts, setDrafts] = useState<Record<string, TopicDraft>>({});
-    const [hideOverride, setHideOverride] = useState<boolean | null>(null);
-    const [hideBusy, setHideBusy] = useState(false);
-    const [hideFailed, setHideFailed] = useState(false);
-
-    // Switching sessions resets the filter; retained page switches preserve it.
-    const wasEnabled = useRef(enabled);
-    useEffect(() => {
-        if (enabled && !wasEnabled.current) {
-            setFilterState(MAIN_CHAT_FILTER_ALL);
-            setDetached(false);
-        }
-        wasEnabled.current = enabled;
-    }, [enabled]);
-
     const today = useToday();
     // Today's numbers read again after midnight too.
     const overview = useMainChatOverview(enabled, today);
@@ -243,73 +211,16 @@ export function useMainChatView({ enabled, items }: { enabled: boolean; items: r
         return shown;
     }, [allChips, answerKey]);
 
-    const { topics: allTopics, status: topicsStatus, refreshing: topicsRefreshing } = useTodayTopics(enabled);
-    const workTopics = useMemo(() => allTopics.filter((topic) => topic.kind === 'work'), [allTopics]);
+    const { topics: allTopics } = useTodayTopics(enabled);
     const topicNames = useMemo(() => new Map(allTopics.map((topic) => [topic.id, topic.name])), [allTopics]);
-
-    const topicId = filter.kind === 'topic' ? filter.topicId : null;
-    const retainedTopic = useRef<TodayTopic | null>(null);
-    const publishedTopic = topicId ? workTopics.find((entry) => entry.id === topicId) ?? null : null;
-    if (publishedTopic) retainedTopic.current = publishedTopic;
-    const topic = publishedTopic ?? (retainedTopic.current?.id === topicId ? retainedTopic.current : null);
-    const topicPending = Boolean(topicId) && !topic && (topicsRefreshing || topicsStatus !== 'ready');
-    const topicChat = useTopicChat(enabled && topic ? topic.id : null);
-
-    const setFilter = useCallback((next: MainChatFilter) => {
-        setFilterState(normalizeMainChatFilter(next));
-        setDetached(false);
-    }, []);
-
-    const hideRoutine = hideOverride ?? overview.overview?.hideRoutine ?? false;
-    const setOverview = overview.setOverview;
-    // A saved switch holds until the next read of today's numbers reports
-    // it, so it works even when the first read failed.
-    useEffect(() => setHideOverride(null), [overview.overview]);
-    const setHideRoutine = useCallback(async (hide: boolean) => {
-        if (hideBusy) return;
-        setHideBusy(true);
-        setHideFailed(false);
-        setHideOverride(hide);
-        try {
-            await SetMainChatHideRoutine(hide);
-            const cached = pageQueryCache.peek<Record<string, unknown>>('GetMainChatOverview');
-            if (cached) pageQueryCache.set('GetMainChatOverview', [], { ...cached, hideRoutine: hide });
-            setOverview((current) => (current ? { ...current, hideRoutine: hide } : current));
-        } catch {
-            setHideOverride(null);
-            setHideFailed(true);
-        } finally {
-            setHideBusy(false);
-        }
-    }, [hideBusy, setOverview]);
-
-    const topicDraft = topicId ? drafts[topicId] ?? { text: '', prepared: false } : { text: '', prepared: false };
-    const setTopicDraft = useCallback((text: string, prepared: boolean) => {
-        if (!topicId) return;
-        const id = topicId;
-        setDrafts((current) => ({ ...current, [id]: { text, prepared } }));
-    }, [topicId]);
 
     return {
         today,
-        filter,
-        setFilter,
-        workTopics,
         topicNames,
-        topic,
-        topicPending,
-        attached: (Boolean(topic) || topicPending) && !detached,
-        detach: () => setDetached(true),
-        topicChat,
-        topicDraft,
-        setTopicDraft,
         overview: summaryOverview,
         overviewStatus: overview.status,
         reloadOverview: overview.reload,
-        hideRoutine,
-        hideBusy,
-        hideFailed,
-        setHideRoutine,
+        hideRoutine: overview.overview?.hideRoutine ?? false,
         chips,
     };
 }

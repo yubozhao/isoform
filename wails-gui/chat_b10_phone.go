@@ -60,6 +60,9 @@ func (a *App) notePhoneTurnSender(device mobileDeviceRecord) {
 // CorrectIsoform: computer turns, and phone turns from a phone that holds
 // chat:correct.
 func (a *App) chatCorrectionAllowed(origin promptOrigin) bool {
+	if a == nil {
+		return false
+	}
 	switch origin {
 	case promptOriginMac:
 		return true
@@ -88,10 +91,10 @@ func chatB10Origin(origin promptOrigin) bool {
 
 // mainChatTurnTools are the extra tools a main-chat turn from this origin
 // gets, in the order the runner lists them.
-func (a *App) mainChatTurnTools(tag string, origin promptOrigin) []tools.Tool {
+func (a *App) mainChatTurnTools(tag string, origin promptOrigin, binding ...*topicTurnBinding) []tools.Tool {
 	out := append(a.mainChatExtraTools(tag, origin), a.mainChatDraftTools(tag, origin)...)
 	out = append(out, a.mainChatHandoffTools(tag, origin)...)
-	out = append(out, a.mainChatCorrectionTools(tag, origin)...)
+	out = append(out, a.mainChatCorrectionTools(tag, origin, binding...)...)
 	return append(out, a.mainChatSourcesTools(tag, origin)...)
 }
 
@@ -131,8 +134,11 @@ type mobileChatHandoffAgent struct {
 
 // mobileChatCorrectionView is a correction line for the phone (15.10).
 type mobileChatCorrectionView struct {
-	Where  string `json:"where"`
-	Status string `json:"status"`
+	About          *mobileChatAbout `json:"about,omitempty"`
+	Applied        string           `json:"applied,omitempty"`
+	UndoneSentence string           `json:"undoneSentence,omitempty"`
+	Where          string           `json:"where"`
+	Status         string           `json:"status"`
 }
 
 // mobileChatB10Item projects a hand-off card, a correction line or a sources
@@ -164,7 +170,7 @@ func mobileChatB10Item(view *mobileChatItemView, row storage.StreamItemRow) bool
 		if err := json.Unmarshal([]byte(row.ToolInput), &payload); err != nil || payload.Where == "" {
 			return false
 		}
-		view.Kind, view.Correction = "correction", &mobileChatCorrectionView{Where: payload.Where, Status: payload.Status}
+		view.Kind, view.Correction = "correction", &mobileChatCorrectionView{Where: payload.Where, Status: payload.Status, About: payload.About, Applied: payload.Applied, UndoneSentence: payload.UndoneSentence}
 	case chatSourcesLineTool:
 		var payload chatSourcesPayload
 		if err := json.Unmarshal([]byte(row.ToolInput), &payload); err != nil || len(payload.Sources) == 0 {
@@ -343,7 +349,10 @@ func (bridge *mobileBridge) chatB10ItemResponse(w http.ResponseWriter, itemID st
 	store := bridge.app.storeForMobile()
 	var view *mobileChatItemView
 	if store != nil {
-		if row, loadErr := store.LoadStreamItem(bridge.ctx, itemID); loadErr == nil && row != nil {
+		if row, loadErr := store.LoadStreamItem(bridge.ctx, itemID); loadErr != nil {
+			mobileJSON(w, http.StatusServiceUnavailable, nil, "the chat item could not be read")
+			return
+		} else if row != nil {
 			if item, ok := mobileChatItemFromRow(*row); ok {
 				view = &item
 			}
@@ -359,7 +368,7 @@ func (bridge *mobileBridge) chatB10ItemResponse(w http.ResponseWriter, itemID st
 	case errors.Is(err, errChatAgentNotConnected):
 		mobileJSON(w, http.StatusConflict, map[string]any{"code": "agent_not_connected", "item": view}, errChatAgentNotConnected.Error())
 	default:
-		log.Printf("[mobile-chat] chat item answer failed: %v", err)
+		log.Printf("[mobile-chat] chat item answer failed for %s", itemID)
 		mobileJSON(w, http.StatusServiceUnavailable, nil, "the answer could not be saved; try again")
 	}
 }
@@ -434,8 +443,9 @@ func (bridge *mobileBridge) serveChatCorrectionUndo(w http.ResponseWriter, r *ht
 		if err == nil && status != chatCorrectionUndone {
 			err = errChatItemChanged
 		}
-		if err != nil && !errors.Is(err, errChatItemChanged) {
-			err = errChatItemGone
+		if errors.Is(err, errWorkUndoClosed) || errors.Is(err, errWorkItemChanged) || errors.Is(err, errWorkItemGone) {
+			mobileJSON(w, http.StatusConflict, map[string]string{"code": "item_changed"}, err.Error())
+			return
 		}
 		bridge.chatB10ItemResponse(w, itemID, err)
 	})
@@ -448,11 +458,17 @@ func (a *App) mainChatB10Row(ctx context.Context, chatID, itemID, toolName strin
 		return nil, errChatItemGone
 	}
 	main, err := a.store.LoadMainSession(ctx)
-	if err != nil || main == nil || chatID != mobileMainChatAlias && chatID != main.LocalID {
+	if err != nil {
+		return nil, err
+	}
+	if main == nil || chatID != mobileMainChatAlias && chatID != main.LocalID {
 		return nil, errChatItemGone
 	}
 	row, err := a.store.LoadStreamItem(ctx, itemID)
-	if err != nil || row == nil || row.SessionLocalID != main.LocalID || row.Kind != "system" || row.ToolName != toolName {
+	if err != nil {
+		return nil, err
+	}
+	if row == nil || row.SessionLocalID != main.LocalID || row.Kind != "system" || row.ToolName != toolName {
 		return nil, errChatItemGone
 	}
 	return row, nil

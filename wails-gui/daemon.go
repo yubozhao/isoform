@@ -267,6 +267,7 @@ func (d *daemonClient) stop() {
 	<-d.done
 }
 
+//isoform:destination yansu_backend
 func (d *daemonClient) connectAndListen(ctx context.Context) error {
 	// No Yansu account: the daemon relays IM messages through the Yansu backend, so it
 	// must never connect. Fail closed at the socket layer (defense in depth — IM
@@ -898,6 +899,8 @@ func (d *daemonClient) processFeishuFiles(ctx context.Context, files []feishuFil
 
 // downloadFeishuImageContent downloads a Feishu message image via the backend proxy
 // (which holds the tenant access token).
+//
+//isoform:destination chat_bridges
 func (d *daemonClient) downloadFeishuImageContent(ctx context.Context, appID, tenantKey, messageID, imageKey string) ([]byte, string, error) {
 	reqBody, err := json.Marshal(map[string]string{
 		"app_id":     appID,
@@ -1025,6 +1028,8 @@ func isTextMIME(mimeType string) bool {
 
 // downloadSlackFileContent downloads a file via the backend API (which holds the bot token)
 // and returns the raw content bytes and resolved MIME type.
+//
+//isoform:destination chat_bridges
 func (d *daemonClient) downloadSlackFileContent(ctx context.Context, fileID, fileURL, fallbackMIME string) ([]byte, string, error) {
 	reqBody, err := json.Marshal(map[string]string{
 		"team_id": d.teamID,
@@ -1075,6 +1080,8 @@ func (d *daemonClient) downloadSlackFileContent(ctx context.Context, fileID, fil
 
 // processDiscordFiles downloads Discord attachments directly from CDN (no backend proxy needed).
 // Discord CDN URLs are publicly accessible temporary signed URLs.
+//
+//isoform:destination chat_bridges
 func (d *daemonClient) processDiscordFiles(ctx context.Context, files []struct {
 	ID                 string `json:"id"`
 	Name               string `json:"name"`
@@ -1212,6 +1219,8 @@ func (d *daemonClient) processTelegramFiles(ctx context.Context, files []telegra
 
 // downloadTelegramFileContent resolves a Telegram file_id and downloads its content
 // via the backend proxy endpoint, which holds the bot token.
+//
+//isoform:destination chat_bridges
 func (d *daemonClient) downloadTelegramFileContent(ctx context.Context, fileID, fallbackMIME string) ([]byte, string, error) {
 	reqBody, err := json.Marshal(map[string]string{
 		"file_id":   fileID,

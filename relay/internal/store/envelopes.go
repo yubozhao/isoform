@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"isoform-relay/internal/limit"
 	"isoform-relay/internal/push"
 	"isoform-relay/internal/wire"
 )
@@ -46,7 +47,7 @@ func (s *Store) AddRequest(ctx context.Context, dev Device, env wire.Envelope, b
 		return err
 	}
 	if count >= MaxQueued {
-		return ErrQueueFull
+		return &limit.Refusal{Name: "request_queue", Count: int64(count), Cap: MaxQueued, Err: ErrQueueFull}
 	}
 	if _, err = tx.ExecContext(ctx, "INSERT INTO envelopes(device_id,dir,seq,kind,body,expires_at) VALUES(?,'d2h',?,'req',?,?)", dev.ID, int64(env.Seq), string(body), millis(now.Add(RequestTTL))); err != nil {
 		return err
@@ -184,6 +185,26 @@ func (s *Store) AckResponses(ctx context.Context, deviceID string, upTo uint64) 
 	return err
 }
 
+// AckRequestSeqs deletes exactly the given requests of a device of the hub. The
+// hub's connection names the numbers it handed over; a queued request it has not
+// handed over is never among them.
+func (s *Store) AckRequestSeqs(ctx context.Context, hubID, deviceID string, seqs []uint64) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err = deviceInHub(ctx, tx, hubID, deviceID); err != nil {
+		return err
+	}
+	for _, seq := range seqs {
+		if _, err = tx.ExecContext(ctx, "DELETE FROM envelopes WHERE device_id=? AND dir='d2h' AND seq=?", deviceID, int64(seq)); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 // AckRequests deletes a device's requests the hub has consumed through upTo.
 // The device must belong to the hub; an unknown device is ErrNotFound.
 func (s *Store) AckRequests(ctx context.Context, hubID, deviceID string, upTo uint64) error {
@@ -279,6 +300,8 @@ func (s *Store) PurgeDevice(ctx context.Context, hubID, deviceID string) error {
 		"DELETE FROM envelopes WHERE device_id=?",
 		"DELETE FROM briefs WHERE device_id=?",
 		"DELETE FROM uploads WHERE device_id=?",
+		"DELETE FROM upload_piece_marks WHERE id IN (SELECT id FROM upload_pieces WHERE device_id=?)",
+		"DELETE FROM upload_pieces WHERE device_id=?",
 		"UPDATE push_outbox SET state='cancelled' WHERE device_id=? AND state IN ('queued','inflight')",
 	} {
 		if _, err = tx.ExecContext(ctx, statement, deviceID); err != nil {

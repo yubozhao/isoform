@@ -705,6 +705,7 @@ func catalogSkillFromDetail(detail *clawHubSkillResponse) SkillHubCatalogSkill {
 	}
 }
 
+//isoform:destination metadata
 func clawHubGetJSON(ctx context.Context, path string, values url.Values, out any) error {
 	reqURL := strings.TrimRight(clawHubRegistry(), "/") + path
 	if len(values) > 0 {
@@ -740,6 +741,7 @@ func clawHubGetJSON(ctx context.Context, path string, values url.Values, out any
 	return nil
 }
 
+//isoform:destination metadata
 func downloadClawHubSkillZip(ctx context.Context, slug, version, destPath string) error {
 	values := url.Values{}
 	values.Set("slug", slug)

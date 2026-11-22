@@ -23,8 +23,7 @@ import (
 // next piece of work, built once a day into a saved copy (internal/topicday).
 // It reads the registry's own snapshot as input, applies the person's
 // choices, asks the model once for every topic's proposal, and saves. Reads
-// return the saved copy as it is. It is behind a switch, off by default, while
-// design draws its screens.
+// return the saved copy as it is.
 
 const (
 	topicsDailyEnabledKey = "topics_daily_enabled"
@@ -87,21 +86,37 @@ func (a *App) topicsDailyStore() (*topicday.Store, error) {
 	return s.(*topicday.Store), nil
 }
 
-func (a *App) topicsDailyEnabled(ctx context.Context) bool {
+func (a *App) topicsDailyEnabled(ctx context.Context) (bool, error) {
 	if a == nil || a.store == nil {
-		return false
+		return false, errors.New("storage is not ready")
 	}
-	value, err := a.store.GetUIState(ctx, topicsDailyEnabledKey)
-	return err == nil && value == "true"
+	if a.settingsDefaultsHeldOff.Load() {
+		return false, errSettingsDefaultsUnavailable
+	}
+	value, found, err := a.store.LookupUIState(ctx, topicsDailyEnabledKey)
+	if err != nil {
+		return false, err
+	}
+	if !found {
+		return !a.legacySettingsDefaults.Load(), nil
+	}
+	return value == "true", nil
 }
 
 // GetDailyTopics returns the saved copy as it is: no build, no privacy check
-// per read (the person's choices were applied when it was built).
+// per read (the person's choices were applied when it was built). While
+// Proposals from your topics is off it holds only today's proposals already
+// offered and not yet answered: off means no new proposals, and the ones
+// already offered stay in Your work until answered (computer-settings v1.3.0
+// rule 5).
 func (a *App) GetDailyTopics() (perfValue DailyTopicsView, perfErr error) {
 	defer logPageBinding("GetDailyTopics", time.Now(), &perfValue)
-	view := DailyTopicsView{Enabled: a.topicsDailyEnabled(context.Background()), Topics: []DailyTopicView{}}
-	if !view.Enabled {
-		return view, nil
+	enabled, err := a.topicsDailyEnabled(context.Background())
+	view := DailyTopicsView{Enabled: enabled, Topics: []DailyTopicView{}}
+	if err != nil {
+		// Unknown is never shown as off with nothing in it: the read's error
+		// goes to the caller, and nothing is offered meanwhile.
+		return view, err
 	}
 	store, err := a.topicsDailyStore()
 	if err != nil {
@@ -111,9 +126,15 @@ func (a *App) GetDailyTopics() (perfValue DailyTopicsView, perfErr error) {
 	if !ok {
 		return view, nil
 	}
+	if !view.Enabled && saved.Day != topicsDailyNow().Format("2006-01-02") {
+		return view, nil
+	}
 	saved = a.syncDailyTopicTasks(store, saved)
 	view.Day, view.BuiltAt = saved.Day, saved.BuiltAt
 	for _, t := range saved.Topics {
+		if !view.Enabled && (t.Proposal == nil || t.Proposal.State != topicday.StateProposed) {
+			continue
+		}
 		view.Topics = append(view.Topics, dailyTopicView(t))
 	}
 	return view, nil
@@ -133,6 +154,9 @@ func (a *App) SetDailyTopicsEnabled(enabled bool) (DailyTopicsView, error) {
 	if a == nil || a.store == nil {
 		return DailyTopicsView{Topics: []DailyTopicView{}}, errors.New("storage is not ready")
 	}
+	if a.settingsDefaultsHeldOff.Load() {
+		return DailyTopicsView{Topics: []DailyTopicView{}}, errSettingsDefaultsUnavailable
+	}
 	value := "false"
 	if enabled {
 		value = "true"
@@ -143,7 +167,8 @@ func (a *App) SetDailyTopicsEnabled(enabled bool) (DailyTopicsView, error) {
 	if enabled {
 		go a.maybeBuildDailyTopics(context.Background(), "enabled")
 	}
-	// Your work shows the topics' proposals only while this is on.
+	// Off, Your work keeps only the proposals already offered; on, it shows
+	// the day's copy again.
 	a.touchDerivedViews(derivedWorkList)
 	return a.GetDailyTopics()
 }
@@ -151,7 +176,11 @@ func (a *App) SetDailyTopicsEnabled(enabled bool) (DailyTopicsView, error) {
 // RefreshDailyTopics builds today's copy now: the person asked, so it does not
 // wait for the daily clock.
 func (a *App) RefreshDailyTopics() (DailyTopicsView, error) {
-	if !a.topicsDailyEnabled(context.Background()) {
+	enabled, err := a.topicsDailyEnabled(context.Background())
+	if err != nil {
+		return DailyTopicsView{}, err
+	}
+	if !enabled {
 		return a.GetDailyTopics()
 	}
 	if err := a.buildDailyTopics(context.Background()); err != nil && !errors.Is(err, topicday.ErrClosedEyes) {
@@ -184,7 +213,14 @@ func (a *App) startDailyTopics(ctx context.Context) {
 // maybeBuildDailyTopics builds once a day: when the switch is on, the saved
 // copy is from an earlier day, and the day's attempt has not been claimed.
 func (a *App) maybeBuildDailyTopics(ctx context.Context, trigger string) {
-	if !a.topicsDailyEnabled(ctx) {
+	enabled, err := a.topicsDailyEnabled(ctx)
+	if err != nil {
+		if err != errSettingsDefaultsUnavailable {
+			log.Printf("[topics-daily] read switch: %v", err)
+		}
+		return
+	}
+	if !enabled {
 		return
 	}
 	store, err := a.topicsDailyStore()
@@ -236,6 +272,7 @@ func (a *App) buildDailyTopics(ctx context.Context) error {
 	if err := store.Save(built); err != nil {
 		return err
 	}
+	a.recordWrittenProposals(previous, built)
 	proposed := 0
 	for _, t := range built.Topics {
 		if t.Proposal != nil {

@@ -170,6 +170,9 @@ func (a *App) deleteWatchRecording(store *mobileRecordingStore, id, deviceID str
 		return MobileRecordingView{}, err
 	}
 	a.deleteMobileRecordingSession(sessionID)
+	// What the assistant was given from this hour goes with it (See them).
+	a.forgetAssistantCallsForSource("watch", id)
+	a.forgetAssistantCallsForSession(sessionID)
 	// Parts that arrived after the recording was closed are the same
 	// recording to the person: they go with it.
 	for _, more := range store.continuationIDs(id) {
@@ -177,6 +180,8 @@ func (a *App) deleteWatchRecording(store *mobileRecordingStore, id, deviceID str
 			log.Printf("[recordings] the later parts of %s not deleted: %v", id, err)
 		} else {
 			a.deleteMobileRecordingSession(moreSession)
+			a.forgetAssistantCallsForSource("watch", more)
+			a.forgetAssistantCallsForSession(moreSession)
 		}
 	}
 	// The names made from this hour's words go with it, now.

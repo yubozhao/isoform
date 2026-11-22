@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"wails-gui/internal/pii"
 )
@@ -145,7 +146,13 @@ func (g *memorySourceReadGate) allows(content string) bool {
 	return a.memoryReadDependenciesAllow(g.dependencies(content), g.deps.allows)
 }
 
+type memoryEntryReadFilter func(MemoryEntry) (bool, error)
+
 func (a *App) memoryEntriesForExternalRead() ([]MemoryEntry, error) {
+	return a.filteredExternalMemories(nil)
+}
+
+func (a *App) filteredExternalMemories(filter memoryEntryReadFilter) ([]MemoryEntry, error) {
 	allowRead, err := a.memoryReadFilter()
 	if err != nil {
 		return nil, err
@@ -154,10 +161,36 @@ func (a *App) memoryEntriesForExternalRead() ([]MemoryEntry, error) {
 	if err != nil {
 		return nil, err
 	}
-	return snapshot.redactedEntries(snapshot.allowed(allowRead)), nil
+	allowed := snapshot.allowed(allowRead)
+	current := allowed[:0]
+	for _, i := range allowed {
+		entry := snapshot.entries[i].raw
+		forgotten, err := snapshot.forgotten(entry.ID, entry.Content, time.Now())
+		if err != nil {
+			return nil, err
+		}
+		if forgotten {
+			continue
+		}
+		if filter != nil {
+			ok, err := filter(entry)
+			if err != nil {
+				return nil, err
+			}
+			if !ok {
+				continue
+			}
+		}
+		current = append(current, i)
+	}
+	return snapshot.redactedEntries(current), nil
 }
 
 func (a *App) memoryEntryForExternalRead(id string) (MemoryEntry, error) {
+	return a.filteredExternalMemory(id, nil)
+}
+
+func (a *App) filteredExternalMemory(id string, filter memoryEntryReadFilter) (MemoryEntry, error) {
 	allowRead, err := a.memoryReadFilter()
 	if err != nil {
 		return MemoryEntry{}, err
@@ -168,6 +201,26 @@ func (a *App) memoryEntryForExternalRead(id string) (MemoryEntry, error) {
 	}
 	if !allowRead(entry.ID, entry.Content) || !memoryInUse(entry.Content) {
 		return MemoryEntry{}, os.ErrNotExist
+	}
+	dir, err := memoryDir()
+	if err != nil {
+		return MemoryEntry{}, err
+	}
+	forgotten, err := isMemoryForgotten(dir, id, entry.Content, time.Now())
+	if err != nil {
+		return MemoryEntry{}, err
+	}
+	if forgotten {
+		return MemoryEntry{}, os.ErrNotExist
+	}
+	if filter != nil {
+		ok, err := filter(entry)
+		if err != nil {
+			return MemoryEntry{}, err
+		}
+		if !ok {
+			return MemoryEntry{}, os.ErrNotExist
+		}
 	}
 	return redactMemoryEntryForExternalRead(entry), nil
 }
@@ -203,9 +256,10 @@ func (a *App) memorySourceAllowsReadWithDependency(content string, allowsDepende
 // memoryReadDependencies is what a note's source check reads from the note
 // itself: its apps and sessions, with a valid read provenance merged in.
 type memoryReadDependencies struct {
-	fm             memoryFrontmatter
-	blocked        bool
-	apps, sessions []string
+	fm               memoryFrontmatter
+	blocked          bool
+	apps, sessions   []string
+	correctionPerson string
 }
 
 func memoryReadDependenciesOf(content string) memoryReadDependencies {
@@ -223,10 +277,31 @@ func memoryReadDependenciesOf(content string) memoryReadDependencies {
 		apps = compactStrings(append(slices.Clone(apps), provenance.Apps...))
 		sessions = compactStrings(append(slices.Clone(sessions), provenance.Sessions...))
 	}
-	return memoryReadDependencies{fm: fm, apps: apps, sessions: sessions}
+	deps := memoryReadDependencies{fm: fm, apps: apps, sessions: sessions}
+	if strings.Contains(content, "chat-person:") {
+		if doc, ok := parseOKFDocument(content); ok {
+			for _, source := range okfStringSlice(doc.Frontmatter, "source_ids") {
+				if id, linked := strings.CutPrefix(source, "chat-person:"); linked {
+					deps.correctionPerson = id
+					break
+				}
+			}
+		}
+	}
+	return deps
 }
 
 func (a *App) memoryReadDependenciesAllow(deps memoryReadDependencies, allowsDependency func(string, []string) bool) bool {
+	if deps.correctionPerson != "" {
+		if a == nil || a.store == nil || a.IsClosedEyesModeEnabled() {
+			return false
+		}
+		ctx := context.Background()
+		p, err := a.store.GetPrincipal(ctx, deps.correctionPerson)
+		if err != nil || !a.peopleProfileAllowsModelRead(ctx, p, nil) {
+			return false
+		}
+	}
 	if deps.blocked {
 		return false
 	}

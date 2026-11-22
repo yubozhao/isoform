@@ -28,7 +28,7 @@ const (
 // Matches openclaw's memory search config subset relevant to desktop.
 
 type MemoryStoreConfig struct {
-	Provider string `json:"provider"` // "openai" | "none" | "" (auto-detect)
+	Provider string `json:"provider"` // Empty uses local ONNX. Legacy "none" disables embeddings.
 	APIKey   string `json:"apiKey"`
 	BaseURL  string `json:"baseUrl"` // e.g. "https://api.openai.com/v1"
 	Model    string `json:"model"`   // e.g. "text-embedding-3-small"
@@ -176,7 +176,7 @@ func NewMemoryStore(configDir string, cfg MemoryStoreConfig, onDownloadProgress 
 	}
 	embedder := resolveEmbeddingProvider(configDir, cfg, progressCb)
 	if embedder != nil {
-		log.Printf("[memory] embedding provider: %s, model: %s", cfg.Provider, embedder.Model())
+		log.Printf("[memory] embedding provider: %s, model: %s", embedder.Provider(), embedder.Model())
 	} else {
 		log.Printf("[memory] no embedding provider configured, using FTS-only mode")
 	}
@@ -197,12 +197,23 @@ func NewMemoryStore(configDir string, cfg MemoryStoreConfig, onDownloadProgress 
 		return nil, fmt.Errorf("migrate memory db: %w", err)
 	}
 
+	if p, ok := embedder.(*openaiProvider); ok {
+		p.store = s
+	}
 	return s, nil
 }
 
 func (s *MemoryStore) migrate() error {
 	// Create metadata table first (needed for schema versioning)
 	if _, err := s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS finding_embedding_calls (
+			service TEXT NOT NULL,
+			address TEXT NOT NULL,
+			second INTEGER NOT NULL,
+			calls INTEGER NOT NULL,
+			PRIMARY KEY(service, address, second)
+		);
+		CREATE INDEX IF NOT EXISTS finding_calls_time ON finding_embedding_calls(second);
 		CREATE TABLE IF NOT EXISTS memory_meta (
 			key   TEXT PRIMARY KEY,
 			value TEXT NOT NULL
@@ -310,6 +321,11 @@ func ensureColumn(db *sql.DB, table, column, colDef string) {
 func (s *MemoryStore) Run(ctx context.Context) {
 	ctx, cancel := context.WithCancel(ctx)
 	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		cancel()
+		return
+	}
 	s.cancel = cancel
 	s.mu.Unlock()
 
@@ -499,30 +515,20 @@ func (s *MemoryStore) SaveDiaryEntry(content string, preflight ...func(id, conte
 
 // ── Config I/O ──────────────────────────────────────────────────────────
 
-func loadMemoryStoreConfig(configDir string) MemoryStoreConfig {
-	var cfg MemoryStoreConfig
-
-	// Try config file
+// A missing file is the first-run local choice. Reject partial or unreadable JSON.
+func loadMemoryStoreConfig(configDir string) (MemoryStoreConfig, error) {
+	var cfg *MemoryStoreConfig
 	data, err := os.ReadFile(filepath.Join(configDir, "memory.json"))
-	if err == nil {
-		_ = json.Unmarshal(data, &cfg)
+	if os.IsNotExist(err) {
+		return MemoryStoreConfig{}, nil
 	}
-
-	// Override with env vars
-	if key := os.Getenv("OPENAI_API_KEY"); key != "" && cfg.APIKey == "" {
-		cfg.APIKey = key
-		if cfg.Provider == "" {
-			cfg.Provider = "openai"
-		}
+	if err != nil {
+		return MemoryStoreConfig{}, err
 	}
-	if url := os.Getenv("OPENAI_BASE_URL"); url != "" && cfg.BaseURL == "" {
-		cfg.BaseURL = url
+	if err := json.Unmarshal(data, &cfg); err != nil || cfg == nil {
+		return MemoryStoreConfig{}, fmt.Errorf("invalid memory.json")
 	}
-
-	// If no provider is configured at all, auto-detect will try Ollama
-	// (handled in resolveEmbeddingProvider)
-
-	return cfg
+	return *cfg, nil
 }
 
 func saveMemoryStoreConfig(configDir string, cfg MemoryStoreConfig) error {
@@ -530,5 +536,19 @@ func saveMemoryStoreConfig(configDir string, cfg MemoryStoreConfig) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(configDir, "memory.json"), data, 0600)
+	tmp, err := os.CreateTemp(configDir, ".memory-*.tmp")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	findingSendMu.Lock()
+	defer findingSendMu.Unlock()
+	return os.Rename(tmp.Name(), filepath.Join(configDir, "memory.json"))
 }

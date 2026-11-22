@@ -189,8 +189,8 @@ export function ConnectAgentPanel({ active, agents, onConnected, onWaitingChange
             <section className="flex flex-col gap-2" aria-label={t("agents.connectSheet.anyOther")}>
                 <h3 className={sectionLabel}>{pasteName ? t("agents.connectSheet.pasteIntoTitle", { agent: pasteName }) : t("agents.connectSheet.anyOther")}</h3>
                 {startFailed ? (
-                    <div className="flex items-center gap-3 text-[13px] text-error" data-connect-off>
-                        {t("agents.connectSheet.off")}
+                    <div className="flex items-center gap-3 text-[13px] text-muted" data-connect-failed>
+                        {t("agents.actionFailed")}
                         <Button variant="quiet" size="sm" onClick={() => void makeLink()}>{t("agents.retry")}</Button>
                     </div>
                 ) : (

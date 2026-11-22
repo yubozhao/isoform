@@ -129,7 +129,7 @@ func (s *Store) ListMainChatAnswerChips(ctx context.Context, ids []string) (map[
 		args[i] = id
 	}
 	marks := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
-	rows, err := s.db.QueryContext(ctx, `SELECT c.stream_item_id,c.chips_json FROM stream_item_chips c
+	rows, err := s.committedReader().QueryContext(ctx, `SELECT c.stream_item_id,c.chips_json FROM stream_item_chips c
         JOIN stream_items i ON i.id=c.stream_item_id AND i.session_local_id=c.session_id AND i.run_id=c.run_id
         JOIN sessions s ON s.local_id=c.session_id
         WHERE s.kind='main' AND i.kind='assistant' AND i.tool_name='' AND c.stream_item_id IN (`+marks+`)`, args...)

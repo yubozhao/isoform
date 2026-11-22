@@ -463,6 +463,8 @@ func (a *App) StopEmailChannel() (EmailChannelStatus, error) {
 // emailCall makes one call to an email route with the hub credential
 // (PROTOCOL.md 19.2) and decodes the status object. Neither the address nor
 // a message is ever logged here.
+//
+//isoform:destination email
 func (c *mobileRelayClient) emailCall(ctx context.Context, method, path string, body any) (emailRelayStatus, error) {
 	var reader io.Reader
 	if body != nil {

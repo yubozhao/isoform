@@ -10,6 +10,7 @@ func (a *App) deferSetupStartup(manager *models.Manager) <-chan struct{} {
 			manager.MonitorNetwork()
 			manager.Resume()
 			a.watchDeferredModels(manager)
+			a.watchWaitingSpeechModels(manager)
 		})
 	}
 	return a.deferLaunchTask("setup_agent_probe", a.prepareAgentProbe)

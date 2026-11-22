@@ -8,13 +8,13 @@ protocol YourWeekDeclineAPI: Sendable {
 
 extension HubChannel: YourWeekDeclineAPI {
     func weekDeclined(briefID: String, version: String) async throws -> Bool {
-        guard try await status().briefWeekDecline == true else { throw HubRequestError.rejected(status: 404, message: "") }
+        guard try await abilities().briefWeekDecline == true else { throw HubRequestError.rejected(status: 404, message: "") }
         struct Result: Decodable { let declined: Bool }
         return try await perform(.briefWeekDecline(id: briefID, version: version)).payload(Result.self).declined
     }
 
     func declineWeek(briefID: String, version: String, idempotencyKey: String) async throws -> Bool {
-        guard Identifiers.isSafeBriefID(briefID), try await status().briefWeekDecline == true else {
+        guard Identifiers.isSafeBriefID(briefID), try await abilities().briefWeekDecline == true else {
             throw HubRequestError.rejected(status: 404, message: "")
         }
         struct Request: Encodable { let idempotencyKey: String; let version: String }

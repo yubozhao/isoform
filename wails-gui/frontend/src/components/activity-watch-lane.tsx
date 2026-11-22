@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { ActivityInlineNotice } from '@/components/activity-inline-notice';
 import { GetWatchLane, type WatchLane, type WatchLaneHour } from '@/lib/wails-shim-app';
 
 // "Your watch today": one column for each clock hour since the watch first
@@ -28,12 +29,16 @@ export function watchLaneHourHeight(hour: WatchLaneHour): number {
 export function ActivityWatchLane() {
     const { t, i18n } = useTranslation('activity');
     const [lane, setLane] = useState<WatchLane | null>(null);
+    const [failed, setFailed] = useState(false);
 
     const load = useCallback(() => {
-        // The lane is an extra over the list below: when it cannot be read it is simply not shown.
+        // A failed read says so with Try again; it is never an empty lane.
         GetWatchLane()
-            .then((got) => setLane(got ?? null))
-            .catch(() => setLane(null));
+            .then((got) => {
+                setLane(got ?? null);
+                setFailed(false);
+            })
+            .catch(() => setFailed(true));
     }, []);
 
     useEffect(() => {
@@ -46,6 +51,9 @@ export function ActivityWatchLane() {
         };
     }, [load]);
 
+    if (failed) {
+        return <ActivityInlineNotice notice={{ tone: 'error', text: t('watch.laneFailed'), onAction: load }} />;
+    }
     const hours = lane?.hours ?? [];
     if (hours.length === 0) return null;
 

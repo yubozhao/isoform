@@ -215,6 +215,8 @@ func (a *App) extractMeetingFollowups(ctx context.Context, session ActivitySessi
 			attendees = strings.Split(names, ", ")
 		}
 	}
+	// See them: the meeting this pass reads, so forgetting it removes the entry.
+	a.recordLearningRead("sense", storage.AssistantCallSource{Kind: activitySessionSourceKind(session), Ref: session.ID, Count: 1})
 	raw, err := meetingFollowupModel(a, buildMeetingFollowupPrompt(title, attendees, body))
 	if err != nil {
 		return empty, fmt.Errorf("follow-up pass: %w", err)

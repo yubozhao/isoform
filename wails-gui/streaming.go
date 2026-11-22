@@ -625,10 +625,7 @@ func (a *App) executePromptOwned(prompt string, userPrompt string, workDir strin
 		a.finishChatPreparation(tag, cancel)
 		return err
 	}
-	input.ExtraTools = a.mainChatTurnTools(tag, origin)
-	if a.quickChatTurnActive(tag) {
-		input.ExtraTools = withoutQuickChatCards(input.ExtraTools)
-	}
+	input.ExtraTools = a.mainChatTurnTools(tag, origin, topicTurnFromContext(ctx))
 	input.BeforeDispatch = func(dispatchCtx context.Context) error {
 		if err := dispatchCtx.Err(); err != nil {
 			return err
@@ -747,7 +744,16 @@ func (a *App) executePromptOwned(prompt string, userPrompt string, workDir strin
 		a.isMainChatSession(ctx, tag) && origin != promptOriginResume &&
 		!hasFocusedAppContext(tag) && mainChatContextToolsAllowed(input) {
 		input.ExternalPromptFunc = func() (string, string) { return composeTurn(true) }
-		input.ExternalExtraTools = a.chatContextTools(tag, capturedLanguageName)
+		input.ExtraTools = append(input.ExtraTools, a.namedChatTools(tag, capturedLanguageName, chatNativeReadNames)...)
+		input.ExternalExtraTools = a.namedChatTools(tag, capturedLanguageName, externalContextToolNames)
+		nativePrompt := input.PromptFunc
+		input.PromptFunc = func() (string, string) {
+			prompt, history := nativePrompt()
+			if prompt != "" {
+				prompt = chatNativeReadHint + prompt
+			}
+			return prompt, history
+		}
 	}
 
 	for _, img := range images {
@@ -774,6 +780,15 @@ func (a *App) executePromptOwned(prompt string, userPrompt string, workDir strin
 	input.Redactor = buildCERedactor()
 
 	go func() {
+		// An answer's calls and the sources its context tools read count in
+		// its See them entry (assistant_call_record.go). Hand-off work goes
+		// to the agent's own row instead.
+		ctx := ctx
+		if work == nil && owner == nil {
+			var answerScope *assistantCallScope
+			ctx, answerScope = a.beginAnswerCallScope(ctx, tag, admissionUserID)
+			defer a.endAnswerCallScope(tag, answerScope)
+		}
 		a.beginDesktopTurn(tag, origin)
 		panelPendingUserID := admissionUserID
 		var trackedRunID string
@@ -1684,7 +1699,6 @@ func (a *App) composePromptFor(prompt string, personal bool, opts ...string) str
 		{"chat-scope", func() string { return a.injectChatNarrowingContext(tag, origin) }},
 		{"corrections", func() string { return a.injectChatCorrectionContext(tag, origin) }},
 		{"sources", func() string { return a.injectChatSourcesContext(tag, origin) }},
-		{"quick-chat", func() string { return a.injectQuickChatContext(tag) }},
 		{"upcoming-tools", func() string { return a.injectUpcomingToolsContext(tag, origin) }},
 		{"goal-tools", func() string { return a.injectGoalToolsContext(tag) }},
 		{"web-search-tool", func() string { return a.injectWebSearchToolContext(tag, origin) }},
@@ -1740,6 +1754,7 @@ func (a *App) composePromptFor(prompt string, personal bool, opts ...string) str
 	if externalChat {
 		b.WriteString(a.externalChatStandingRules(languageName))
 		b.WriteString(chatContextToolHint)
+		b.WriteString(chatNativeReadHint)
 		b.WriteString(responseLanguageInstruction(languageName) + "\n\n")
 	}
 	for _, c := range chunks {

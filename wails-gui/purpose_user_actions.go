@@ -509,6 +509,11 @@ var (
 // restores it after the user's done or forget (Undo), keeps it (the
 // check-in's Keep), or edits its title and due date (revise).
 func (a *App) MoveGoal(input GoalMoveInput) (GoalMoveResult, error) {
+	// Playbooks, SOPs and goals are off unless their switch is on
+	// (feature_switches.go).
+	if !featureOn(featurePlaybooks) {
+		return GoalMoveResult{}, errFeatureOff(featurePlaybooks)
+	}
 	key := strings.TrimSpace(input.Key)
 	if key == "" || len(key) > 128 || !mobileValidID(input.GoalID) {
 		return GoalMoveResult{}, errGoalMoveInvalid
@@ -547,6 +552,11 @@ type GoalCreateInput struct {
 // CreateGoal adds a goal the user typed on the computer. It answers with the
 // goal as MoveGoal does, or one of MoveGoal's named errors.
 func (a *App) CreateGoal(input GoalCreateInput) (GoalMoveResult, error) {
+	// Playbooks, SOPs and goals are off unless their switch is on
+	// (feature_switches.go).
+	if !featureOn(featurePlaybooks) {
+		return GoalMoveResult{}, errFeatureOff(featurePlaybooks)
+	}
 	key := strings.TrimSpace(input.Key)
 	if key == "" || len(key) > 128 || strings.TrimSpace(input.Text) == "" {
 		return GoalMoveResult{}, errGoalMoveInvalid

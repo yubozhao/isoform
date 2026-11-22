@@ -181,3 +181,19 @@ func TestLocalRelaySettingLeavesAnotherLoopbackRelayAlone(t *testing.T) {
 		t.Fatalf("a loopback relay was moved: local %q ws %q", client.local, client.wsURL)
 	}
 }
+
+// Monday 2026-11-16, 7:22 to 8:23 PM: the direct link reached the pinned relay and re-sent its
+// grants there. A direct link that would connect where the pinned relay connection does is refused.
+func TestADirectLinkNeverReachesThePinnedRelay(t *testing.T) {
+	t.Setenv(mobileRelayLocalURLEnv, "http://127.0.0.1:8791")
+	pinned := testRelayClient(t, "https://relay.example.test")
+	if !mobileDirectReachesPinned(testRelayClient(t, "http://127.0.0.1:8791"), pinned) {
+		t.Fatal("a direct link to the pinned relay's own address was allowed")
+	}
+	if mobileDirectReachesPinned(testRelayClient(t, "http://127.0.0.1:49512"), pinned) {
+		t.Fatal("the sidecar on its own port was refused")
+	}
+	if mobileDirectReachesPinned(testRelayClient(t, "http://127.0.0.1:49512"), nil) {
+		t.Fatal("a direct link without a pinned relay was refused")
+	}
+}

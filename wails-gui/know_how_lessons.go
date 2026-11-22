@@ -241,6 +241,14 @@ func relearnKnowHowWithEvidence(dir, title, except string, moment KnowHowMoment,
 	if !ok {
 		return "", false
 	}
+	if len(evidence.historyAgents) > 0 {
+		prior := okfStringSlice(doc.Frontmatter, "historyAgents")
+		source := okfString(doc.Frontmatter, "source")
+		if len(prior) == 0 && (source == assistantHistorySource || source == assistantHistoryClaudeMd) {
+			prior = historyAgentsForExistingRecord(doc.Frontmatter)
+		}
+		doc.Frontmatter["historyAgents"] = knowledgeProvenanceUnion(prior, evidence.historyAgents)
+	}
 	if moment.At <= 0 {
 		moment.At = time.Now().UnixMilli()
 	}

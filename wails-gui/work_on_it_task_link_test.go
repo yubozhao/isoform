@@ -19,7 +19,6 @@ func newWorkOnItTaskLinkApp(t *testing.T) (*App, *workOnItSeams) {
 	t.Setenv(taskLinkAddrEnv, "127.0.0.1:0")
 	t.Setenv(taskLinkBaseURLEnv, "https://isoform-tasks.example.test")
 	app.taskLinks.dir = t.TempDir()
-	app.taskLinks.enabled = func() bool { return true }
 	t.Cleanup(app.shutdownTaskLinks)
 	return app, seams
 }
@@ -57,13 +56,6 @@ func TestWorkOnItOffersTaskLinkFirstOnlyWithAPublicOrigin(t *testing.T) {
 	for _, m := range methodsOf(t, app, "claude") {
 		if m == workonit.MethodTaskLink {
 			t.Fatal("task_link offered with no public origin")
-		}
-	}
-	t.Setenv(taskLinkBaseURLEnv, "https://isoform-tasks.example.test")
-	app.taskLinks.enabled = func() bool { return false }
-	for _, m := range methodsOf(t, app, "claude") {
-		if m == workonit.MethodTaskLink {
-			t.Fatal("task_link offered with the switch off")
 		}
 	}
 }

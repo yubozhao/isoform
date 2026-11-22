@@ -175,6 +175,7 @@ func verifyExistingFile(path, displayName, expectedSHA256 string) error {
 	return nil
 }
 
+//isoform:destination metadata
 func downloadFile(url, dest, displayName, expectedSHA256 string, onProgress ProgressFn) error {
 	client := &http.Client{Timeout: downloadTimeout}
 	resp, err := client.Get(url)

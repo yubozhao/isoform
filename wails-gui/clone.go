@@ -246,6 +246,8 @@ func cloneReachabilityTarget(repoURL string) (host string, port string, ok bool)
 
 // checkGitHostReachable performs a quick TCP dial to verify the git host is reachable
 // before starting a potentially long git clone operation.
+//
+//isoform:destination yansu_backend
 func checkGitHostReachable(repoURL string) error {
 	host, port, ok := cloneReachabilityTarget(repoURL)
 	if !ok {
@@ -647,6 +649,7 @@ func syncAfterClone(baseURL, token, org, product, projectName, targetDir string)
 	registerWithDaemon(targetDir)
 }
 
+//isoform:destination yansu_backend
 func registerWithDaemon(projectPath string) {
 	dataRoot, err := flavorDataDir()
 	if err != nil {

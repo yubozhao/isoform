@@ -181,3 +181,43 @@ func (r *mobileRecording) dropContext() {
 	// The marks are the wearer's own notes on the same audio: they go with it.
 	r.dropMarks()
 }
+
+// filterWatchContext takes a copy so a retry or another reader cannot mutate
+// an already stored part. Hold the returned grants until the metadata is saved.
+func (a *App) filterWatchContext(req *MobileRecordingRequest) func() {
+	if req.Context == nil || a == nil {
+		return func() {}
+	}
+	kept := *req.Context
+	heart := kept.HeartRate != nil && a.watchHeartRate.tryKeep()
+	place := kept.Location != nil && a.watchPlace.tryKeep()
+	if !heart {
+		kept.HeartRate = nil
+	}
+	if !place {
+		kept.Location = nil
+	}
+	req.Context = nil
+	if heart || place {
+		req.Context = &kept
+	}
+	return func() {
+		if heart {
+			a.watchHeartRate.receipts.RUnlock()
+		}
+		if place {
+			a.watchPlace.receipts.RUnlock()
+		}
+	}
+}
+
+func (c *watchContextChoice) tryKeep() bool {
+	if !c.receipts.TryRLock() {
+		return false
+	}
+	if !c.off.Load() {
+		return true
+	}
+	c.receipts.RUnlock()
+	return false
+}

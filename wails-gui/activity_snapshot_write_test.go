@@ -131,7 +131,7 @@ func TestRunAsyncPIIMasking_OCRFailureRecordsDroppedWrite(t *testing.T) {
 }
 
 func TestRunAsyncPIIMasking_CleanFrameKeepsEntryWithFile(t *testing.T) {
-	am := &activityMonitorState{piiSem: make(chan struct{}, 1), ocrEngine: fakeOCREngine{supported: true}}
+	am := &activityMonitorState{piiDetector: &holdDetector{}, piiSem: make(chan struct{}, 1), ocrEngine: fakeOCREngine{supported: true}}
 	path := filepath.Join(t.TempDir(), "2026-10-15", "frame.jpg")
 	write := newSnapshotWrite("2026-10-15/frame.jpg")
 

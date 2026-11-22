@@ -3,7 +3,7 @@ import { useTodaySectionSeen } from "@/hooks/useTodaySectionSeen";
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Check } from "lucide-react";
-import type { AssistantHistoryView, CalendarFirstDay, HistoryProject, WatchedToday } from "@/lib/wails-shim-app";
+import type { AssistantHistoryView, CalendarFirstDay, WatchedToday } from "@/lib/wails-shim-app";
 import { GetWatchedToday } from "@/lib/wails-shim-app";
 import { clockTime } from "@/lib/brief-time";
 import { historyFound, historyName } from "@/hooks/useFirstDay";
@@ -194,47 +194,6 @@ export function GettingToKnowYou({ day, active = true, history, calendar, watche
                     </p>
                 )}
                 <p className="text-muted" data-testid="know-local-line">{tc("firstDay.localLine")}</p>
-            </div>
-        </section>
-    );
-}
-
-/** One project card: name, sessions and last time, and where it stands
- *  only when the history said it plainly. */
-function ProjectCard({ project, now }: { project: HistoryProject; now: Date }) {
-    const { t, i18n } = useTranslation("today");
-    const tr: TodayT = (key, options) => String(t(key as never, options as never));
-    const last = new Date(project.lastAt);
-    const sameDay = last.toDateString() === now.toDateString();
-    const meta = project.sessionsThisWeek > 0 && sameDay
-        ? tr("firstDay.projects.sessionsAt", { count: project.sessionsThisWeek, time: clockTime(last, i18n.language, tr) })
-        : tr("firstDay.projects.sessionsOn", { count: project.sessionsThisWeek || project.sessions14d, day: last.toLocaleDateString(i18n.language, { weekday: "short" }) });
-    return (
-        <div data-project-card={project.id} className="flex min-w-0 flex-col gap-1 rounded-xl border border-border bg-panel px-3.5 py-3">
-            <span className="truncate text-[14px] font-semibold text-ink" title={project.path}>{project.name}</span>
-            <span className="text-[12px] leading-[17px] text-muted">{meta}</span>
-            {project.status && <span className="mt-1 text-[13px] leading-[18px] text-ink">{project.status}</span>}
-        </div>
-    );
-}
-
-/** Your projects (first-day handoff §3): up to three, from the history,
- *  until topics come from the screen. */
-export function YourProjects({ history, now = new Date(), active = true }: { history: AssistantHistoryView; now?: Date; active?: boolean }) {
-    const { t } = useTranslation("today");
-    const { t: tc } = useTranslation("common");
-    const tr: TodayT = (key, options) => String(t(key as never, options as never));
-    const projects = [...history.projects].sort((a, b) => b.sessions14d - a.sessions14d || b.lastAt - a.lastAt).slice(0, 3);
-    const seenRef = useTodaySectionSeen(active, "your_projects", projects.length);
-    if (projects.length === 0) return null;
-    return (
-        <section ref={seenRef} aria-labelledby="your-projects" className="flex min-w-0 flex-col gap-3" data-testid="your-projects">
-            <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
-                <h2 id="your-projects" className="text-[18px] font-semibold text-ink">{tr("firstDay.projects.title")}</h2>
-                <span className="text-[12.5px] text-muted">{tc("firstDay.fromHistory", { history: historyName(history.assistants, tc) })}</span>
-            </div>
-            <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
-                {projects.map((project) => <ProjectCard key={project.id} project={project} now={now} />)}
             </div>
         </section>
     );

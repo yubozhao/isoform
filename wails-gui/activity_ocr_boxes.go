@@ -108,6 +108,7 @@ func filterOCRBoxesByKeyword(boxes []OCRHighlightBox, keyword string) []OCRHighl
 // worker's session-relative seconds offset so write-through rows look like
 // worker rows.
 type snapshotOCRIdentity struct {
+	held       bool
 	SnapshotID int64
 	SessionID  string
 	FrameTime  float64
@@ -120,12 +121,12 @@ func (s *ActivityStore) GetSnapshotOCRIdentityByFilePath(relPath string) (snapsh
 	var id snapshotOCRIdentity
 	var snapTS, sessStart int64
 	err := s.db.QueryRow(`
-		SELECT snap.id, snap.session_id, snap.timestamp, sess.start_time
+		SELECT snap.id, snap.session_id, snap.timestamp, sess.start_time,snap.privacy_held
 		FROM activity_snapshots snap
 		JOIN activity_sessions sess ON sess.id = snap.session_id
 		WHERE snap.file_path = ?
 		ORDER BY snap.id DESC
-		LIMIT 1`, relPath).Scan(&id.SnapshotID, &id.SessionID, &snapTS, &sessStart)
+		LIMIT 1`, relPath).Scan(&id.SnapshotID, &id.SessionID, &snapTS, &sessStart, &id.held)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return snapshotOCRIdentity{}, false, nil
@@ -259,7 +260,7 @@ func (m *activityMonitorState) getOrComputeOCRBoxes(snapshotRelPath string) ([]O
 		// On-demand OCR sees the full frame, so observations are already
 		// full-frame normalized — no crop mapping needed.
 		boxes := observationsToFullFrameBoxes(observations, image.Rectangle{}, 0, 0)
-		if found {
+		if found && !identity.held {
 			if err := store.SaveOCRBoxesForSnapshot(identity, marshalOCRBoxes(boxes)); err != nil {
 				log.Printf("[ocr] write-through of highlight boxes failed for %s: %v", snapshotRelPath, err)
 			}

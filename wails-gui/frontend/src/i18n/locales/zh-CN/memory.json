@@ -695,7 +695,10 @@
             "edit": "编辑",
             "cardLabel": "{{where}}。{{text}}。选“是”即确认，Isoform 会把它当作事实。",
             "cardLabelNoSource": "{{text}}。选“是”即确认，Isoform 会把它当作事实。",
-            "forgetClaim": "忘记：{{claim}}"
+            "forgetClaim": "忘记：{{claim}}",
+            "notMine": "不是我的",
+            "notMineDone": "不是你的，所以已经移除，它来自的那些时刻也不再算在你身上。",
+            "notMineDoneClaimOnly": "不是你的，所以已经移除。"
         },
         "detail": {
             "label": "认识详情",
@@ -754,6 +757,29 @@
             "checkFirst": "先确认这几条",
             "checkFirstHint": "来自你的 {{history}}",
             "source": "{{assistant}}，{{date}}"
+        },
+        "oneLine": "一句话",
+        "oneLineFailed": "无法加载你的一句话。",
+        "toCheck": "待确认",
+        "confirmed": "已确认",
+        "youConfirmed": "你确认过",
+        "youConfirmedOn": "你确认过 · {{date}}",
+        "youEdited": "你改过",
+        "youSaid": "你说过",
+        "notRight": "不对",
+        "notRightMeta_one": "{{count}} · 保留下来，免得再被猜一次",
+        "notRightMeta_other": "{{count}} · 保留下来，免得再被猜一次",
+        "notRightMore": "还有 {{count}} 条",
+        "show": "显示",
+        "hide": "收起",
+        "showMore": "再显示 {{count}} 条",
+        "importMore_one": "来自 {{label}} 的另外 {{count}} 条",
+        "importMore_other": "来自 {{label}} 的另外 {{count}} 条",
+        "importedFrom": "从 {{label}} 导入",
+        "undoFailed": "撤销没有保存。",
+        "edit": {
+            "label": "正在编辑",
+            "kept": "Isoform 会保留你的修改并从中学习。"
         }
     },
     "newNote": {
@@ -775,6 +801,7 @@
         "nothingNew": "本周没有需要确认的新内容。",
         "allJudged_one": "Isoform 对你的 {{count}} 条看法你都已判断过。随着它看到更多你的工作，新的会先显示在这里。",
         "allJudged_other": "Isoform 对你的 {{count}} 条看法你都已判断过。随着它看到更多你的工作，新的会先显示在这里。",
-        "tooEarly": "Isoform 还没看到足够的内容来说说你。随着它看到你的工作，看法会出现在这里，通常需要一天左右。"
+        "tooEarly": "Isoform 还没看到足够的内容来说说你。随着它看到你的工作，看法会出现在这里，通常需要一天左右。",
+        "import": "导入另一个 AI 对你的了解 ›"
     }
 }

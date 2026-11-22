@@ -54,6 +54,14 @@ type mobileBridge struct {
 	// writes. Acquire it before mu, and release mu before network writes.
 	briefDeliveryMu sync.Mutex
 
+	// sendOrder is held from numbering a message for a phone until it is on the
+	// wire, so messages leave in the order of their numbers. Without it two
+	// senders could number under mu and then send in the other order; the relay
+	// hands a phone only numbers above the one it asked after, and the phone
+	// keeps a highest number too, so the overtaken message was lost
+	// (PROTOCOL.md, "Requests reach the hub in any order"). Taken before mu,
+	// never while holding it.
+	sendOrder          sync.Mutex
 	mu                 sync.Mutex
 	stopped            bool
 	identity           *mobileHubIdentity
@@ -88,6 +96,9 @@ type mobileBridge struct {
 	// keepAwake holds the idle-sleep assertion while the setting and power
 	// inputs allow it and a phone is paired (mobile_keep_awake.go).
 	keepAwake *mobileKeepAwake
+	// expectedRunning is true once the loop that fetches parts told ahead of
+	// their upload runs (mobile_recordings_ahead.go). Guarded by mu.
+	expectedRunning bool
 }
 
 // mobileDeviceRecord is one paired iPhone (devices.json, version 2). Counters are
@@ -256,6 +267,9 @@ func newMobileBridge(app *App, stateDir string) (*mobileBridge, error) {
 	bridge.keepAwake.initPairedPhones(len(devices))
 	bridge.registerChatListener()
 	if app != nil && app.store != nil {
+		bridge.mu.Lock()
+		bridge.pruneWatchPairingReportsLocked()
+		bridge.mu.Unlock()
 		if removed, pruneErr := app.store.PruneMobileReceipts(ctx, time.Now()); pruneErr != nil {
 			log.Printf("[mobile-chat] could not prune receipts: %v", pruneErr)
 		} else if removed > 0 {
@@ -405,6 +419,8 @@ func (bridge *mobileBridge) publishEvent(scope string, payload []byte) {
 }
 
 func (bridge *mobileBridge) publishEventForDevices(scope string, payloadFor func(mobileDeviceRecord) []byte) {
+	bridge.sendOrder.Lock()
+	defer bridge.sendOrder.Unlock()
 	bridge.mu.Lock()
 	if bridge.stopped || bridge.identity == nil || bridge.client == nil {
 		bridge.mu.Unlock()
@@ -478,6 +494,10 @@ func (bridge *mobileBridge) startRelayLocked() error {
 	client.mirror = bridge.mirrorToDirect
 	bridge.client = client
 	client.start(bridge.ctx)
+	// Parts a phone told of before a restart are fetched when the relay has them.
+	if store := bridge.recordingStoreLocked(); store != nil && len(store.expected()) > 0 {
+		bridge.startExpectedRecordingsLocked()
+	}
 	return nil
 }
 
@@ -886,6 +906,7 @@ func (bridge *mobileBridge) dropDevice(id string) error {
 	}
 	delete(bridge.replayWindows, id)
 	delete(bridge.scopeRequests, id)
+	bridge.pruneWatchPairingReportsLocked()
 	delete(bridge.pendingBriefs, id)
 	bridge.briefOutbox.drop(id)
 	bridge.closeWorkerLocked(id)
@@ -937,6 +958,7 @@ func (bridge *mobileBridge) reconcileLocked(presence []mobileRelayPresence) {
 		log.Printf("[mobile-bridge] the relay listed %d iPhone(s) this Mac has no record of; revoked them at the relay", unknown)
 	}
 	if removed > 0 {
+		bridge.pruneWatchPairingReportsLocked()
 		log.Printf("[mobile-bridge] the relay no longer lists %d paired iPhone(s); their records were removed", removed)
 		if err := bridge.persistDevicesLocked(); err != nil {
 			log.Printf("[mobile-bridge] could not save the device list: %v", err)
@@ -1049,11 +1071,16 @@ func (bridge *mobileBridge) serveInbound(env mobileEnvelope) {
 		return
 	}
 	if !fresh {
+		// Normal when a request arrives over both paths. Said, because until 2026-11-20
+		// nothing told a request seen twice from one that never ran (number only).
+		log.Printf("[mobile-bridge] a request seen before was acknowledged and not run: seq %d", env.Seq)
 		bridge.ackInbound(env)
 		return
 	}
 	request, err := decodeMobileRequest(plaintext)
 	if err != nil {
+		// The size only: nothing of what the request holds.
+		log.Printf("[mobile-bridge] a request could not be read and was refused: seq %d, %d bytes", env.Seq, len(plaintext))
 		if mobileValidUUID(request.ID) {
 			_ = bridge.sendMobileResponse(device.DeviceID, request.ID, http.StatusBadRequest, mobileErrorBody("the request is not valid"))
 		}
@@ -1141,6 +1168,8 @@ func (bridge *mobileBridge) ackInbound(env mobileEnvelope) {
 
 // serveRequest runs an authorized request through the route table and returns the
 // status and the standard JSON body.
+//
+//isoform:destination local
 func (bridge *mobileBridge) serveRequest(device mobileDeviceRecord, request mobileRequestPlaintext) (int, string) {
 	if expires, ok := mobileParseTimestamp(device.ExpiresAt); !ok || !time.Now().Before(expires) {
 		return http.StatusUnauthorized, mobileErrorBody("this phone's authorization has expired; pair it again")
@@ -1179,6 +1208,8 @@ func (bridge *mobileBridge) sendMobileResponse(deviceID, requestID string, statu
 			return err
 		}
 	}
+	bridge.sendOrder.Lock()
+	defer bridge.sendOrder.Unlock()
 	bridge.mu.Lock()
 	record := bridge.devices[deviceID]
 	if record == nil {

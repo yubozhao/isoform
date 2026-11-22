@@ -93,7 +93,6 @@ import { YouPage, type YouPageTab } from "@/components/you/you-page";
 import { useClosedEyes } from "@/components/sidebar-foot";
 import { MainChatPageColumn, MainChatStreamBody } from "@/components/main-chat/main-chat-stream-body";
 import { useMainChatItemPanel } from "@/hooks/useMainChatItemPanel";
-import { MainChatTopicBox } from "@/components/main-chat/main-chat-topic-view";
 import { useMainChatView } from "@/hooks/useMainChatView";
 import { ChatErrorPreview } from "@/components/chat-error-preview";
 import { NewChatWelcome } from "@/components/new-chat-welcome";
@@ -114,7 +113,6 @@ import { AutomationDetailPane } from "@/components/automations/AutomationDetailP
 import { TodayPage } from "@/components/today/TodayPage";
 import { CAPTURED_COUNTS_ANCHOR } from "@/components/settings/pages/captured-counts-card";
 import type { TodayActionHandlers } from "@/components/today/types";
-import { todayBriefCardRef } from "@/lib/today-chat-navigation";
 import {
     Dialog,
     DialogDescription,
@@ -125,7 +123,8 @@ import type {
     SettingsOpenOptions,
     SettingsTopic,
 } from "@/components/settings-page";
-import { isSettingsPageId, readSettingsOpenEvent } from "@/components/settings/settings-registry";
+import { isSettingsPageId, opensKeysSheet, opensYouPage, readSettingsOpenEvent } from "@/components/settings/settings-registry";
+import { KeysSheet } from "@/components/keys-sheet";
 import { debugDetailOwnsEscape } from "@/components/debug-master-detail";
 import { PlanReviewCard } from "@/components/plan-review-card";
 import { PermissionQuestionCard } from "@/components/permission-question-card";
@@ -183,7 +182,6 @@ import { AppToaster } from "@/components/app-toaster";
 import { loadOnboardingStateRaw, onboardingFinished } from "@/lib/onboarding-gate";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useHandoffNotification } from "@/hooks/useHandoffNotification";
-import { useFirstDay } from "@/hooks/useFirstDay";
 import { useTasksNeedsYouCount } from "@/hooks/useTasksNeedsYou";
 import { useTtsAnnounce } from "@/hooks/useTtsAnnounce";
 
@@ -495,14 +493,15 @@ export default function App() {
     const onboardingStateRef = useRef(onboardingState);
     const [onboardingLoading, setOnboardingLoading] = useState(true);
     const [skipOnboardingSession, setSkipOnboardingSession] = useState(false);
-    // Which first-run setup runs: 3 is computer setup v1.0.0 (ISOFORM_SETUP_V3=1),
-    // 2 is setup v2. Null until the backend answers; a missing binding is v2.
+    // Which first-run setup runs: 3 is computer setup v1.0.0 (the default), 2 is
+    // setup v2 (ISOFORM_SETUP_V3=0). Null until the backend answers; a failed
+    // read is 3, matching the Go default and the window it sized.
     const [setupVersion, setSetupVersion] = useState<number | null>(null);
     useEffect(() => {
         let live = true;
         GetSetupVersion()
             .then((v) => live && setSetupVersion(v))
-            .catch(() => live && setSetupVersion(2));
+            .catch(() => live && setSetupVersion(3));
         return () => {
             live = false;
         };
@@ -568,7 +567,6 @@ export default function App() {
     });
     // The Tasks count is exactly what Tasks › Needs you lists.
     const tasksNeedsYouCount = useTasksNeedsYouCount();
-    const firstDay = useFirstDay();
     useHandoffNotification();
     useTtsAnnounce();
 
@@ -732,8 +730,20 @@ export default function App() {
     const [settingsInitialOptions, setSettingsInitialOptions] =
         useState<SettingsOpenOptions>({});
 
+    // Keyboard shortcuts (computer-keys v1.0.0): Cmd+/, the user menu and
+    // the old `keybindings` Settings link all open this sheet.
+    const [keysSheetOpen, setKeysSheetOpen] = useState(false);
+
     const openSettings = useCallback(
         (topic?: SettingsTopic, options?: SettingsOpenOptions) => {
+            if (opensKeysSheet(topic)) {
+                setKeysSheetOpen(true);
+                return;
+            }
+            if (opensYouPage(topic)) {
+                openMemoryRef.current?.();
+                return;
+            }
             setSettingsInitialTopic(topic);
             setSettingsInitialOptions({ ...options });
             settings.setSettingsOpen(true);
@@ -760,6 +770,8 @@ export default function App() {
     // A thread the Activity page's "What you worked on" opens and scrolls to
     // (an "Open thread" card target).
     const [activityInitialThreadId, setActivityInitialThreadId] = useState<string | null>(null);
+    // A watch conversation Activity › Watch opens on arrival (openActivityConversation).
+    const [activityInitialConversationId, setActivityInitialConversationId] = useState<string | null>(null);
     const [activityInitialSessionId, setActivityInitialSessionId] = useState<
         string | null
     >(null);
@@ -826,6 +838,7 @@ export default function App() {
         setActivityInitialDate(null);
         setActivityNoticedFocus(null);
         setActivityInitialThreadId(null);
+        setActivityInitialConversationId(null);
         setActivityInitialEventTimestamp(null);
         setActivityHighlightedSenderName(null);
         setActivityOpenedFrom(null);
@@ -981,13 +994,9 @@ export default function App() {
     const cronJobs = useCronJobs();
 
     usePageWindowTitle(appMode, projects.activeSession);
-    const mainChatWaitingCount = useMainChatWaitingCount();
-    // Chat's copper dot: an unread reply in the main chat (a question waiting
-    // there also counts on Tasks, and shows the dot through the count).
-    const mainChatUnread = useMemo(() => {
-        const standalone = projects.projects.find((p) => p.id === STANDALONE_CHAT_PROJECT_ID);
-        return Boolean(standalone?.workspaces.some((w) => w.sessions.some((session) => isMainChatSession(session) && projects.unreadSessionIds.has(session.localId))));
-    }, [projects.projects, projects.unreadSessionIds]);
+    // Keeps the main chat's waiting frame current and marks the launch's
+    // overview paint; the sidebar shows no Chat count (design S1).
+    useMainChatWaitingCount();
     // Tasks › Scheduled (was Upcoming), loaded while Tasks is open.
     const upcoming = useUpcoming(appMode === "agents");
     // True while viewing a chat that was opened from the Handoffs page, so the
@@ -1204,6 +1213,18 @@ export default function App() {
         handleSetAppMode("activity");
     };
 
+    // One watch conversation, from anywhere (Chat's watch source, #1418):
+    // Activity › Watch on its day (YYYY-MM-DD) with that conversation open.
+    const openActivityConversation = useCallback((day: string, conversationId: string) => {
+        resetActivityState();
+        setActivityInitialDate(day);
+        setActivityInitialConversationId(conversationId);
+        setActivitySection("watch");
+        setActivityNonce((n) => n + 1);
+        closeOverlaysForActivityPage();
+        handleSetAppMode("activity");
+    }, [resetActivityState, closeOverlaysForActivityPage, handleSetAppMode]);
+
     const openActivityWithSession = useCallback(
         (
             sessionId: string,
@@ -1300,7 +1321,7 @@ export default function App() {
     const activeIsMainChat = projects.activeSession
         ? isMainChatSession(projects.activeSession)
         : false;
-    // RC 2 D1: the main chat's filters, numbers, day folds and chips. They
+    // RC 2 D1: the main chat's numbers, day folds and chips. They
     // change only what is shown; the chat stays one conversation.
     const [chatVisited, setChatVisited] = useState(false);
     useEffect(() => { if (appMode === 'chat') setChatVisited(true); }, [appMode]);
@@ -1369,18 +1390,6 @@ export default function App() {
         if (todayContentReady) markPageContent('today');
     }, [chatContentReady, todayContentReady, appMode]);
 
-    // Words a click put in the box, unsent, until the user edits or sends
-    // them; "answer" when they came from a chip under an answer.
-    const [preparedPrompt, setPreparedPrompt] = useState<{ text: string; from: "answer" | "suggestion" } | null>(null);
-    const composerReplacePrompt = composer.replacePrompt;
-    const prepareComposerPrompt = useCallback(
-        (text: string, from: "answer" | "suggestion") => {
-            composerReplacePrompt(text);
-            setPreparedPrompt({ text, from });
-            requestAnimationFrame(focusComposer);
-        },
-        [composerReplacePrompt, focusComposer],
-    );
     // Chat K4: a suggestion, starter or answer chip is sent as the person's
     // message at once; nothing waits in the box.
     const composerSendImmediate = composer.sendImmediate;
@@ -1388,14 +1397,6 @@ export default function App() {
         (text: string) => composerSendImmediate(text),
         [composerSendImmediate],
     );
-    const composerNote =
-        preparedPrompt && preparedPrompt.text === composer.prompt
-            ? tChat(
-                  preparedPrompt.from === "answer"
-                      ? "mainChat.view.notePreparedAnswer"
-                      : "mainChat.view.notePrepared",
-              )
-            : undefined;
 
     // Whether the onboarding screen (or its loading gate) is in front. It is
     // the same test as the early returns further down, computed here so the
@@ -1450,6 +1451,31 @@ export default function App() {
             focusComposer,
             tToday,
         ],
+    );
+
+    // "Ask about {topic} ›" (computer-conformance-answers v1.2.0 T11): Chat
+    // opens with the topic attached as its chip and an empty field whose
+    // placeholder names it. Nothing is written or sent for the person; a
+    // prewritten question would be Chat speaking first.
+    const composerAttachAbout = composer.attachAbout;
+    const handleAskAboutTopic = useCallback(
+        (topic: { id: string; name: string }) => {
+            const name = topic.name.trim();
+            if (!topic.id || !name) return;
+            handleSetAppMode("chat");
+            void projects.handleOpenMainChat().then((sessionId) => {
+                if (!sessionId) {
+                    toast.error(tToday("actions.chatOpenFailed"));
+                    return;
+                }
+                composerAttachAbout(sessionId, { sourceKind: "topic", sourceId: topic.id }, {
+                    title: name,
+                    placeholder: tChat("mainChat.view.askTopicPlaceholder", { topic: name }),
+                });
+                requestAnimationFrame(() => focusComposer());
+            }).catch(() => toast.error(tToday("actions.chatOpenFailed")));
+        },
+        [handleSetAppMode, projects.handleOpenMainChat, composerAttachAbout, focusComposer, tChat, tToday],
     );
 
     // Navigate first; the composer holds a loading context until the brief
@@ -1511,12 +1537,26 @@ export default function App() {
 
     const [, setActiveTodayTopicId] = useState<string | null>(null);
     const [todayTopicRequest, setTodayTopicRequest] = useState<{ topic: TodayTopic; nonce: number } | null>(null);
+    // A Your work item to open on Today (Quick chat's Open, #1414/#1415):
+    // openTodayItem goes to Today and opens that item there.
+    const [todayWorkRequest, setTodayWorkRequest] = useState<{ itemId: string; nonce: number } | null>(null);
+    const todayWorkNonce = useRef(0);
+    const openTodayItem = useCallback((itemId: string) => {
+        if (!itemId.trim()) return;
+        handleSetAppMode("today");
+        setTodayWorkRequest({ itemId, nonce: ++todayWorkNonce.current });
+    }, [handleSetAppMode]);
+    // For event handlers that keep one closure (Quick chat's
+    // "spotlight:open-work"): openTodayItemRef.current?.(itemId).
+    const openTodayItemRef = useRef(openTodayItem);
+    openTodayItemRef.current = openTodayItem;
 
     const briefHandlers = useMemo<TodayActionHandlers>(
         () => ({
             onStartChat: handleStartChatFromToday,
             onOpenBriefConversation: handleOpenBriefConversation,
             onAskAboutParagraph: handleAskAboutParagraph,
+            onAskAboutTopic: handleAskAboutTopic,
             onRunNow: (jobId: string) => {
                 void cronJobs.runNow(jobId).catch(() => {});
             },
@@ -1547,6 +1587,13 @@ export default function App() {
                 setTasksFocus((current) => ({ section: "done", nonce: (current?.nonce ?? 0) + 1 }));
             },
             onOpenActivity: () => openActivityFresh(new Date()),
+            // Your work's "Connect an agent ›" (computer-today v1.1.0 rule 3).
+            onOpenAgents: () => {
+                handleSetAppMode("agents");
+                setHandoffOpenId(null);
+                setTasksFocus(null);
+                setAgentsShowTasks(false);
+            },
             onOpenMeetingNotes: (sessionId: string) => openActivityWithSession(sessionId),
             onOpenActivitySuggestion: (target) => {
                 openActivityDayRef.current(target.date);
@@ -1571,6 +1618,7 @@ export default function App() {
             handleStartChatFromToday,
             handleOpenBriefConversation,
             handleAskAboutParagraph,
+            handleAskAboutTopic,
             cronJobs.runNow,
             setPendingInsightMemoryId,
             setMemoryOpen,
@@ -2290,6 +2338,28 @@ export default function App() {
         return () => unsub();
     }, [projects, handleSetAppMode]);
 
+    // ── Quick chat's ready work first (quick_chat_ready.go) ──
+    // Open shows the item where it lives, on Today; Open in Chat opens Chat
+    // with the item attached and the typed words in the box, unsent.
+    useEffect(() => {
+        const offOpen = EventsOn("spotlight:open-work", (data: { itemId?: string }) => {
+            const itemId = (data?.itemId ?? "").trim();
+            if (!itemId) return;
+            // The item itself on Today: open, or focused in its row when answered.
+            openTodayItemRef.current?.(itemId);
+        });
+        const offChat = EventsOn("spotlight:chat-work", (data: { itemId?: string; prompt?: string }) => {
+            const itemId = (data?.itemId ?? "").trim();
+            const prompt = (data?.prompt ?? "").trim();
+            if (!itemId || !prompt) return;
+            handleStartChatFromToday(prompt, { sourceKind: "work", sourceId: itemId });
+        });
+        return () => {
+            offOpen();
+            offChat();
+        };
+    }, [handleStartChatFromToday]);
+
     // ── Credential probe greeting toast ──
     useEffect(() => {
         const unsub = EventsOn("auth:greeting", (data: { message: string }) => {
@@ -2507,6 +2577,14 @@ export default function App() {
             setActivitySection("workedOn");
             setActivityInitialThreadId(id);
         },
+        // A chat answer's source: the Activity session or call it read, or
+        // the watch's conversations (computer-chat v1.0.0 rule 3).
+        openActivitySession: (id: string) => openActivityWithSession(id),
+        openWatch: () => {
+            openActivityFresh(new Date());
+            setActivitySection("watch");
+        },
+        openActivityConversation,
     });
 
     // "Use as my message" on a texted reply: its sender is unverified, so the
@@ -2664,6 +2742,8 @@ export default function App() {
         [keybindings.getCombo],
     );
     const searchActions: SearchDialogActions = {
+        // Find's Go to opens a place as its key does (goToPageRef is set below).
+        goToPage: (page) => goToPageRef.current(page),
         goToMainChat: () => {
             closeOverlaysForSearch();
             handleSetAppMode("chat");
@@ -3267,21 +3347,10 @@ export default function App() {
                     openSettings();
                     break;
                 case "keyboard-shortcuts":
+                    // Over whatever is in front, Settings included.
                     e.preventDefault();
-                    openSettings("keybindings");
+                    setKeysSheetOpen(true);
                     break;
-                case "new-chat": {
-                    // Don't create a new chat while settings is open.
-                    if (settings.settingsOpen) break;
-                    e.preventDefault();
-                    const projectId =
-                        projects.activeProject?.id ??
-                        STANDALONE_CHAT_PROJECT_ID;
-                    void projects.handleNewSession(projectId);
-                    // Switch to chat view if currently showing an automation.
-                    handleSetAppMode("chat");
-                    break;
-                }
                 case "go-today":
                 case "go-chat":
                 case "go-agents":
@@ -3316,10 +3385,7 @@ export default function App() {
     }, [
         keybindings.findMatchingAction,
         openSettings,
-        projects.activeProject?.id,
-        projects.handleNewSession,
         handleReplayOnboarding,
-        handleSetAppMode,
         devToolsUnlocked,
         interfaceZoom,
     ]);
@@ -3551,27 +3617,13 @@ export default function App() {
                                     }}
                             onJumpToActivity={openActivityWithHighlightedFrames}
                             onReplayOnboarding={handleReplayOnboarding}
-                            vimMode={settings.vimMode}
-                            onVimModeChange={settings.setVimMode}
                             initialTopic={settingsInitialTopic}
                             initialOptions={settingsInitialOptions}
-                            keybindings={keybindings}
                             devToolsUnlocked={devToolsUnlocked}
-                            onOpenMemory={() => {
-                                settings.setSettingsOpen(false);
-                                setSettingsInitialTopic(undefined);
-                                        setMemoryOpen(true);
-                            }}
                             onOpenPeople={() => {
                                 settings.setSettingsOpen(false);
                                 setSettingsInitialTopic(undefined);
                                         setPeopleInitialSelection(undefined);
-                                setPeopleOpen(true);
-                            }}
-                            onOpenProfile={() => {
-                                settings.setSettingsOpen(false);
-                                setSettingsInitialTopic(undefined);
-                                        setPeopleInitialSelection("self");
                                 setPeopleOpen(true);
                             }}
                         />
@@ -3647,13 +3699,8 @@ export default function App() {
                 isStaging={envSwitch.showStagingBadge}
                 shortcutFor={searchShortcutFor}
                 onOpenSettings={() => openSettings()}
-                onOpenProfile={() => openSettings("profile")}
-                onOpenShortcuts={() => openSettings("keybindings")}
-                onOpenHelp={() => openSettings("about")}
-                onOpenObservationSettings={() => openSettings("activity")}
                 onOpenPhoneSettings={() => openSettings("iphone")}
                 waitingCount={tasksNeedsYouCount}
-                chatUnread={mainChatUnread || (mainChatWaitingCount ?? 0) > 0}
                 onOpenToday={() => handleSetAppMode("today")}
                 onOpenMainChat={() => {
                     handleSetAppMode("chat");
@@ -3744,6 +3791,7 @@ export default function App() {
                             briefRequest={todayBriefRequest}
                             onActiveTopicChange={setActiveTodayTopicId}
                             onTopicRequestDone={() => setTodayTopicRequest(null)}
+                            workRequest={todayWorkRequest}
                         />
                     </RetainedPage>
                 </ComposerVoiceContext.Provider>
@@ -3876,6 +3924,8 @@ export default function App() {
                         onNoticedFocusConsumed={(focus) => setActivityNoticedFocus((current) => current === focus ? null : current)}
                         initialThreadId={activityInitialThreadId}
                         onInitialThreadConsumed={(threadId) => setActivityInitialThreadId((current) => current === threadId ? null : current)}
+                        initialConversationId={activityInitialConversationId}
+                        onOpenTopic={searchActions.openTopic}
                         cronJobs={cronJobs}
                         section={activitySection}
                         onSectionChange={setActivitySection}
@@ -3900,13 +3950,16 @@ export default function App() {
                         highlightedSenderName={activityHighlightedSenderName}
                         onStartChat={(prompt, context) => briefHandlers.onStartChat(prompt, context)}
                         onOpenChat={() => openMainChatRef.current()}
-                        yourWeekHandlers={briefHandlers}
-                        onYourWeekCard={(briefId, card) => briefHandlers.onStartChat(card.message, todayBriefCardRef(briefId, card.id, card.message))}
                     />
                     </Suspense>
                     </div>
                 ) : appMode === "agents" && !agentsOnTasks ? (
-                    <AgentsPage onOpenTasks={() => setAgentsShowTasks(true)} />
+                    <AgentsPage
+                        onOpenActivityAgents={() => {
+                            openActivityFresh(new Date());
+                            setActivitySection("agents");
+                        }}
+                    />
                 ) : appMode === "agents" ? (
                     <TasksPage
                         openHandoffId={handoffOpenId}
@@ -3920,7 +3973,7 @@ export default function App() {
                             })
                         }
                         onOpenTodayBrief={(briefId) => openTodayBrief(briefId)}
-                        onChangeBriefTimes={() => openSettings("iphone")}
+                        onChangeBriefTimes={() => openSettings("notifications")}
                         onStartInPlace={async (result) => {
                             const started = await projects.handleStartHandoffExecution(result);
                             if (started) projects.markSessionRead(result.sessionId);
@@ -3973,7 +4026,8 @@ export default function App() {
                                     <>
                                     {aiReady === false && <NoAILine />}
                                     <Composer
-                                        placeholder={activeIsMainChat && firstDay.firstDays ? t("firstDay.placeholder") : undefined}
+                                        placeholder={activeIsMainChat ? composer.about?.placeholder ?? tChat("mainChat.view.field") : undefined}
+                                        about={activeIsMainChat && composer.about ? { title: composer.about.title, onRemove: composer.detachAbout } : undefined}
                                         prompt={composer.prompt}
                                         todayPreview={composer.todayPreview}
                                         onPromptChange={composer.setPrompt}
@@ -4054,7 +4108,6 @@ export default function App() {
                                             hasActiveConversation
                                         }
                                         onSelectSuggestion={askNow}
-                                        note={composerNote}
                                         onOpenHandoff={(id) => {
                                             // Chat K4: the task's thread opens in Chat's panel; Chat stays.
                                             mainChatItemPanel.close();
@@ -4280,43 +4333,7 @@ export default function App() {
                                                         willChange: "transform",
                                                     }}
                                                 >
-                                                    {activeIsMainChat &&
-                                                    mainChatView.attached ? (
-                                                        <MainChatTopicBox
-                                                            view={mainChatView}
-                                                            streaming={
-                                                                projects
-                                                                    .activeSession
-                                                                    ?.streaming ??
-                                                                false
-                                                            }
-                                                            onStop={
-                                                                composer.handleCancel
-                                                            }
-                                                            queuedMessages={
-                                                                composer.queuedMessages
-                                                            }
-                                                            onRemoveQueued={
-                                                                composer.removeQueuedMessage
-                                                            }
-                                                            onEditQueued={
-                                                                composer.editQueuedMessage
-                                                            }
-                                                            onUsePlainBox={(
-                                                                text,
-                                                            ) =>
-                                                                prepareComposerPrompt(
-                                                                    text,
-                                                                    "suggestion",
-                                                                )
-                                                            }
-                                                            wideMode={
-                                                                chatWideMode
-                                                            }
-                                                        />
-                                                    ) : (
-                                                        composerEl
-                                                    )}
+                                                    {composerEl}
                                                 </div>
                                             </>
                                         )}
@@ -4395,6 +4412,13 @@ export default function App() {
                 onCancel={envSwitch.cancelSwitch}
             />
 
+            <KeysSheet
+                open={keysSheetOpen}
+                onOpenChange={setKeysSheetOpen}
+                keybindings={keybindings}
+                vimMode={settings.vimMode}
+                onVimModeChange={settings.setVimMode}
+            />
             <SearchDialog
                 open={searchOpen}
                 onOpenChange={setSearchOpen}

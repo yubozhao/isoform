@@ -839,13 +839,28 @@ export function TodayBriefSection({
                     {!building && <SensitiveExcluded count={brief?.limits?.excludedSensitiveItems ?? 0} tr={tr} />}
                 </div>
             ),
+            // Before the first brief the band says when it comes (12a); under
+            // it only that one is being made, and what Isoform can't see.
+            underBand: building || missing.length > 0 ? (
+                <div className="flex flex-col gap-2" data-testid="first-brief-under-band">
+                    {building && (
+                        <p className="flex items-center gap-2 text-[13px] text-muted" role="status">
+                            <Loader2 className="size-3.5 animate-spin" />
+                            {tr("todayBrief.makingFirst")}
+                        </p>
+                    )}
+                    {missing.length > 0 && <Blind missing={missing} handlers={handlers} tr={tr} onChanged={onRetry} inline />}
+                </div>
+            ) : null,
             checkIn: null,
             rows: [summaryRow],
             footer: null,
         };
     }
 
-    const pendingCard = waiting && !(loading && !view) && !(!view && loadFailed) ? (
+    // With the band on screen its own line says the next brief is being made
+    // or couldn't be (computer-today v1.0.0 rule 2); no card above it.
+    const pendingCard = !banded && waiting && !(loading && !view) && !(!view && loadFailed) ? (
         <PendingBrief
             slot={waiting}
             building={building}
@@ -867,9 +882,11 @@ export function TodayBriefSection({
         />
     ) : null;
     const hasQuietFooter = !!quietFooter;
-    // SH1: the written brief leads as the band, Hear it and what is in it;
-    // today's full card stays under it, since its chips, day strip, Find time
-    // and Your week have no new home until Your work (SH2). Every other state
+    // SH1: the written brief leads as the band, with its first sentences,
+    // Hear it and what is in it; Your work follows. The old full card does
+    // not come back under it (computer-today v1.0.0 rule 10): its items are
+    // Your work, Reply about this is in the brief in full, and only Your week
+    // and what the brief couldn't see stay under the band. Every other state
     // keeps its own card.
     const shownCard = banded && view ? (
         <section ref={seenRef} className="flex flex-col gap-[18px]">
@@ -878,21 +895,19 @@ export function TodayBriefSection({
                 view={view}
                 make={make}
                 onMakeNow={onMakeNow}
-                showLead={false}
                 onReadAll={onReadAll}
                 onOpenPastBriefs={onOpenPastBriefs}
                 active={active}
                 firstCaption={firstBrief?.caption}
             />
             {afterBand}
-            {parts.card}
+            {parts.underBand}
         </section>
     ) : band && view && !view.brief && !view.lastBriefId && view.nextAt && !(loading && !view) ? (
-        // Before the first brief the band says when it comes; the card under
-        // it keeps Make my brief now and what Isoform can't see.
+        // Before the first brief the band says when it comes (12a).
         <section className="flex flex-col gap-[18px]">
             <TodayFirstBriefBand nextAt={view.nextAt} />
-            {parts.card}
+            {parts.underBand}
         </section>
     ) : parts.card;
     return (
@@ -1217,6 +1232,9 @@ function MoreRow({ rowKey, rows, label, detail, testId, list, children, action }
  *  parts (topics, the suggestion, news) never remount. */
 interface BriefParts {
     card: ReactNode;
+    /** Under the band, in place of the card: Your week on Friday evening
+     *  (redesign-today rule 15) and what the brief couldn't see. */
+    underBand?: ReactNode;
     checkIn: ReactNode;
     rows: ReactNode[];
     footer: ReactNode;
@@ -1647,7 +1665,7 @@ function briefParts({
                     <div className="text-[12px] text-muted" data-testid="brief-no-recording">{asOf}</div>
                 )}
                 {lateLine && <p className="-mt-2 text-[12px] text-muted" data-testid="brief-late-line">{lateLine}</p>}
-                {dayShapeFailure ? <CalendarReadFailed retry={dayShapeFailure.retry} tr={tr} /> : (<TodayDayStrip heading={firstBrief?.strip} briefText={firstSentence(brief.narrative?.[0]?.text)} requestedDate={dayShapeDate} shape={dayShape ? { ...dayShape, events: dayShape.events.filter((event) => !stripHidden.has(event.id)), hold: briefHold.offer?.preferred && !briefHold.dismissal ? { ...briefHold.offer.preferred, label: briefHold.offer.thing.title } : null } : null} holdPreview={briefHold.offer ? (directHold.removed ? "dismissed" : directHold.held ? "held" : "proposed") : holdPreview} holdTitle={briefHold.offer?.thing.title} onOpenHold={briefHold.offer && !briefHold.dismissal ? () => measureToday("T31", "reach", "opened", () => handlers.onFindTime?.({ ...briefHold.offer!, telemetryAction: "T31" })) : undefined} onRemoveHold={(id) => { if (id) void removeStripHold(id); else void directHold.remove(); }} timeZone={brief.timezone} onOpenMeeting={handlers.onOpenDayMeeting} />)}
+                {dayShapeFailure ? <CalendarReadFailed retry={dayShapeFailure.retry} tr={tr} /> : (<TodayDayStrip heading={firstBrief?.strip} briefText={firstSentence(brief.narrative?.[0]?.text)} requestedDate={dayShapeDate} shape={dayShape ? { ...dayShape, events: dayShape.events.filter((event) => !stripHidden.has(event.id)), hold: briefHold.offer?.preferred && !briefHold.dismissal ? { ...briefHold.offer.preferred, label: briefHold.offer.thing.title } : null } : null} holdPreview={briefHold.offer ? (directHold.removed ? "dismissed" : directHold.held ? "held" : "proposed") : holdPreview} holdTitle={briefHold.offer?.thing.title} onOpenHold={briefHold.offer && !briefHold.dismissal ? () => measureToday("T31", "reach", "opened", () => handlers.onFindTime?.({ ...briefHold.offer!, telemetryAction: "T31" })) : undefined} onRemoveHold={features.calendarHolds ? (id) => { if (id) void removeStripHold(id); else void directHold.remove(); } : undefined} timeZone={brief.timezone} onOpenMeeting={handlers.onOpenDayMeeting} />)}
                 {stripRemoval && <p role="status" className="text-[13px] text-muted">{tr("holds.removed")} · <button type="button" className="text-accent" onClick={() => void undoStripRemoval()}>{tr("holds.undo")}</button></p>}
                 {stripError && <div role="status" className="text-[13px] text-destructive">{tr(stripError === "access" ? "holds.accessOff" : stripError === "remove" ? "holds.removeFailed" : stripError === "edited" ? "holds.edited" : "holds.restoreFailed")} {stripError === "restore" && stripRemoval && <button type="button" className="text-accent" onClick={() => void undoStripRemoval()}>{tr("holds.retry")}</button>} {stripError === "access" && <button type="button" className="text-accent" onClick={() => void measureToday("T31", "open", "opened", () => OpenPermissionSettings("calendars"))}>{tr("holds.openSettings")}</button>} {stripError !== "restore" && <button type="button" className="text-accent" onClick={() => void measureToday("T31", "open", "opened", () => OpenExternalURL("/System/Applications/Calendar.app"))}>{tr("holds.openCalendar")}</button>}</div>}
 
@@ -1744,6 +1762,27 @@ function briefParts({
                 <SensitiveExcluded count={brief.limits?.excludedSensitiveItems ?? 0} tr={tr} />
             </section>
         ),
+        underBand: week || blind || (brief.limits?.excludedSensitiveItems ?? 0) > 0 ? (
+            <>
+                {week && (
+                    <section className={cn(BRIEF_CARD, "gap-3.5")} data-testid="your-week-section">
+                        <YourWeekCard
+                            week={week}
+                            active={active}
+                            briefId={brief.briefId}
+                            beliefReview={beliefReview}
+                            cards={cards}
+                            timeZone={brief.timezone}
+                            handlers={handlers}
+                            onCard={(card) => sendCard(card, "T84")}
+                            onAskCard={(card) => askCard(card, "T81")}
+                        />
+                    </section>
+                )}
+                {blind}
+                <SensitiveExcluded count={brief.limits?.excludedSensitiveItems ?? 0} tr={tr} />
+            </>
+        ) : null,
         checkIn: checkIn && (
             <TodayGoalCheckIn
                 active={active}

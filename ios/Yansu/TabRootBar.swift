@@ -231,7 +231,7 @@ struct FloatingTabBar: View {
     var body: some View {
         HStack(spacing: 4) {
             tab(.today, title: RootView.tabTitle(.today, locale: locale), symbol: "sun.max")
-            if watch.connection.hasWatch {
+            if watch.showsWatchTab {
                 tab(.watch, title: RootView.tabTitle(.watch, locale: locale), symbol: "applewatch")
             }
             tab(.chat, title: RootView.tabTitle(.chat, locale: locale), symbol: "bubble.left",
@@ -260,7 +260,12 @@ struct FloatingTabBar: View {
             VStack(spacing: router.isTabBarCompact ? 0 : 4) {
                 ZStack(alignment: .topTrailing) {
                     Group {
-                        if reduceMotion {
+                        if tab == .watch {
+                            // The mark in the watch's pose, with its amber dot (phone-watch v1.1.0 rule 3).
+                            WatchPoseMark(state: WatchItemState.of(connection: watch.connection, status: watch.watchStatus,
+                                                                   rows: watch.rows, outcome: watch.outcome),
+                                          selected: selected, size: 22)
+                        } else if reduceMotion {
                             Image(systemName: symbol)
                         } else {
                             Image(systemName: symbol)

@@ -161,6 +161,7 @@ func (c *mobileRelayClient) waitRetry(ctx context.Context, delay time.Duration) 
 	}
 }
 
+//isoform:destination relay
 func (c *mobileRelayClient) relayHealthy(ctx context.Context) bool {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.hubOrigin()+"/v1/health", nil)
 	if err != nil {

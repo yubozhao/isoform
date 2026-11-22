@@ -13,11 +13,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/posthog/posthog-go"
 	"modernc.org/sqlite"
 )
 
 func TestTelemetryBusyStoreDoesNotBlockCaptureOrConsent(t *testing.T) {
-	newHTTPTelemetry(t, TelemetryTierDetailed)
+	telemetry, _ := newRecordingTelemetry(t)
 	entered, release := make(chan struct{}), make(chan struct{})
 	function := "telemetry_hold_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	// A trigger occupies the store's sole connection exactly as a slow
@@ -30,6 +31,7 @@ func TestTelemetryBusyStoreDoesNotBlockCaptureOrConsent(t *testing.T) {
 		t.Fatal(err)
 	}
 	app := NewApp()
+	app.telemetry = telemetry
 	t.Cleanup(app.telemetry.Close)
 	// Storage opens after Wails starts now; open it here as startup would.
 	store, err := openStartupStorage()
@@ -102,8 +104,9 @@ func TestTelemetryBusyStoreDoesNotBlockCaptureOrConsent(t *testing.T) {
 }
 
 func TestTelemetryLocaleTracksPersistedLanguage(t *testing.T) {
-	_, received := newHTTPTelemetry(t, TelemetryTierDetailed)
+	telemetry, _ := newRecordingTelemetry(t)
 	app := NewApp()
+	app.telemetry = telemetry
 	// Storage opens after Wails starts now; open it here as startup would.
 	store, err := openStartupStorage()
 	if err != nil {
@@ -117,6 +120,9 @@ func TestTelemetryLocaleTracksPersistedLanguage(t *testing.T) {
 	app.telemetry.Close()
 	_ = app.store.Close()
 	app = NewApp()
+	recorder := &recordingPostHogClient{}
+	app.telemetry = &PostHogTelemetry{client: recorder}
+	app.telemetry.enabled.Store(true)
 	t.Cleanup(app.telemetry.Close)
 	store, err = openStartupStorage()
 	if err != nil {
@@ -137,12 +143,12 @@ func TestTelemetryLocaleTracksPersistedLanguage(t *testing.T) {
 	}
 	app.telemetry.Capture("iphone.paired", nil)
 	app.telemetry.Close()
-	events := received()
+	events := recorder.messages
 	if len(events) != 3 {
 		t.Fatalf("received %d events, want 3", len(events))
 	}
 	for i, want := range []string{"zh-CN", "en", "en"} {
-		if got := events[i].Properties["locale"]; got != want {
+		if got := events[i].(posthog.Capture).Properties["locale"]; got != want {
 			t.Errorf("event %d locale = %v, want %s", i, got, want)
 		}
 	}

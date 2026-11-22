@@ -1,4 +1,117 @@
 {
+    "given": {
+        "title": "这周 {{assistant}} 收到的内容",
+        "sub": "只列名称和时间，从不列内容。每一条保留的时间与它的来源相同。",
+        "sense": "理解你的一天",
+        "briefs": "简报",
+        "answers": "聊天中的回答",
+        "proposals": "来自你话题的提议",
+        "times_one": "{{n}} 次",
+        "times_other": "{{n}} 次",
+        "from": "来源：{{sources}}",
+        "fromQuestion": "来源：你的问题",
+        "join": "、",
+        "screen_one": "你工作时屏幕上的文字，大约每分钟一次",
+        "screen_other": "你工作时屏幕上的文字，大约每 {{m}} 分钟一次",
+        "wechat_one": "{{k}} 个微信窗口，以图片形式",
+        "wechat_other": "{{k}} 个微信窗口，以图片形式",
+        "calls_one": "{{count}} 次通话",
+        "calls_other": "{{count}} 次通话",
+        "messages_one": "{{count}} 个“信息”对话",
+        "messages_other": "{{count}} 个“信息”对话",
+        "watch": "你的手表 · {{title}}，{{length}}",
+        "stretch": "{{date}}，{{from}} 至 {{to}}",
+        "briefAt": "{{date}}，{{time}}",
+        "question": "“{{question}}”",
+        "open": "打开 ›",
+        "done": "完成",
+        "failed": "无法读取 {{assistant}} 收到的内容。",
+        "foot": "在“活动”中忘记某项内容，这里对应的条目也会一起删除。{{assistant}} 的提供方在每次调用后保留什么，由其自身条款决定。",
+        "hourRow": "{{hour}} · {{group}} · {{times}}",
+        "sawThatHour": "Isoform 那一小时看到的内容",
+        "held_one": "另有 {{count}} 次，用于建议，按小时计数。",
+        "held_other": "另有 {{count}} 次，用于建议，按小时计数。",
+        "kinds": {
+            "mail": "邮件",
+            "calendar": "日历",
+            "screen": "屏幕",
+            "call": "通话和会议",
+            "watch": "你的手表",
+            "messages": "信息",
+            "wechat": "微信窗口",
+            "memory": "关于你",
+            "knowledge": "你的做事方式",
+            "people": "你认识的人",
+            "activity": "活动",
+            "goals": "你的目标",
+            "chat": "聊天",
+            "web": "网络",
+            "topic_names": "你的话题名称",
+            "agents_history": "你的智能体历史",
+            "work": "你的工作",
+            "files": "文件"
+        },
+        "counts": {
+            "mail_one": "邮件（1 个会话）",
+            "mail_other": "邮件（{{count}} 个会话）",
+            "calendar_one": "日历（1 个日程）",
+            "calendar_other": "日历（{{count}} 个日程）",
+            "screen_one": "屏幕（1 段）",
+            "screen_other": "屏幕（{{count}} 段）",
+            "call_one": "通话和会议（1 次通话）",
+            "call_other": "通话和会议（{{count}} 次通话）",
+            "watch_one": "你的手表（1 小时）",
+            "watch_other": "你的手表（{{count}} 小时）",
+            "messages_one": "信息（1 个对话）",
+            "messages_other": "信息（{{count}} 个对话）",
+            "wechat_one": "微信窗口（1 个窗口）",
+            "wechat_other": "微信窗口（{{count}} 个窗口）",
+            "memory_one": "关于你（1 条笔记）",
+            "memory_other": "关于你（{{count}} 条笔记）",
+            "knowledge_one": "你的做事方式（1 条）",
+            "knowledge_other": "你的做事方式（{{count}} 条）",
+            "people_one": "你认识的人（1 人）",
+            "people_other": "你认识的人（{{count}} 人）",
+            "activity_one": "活动（1 个片段）",
+            "activity_other": "活动（{{count}} 个片段）",
+            "goals_one": "你的目标（1 个目标）",
+            "goals_other": "你的目标（{{count}} 个目标）",
+            "chat_one": "聊天（1 条消息）",
+            "chat_other": "聊天（{{count}} 条消息）",
+            "web_one": "网络（1 个网页）",
+            "web_other": "网络（{{count}} 个网页）",
+            "topic_names_one": "你的话题名称（1 个话题）",
+            "topic_names_other": "你的话题名称（{{count}} 个话题）",
+            "agents_history_one": "你的智能体历史（1 个会话）",
+            "agents_history_other": "你的智能体历史（{{count}} 个会话）",
+            "work_one": "你的工作（1 项）",
+            "work_other": "你的工作（{{count}} 项）",
+            "files_one": "文件（1 个文件）",
+            "files_other": "文件（{{count}} 个文件）"
+        },
+        "passes": {
+            "purpose": "你的工作是为了什么",
+            "work_profile": "你的工作档案",
+            "questions": "Isoform 建议的问题",
+            "self_dream": "Isoform 对已知内容的夜间回顾",
+            "weekly": "你的一周总结",
+            "recent": "你最近几天的总结"
+        },
+        "minutes": "{{m}} 分钟",
+        "hoursMinutes": "{{h}} 小时 {{m}} 分钟",
+        "hoursOnly": "{{h}} 小时",
+        "watchHour": "你的手表 · {{hour}}，{{length}} 的谈话",
+        "when": "{{date}}，{{time}}",
+        "passRow": "{{name}} · {{times}} · 来源：Isoform 已写好的总结",
+        "passNote": "这些读取的是总结，而不是单个时刻。“忘记所有内容”会移除它们，它们也会随这些总结过期而消失。"
+    },
+    "see": {
+        "learning": "了解你",
+        "made_one": "生成：{{n}} 条待确认的判断",
+        "made_other": "生成：{{n}} 条待确认的判断",
+        "work": "为你做的工作",
+        "byHour": "按小时计数，所以忘记某一项暂时不会移除这些条目。"
+    },
     "settingRead": {
         "failed": "无法读取此设置。",
         "retry": "重试"
@@ -23,7 +136,6 @@
         "connectFailed": "无法连接。请确认已安装该助手的命令行应用。",
         "revokeFailed": "无法完成撤销访问。",
         "privacy": "点击连接将注册上述命令，并为该助手授予独立的只读访问权限，同时替换之前的 Isoform 注册。每次请求都会遵循 Isoform 的隐私设置。撤销会立即停止访问。",
-        "otherAppsPointer": "在“设置 › 其他 AI 应用”中把 Isoform 连接到 Claude Code 或 Codex。",
         "loading": "正在检查连接...",
         "retry": "重试"
     },
@@ -481,7 +593,7 @@
             },
             "answer_ready": {
                 "label": "你问过的事",
-                "description": "你问过的事有结果时告诉你。关掉后仍会留在聊天里。"
+                "description": "你问过的事有结果时告诉你。"
             },
             "commitment_slipping": {
                 "label": "承诺进度滞后",
@@ -587,7 +699,7 @@
             "stillBlocked": "通知仍然是关闭的。请在系统设置中为 Isoform 打开通知，然后回到这里。",
             "failed": "无法向 macOS 请求权限。请重试。"
         },
-        "advancedHint": "免打扰时段、次数，以及每条提醒发到哪里",
+        "advancedHint": "每条提醒发到哪里",
         "channels": {
             "title": "提醒发到哪里",
             "description": "Isoform 按顺序尝试这些方式，用第一个能联系到你的。如果都联系不到，会稍后再试。",
@@ -787,10 +899,6 @@
         "searchPlaceholder": "搜索设置",
         "noResults": "没有匹配的设置",
         "sections": {
-            "personalAi": {
-                "heading": "个人 AI",
-                "explanation": "Isoform 如何思考、留意和记住什么、如何使用你的应用，以及哪些内容保持私密。"
-            },
             "extensions": {
                 "heading": "扩展",
                 "explanation": "可选的附加功能，让 Isoform 拥有更多 Skills、工具，以及联系你的渠道。"
@@ -802,21 +910,10 @@
         "soon": "预留已开放"
     },
     "pages": {
-        "overview": {
-            "label": "概览",
-            "title": "Isoform 如何为你工作",
-            "subtitle": "用几句话看清你的全部设置；可以直接在这里修改，也可以打开对应页面查看详情。",
-            "keywords": "概览, 总览, 摘要, 设置一览, Isoform 如何工作, 值得一看, 保持现状, 暂停 1 小时, 恢复观察"
-        },
-        "general": {
-            "label": "通用",
-            "subtitle": "选择 Isoform 如何启动、外观如何、使用哪种语言，以及你的键盘快捷键。",
-            "keywords": "登录时启动, 登录时打开, 开机启动, 启动, 外观, 主题, 深色模式, 浅色模式, 跟随系统, 颜色, 语言, 系统默认, 英文, 中文, 快速对话, 朗读, 语音, 声音, 键盘快捷键, 快捷键, vim, 发送消息, 工具步骤, 工具调用"
-        },
         "notifications": {
             "label": "简报和通知",
-            "subtitle": "选择 Isoform 提醒你哪些事情，以及什么时候保持安静。",
-            "keywords": "提醒, 通知, 免打扰时段, 安静时段, 免打扰, 打扰次数, 每日上限, 摘要, 卡住的工作, 工作卡住, 工作完成, 简报就绪, 已暂停, 观察已暂停, 电脑通知, 权限, 手机, 短信, 提醒发到哪里, 过去 30 天, 本周, 主动提醒, 太频繁, 被忽略, 改为在「今天」显示, 安静提示, 询问"
+            "subtitle": "Isoform 主动带给你的：简报、根据你的话题提出的建议，以及三类通知。",
+            "keywords": "提醒, 通知, 免打扰时段, 安静时段, 免打扰, 打扰次数, 每日上限, 摘要, 卡住的工作, 工作卡住, 工作完成, 简报就绪, 已暂停, 观察已暂停, 电脑通知, 权限, 手机, 短信, 提醒发到哪里, 过去 30 天, 本周, 主动提醒, 太频繁, 被忽略, 改为在「今天」显示, 安静提示, 询问, 每日简报, 早间简报, 晚间简报, 文字摘要, 简报时间, 播客订阅, 建议, 话题, 朗读, 语音, 声音, 收听, 朗读通知, 播报完成的自动化"
         },
         "ai-provider": {
             "label": "你的 Agents",
@@ -825,33 +922,18 @@
         },
         "activity": {
             "label": "Isoform 看到的",
-            "subtitle": "所有来源都在这一页，关闭即不保留它的任何内容。",
-            "keywords": "暂停, 暂停观察, 屏幕, 查看我的屏幕, 屏幕录制, 采集, 活动, 聆听, 后台监听, 麦克风, 系统音频, 电脑音频, 会议, 记录会议, 会议录制, 采集状态, 快捷键, 日历, 提醒事项, 剪贴板, 复制"
-        },
-        "memory": {
-            "label": "学习与记忆",
-            "subtitle": "选择 Isoform 会学习什么，查看它建议的修改，从其他 AI 工具导入记忆，并查看它了解的内容。",
-            "keywords": "记忆, Isoform 会学习什么, 关于你, 人物, 通讯录, 你的资料, 个人上下文, 活动时间线, 可复用经验, 工作手册, 导入, Claude Code, Codex, Cursor, 等你确认的修改, 通过对比学习, 预测置信度, 聊天上下文预览, 搜索索引, 向量, Ollama, OpenAI"
-        },
-        "security": {
-            "label": "隐私",
-            "subtitle": "选择 Isoform 忽略哪些应用、录制保留多久，以及分享哪些数据。",
-            "keywords": "隐私, 忽略的应用, 受保护的应用, 隐藏的应用, 模糊, 密码管理器, 敏感应用, 语音输入, 听写, Isoform 不聆听的应用, 不聆听, 保留, 保留录制, 删除录制, 权限, 安全, 屏幕录制, 辅助功能, 麦克风, 信息, 通讯录, 通知, 诊断数据, 遥测"
-        },
-        "storage": {
-            "label": "存储空间",
-            "subtitle": "查看 Isoform 在这台电脑上占用的空间，并选择它最多保留多少。",
-            "keywords": "存储, 存储空间, 磁盘空间, 已用空间, 存储上限, 截图, 通话录音, 音频, 数据库, 释放空间, 清理, 压缩, 缩小, 删除旧截图, 保留截图, 模型, 模型下载, 语音识别, 语音模型, 下载来源"
+            "subtitle": "所有来源都在这一页。关闭即不保留它的任何内容。",
+            "keywords": "暂停, 暂停观察, 屏幕, 查看我的屏幕, 屏幕录制, 采集, 活动, 聆听, 后台监听, 麦克风, 系统音频, 电脑音频, 会议, 记录会议, 会议录制, 采集状态, 快捷键, 日历, 提醒事项, 剪贴板, 复制, 忽略的应用, 受保护的应用, 隐藏的应用, 密码管理器, 敏感应用, Isoform 不聆听的应用, 权限, 辅助功能"
         },
         "iphone": {
             "label": "你的手机",
             "subtitle": "配对手机，离开时也能与这台电脑保持联系。",
-            "keywords": "手机, 移动端, 配对, 配对手机, 二维码, 连接, 断开连接, 你的手机, 每日简报, 早间简报, 晚间简报, 服务器地址, 中继, 每部手机可以做什么, 访问权限, 文字摘要"
+            "keywords": "手机, 移动端, 配对, 配对手机, 二维码, 连接, 断开连接, 你的手机, 服务器地址, 中继, 每部手机可以做什么, 访问权限"
         },
-        "skills": {
-            "label": "Skills",
-            "subtitle": "添加现成的技能，教 Isoform 完成新类型的任务。",
-            "keywords": "Skills, Skill 库, ClawHub, 浏览, 安装, 卸载, GitHub, 文件夹, 智能体 Skills, 其他 AI 工具, Skills 的存放位置"
+        "your-watch": {
+            "label": "你的手表",
+            "subtitle": "手表为听到的内容附加哪些信息，和手机上的开关相同。",
+            "keywords": "手表, Apple Watch, 手腕, 笔记, 长谈话, 心率, 地点, 区域, 位置, 手机联系, 配对"
         },
         "mcp": {
             "label": "工具服务器",
@@ -870,23 +952,13 @@
         },
         "about": {
             "label": "关于",
-            "subtitle": "版本、更新和支持所需的信息。",
-            "keywords": "关于, 版本, 更新, 检查更新, 更新说明, 重启, 支持, 帮助, 邮件, Discord, 排查报告, 复制报告, 排查报告包含哪些内容, 排查问题, 重新进行初始设置, 新手引导, 设置, 教程，构建，支持日志，发行说明，更新"
+            "subtitle": "你的名字、Isoform 的启动和外观、版本与更新，以及帮助。",
+            "keywords": "关于, 版本, 更新, 检查更新, 更新说明, 重启, 支持, 帮助, 邮件, Discord, 排查报告, 复制报告, 排查报告包含哪些内容, 排查问题, 重新进行初始设置, 新手引导, 设置, 教程，构建，支持日志，发行说明，更新, 你的名字, 名字, 称呼, 个人资料, 账户, 登录时打开, 登录时启动, 开机启动, 启动, 语言, 系统默认, 英文, 中文, 外观, 主题, 深色模式, 浅色模式, 跟随系统, 自动安装更新, 立即检查, 模型, 隐私模型, 搜索模型, 发送反馈, 诊断数据, 遥测, 使用次数, 模型下载, 语音识别, 语音模型, 下载来源, 镜像"
         },
         "plugins": {
             "label": "插件",
             "subtitle": "选择 Isoform 使用哪些内置功能。",
             "keywords": "插件, 内置, 功能, 开关, 启用, 停用, 数据来源, 工具"
-        },
-        "profile": {
-            "label": "个人资料",
-            "subtitle": "Isoform 对你的称呼。",
-            "keywords": "个人资料、姓名、账户、身份"
-        },
-        "appearance": {
-            "label": "外观",
-            "subtitle": "这台电脑的主题和阅读宽度。",
-            "keywords": "阅读宽度，居中，全宽，主题，深色，浅色"
         },
         "your-agent": {
             "label": "出租智能体",
@@ -902,149 +974,11 @@
         "your-data": {
             "label": "你的数据",
             "subtitle": "Isoform 保留的一切都在这台电脑上。",
-            "keywords": "保留, 删除, 隐私, 导出, 声音"
+            "keywords": "保留, 删除, 隐私, 导出, 声音, 保留录制, 删除录制, 保留截图, 删除旧截图, 存储, 存储空间, 磁盘空间, 已用空间, 存储上限, 截图, 通话录音, 音频, 数据库, 保留时间, 保留多久"
         }
     },
     "overview": {
-        "loading": "正在检查你的设置……",
-        "changeFailed": "无法更改此设置。",
-        "listSeparator": "、",
-        "listLastSeparator": "和",
-        "sentences": "{{first}}<second/>",
-        "labels": {
-            "sees": "观察",
-            "speaksUp": "通知",
-            "thinksWith": "你的 Agents",
-            "remembers": "记忆",
-            "keeps": "保留",
-            "briefs": "简报",
-            "ignores": "忽略"
-        },
-        "worth": {
-            "title": "值得一看",
-            "titleDone": "值得一看",
-            "leave": "保持现状",
-            "left": "已保持现状。",
-            "noisy": {
-                "title_one": "「{{kind}}」在 30 天内发送了 {{count}} 次，你一次也没有处理",
-                "title_other": "「{{kind}}」在 30 天内发送了 {{count}} 次，你一次也没有处理",
-                "detail": "改为在「今天」页面显示一条安静的提示，而不是发送通知。",
-                "action": "改为安静提示",
-                "done": "已改为「今天」页面上的安静提示。"
-            },
-            "phone": {
-                "title": "你的手机只能在同一网络下连接这台电脑",
-                "detail": "当前连接使用的是本地地址。离开家时，简报会等你回来后再送达。",
-                "titleRemoteOff": "远程访问已关闭，手机只能在同一网络下连接这台电脑",
-                "detailRemoteOff": {
-                    "saved_relay": "打开手机设置，选择“使用远程访问”。",
-                    "environment_relay": "这台电脑上的一项设置让 Isoform 指向另一台连接服务器。请退出 Isoform，去掉它后重新打开。",
-                    "build_relay": "此版本的 Isoform 始终使用自己的连接服务器。",
-                    "disabled": "这台电脑上的一项设置关闭了远程访问。请退出 Isoform，去掉它后重新打开。"
-                },
-                "action": "修复连接",
-                "done": "已打开手机设置。"
-            },
-            "phoneRemote": {
-                "title": "远程访问未运行",
-                "detail": "重新启动前，手机无法从其他网络连接这台电脑。Isoform 会持续重试。",
-                "action": "打开手机设置",
-                "done": "已打开手机设置。"
-            },
-            "assistant": {
-                "title": "{{assistant}} 的{{window}}已用完",
-                "titleNoWindow": "{{assistant}} 的用量已用完",
-                "resets": "它将在{{when}}重置。",
-                "others_one": "在此之前由 {{others}} 继续回答。",
-                "others_other": "在此之前由 {{others}} 继续回答。",
-                "action": "打开助手",
-                "done": "已打开助手设置。"
-            }
-        },
-        "sees": {
-            "watching": "Isoform <b>正在观察</b>{{sources}}。浏览器的隐私窗口和被忽略的应用不会被记录。",
-            "nothing": "Isoform <b>没有在观察或聆听</b>：「查看我的屏幕」和「聆听」都已关闭。",
-            "screenBlocked": "在你的电脑允许之前，Isoform <b>看不到你的屏幕</b>。",
-            "allow": "允许",
-            "pausedUntil": "Isoform <b>已暂停至 {{time}}</b>，不会观察或聆听。",
-            "paused": "Isoform <b>已暂停</b>，在你恢复之前不会观察或聆听。",
-            "sources": {
-                "screen": "你的屏幕",
-                "microphone": "你的麦克风",
-                "calls": "你的通话"
-            },
-            "pause": "暂停 1 小时",
-            "resume": "恢复观察",
-            "link": "观察"
-        },
-        "speaksUp": {
-            "lead": "提醒程度为",
-            "levelLabel": "Isoform 主动提醒的频率",
-            "detail": "——{{clauses}}。",
-            "clauseSeparator": "，",
-            "limit_one": "每天最多 {{count}} 次",
-            "limit_other": "每天最多 {{count}} 次",
-            "noLimit": "每天不限次数",
-            "quiet": "{{start}} 至 {{end}} 保持安静",
-            "noQuiet": "不设安静时段",
-            "on": "目前可以发到{{channels}}",
-            "channels": {
-                "desktop": "这台电脑",
-                "push": "你的手机",
-                "text": "短信",
-                "email": "邮件（仅限操作手册结果）"
-            },
-            "offDetail": "——不会主动提醒它注意到的事。你自己的定时任务结果和「今天」页面仍会显示。",
-            "link": "通知"
-        },
-        "thinksWith": {
-            "one": "由 {{first}} 回答。",
-            "many": "先由 {{first}} 回答，然后是 {{rest}}。",
-            "thenSeparator": "，然后是 ",
-            "left": "{{assistant}} 的{{window}}<b>还剩 {{percent}}%</b>。",
-            "leftNoWindow": "{{assistant}} 的用量额度<b>还剩 {{percent}}%</b>。",
-            "none": "还没有设置助手。",
-            "link": "助手"
-        },
-        "remembers": {
-            "learns": "它会学习{{things}}。观察本身不会启动任何工作。",
-            "learnsNothing": "学习已关闭。观察本身不会启动任何工作。",
-            "things": {
-                "events": "你的活动",
-                "memory": "关于你的事",
-                "knowledge": "你的方法",
-                "sop": "工作手册"
-            },
-            "waiting_one": "有 {{count}} 条学到的内容在等你确认。",
-            "waiting_other": "有 {{count}} 条学到的内容在等你确认。",
-            "nothingWaiting": "没有学到的内容在等你确认。",
-            "review": "查看",
-            "link": "学习与记忆"
-        },
-        "keeps": {
-            "lead": "录制内容存储在这台电脑上，保留",
-            "detail": "，总共最多 {{limit}}，已使用 {{used}}。",
-            "usage": "已使用 {{used}}，上限 {{limit}}",
-            "link": "存储空间",
-            "detailNothingUsed": "，总共最多 {{limit}}。",
-            "detailNoLimit": "，只要空间允许。"
-        },
-        "briefs": {
-            "adaptive": "你的简报大约在 {{morning}} 和 {{evening}} 送达，会根据你开始和结束工作的时间调整。",
-            "fixed": "你的简报在 {{morning}} 和 {{evening}} 送达。",
-            "off": "你的简报已关闭。",
-            "phone": "它会发到 {{name}}，上次在线：{{when}}。",
-            "noPhone": "还没有配对手机，所以简报只显示在这台电脑上。",
-            "link": "手机"
-        },
-        "ignores": {
-            "none": "还没有忽略任何应用。密码管理器始终会被隐藏。",
-            "some": "Isoform 会忽略 {{apps}}。密码管理器始终会被隐藏。",
-            "more_one": "另外 {{count}} 个",
-            "more_other": "另外 {{count}} 个",
-            "add": "添加私密应用"
-        },
-        "futureChannels": "短信和电话功能即将推出。"
+        "changeFailed": "无法更改此设置。"
     },
     "advanced": {
         "label": "高级"
@@ -1125,6 +1059,7 @@
         "activity-pipeline": "活动处理",
         "shadow-agent": "影子学习",
         "purpose-map": "优先事项",
+        "memory-debug": "记忆与搜索",
         "perf-analysis": "应用运行状态",
         "audio-capture": "音频采集",
         "notification-tests": "通知检查",
@@ -1413,7 +1348,7 @@
         "updateAvailableNoVersion": "有新版本可用",
         "updateAvailableDescription": "Isoform 会先验证下载的更新，然后在这台电脑上重启。你的数据会保留。",
         "releaseNotes": "更新说明",
-        "advancedHint": "帮助、初始设置和排查报告包含的内容",
+        "advancedHint": "模型及其下载、初始设置，以及排查报告和诊断数据包含的内容",
         "supportReport": {
             "title": "排查报告",
             "description": "复制一份关于 Isoform 运行状况的简短报告。把它粘贴到邮件或 Discord 消息中，团队就能更快找到问题。",
@@ -1434,7 +1369,14 @@
             "title": "邮件支持",
             "description": "写信至 bo@isoform.ai。你的邮件 App 会打开一封带有版本号的草稿。",
             "openFailed": "无法打开你的邮件 App。请写信至 bo@isoform.ai。"
-        }
+        },
+        "yourName": "你的名字 · 用于你的简报和交给智能体的任务",
+        "openAtLogin": "登录时打开",
+        "autoUpdate": "自动安装更新",
+        "updateReady": "{{version}} 已准备好 · <restart>立即重启</restart>",
+        "helpTitle": "帮助和发送反馈",
+        "models": "在这台电脑上：用于隐私和查找内容的模型 · {{size}}",
+        "modelsShort": "隐私和搜索模型需要 {{size}} 可用空间 · 当前可用 {{free}}"
     },
     "onboarding": {
         "title": "重新进行初始设置",
@@ -1574,8 +1516,6 @@
     "autoSpeak": {
         "cardTitle": "朗读",
         "cardDescription": "Isoform 可以用在本机运行的语音朗读内容。首次开启其中任一项时，会下载与你的语言对应的语音。",
-        "chatTitle": "朗读聊天回复",
-        "chatDescription": "当前查看的对话里，每条回复完成后自动朗读。",
         "automationTitle": "播报自动化完成",
         "automationDescription": "自动化任务在后台完成时，播报一句简短提示。",
         "automationDoneSpeech": "自动化任务{{name}}已完成。",
@@ -1613,9 +1553,6 @@
         "storageCapFailedToast": "更新存储上限失败：{{error}}"
     },
     "privacy": {
-        "advanced": {
-            "hint": "系统权限，以及诊断数据包含的内容"
-        },
         "ignoredApps": {
             "title": "Isoform 忽略的应用",
             "description": "让私密的应用不出现在 Isoform 看到和听到的内容里。当你用某个应用处理不想被记录的事情时，可以把它加到这里。",
@@ -1668,10 +1605,7 @@
             "saveFailed": "无法更改此设置。"
         },
         "permissions": {
-            "title": "系统权限",
-            "description": "你的电脑允许 Isoform 使用的内容。这里只显示访问状态；要开启或关闭查看屏幕和聆听，请前往「观察」页面。",
-            "usedFor": "用于{{purpose}}。",
-            "usedForTurnedOff": "用于{{purpose}}。已在「观察」页面关闭。"
+            "usedFor": "用于{{purpose}}。"
         },
         "voices": {
             "title": "声音记忆",
@@ -1747,61 +1681,9 @@
             "updatedToast": "截图保留时长已更新",
             "failedToast": "无法更改截图保留时长。",
             "readFailed": "无法读取截图保留时长。"
-        },
-        "cleanup": {
-            "title": "释放空间",
-            "description": "先查看 Isoform 可以删除或缩小哪些内容。确认之前不会做任何更改。",
-            "check": "检查",
-            "checking": "正在检查…",
-            "checkAgain": "重新检查",
-            "nothingToFree": "目前没有可以释放的空间。",
-            "unlinkedScreenshots": "没有对应活动的截图",
-            "unlinkedRecordings": "没有对应活动的通话录音",
-            "expiredSessions": "早于 {{period}} 的录制及其文字",
-            "expiredScreenshots": "早于 {{period}} 的截图",
-            "overLimitScreenshots": "超出存储上限的最早截图",
-            "overLimitRecordings": "超出存储上限的最早通话录音",
-            "shrinkScreenshots": "以较小尺寸保存较早的截图",
-            "compressRecordings": "压缩通话录音",
-            "databaseSpace": "数据库中的未用空间",
-            "removeDetail_one": "{{n}} 个文件，{{size}}",
-            "removeDetail_other": "{{n}} 个文件，{{size}}",
-            "removeDetailRange_one": "{{n}} 个文件，{{size}}，{{from}} 至 {{to}}",
-            "removeDetailRange_other": "{{n}} 个文件，{{size}}，{{from}} 至 {{to}}",
-            "convertDetail_one": "{{n}} 个文件，{{before}} 缩小到约 {{after}}",
-            "convertDetail_other": "{{n}} 个文件，{{before}} 缩小到约 {{after}}",
-            "sessionsDetail_one": "{{n}} 段录制，{{size}}，{{from}} 至 {{to}}",
-            "sessionsDetail_other": "{{n}} 段录制，{{size}}，{{from}} 至 {{to}}",
-            "databaseDetail": "{{size}}，在下次锁定这台电脑、磁盘空间足够时释放，最多每 12 小时一次",
-            "textStays": "删除的截图和录音会保留对应的活动文字、摘要和转写稿。",
-            "needsFFmpeg": "安装 Isoform 的音频工具后即可压缩通话录音。",
-            "total": "现在约可释放 {{size}}：从 {{before}} 降到约 {{after}}。",
-            "databaseLater": "之后数据库还能再释放约 {{size}}。",
-            "limitUnreachable": "存储上限无法达到：无论删除多少都会保留 {{kept}}，所以不会为它删除任何内容。",
-            "confirm": "释放 {{size}}",
-            "cancel": "取消",
-            "confirmTitle": "释放 {{size}}？",
-            "confirmDescription": "Isoform 将删除并缩小上面列出的文件。删除的截图和录音无法恢复，缩小和压缩也无法撤销；对应的活动文字会保留。",
-            "confirmAction": "释放空间",
-            "phase": {
-                "unlinked": "正在删除没有对应活动的文件",
-                "database": "正在整理数据库",
-                "expired": "正在删除较早的截图",
-                "limit": "正在腾出空间以符合存储上限",
-                "shrink": "正在以较小尺寸保存较早的截图（{{done}}/{{total}}）",
-                "compress": "正在压缩通话录音（{{done}}/{{total}}）"
-            },
-            "runningNote": "运行期间可以继续使用 Isoform。",
-            "done": "已释放 {{size}}。Isoform 现在占用 {{after}}。",
-            "doneDatabase": "数据库会在下次锁定这台电脑时释放未用空间。",
-            "checkFailed": "无法检查可以释放的空间。",
-            "startFailed": "无法开始释放空间。"
         }
     },
     "permissions": {
-        "checking": "正在检查权限……",
-        "unavailable": "无法获取权限状态。",
-        "noneRequired": "当前平台无需额外权限，已全部就绪。",
         "checkFailedToast": "检查平台权限失败",
         "grantedToast": "已允许「{{label}}」权限。",
         "stillNotGrantedToast": "「{{label}}」仍未允许。请在系统设置中允许 Isoform，然后回到这里刷新。",
@@ -1845,9 +1727,6 @@
             "contacts": {
                 "label": "通讯录",
                 "usedFor": "识别与你共事的人",
-                "importNote": "在「你认识的人」页面查看并同意，再选择联系人。",
-                "vcardNote": "在「你认识的人」页面导入 vCard (.vcf) 文件。",
-                "vcardLabel": "导入 vCard",
                 "windowsNote": "Windows 不向应用开放通讯录。你可以在「你认识的人」页面导入 vCard (.vcf) 文件。"
             },
             "calendars": {
@@ -2062,41 +1941,24 @@
         }
     },
     "keybindings": {
-        "vim": {
-            "readonlyHint": "Vim 按键使用标准字母，无法更改。",
-            "title": "Vim 风格导航",
-            "description": "不在输入时，用 j 和 k 滚动聊天，用 gg 和 G 跳转。",
-            "showKeys": "显示 Vim 按键",
-            "hideKeys": "隐藏 Vim 按键",
-            "offReason": "开启 Vim 风格导航后才能使用这些按键。"
-        },
-        "resetAll": "重置所有快捷键",
         "resetTooltip": "恢复默认",
         "recordPlaceholder": "请按下快捷键……",
         "toasts": {
             "conflict": "与「{{action}}」冲突，请选择其他快捷键。",
-            "shortcutUpdated": "快捷键已更新",
-            "shortcutResetSingle": "快捷键已恢复为默认",
-            "shortcutResetAll": "全部快捷键已恢复为默认",
-            "modifierRequired": "全局快捷键至少需要包含一个修饰键（Cmd/Ctrl/Alt/Shift）。",
-            "applyFailed": "应用快捷键失败：{{error}}"
+            "modifierRequired": "全局快捷键至少需要包含一个修饰键（Cmd/Ctrl/Alt/Shift）。"
         },
         "commands": {
             "command-palette": {
-                "label": "搜索与命令",
-                "description": "搜索 Isoform 并运行命令"
+                "label": "查找",
+                "description": "在 Isoform 中查找任何内容"
             },
             "toggle-sidebar": {
                 "label": "显示或隐藏侧边栏",
                 "description": "为聊天腾出空间，或重新显示侧边栏"
             },
             "open-settings": {
-                "label": "打开设置",
-                "description": "打开这个设置窗口"
-            },
-            "new-chat": {
-                "label": "新建对话",
-                "description": "开始一段新的对话"
+                "label": "设置",
+                "description": "打开设置"
             },
             "replay-onboarding": {
                 "label": "重新进行初始设置",
@@ -2104,10 +1966,10 @@
             },
             "quick-chat-global": {
                 "label": "快速对话",
-                "description": "在任意应用中唤起快速对话浮窗"
+                "description": "在任意应用中打开快速对话"
             },
             "send-prompt": {
-                "label": "发送消息",
+                "label": "发送",
                 "description": "发送你在输入框中输入的内容"
             },
             "vim-scroll-down": {
@@ -2147,35 +2009,31 @@
                 "description": "把光标移到输入框"
             },
             "pause-observing": {
-                "label": "暂停观察，直到手动恢复",
-                "description": "在任何应用中暂停或恢复观察。观察将保持暂停，直到你手动恢复；菜单栏中的暂停仅持续一小时。"
-            },
-            "pause-observing-one-hour": {
-                "label": "暂停观察一小时",
-                "description": "在这台电脑的任何应用中暂停观察一小时或恢复观察。"
+                "label": "Closed Eyes",
+                "description": "在这台电脑的任何应用中停止或开始观察"
             },
             "keyboard-shortcuts": {
                 "label": "键盘快捷键",
                 "description": "打开键盘快捷键设置"
             },
             "go-today": {
-                "label": "前往今日",
+                "label": "今日",
                 "description": "打开今日"
             },
             "go-chat": {
-                "label": "前往聊天",
+                "label": "聊天",
                 "description": "打开聊天"
             },
             "go-agents": {
-                "label": "前往智能体",
-                "description": "打开你的智能体和它们手上的工作"
+                "label": "Agents",
+                "description": "打开你的 Agents 和它们手上的工作"
             },
             "go-activity": {
-                "label": "前往活动",
+                "label": "活动",
                 "description": "打开活动"
             },
             "go-you": {
-                "label": "前往关于你",
+                "label": "你",
                 "description": "打开 Isoform 对你的了解"
             },
             "zoom-in": {
@@ -2191,8 +2049,6 @@
                 "description": "把这个窗口恢复到 100%"
             }
         },
-        "title": "键盘快捷键",
-        "description": "这些快捷键在 Isoform 位于前台时生效。点击某个快捷键，然后按下你想改用的按键。",
         "quickChat": {
             "title": "快速对话快捷键",
             "description": "选择在任意应用中打开快速对话的方式。",
@@ -2205,11 +2061,54 @@
                 "altSpace": "Alt 和空格",
                 "windowsShiftSpace": "Windows、Shift 和空格"
             }
+        }
+    },
+    "keys": {
+        "title": "键盘快捷键",
+        "anywhere": "在这台电脑的任何地方",
+        "inApp": "在 Isoform 中",
+        "onItem": "在“你的工作”中的一项上",
+        "brief": "简报",
+        "chat": "在聊天中",
+        "always": "始终是这个",
+        "hear": "收听，或暂停",
+        "newLine": "换行",
+        "vim": "聊天中的 Vim 按键",
+        "vimSub": "在输入框外，用 j 和 k 滚动，用 i 开始输入",
+        "focusNote": "Y、N、M 和 E 只对获得焦点的那一项有效，所以在别处打字永远不会回答它。",
+        "clash": "已被“{{row}}”使用。",
+        "recording": "按下新的按键，或按 Escape 保留 {{keys}}。",
+        "change": "更改",
+        "done": "完成",
+        "rowLabel": "{{name}}，{{keys}}，更改",
+        "fixedRowLabel": "{{name}}，{{keys}}",
+        "item": {
+            "move": "移动",
+            "yes": "是",
+            "no": "否",
+            "notMine": "不是我的",
+            "edit": "编辑",
+            "undo": "撤销"
         },
-        "resetAllConfirm": {
-            "title": "重置所有快捷键？",
-            "description": "此列表中的所有快捷键都会恢复为默认值。快速对话快捷键保持不变。",
-            "confirm": "重置快捷键"
+        "spoken": {
+            "command": "Command",
+            "control": "Control",
+            "option": "Option",
+            "alt": "Alt",
+            "shift": "Shift",
+            "windows": "Windows",
+            "space": "空格",
+            "enter": "回车",
+            "escape": "Escape",
+            "up": "上箭头",
+            "down": "下箭头",
+            "left": "左箭头",
+            "right": "右箭头",
+            "backspace": "删除",
+            "delete": "向前删除",
+            "tab": "Tab",
+            "optionTwice": "连按两次 Option",
+            "off": "关闭"
         }
     },
     "activityPipeline": {
@@ -2454,111 +2353,6 @@
         "promptImportSuccess": "已从 {{provider}} 导入。",
         "promptImportNone": "未导入任何记忆。",
         "retry": "重试"
-    },
-    "skillHub": {
-        "clawhub": {
-            "cardTitle": "浏览 Skill 库",
-            "cardDescription": "搜索公开 Skills 库 ClawHub，或粘贴某个 Skill 的链接。你添加的 Skills 会立即启用。",
-            "searchPlaceholder": "calendar、github 或 https://clawhub.ai/...",
-            "search": "搜索",
-            "browse": "浏览",
-            "install": "安装",
-            "installed": "已安装",
-            "openOnTitle": "在 ClawHub 上打开 {{url}}",
-            "openOnAria": "在 ClawHub 上打开"
-        },
-        "github": {
-            "cardTitle": "从 GitHub 安装",
-            "cardDescription": "粘贴公开仓库链接，或使用 <0>owner/repo</0>、<1>owner/repo@ref</1>、<2>owner/repo#sub/dir</2>。",
-            "placeholder": "anthropics/skills、owner/repo@v1 或 https://github.com/...",
-            "install": "安装",
-            "warning": "来自 GitHub 的 Skills 没有经过任何审核。请只安装你信任的人提供的 Skills，因为某个 Skill 的说明会指导 Isoform 在这台电脑上做什么。"
-        },
-        "folder": {
-            "cardTitle": "从文件夹安装",
-            "cardDescription": "选择一个包含 <0>SKILL.md</0> 文件的文件夹，比如你自己编写的技能。Isoform 会保留一份自己的副本，即使你移动了原文件夹，技能也能继续使用。",
-            "chooseButton": "选择文件夹"
-        },
-        "installed": {
-            "title": "你的 Skills",
-            "description": "当任务需要时，Isoform 会调用相应的 Skill。关闭某个 Skill 即可停止使用它，展开它可以选择在哪些地方使用。",
-            "refresh": "刷新",
-            "loading": "加载 Skills 中……",
-            "empty": "你还没有 Skills。可以浏览 Skill 库，或从你的其他 AI 工具中复制 Skills。",
-            "version": "v{{version}}",
-            "detailsAria": "{{name}} 的详情",
-            "emptyAction": "添加 Skill",
-            "toggleAria": "使用 {{name}}",
-            "useIn": "使用范围",
-            "useInHint": "选择 Isoform 可以在哪些地方使用这个 Skill。",
-            "useInOffReason": "打开这个 Skill 后才能选择使用范围。",
-            "uninstallConfirm": {
-                "title": "卸载 {{name}}？",
-                "description": "Isoform 会停止使用这个 Skill，并删除它保存的 Skill 文件夹副本。以后可以重新添加。",
-                "confirm": "卸载"
-            },
-            "uninstall": "卸载",
-            "uninstallAria": "卸载 {{name}}"
-        },
-        "domains": {
-            "chat": "聊天",
-            "project": "项目",
-            "automation": "定时任务"
-        },
-        "sourceLabels": {
-            "clawhub": "ClawHub",
-            "github": "GitHub",
-            "local": "文件夹",
-            "agentDirs": "其他 AI 工具"
-        },
-        "toasts": {
-            "loadFailed": "无法读取你的 Skills。",
-            "searchFailed": "无法搜索 ClawHub。请检查网络连接。",
-            "installed": "{{name}} 已安装并启用",
-            "installedFromGitHub": "已从 GitHub 安装 {{name}}",
-            "installedFromFolder": "已从文件夹安装 {{name}}",
-            "installFailed": "无法安装{{name}}。",
-            "githubInstallFailed": "无法安装{{name}}。",
-            "localInstallFailed": "无法安装此 Skill。",
-            "uninstalled": "已卸载 {{name}}",
-            "uninstallFailed": "无法卸载{{name}}。",
-            "updateFailed": "无法更改{{name}}。",
-            "updateAreasFailed": "无法更改{{name}}。",
-            "openFolderFailed": "无法打开文件夹。"
-        },
-        "discover": {
-            "title": "在你的其他 AI 工具中找到的技能",
-            "description": "复制你已经在 Claude Code、Codex、Cursor、Gemini、Goose 等工具中使用的 Skills。Isoform 会保留自己的副本，原来的 Skills 保持不变。",
-            "searchPlaceholder": "在你的其他 AI 工具中搜索 Skills",
-            "search": "搜索",
-            "scan": "查找 Skills",
-            "noMatch": "没有在你的其他 AI 工具中找到 Skills。",
-            "install": "安装",
-            "installed": "已安装",
-            "discoveryFailed": "无法读取你其他 AI 工具中的 Skills。",
-            "installedFrom": "已从 {{source}} 安装 {{name}}",
-            "installFailed": "无法安装{{name}}。"
-        },
-        "advancedHint": "从 GitHub 或文件夹安装，以及每个 Skill 的存放位置",
-        "tabs": {
-            "label": "Skills",
-            "installed": "已安装",
-            "add": "添加"
-        },
-        "security": {
-            "clean": "已检查，未发现问题",
-            "suspicious": "被标记为可疑",
-            "malicious": "已判定为有害",
-            "none": "未检查",
-            "unknown": "安全检查结果不明确"
-        },
-        "files": {
-            "title": "Skills 的存放位置",
-            "description": "每个 Skill 都是 Isoform 自己 Skills 目录中的一个文件夹，与你的其他 AI 工具相互独立。安全检查结果来自 Skill 库的审核。",
-            "empty": "还没有安装 Skills。",
-            "safety": "安全检查：{{status}}",
-            "openFolder": "打开文件夹"
-        }
     },
     "connectors": {
         "common": {
@@ -3088,36 +2882,11 @@
         "comparison": {
             "confidenceNeedsComparison": "开启「通过对比学习」后才能使用此项。"
         },
-        "import": {
-            "title": "从你的其他 AI 工具导入记忆",
-            "description": "把 Claude Code、Codex 和 Cursor 已经记下的关于你的内容带过来，Isoform 就不用重新学习。要添加哪些文件由你决定。",
-            "button": "选择要导入的内容"
-        },
-        "knows": {
-            "title": "Isoform 了解的内容",
-            "description": "阅读、更正或删除 Isoform 学到的任何内容。每一项都会在主窗口中打开。",
-            "open": "打开",
-            "memoryTitle": "关于你",
-            "memoryDescription": "Isoform 记住的关于你和你工作的内容。",
-            "openMemory": "打开「关于你」",
-            "peopleTitle": "你认识的人",
-            "peopleDescription": "Isoform 在你的消息、会议和通话中认出的人。",
-            "openPeople": "打开「你认识的人」",
-            "profileTitle": "你的名片",
-            "profileDescription": "你的名字，以及 Isoform 如何认出你自己的消息和声音。",
-            "openProfile": "打开你的名片"
-        },
         "contacts": {
             "title": "通过通讯录认出联系人",
             "description": "在「你认识的人」页面查看 Isoform 将读取的信息，再选择要导入的联系人。",
-            "openPeople": "前往「你认识的人」选择",
-            "allow": "允许",
-            "grantedToast": "Isoform 现在可以使用你的通讯录了。",
-            "notGranted": "通讯录权限仍未开启。请在系统设置中为 Isoform 开启，然后回到这里。",
-            "failed": "无法请求通讯录权限，请重试。"
-        },
-        "advancedHint": "通过对比学习、聊天上下文预览、搜索索引",
-        "advancedHintPlain": "通过对比学习"
+            "openPeople": "前往「你认识的人」选择"
+        }
     },
     "general": {
         "startAtLogin": {
@@ -3138,16 +2907,6 @@
             "system": "跟随系统",
             "english": "English",
             "chinese": "简体中文"
-        },
-        "advancedHint": "键盘快捷键、朗读与语音、在聊天中显示工具步骤",
-        "toolSteps": {
-            "title": "在聊天中显示工具步骤",
-            "description": "在回复下方显示 Isoform 用过的每个工具及其返回结果。想核对它是如何得出答案时可以打开。"
-        },
-        "readingWidth": {
-            "title": "阅读宽度",
-            "centered": "居中",
-            "full": "全宽"
         }
     },
     "toolsOnThisMac": {
@@ -3181,15 +2940,6 @@
     },
     "observation": {
         "pausedReason": "观察已暂停。恢复后才能更改此项。",
-        "pause": {
-            "title": "暂停观察",
-            "description": "Isoform 会停止查看你的屏幕和聆听，直到你关闭此项或重启 Isoform。适合私密通话，或任何你不想让它看到的时候。",
-            "paused": "已暂停。Isoform 现在不会查看屏幕或聆听。",
-            "shortcutTitle": "键盘快捷键",
-            "shortcutDescription": "在这台电脑的任何应用中暂停或恢复观察。暂停时长请参阅键盘快捷键设置。",
-            "loadFailed": "无法读取此设置。",
-            "toggleFailed": "无法更改此设置。"
-        },
         "watch": {
             "title": "查看我的屏幕",
             "description": "Isoform 会查看你使用的应用和窗口，并保留你在其中输入的文字，以了解你的工作方式，在合适的时候提供帮助。它还会读取这台电脑上 Chrome 及其他 Chromium 浏览器的历史记录（不含 Safari，从不读取无痕窗口），所以你最常访问的网站和你搜索过的内容可能会出现在你的简报里。密码输入框、无痕窗口和你忽略的应用不会被记录。如果你不希望它看到你的屏幕，请关闭此项。",
@@ -3253,31 +3003,10 @@
                 "microphone_paused": "已通过「使用麦克风」关闭。系统音频仍可收听。"
             }
         },
-        "related": {
-            "title": "在「隐私」页面",
-            "description": "这些设置和其他关于隐私的选项放在一起。",
-            "ignoredAppsTitle": "Isoform 不聆听的应用",
-            "ignoredAppsDescription": "例如听写工具，这样你在通话之外口述的内容不会变成转写文字。开启「自动记录会议」时，通话会被完整记录。",
-            "retentionTitle": "录制保留时长",
-            "retentionDays_one": "目前保留 {{count}} 天。",
-            "retentionDays_other": "目前保留 {{count}} 天。",
-            "retentionUnlimited": "目前保留到存储上限用满为止。",
-            "open": "打开「隐私」页面"
-        },
         "advanced": {
             "hint": "采集状态、Isoform 不聆听的应用和录制保留时长"
         },
         "calendars": {
-            "holds": {
-                "offerTitle": "主动提出留出时间",
-                "offerDescription": "有事需要你的时间时，Isoform 会建议一段时间。只有你点“留出”，它才会放进日历。",
-                "calendarTitle": "时间块放在",
-                "calendarDescription": "选一个同事能看到的日历，这样他们知道你在忙。",
-                "noCalendar": "没有可写入的日历",
-                "chooseCalendar": "选择日历",
-                "browserOnly": "你的{{account}}日历只在浏览器里。在“日历” › 设置 › 账户里添加它，就能在上面留出时间。",
-                "changeFailed": "无法更改此设置。"
-            },
             "title": "Isoform 能看到的日历",
             "description": "Isoform 会读取这台电脑上的日历，以及你在浏览器中打开的网页日历，帮你准备会议、规划一天。日程保存在这台电脑上；只有任务需要的内容会发送给你选择的 AI 和已配对的手机。",
             "needsAccess": "你的电脑还没有允许 Isoform 访问日历。请在下方允许。",
@@ -3394,11 +3123,6 @@
                 "action": "忘记",
                 "failed": "无法忘记这些内容。"
             }
-        },
-        "clipboard": {
-            "title": "记录我复制的内容",
-            "description": "复制往往说明你接下来要做什么。Isoform 会记录你复制的内容类型和所在的应用；在 macOS 允许读取时，还会保留一段简短预览，其中的个人信息、验证码、助记词、密码这类单个词以及任何标明为密码或密钥的内容都会被去除。来自密码管理器、被应用标记为密码的内容、浏览器无痕窗口、Isoform 本身以及你保护的应用都不会被记录。Safari 不会标明它的无痕窗口，因此对于在 Safari 中复制的内容，Isoform 只记录内容类型，从不保留预览。",
-            "toggleFailed": "无法更改此设置。"
         },
         "files": {
             "title": "最近文件",
@@ -3543,27 +3267,27 @@
             },
             "triage-memory": {
                 "name": "学习记忆",
-                "description": "从观察到的活动中发现有用的个人背景。"
+                "description": "了解你当前关注的事、常用的工具和工作习惯。关闭后，「关于你」不再根据 Isoform 看到的内容更新。你的 AI 会读取 Isoform 看到的内容来完成这件事。"
             },
             "triage-knowledge": {
                 "name": "学习知识",
-                "description": "从观察到的工作中发现可复用的知识。"
+                "description": "保存有用的细节，比如你如何解决某个报错或完成某项配置，方便 Isoform 以后复用。关闭后，不再保存新的内容。你的 AI 会读取 Isoform 看到的内容来完成这件事。"
             },
             "triage-shadow": {
                 "name": "通过比较学习",
-                "description": "将独立练习的结果与你的工作方式进行比较。"
+                "description": "Isoform 会悄悄猜测你会如何处理一项任务，把猜测和你的实际做法对比，并从差异中学习。它不会替你行动。关闭后，不再进行新的猜测，已学到的内容会保留。你的 AI 会读取 Isoform 看到的内容来完成这件事。"
             },
             "triage-sop": {
                 "name": "学习操作手册",
-                "description": "发现可整理为操作手册的重复步骤。"
+                "description": "把你反复用同样方式完成的任务整理成可运行、编辑和分享的分步工作手册。关闭后，不再生成新的工作手册。你的 AI 会读取 Isoform 看到的内容来完成这件事。"
             },
             "triage-events": {
                 "name": "识别事件",
-                "description": "从观察到的活动中发现值得关注的事件。"
+                "description": "把你在各个应用中的操作归为活动时间线上的一个个时刻。为了读取微信，它会把打开的聊天的裁剪截图发送给你的 AI。关闭后不会再添加新的时刻。"
             },
             "shadow-confidence": {
                 "name": "调整预测置信度",
-                "description": "利用比较结果改善预测的置信度。"
+                "description": "对比足够多次后，Isoform 会调整它对自己猜测的把握程度。这不会让 Isoform 自行行动。"
             },
             "work-pattern-profile": {
                 "name": "工作模式上下文",
@@ -3575,11 +3299,11 @@
             },
             "memory-dream-llm": {
                 "name": "AI 记忆整理",
-                "description": "使用 AI 协助回顾和整合记忆。"
+                "description": "把已保存的记忆发送给你的 AI，由它回顾和整合。"
             },
             "topic-finds": {
                 "name": "话题发现",
-                "description": "寻找你关注的话题的新信息。关闭此功能会暂停搜索，并保留已保存的话题、发现和搜索历史。"
+                "description": "寻找你关注的话题的新信息。关闭此功能会暂停搜索，并保留已保存的话题、发现和搜索历史。你的话题名称和根据你的兴趣生成的搜索词会发送给你的 AI 用于网页搜索。"
             },
             "auto-speak": {
                 "name": "朗读回复",
@@ -3840,7 +3564,12 @@
         "appMenu": {
             "about": "关于 Isoform",
             "check": "检查更新…",
-            "settings": "设置…"
+            "settings": "设置…",
+            "restart": "重新启动以更新",
+            "help": "帮助",
+            "shortcuts": "键盘快捷键",
+            "isoformHelp": "Isoform 帮助",
+            "feedback": "发送反馈…"
         },
         "legalUnavailable": "此构建尚未包含隐私、条款和开源许可文档。",
         "close": "关闭",
@@ -4004,9 +3733,9 @@
         "change": "更改",
         "leaves": "离开这台电脑的内容",
         "agents": "你的 Agents",
-        "agentsSub_one": "只有每个任务的“它得到什么”所列内容 · 本周 {{count}} 个任务",
-        "agentsSub_other": "只有每个任务的“它得到什么”所列内容 · 本周 {{count}} 个任务",
-        "agentsSubPlain": "只有每个任务的“它得到什么”所列内容",
+        "agentsSub_one": "只发送每次交接的「发送了什么」所列内容 · 本周 {{count}} 次：{{counts}}",
+        "agentsSub_other": "只发送每次交接的「发送了什么」所列内容 · 本周 {{count}} 次：{{counts}}",
+        "agentsSubPlain": "只发送每次交接的「发送了什么」所列内容",
         "devices": "你的手机和手表",
         "devicesSub": "今天的事项、简报和结果，经中继加密传送，中继无法读取",
         "devicesNone": "没有配对手机，所以不会发到手机",
@@ -4021,7 +3750,6 @@
         "messages": "信息",
         "messagesSub": "记下谁问了什么、你答应了什么，不保留信息本身 · 最多两周",
         "agentsHistory": "你的 Agents 的记录",
-        "agentsHistorySub": "每个 Agent 默认关闭，直到你打开",
         "noSize": "—",
         "total": "已用 {{used}}，上限 {{cap}}。满了时，最旧的先删除。",
         "yours": "你的",
@@ -4043,7 +3771,7 @@
         "deleteFailed": "无法删除你的回答。",
         "forgetTitle": "忘记一切",
         "forget": "忘记一切…",
-        "forgetSub": "删除 Isoform 保存的关于你的一切，包括这台电脑上的和 Agent of You 中的。设置、手机配对和 App 本身保留。",
+        "forgetSub": "会先询问，并列出要删除的内容",
         "forgetButton": "忘记一切…",
         "forgetConfirmTitle": "忘记一切？",
         "forgetConfirm": "Isoform 会删除你的屏幕和通话、手表时段、会议笔记、邮件和日历副本、信息笔记、声音、聊天、交接、记忆、经验、联系人、主题、回答、你的工作档案和 Agent of You 档案。此操作无法撤回。即使退出 App 也会继续。",
@@ -4080,8 +3808,21 @@
             "mainChat": "聊天",
             "logs": "日志和探测记录",
             "phones": "你的手机和手表",
-            "briefs": "简报"
-        }
+            "briefs": "简报",
+            "assistantCalls": "你的助手收到的内容"
+        },
+        "off": "已关闭",
+        "turnOn": "打开",
+        "agentsHistoryOnSub": "这台电脑上你的 Claude Code 和 Codex 会话",
+        "agentOwn": "你选择的 AI",
+        "agentCount": "{{agent}} {{count}}",
+        "aoy": "Agent of You",
+        "aoySub_one": "Agent of You 可以说的 {{count}} 条内容",
+        "aoySub_other": "Agent of You 可以说的 {{count}} 条内容",
+        "switchReadFailed": "无法读取这一项是否开启。",
+        "aoyReadFailed": "无法读取发送给 Agent of You 的内容。",
+        "changeTitle": "Isoform 保留多久",
+        "changeSub": "保留时间，以及 Isoform 在这台电脑上可以使用的空间。满了之后，最早的先删除。"
     },
     "aoy": {
         "aoy": "Agent of You",
@@ -4312,27 +4053,127 @@
         "save": "保存",
         "lead": "作为客户可以在 isoform.ai/agents/{{name}} 雇用的智能体的你。"
     },
+    "yourAI": {
+        "title": "你的 AI",
+        "lead": "{{assistant}} 读取你的一天，为你写简报和回答。",
+        "alsoAgent": "{{app}} · 也是你的{{job}} Agent",
+        "jobCode": "写代码",
+        "jobElse": "其他所有事",
+        "finding": {
+            "title": "在 Isoform 保存的内容中查找",
+            "here": "在这台电脑上",
+            "ollamaHere": "这台电脑上的 Ollama",
+            "ollamaAt": "位于 {{address}} 的 Ollama",
+            "openai": "OpenAI",
+            "change": "更改",
+            "choice": {
+                "local": "在这台电脑上",
+                "ollama": "Ollama",
+                "openai": "OpenAI"
+            },
+            "keyLabel": "OpenAI 密钥",
+            "keySaved": "已保存密钥；留空即保留",
+            "leaves": "会把文本发送给 OpenAI；见“离开电脑的内容”。",
+            "addressLabel": "Ollama 地址",
+            "save": "保存",
+            "cancel": "取消",
+            "failed": "没有成功，请再试一次。"
+        },
+        "overnight": {
+            "title": "夜间回顾它所知道的内容",
+            "line": "用 {{assistant}} 读取你保存的记忆，并提出修改供你确认。",
+            "yourAI": "你的 AI",
+            "failed": "没有成功，请再试一次。",
+            "readFailed": "无法读取此项是否开启。"
+        }
+    },
     "yourAgents": {
-        "jobsTitle": "它们的分工",
+        "jobsTitle": "你的分工",
+        "change": "更改",
+        "noneChosen": "还没有连接。你对推荐的工作说同意时，会交给你常用的 Agent。",
+        "takesOver": "{{current}} 现在负责你的{{kind}}工作。改由 {{agent}} 接手；{{current}} 仍保持连接。",
+        "kindCode": "代码",
+        "kindElse": "其他",
         "note": "Isoform 只把任务和它需要的内容交给它们，别的都不给。",
         "forCode": "写代码",
         "forCodeSub": "涉及代码仓库的工作",
         "forElse": "其他所有事",
         "forElseSub": "你同意的、不是代码的事",
-        "notChosen": "第一次同意时再问你",
-        "connectedTitle": "已连接的 Agents",
+        "otherTitle": "其他 Agents",
         "empty": "还没有 Agent。连接一个就能把工作交给它。",
+        "stateWhere": "{{state}} · {{where}}",
         "connect": "连接 Agent",
         "disconnect": "断开连接",
         "disconnectTitle": "断开 {{agent}}？",
         "disconnectBody": "它会立刻不再收到交接，也不能再使用 Isoform 的工具。它已经做出的东西仍归它所有。",
         "loadFailed": "无法读取你的 Agents。",
-        "actionFailed": "没有成功，请再试一次。"
+        "actionFailed": "没有成功，请再试一次。",
+        "learnOff": "从它学习：关闭",
+        "learnOn": "从它学习：开启",
+        "learnOnlyHere": "从它学习：仅限这台电脑上的代理"
     },
     "topicProposals": {
         "title": "根据你的主题提出建议",
-        "description": "Isoform 会把你的主题名称发给你自己的 AI，来建议下一步工作。",
+        "description": "主题会在「你的工作」里提出下一步工作。为了写出提议，你的主题名称和 Isoform 对每个主题记下的内容会发送给 {{assistant}}。",
         "toggleFailed": "没能更改，请再试一次。",
-        "loadFailed": "无法读取这项设置。"
+        "loadFailed": "无法读取这项设置。",
+        "yourAI": "你选择的 AI"
+    },
+    "sees": {
+        "screen": "屏幕",
+        "screenSub": "屏幕上的内容，以及你在 Chrome 和同类浏览器中的历史记录，你排除的应用除外",
+        "calls": "通话和会议",
+        "callsSub": "你说的话和录下的通话，在这台电脑上转写",
+        "mailCalRem": "邮件、日历和提醒事项",
+        "mailCalRemSub": "这台电脑上的账户，在原处读取",
+        "messages": "信息",
+        "messagesSub": "这台电脑上你与认识的人的 iMessage 和短信对话",
+        "messagesAsk": "Isoform 会读取你与认识的人的对话，以便知道谁在等你、你答应了什么。它把这些保存在这台电脑上，{{assistant}} 会像读取你的屏幕一样读取它们。这需要完全磁盘访问权限，你可以在系统设置中授予。",
+        "openSystem": "打开系统设置",
+        "notNow": "暂不",
+        "needsFda": "需要完全磁盘访问权限",
+        "needsFdaOff": "需要完全磁盘访问权限 · 打开时会询问",
+        "watch": "你的手表",
+        "watchSub": "戴在手腕上时听到的谈话，按小时整理",
+        "watchOff": "已关闭。轻点手表上的标记即可开始聆听。",
+        "noWatch": "还没有装有 Isoform 的手表。请从手机把 Isoform 装到手表上。",
+        "watchOffFailed": "没能关闭聆听，你的手表仍在聆听。",
+        "agentsHistory": "你的 Agents 的记录",
+        "agentsHistorySub": "Claude Code 和 Codex 在这台电脑上做过的事",
+        "needsAccess": "需要访问权限",
+        "readFailed": "无法读取这是否已打开",
+        "closedEyesOn": "Closed Eyes 已开启。在你睁眼之前，不会看到或保留任何内容。",
+        "open": "打开{{source}}",
+        "back": "Isoform 看到的",
+        "speechSpaceFailed": "无法读取语音识别是否已在这台电脑上。",
+        "wechatPic": "无法读取文字时，以图片形式读取微信窗口 · 发送给 {{assistant}}",
+        "wechatPicWaiting": "在这台电脑上有隐私模型（会遮挡屏幕图片中的敏感内容）之前，图片会等待。",
+        "wechatPicFailed": "无法更改此设置。"
+    },
+    "watch": {
+        "phoneQuiet": "你的手机自 {{time}} 起没有联系过，所以之后手表上的内容都还没有传来。在手机上打开 Isoform 即可发送。",
+        "offPending": "正在等待传达到你的手表 · 你的手机上次联系是在 {{time}}。在那之前手表听到的内容，传来时都会被删除。"
+    },
+    "yourWatch": {
+        "readFailed": "无法读取手表的设置。",
+        "pairingUnknown": "暂时无法确定你的手机是否有装了 Isoform 的手表。",
+        "changeFailed": "无法更改。手表保留原来的设置。",
+        "stateHeard": "正在聆听 · 上次听到在 {{time}}",
+        "stateListening": "正在聆听 · 还没有听到内容",
+        "offPendingNever": "正在等待传达到你的手表 · 你的手机还没有联系过。在那之前手表听到的内容，传来时都会被删除。",
+        "notes": {
+            "title": "长谈话的笔记",
+            "description": "超过 5 分钟：一份笔记，以及你说过要做的事"
+        },
+        "heartRate": {
+            "title": "心率",
+            "description": "在所说内容旁加上「心率升高」。不记录具体数值。",
+            "interim": "手表自己的「心率」开关也打开时，才会加上。"
+        },
+        "place": {
+            "title": "地点",
+            "description": "加上所在区域，比如「Mission District」。不记录具体地址。",
+            "interim": "手表自己的「地点」开关也打开时，才会加上。"
+        }
     }
 }

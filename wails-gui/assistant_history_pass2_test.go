@@ -16,7 +16,9 @@ func historyFixture(t *testing.T) (assistantHistoryRoots, string, time.Time) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv(agentHomeEnv, filepath.Join(home, "agent-data"))
-	now := time.Date(2026, 10, 28, 12, 0, 0, 0, time.Local)
+	t.Setenv("CODEX_HOME", filepath.Join(home, ".codex"))
+	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(home, ".claude"))
+	now := time.Now().Truncate(time.Second)
 	repo := filepath.Join(home, "src", "halcyon")
 	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0700); err != nil {
 		t.Fatal(err)
@@ -32,6 +34,9 @@ func historyFixture(t *testing.T) (assistantHistoryRoots, string, time.Time) {
 		claudeLine(t, repo, "assistant", "Try: export DEPLOY_SECRET=example-deploy-secret and rerun."),
 		claudeLine(t, repo, "user", "Fixed the fixture store. Run the tests before every push."),
 	)
+	if err := (&App{}).SetLearnFromIt("claude-code", true); err != nil {
+		t.Fatal(err)
+	}
 	return assistantHistoryRoots{Home: home, Claude: claudeProjects, Codex: filepath.Join(home, "none")}, repo, now
 }
 
@@ -51,7 +56,7 @@ func TestAssistantHistoryPassTwoStoresCheckedDrafts(t *testing.T) {
 	}
 
 	app := &App{}
-	scan := scanAssistantHistory(roots, now)
+	scan := fixtureHistoryScan(t, roots, now)
 	if len(scan.Projects) != 1 {
 		t.Fatalf("projects: %+v", scan.Projects)
 	}
@@ -167,7 +172,7 @@ func TestAssistantHistoryRunStoresViewAndCounts(t *testing.T) {
 	_ = now
 
 	app := &App{}
-	app.runAssistantHistoryScan(context.Background(), app.assistantHistory.generation)
+	app.runAssistantHistoryScan(context.Background(), app.assistantHistory.generation, "")
 
 	view := app.GetAssistantHistory()
 	if !view.Enabled || view.State != "ready" || len(view.Projects) != 1 || !view.Pass2Done {
@@ -185,29 +190,29 @@ func TestAssistantHistoryRunStoresViewAndCounts(t *testing.T) {
 		calls++
 		return reply, nil
 	}
-	app.runAssistantHistoryScan(context.Background(), app.assistantHistory.generation)
+	app.runAssistantHistoryScan(context.Background(), app.assistantHistory.generation, "")
 	if calls != 0 {
 		t.Fatalf("pass 2 ran again without new sessions: %d calls", calls)
 	}
 }
 
-// TestAssistantHistoryDefaultsOnAndOffForgets covers the opt-out switch: the
-// default is on, turning it off forgets what came from history, and the view
+// TestAssistantHistorySavedOnAndOffForgets covers the compatibility switch: the
+// fixture has saved on, turning it off forgets what came from history, and the view
 // is empty afterwards.
-func TestAssistantHistoryDefaultsOnAndOffForgets(t *testing.T) {
+func TestAssistantHistorySavedOnAndOffForgets(t *testing.T) {
 	roots, _, now := historyFixture(t)
 	_ = roots
 	_ = now
 	app := &App{}
 	if value, err := app.GetReadAssistantHistory(); err != nil || !value {
-		t.Fatal("reading history must be on by default")
+		t.Fatal("reading history must reflect the saved choice")
 	}
 	oldCall := assistantHistoryModelCall
 	t.Cleanup(func() { assistantHistoryModelCall = oldCall })
 	assistantHistoryModelCall = func(ctx context.Context, a *App, prompt string) (string, error) {
 		return `{"beliefs":[{"text":"Runs the tests before every push","session":1}],"knowHow":[{"title":"Run tests before push","takeaway":"Run go test before pushing.","kind":"how_to","fromClaudeMd":true,"session":0}]}`, nil
 	}
-	app.runAssistantHistoryScan(context.Background(), app.assistantHistory.generation)
+	app.runAssistantHistoryScan(context.Background(), app.assistantHistory.generation, "")
 	if view := app.GetAssistantHistory(); view.BeliefCount != 1 || view.KnowHowCount != 1 {
 		t.Fatalf("before off: %+v", view)
 	}

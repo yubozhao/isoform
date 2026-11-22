@@ -39,7 +39,7 @@ describe("TroubleLine (computer-trouble v1.0.0)", () => {
         fireEvent.click(screen.getByRole("button", { name: en.trouble.openSettings }));
         expect(mocks.openFix).toHaveBeenCalledWith("screen");
         fireEvent.click(screen.getByText("1 more ›"));
-        expect(document.querySelector("[data-trouble-kind=phone]")).toHaveTextContent("Your phone hasn't checked in since 2:10 PM.");
+        expect(document.querySelector("[data-trouble-kind=phone]")).toHaveTextContent("Your phone hasn't been in touch since 2:10 PM, so nothing from your watch has come since.");
         // Nothing to press for the phone.
         expect(document.querySelector("[data-trouble-kind=phone] button")).toBeNull();
     });

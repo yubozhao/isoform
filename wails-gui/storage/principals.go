@@ -167,7 +167,7 @@ func (s *Store) DeletePrincipal(ctx context.Context, id string) error {
 // GetPrincipal returns the principal with the given id including its aliases.
 // Returns sql.ErrNoRows if missing.
 func (s *Store) GetPrincipal(ctx context.Context, id string) (PrincipalRow, error) {
-	return getPrincipalTx(ctx, s.db, id)
+	return getPrincipalTx(ctx, s.committedReader(), id)
 }
 
 // ListPrincipals returns all principals ordered by kind then display name.
@@ -419,7 +419,7 @@ func (s *Store) UnbindAppHandle(ctx context.Context, id int64) error {
 
 // ListAppHandlesByPrincipal returns every app handle bound to a principal.
 func (s *Store) ListAppHandlesByPrincipal(ctx context.Context, principalID string) ([]AppHandleRow, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.committedReader().QueryContext(ctx, `
 		SELECT id, principal_id, app, handle_id, display_handle, created_at
 		  FROM app_handles
 		 WHERE principal_id = ? AND EXISTS (SELECT 1 FROM principals p WHERE p.id=principal_id AND p.merged_into='')
@@ -445,7 +445,7 @@ func (s *Store) ListAppHandlesByPrincipal(ctx context.Context, principalID strin
 // ListAppHandlesByPrincipals returns active handles grouped by principal.
 // Ordering within each principal matches ListAppHandlesByPrincipal.
 func (s *Store) ListAppHandlesByPrincipals(ctx context.Context) (map[string][]AppHandleRow, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.committedReader().QueryContext(ctx, `
 		SELECT id, principal_id, app, handle_id, display_handle, created_at
 		  FROM app_handles
 		 WHERE EXISTS (SELECT 1 FROM principals p WHERE p.id=principal_id AND p.merged_into='')
@@ -933,7 +933,7 @@ func (s *Store) ListPrincipalSessionSightingsPage(ctx context.Context, principal
 	if limit <= 0 {
 		limit = 50
 	}
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.committedReader().QueryContext(ctx, `
 		SELECT principal_id, session_id, first_seen_at, last_seen_at
 		  FROM principal_session_sightings
 		 WHERE principal_id = ? AND EXISTS (SELECT 1 FROM principals p WHERE p.id=principal_id AND p.merged_into='')
@@ -963,7 +963,7 @@ func (s *Store) ListPrincipalSessionSightingsPage(ctx context.Context, principal
 // per-principal order. The People read path applies its read-revision fence
 // around this batch.
 func (s *Store) ListPrincipalSessionSightingsForActivePrincipals(ctx context.Context) (map[string][]PrincipalSessionSightingRow, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.committedReader().QueryContext(ctx, `
 		SELECT pss.principal_id, pss.session_id, pss.first_seen_at, pss.last_seen_at
 		  FROM principal_session_sightings pss
 		 WHERE EXISTS (SELECT 1 FROM principals p WHERE p.id=pss.principal_id AND p.merged_into='')`)
@@ -1004,7 +1004,7 @@ func (s *Store) ListSessionPrincipalSightings(ctx context.Context, sessionID str
 	if limit <= 0 {
 		limit = 100
 	}
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.committedReader().QueryContext(ctx, `
 		SELECT pss.principal_id, p.display_name, p.kind,
 		       pss.first_seen_at, pss.last_seen_at
 		  FROM principal_session_sightings pss
@@ -1037,7 +1037,7 @@ func (s *Store) ListSessionPrincipalSightings(ctx context.Context, sessionID str
 // nil check. The principal must exist; missing IDs return sql.ErrNoRows.
 func (s *Store) GetPrincipalStats(ctx context.Context, principalID string) (PrincipalStatsRow, error) {
 	var exists int
-	if err := s.db.QueryRowContext(ctx, "SELECT 1 FROM principals WHERE id = ? AND merged_into = ''", principalID).Scan(&exists); err != nil {
+	if err := s.committedReader().QueryRowContext(ctx, "SELECT 1 FROM principals WHERE id = ? AND merged_into = ''", principalID).Scan(&exists); err != nil {
 		return PrincipalStatsRow{}, err
 	}
 
@@ -1080,7 +1080,7 @@ func (s *Store) GetAllPrincipalStats(ctx context.Context) (map[string]PrincipalS
 		out[id] = PrincipalStatsRow{PrincipalID: id}
 	}
 
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.committedReader().QueryContext(ctx, `
 		SELECT principal_id, app, message_count, first_seen_at, last_seen_at
 		  FROM principal_sightings
 		 ORDER BY principal_id, last_seen_at DESC
@@ -1118,7 +1118,7 @@ func (s *Store) GetPrincipalRecentMessages(ctx context.Context, principalID stri
 	if limit <= 0 {
 		limit = defaultRecentMessagesWindow
 	}
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.committedReader().QueryContext(ctx, `
 		SELECT principal_id, app, seen_at, preview
 		  FROM principal_recent_messages
 		 WHERE principal_id = ? AND EXISTS (SELECT 1 FROM principals p WHERE p.id=principal_id AND p.merged_into='')
@@ -1148,7 +1148,7 @@ func (s *Store) GetPrincipalRecentMessages(ctx context.Context, principalID stri
 // principals that have never been sighted (so the Who you know page can still
 // show them in the list).
 func (s *Store) allPrincipalIDs(ctx context.Context) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx, "SELECT id FROM principals WHERE merged_into = ''")
+	rows, err := s.committedReader().QueryContext(ctx, "SELECT id FROM principals WHERE merged_into = ''")
 	if err != nil {
 		return nil, fmt.Errorf("query principal ids: %w", err)
 	}
@@ -1675,7 +1675,7 @@ func requirePrincipalExists(ctx context.Context, tx *sql.Tx, id string) error {
 }
 
 func (s *Store) listSightings(ctx context.Context, principalID string) ([]PrincipalSightingRow, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.committedReader().QueryContext(ctx, `
 		SELECT principal_id, app, message_count, first_seen_at, last_seen_at
 		  FROM principal_sightings
 		 WHERE principal_id = ?
@@ -1702,7 +1702,7 @@ func (s *Store) listSightings(ctx context.Context, principalID string) ([]Princi
 // PrincipalIDs returns the id of every stored principal, merged ones
 // included. Saved page snapshots check it to find people deleted since.
 func (s *Store) PrincipalIDs(ctx context.Context) (map[string]bool, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id FROM principals`)
+	rows, err := s.committedReader().QueryContext(ctx, `SELECT id FROM principals`)
 	if err != nil {
 		return nil, err
 	}

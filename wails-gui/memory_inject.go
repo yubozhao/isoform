@@ -243,6 +243,10 @@ func (a *App) resolveMemoryContext(
 	query string,
 	validators ...func(*MemoryStore, []MemorySearchResult) error,
 ) (memoryContextResolution, error) {
+	return a.resolveFilteredMemoryContext(ctx, query, nil, validators...)
+}
+
+func (a *App) resolveFilteredMemoryContext(ctx context.Context, query string, filter func(*MemoryStore, []MemorySearchResult) ([]MemorySearchResult, error), validators ...func(*MemoryStore, []MemorySearchResult) error) (memoryContextResolution, error) {
 	if a == nil || a.IsClosedEyesModeEnabled() {
 		return memoryContextResolution{}, nil
 	}
@@ -292,6 +296,12 @@ func (a *App) resolveMemoryContext(
 	}
 	for _, validate := range validators {
 		if err := validate(store, results); err != nil {
+			return memoryContextResolution{}, err
+		}
+	}
+	if filter != nil {
+		results, err = filter(store, results)
+		if err != nil {
 			return memoryContextResolution{}, err
 		}
 	}
@@ -352,22 +362,26 @@ func (a *App) injectMemoryContext(ctx context.Context, prompt, query string, val
 	if resolution.Store == nil {
 		return selfModelContext + prompt
 	}
-	selection := resolution.Selection
-	selected := selection.Results
 	log.Printf(
 		"[memory] inject context: discovered=%d corrected=%d selected=%d chars=%d below_score=%d empty=%d truncated=%d budget_omitted=%d duration=%v",
 		resolution.DiscoveredCount,
 		resolution.CorrectedExclusions,
-		selection.SelectedCount,
-		selection.SelectedChars,
-		selection.BelowScoreCount,
-		selection.EmptyCount,
-		selection.TruncatedCount,
-		selection.BudgetOmittedCount,
+		resolution.Selection.SelectedCount,
+		resolution.Selection.SelectedChars,
+		resolution.Selection.BelowScoreCount,
+		resolution.Selection.EmptyCount,
+		resolution.Selection.TruncatedCount,
+		resolution.Selection.BudgetOmittedCount,
 		time.Since(searchStart),
 	)
+	return selfModelContext + a.renderMemorySelection(ctx, resolution, useEpoch) + prompt
+}
+
+func (a *App) renderMemorySelection(ctx context.Context, resolution memoryContextResolution, useEpoch uint64) string {
+	selection := resolution.Selection
+	selected := selection.Results
 	if len(selected) == 0 {
-		return selfModelContext + prompt
+		return ""
 	}
 
 	var memoryResults, knowledgeResults []MemorySearchResult
@@ -444,7 +458,7 @@ func (a *App) injectMemoryContext(ctx context.Context, prompt, query string, val
 	}
 
 	a.recordMemorySelectionUses(ctx, used, useEpoch)
-	return selfModelContext + sb.String() + prompt
+	return sb.String()
 }
 
 // memoryBodyCache keeps the bytes of memory files read by the injection path, keyed on

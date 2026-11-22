@@ -3,8 +3,9 @@ package main
 // Task links in the app (design: docs/design/task-link-handoff.md). The
 // internal/tasklink package serves /t/<token>; this file keeps its links
 // across restarts, withdraws them when the person withdraws anything or
-// turns on Closed Eyes, serves them on a loopback listener behind the
-// task_links_enabled switch, and records each agent's result.
+// turns on Closed Eyes, serves them on a loopback listener, and records each
+// agent's result. No switch gates agents: making a link or a join link is the
+// person's yes, and Closed Eyes refuses every read (agents G2, 2026-11-21).
 //
 // The listener only binds loopback. Reaching it from outside is the front's
 // job (docs/design/mcp-public-front.md); until the front ships, a dogfood
@@ -32,7 +33,6 @@ import (
 )
 
 const (
-	taskLinksEnabledKey    = "task_links_enabled"
 	taskLinksDirName       = "task-links"
 	taskLinksOpenFile      = "open.json"
 	taskLinksResultsFile   = "results.json"
@@ -45,7 +45,6 @@ const (
 )
 
 var (
-	errTaskLinksOff        = errors.New("task links are off")
 	errTaskLinksClosedEyes = errors.New("closed eyes is on")
 	errTaskLinkNotLoopback = errors.New("the task link listener must bind a loopback address")
 )
@@ -60,6 +59,8 @@ type TaskLinkResult struct {
 	Status     string   `json:"status"`
 	Summary    string   `json:"summary"`
 	Links      []string `json:"links,omitempty"`
+	// RequestText is the submitted result text of an agent-to-agent hand-off.
+	RequestText string `json:"requestText,omitempty"`
 	// Files are the names of the text files a connected agent posted with
 	// its result, kept under agents/files/<linkId>/.
 	Files    []string `json:"files,omitempty"`
@@ -84,9 +85,8 @@ type taskLinkState struct {
 	onTaken  func(tasklink.Link)
 	onResult func(tasklink.Link, tasklink.Result)
 	// test seams
-	dir     string
-	enabled func() bool
-	now     func() time.Time
+	dir string
+	now func() time.Time
 }
 
 func (s *taskLinkState) clock() time.Time {
@@ -105,17 +105,6 @@ func (s *taskLinkState) dirPath() (string, error) {
 		return "", err
 	}
 	return filepath.Join(root, taskLinksDirName), nil
-}
-
-func (a *App) taskLinksEnabled() bool {
-	if a.taskLinks.enabled != nil {
-		return a.taskLinks.enabled()
-	}
-	if a.store == nil {
-		return false
-	}
-	value, err := a.store.GetUIState(context.Background(), taskLinksEnabledKey)
-	return err == nil && strings.EqualFold(strings.TrimSpace(value), "true")
 }
 
 // taskLinkStore makes the store once: restored from disk, and subscribed to
@@ -139,16 +128,15 @@ func (a *App) taskLinkStore() *tasklink.Store {
 	return s.store
 }
 
-// taskLinkAllowed runs on every request: a link answers only while the
-// switch is on and Closed Eyes is off.
+// taskLinkAllowed runs on every request: a link answers only while Closed
+// Eyes is off.
 func (a *App) taskLinkAllowed(tasklink.Link) error { return a.agentsAllowed() }
 
-// agentsAllowed is the gate for everything agents reach: task links and
-// joining answer only while the switch is on and Closed Eyes is off.
+// agentsAllowed is the gate for everything an agent reads or is handed:
+// task links, a joined agent's tools and inbox, and new hand-offs answer
+// only while Closed Eyes is off. Joining is not gated: connecting sees and
+// keeps nothing, and the person's Yes is the access (agents G2).
 func (a *App) agentsAllowed() error {
-	if !a.taskLinksEnabled() {
-		return errTaskLinksOff
-	}
 	if a.IsClosedEyesModeEnabled() {
 		return errTaskLinksClosedEyes
 	}
@@ -223,9 +211,6 @@ func (a *App) taskLinkResulted(link tasklink.Link, result tasklink.Result) {
 // createTaskLink makes a link for one prepared task and returns its URL.
 // It is called only from the person's tap.
 func (a *App) createTaskLink(spec tasklink.Link) (string, error) {
-	if !a.taskLinksEnabled() {
-		return "", errTaskLinksOff
-	}
 	if a.IsClosedEyesModeEnabled() {
 		return "", errTaskLinksClosedEyes
 	}
@@ -336,16 +321,13 @@ func (a *App) stopTaskLinkListener() {
 	_ = server.Shutdown(ctx)
 }
 
-// startTaskLinksIfEnabled runs at launch: open links answer again only when
-// the switch is on.
-func (a *App) startTaskLinksIfEnabled() {
+// startTaskLinksAtLaunch runs at launch: open links, joined agents and
+// waiting hand-offs answer again on the loopback listener.
+func (a *App) startTaskLinksAtLaunch() {
 	// The inbox restores its waiting hand-offs and listens for privacy
 	// withdrawals from launch, not from first use: a withdrawal before then
 	// must still spend them.
 	a.agentInboxService()
-	if !a.taskLinksEnabled() {
-		return
-	}
 	a.taskLinkStore()
 	// The listener serves task links and the agents' channel: start it when
 	// a link is open or an agent has joined, so a joined agent can reach its
@@ -358,25 +340,6 @@ func (a *App) startTaskLinksIfEnabled() {
 	}
 }
 
-// GetTaskLinksEnabled reports the switch.
-func (a *App) GetTaskLinksEnabled() bool { return a.taskLinksEnabled() }
-
-// SetTaskLinksEnabled turns task links on or off. Off spends every open
-// link and stops the listener.
-func (a *App) SetTaskLinksEnabled(enabled bool) error {
-	if a.store == nil {
-		return errors.New("storage is not ready")
-	}
-	if err := a.store.SetUIState(context.Background(), taskLinksEnabledKey, fmt.Sprintf("%t", enabled)); err != nil {
-		return err
-	}
-	if !enabled {
-		a.withdrawTaskLinks(nil)
-		a.stopTaskLinkListener()
-	}
-	return nil
-}
-
 // GetTaskLinkResults lists the agents' answers, newest first.
 func (a *App) GetTaskLinkResults() ([]TaskLinkResult, error) {
 	a.taskLinks.fileMu.Lock()
@@ -387,9 +350,26 @@ func (a *App) GetTaskLinkResults() ([]TaskLinkResult, error) {
 	}
 	out := make([]TaskLinkResult, 0, len(results))
 	for i := len(results) - 1; i >= 0; i-- {
+		results[i].RequestText = "" // Only get_answer needs the request body.
 		out = append(out, results[i])
 	}
 	return out, nil
+}
+
+// agentRequestResult projects one approved delivery from the saved inbox results.
+func (a *App) agentRequestResult(r AgentRequest) (TaskLinkResult, bool, error) {
+	a.taskLinks.fileMu.Lock()
+	defer a.taskLinks.fileMu.Unlock()
+	results, err := a.readTaskLinkResultsLocked()
+	if err != nil {
+		return TaskLinkResult{}, false, err
+	}
+	for _, result := range results {
+		if result.LinkID == r.TargetHandoffID && result.SourceKind == agentRequestSource && result.SourceID == r.ID {
+			return result, true, nil
+		}
+	}
+	return TaskLinkResult{}, false, nil
 }
 
 func (a *App) shutdownTaskLinks() {
@@ -489,14 +469,11 @@ func (a *App) writeTaskLinkJSON(name string, value any) error {
 	return os.Rename(tmp, path)
 }
 
-// taskLinkHandoffReady says whether Work on it may offer a task link: the
-// switch is on and a public https origin reaches the listener: the front
+// taskLinkHandoffReady says whether Work on it may offer a task link: a
+// public https origin reaches the listener: the front
 // while it runs, or a bridge named by ISOFORM_TASK_LINK_BASE_URL (a loopback
 // link is useless to an agent in the cloud).
 func (a *App) taskLinkHandoffReady() bool {
-	if !a.taskLinksEnabled() {
-		return false
-	}
 	if a.frontHostname() != "" {
 		return true
 	}

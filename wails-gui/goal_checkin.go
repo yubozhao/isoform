@@ -52,6 +52,11 @@ var goalCheckInBeforeWrite = func() {}
 
 // GetGoalCheckIn returns the goal Today asks about now, or nil.
 func (a *App) GetGoalCheckIn() (perfValue *GoalCheckInView, perfErr error) {
+	// Playbooks, SOPs and goals are off unless their switch is on
+	// (feature_switches.go).
+	if !featureOn(featurePlaybooks) {
+		return nil, nil
+	}
 	defer logPageBinding("GetGoalCheckIn", time.Now(), &perfValue)
 	if a == nil || a.store == nil || a.activity == nil || a.activity.store == nil {
 		return nil, nil
@@ -104,6 +109,11 @@ func (a *App) GetGoalCheckIn() (perfValue *GoalCheckInView, perfErr error) {
 
 // NoteGoalCheckInShown records that Today showed the check-in for a goal.
 func (a *App) NoteGoalCheckInShown(goalID, eventID string) error {
+	// Playbooks, SOPs and goals are off unless their switch is on
+	// (feature_switches.go).
+	if !featureOn(featurePlaybooks) {
+		return nil
+	}
 	if a == nil || a.store == nil || !mobileValidID(goalID) {
 		return errGoalMoveInvalid
 	}

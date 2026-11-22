@@ -14,7 +14,7 @@ protocol TasksHubAPI: Sendable {
 }
 
 extension HubChannel: TasksHubAPI {
-    func brainDumpAvailable() async throws -> Bool { try await status().brainDump == true }
+    func brainDumpAvailable() async throws -> Bool { try await abilities().brainDump == true }
 
     func parseBrainDump(text: String, idempotencyKey: String) async throws -> [BrainDumpItem] {
         let body = try JSONEncoder().encode(BrainDumpParseRequest(idempotencyKey: idempotencyKey, text: text))

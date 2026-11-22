@@ -12,7 +12,9 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -26,7 +28,14 @@ func TestMain(m *testing.M) {
 	case "fake-relay":
 		runFakeRelay()
 		os.Exit(0)
-	case "fake-dumbpipe":
+	case "fake-listener-parent":
+		// Run only the listener worker so killing this parent cannot orphan a relay.
+		s := New(Config{StateDir: os.Getenv("HOME"), DumbpipeBin: os.Args[1]})
+		s.ctx, s.port = context.Background(), 12345
+		s.secret = strings.Repeat("a", 64)
+		s.runDumbpipe()
+		os.Exit(1)
+	case "fake-dumbpipe", "dumbpipe":
 		runFakeDumbpipe()
 		os.Exit(0)
 	default:
@@ -63,6 +72,9 @@ func runFakeRelay() {
 
 func runFakeDumbpipe() {
 	home := os.Getenv("HOME")
+	if _, err := os.Stat(filepath.Join(home, "ignore-hup-term")); err == nil {
+		signal.Ignore(syscall.SIGHUP, syscall.SIGTERM)
+	}
 	env := map[string]string{}
 	for _, pair := range os.Environ() {
 		parts := strings.SplitN(pair, "=", 2)
@@ -202,7 +214,7 @@ func TestStartChildKeepsStdoutOpenAfterStderrEOF(t *testing.T) {
 	s := newTestSupervisor(t, dir, nil)
 	cmd := exec.Command(s.cfg.DumbpipeBin)
 	cmd.Env = append(os.Environ(), "FAKE_CLOSE_STDERR_KEEP_STDOUT=1")
-	outputDone, logFile, err := s.startChild("dumbpipe", cmd)
+	outputDone, cleanup, err := s.startChild("dumbpipe", cmd)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +222,7 @@ func TestStartChildKeepsStdoutOpenAfterStderrEOF(t *testing.T) {
 	go func() {
 		_ = cmd.Wait()
 		<-outputDone
-		_ = logFile.Close()
+		cleanup()
 		close(waitDone)
 	}()
 	t.Cleanup(func() {
@@ -349,6 +361,9 @@ func TestReadyPersistenceEnvironmentResetAndStop(t *testing.T) {
 	pid := readDumbpipePID(t, dumbpipeData)
 	s.Stop()
 	s.Stop()
+	if _, err := os.Stat(s.listenerPath()); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("listener record after Stop: %v", err)
+	}
 	if err := syscall.Kill(pid, 0); !errors.Is(err, syscall.ESRCH) {
 		t.Fatalf("dumbpipe process %d still exists: %v", pid, err)
 	}
@@ -785,5 +800,213 @@ func TestTicketRedactingWriterReplacesTickets(t *testing.T) {
 	}
 	if out.String() != "connect with "+redactedTicket+" now\n" {
 		t.Fatalf("redacted output = %q", out.String())
+	}
+}
+
+func bundledTestListener(t *testing.T, s *Supervisor) string {
+	t.Helper()
+	bin := filepath.Join(s.cfg.StateDir, "Test Build", "Isoform.app", "Contents", "Resources", "dumbpipe-bundle", "dumbpipe")
+	if err := os.MkdirAll(filepath.Dir(bin), 0700); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(s.cfg.DumbpipeBin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bin, data, 0700); err != nil {
+		t.Fatal(err)
+	}
+	return bin
+}
+
+func TestListenerParentDeathAndRecovery(t *testing.T) {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+		t.Skip("listener recovery platform")
+	}
+	for _, ignoreHangup := range []bool{false, true} {
+		name := "parent-death"
+		if ignoreHangup && !listenerRecoveryAvailable {
+			continue
+		}
+		if ignoreHangup {
+			name = "recover-stubborn-leftover"
+		}
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			s := newTestSupervisor(t, dir, nil)
+			bin := bundledTestListener(t, s)
+			s.cfg.DumbpipeBin = bin
+			parentBin := filepath.Join(dir, "fake-listener-parent")
+			if err := os.Symlink(s.cfg.RelayBin, parentBin); err != nil {
+				t.Fatal(err)
+			}
+			marker := filepath.Join(dir, "ignore-hup-term")
+			if ignoreHangup {
+				if err := os.WriteFile(marker, nil, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			parent := exec.Command(parentBin, bin)
+			if err := parent.Start(); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = parent.Process.Kill(); _ = parent.Wait() })
+			var record listenerRecord
+			awaitListener(t, func() bool {
+				data, err := os.ReadFile(s.listenerPath())
+				if err != nil || json.Unmarshal(data, &record) != nil {
+					return false
+				}
+				pid, err := os.ReadFile(filepath.Join(dir, "dumbpipe-pid"))
+				return err == nil && string(pid) == strconv.Itoa(record.PID)
+			})
+			if err := parent.Process.Kill(); err != nil {
+				t.Fatal(err)
+			}
+			_ = parent.Wait()
+			if ignoreHangup {
+				if err := os.Remove(marker); err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = stopRecordedListener(record) })
+				if err := s.Start(context.Background()); err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(s.Stop)
+				waitReady(t, s)
+			}
+			awaitListener(t, func() bool { return errors.Is(syscall.Kill(record.PID, 0), syscall.ESRCH) })
+		})
+	}
+}
+
+func awaitListener(t *testing.T, condition func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !condition() {
+		if time.Now().After(deadline) {
+			t.Fatal("listener did not reach expected process state")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestRecoverySparesReusedPID(t *testing.T) {
+	dir := t.TempDir()
+	s := newTestSupervisor(t, dir, nil)
+	cmd := exec.Command(bundledTestListener(t, s), "listen-tcp", "--host", "127.0.0.1:12345")
+	stale := newListenerRecord(cmd)
+	cmd.Env = selectedEnvironment() // An unrelated launch never inherited the old launch nonce.
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() { _ = cmd.Wait(); close(done) }()
+	t.Cleanup(func() { _ = cmd.Process.Kill(); <-done })
+	stale.PID = cmd.Process.Pid
+	if err := stale.save(s.listenerPath()); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s.Stop)
+	waitReady(t, s)
+	if err := cmd.Process.Signal(syscall.Signal(0)); err != nil {
+		t.Fatalf("unrelated process: %v", err)
+	}
+}
+
+func TestLiveSupervisorKeepsOwnershipOfListener(t *testing.T) {
+	dir := t.TempDir()
+	s := newTestSupervisor(t, dir, nil)
+	s.cfg.DumbpipeBin = bundledTestListener(t, s)
+	if err := s.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s.Stop)
+	waitReady(t, s)
+	record, err := os.ReadFile(s.listenerPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := New(s.cfg)
+	if err := second.Start(context.Background()); err == nil {
+		second.Stop()
+		t.Fatal("second supervisor acquired the active listener")
+	}
+	current, err := os.ReadFile(s.listenerPath())
+	if err != nil || !bytes.Equal(current, record) {
+		t.Fatal("active listener record changed")
+	}
+}
+
+func TestStartContinuesAfterListenerRecoveryFailure(t *testing.T) {
+	for _, tc := range []struct{ name, warning string }{
+		{"corrupt", "invalid dumbpipe process record"},
+		{"invalid", "invalid dumbpipe process record"},
+		{"unreadable", "could not read the previous dumbpipe process record"},
+		{"stop-error", "could not stop the previous dumbpipe listener"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			s := newTestSupervisor(t, dir, nil)
+			path := s.listenerPath()
+			switch tc.name {
+			case "corrupt", "invalid":
+				data := []byte("{")
+				if tc.name == "invalid" {
+					data = []byte("{}")
+				}
+				if err := os.WriteFile(path, data, 0600); err != nil {
+					t.Fatal(err)
+				}
+			case "unreadable":
+				// A directory gives a deterministic read error even under elevated privileges.
+				if err := os.Mkdir(path, 0700); err != nil {
+					t.Fatal(err)
+				}
+			case "stop-error":
+				old := newListenerRecord(exec.Command(s.cfg.DumbpipeBin, "listen-tcp", "--host", "127.0.0.1:12345"))
+				old.PID = os.Getppid()
+				if err := old.save(path); err != nil {
+					t.Fatal(err)
+				}
+				s.stopListener = func(record listenerRecord) error {
+					if record.ID != old.ID {
+						t.Fatalf("unexpected record passed to stop")
+					}
+					return &os.PathError{Op: "inspect", Path: path, Err: os.ErrPermission}
+				}
+			}
+			var logs sync.Map
+			s.cfg.Logf = func(format string, args ...any) { logs.Store(fmt.Sprintf(format, args...), true) }
+			if err := s.Start(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(s.Stop)
+			waitReady(t, s)
+			if _, ok := logs.Load(tc.warning); !ok {
+				t.Fatalf("missing recovery warning %q", tc.warning)
+			}
+			logs.Range(func(line, _ any) bool {
+				if strings.Contains(line.(string), dir) {
+					t.Error("recovery log exposed the state path")
+				}
+				return true
+			})
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var current listenerRecord
+			if err := json.Unmarshal(data, &current); err != nil || !current.valid() {
+				t.Fatalf("invalid replacement record: %v", err)
+			}
+			pid, err := os.ReadFile(filepath.Join(dir, "dumbpipe-pid"))
+			if err != nil || string(pid) != strconv.Itoa(current.PID) {
+				t.Fatalf("replacement PID %d differs from running listener %q: %v", current.PID, pid, err)
+			}
+		})
 	}
 }

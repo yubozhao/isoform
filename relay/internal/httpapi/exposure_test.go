@@ -29,7 +29,11 @@ func TestFailedAuthenticationsLockTheAddress(t *testing.T) {
 	for i := 0; i < authFailuresPerAddress; i++ {
 		r.expectStatus(r.call(http.MethodGet, "/v1/presence", withBearer(scanner, randomToken(t)), nil), http.StatusUnauthorized, "guess within the window")
 	}
-	locked := r.call(http.MethodGet, "/v1/presence", withBearer(scanner, randomToken(t)), nil)
+	var locked response
+	expectLimitLog(t, "auth_failures", "/v1/presence", authFailuresPerAddress, authFailuresPerAddress, func() int {
+		locked = r.call(http.MethodGet, "/v1/presence", withBearer(scanner, randomToken(t)), nil)
+		return locked.Status
+	})
 	r.expectStatus(locked, http.StatusTooManyRequests, "guess past the limit")
 	if locked.Header.Get("Retry-After") == "" {
 		t.Fatal("authentication lock omitted Retry-After")
@@ -131,7 +135,11 @@ func TestOpenRequestsPerAddressAreCapped(t *testing.T) {
 	}
 	header := bearer(devices[0].bearer)
 	header.Set("X-Forwarded-For", address)
-	refused := r.call(http.MethodGet, "/v1/presence", header, nil)
+	var refused response
+	expectLimitLog(t, "inflight_address", "/v1/presence", inflightPerAddress, inflightPerAddress, func() int {
+		refused = r.call(http.MethodGet, "/v1/presence", header, nil)
+		return refused.Status
+	})
 	r.expectStatus(refused, http.StatusTooManyRequests, "request past the open cap")
 	if refused.Header.Get("Retry-After") == "" {
 		t.Fatal("open request cap omitted Retry-After")

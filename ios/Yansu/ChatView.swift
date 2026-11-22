@@ -100,6 +100,10 @@ struct ChatView: View {
                             banners
                             transcriptContent
                             outgoingContent
+                            if usesTabTitle, chat.activity?.isFresh() == true {
+                                // What Isoform is doing, where the reply will appear, only while true (phone-duo v1.1.0 rule 5).
+                                IsoformPresenceLine(presence: chat.activity)
+                            }
                         }
                         // The scroll target sits one row spacing below the last row, so the end of a transcript is as far above
                         // the composer as two messages are from each other (P161). The empty card has no space after it.

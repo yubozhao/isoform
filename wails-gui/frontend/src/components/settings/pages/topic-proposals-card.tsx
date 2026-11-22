@@ -1,19 +1,37 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { SettingsFailureLine, useSettingsFailure } from "@/components/settings/settings-failure";
 import { Switch } from "@/components/ui/switch";
-import { GetDailyTopics, SetDailyTopicsEnabled } from "@/lib/wails-shim-app";
+import { GetAssistantChoice, GetDailyTopics, SetDailyTopicsEnabled } from "@/lib/wails-shim-app";
 import { SettingsControlCard } from "./capture-shared";
 
-/** Settings › What Isoform sees › Proposals from your topics: the computer's
- *  switch for the daily topics' proposals, the one the phone has (#1231).
- *  Placeholder words until design answers. */
+/** Settings › Briefs and notifications › Proposals from your topics, at the
+ *  top of the page (computer-settings v1.3.0 rules 1-3): the one switch the
+ *  phone has too (PROTOCOL.md 15.9.1). Its line names the assistant the topic
+ *  names go to, because writing a proposal sends them there. */
+/** The assistant the topic names go to, by its product name; "the AI you
+ *  chose" when the choice can't be read or routes through Isoform's gateway. */
+export function assistantName(answering: string | null, t: TFunction<"settings">): string {
+    switch (answering) {
+        case "claude-code":
+            return t("assistantChoice.agents.claudeCode");
+        case "codex":
+            return t("assistantChoice.agents.codex");
+        case "deepseek":
+            return t("assistantChoice.agents.deepseek");
+        default:
+            return t("topicProposals.yourAI");
+    }
+}
+
 export function TopicProposalsCard() {
     const { t } = useTranslation("settings");
     const { failure, fail } = useSettingsFailure();
     const [enabled, setEnabled] = useState<boolean | null>(null);
     const [loadFailed, setLoadFailed] = useState(false);
     const [saving, setSaving] = useState(false);
+    const [answering, setAnswering] = useState<string | null>(null);
 
     const load = useCallback(async () => {
         try {
@@ -27,6 +45,9 @@ export function TopicProposalsCard() {
 
     useEffect(() => {
         void load();
+        GetAssistantChoice()
+            .then((view) => setAnswering(view?.answering ?? null))
+            .catch(() => setAnswering(null));
     }, [load]);
 
     const change = async (next: boolean) => {
@@ -45,7 +66,7 @@ export function TopicProposalsCard() {
     return (
         <SettingsControlCard
             title={title}
-            description={t("topicProposals.description")}
+            description={t("topicProposals.description", { assistant: assistantName(answering, t) })}
             control={
                 <Switch
                     aria-label={title}

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/base64"
 	"errors"
 	"io"
@@ -149,6 +150,59 @@ func TestRelayClientUploadsAttachmentsWithTheHubCredential(t *testing.T) {
 	}
 	if err := client.uploadAttachment(context.Background(), id, nil); !errors.Is(err, errMobileAttachmentTooLarge) {
 		t.Fatal("an empty upload must be refused before the network")
+	}
+}
+
+// On 2026-11-21 the tunnel in front of the relay refused sealed bytes by what
+// they happened to be, with a 403 of its own, the same body every time. The
+// computer sends such an attachment once more as base64 text. The relay's own
+// 403 (no phone may read it) is an answer, and nothing is sent again.
+func TestRelayClientSendsAnAttachmentAsTextAfterATunnelRefusal(t *testing.T) {
+	var types []string
+	var text []byte
+	relays := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		types = append(types, r.Header.Get("Content-Type"))
+		body, _ := io.ReadAll(r.Body)
+		switch {
+		case relays:
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"ok":false,"error":"No paired device can read briefs"}`))
+		case r.Header.Get("Content-Type") == mobileAttachmentTextType:
+			text = body
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"ok":true,"data":{"id":"x"}}`))
+		default:
+			w.Header().Set("Content-Type", "text/html")
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte("<html><head><title>403 Forbidden</title></head></html>"))
+		}
+	}))
+	defer server.Close()
+
+	client := &mobileRelayClient{origin: server.URL, hubID: uuid.NewString(), credential: "secret-credential"}
+	sealed := make([]byte, 5000)
+	if _, err := rand.Read(sealed); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.uploadAttachment(context.Background(), uuid.NewString(), sealed); err != nil {
+		t.Fatalf("a tunnel's refusal must be followed by the same bytes as text: %v", err)
+	}
+	if len(types) != 2 || types[0] != mobileAttachmentContentType || types[1] != mobileAttachmentTextType {
+		t.Fatalf("content types sent: %v", types)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(string(text))
+	if err != nil || !bytes.Equal(decoded, sealed) {
+		t.Fatalf("the text must stand for the sealed bytes (%v)", err)
+	}
+
+	relays, types = true, nil
+	if err := client.uploadAttachment(context.Background(), uuid.NewString(), sealed); !errors.Is(err, errMobileAttachmentRejected) {
+		t.Fatalf("the relay's own refusal must surface, got %v", err)
+	}
+	if len(types) != 1 {
+		t.Fatalf("the relay's own 403 must not be sent again, sent %d", len(types))
 	}
 }
 

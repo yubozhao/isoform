@@ -37,7 +37,7 @@ func (s *Store) ListChatDeliverables(ctx context.Context, limit int) ([]ChatDeli
 	if limit <= 0 {
 		limit = 200
 	}
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.committedReader().QueryContext(ctx, `
 		SELECT id, session_id, title, summary, files, work_dir, session_temp_dir, created_at, updated_at
 		FROM chat_deliverables
 		ORDER BY updated_at DESC
@@ -65,7 +65,7 @@ func (s *Store) ListChatDeliverables(ctx context.Context, limit int) ([]ChatDeli
 // from a real query error.
 func (s *Store) GetChatDeliverable(ctx context.Context, id string) (*ChatDeliverableRow, error) {
 	var r ChatDeliverableRow
-	err := s.db.QueryRowContext(ctx, `
+	err := s.committedReader().QueryRowContext(ctx, `
 		SELECT id, session_id, title, summary, files, work_dir, session_temp_dir, created_at, updated_at
 		FROM chat_deliverables WHERE id = ?
 	`, id).Scan(&r.ID, &r.SessionID, &r.Title, &r.Summary, &r.Files,

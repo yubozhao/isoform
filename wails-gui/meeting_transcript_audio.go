@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -68,6 +69,10 @@ var (
 // Failed decodes stay pending, regardless of their age; concurrent attempts
 // for the same session are suppressed by meetingTranscriptActive.
 func (a *App) recoverUntranscribedMeetings() {
+	a.recoverUntranscribedMeetingsWithContext(context.Background())
+}
+
+func (a *App) recoverUntranscribedMeetingsWithContext(ctx context.Context) {
 	if !meetingTranscriptRecoveryMu.TryLock() {
 		return
 	}
@@ -84,7 +89,7 @@ func (a *App) recoverUntranscribedMeetings() {
 		return
 	}
 	for _, s := range sessions {
-		if !a.automaticMeetingRecordingEpochIsCurrent(epoch) || a.IsClosedEyesModeEnabled() {
+		if ctx.Err() != nil || !a.automaticMeetingRecordingEpochIsCurrent(epoch) || a.IsClosedEyesModeEnabled() {
 			return
 		}
 		if !s.IsMeeting || s.AudioPath == "" || s.TranscriptPath != "" || s.TriageStatus == "protected" ||
@@ -286,15 +291,19 @@ func (a *App) meetingRecordingSourceSessions(session ActivitySessionRow) []strin
 
 // speechTranscriber is the running speech engine, if any.
 func (a *App) speechTranscriber() asr.Transcriber {
-	if a == nil || a.whisper == nil {
+	if a == nil {
 		return nil
 	}
-	a.whisper.mu.Lock()
-	defer a.whisper.mu.Unlock()
-	if a.whisper.server == nil || !a.whisper.server.IsRunning() {
+	whisper := a.getWhisperState()
+	if whisper == nil {
 		return nil
 	}
-	return a.whisper.server
+	whisper.mu.Lock()
+	defer whisper.mu.Unlock()
+	if whisper.server == nil || !whisper.server.IsRunning() {
+		return nil
+	}
+	return whisper.server
 }
 
 // transcribeMeetingRecording transcribes a meeting WAV channel by channel.

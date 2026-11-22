@@ -3,7 +3,6 @@ import i18n from '@/i18n';
 import { formatDurationMs, formatRoundedDurationMs, formatTimeFromMs, formatTimeRangeFromMs } from './timeline/useCalendarData';
 import { pointWhat, readableName, stitchedTitles, stripChipsFit } from './activity-stitched';
 import type { ActivityThreadView } from '@/lib/wails-shim-app';
-import { weekParagraphs } from './activity-week-view';
 
 const at = (h: number, m: number) => new Date(2026, 10, 2, h, m).getTime();
 
@@ -56,13 +55,6 @@ describe('Activity path to 80 (activity review v1.0.6, v1.0.7)', () => {
         expect(stripChipsFit(seven, 760)).toBe(false);
         expect(stripChipsFit([{ kind: 'stretch', grow: 50, label: '9:12 AM · 50m' }, { kind: 'gap', grow: 28, label: 'Away 28m · Northwind call' }, { kind: 'stretch', grow: 70, label: '10:30 AM · 1h 10m' }], 760)).toBe(true);
         expect(stripChipsFit(seven, 0)).toBe(true);
-    });
-
-    it('AR54: the week keeps a blank line between paragraphs and leaves lists alone', () => {
-        expect(weekParagraphs('Monday you planned the release.\nTuesday you wrote the tests.\n- one\n- two'))
-            .toBe('Monday you planned the release.\n\nTuesday you wrote the tests.\n- one\n- two');
-        expect(weekParagraphs('A.\n\nB.')).toBe('A.\n\nB.');
-        expect(weekParagraphs(undefined)).toBe('');
     });
 
     it('AR55: a title of 60 characters or fewer is never cut', () => {

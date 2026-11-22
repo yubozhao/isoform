@@ -52,5 +52,52 @@
         "fromHistory": "From your {{history}}",
         "fromCalendar": "From your calendar",
         "localLine": "Screenshots and audio never leave this computer."
+    },
+    "why": {
+        "title": "Why",
+        "notThis": "Not this",
+        "notThisLabel": "Not this: {{what}}",
+        "notThisFailed": "Couldn't take it off. Try again.",
+        "empty": "Nothing Isoform saw is linked to this yet.",
+        "importedEmpty": "Brought in from {{label}}. Nothing Isoform saw is linked to it yet.",
+        "failed": "Couldn't load where this came from.",
+        "retry": "Try again",
+        "untitled": "A session in {{app}}",
+        "imported": "Brought in from {{label}}",
+        "from": "From {{list}}",
+        "fromThisWeek": "From {{list}} this week",
+        "day": {
+            "today": "Today",
+            "yesterday": "Yesterday",
+            "undated": "Linked"
+        },
+        "source": {
+            "screen": "Screen",
+            "mail": "Mail",
+            "calendar": "Calendar",
+            "call": "Call",
+            "watch": "Watch",
+            "messages": "Messages",
+            "agent": "Your agents",
+            "chat": "Chat"
+        },
+        "count": {
+            "screen_one": "a moment on your screen",
+            "screen_other": "{{count}} moments on your screen",
+            "mail_one": "an email",
+            "mail_other": "{{count}} emails",
+            "calendar_one": "a meeting",
+            "calendar_other": "{{count}} meetings",
+            "call_one": "a call",
+            "call_other": "{{count}} calls",
+            "watch_one": "a watch recording",
+            "watch_other": "{{count}} watch recordings",
+            "messages_one": "a message",
+            "messages_other": "{{count}} messages",
+            "agent_one": "a session with an agent",
+            "agent_other": "{{count}} sessions with agents",
+            "chat_one": "a chat",
+            "chat_other": "{{count}} chats"
+        }
     }
 }

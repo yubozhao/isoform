@@ -512,6 +512,17 @@ func mobileBriefConversationKey(brief MobileBriefV1) string {
 	// must not strand a draft for otherwise unchanged prose and evidence.
 	brief = mobileBriefWithoutParagraphTopics(brief)
 	brief.WeeklyRecap = mobileBriefParasWithoutTopics(brief.WeeklyRecap)
+	// A source's group ("In this brief") is derived from its kind when the
+	// brief is made, so it never changes what was written or cited.
+	evidence := make([]MobileBriefRef, len(brief.Evidence))
+	for i, ref := range brief.Evidence {
+		ref.Group = ""
+		evidence[i] = ref
+	}
+	if brief.Evidence == nil {
+		evidence = nil
+	}
+	brief.Evidence = evidence
 	raw, _ := json.Marshal(struct {
 		ID          string
 		AsOf        string

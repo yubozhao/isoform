@@ -29,14 +29,14 @@ export function WhatIsoformSeesSheet({ open, onOpenChange, onNavigate }: {
         }).catch(() => { if (active) setFailed(true); });
         return () => { active = false; };
     }, [open, attempt]);
-    const openPrivacy = () => {
+    const openSources = () => {
         onOpenChange(false);
-        EventsEmit("settings:open", "security");
+        EventsEmit("settings:open", "activity");
     };
     const navigate = (job: Job) => {
         onOpenChange(false);
         if (onNavigate) onNavigate(job);
-        else if (job === "contacts") EventsEmit("settings:open", "security", { advanced: true, anchor: "contacts" });
+        else if (job === "contacts") EventsEmit("settings:open", "activity", { anchor: "sees-messages" });
         else EventsEmit("settings:open", "activity", { anchor: `sees-${job}` });
     };
     return (
@@ -69,7 +69,7 @@ export function WhatIsoformSeesSheet({ open, onOpenChange, onNavigate }: {
                         </div>
                         <h3 className="mt-5 text-xs font-semibold uppercase text-muted">{t("whatIsoformSees.tap.title")}</h3>
                         <p className="mt-2 rounded-xl border border-border px-4 py-3 text-sm text-ink">{t("whatIsoformSees.tap.line")}</p>
-                        <button type="button" className="mt-3 text-xs text-accent hover:underline" onClick={openPrivacy}>{t("whatIsoformSees.foot")}</button>
+                        <button type="button" className="mt-3 text-xs text-accent hover:underline" onClick={openSources}>{t("whatIsoformSees.foot")}</button>
                     </>}
                 </div>
             </DialogContent>

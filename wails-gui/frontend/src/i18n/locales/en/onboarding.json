@@ -134,7 +134,7 @@
     "telemetry": {
         "title": "Help improve Isoform",
         "description": "Share counts of feature use and time spent actively using Isoform. A random install ID links these counts; they do not include your content, name, email or device identity.",
-        "choiceHint": "On by default. You can turn this off here or any time in Settings > Privacy.",
+        "choiceHint": "On by default. You can turn this off here or any time in Settings > About.",
         "detailsLink": "Read the full description",
         "saveFailed": "Could not save your choice. Please try again."
     },
@@ -144,7 +144,7 @@
         "localProcessing": "Screen and audio recordings are <h>stored on this computer</h>, and models here read them. Your AI gets only what a task needs: the text, or for WeChat, a cropped screenshot.",
         "webCalendarsNote": "If you use Google Calendar or Outlook in your browser, Isoform can also read them while your computer is idle. You can turn that off any time in Settings > What Isoform sees.",
         "checking": "Checking what Isoform needs on this computer…",
-        "couldNotDetermine": "Isoform could not check its permissions right now. You can continue and turn them on later in Settings > Privacy.",
+        "couldNotDetermine": "Isoform could not check its permissions right now. You can continue and turn them on later in Settings > What Isoform sees.",
         "noneRequired": "No additional permissions required on {{platform}}. You're all set.",
         "allGranted": "Everything Isoform needs is on. The optional ones can wait.",
         "coreGrantedToast": {
@@ -296,7 +296,7 @@
         "installFailed": "Could not install the assistant. Try again or install it in Terminal.",
         "telemetryOn": "Usage counts are on.",
         "telemetryOff": "Usage counts are off.",
-        "telemetryDescription": "Feature use and active time under a random install ID. Never content, names or email. Settings › Privacy turns it off.",
+        "telemetryDescription": "Feature use and active time under a random install ID. Never content, names or email. Settings › About turns it off.",
         "installedPlan": "Installed · {{version}} · {{plan}}"
     },
     "setupPermissions": {
@@ -355,7 +355,7 @@
         "sequenceCount": "{{count}} permission prompts, one after another.",
         "continueWithout": "Continue without",
         "turnOnAll": "Turn on all {{count}}",
-        "note": "All of these are in Settings › Privacy. Mail, Messages and Contacts are asked the first time they are needed. Clipboard and Recent files are not permissions.",
+        "note": "Each one is on its source in Settings › What Isoform sees. Mail, Messages and Contacts are asked the first time they are needed. Clipboard and Recent files are not permissions.",
         "failed": "Could not finish the permission requests. Try the individual Turn on buttons.",
         "appName": "Isoform",
         "countAfterReopen": "{{count}} of {{total}} on after reopening",
@@ -385,7 +385,7 @@
         "changeJob": "Change {{taskLabel}}",
         "chosen": "Chosen",
         "remove": "Remove",
-        "note": "The speaker models come with any live choice, so transcripts say who said what. Sizes, sources and licences show before anything downloads; Settings › Storage › Models changes all of this later.",
+        "note": "The speaker models come with any live choice, so transcripts say who said what. Sizes, sources and licences show before anything downloads; Settings › About › Advanced changes all of this later.",
         "legacy": "This version uses the current model settings. Continue and manage them in Settings.",
         "loadFailed": "Could not read or update the models. Try again.",
         "retry": "Retry",
@@ -404,7 +404,7 @@
         "itemSize": "{{size}} · {{count}} files",
         "source": "Source",
         "sourceFor": "Source for {{name}}",
-        "sourceNote": "Sources apply to this download only. Settings › Storage keeps the defaults and your own mirrors. A non-commercial licence shows here in copper before you confirm.",
+        "sourceNote": "Sources apply to this download only. Settings › About › Advanced keeps the defaults and your own mirrors. A non-commercial licence shows here in copper before you confirm.",
         "nonCommercial": "{{name}} uses {{licence}}. Non-commercial use only. Confirm only if your use meets this restriction.",
         "shortfall": "Not enough space. Free {{size}} more before downloading.",
         "startFailed": "Could not start the downloads. Try again.",
@@ -671,7 +671,7 @@
                 "ready": "Ready"
             },
             "cardLabel": "{{name}}, {{state}}",
-            "fineHistory": "Isoform reads your last 30 days in {{assistants}} on this computer, so it knows your projects from the start. Change it in Settings › Privacy.",
+            "fineHistory": "Isoform reads your last 30 days in {{assistants}} on this computer, so it knows your projects from the start. Change it in Settings › What Isoform sees.",
             "assistantsBoth": "Claude Code and Codex"
         },
         "sees": {
@@ -860,7 +860,7 @@
             },
             "notifications": {
                 "name": "Notifications",
-                "line": "The brief, meeting prep and finished work."
+                "line": "The brief and meeting prep, while you're at this computer."
             },
             "screen": {
                 "name": "Screen",
@@ -880,7 +880,6 @@
             "screen": "your screen"
         },
         "rightLead": "From your calendar and mail, read a minute ago. Your answers make Isoform yours from the start.",
-        "rightNothing": "Nothing to check yet. Isoform asks once it has read your calendar and mail.",
         "todayLead": "Made from what Isoform has already seen. Answer one, or skip; it waits in Your work.",
         "todayNothing": "Nothing to offer yet. Tell Isoform what you're working on, and it starts there.",
         "agentsLead": "A yes on offered work goes straight to the agents you already use. They see only what each hand-off sends.",
@@ -890,10 +889,6 @@
         "watchLine": "With Apple Watch, the watch app comes with it. After pairing, the phone asks once to hear a sentence of your voice.",
         "waitingPhone": "Waiting for your phone · the code works for 10 minutes",
         "finish": "Finish setup",
-        "modelsDownload": "Download now",
-        "modelsLaterButton": "Later",
-        "modelsLater": "Later: when your computer is plugged in and idle. Change it in Settings › Models.",
-        "thinksWith": "Isoform thinks with {{agent}}",
         "change": "Change",
         "rightReading": "Reading your calendar and mail…",
         "rightAsk": "Right?",
@@ -915,6 +910,20 @@
         "followAdded": "{{name}} · its first idea comes in a minute, in Your work",
         "followFailed": "Couldn't add that. Try again, or add it later in Your topics.",
         "connectedForCode": "{{agent}} · Connected · for code",
-        "connectedForElse": "{{agent}} · Connected · for everything else"
+        "connectedForElse": "{{agent}} · Connected · for everything else",
+        "modelLine": "Getting speech recognition for this computer · {{size}} · {{n}}%",
+        "modelFailed": "Couldn't start speech recognition. It can be downloaded later in Settings › Models.",
+        "assistant": "{{assistant}} reads your day and writes your briefs and answers",
+        "assistantOk": "Signed in · checked just now",
+        "install": "Install",
+        "signIn": "Sign in",
+        "checkLater": "Later · on Today",
+        "checkNeeds": "Needs calendar and mail",
+        "rightReadFailed": "Couldn't read your calendar and mail.",
+        "tryAgain": "Try again",
+        "diskShort": "Speech recognition needs {{size}} free · {{free}} free now",
+        "openStorage": "Open Storage Settings",
+        "diskKept": "Calls and your watch's talk are kept, and transcribed once it's here.",
+        "modelsShort": "Privacy and search models need {{size}} free · {{free}} free now"
     }
 }

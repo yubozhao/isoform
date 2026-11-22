@@ -135,6 +135,11 @@ func TestEmailVerifyAndSend(t *testing.T) {
 		t.Fatalf("count %d", data.SentToday)
 	}
 
+	r.h.Email.Config.DailyCap = 1
+	expectLimitLog(t, "email_daily", "/v1/hub/email/send", 1, 1, func() int {
+		return r.hubCall("POST", "/v1/hub/email/send", hubID, credential, map[string]string{"subject": "Isoform: test", "body": "test"}).Status
+	})
+
 	resp = r.hubCall(http.MethodDelete, "/v1/hub/email/subscription", hubID, credential, nil)
 	r.expectStatus(resp, http.StatusOK, "stop")
 	resp = r.hubCall(http.MethodPost, "/v1/hub/email/send", hubID, credential, map[string]string{"subject": "Isoform: x", "body": "y"})

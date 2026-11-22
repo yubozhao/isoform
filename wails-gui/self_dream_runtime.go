@@ -401,6 +401,8 @@ func runSelfDreamAnalysis(
 		)
 	}
 	var raw strings.Builder
+	ctx, given := withPassScope(ctx, passSelfDream)
+	defer finishPassScope(given)
 	_, err := runner.ExecuteTask(ctx, &agent.TaskInput{
 		Priority:           agent.PriorityBackground,
 		BackendHint:        agent.BackendHintLearning,

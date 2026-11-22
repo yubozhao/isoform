@@ -70,7 +70,8 @@ func (a *App) holdCoverageWithAccess(event holdEvent, now time.Time, granted boo
 }
 
 func (a *App) startHoldWorker(parent context.Context) {
-	if a == nil || a.activity == nil || a.activity.store == nil {
+	// No background loop while holds are off (feature_switches.go).
+	if a == nil || a.activity == nil || a.activity.store == nil || !featureOn(featureCalendarHolds) {
 		return
 	}
 	a.holdsMu.Lock()

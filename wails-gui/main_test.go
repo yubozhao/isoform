@@ -25,12 +25,13 @@ var testRealClaudeConfigDir, testRealCodexHome string
 // helper child. A helper must keep the exact environment its parent test
 // chose, so TestMain leaves it untouched.
 var testHelperChildEnvVars = []string{
-	stderrHelperEnv,           // TestStderrLogHelperProcess
-	"ISOFORM_MCP_STDIO_TEST",  // TestMCPReadStdioProcess
-	"ISOFORM_SKILL_LOCK_TEST", // TestIsoformSkillSharedLockHelper
-	"UPDATE_TEST_CHILD",       // TestUpdateChildProcess
-	"YANSU_GOAL_TEST_FIXTURE", // TestGoalExternalCLIFixture and its tool shim
-	searchNoFoldersChildEnv,   // TestSearchMissingPageFoldersStayMissing
+	stderrHelperEnv,            // TestStderrLogHelperProcess
+	"ISOFORM_MCP_STDIO_TEST",   // TestMCPReadStdioProcess
+	"ISOFORM_SKILL_LOCK_TEST",  // TestIsoformSkillSharedLockHelper
+	"UPDATE_TEST_CHILD",        // TestUpdateChildProcess
+	"YANSU_GOAL_TEST_FIXTURE",  // TestGoalExternalCLIFixture and its tool shim
+	searchNoFoldersChildEnv,    // TestSearchMissingPageFoldersStayMissing
+	memoryReadSnapshotChildEnv, // TestRepeatedMemoryReadsTouchNoFilesWhileUnchanged
 }
 
 func TestMain(m *testing.M) {

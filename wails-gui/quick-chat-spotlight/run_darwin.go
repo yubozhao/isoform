@@ -80,6 +80,8 @@ func (a *app) presentPanel(p showPayload) {
 // reportSpotlightDisarmDismiss tells the main Yansu app to disarm its
 // dismiss-on-key flag — the pill either got engaged or hid, so the next
 // keystroke must not dismiss/re-show race. Best-effort, fire-and-forget.
+//
+//isoform:destination local
 func reportSpotlightDisarmDismiss() {
 	port := spotlightYansuPort
 	token := spotlightToken

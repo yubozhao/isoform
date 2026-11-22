@@ -395,6 +395,8 @@ func magpieByokArgs(cfg AIProviderConfig) (args []string, chatModel, lightModel 
 
 // detectOllamaModels lists local Ollama models. Anything but a quick 200
 // means Ollama is absent, so it returns nil.
+//
+//isoform:destination local
 func detectOllamaModels(ctx context.Context, baseURL string) []string {
 	if baseURL == "" {
 		baseURL = magpieOllamaBaseURL

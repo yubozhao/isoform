@@ -92,8 +92,8 @@ const texts: TextChannelStatus = {
     lastError: "",
 };
 
-async function renderPage(props: Parameters<typeof IPhonePage>[0] = {}) {
-    render(<IPhonePage {...props} />);
+async function renderPage() {
+    render(<IPhonePage />);
     await waitFor(() => {
         expect(screen.queryByText("Checking text messages...")).not.toBeInTheDocument();
     });
@@ -111,14 +111,16 @@ describe("IPhonePage", () => {
         mocks.eventsOn.mockReturnValue(() => undefined);
     });
 
-    it("opens with phone pairing and the daily brief, without text-message setup", async () => {
+    it("opens with phone pairing only, without the brief or text-message setup", async () => {
         await renderPage();
         expect(screen.getByText("Connected")).toBeInTheDocument();
         expect(screen.getByRole("button", { name: "Turn off" })).toBeInTheDocument();
+        // The brief's schedule lives on Briefs and notifications
+        // (computer-settings v1.0.0 rule 6), not here.
         expect(screen.getAllByRole("heading").map((heading) => heading.textContent)).toEqual([
             "Your phones",
-            "Daily brief",
         ]);
+        expect(mocks.getSchedule).not.toHaveBeenCalled();
         expect(screen.queryByRole("switch", { name: "Turn on text messages" })).not.toBeInTheDocument();
         expect(mocks.getTextStatus).not.toHaveBeenCalled();
         expect(mocks.getSMSStatus).not.toHaveBeenCalled();
@@ -132,24 +134,11 @@ describe("IPhonePage", () => {
         fireEvent.click(screen.getByRole("button", { name: /Advanced/ }));
         expect(screen.getAllByRole("heading").map((heading) => heading.textContent)).toEqual([
             "Your phones",
-            "Daily brief",
             "Server address",
             "What each phone can do",
         ]);
         expect(screen.queryByRole("switch", { name: "Include names in texts" })).not.toBeInTheDocument();
         expect(screen.queryByRole("button", { name: "Send a test text" })).not.toBeInTheDocument();
         expect(mocks.getTextStatus).not.toHaveBeenCalled();
-    });
-
-    it("links the Written summary note to Assistant with Advanced open", async () => {
-        mocks.getSchedule.mockResolvedValue({ ...schedule, narrativeAvailable: false });
-        const onOpenPage = vi.fn();
-        await renderPage({ onOpenPage });
-        fireEvent.click(screen.getByRole("button", { name: /Advanced/ }));
-
-        expect(screen.getByText(/turn on Use your own API key or model under Advanced/)).toBeInTheDocument();
-        fireEvent.click(screen.getByRole("button", { name: "Open Assistant" }));
-
-        expect(onOpenPage).toHaveBeenCalledWith("ai-provider", { advanced: true });
     });
 });

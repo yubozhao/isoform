@@ -134,7 +134,7 @@
     "telemetry": {
         "title": "帮助改进 Isoform",
         "description": "分享功能使用次数和主动使用 Isoform 的时长。随机生成的安装 ID 用于关联这些统计；统计不含你的内容、姓名、邮箱或设备身份信息。",
-        "choiceHint": "默认开启。你可以在这里关闭，也可以随时在「设置 > 隐私」中关闭。",
+        "choiceHint": "默认开启。你可以在这里关闭，也可以随时在「设置 > 关于」中关闭。",
         "detailsLink": "阅读完整说明",
         "saveFailed": "未能保存你的选择，请重试。"
     },
@@ -144,7 +144,7 @@
         "localProcessing": "屏幕和音频录制<h>存储在这台电脑上</h>，由这里的模型读取。你的 AI 只会拿到任务需要的内容：文字，或者微信的裁剪截图。",
         "webCalendarsNote": "如果你在浏览器中使用 Google 日历或 Outlook，Isoform 也可以在电脑空闲时读取它们。你随时可以在「设置 > Isoform 看到的」中关闭。",
         "checking": "正在检查 Isoform 在这台电脑上需要的权限……",
-        "couldNotDetermine": "Isoform 暂时无法检查权限。你可以先继续，之后在「设置 > 隐私」中开启。",
+        "couldNotDetermine": "Isoform 暂时无法检查权限。你可以先继续，之后在「设置 > Isoform 看到的」中开启。",
         "noneRequired": "在 {{platform}} 上无需额外权限，一切就绪。",
         "allGranted": "Isoform 需要的权限都已开启，可选的可以以后再说。",
         "coreGrantedToast": {
@@ -296,7 +296,7 @@
         "installFailed": "无法安装助手。请重试或在终端中安装。",
         "telemetryOn": "已开启使用统计。",
         "telemetryOff": "已关闭使用统计。",
-        "telemetryDescription": "通过随机安装 ID 记录功能使用和活跃时间。绝不收集内容、姓名或邮箱。可在「设置 › 隐私」中关闭。",
+        "telemetryDescription": "通过随机安装 ID 记录功能使用和活跃时间。绝不收集内容、姓名或邮箱。可在「设置 › 关于」中关闭。",
         "installedPlan": "已安装 · {{version}} · {{plan}}"
     },
     "setupPermissions": {
@@ -355,7 +355,7 @@
         "sequenceCount": "{{count}} 项权限提示将逐一出现。",
         "continueWithout": "暂不开启，继续",
         "turnOnAll": "开启全部 {{count}} 项",
-        "note": "这些权限都可以在「设置 › 隐私」中管理。邮件、信息和通讯录会在首次需要时询问。剪贴板和最近文件不属于权限。",
+        "note": "每项权限都在「设置 › Isoform 看到的」里对应的来源中。邮件、信息和通讯录会在首次需要时询问。剪贴板和最近文件不属于权限。",
         "failed": "无法完成权限请求。请尝试逐项点击开启。",
         "appName": "Isoform",
         "countAfterReopen": "重新打开后开启 {{count}} 项，共 {{total}} 项",
@@ -385,7 +385,7 @@
         "changeJob": "更改{{taskLabel}}",
         "chosen": "已选择",
         "remove": "移除",
-        "note": "所有实时模型都附带说话人模型，让转写标明谁说了什么。下载前会显示大小、来源和许可；稍后可以在「设置 › 存储 › 模型」中更改。",
+        "note": "所有实时模型都附带说话人模型，让转写标明谁说了什么。下载前会显示大小、来源和许可；稍后可以在「设置 › 关于 › 高级」中更改。",
         "legacy": "此版本使用当前模型设置。请继续，稍后在设置中管理。",
         "loadFailed": "无法读取或更新模型，请重试。",
         "retry": "重试",
@@ -404,7 +404,7 @@
         "itemSize": "{{size}} · {{count}} 个文件",
         "source": "来源",
         "sourceFor": "{{name}} 的来源",
-        "sourceNote": "所选来源仅适用于本次下载。「设置 › 存储」保存默认来源和你的镜像。非商业许可会在确认前以铜色显示。",
+        "sourceNote": "所选来源仅适用于本次下载。「设置 › 关于 › 高级」保存默认来源和你的镜像。非商业许可会在确认前以铜色显示。",
         "nonCommercial": "{{name}} 使用 {{licence}}，仅限非商业用途。请仅在使用方式符合此限制时确认。",
         "shortfall": "空间不足。下载前还需释放 {{size}}。",
         "startFailed": "无法开始下载，请重试。",
@@ -671,7 +671,7 @@
                 "ready": "已就绪"
             },
             "cardLabel": "{{name}}，{{state}}",
-            "fineHistory": "Isoform 会读取这台电脑上你最近 30 天的 {{assistants}} 记录，从一开始就了解你的项目。可在“设置 › 隐私”中更改。",
+            "fineHistory": "Isoform 会读取这台电脑上你最近 30 天的 {{assistants}} 记录，从一开始就了解你的项目。可在“设置 › Isoform 看到的”中更改。",
             "assistantsBoth": "Claude Code 和 Codex"
         },
         "sees": {
@@ -860,7 +860,7 @@
             },
             "notifications": {
                 "name": "通知",
-                "line": "简报、会议准备和完成的工作。"
+                "line": "在这台电脑前时，提供简报和会议准备。"
             },
             "screen": {
                 "name": "屏幕",
@@ -880,7 +880,6 @@
             "screen": "你的屏幕"
         },
         "rightLead": "来自你的日历和邮件，一分钟前读取。你的回答从一开始就让 Isoform 属于你。",
-        "rightNothing": "还没有可确认的。Isoform 读过你的日历和邮件后会来问你。",
         "todayLead": "根据 Isoform 已经看到的内容整理。回答一件，或跳过；它会在你的工作中等着。",
         "todayNothing": "还没有可以提供的。告诉 Isoform 你在做什么，它就从那里开始。",
         "agentsLead": "说可以的工作会直接交给你已经在用的 agent。它们只能看到每次交接发送的内容。",
@@ -890,10 +889,6 @@
         "watchLine": "配合 Apple Watch，手表 App 一并安装。配对后，手机会请你说一句话来认识你的声音，只问一次。",
         "waitingPhone": "正在等待你的手机 · 二维码 10 分钟内有效",
         "finish": "完成设置",
-        "modelsDownload": "现在下载",
-        "modelsLaterButton": "稍后",
-        "modelsLater": "稍后：在电脑接通电源且空闲时下载。可在设置 › 模型中更改。",
-        "thinksWith": "Isoform 使用 {{agent}} 思考",
         "change": "更改",
         "rightReading": "正在读取你的日历和邮件…",
         "rightAsk": "对吗？",
@@ -915,6 +910,20 @@
         "followAdded": "{{name}} · 第一个想法一分钟内出现在你的工作中",
         "followFailed": "无法添加。请重试，或稍后在你的主题中添加。",
         "connectedForCode": "{{agent}} · 已连接 · 负责代码",
-        "connectedForElse": "{{agent}} · 已连接 · 负责其他一切"
+        "connectedForElse": "{{agent}} · 已连接 · 负责其他一切",
+        "modelLine": "正在为这台电脑获取语音识别 · {{size}} · {{n}}%",
+        "modelFailed": "无法开始获取语音识别。稍后可在设置 › 模型中下载。",
+        "assistant": "{{assistant}} 读取你的一天，撰写你的简报和回答",
+        "assistantOk": "已登录 · 刚刚检查",
+        "install": "安装",
+        "signIn": "登录",
+        "checkLater": "稍后 · 在 Today 中",
+        "checkNeeds": "需要日历和邮件",
+        "rightReadFailed": "无法读取你的日历和邮件。",
+        "tryAgain": "重试",
+        "diskShort": "语音识别需要 {{size}} 可用空间 · 当前可用 {{free}}",
+        "openStorage": "打开存储设置",
+        "diskKept": "通话和手表上的对话会先保存，等它就位后再转写。",
+        "modelsShort": "隐私和搜索模型需要 {{size}} 可用空间 · 现在可用 {{free}}"
     }
 }

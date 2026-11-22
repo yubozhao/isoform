@@ -39,6 +39,17 @@ const mobileDirectGrantsFile = "direct-grants.json"
 
 var errMobileDirectPathNotReady = errors.New("the direct path is not ready")
 
+// errMobileDirectReachesPinned stops a direct link that would talk to the
+// pinned relay itself. On 2026-11-16 it did for an hour and re-sent its grants
+// there, which replaced a paired phone's bearer on the pinned relay.
+var errMobileDirectReachesPinned = errors.New("the direct path would reach the pinned relay")
+
+// mobileDirectReachesPinned reports whether a direct link would connect where
+// the pinned relay connection does.
+func mobileDirectReachesPinned(direct, pinned *mobileRelayClient) bool {
+	return direct != nil && pinned != nil && direct.wsURL == pinned.wsURL
+}
+
 // mobileDirectGrant is one phone's bearer at the local relay. Only the digest
 // is kept; the bearer itself travels once, sealed, in the /remote-access reply.
 type mobileDirectGrant struct {
@@ -192,6 +203,9 @@ func (bridge *mobileBridge) runDirectLink() {
 				return
 			}
 			client, clientErr := newMobileRelayClient(snapshot.RelayURL, *bridge.identity, mobileHubName(), &mobileDirectHandler{bridge: bridge})
+			if clientErr == nil && mobileDirectReachesPinned(client, bridge.client) {
+				clientErr = errMobileDirectReachesPinned
+			}
 			if clientErr == nil {
 				client.logPrefix = "[mobile-direct]"
 				bridge.direct.Store(client)

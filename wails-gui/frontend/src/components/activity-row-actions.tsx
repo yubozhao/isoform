@@ -62,6 +62,130 @@ function toLocalInputValue(ms: number): string {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+/** Remind me on one moment (design T12): Go's quick times when the menu
+ *  opens, or any picked time, and Cancel while one is pending. A reminder
+ *  you set yourself is your own alarm. The one flow, shared by the opened
+ *  "What you worked on" row and the feed row's •••. */
+export function useActivityReminder({ activityId, pendingAt, onChanged, onNotice, onSettled }: {
+    activityId: string;
+    /** The pending reminder's time, from Go; none when 0 or undefined. */
+    pendingAt?: number;
+    onChanged: () => void;
+    onNotice: (notice: ActivityNotice | null) => void;
+    /** Called when a reminder was set from the picker, to close it. */
+    onSettled?: () => void;
+}) {
+    const { t } = useTranslation('activity');
+    const reminderWhen = useReminderWhen();
+    const [busy, setBusy] = useState(false);
+    const [reminderAt, setReminderAt] = useState<number | undefined>(pendingAt || undefined);
+    useEffect(() => setReminderAt(pendingAt || undefined), [pendingAt]);
+    const [choices, setChoices] = useState<ActivityReminderChoice[]>([]);
+    const [pickedTime, setPickedTime] = useState('');
+    const loadChoices = (open: boolean) => {
+        if (!open) return;
+        GetActivityReminderChoices()
+            .then((rows) => setChoices(rows ?? []))
+            .catch(() => {
+                setChoices([]);
+                onNotice(errorNotice(t('rowActions.choicesFailed'), () => loadChoices(true)));
+            });
+    };
+    const setReminder = async (atMs: number) => {
+        if (busy) return;
+        setBusy(true);
+        try {
+            const at = await SetActivityReminder(activityId, atMs);
+            setReminderAt(at);
+            onSettled?.();
+            onChanged();
+            onNotice({ tone: 'done', text: t('rowActions.reminderSetToast', { when: reminderWhen(at) }) });
+        } catch {
+            onNotice(errorNotice(t('rowActions.reminderFailed'), () => void setReminder(atMs)));
+        } finally {
+            setBusy(false);
+        }
+    };
+    /** Starts the picker at tomorrow morning, else an hour from now. */
+    const startPick = () => {
+        const tomorrow = choices.find((c) => c.id === 'tomorrow_morning');
+        setPickedTime(toLocalInputValue(tomorrow?.atMs ?? Date.now() + 3_600_000));
+    };
+    const pickedMs = pickedTime ? new Date(pickedTime).getTime() : NaN;
+    const pickedValid = Number.isFinite(pickedMs) && pickedMs > Date.now() + 60_000;
+    const cancelReminder = async () => {
+        if (busy) return;
+        setBusy(true);
+        try {
+            await CancelActivityReminder(activityId);
+            setReminderAt(undefined);
+            onChanged();
+            onNotice({ tone: 'done', text: t('rowActions.reminderCancelledToast') });
+        } catch {
+            onNotice(errorNotice(t('rowActions.cancelReminderFailed'), () => void cancelReminder()));
+        } finally {
+            setBusy(false);
+        }
+    };
+    return { busy, reminderAt, choices, loadChoices, setReminder, startPick, pickedTime, setPickedTime, pickedMs, pickedValid, cancelReminder };
+}
+
+export type ActivityReminder = ReturnType<typeof useActivityReminder>;
+
+/** The quick times and Pick a time, as menu items. */
+export function ReminderChoiceItems({ reminder, onPickTime }: { reminder: ActivityReminder; onPickTime: () => void }) {
+    const { t } = useTranslation('activity');
+    const reminderWhen = useReminderWhen();
+    return (
+        <>
+            {reminder.choices.map((choice) => (
+                <DropdownMenuItem key={choice.id} onSelect={() => void reminder.setReminder(choice.atMs)}>
+                    {choice.id === 'later_today'
+                        ? t('rowActions.laterToday', { when: reminderWhen(choice.atMs) })
+                        : t('rowActions.tomorrowMorning', { when: reminderWhen(choice.atMs) })}
+                </DropdownMenuItem>
+            ))}
+            <DropdownMenuItem onSelect={onPickTime}>{t('rowActions.pickTime')}</DropdownMenuItem>
+        </>
+    );
+}
+
+/** Pick a time: any time from a minute ahead. */
+export function ReminderTimePicker({ reminder, onClose, disabled }: { reminder: ActivityReminder; onClose: () => void; disabled?: boolean }) {
+    const { t } = useTranslation('activity');
+    const set = () => {
+        if (reminder.pickedValid) void reminder.setReminder(reminder.pickedMs);
+    };
+    return (
+        <div className="flex items-center gap-2">
+            <input
+                type="datetime-local"
+                autoFocus
+                aria-label={t('rowActions.pickTime')}
+                className={inputClass}
+                value={reminder.pickedTime}
+                min={toLocalInputValue(Date.now())}
+                onChange={(e) => reminder.setPickedTime(e.target.value)}
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                        e.preventDefault();
+                        set();
+                    } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        onClose();
+                    }
+                }}
+            />
+            <Button size="sm" onClick={set} disabled={disabled || reminder.busy || !reminder.pickedValid}>
+                {t('rowActions.setReminder')}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={onClose}>
+                {t('activityCard.cancel')}
+            </Button>
+        </div>
+    );
+}
+
 export function ActivityRowActions({
     activity,
     onChanged,
@@ -86,9 +210,19 @@ export function ActivityRowActions({
     const [notice, setNotice] = useState<ActivityNotice | null>(null);
     const [busy, setBusy] = useState(false);
     const [followUp, setFollowUp] = useState<ActivityFollowUp | undefined>(activity.followUp);
-    const [reminderAt, setReminderAt] = useState<number | undefined>(activity.reminderAt || undefined);
     useEffect(() => setFollowUp(activity.followUp), [activity.followUp?.openLoopId, activity.followUp?.eventId]);
-    useEffect(() => setReminderAt(activity.reminderAt || undefined), [activity.reminderAt]);
+    const reminder = useActivityReminder({
+        activityId: activity.id,
+        pendingAt: activity.reminderAt,
+        onChanged,
+        onNotice: setNotice,
+        onSettled: () => setEditor('none'),
+    });
+    const reminderAt = reminder.reminderAt;
+    const openPickTime = () => {
+        reminder.startPick();
+        setEditor('pickTime');
+    };
 
     // Follow-up editor: one line, prefilled with Go's text, editable.
     const [followUpDraft, setFollowUpDraft] = useState('');
@@ -119,55 +253,6 @@ export function ActivityRowActions({
             setNotice({ tone: 'done', text: t('rowActions.followUpAddedToast'), actionLabel: t('rowActions.undo'), onAction: undo });
         } catch {
             setNotice(errorNotice(t('rowActions.followUpFailed'), () => void addFollowUp()));
-        } finally {
-            setBusy(false);
-        }
-    };
-
-    // Remind me: Go's quick times when the menu opens, or any picked time.
-    const [choices, setChoices] = useState<ActivityReminderChoice[]>([]);
-    const [pickedTime, setPickedTime] = useState('');
-    const loadChoices = (open: boolean) => {
-        if (!open) return;
-        GetActivityReminderChoices()
-            .then((rows) => setChoices(rows ?? []))
-            .catch(() => {
-                setChoices([]);
-                setNotice(errorNotice(t('rowActions.choicesFailed'), () => loadChoices(true)));
-            });
-    };
-    const setReminder = async (atMs: number) => {
-        if (busy) return;
-        setBusy(true);
-        try {
-            const at = await SetActivityReminder(activity.id, atMs);
-            setReminderAt(at);
-            setEditor('none');
-            onChanged();
-            setNotice({ tone: 'done', text: t('rowActions.reminderSetToast', { when: reminderWhen(at) }) });
-        } catch {
-            setNotice(errorNotice(t('rowActions.reminderFailed'), () => void setReminder(atMs)));
-        } finally {
-            setBusy(false);
-        }
-    };
-    const openPickTime = () => {
-        const tomorrow = choices.find((c) => c.id === 'tomorrow_morning');
-        setPickedTime(toLocalInputValue(tomorrow?.atMs ?? Date.now() + 3_600_000));
-        setEditor('pickTime');
-    };
-    const pickedMs = pickedTime ? new Date(pickedTime).getTime() : NaN;
-    const pickedValid = Number.isFinite(pickedMs) && pickedMs > Date.now() + 60_000;
-    const cancelReminder = async () => {
-        if (busy) return;
-        setBusy(true);
-        try {
-            await CancelActivityReminder(activity.id);
-            setReminderAt(undefined);
-            onChanged();
-            setNotice({ tone: 'done', text: t('rowActions.reminderCancelledToast') });
-        } catch {
-            setNotice(errorNotice(t('rowActions.cancelReminderFailed'), () => void cancelReminder()));
         } finally {
             setBusy(false);
         }
@@ -218,7 +303,7 @@ export function ActivityRowActions({
                 <p className="flex items-center gap-2 text-[12px] text-muted">
                     <Bell className="h-3 w-3 shrink-0" />
                     <span>{t('rowActions.reminderSetFor', { when: reminderWhen(reminderAt) })}</span>
-                    <button type="button" onClick={cancelReminder} disabled={busy} className={actionClass}>
+                    <button type="button" onClick={() => void reminder.cancelReminder()} disabled={busy || reminder.busy} className={actionClass}>
                         {t('rowActions.cancelReminder')}
                     </button>
                 </p>
@@ -237,22 +322,15 @@ export function ActivityRowActions({
                         </button>
                     ))}
                 {!withheld && (
-                    <DropdownMenu onOpenChange={loadChoices}>
+                    <DropdownMenu onOpenChange={reminder.loadChoices}>
                         <DropdownMenuTrigger asChild>
-                            <button type="button" disabled={busy} className={actionClass}>
+                            <button type="button" disabled={busy || reminder.busy} className={actionClass}>
                                 <Bell className="h-3 w-3" />
                                 {t('rowActions.remindMe')}
                             </button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="start">
-                            {choices.map((choice) => (
-                                <DropdownMenuItem key={choice.id} onSelect={() => void setReminder(choice.atMs)}>
-                                    {choice.id === 'later_today'
-                                        ? t('rowActions.laterToday', { when: reminderWhen(choice.atMs) })
-                                        : t('rowActions.tomorrowMorning', { when: reminderWhen(choice.atMs) })}
-                                </DropdownMenuItem>
-                            ))}
-                            <DropdownMenuItem onSelect={openPickTime}>{t('rowActions.pickTime')}</DropdownMenuItem>
+                            <ReminderChoiceItems reminder={reminder} onPickTime={openPickTime} />
                         </DropdownMenuContent>
                     </DropdownMenu>
                 )}
@@ -298,26 +376,7 @@ export function ActivityRowActions({
                 </div>
             )}
 
-            {editor === 'pickTime' && (
-                <div className="flex items-center gap-2">
-                    <input
-                        type="datetime-local"
-                        autoFocus
-                        aria-label={t('rowActions.pickTime')}
-                        className={inputClass}
-                        value={pickedTime}
-                        min={toLocalInputValue(Date.now())}
-                        onChange={(e) => setPickedTime(e.target.value)}
-                        onKeyDown={keys(() => pickedValid && void setReminder(pickedMs))}
-                    />
-                    <Button size="sm" onClick={() => void setReminder(pickedMs)} disabled={busy || !pickedValid}>
-                        {t('rowActions.setReminder')}
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setEditor('none')}>
-                        {t('activityCard.cancel')}
-                    </Button>
-                </div>
-            )}
+            {editor === 'pickTime' && <ReminderTimePicker reminder={reminder} onClose={() => setEditor('none')} disabled={busy} />}
 
             {editor === 'correct' && (
                 <div className="space-y-2">

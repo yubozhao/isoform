@@ -333,6 +333,8 @@ func (r *cuaDaemonResponse) ErrorMessage() string {
 // Retries cover all dial errors (refused / no-such-file / EADDR-in-use
 // during rebind), not just connection-refused. Any dial error before
 // the budget runs out is treated as transient.
+//
+//isoform:destination local
 func dialCuaDaemonWithRetry(ctx context.Context, sock string) (net.Conn, error) {
 	dialer := &net.Dialer{Timeout: 2 * time.Second}
 	deadline := time.Now().Add(cuaDriverDialBudget)

@@ -490,6 +490,7 @@ func refreshMcpOAuthToken(ctx context.Context, cfg McpOAuthConfig, token mcpOAut
 	return tokenFromResponse(resp, clientID), nil
 }
 
+//isoform:destination mcp_servers
 func postMcpOAuthTokenRequest(ctx context.Context, tokenURL string, form url.Values) (mcpOAuthTokenResponse, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, strings.NewReader(form.Encode()))
 	if err != nil {
@@ -591,6 +592,7 @@ func discoverMcpOAuthConfig(ctx context.Context, mcpURL string) (McpOAuthConfig,
 	return cfg, serverMeta, nil
 }
 
+//isoform:destination mcp_servers
 func discoverMcpProtectedResourceMetadata(ctx context.Context, mcpURL string) (mcpOAuthProtectedResourceMetadata, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, mcpURL, nil)
 	if err == nil {
@@ -761,6 +763,7 @@ func oauthServerMetadataCandidates(issuerURL string) []string {
 	}
 }
 
+//isoform:destination mcp_servers
 func getOAuthJSON(ctx context.Context, rawURL string, dest any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
@@ -782,6 +785,7 @@ func getOAuthJSON(ctx context.Context, rawURL string, dest any) error {
 	return nil
 }
 
+//isoform:destination mcp_servers
 func registerMcpOAuthClient(ctx context.Context, registrationURL, name, redirectURL string, scopes []string) (string, error) {
 	if err := validateMcpOAuthEndpointURL(registrationURL); err != nil {
 		return "", fmt.Errorf("invalid OAuth dynamic registration endpoint: %w", err)

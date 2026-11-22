@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -26,7 +27,8 @@ import (
 
 // AnswerRecord is one entry in the ledger.
 type AnswerRecord struct {
-	V int `json:"v"`
+	About *mobileChatAbout `json:"about,omitempty"`
+	V     int              `json:"v"`
 	// EntryID names this entry; an undo names the entry it takes back.
 	EntryID string `json:"id"`
 	// ItemID is what was answered: a Your work id, belief:<memoryId>, portrait,
@@ -60,10 +62,11 @@ type AnswerRecord struct {
 }
 
 const (
-	answerKindWork       = "work"
-	answerKindBelief     = "belief"
-	answerKindPortrait   = "portrait"
-	answerKindCorrection = "correction"
+	answerActionNotThisTopic = "not_this_topic"
+	answerKindWork           = "work"
+	answerKindBelief         = "belief"
+	answerKindPortrait       = "portrait"
+	answerKindCorrection     = "correction"
 
 	answersLedgerDirName  = "answers"
 	answersLedgerFileName = "ledger.jsonl"
@@ -123,8 +126,21 @@ func (s *answersLedgerStore) append(record AnswerRecord) (AnswerRecord, error) {
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
 		return record, err
 	}
-	file, err := os.OpenFile(s.path, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o600)
+	file, err := os.OpenFile(s.path, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0o600)
 	if err != nil {
+		return record, err
+	}
+	// Keep the next record on its own line after an interrupted append.
+	info, err := file.Stat()
+	if err == nil && info.Size() > 0 {
+		var last [1]byte
+		_, err = file.ReadAt(last[:], info.Size()-1)
+		if err == nil && last[0] != '\n' {
+			line = append([]byte{'\n'}, line...)
+		}
+	}
+	if err != nil {
+		_ = file.Close()
 		return record, err
 	}
 	if _, err := file.Write(append(line, '\n')); err != nil {
@@ -141,19 +157,41 @@ func (s *answersLedgerStore) append(record AnswerRecord) (AnswerRecord, error) {
 // entries reads the ledger, oldest first. A line that cannot be read (a
 // torn last write) is skipped, never repaired in place.
 func (s *answersLedgerStore) entries() []AnswerRecord {
-	if s == nil || s.path == "" {
-		return nil
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.entriesLocked()
+	records, _ := s.readEntriesSkippingMalformed()
+	return records
 }
 
 // entriesLocked reads the ledger; the caller holds mu.
 func (s *answersLedgerStore) entriesLocked() []AnswerRecord {
+	records, _ := s.readEntriesLocked(false)
+	return records
+}
+
+func (s *answersLedgerStore) readEntries() ([]AnswerRecord, error) {
+	return s.readEntriesWithPolicy(true)
+}
+
+// Activity correction retries tolerate a torn line but must surface storage errors.
+func (s *answersLedgerStore) readEntriesSkippingMalformed() ([]AnswerRecord, error) {
+	return s.readEntriesWithPolicy(false)
+}
+
+func (s *answersLedgerStore) readEntriesWithPolicy(strict bool) ([]AnswerRecord, error) {
+	if s == nil || s.path == "" {
+		return nil, errMobileStoreUnavailable
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.readEntriesLocked(strict)
+}
+
+func (s *answersLedgerStore) readEntriesLocked(strict bool) ([]AnswerRecord, error) {
 	raw, err := os.ReadFile(s.path)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	out := []AnswerRecord{}
 	scanner := bufio.NewScanner(bytes.NewReader(raw))
@@ -162,9 +200,11 @@ func (s *answersLedgerStore) entriesLocked() []AnswerRecord {
 		var record AnswerRecord
 		if json.Unmarshal(scanner.Bytes(), &record) == nil && record.EntryID != "" && record.ItemID != "" {
 			out = append(out, record)
+		} else if strict {
+			return nil, fmt.Errorf("unreadable answers entry")
 		}
 	}
-	return out
+	return out, scanner.Err()
 }
 
 // answersUndone lists the entries an undo took back.
@@ -221,12 +261,16 @@ func (a *App) recordAnswer(record AnswerRecord) (AnswerRecord, error) {
 // undoAnswerFor records an Undo of the item's last standing answer.
 func (a *App) undoAnswerFor(itemID, kind, surface string) error {
 	ledger := a.answersLedger()
-	standing, ok := answersStanding(ledger.entries())[itemID]
+	entries, err := ledger.readEntries()
+	if err != nil {
+		return err
+	}
+	standing, ok := answersStanding(entries)[itemID]
 	if !ok {
 		return nil
 	}
-	_, err := ledger.append(AnswerRecord{ItemID: itemID, Kind: kind, Title: standing.Title, Action: workActionUndo,
-		Undoes: standing.EntryID, Surface: surface})
+	_, err = ledger.append(AnswerRecord{ItemID: itemID, Kind: kind, Title: standing.Title, Action: workActionUndo,
+		Undoes: standing.EntryID, Surface: surface, About: standing.About})
 	return err
 }
 
@@ -234,6 +278,28 @@ func (a *App) undoAnswerFor(itemID, kind, surface string) error {
 type AnswerView struct {
 	AnswerRecord
 	Undone bool `json:"undone,omitempty"`
+	// CanUndo marks an answer Your answers may take back with UndoWork: the
+	// item's standing answer on Your work, until the next brief, that sent
+	// nothing to a task or an agent and isn't an agent's request
+	// (redesign-activity v1.0.0 rule 10).
+	CanUndo bool `json:"canUndo,omitempty"`
+}
+
+// answerCanUndo says whether Your answers offers Undo on the record.
+func answerCanUndo(record AnswerRecord, standing map[string]AnswerRecord, now time.Time) bool {
+	if record.Kind != answerKindWork || standing[record.ItemID].EntryID != record.EntryID {
+		return false
+	}
+	if record.TaskID != "" || record.HandoffID != "" || record.NotSent || strings.HasPrefix(record.ItemID, workRequestID("")) {
+		return false
+	}
+	switch record.Action {
+	case workActionYes, workActionEdit, workActionNo, workActionNotMine, workActionUseful, workActionNotUseful:
+	default:
+		return false
+	}
+	until, err := time.Parse(time.RFC3339, record.UndoUntil)
+	return err == nil && now.Before(until)
 }
 
 // AnswersPage is a page of the ledger, newest first. Next is the cursor for
@@ -252,6 +318,8 @@ func (a *App) GetAnswers(limit int, before string) (AnswersPage, error) {
 	}
 	entries := a.answersLedger().entries()
 	undone := answersUndone(entries)
+	standing := answersStanding(entries)
+	now := time.Now()
 	page := AnswersPage{Answers: []AnswerView{}}
 	started := before == ""
 	for i := len(entries) - 1; i >= 0; i-- {
@@ -267,7 +335,8 @@ func (a *App) GetAnswers(limit int, before string) (AnswersPage, error) {
 			page.Next = page.Answers[len(page.Answers)-1].EntryID
 			break
 		}
-		page.Answers = append(page.Answers, AnswerView{AnswerRecord: record, Undone: undone[record.EntryID]})
+		page.Answers = append(page.Answers, AnswerView{AnswerRecord: record, Undone: undone[record.EntryID],
+			CanUndo: !undone[record.EntryID] && answerCanUndo(record, standing, now)})
 	}
 	return page, nil
 }
@@ -404,13 +473,17 @@ type JudgmentCounts struct {
 	// Shown counts items first put in front of the person.
 	Shown int `json:"shown"`
 	// Answered counts answers that stand; an undone answer counts as Undone.
-	Answered  int `json:"answered"`
-	Accepted  int `json:"accepted"`
-	Declined  int `json:"declined"`
-	NotMine   int `json:"notMine"`
-	Useful    int `json:"useful"`
-	NotUseful int `json:"notUseful"`
-	Undone    int `json:"undone"`
+	Answered         int `json:"answered"`
+	Accepted         int `json:"accepted"`
+	Declined         int `json:"declined"`
+	NotMine          int `json:"notMine"`
+	Useful           int `json:"useful"`
+	NotUseful        int `json:"notUseful"`
+	Undone           int `json:"undone"`
+	TopicCorrections int `json:"topicCorrections,omitempty"`
+	// MomentCorrections counts Not this on a moment of a claim's Why (why.go):
+	// a correction, never an answer on an item made (redesign v1.0.0 rule 30).
+	MomentCorrections int `json:"momentCorrections,omitempty"`
 }
 
 // JudgmentDay is one local day's measures, all sources and by source.
@@ -481,6 +554,14 @@ func judgmentCount(c *JudgmentCounts, record AnswerRecord, undone bool) {
 	}
 	if undone {
 		c.Undone++
+		return
+	}
+	if record.Action == answerActionNotThisTopic {
+		c.TopicCorrections++
+		return
+	}
+	if record.Action == answerActionNotThis {
+		c.MomentCorrections++
 		return
 	}
 	c.Answered++

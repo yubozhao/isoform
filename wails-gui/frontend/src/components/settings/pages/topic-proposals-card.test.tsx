@@ -7,10 +7,12 @@ import { TopicProposalsCard } from "./topic-proposals-card";
 
 const mocks = vi.hoisted(() => ({
     enabled: false,
+    answering: "claude-code",
     set: vi.fn(async (enabled: boolean) => ({ enabled, topics: [] })),
 }));
 
 vi.mock("@/lib/wails-shim-app", () => ({
+    GetAssistantChoice: vi.fn(async () => ({ answering: mocks.answering })),
     GetDailyTopics: vi.fn(async () => ({ enabled: mocks.enabled, topics: [] })),
     SetDailyTopicsEnabled: mocks.set,
 }));
@@ -19,6 +21,7 @@ describe("Settings › Proposals from your topics", () => {
     beforeEach(async () => {
         await i18n.changeLanguage("en");
         mocks.enabled = false;
+        mocks.answering = "claude-code";
         mocks.set.mockClear();
     });
 
@@ -27,7 +30,6 @@ describe("Settings › Proposals from your topics", () => {
         const toggle = screen.getByRole("switch", { name: en.topicProposals.title });
         await waitFor(() => expect(toggle).not.toBeDisabled());
         expect(toggle).not.toBeChecked();
-        expect(screen.getByText(en.topicProposals.description)).toBeInTheDocument();
         fireEvent.click(toggle);
         await waitFor(() => expect(mocks.set).toHaveBeenCalledWith(true));
         await waitFor(() => expect(toggle).toBeChecked());
@@ -41,6 +43,23 @@ describe("Settings › Proposals from your topics", () => {
         fireEvent.click(toggle);
         await waitFor(() => expect(mocks.set).toHaveBeenCalledWith(false));
         await waitFor(() => expect(toggle).not.toBeChecked());
+    });
+
+    // Never less than the code sends: proposeDailyTopicWork sends each topic's
+    // name with its why, latest and next lines (redacted) and declined titles.
+    it("says that topic names and what Isoform noted about each go to the chosen assistant", async () => {
+        render(<TopicProposalsCard />);
+        expect(
+            await screen.findByText(
+                "Topics offer their next piece of work in Your work. To write it, your topic names and what Isoform noted about each go to Claude Code.",
+            ),
+        ).toBeInTheDocument();
+    });
+
+    it("names the AI you chose when the assistant is not Claude Code, Codex or DeepSeek", async () => {
+        mocks.answering = "isoform";
+        render(<TopicProposalsCard />);
+        expect(await screen.findByText(/what Isoform noted about each go to the AI you chose\.$/)).toBeInTheDocument();
     });
 
     it("keeps both locales in step", () => {

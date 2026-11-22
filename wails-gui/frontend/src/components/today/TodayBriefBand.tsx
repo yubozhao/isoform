@@ -106,12 +106,31 @@ export function TodayBriefBand({ brief, view, make, onMakeNow, showLead = true, 
         return () => document.removeEventListener("keydown", onKey);
     }, [active, audio, brief.briefId]);
 
+    // What is in it, also as one line under the text below 880 of content
+    // (computer-window v1.0.0 rule 6).
+    const contents = [
+        meetings > 0 ? tr(slot === "evening" ? "ctoday.meetings" : "ctoday.meetingsToday", { count: meetings }) : "",
+        toAnswer > 0 ? tr("ctoday.toAnswer", { count: toAnswer }) : "",
+    ].filter(Boolean);
+    const pastBriefs = (testId: string) => onOpenPastBriefs && (
+        <button
+            type="button"
+            data-testid={testId}
+            className="flex items-center gap-0.5 self-start rounded-sm text-[13px] font-medium text-accent outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
+            onClick={() => measureToday("T05", "open", "opened", onOpenPastBriefs)}
+        >
+            {tr("ctoday.pastBriefs")}
+            <ChevronRight aria-hidden className="size-3.5" />
+        </button>
+    );
+
     return (
+        <div className="@container" data-testid="today-brief-band-frame">
         <section
             aria-label={title}
             aria-keyshortcuts={audio ? "Space" : undefined}
             data-testid="today-brief-band"
-            className="grid grid-cols-1 gap-6 rounded-xl border border-border bg-panel px-[26px] py-6 shadow-card md:grid-cols-[minmax(0,1fr)_220px]"
+            className="grid grid-cols-1 gap-6 rounded-xl border border-border bg-panel px-[26px] py-6 shadow-card @min-[880px]:grid-cols-[minmax(0,1fr)_220px]"
         >
             <div className="flex min-w-0 flex-col gap-3.5">
                 {building ? (
@@ -129,9 +148,13 @@ export function TodayBriefBand({ brief, view, make, onMakeNow, showLead = true, 
                 ) : (
                     <div className="text-[12px] text-muted" data-testid="brief-band-title">{title}</div>
                 )}
+                {/* Its text stops at 720 wide (rule 9); under 640 tall it shows
+                    two lines and Read all opens the rest (rule 7). */}
                 {showLead && !readAll && lead && (
-                    <p className="text-[15px] leading-[1.6] text-ink" data-testid="brief-band-lead">{lead}</p>
+                    <p className="max-w-[720px] text-[15px] leading-[1.6] text-ink [@media(max-height:639px)]:line-clamp-2" data-testid="brief-band-lead">{lead}</p>
                 )}
+                {contents.length > 0 && <p className="text-[13px] text-muted @min-[880px]:hidden" data-testid="brief-band-contents-line">{contents.join(" · ")}</p>}
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
                 {onReadAll && <button
                     type="button"
                     aria-expanded={readAll}
@@ -142,24 +165,16 @@ export function TodayBriefBand({ brief, view, make, onMakeNow, showLead = true, 
                     {tr(readAll ? "ctoday.showLess" : "ctoday.readAll")}
                     <ChevronRight aria-hidden className={readAll ? "size-3.5 -rotate-90" : "size-3.5"} />
                 </button>}
+                <span className="@min-[880px]:hidden">{pastBriefs("brief-band-past-inline")}</span>
+                </div>
             </div>
-            <div className="flex flex-col gap-2.5 border-t border-border-divider pt-4 md:border-l md:border-t-0 md:pl-6 md:pt-0" data-testid="brief-band-contents">
+            <div className="hidden flex-col gap-2.5 border-l border-border-divider pl-6 @min-[880px]:flex" data-testid="brief-band-contents">
                 <h2 className="text-[11px] font-semibold uppercase tracking-wider text-muted">{tr("ctoday.inBrief")}</h2>
-                {meetings > 0 && <p className="text-[13px] text-ink">{tr(slot === "evening" ? "ctoday.meetings" : "ctoday.meetingsToday", { count: meetings })}</p>}
-                {toAnswer > 0 && <p className="text-[13px] text-ink">{tr("ctoday.toAnswer", { count: toAnswer })}</p>}
-                {onOpenPastBriefs && (
-                    <button
-                        type="button"
-                        data-testid="brief-band-past"
-                        className="mt-auto flex items-center gap-0.5 self-start rounded-sm text-[13px] font-medium text-accent outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
-                        onClick={() => measureToday("T05", "open", "opened", onOpenPastBriefs)}
-                    >
-                        {tr("ctoday.pastBriefs")}
-                        <ChevronRight aria-hidden className="size-3.5" />
-                    </button>
-                )}
+                {contents.map((line) => <p key={line} className="text-[13px] text-ink">{line}</p>)}
+                <span className="mt-auto">{pastBriefs("brief-band-past")}</span>
             </div>
         </section>
+        </div>
     );
 }
 

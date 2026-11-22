@@ -309,6 +309,8 @@ func installGitHook(targetDir string) {
 }
 
 // gitClone clones a git repository
+//
+//isoform:destination yansu_backend
 func gitClone(repoURL, targetDir string) error {
 	// Disable SSL verification for localhost (self-signed certs in development)
 	if strings.Contains(repoURL, "localhost") || strings.Contains(repoURL, "127.0.0.1") {
@@ -325,6 +327,8 @@ func gitClone(repoURL, targetDir string) error {
 }
 
 // gitCheckout checks out a branch in the repository
+//
+//isoform:destination yansu_backend
 func gitCheckout(repoDir, branch string) error {
 	// First try to checkout existing branch
 	cmd := exec.Command("git", "checkout", branch)
@@ -589,6 +593,8 @@ func runPull() error {
 }
 
 // gitPull runs git pull in the given directory
+//
+//isoform:destination yansu_backend
 func gitPull(projectRoot string) error {
 	cmd := exec.Command("git", "pull")
 	cmd.Dir = projectRoot
@@ -715,6 +721,8 @@ func runPush() error {
 }
 
 // gitPush pushes commits to the remote repository
+//
+//isoform:destination yansu_backend
 func gitPush(projectRoot string) error {
 	cmd := exec.Command("git", "push")
 	cmd.Dir = projectRoot
@@ -872,6 +880,7 @@ func runAnalyze() error {
 	return nil
 }
 
+//isoform:destination local
 func getGitDiff(projectRoot string, staged bool) (string, error) {
 	args := []string{"diff"}
 	if staged {
@@ -888,6 +897,7 @@ func getGitDiff(projectRoot string, staged bool) (string, error) {
 	return string(output), nil
 }
 
+//isoform:destination local
 func getRecentCommits(projectRoot string, count int) (string, error) {
 	// Get commit messages and stats
 	cmd := exec.Command("git", "log", fmt.Sprintf("-%d", count), "--pretty=format:=== Commit: %h ===\n%s\n%b", "--stat", "--no-color")
@@ -899,6 +909,7 @@ func getRecentCommits(projectRoot string, count int) (string, error) {
 	return string(output), nil
 }
 
+//isoform:destination local
 func getChangedFiles(projectRoot string) ([]string, error) {
 	// Get both staged and unstaged changed files
 	cmd := exec.Command("git", "status", "--porcelain")
@@ -1366,6 +1377,7 @@ create
 	return nil
 }
 
+//isoform:destination local
 func getLastCommitMessage(projectRoot string) (string, error) {
 	cmd := exec.Command("git", "log", "-1", "--pretty=format:%s%n%n%b")
 	cmd.Dir = projectRoot
@@ -1376,6 +1388,7 @@ func getLastCommitMessage(projectRoot string) (string, error) {
 	return string(output), nil
 }
 
+//isoform:destination local
 func getLastCommitDiff(projectRoot string) (string, error) {
 	cmd := exec.Command("git", "diff", "HEAD~1", "HEAD", "--no-color")
 	cmd.Dir = projectRoot
@@ -1392,6 +1405,7 @@ func getLastCommitDiff(projectRoot string) (string, error) {
 	return string(output), nil
 }
 
+//isoform:destination local
 func getLastCommitFiles(projectRoot string) (string, error) {
 	cmd := exec.Command("git", "diff", "HEAD~1", "HEAD", "--name-only")
 	cmd.Dir = projectRoot
@@ -3985,6 +3999,7 @@ func cronRequest(method, path string, body map[string]any, cmd *cobra.Command) e
 	return nil
 }
 
+//isoform:destination local
 func doCronRequest(method, path string, body io.Reader, contentType string, opts ...cronsecret.Option) (*http.Response, error) {
 	port, secret, err := loadCronCredentials(opts...)
 	if err != nil {

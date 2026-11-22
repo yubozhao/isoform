@@ -66,7 +66,7 @@ type inboxView struct {
 // with the task-link results, the file kept, the record done. Nothing is
 // copied or opened.
 func TestConnectedAgentGetsTheWorkAndReportsBack(t *testing.T) {
-	app, _ := newAgentJoinTestApp(t)
+	app := newAgentJoinTestApp(t)
 	seams := &workOnItSeams{}
 	s := app.workOnIt()
 	s.open = func(target string) error { seams.opened = append(seams.opened, target); return nil }
@@ -140,7 +140,7 @@ func TestConnectedAgentGetsTheWorkAndReportsBack(t *testing.T) {
 // waiting work and its token; any privacy withdrawal spends waiting work,
 // and a withdrawn source's files go.
 func TestDisconnectAndWithdrawalSpendTheInbox(t *testing.T) {
-	app, _ := newAgentJoinTestApp(t)
+	app := newAgentJoinTestApp(t)
 	token, base := joinTestAgent(t, app, "Ana's Helper")
 	joined := app.GetConnectedAgents()[0]
 	send := func(sourceID string) string {
@@ -181,7 +181,7 @@ func TestDisconnectAndWithdrawalSpendTheInbox(t *testing.T) {
 // TestPhoneHandsOffToAConnectedAgent: the phone's Yes goes to the person's
 // agent for the work when it is connected, and is refused otherwise.
 func TestPhoneHandsOffToAConnectedAgent(t *testing.T) {
-	app, _ := newAgentJoinTestApp(t)
+	app := newAgentJoinTestApp(t)
 	bridge := &mobileBridge{app: app, ctx: t.Context()}
 	device := mobileDeviceRecord{MobileDeviceView: MobileDeviceView{DeviceID: "phone-1"}}
 	post := func(key string) *httptest.ResponseRecorder {
@@ -217,7 +217,7 @@ func TestPhoneHandsOffToAConnectedAgent(t *testing.T) {
 // for a joined agent with no open task link, its waiting hand-off is still
 // there, and a withdrawal before anything touched the inbox spends it.
 func TestAgentInboxSurvivesARestart(t *testing.T) {
-	app, on := newAgentJoinTestApp(t)
+	app := newAgentJoinTestApp(t)
 	token, _ := joinTestAgent(t, app, "Ana's Helper")
 	joined := app.GetConnectedAgents()[0]
 	prepared, err := app.PrepareWorkOnIt(briefInput())
@@ -232,9 +232,9 @@ func TestAgentInboxSurvivesARestart(t *testing.T) {
 	// The same data folders, a fresh app: the launch task alone.
 	restart := func() *App {
 		again, _ := newWorkOnItTestApp(t, true)
-		again.taskLinks.dir, again.taskLinks.enabled, again.agentJoin.dir = app.taskLinks.dir, on.Load, app.agentJoin.dir
+		again.taskLinks.dir, again.agentJoin.dir = app.taskLinks.dir, app.agentJoin.dir
 		t.Cleanup(again.shutdownTaskLinks)
-		again.startTaskLinksIfEnabled()
+		again.startTaskLinksAtLaunch()
 		return again
 	}
 	again := restart()

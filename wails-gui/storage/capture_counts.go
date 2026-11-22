@@ -18,7 +18,7 @@ import (
 // to a meeting), and such an index would be rewritten for every row on every
 // fifteen-minute sync.
 func (s *Store) CountCalendarEventsRead(ctx context.Context, source string, todayStart, weekStart int64) (today, week int64, err error) {
-	err = s.db.QueryRowContext(ctx, `
+	err = s.committedReader().QueryRowContext(ctx, `
 		SELECT COUNT(*), COALESCE(SUM(updated_at >= ?), 0)
 		FROM calendar_events
 		WHERE source = ? AND updated_at >= ? AND deleted_at = 0`,

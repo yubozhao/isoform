@@ -448,6 +448,7 @@ func fetchGitHubCommitSHA(ctx context.Context, owner, repo, ref string) (string,
 	return commit.SHA, nil
 }
 
+//isoform:destination metadata
 func newGitHubAPIRequest(ctx context.Context, endpoint string) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
@@ -462,6 +463,7 @@ func newGitHubAPIRequest(ctx context.Context, endpoint string) (*http.Request, e
 	return req, nil
 }
 
+//isoform:destination metadata
 func downloadGitHubSkillZip(ctx context.Context, owner, repo, ref, destPath string) error {
 	endpoint := fmt.Sprintf("%s/%s/%s/zip/%s",
 		githubArchiveBase(),

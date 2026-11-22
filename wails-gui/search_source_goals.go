@@ -7,6 +7,9 @@ import (
 )
 
 func (a *App) searchGoals(ctx context.Context, words []string) ([]searchCandidate, error) {
+	if !featureOn(featurePlaybooks) {
+		return nil, nil
+	}
 	if a == nil || a.activity == nil || a.activity.store == nil {
 		return nil, nil
 	}

@@ -9,8 +9,6 @@
         "yesterday": "昨天"
     },
     "viewMode": {
-        "day": "日",
-        "week": "周",
         "timeline": "屏幕时间线"
     },
     "sections": {
@@ -19,42 +17,25 @@
     "dayNav": {
         "previous": "前一天",
         "next": "后一天",
-        "pickDate": "选择日期"
+        "pickDate": "选择日期",
+        "today": "今天",
+        "yesterday": "昨天"
     },
     "day": {
         "yourDay": "你的一天",
-        "activeLineWithApps": "活跃 {{duration}} · 大多在{{apps}}",
-        "activeLineNoApps": "活跃 {{duration}}",
-        "appsJoin": "{{first}}和{{second}}",
-        "details": "详情",
-        "byHour": "按小时统计的活动",
-        "topApps": "主要应用",
-        "noHourly": "暂无每小时活动数据。",
-        "noApps": "暂无应用使用明细。",
-        "hourTooltip": "{{hour}} · {{minutes}} 分钟",
-        "hourAm": "上午 {{hour}} 点",
-        "hourPm": "下午 {{hour}} 点",
-        "midnight": "凌晨 12 点",
-        "noon": "中午 12 点",
         "workedOn": "你在忙什么",
         "isoformRan": "Isoform 运行了 {{name}}",
         "unknownSchedule": "一个定时任务",
         "openResult": "查看",
-        "learned": "它学到的内容",
-        "learnedKnowHow": "你的方法",
-        "learnedAboutYou": "关于你",
-        "untitled": "未命名",
-        "noContent": "暂无内容。",
         "noMatches": "这一天没有匹配“{{query}}”的内容。",
-        "empty": "这一天还没有记录。",
         "sectionEmpty": "这一天这里没有内容。",
         "workedOnSoon": "大约 30 分钟后，这里会显示你做了什么。",
         "people": "人物：{{names}}",
         "links": "链接：{{names}}",
         "deleteFromHistory": "从历史中删除",
-        "learnedShowMore": "显示更多",
         "deleteMomentFailed": "无法从历史记录中删除。",
-        "isoformUpdatedTopics": "Isoform 更新了你的话题"
+        "isoformUpdatedTopics": "Isoform 更新了你的话题",
+        "agentRunsFailed": "无法载入屏幕上看到的代理运行。"
     },
     "rowActions": {
         "addFollowUp": "添加跟进",
@@ -94,48 +75,7 @@
         "choicesFailed": "无法加载提醒时间。"
     },
     "noticed": {
-        "followUpFailedInline": "没能添加跟进。重试",
-        "title": "Isoform 注意到",
-        "from": "来自 {{time}} · {{title}}",
-        "addFollowUp": "添加跟进",
-        "makeRoutine": "设为例行事务",
-        "notNow": "以后再说",
-        "notNowToast": "Isoform 不会再提这条建议。",
-        "notNowFailed": "无法隐藏这条建议，请重试。",
-        "routine": {
-            "editDescription": "编辑已保存的计划任务，保存后更改生效。",
-            "whenManual": "不设时间（仅手动运行）",
-            "title": "设为例行事务",
-            "description": "Isoform 根据它看到的步骤起草了这份内容。在你点击保存之前，不会保存或运行任何东西。",
-            "name": "名称",
-            "when": "运行时间",
-            "whenNone": "不设时间（保存到知识库）",
-            "whenDaily": "每天",
-            "whenWeekdays": "每个工作日",
-            "whenWeekly": "每周",
-            "day": "星期",
-            "time": "时间",
-            "steps": "步骤（每行一条）",
-            "will": "它会做什么（每行一条）",
-            "wont": "它不会做什么（每行一条）",
-            "save": "保存",
-            "cancel": "取消",
-            "savedSchedule": "已设为定时任务，会按你选择的时间运行，可在“任务”中找到。",
-            "savedKnowhow": "已保存到知识库。",
-            "failed": "无法保存例行事务，请重试。",
-            "needsName": "请给例行事务起个名字。",
-            "needsSteps": "请至少添加一个步骤。"
-        },
-        "weekday": {
-            "mon": "星期一",
-            "tue": "星期二",
-            "wed": "星期三",
-            "thu": "星期四",
-            "fri": "星期五",
-            "sat": "星期六",
-            "sun": "星期日"
-        },
-        "notNowFailedLine": "无法隐藏这条建议。"
+        "makeRoutine": "设为例行事务"
     },
     "threads": {
         "span": "{{start}} 至 {{end}}",
@@ -367,58 +307,6 @@
         "snapshotDistanceHint": "事件时刻附近截屏失败,显示的是最近的一张可用画面。GPU 加速的应用(WebView2、Direct3D)经常触发这种情况。",
         "ocrFailed": "无法读取此画面上的文字。"
     },
-    "summary": {
-        "noWeeklyActivity": "本周没有记录活动",
-        "weekOf": "{{start}} 至 {{end}} 这一周",
-        "labels": {
-            "today": "今天",
-            "yesterday": "昨天"
-        },
-        "meta": {
-            "active": "活跃 {{value}}",
-            "perDay": "{{value}} / 天"
-        },
-        "generating": "生成中……",
-        "card": {
-            "regenerating": "正在重新生成{{label}}……",
-            "regenerate": "重新生成{{label}}",
-            "generate": "生成{{label}}",
-            "digest": "摘要",
-            "weeklyDigest": "周摘要",
-            "chatAboutDay": "聊聊这一天",
-            "chatAboutWeek": "聊聊这一周",
-            "copy": "复制",
-            "copied": "已复制",
-            "todayUnfolding": "今天还在进行中。可以随时生成摘要,也可以等今天结束后再来查看。",
-            "noneDay": "这一天还没有摘要。",
-            "unavailableDay": "摘要不可用。",
-            "unavailableWeek": "周摘要不可用。",
-            "freshnessTodayPartial": "生成于 {{time}}。后续活动可能未包含。",
-            "freshnessPastPartial": "在当天结束前生成。最终摘要将自动刷新。",
-            "refresh": "刷新",
-            "refreshing": "刷新中……",
-            "languageHint": "由{{lang}}生成",
-            "regenerateInCurrent": "用{{lang}}重新生成",
-            "writingDay": "正在写你的这一天……",
-            "writingWeek": "正在写你的这一周……",
-            "writingNewer": "正在写一个更新的版本…",
-            "writtenAt": "写于 {{time}}。之后的工作可能未包含在内。",
-            "writeAgain": "再写一次",
-            "writeFailed": "无法写下你的一天。请重试。",
-            "dayNotWritten": "这一天还没写。",
-            "weekNotWritten": "你的这一周还没写。",
-            "writeIt": "写一下",
-            "loadFailed": "无法加载这一天。",
-            "tryAgain": "重试"
-        },
-        "languageName": {
-            "en": "英文",
-            "zh-CN": "中文"
-        }
-    },
-    "yourWeek": {
-        "title": "你的这一周"
-    },
     "session": {
         "frames": "{{count}} 帧",
         "peopleHeading": "出现的人({{count}})",
@@ -603,12 +491,6 @@
         "tryAgain": "重试",
         "openInChat": "在聊天中打开"
     },
-    "week": {
-        "yourWeekFailed": "无法加载你的一周。",
-        "loadFailed": "无法加载这一周。",
-        "recapFailed": "无法写出每周回顾。",
-        "noActivity": "—"
-    },
     "timeline": {
         "sessionsFailed": "无法加载你的会话。"
     },
@@ -629,13 +511,6 @@
             "hourPaused_other": "{{hour}}：暂停了 {{count}} 分钟",
             "hourQuiet": "{{hour}}：安静"
         },
-        "conversations": "对话",
-        "hours": "按小时",
-        "conversationRange": "{{start}} 至 {{end}}",
-        "conversationWords_one": "{{count}} 个词",
-        "conversationWords_other": "{{count}} 个词",
-        "conversationAcross_one": "在 {{count}} 个小时内",
-        "conversationAcross_other": "跨 {{count}} 个小时",
         "empty": "手机把手表录音发送过来后，会显示在这里。",
         "loadFailed": "无法加载录音。",
         "untimed": "录音",
@@ -664,11 +539,14 @@
         "transcriptEmpty": "没有可显示的内容。文字为私密内容，或观察已暂停。",
         "voiceNotEnrolled": "在设置中添加你的声音，Isoform 就能分辨哪些话是你说的。",
         "openTimeline": "在屏幕时间线中显示",
-        "delete": "全部删除",
-        "deleteTitle": "全部删除？",
-        "deleteBody": "这段录音以及 Isoform 仅从中了解到的内容，会从你的手表、手机和电脑上删除。",
-        "deleteConfirm": "删除",
-        "deleteFailed": "未能删除，请重试。"
+        "back": "返回你的手表",
+        "rowsFailed": "无法加载你手表上的对话。",
+        "pageFailed": "无法加载这段对话。",
+        "pageGone": "这段对话已经不再保存。",
+        "notes": "笔记",
+        "noTalk": "这一小时里没有人说话。",
+        "conversationAt": "{{start}} 到 {{end}}",
+        "laneFailed": "无法读取手表的各个小时。"
     },
     "act": {
         "sub": "Isoform 今天看到的一切，按时间和来源排列。任何一条都可以忘记，由它生成的内容也会一并删除。",
@@ -705,7 +583,17 @@
             "signedOut": "你的助手已退出登录",
             "offline": "没有网络"
         },
-        "tabAnswers": "你的回答"
+        "tabAnswers": "你的回答",
+        "readBecause": "因为对 {{agent}} 开启了 Learn from it 而读取",
+        "agentOnScreen": "{{agent}} 在自己工作 · 不算作你的工作",
+        "agentOnScreenUnnamed": "一个 agent 在自己工作 · 不算作你的工作",
+        "forgetShared": "忘记「{{name}}」？它和「{{other}}」在同一时段，那段对话也会一起删除。",
+        "notThisTopic": "不属于这个主题",
+        "openPage": "打开网页",
+        "openFile": "打开 {{label}}",
+        "openCall": "打开录制",
+        "conversationGone": "那段对话已不再保留。",
+        "remindMe": "提醒我…"
     },
     "feed": {
         "label": "时间线",
@@ -726,24 +614,43 @@
         "watchWords_other": "听到 {{count}} 个词",
         "watchNoWords": "没有人说话",
         "agentTitle": "工作了 {{length}}",
-        "agentLine": "你的 agent 的工作，不算作你的工作。",
         "goes": {
             "topic": "它在 {{topic}} 中的位置",
             "goal": "目标 {{goal}}",
             "goalUntitled": "由它生成的一个目标",
             "screen": "{{start}} 到 {{end}} 的屏幕记录",
             "moment": "共用这段屏幕记录的「{{moment}}」",
-            "notes": "由它生成的笔记"
+            "notes": "由它生成的笔记",
+            "followupUntitled": "由它生成的一项后续",
+            "claimUntitled": "Isoform 对你的一个看法",
+            "claim": "「{{claim}}」",
+            "conversation": "同一时段的对话「{{name}}」",
+            "conversationAt": "同一时段 {{start}} 到 {{end}} 的对话"
         },
         "where": {
             "topics": "你的主题",
             "goals": "目标",
             "screen": "屏幕",
             "activity": "活动",
-            "watch": "手表"
+            "watch": "手表",
+            "work": "你的工作",
+            "aboutYou": "你 · 关于你"
         },
         "untitledHandoff": "一次交接",
-        "forgetRow": "忘记：{{title}}"
+        "forgetRow": "忘记：{{title}}",
+        "spokeYou": "你",
+        "otherVoices_one": "另外 {{count}} 人",
+        "otherVoices_other": "另外 {{count}} 人",
+        "marks_one": "{{count}} 个标记",
+        "marks_other": "{{count}} 个标记",
+        "note": "笔记",
+        "openRow": "打开：{{title}}",
+        "forgetNoLonger": "它已经不再保存，所以什么也没有忘记。列表已经更新。",
+        "moreRow": "更多：{{title}}",
+        "detailsFailed": "无法载入这些条目的主题。",
+        "notThisTopicFailed": "没能把它移出这个主题。",
+        "openWhereFailed": "无法打开。",
+        "remindersFailed": "无法读取你的提醒。"
     },
     "ans": {
         "title": "你的回答",
@@ -760,6 +667,8 @@
             "yes": "是",
             "no": "不是",
             "not_mine": "不是我的",
+            "not_this_topic": "不是这个话题",
+            "not_this": "不是这个",
             "edit": "编辑",
             "useful": "有用",
             "not_useful": "没用"
@@ -790,6 +699,21 @@
             "chat": "聊天",
             "other": "其他"
         },
-        "forgetRow": "忘记：{{title}}"
+        "forgetRow": "忘记：{{title}}",
+        "undo": "撤销",
+        "undoRow": "撤销：{{title}}",
+        "undoFailed": "没有撤销成功。在下一份简报之前都可以撤销。",
+        "reason": {
+            "already_done": "已经做了",
+            "not_now": "现在不",
+            "not_useful": "没用",
+            "myself": "我自己来",
+            "not_needed": "不需要",
+            "wrong_facts": "事实不对",
+            "not_how_id_say": "不是我会说的话",
+            "was_true_once": "以前是这样",
+            "only_sometimes": "只是有时",
+            "not_at_all": "完全不是"
+        }
     }
 }

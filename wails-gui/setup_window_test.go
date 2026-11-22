@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"os"
 	"testing"
 )
 
@@ -205,8 +206,60 @@ func TestMainWindowMinSizeIsLiftedOnlyForSetup(t *testing.T) {
 	if w, h := mainWindowMinSize(false); w != 0 || h != 0 {
 		t.Fatalf("setup window minimum = %dx%d, want none", w, h)
 	}
+	// Setup v2 (the rollback) is narrower than the main minimum, which is why
+	// the minimum is lifted during setup; v3's 960 x 640 window is lifted too,
+	// so the main minimum never fights the setup window either way.
 	if setupWindowWidth >= mainWindowMinWidth {
-		t.Fatal("setup is narrower than the main minimum, which is why it is lifted during setup")
+		t.Fatal("setup v2 is narrower than the main minimum, which is why it is lifted during setup")
+	}
+	t.Setenv(setupV3EnvVar, "")
+	if w, _ := setupWindowSize(); w != setupV3WindowWidth {
+		t.Fatalf("default setup width = %v, want %d", w, setupV3WindowWidth)
+	}
+	if w, h := mainWindowMinSize(false); w != 0 || h != 0 {
+		t.Fatalf("minimum while the 960-wide setup shows = %dx%d, want none", w, h)
+	}
+}
+
+// Setup v3 is the default first run; ISOFORM_SETUP_V3=0 rolls back to v2.
+func TestSetupVersionDefaultsToV3WithRollback(t *testing.T) {
+	a := &App{}
+	cases := []struct {
+		name    string
+		value   string
+		set     bool
+		version int
+		w, h    float64
+	}{
+		{"unset", "", false, 3, setupV3WindowWidth, setupV3WindowHeight},
+		{"empty", "", true, 3, setupV3WindowWidth, setupV3WindowHeight},
+		{"rollback", "0", true, 2, setupWindowWidth, setupWindowHeight},
+		{"on", "1", true, 3, setupV3WindowWidth, setupV3WindowHeight},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if c.set {
+				t.Setenv(setupV3EnvVar, c.value)
+			} else {
+				prev, had := os.LookupEnv(setupV3EnvVar)
+				os.Unsetenv(setupV3EnvVar)
+				if had {
+					t.Cleanup(func() { os.Setenv(setupV3EnvVar, prev) })
+				}
+			}
+			if got := a.GetSetupVersion(); got != c.version {
+				t.Fatalf("GetSetupVersion() = %d, want %d", got, c.version)
+			}
+			if w, h := setupWindowSize(); w != c.w || h != c.h {
+				t.Fatalf("setupWindowSize() = %vx%v, want %vx%v", w, h, c.w, c.h)
+			}
+		})
+	}
+	if setupV3WindowWidth != 960 || setupV3WindowHeight != 640 {
+		t.Fatalf("v3 window = %dx%d, want 960x640", setupV3WindowWidth, setupV3WindowHeight)
+	}
+	if setupWindowWidth != 600 || setupWindowHeight != 560 {
+		t.Fatalf("v2 window = %dx%d, want 600x560", setupWindowWidth, setupWindowHeight)
 	}
 }
 

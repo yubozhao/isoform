@@ -70,17 +70,20 @@ func (a *App) writeWatchListenOffSpans(spans []observationPause, now time.Time) 
 }
 
 // watchListening reports the setting now.
-func (a *App) watchListening() MobileWatchListening {
+func (a *App) watchListening() (MobileWatchListening, error) {
+	if a == nil || a.store == nil {
+		return MobileWatchListening{}, errMobileStoreUnavailable
+	}
 	spans, err := a.watchListenOffSpans()
 	if err != nil {
-		return MobileWatchListening{}
+		return MobileWatchListening{}, err
 	}
 	for _, span := range spans {
 		if span.End == 0 {
-			return MobileWatchListening{Off: true, Since: mobileTimestamp(time.UnixMilli(span.Start))}
+			return MobileWatchListening{Off: true, Since: mobileTimestamp(time.UnixMilli(span.Start))}, nil
 		}
 	}
-	return MobileWatchListening{}
+	return MobileWatchListening{}, nil
 }
 
 // setWatchListeningOff turns listening off at now. Already off changes nothing.
@@ -88,6 +91,8 @@ func (a *App) setWatchListeningOff(now time.Time) error {
 	if a == nil || a.store == nil {
 		return errMobileStoreUnavailable
 	}
+	a.watchListeningMu.Lock()
+	defer a.watchListeningMu.Unlock()
 	spans, err := a.watchListenOffSpans()
 	if err != nil {
 		return err
@@ -107,6 +112,8 @@ func (a *App) endWatchListeningOff(startedAt, now time.Time) error {
 	if a == nil || a.store == nil {
 		return errMobileStoreUnavailable
 	}
+	a.watchListeningMu.Lock()
+	defer a.watchListeningMu.Unlock()
 	spans, err := a.watchListenOffSpans()
 	if err != nil {
 		return err
@@ -153,7 +160,12 @@ func (bridge *mobileBridge) serveWatchListening(w http.ResponseWriter) {
 		mobileJSON(w, http.StatusServiceUnavailable, nil, errMobileStoreUnavailable.Error())
 		return
 	}
-	mobileJSON(w, http.StatusOK, bridge.app.watchListening(), "")
+	setting, err := bridge.app.watchListening()
+	if err != nil {
+		mobileJSON(w, http.StatusServiceUnavailable, nil, "the setting could not be read")
+		return
+	}
+	mobileJSON(w, http.StatusOK, setting, "")
 }
 
 // serveWatchListeningSet answers POST /watch/listening. {"off": true} turns
@@ -192,7 +204,7 @@ func (bridge *mobileBridge) serveWatchListeningSet(w http.ResponseWriter, r *htt
 		mobileJSON(w, http.StatusInternalServerError, nil, "the setting could not be saved")
 		return
 	}
-	mobileJSON(w, http.StatusOK, bridge.app.watchListening(), "")
+	bridge.serveWatchListening(w)
 }
 
 // "Listen on your watch" (24.14): its routes, and the setting in the status.
@@ -204,8 +216,54 @@ func init() {
 		bridge.serveWatchListeningSet(w, r)
 	})
 	mobileRegisterStatus(func(bridge *mobileBridge, status map[string]any) {
-		if bridge.app != nil {
-			status["watchListening"] = bridge.app.watchListening()
+		if setting, err := bridge.app.watchListening(); err == nil {
+			status["watchListening"] = setting
 		}
 	})
+}
+
+// WatchListeningView is "Listen on your watch" as Settings › What Isoform
+// sees shows it: the same setting the phone reads (24.14), and whether a
+// watch has ever sent this computer a recording.
+type WatchListeningView struct {
+	Off      bool   `json:"off"`
+	Since    string `json:"since,omitempty"`
+	HasWatch bool   `json:"hasWatch"`
+}
+
+// readWatchListeningView reads the setting and the watch, failing rather
+// than guessing: a failed read is never shown as on or off.
+func (a *App) readWatchListeningView() (WatchListeningView, error) {
+	listening, err := a.watchListening()
+	if err != nil {
+		return WatchListeningView{}, err
+	}
+	view := WatchListeningView{Off: listening.Off, Since: listening.Since}
+	recordings, err := a.GetWatchRecordings()
+	if err != nil {
+		return WatchListeningView{}, err
+	}
+	for _, recording := range recordings {
+		if recording.Source == "watch" {
+			view.HasWatch = true
+			break
+		}
+	}
+	return view, nil
+}
+
+// GetWatchListening is the Your watch row in What Isoform sees.
+func (a *App) GetWatchListening() (WatchListeningView, error) {
+	return a.readWatchListeningView()
+}
+
+// TurnOffWatchListening turns listening on the watch off from the computer,
+// exactly as the phone's switch does: off from now, and the watch stops at
+// its next sync. Like the phone, the computer can never turn it on; the
+// wearer starts listening on the watch.
+func (a *App) TurnOffWatchListening() (WatchListeningView, error) {
+	if err := a.setWatchListeningOff(time.Now()); err != nil {
+		return WatchListeningView{}, err
+	}
+	return a.readWatchListeningView()
 }

@@ -113,7 +113,7 @@ func TestStreamComposedExternalChatThroughControlledToolServer(t *testing.T) {
 				}
 				for _, raw := range nativeBodies[0]["tools"].([]any) {
 					name, _ := raw.(map[string]any)["name"].(string)
-					if allowsTool(chatContextToolNames, name) {
+					if allowsTool(externalContextToolNames, name) {
 						t.Fatalf("native registry acquired external tool %s", name)
 					}
 				}

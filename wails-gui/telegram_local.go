@@ -176,6 +176,7 @@ type telegramBotClient struct {
 	apiURL string
 }
 
+//isoform:destination chat_bridges
 func newTelegramBotClient(token string, pollTimeoutSec int) *telegramBotClient {
 	// HTTP timeout must exceed the long-poll timeout or getUpdates is cut short.
 	return &telegramBotClient{
@@ -191,6 +192,7 @@ type telegramAPIResponse struct {
 	Description string          `json:"description"`
 }
 
+//isoform:destination chat_bridges
 func (c *telegramBotClient) call(ctx context.Context, method string, body any, out any) error {
 	var reqBody io.Reader
 	if body != nil {

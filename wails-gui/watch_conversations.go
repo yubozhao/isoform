@@ -1,12 +1,12 @@
 package main
 
 import (
+	"context"
+	"database/sql"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
-
-	"wails-gui/internal/platform/activitymon"
 )
 
 // Conversations from the watch's hours.
@@ -134,31 +134,35 @@ func buildWatchConversations(speech []watchConversationSpeech, silence time.Dura
 // watchConversationSpeechOf reads the stored speech of the transcribed
 // recordings that began after since. A transcript marked private reads as
 // nothing, as it does everywhere else.
-func (a *App) watchConversationSpeechOf(recordings []mobileRecording, since time.Time) []watchConversationSpeech {
-	var speech []watchConversationSpeech
+func (a *App) watchConversationSpeechOf(recordings []mobileRecording, since time.Time) ([]watchConversationSpeech, error) {
+	var skipped watchSpeechSkips
+	return a.watchDisplaySpeech(recordings, since, &skipped)
+}
+
+func (a *App) watchDisplaySpeech(recordings []mobileRecording, since time.Time, skipped *watchSpeechSkips) ([]watchConversationSpeech, error) {
+	defer skipped.report()
+	if len(recordings) == 0 {
+		return nil, nil
+	}
 	if a.activity == nil || a.activity.store == nil {
-		return speech
+		return nil, errMobileStoreUnavailable
 	}
-	for _, rec := range recordings {
-		if rec.State != mobileRecordingTranscribed || rec.SessionID == "" {
-			continue
-		}
-		if started, err := time.Parse(time.RFC3339, rec.view().StartedAt); err != nil || started.Before(since) {
-			continue
-		}
-		events, err := a.activity.store.GetSessionEvents(rec.SessionID)
-		if err != nil {
-			continue
-		}
-		for _, evt := range events {
-			if evt.Kind != activitymon.EventSpeech {
-				continue
-			}
-			speech = append(speech, watchConversationSpeech{At: evt.Timestamp, RecordingID: rec.ID, DeviceID: rec.DeviceID,
-				Speaker: evt.SpeechSpeakerLabel, Text: evt.SpeechText})
-		}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	tx, err := a.activity.store.reader().BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, err
 	}
-	return speech
+	defer tx.Rollback()
+	lines, err := readWatchSpeech(ctx, tx, recordings, since, skipped)
+	if err != nil {
+		return nil, err
+	}
+	speech := make([]watchConversationSpeech, len(lines))
+	for i, line := range lines {
+		speech[i] = line.watchConversationSpeech
+	}
+	return speech, tx.Commit()
 }
 
 // GetWatchConversations lists the conversations heard on the watch and the
@@ -176,13 +180,51 @@ func (a *App) watchConversationsOf(store *mobileRecordingStore) ([]WatchConversa
 		return nil, err
 	}
 	since := time.Now().AddDate(0, 0, -watchConversationDays)
-	convs := buildWatchConversations(a.watchConversationSpeechOf(recordings, since), watchConversationSilence)
-	// Reading also drops the names whose words are gone.
-	applyWatchConversationNames(convs, pruneWatchConversationNames(store.dir, convs))
+	var skipped watchSpeechSkips
+	speech, err := a.watchDisplaySpeech(recordings, since, &skipped)
+	if err != nil {
+		return nil, err
+	}
+	convs := buildWatchConversations(speech, watchConversationSilence)
 	for i := range convs {
 		convs[i].Decisions, convs[i].Followups, convs[i].ItemIDs = []string{}, []WatchConversationFollowup{}, []string{}
 	}
-	applyWatchConversationNotes(convs, a.pruneWatchConversationNotes(store.dir, convs))
-	a.applyWatchSpeakerNames(convs, pruneWatchSpeakerNames(store.dir, convs))
+	if skipped.events > 0 || skipped.invalidRecordings > 0 {
+		// A partial transcript cannot prove that a saved note or its
+		// commitment should be purged. Apply only matching metadata.
+		applyWatchConversationNames(convs, readWatchConversationNames(store.dir))
+		applyWatchConversationNotes(convs, readWatchConversationNotes(store.dir))
+		speakers := readWatchSpeakerNames(store.dir)
+		for _, c := range convs {
+			if speakers[c.ID].Hash != watchConversationHash(c) {
+				delete(speakers, c.ID)
+			}
+		}
+		a.applyWatchSpeakerNames(convs, speakers)
+	} else {
+		applyWatchConversationNames(convs, pruneWatchConversationNames(store.dir, convs))
+		applyWatchConversationNotes(convs, a.pruneWatchConversationNotes(store.dir, convs))
+		a.applyWatchSpeakerNames(convs, pruneWatchSpeakerNames(store.dir, convs))
+	}
+	markWatchConversationLines(convs, recordings)
 	return convs, nil
+}
+
+// markWatchConversationLines sets Marked on the words being said when the
+// wearer marked, from the marks of the hours each conversation draws on.
+func markWatchConversationLines(convs []WatchConversation, recordings []mobileRecording) {
+	byID := map[string]mobileRecording{}
+	for _, rec := range recordings {
+		byID[rec.ID] = rec
+	}
+	for i := range convs {
+		var marks []int64
+		for _, id := range convs[i].RecordingIDs {
+			if rec, ok := byID[id]; ok {
+				marks = append(marks, rec.marksAt()...)
+			}
+		}
+		sort.Slice(marks, func(a, b int) bool { return marks[a] < marks[b] })
+		markWatchRecordingLines(convs[i].Lines, marks)
+	}
 }

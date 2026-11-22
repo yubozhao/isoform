@@ -92,7 +92,7 @@ func (s *Store) UpsertMessageAsks(ctx context.Context, rows []MessageAskRow, now
 
 // ListMessageAsks returns the asks at or after since, newest first.
 func (s *Store) ListMessageAsks(ctx context.Context, since int64) ([]MessageAskRow, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+messageAskColumns+` FROM message_asks WHERE at >= ? ORDER BY at DESC, id ASC`, since)
+	rows, err := s.committedReader().QueryContext(ctx, `SELECT `+messageAskColumns+` FROM message_asks WHERE at >= ? ORDER BY at DESC, id ASC`, since)
 	if err != nil {
 		return nil, fmt.Errorf("list message asks: %w", err)
 	}
@@ -112,7 +112,7 @@ func (s *Store) ListMessageAsks(ctx context.Context, since int64) ([]MessageAskR
 // GetMessageAsk returns one ask, or found false.
 func (s *Store) GetMessageAsk(ctx context.Context, id string) (MessageAskRow, bool, error) {
 	var row MessageAskRow
-	err := s.db.QueryRowContext(ctx, `SELECT `+messageAskColumns+` FROM message_asks WHERE id = ?`, id).Scan(
+	err := s.committedReader().QueryRowContext(ctx, `SELECT `+messageAskColumns+` FROM message_asks WHERE id = ?`, id).Scan(
 		&row.ID, &row.ChatKey, &row.PrincipalID, &row.PersonName, &row.Kind, &row.Summary,
 		&row.NextStep, &row.Action, &row.At, &row.CreatedAt)
 	if err != nil {

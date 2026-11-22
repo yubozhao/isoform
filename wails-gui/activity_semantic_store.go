@@ -527,7 +527,7 @@ func (s *ActivityStore) GetSemanticPendingSessions() ([]ActivitySessionRow, erro
 			event_count, segment_count, snapshot_count, total_size_bytes, triage_status,
 			COALESCE(is_meeting, 0), COALESCE(meeting_app, ''), COALESCE(transcript_path, '')
 		FROM activity_sessions
-		WHERE COALESCE(semantic_status, 'pending') = 'pending'
+		WHERE COALESCE(semantic_status, 'pending') = 'pending' AND ` + sqlSessionHasNoPrivacyHold + `
 		AND COALESCE(triage_status, '') != 'protected'
 		ORDER BY start_time ASC`)
 	if err != nil {

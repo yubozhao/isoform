@@ -59,7 +59,6 @@ func (a *App) agentJoinService() *agentjoin.Service {
 	s := &a.agentJoin
 	s.once.Do(func() {
 		s.svc = agentjoin.New(agentjoin.Hooks{
-			Allowed: func() error { return a.agentsAllowed() },
 			Changed: func() {
 				a.saveConnectedAgents()
 				a.notePhoneAgentJoinChanged()
@@ -88,11 +87,9 @@ type AgentJoinStart struct {
 }
 
 // StartAgentJoin makes a join link and the one message to paste. A link
-// still open is closed.
+// still open is closed. Making the link is the person's yes; no switch and
+// not Closed Eyes stop it, since connecting sees and keeps nothing (G2).
 func (a *App) StartAgentJoin() (AgentJoinStart, error) {
-	if err := a.agentsAllowed(); err != nil {
-		return AgentJoinStart{}, err
-	}
 	if err := a.startTaskLinkListener(); err != nil {
 		return AgentJoinStart{}, err
 	}
@@ -116,11 +113,6 @@ func (a *App) GetAgentJoin() *agentjoin.Join {
 
 // AnswerAgentJoin is the person's Allow or Deny.
 func (a *App) AnswerAgentJoin(allow bool) error {
-	if allow {
-		if err := a.agentsAllowed(); err != nil {
-			return err
-		}
-	}
 	agent, err := a.agentJoinService().Answer(allow)
 	if err == nil && agent != nil {
 		// Joined again: Connect again's entry goes (phone-agent v1.2.0 §6).

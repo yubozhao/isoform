@@ -187,6 +187,10 @@ func (c *ActivityTriager) markGroupSemanticDone(g sessionGroup) {
 // never returns an error — a failure here must not disturb the four existing
 // triage outputs. (§8)
 func (c *ActivityTriager) runSemanticEventExtraction(ctx context.Context, g sessionGroup) (changed bool) {
+	ctx, dayScope, opened := withDayScope(ctx, g)
+	if opened && c.app != nil {
+		defer c.app.finishAssistantCall(dayScope)
+	}
 	if !featureSemanticEvents && !featurePeopleVision {
 		return
 	}

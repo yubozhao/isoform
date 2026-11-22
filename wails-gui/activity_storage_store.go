@@ -14,15 +14,16 @@ import (
 
 // snapshotMedia is one screenshot file the storage budget can shrink or remove.
 type snapshotMedia struct {
-	ID        int64
-	SessionID string
-	Timestamp int64
-	RelPath   string
-	Size      int64
-	Width     int
-	Height    int
-	Tier      string
-	OCRStatus string
+	ID          int64
+	SessionID   string
+	Timestamp   int64
+	RelPath     string
+	Size        int64
+	Width       int
+	Height      int
+	PrivacyHeld bool
+	Tier        string
+	OCRStatus   string
 	// TriageStatus and SessionSavedAt are the session's triage state and
 	// save time (created_at).
 	TriageStatus   string
@@ -45,7 +46,7 @@ type audioMedia struct {
 // joined (LEFT) to activity_sessions s.
 const snapshotMediaColumns = `sn.id, COALESCE(sn.session_id, ''), sn.timestamp, sn.file_path,
 	COALESCE(sn.size_bytes, 0), COALESCE(sn.width, 0), COALESCE(sn.height, 0),
-	sn.storage_tier, COALESCE(s.ocr_status, ''), COALESCE(s.triage_status, ''), COALESCE(s.created_at, 0)`
+	sn.storage_tier, sn.privacy_held, COALESCE(s.ocr_status, ''), COALESCE(s.triage_status, ''), COALESCE(s.created_at, 0)`
 
 func scanSnapshotMedia(rows *sql.Rows) ([]snapshotMedia, error) {
 	defer rows.Close()
@@ -53,7 +54,7 @@ func scanSnapshotMedia(rows *sql.Rows) ([]snapshotMedia, error) {
 	for rows.Next() {
 		var m snapshotMedia
 		if err := rows.Scan(&m.ID, &m.SessionID, &m.Timestamp, &m.RelPath,
-			&m.Size, &m.Width, &m.Height, &m.Tier, &m.OCRStatus, &m.TriageStatus, &m.SessionSavedAt); err != nil {
+			&m.Size, &m.Width, &m.Height, &m.Tier, &m.PrivacyHeld, &m.OCRStatus, &m.TriageStatus, &m.SessionSavedAt); err != nil {
 			return nil, fmt.Errorf("scan snapshot media: %w", err)
 		}
 		out = append(out, m)
@@ -137,7 +138,7 @@ func (s *ActivityStore) snapshotMediaByIDs(ids []int64) ([]snapshotMedia, error)
 // recorded, and its session is not waiting for OCR or (for up to
 // removableTriageWait, 7 days) for triage, both of which read the
 // full-resolution image. Arguments: coldBeforeMs, snapshotCompactMaxPixels.
-const compactableSnapshotWhere = `sn.storage_tier != 'missing' AND sn.file_path != ''
+const compactableSnapshotWhere = `sn.privacy_held=0 AND sn.storage_tier != 'missing' AND sn.file_path != ''
 	AND (sn.storage_tier = 'cold' OR sn.timestamp < ?)
 	AND (COALESCE(sn.width, 0) <= 0 OR COALESCE(sn.height, 0) <= 0 OR sn.width * sn.height > ?)
 	AND COALESCE(s.ocr_status, '') NOT IN ('pending', 'processing')
@@ -206,8 +207,8 @@ func (s *ActivityStore) updateSnapshotAfterCompaction(m snapshotMedia, newSize i
 
 // stripSnapshotImages marks screenshot rows image-missing (tier "missing",
 // size 0) and recounts their sessions over rows with a file, exactly as the
-// startup reconcile does for a lost file. Rows keep their AX text, parsed
-// content and OCR. The caller removes the files after this commits, so a
+// startup reconcile does for a lost file. Ordinary rows keep their AX text, parsed
+// content and OCR. Held rows and their OCR must be erased together. The caller removes the files after this commits, so a
 // failure here leaves both row and file as they were.
 func (s *ActivityStore) stripSnapshotImages(rows []snapshotMedia) error {
 	if len(rows) == 0 {
@@ -220,6 +221,24 @@ func (s *ActivityStore) stripSnapshotImages(rows []snapshotMedia) error {
 	defer tx.Rollback()
 	freed := make(map[string]int64)
 	for _, m := range rows {
+		// A staged row may have acquired an owner, or a release may have
+		// rewritten the image since the budget selected it.
+		err := tx.QueryRow(`SELECT COALESCE(session_id,''),COALESCE(size_bytes,0),privacy_held FROM activity_snapshots WHERE id=? AND file_path=? AND storage_tier!=?`, m.ID, m.RelPath, snapshotTierMissing).Scan(&m.SessionID, &m.Size, &m.PrivacyHeld)
+		if err == sql.ErrNoRows {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if m.PrivacyHeld {
+			removed, err := deleteHeldSnapshot(tx, m.ID, m.SessionID, m.RelPath)
+			if err != nil {
+				return err
+			}
+			if removed {
+				continue
+			}
+		}
 		res, err := tx.Exec(`UPDATE activity_snapshots SET storage_tier = ?, size_bytes = 0
 			WHERE id = ? AND storage_tier != ?`, snapshotTierMissing, m.ID, snapshotTierMissing)
 		if err != nil {

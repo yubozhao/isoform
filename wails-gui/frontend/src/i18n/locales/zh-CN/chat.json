@@ -574,12 +574,9 @@
         },
         "view": {
             "title": "聊天",
-            "filterLabel": "显示",
-            "everything": "全部",
-            "hideUpdates": "隐藏更新",
-            "showUpdates": "显示更新",
-            "hiddenWhileFiltered": "筛选时不显示更新",
-            "hideFailed": "没能保存，请再试一次。",
+            "sub": "关于你自己的一天，以及纠正 Isoform。",
+            "field": "问问你的一天，或纠正 Isoform",
+            "askTopicPlaceholder": "问问{{topic}}",
             "summaryTitle": "今天聊天里有",
             "summarySeparator": " · ",
             "summaryConversations_one": "{{count}} 段与你的聊天",
@@ -590,7 +587,6 @@
             "summaryRoutine_other": "{{count}} 条例行更新，已折叠",
             "summaryFailed": "没能统计今天聊天里的内容。",
             "retry": "重试",
-            "showEverything": "显示全部",
             "today": "今天",
             "yesterday": "昨天",
             "foldSummary_one": "Isoform 的 {{count}} 条更新",
@@ -602,14 +598,8 @@
             "briefOpenFailed": "没能打开这份简报。",
             "topicTags": "主题",
             "chipsLabel": "准备好的请求",
-            "notePrepared": "已为你准备好。按发送之前不会发出任何内容。",
-            "notePreparedAnswer": "已根据上面的回答准备好。按发送之前不会发出任何内容。",
-            "detachTopic": "从输入框移除「{{name}}」",
-            "topicChecking": "正在核实此主题...",
-            "topicBusy": "Isoform 还在聊天里回答。可以先停止，或等它答完再发送关于这个主题的内容。",
             "scope": "选择聊天范围",
             "wholeChat": "整个聊天",
-            "more": "更多",
             "itemPanel": "条目",
             "briefLoadFailed": "没能加载这份简报。"
         },
@@ -684,7 +674,15 @@
             "memory": "你的笔记",
             "person": "你认识的人",
             "from": "来自{{source}} · {{title}} ›",
-            "aria": "来源：{{source}}，{{title}}"
+            "aria": "来源：{{source}}，{{title}}",
+            "activity": "你的屏幕",
+            "call": "一次通话",
+            "watch": "你的手表",
+            "mail": "你的邮件",
+            "calendar": "你的日历",
+            "brief": "你的简报",
+            "fromAt": "来自{{source}} · {{title}}，{{time}} ›",
+            "ariaAt": "来源：{{source}}，{{title}}，{{time}}"
         }
     },
     "setup": {
@@ -794,7 +792,12 @@
         "tool": "工具",
         "aboutScreen": "关于：屏幕上的内容 · {{app}}，{{title}}",
         "aboutScreenApp": "关于：屏幕上的内容 · {{app}}",
-        "removeScreen": "不发送屏幕上的内容"
+        "removeScreen": "不发送屏幕上的内容",
+        "ready": "已准备好 · 完成于 {{time}}",
+        "open": "打开",
+        "openInChat": "在聊天中打开",
+        "readyFailed": "无法查看已准备好的工作。",
+        "readyOpenFailed": "无法打开。"
     },
     "stream": {
         "openProject": "打开一个项目即可开始。",
@@ -869,6 +872,7 @@
     },
     "about": {
         "item": "关于：{{title}}",
-        "brief": "关于你的简报：“{{sentence}}”"
+        "brief": "关于你的简报：“{{sentence}}”",
+        "remove": "从这条消息移除 {{title}}"
     }
 }

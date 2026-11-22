@@ -32,8 +32,7 @@ func (h *Handler) hubSocket(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := storeContext(r.Context())
 	defer cancel()
 	if _, err := h.Store.HubLastSeen(ctx, hubID); errors.Is(err, store.ErrNotFound) {
-		if allowed, retry := h.limits.Allow("hub:new:addr:"+addressBlock(clientIP(r)), newHubsPerAddress, newHubsWindow, h.Now()); !allowed {
-			setRetryAfter(w, retry)
+		if !h.allow(w, r, "new_hubs", addressBlock(clientIP(r)), newHubsPerAddress, newHubsWindow, h.Now()) {
 			reply(w, http.StatusTooManyRequests, nil, "Too many new hubs")
 			return
 		}

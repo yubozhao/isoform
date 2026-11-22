@@ -187,7 +187,7 @@ func (s *Store) SaveStreamItems(ctx context.Context, sessionLocalID string, item
 
 // LoadStreamItems returns all items for a session ordered by sort_order.
 func (s *Store) LoadStreamItems(ctx context.Context, sessionLocalID string) ([]StreamItemRow, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.committedReader().QueryContext(ctx, `
 		SELECT id, session_local_id, kind, content, tool_name, tool_input, tool_use_id, run_id, session_id, sort_order, created_at, images, automation_context, files
 		FROM stream_items WHERE session_local_id = ? ORDER BY sort_order ASC
 	`, sessionLocalID)
@@ -230,11 +230,11 @@ func (s *Store) FindProactiveStreamItem(ctx context.Context, sessionLocalID, mom
 	if momentID == "" {
 		return nil, nil
 	}
-	item, err := scanStreamItemRow(s.db.QueryRowContext(ctx, findProactiveRootSQL, sessionLocalID, momentID))
+	item, err := scanStreamItemRow(s.committedReader().QueryRowContext(ctx, findProactiveRootSQL, sessionLocalID, momentID))
 	if err != nil || item != nil {
 		return item, err
 	}
-	return scanStreamItemRow(s.db.QueryRowContext(ctx, findProactiveChildSQL, sessionLocalID, momentID))
+	return scanStreamItemRow(s.committedReader().QueryRowContext(ctx, findProactiveChildSQL, sessionLocalID, momentID))
 }
 
 const findProactiveBriefCardSQL = `
@@ -251,13 +251,13 @@ func (s *Store) FindProactiveBriefCard(ctx context.Context, sessionLocalID, brie
 	if briefID == "" {
 		return nil, nil
 	}
-	return scanStreamItemRow(s.db.QueryRowContext(ctx, findProactiveBriefCardSQL, sessionLocalID, briefID))
+	return scanStreamItemRow(s.committedReader().QueryRowContext(ctx, findProactiveBriefCardSQL, sessionLocalID, briefID))
 }
 
 // ListProactiveBriefCards returns every brief Chat card of a session in
 // sort order, the earliest first (R40 repair).
 func (s *Store) ListProactiveBriefCards(ctx context.Context, sessionLocalID string) ([]StreamItemRow, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.committedReader().QueryContext(ctx, `
 		SELECT id, session_local_id, kind, content, tool_name, tool_input, tool_use_id, run_id, session_id, sort_order, created_at, images, automation_context, files
 		FROM stream_items
 		WHERE session_local_id = ? AND tool_name = 'main_chat_proactive'
@@ -295,7 +295,7 @@ func (s *Store) FindStatusStreamItem(ctx context.Context, sessionLocalID, entryI
 	if entryID == "" {
 		return nil, nil
 	}
-	return scanStreamItemRow(s.db.QueryRowContext(ctx, findStatusStreamItemSQL, sessionLocalID, entryID))
+	return scanStreamItemRow(s.committedReader().QueryRowContext(ctx, findStatusStreamItemSQL, sessionLocalID, entryID))
 }
 
 func scanStreamItemRow(row interface{ Scan(...any) error }) (*StreamItemRow, error) {
@@ -313,7 +313,7 @@ func scanStreamItemRow(row interface{ Scan(...any) error }) (*StreamItemRow, err
 // LoadAllStreamItems returns all stream items across all sessions, keyed by session local ID.
 // This avoids N*M queries when loading all projects at startup.
 func (s *Store) LoadAllStreamItems(ctx context.Context) (map[string][]StreamItemRow, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.committedReader().QueryContext(ctx, `
 		SELECT id, session_local_id, kind, content, tool_name, tool_input, tool_use_id, run_id, session_id, sort_order, created_at, images, automation_context, files
 		FROM stream_items ORDER BY sort_order ASC
 	`)
@@ -336,7 +336,7 @@ func (s *Store) LoadAllStreamItems(ctx context.Context) (map[string][]StreamItem
 // LoadStreamItemCounts returns the persisted stream item count for every
 // session that has at least one item. Used by metadata-only project loads.
 func (s *Store) LoadStreamItemCounts(ctx context.Context) (map[string]int, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.committedReader().QueryContext(ctx, `
 		SELECT session_local_id, COUNT(*)
 		FROM stream_items
 		GROUP BY session_local_id
@@ -403,7 +403,7 @@ func (s *Store) LoadStreamItemsLatest(ctx context.Context, sessionLocalID string
 // conversation turns regardless of how many tool calls were made.
 // Items are returned in ascending sort_order (oldest first).
 func (s *Store) LoadConversationHistory(ctx context.Context, sessionLocalID string, limit int) ([]StreamItemRow, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.committedReader().QueryContext(ctx, `
 		SELECT id, session_local_id, kind, content, tool_name, tool_input, tool_use_id, run_id, session_id, sort_order, created_at, images, automation_context, files
 		FROM stream_items
 		WHERE session_local_id = ? AND kind IN ('user', 'assistant') AND content != ''
@@ -475,7 +475,7 @@ func (s *Store) LoadStreamItemsBefore(ctx context.Context, sessionLocalID string
 // LoadRecentStreamItems loads the latest `limit` items per session across all sessions.
 // Used during startup to avoid loading the entire stream_items table.
 func (s *Store) LoadRecentStreamItems(ctx context.Context, limit int) (map[string][]StreamItemRow, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.committedReader().QueryContext(ctx, `
 		SELECT id, session_local_id, kind, content, tool_name, tool_input, tool_use_id, run_id, session_id, sort_order, created_at, images, automation_context, files
 		FROM (
 			SELECT *, ROW_NUMBER() OVER (PARTITION BY session_local_id ORDER BY sort_order DESC) AS rn
@@ -513,7 +513,7 @@ func (s *Store) LoadRecentStreamItems(ctx context.Context, limit int) (map[strin
 // of a short session disappears on reload as soon as a single user message
 // anchors the cutoff mid-conversation.
 func (s *Store) LoadRecentStreamItemsByTurns(ctx context.Context, turns int) (map[string][]StreamItemRow, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.committedReader().QueryContext(ctx, `
 		WITH turn_cutoffs AS (
 			SELECT session_local_id,
 				CASE WHEN COUNT(*) < ? THEN 0 ELSE MIN(sort_order) END AS cutoff
@@ -568,7 +568,7 @@ func (s *Store) LoadRecentStreamItemsByTurns(ctx context.Context, turns int) (ma
 // LoadStreamItem returns one stream item by id, or nil when there is none.
 func (s *Store) LoadStreamItem(ctx context.Context, id string) (*StreamItemRow, error) {
 	var item StreamItemRow
-	err := s.db.QueryRowContext(ctx, `
+	err := s.committedReader().QueryRowContext(ctx, `
 		SELECT id, session_local_id, kind, content, tool_name, tool_input, tool_use_id, run_id, session_id, sort_order, created_at, images, automation_context, files
 		FROM stream_items WHERE id = ?
 	`, id).Scan(&item.ID, &item.SessionLocalID, &item.Kind, &item.Content, &item.ToolName, &item.ToolInput, &item.ToolUseID, &item.RunID, &item.SessionID, &item.SortOrder, &item.CreatedAt, &item.Images, &item.AutomationContext, &item.Files)

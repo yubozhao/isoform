@@ -8,7 +8,6 @@ import { useTranslation } from "react-i18next";
 import { NativeClipboardSetText } from "../../wailsjs/go/main/App";
 import { BrowserOpenURL, ClipboardSetText, EventsOn } from "../../wailsjs/runtime/runtime";
 import { IPHONE_APP_LINK } from "@/lib/iphone-app-link";
-import { GetMobileBriefHealth } from "@/lib/page-queries";
 // The shim declares the iPhone bindings with the PROTOCOL.md section 12 types,
 // so the calls and the state below agree on one shape.
 import {
@@ -16,17 +15,12 @@ import {
     ConfirmMobileScopeRequest,
     DisableMobileConnection,
     EnableMobileConnectionUsingRelay,
-    GenerateMobileBriefNow,
     GenerateMobileConnectionCode,
-    GetMobileBriefSchedule,
     GetMobileConnectionStatus,
     GetMobileKeepAwake,
     ResetMobileRemoteAccess,
     RevokeMobileDevice,
-    SetMobileBriefSchedule,
     SetMobileKeepAwake,
-    type MobileBriefHealth,
-    type MobileBriefRequestResult,
     type MobileBriefSchedule,
     type MobileConnectionStatus,
     type MobileDeviceView,
@@ -46,12 +40,11 @@ import {
 import { Switch } from "./ui/switch";
 
 const STATUS_POLL_MS = 15_000;
-const SCHEDULE_POLL_MS = 60_000;
 const CODE_TICK_MS = 1_000;
 const IDLE_TICK_MS = 30_000;
 // Go zero time ("0001-01-01T00:00:00Z") marks "never"; anything before 2000 is treated as unset.
 const EARLIEST_TIMESTAMP = Date.UTC(2000, 0, 1);
-const CLOCK_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+export const CLOCK_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 // settings-review ST69: brief times read "7:00 AM", never the time field's "07:00 AM".
 export function clockOptions(current: string): string[] {
@@ -72,7 +65,7 @@ export function clockLabel(clock: string, locale: string): string {
 }
 const REMOTE_ACCESS_STATE_DETAIL_TRANSLATION_PREFIX = "mobileConnection.remoteAccessStateDetail";
 const REMOTE_ACCESS_OFF_TRANSLATION_PREFIX = "mobileConnection.remoteAccessOff";
-const TIME_INPUT_CLASS =
+export const TIME_INPUT_CLASS =
     "rounded-md border border-border bg-panel px-3 py-1.5 text-xs tabular-nums text-ink focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50";
 const RELAY_INPUT_CLASS =
     "w-full rounded-md border border-border bg-panel px-3 py-1.5 font-mono text-xs text-ink placeholder:text-muted focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50";
@@ -116,7 +109,6 @@ type KnownScope = keyof typeof SCOPE_LABELS;
 
 type ErrorScope =
     | "statusLoad"
-    | "scheduleLoad"
     | "relay"
     | "code"
     | "copy"
@@ -125,8 +117,6 @@ type ErrorScope =
     | "revoke"
     | "remoteReset"
     | "remoteSwitch"
-    | "schedule"
-    | "brief"
     | "keepAwake";
 
 type StatusAction =
@@ -140,13 +130,13 @@ type StatusAction =
     | "revoke"
     | "remote-reset";
 
-type ScheduleDraft = Pick<MobileBriefSchedule, "enabled" | "morning" | "evening" | "feedEnabled" | "adaptiveTiming">;
+export type ScheduleDraft = Pick<MobileBriefSchedule, "enabled" | "morning" | "evening" | "feedEnabled" | "adaptiveTiming">;
 
 function isKnownScope(scope: string): scope is KnownScope {
     return Object.prototype.hasOwnProperty.call(SCOPE_LABELS, scope);
 }
 
-function scheduleDraftOf(schedule: MobileBriefSchedule): ScheduleDraft {
+export function scheduleDraftOf(schedule: MobileBriefSchedule): ScheduleDraft {
     return {
         enabled: schedule.enabled,
         morning: schedule.morning,
@@ -156,7 +146,7 @@ function scheduleDraftOf(schedule: MobileBriefSchedule): ScheduleDraft {
     };
 }
 
-function sameDraft(a: ScheduleDraft, b: ScheduleDraft): boolean {
+export function sameDraft(a: ScheduleDraft, b: ScheduleDraft): boolean {
     return a.enabled === b.enabled && a.morning === b.morning && a.evening === b.evening && a.feedEnabled === b.feedEnabled && a.adaptiveTiming === b.adaptiveTiming;
 }
 
@@ -187,7 +177,7 @@ function formatDate(value: string, locale: string): string | null {
     });
 }
 
-function formatDateTime(value: string, locale: string): string | null {
+export function formatDateTime(value: string, locale: string): string | null {
     const time = parseTimestamp(value);
     if (time === null) return null;
     return new Date(time).toLocaleString(locale, {
@@ -198,7 +188,7 @@ function formatDateTime(value: string, locale: string): string | null {
     });
 }
 
-function formatClock(value: string, locale: string): string | null {
+export function formatClock(value: string, locale: string): string | null {
     const time = parseTimestamp(value);
     if (time === null) return null;
     return new Date(time).toLocaleTimeString(locale, {
@@ -231,7 +221,7 @@ function relayOriginFrom(value: string): string | null {
     }
 }
 
-async function copyText(value: string): Promise<boolean> {
+export async function copyText(value: string): Promise<boolean> {
     try {
         const nativeRuntime = (window as unknown as {
             runtime?: { ClipboardSetText?: unknown };
@@ -247,7 +237,7 @@ async function copyText(value: string): Promise<boolean> {
     }
 }
 
-function SettingRow({
+export function SettingRow({
     title,
     description,
     control,
@@ -270,7 +260,7 @@ function SettingRow({
     );
 }
 
-function LoadState({
+export function LoadState({
     failed,
     loadingText,
     failedText,
@@ -302,39 +292,28 @@ function LoadState({
 }
 
 /**
- * The iPhone page: the connection status, pairing and paired iPhones, the
- * daily brief, then the text-message card, with the server address, what each
+ * The iPhone page: the connection status, pairing and paired iPhones, then
+ * the text-message card (the brief's schedule moved to Briefs and
+ * notifications, brief-schedule-card.tsx), with the server address, what each
  * iPhone may do and other details under one Advanced disclosure.
  */
 export function MobileConnectionSettings({
     textMessages,
     advancedExtra,
-    onOpenAssistant,
 }: {
-    /** Rendered after the Daily brief card: the text-message essentials. */
+    /** Rendered after the paired phones: the text-message essentials. */
     textMessages?: ReactNode;
     /** Rendered last inside Advanced: the text-message details. */
     advancedExtra?: ReactNode;
-    /** Opens Assistant with Advanced expanded, where the switch that brings
-     *  the written summary back lives. Without it the note only names it. */
-    onOpenAssistant?: () => void;
 } = {}) {
     const { t, i18n } = useTranslation("settings");
     const locale = i18n.resolvedLanguage ?? i18n.language;
 
     const [status, setStatus] = useState<MobileConnectionStatus | null>(null);
-    const [schedule, setSchedule] = useState<MobileBriefSchedule | null>(null);
-    // Last run, next run and missed runs; null until read, and left as it was
-    // when the read fails, because the schedule card is still useful without it.
-    const [health, setHealth] = useState<MobileBriefHealth | null>(null);
     const [errors, setErrors] = useState<Partial<Record<ErrorScope, string>>>({});
     const [action, setAction] = useState<StatusAction | null>(null);
-    const [briefBusy, setBriefBusy] = useState(false);
-    const [briefNotice, setBriefNotice] = useState<string | null>(null);
-    const [feedCopied, setFeedCopied] = useState(false);
-    // null means "show the saved value"; a string or draft is the user's edit.
+    // null means "show the saved value"; a string is the user's edit.
     const [relayDraft, setRelayDraft] = useState<string | null>(null);
-    const [scheduleDraft, setScheduleDraft] = useState<ScheduleDraft | null>(null);
     const [copied, setCopied] = useState(false);
     const [now, setNow] = useState(() => Date.now());
     const [dismissedPairingId, setDismissedPairingId] = useState<string | null>(null);
@@ -347,22 +326,11 @@ export function MobileConnectionSettings({
     const mounted = useRef(false);
     // Bumped by every read or write; a read whose version is stale when it resolves is dropped.
     const statusVersion = useRef(0);
-    const scheduleVersion = useRef(0);
     const keepAwakeVersion = useRef(0);
     const actionRef = useRef<StatusAction | null>(null);
-    const scheduleRef = useRef<MobileBriefSchedule | null>(null);
-    const scheduleSavingRef = useRef(false);
-    // The newest schedule waiting to be saved; a running save picks it up when it finishes.
-    const pendingScheduleRef = useRef<ScheduleDraft | null>(null);
-    const briefRef = useRef(false);
 
     const setError = useCallback((scope: ErrorScope, message?: string) => {
         setErrors((current) => ({ ...current, [scope]: message }));
-    }, []);
-
-    const applySchedule = useCallback((next: MobileBriefSchedule) => {
-        scheduleRef.current = next;
-        setSchedule(next);
     }, []);
 
     const refreshStatus = useCallback(async () => {
@@ -382,30 +350,6 @@ export function MobileConnectionSettings({
         }
     }, [setError, t]);
 
-    const refreshSchedule = useCallback(async () => {
-        if (scheduleSavingRef.current) return;
-        const version = ++scheduleVersion.current;
-        try {
-            const next = await GetMobileBriefSchedule();
-            if (mounted.current && version === scheduleVersion.current) {
-                applySchedule(next);
-                setError("scheduleLoad");
-            }
-        } catch {
-            if (mounted.current && version === scheduleVersion.current) {
-                setError("scheduleLoad", t("mobileConnection.scheduleLoadFailed"));
-            }
-        }
-    }, [applySchedule, setError, t]);
-
-    const refreshHealth = useCallback(async () => {
-        try {
-            const next = await GetMobileBriefHealth();
-            if (mounted.current) setHealth(next);
-        } catch {
-            // The schedule card reads without it.
-        }
-    }, []);
 
     const refreshKeepAwake = useCallback(async () => {
         const version = ++keepAwakeVersion.current;
@@ -442,10 +386,8 @@ export function MobileConnectionSettings({
 
     const refreshAll = useCallback(() => {
         void refreshStatus();
-        void refreshSchedule();
-        void refreshHealth();
         void refreshKeepAwake();
-    }, [refreshHealth, refreshKeepAwake, refreshSchedule, refreshStatus]);
+    }, [refreshKeepAwake, refreshStatus]);
 
     useEffect(() => {
         mounted.current = true;
@@ -453,21 +395,13 @@ export function MobileConnectionSettings({
         const unsubscribe = EventsOn("mobile:updated", () => refreshAll());
         const onFocus = () => refreshAll();
         window.addEventListener("focus", onFocus);
-        // Activity can defer a prediction without a mobile event. Keep the
-        // visible schedule current through the same versioned read as focus.
-        // The timer stops while the window is hidden or the Mac locked.
-        const stopSchedulePoll = activeInterval(() => {
-            if (document.visibilityState === "visible" && document.hasFocus()) void refreshSchedule();
-        }, SCHEDULE_POLL_MS);
         return () => {
             mounted.current = false;
             statusVersion.current += 1;
-            scheduleVersion.current += 1;
             window.removeEventListener("focus", onFocus);
-            stopSchedulePoll();
             unsubscribe();
         };
-    }, [refreshAll, refreshSchedule]);
+    }, [refreshAll]);
 
     const connectionCode = status?.connectionCode ?? "";
     const hasCode = connectionCode !== "";
@@ -666,212 +600,6 @@ export function MobileConnectionSettings({
         if (action === "enable") return;
         setRemoteSwitchOpen(false);
         setError("remoteSwitch");
-    };
-
-    const shownSchedule: ScheduleDraft | null =
-        scheduleDraft ?? (schedule ? scheduleDraftOf(schedule) : null);
-    const morningValid = shownSchedule !== null && CLOCK_PATTERN.test(shownSchedule.morning);
-    const eveningValid = shownSchedule !== null && CLOCK_PATTERN.test(shownSchedule.evening);
-
-    // Saves on change, one request at a time; the newest change wins. A failed
-    // save puts the controls back to the saved schedule and says so.
-    const persistSchedule = async (next: ScheduleDraft) => {
-        pendingScheduleRef.current = next;
-        if (scheduleSavingRef.current) return;
-        scheduleSavingRef.current = true;
-        scheduleVersion.current += 1;
-        setError("schedule");
-        try {
-            while (pendingScheduleRef.current !== null) {
-                const draft = pendingScheduleRef.current;
-                pendingScheduleRef.current = null;
-                const base = scheduleRef.current;
-                if (base === null) break;
-                const saved = await SetMobileBriefSchedule({ ...base, ...draft });
-                if (!mounted.current) return;
-                applySchedule(saved);
-                setError("scheduleLoad");
-                const savedDraft = scheduleDraftOf(saved);
-                setScheduleDraft((current) =>
-                    current !== null && sameDraft(current, savedDraft) ? null : current,
-                );
-            }
-        } catch {
-            pendingScheduleRef.current = null;
-            if (mounted.current) {
-                setScheduleDraft(null);
-                setError("schedule", t("mobileConnection.scheduleSaveFailed"));
-            }
-        } finally {
-            scheduleSavingRef.current = false;
-        }
-    };
-
-    const patchSchedule = (patch: Partial<ScheduleDraft>) => {
-        if (!schedule || !shownSchedule) return;
-        const next = { ...shownSchedule, ...patch };
-        setScheduleDraft(next);
-        setError("schedule");
-        // A half-typed time stays on screen with a hint; the rest still saves.
-        const savable: ScheduleDraft = {
-            enabled: next.enabled,
-            morning: CLOCK_PATTERN.test(next.morning) ? next.morning : schedule.morning,
-            evening: CLOCK_PATTERN.test(next.evening) ? next.evening : schedule.evening,
-            feedEnabled: next.feedEnabled,
-            adaptiveTiming: next.adaptiveTiming,
-        };
-        // While a save is running, queue even a change back to the saved
-        // value, so the newest choice is what ends up stored.
-        const saved = scheduleRef.current ?? schedule;
-        if (scheduleSavingRef.current || !sameDraft(savable, scheduleDraftOf(saved))) {
-            void persistSchedule(savable);
-        }
-    };
-
-    const announceBrief = (result: MobileBriefRequestResult) => {
-        switch (result.status) {
-            case "started":
-                setBriefNotice(t("mobileConnection.briefWriting"));
-                return;
-            case "running":
-                setBriefNotice(t("mobileConnection.briefRunningTitle"));
-                return;
-            case "cooldown":
-                setBriefNotice(
-                    t("mobileConnection.briefCooldownBody", {
-                        time: formatClock(result.nextAllowedAt, locale) ?? t("mobileConnection.unknownTime"),
-                    }),
-                );
-                return;
-        }
-    };
-
-    const generateBrief = async () => {
-        if (briefRef.current) return;
-        briefRef.current = true;
-        setBriefBusy(true);
-        setBriefNotice(null);
-        setError("brief");
-        try {
-            const result = await GenerateMobileBriefNow();
-            if (mounted.current) announceBrief(result);
-            void refreshSchedule();
-        } catch {
-            if (mounted.current) setError("brief", t("mobileConnection.briefFailed"));
-        } finally {
-            briefRef.current = false;
-            if (mounted.current) setBriefBusy(false);
-        }
-    };
-
-    const slotLabel = (slot: string): string | null => {
-        switch (slot) {
-            case "morning":
-                return t("mobileConnection.slotMorning");
-            case "evening":
-                return t("mobileConnection.slotEvening");
-            case "on_request":
-                return t("mobileConnection.slotOnRequest");
-            default:
-                return null;
-        }
-    };
-
-    const describeLastBrief = (current: MobileBriefSchedule): string => {
-        const generatedAt = formatDateTime(current.lastGeneratedAt, locale);
-        if (generatedAt === null) return t("mobileConnection.briefNever");
-        const slot = slotLabel(current.lastSlot);
-        return slot === null
-            ? t("mobileConnection.briefLastNoSlot", { time: generatedAt })
-            : t("mobileConnection.briefLast", { slot, time: generatedAt });
-    };
-
-    const describeTimingReason = (reason: string | undefined): string => {
-        switch (reason) {
-            case "fixed_slot":
-                return t("mobileConnection.briefTimingFixed");
-            case "learned_opens":
-                return t("mobileConnection.briefTimingOpens");
-            case "learned_presence":
-                return t("mobileConnection.briefTimingPresence");
-            case "learned_activity":
-                return t("mobileConnection.briefTimingActivity");
-            case "before_meeting":
-                return t("mobileConnection.briefTimingMeeting");
-            case "work_settled":
-                return t("mobileConnection.briefTimingSettled");
-            case "quiet_hours":
-                return t("mobileConnection.briefTimingQuiet");
-            case "waiting_for_activity":
-                return t("mobileConnection.briefTimingWaiting");
-            case "no_window":
-                return t("mobileConnection.briefTimingNoWindow");
-            default:
-                return t("mobileConnection.briefTimingEstimate");
-        }
-    };
-
-    const describePrediction = (current: MobileBriefSchedule | null): string | null => {
-        if (!current?.enabled) return null;
-        const reason = describeTimingReason(current.timingReason);
-        const at = current.nextPredictedAt ? new Date(current.nextPredictedAt) : null;
-        if (at && !Number.isNaN(at.getTime())) {
-            // settings-review ST67: the slot follows the time, and "your
-            // chosen time" only when it is that time.
-            const evening = at.getHours() >= 12;
-            const now = new Date();
-            const day = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-            const days = Math.round((day(at) - day(now)) / 86_400_000);
-            const weekday = at.toLocaleDateString(locale, { weekday: "long" });
-            const when = days <= 0
-                ? (evening ? t("mobileConnection.briefWhenThisEvening") : t("mobileConnection.briefWhenThisMorning"))
-                : days === 1
-                    ? (evening ? t("mobileConnection.briefWhenTomorrowEvening") : t("mobileConnection.briefWhenTomorrowMorning"))
-                    : evening
-                        ? t("mobileConnection.briefWhenLaterEvening", { day: weekday })
-                        : t("mobileConnection.briefWhenLaterMorning", { day: weekday });
-            const hhmm = `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`;
-            const chosen = evening ? current.evening : current.morning;
-            const timing = current.timingReason === "fixed_slot"
-                ? (chosen === hhmm ? reason : t("mobileConnection.briefTimingFinish"))
-                : current.timingReason === "work_settled"
-                    ? t("mobileConnection.briefTimingFinish")
-                    : reason;
-            const time = at.toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" });
-            return t("mobileConnection.briefPredictedWhen", { when, time, reason: timing });
-        }
-        const time = formatDateTime(current.nextPredictedAt ?? "", locale);
-        const slot = slotLabel(current.nextPredictedSlot ?? "");
-        if (time !== null && slot !== null) {
-            return t("mobileConnection.briefPredicted", { slot, time, reason });
-        }
-        return current.timingReason === "no_window"
-            ? t("mobileConnection.briefPredictionUnavailable", { reason })
-            : null;
-    };
-
-    const prediction = describePrediction(schedule);
-
-    // The health lines under the last brief: the next run, then the missed and
-    // failing runs of the last week when there are any.
-    const describeHealth = (current: MobileBriefHealth | null): string[] => {
-        if (!current) return [];
-        const lines: string[] = [];
-        const nextAt = formatDateTime(current.nextRunAt, locale);
-        const nextSlot = slotLabel(current.nextSlot);
-        if (prediction === null && current.enabled && nextAt !== null && nextSlot !== null) {
-            lines.push(t("mobileConnection.briefNext", { slot: nextSlot, time: nextAt }));
-        }
-        if (current.missedRuns > 0) {
-            lines.push(t("mobileConnection.briefMissedWeek", { count: current.missedRuns }));
-        }
-        const failingSlot = slotLabel(current.failingSlot);
-        if (failingSlot !== null && current.failedAttempts > 0) {
-            lines.push(
-                t("mobileConnection.briefFailing", { slot: failingSlot, count: current.failedAttempts }),
-            );
-        }
-        return lines;
     };
 
     const deviceName = (device: { deviceName: string }) =>
@@ -1258,180 +986,6 @@ export function MobileConnectionSettings({
                 )}
             </SettingsCard>
 
-            <SettingsCard
-                title={t("mobileConnection.briefTitle")}
-                description={t("mobileConnection.briefDescription")}
-            >
-                {schedule === null || shownSchedule === null ? (
-                    <LoadState
-                        failed={Boolean(errors.scheduleLoad)}
-                        loadingText={t("mobileConnection.briefLoading")}
-                        failedText={t("mobileConnection.scheduleLoadFailed")}
-                        onRetry={() => void refreshSchedule()}
-                    />
-                ) : (
-                    <div className="flex flex-col">
-                        <SettingRow
-                            title={t("mobileConnection.briefAutomatic")}
-                            description={t("mobileConnection.briefAutomaticDescription")}
-                            control={
-                                <Switch
-                                    aria-label={t("mobileConnection.briefAutomatic")}
-                                    checked={shownSchedule.enabled}
-                                    onCheckedChange={(checked) => patchSchedule({ enabled: checked })}
-                                />
-                            }
-                        />
-                        <SettingRow
-                            title={t("mobileConnection.briefAdaptive")}
-                            description={t("mobileConnection.briefAdaptiveDescription")}
-                            control={
-                                <Switch
-                                    aria-label={t("mobileConnection.briefAdaptive")}
-                                    checked={shownSchedule.adaptiveTiming ?? false}
-                                    disabled={!shownSchedule.enabled}
-                                    onCheckedChange={(checked) => patchSchedule({ adaptiveTiming: checked })}
-                                />
-                            }
-                        >
-                            <p className="text-xs text-muted">{t("mobileConnection.briefAdaptivePrivacy")}</p>
-                        </SettingRow>
-                        <SettingRow
-                            title={t("mobileConnection.briefMorning")}
-                            control={
-                                <select
-                                    aria-label={t("mobileConnection.briefMorning")}
-                                    value={shownSchedule.morning}
-                                    disabled={!shownSchedule.enabled}
-                                    aria-invalid={!morningValid}
-                                    onChange={(event) => patchSchedule({ morning: event.target.value })}
-                                    className={TIME_INPUT_CLASS}
-                                >
-                                    {clockOptions(shownSchedule.morning).map((clock) => (
-                                        <option key={clock} value={clock}>
-                                            {clockLabel(clock, locale)}
-                                        </option>
-                                    ))}
-                                </select>
-                            }
-                        />
-                        <SettingRow
-                            title={t("mobileConnection.briefEvening")}
-                            control={
-                                <select
-                                    aria-label={t("mobileConnection.briefEvening")}
-                                    value={shownSchedule.evening}
-                                    disabled={!shownSchedule.enabled}
-                                    aria-invalid={!eveningValid}
-                                    onChange={(event) => patchSchedule({ evening: event.target.value })}
-                                    className={TIME_INPUT_CLASS}
-                                >
-                                    {clockOptions(shownSchedule.evening).map((clock) => (
-                                        <option key={clock} value={clock}>
-                                            {clockLabel(clock, locale)}
-                                        </option>
-                                    ))}
-                                </select>
-                            }
-                        />
-                        <p className="settings-row-desc pt-3">
-                            {shownSchedule.enabled
-                                ? t("mobileConnection.briefTimesHint")
-                                : t("mobileConnection.briefTimesOffHint")}
-                        </p>
-                        {prediction !== null && (
-                            <p className="pt-2 text-xs text-muted">{prediction}</p>
-                        )}
-                        {shownSchedule.enabled && (!morningValid || !eveningValid) && (
-                            <p role="alert" className="pt-2 text-xs text-copper">
-                                {t("mobileConnection.briefTimeInvalid")}
-                            </p>
-                        )}
-                        {errors.schedule && (
-                            <p role="alert" className="pt-2 text-xs text-copper">
-                                {errors.schedule}
-                            </p>
-                        )}
-                        <SettingRow
-                            title={t("mobileConnection.briefNowTitle")}
-                            description={t("mobileConnection.briefNowDescription")}
-                            control={
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    disabled={briefBusy}
-                                    onClick={() => void generateBrief()}
-                                >
-                                    {briefBusy && <Loader2 className="size-3.5 animate-spin" />}
-                                    {t("mobileConnection.generateBrief")}
-                                </Button>
-                            }
-                        >
-                            <p className="text-xs text-muted">{describeLastBrief(schedule)}</p>
-                            {describeHealth(health).map((line) => (
-                                <p key={line} className="text-xs text-muted">
-                                    {line}
-                                </p>
-                            ))}
-                        <SettingRow
-                            title={t("mobileConnection.briefFeedTitle")}
-                            description={t("mobileConnection.briefFeedDescription")}
-                            control={
-                                <Switch
-                                    aria-label={t("mobileConnection.briefFeedTitle")}
-                                    checked={shownSchedule.feedEnabled}
-                                    onCheckedChange={(checked) => patchSchedule({ feedEnabled: checked })}
-                                />
-                            }
-                        />
-                        {shownSchedule.feedEnabled && (
-                            <div className="flex flex-col gap-2 pt-1 pb-1">
-                                {schedule.feedUrl ? (
-                                    <>
-                                        <p className="break-all font-mono text-xs text-ink" data-testid="brief-feed-url">
-                                            {schedule.feedUrl}
-                                        </p>
-                                        <div>
-                                            <Button
-                                                type="button"
-                                                variant="outline"
-                                                size="sm"
-                                                onClick={() =>
-                                                    void copyText(schedule.feedUrl).then((ok) => {
-                                                        if (mounted.current && ok) setFeedCopied(true);
-                                                    })
-                                                }
-                                            >
-                                                {feedCopied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-                                                {feedCopied
-                                                    ? t("mobileConnection.briefFeedCopied")
-                                                    : t("mobileConnection.briefFeedCopy")}
-                                            </Button>
-                                        </div>
-                                    </>
-                                ) : (
-                                    <p className="text-xs text-muted">{t("mobileConnection.briefFeedStarting")}</p>
-                                )}
-                                <p className="settings-row-desc">{t("mobileConnection.briefFeedHint")}</p>
-                            </div>
-                        )}
-                        </SettingRow>
-                        {briefNotice && (
-                            <p role="status" className="pt-2 text-xs text-ink">
-                                {briefNotice}
-                            </p>
-                        )}
-                        {errors.brief && (
-                            <SettingsFailureLine
-                                className="pt-2"
-                                failure={{ text: errors.brief, retry: () => void generateBrief() }}
-                            />
-                        )}
-                    </div>
-                )}
-            </SettingsCard>
-
             {textMessages}
 
             <SettingsAdvanced pageId="iphone" hint={t("mobileConnection.advancedHint")}>
@@ -1486,23 +1040,6 @@ export function MobileConnectionSettings({
                                 );
                             })}
                         </div>
-                    </SettingsCard>
-                )}
-
-                {schedule !== null && !schedule.narrativeAvailable && (
-                    <SettingsCard
-                        title={t("mobileConnection.narrativeTitle")}
-                        headerRight={
-                            onOpenAssistant ? (
-                                <Button size="sm" variant="outline" onClick={onOpenAssistant}>
-                                    {t("mobileConnection.openAssistant")}
-                                </Button>
-                            ) : undefined
-                        }
-                    >
-                        <p role="note" className="settings-card-desc">
-                            {t("mobileConnection.narrativeUnavailable")}
-                        </p>
                     </SettingsCard>
                 )}
 

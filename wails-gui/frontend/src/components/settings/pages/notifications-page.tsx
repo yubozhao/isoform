@@ -24,8 +24,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { isMac } from "@/lib/platform";
 import { SettingsAdvanced } from "@/components/settings/settings-advanced";
+import { AutoSpeakSettings } from "./read-aloud-settings";
 import { SettingsCard } from "@/components/settings/settings-primitives";
 import { openSettingsPage, type OpenSettingsPage } from "./capture-shared";
+import { TopicProposalsCard } from "./topic-proposals-card";
+import { BriefScheduleCard } from "@/components/brief-schedule-card";
 
 // The Notifications item in GetPlatformPermissions (permissions_darwin.go).
 const NOTIFICATIONS_PERMISSION_KEY = "notifications";
@@ -283,14 +286,21 @@ export function NotificationsPage({ onOpenPage }: { onOpenPage?: OpenSettingsPag
 
     return (
         <>
+            {/* computer-settings v1.3.0 rule 1: proposals first, then the
+                brief (v1.0.0 rule 6: the brief times), then notifications. */}
+            <TopicProposalsCard />
+            <BriefScheduleCard onOpenAssistant={() => openSettingsPage("ai-provider", onOpenPage, { advanced: true })} />
             {permission.granted === false && <MacPermissionCard recheck={permission.refresh} />}
             <NotificationsSettings state={engagement} onOpenPage={onOpenPage} />
             <EmailSettings />
+            {/* Quiet hours and the voice for Hear it sit with the rest
+                (computer-conformance-answers v1.0.0 T2), out of Advanced. */}
+            <QuietHoursCard state={engagement} />
+            <AutoSpeakSettings />
             <SettingsAdvanced
                 pageId="notifications"
                 hint={t("proactiveNotifications.advancedHint")}
             >
-                <QuietHoursCard state={engagement} />
                 <NotificationChannels macGranted={permission.granted} onOpenPage={onOpenPage} />
             </SettingsAdvanced>
         </>

@@ -139,6 +139,7 @@ type ActivityTimelineGroup struct {
 
 // snapshotEntry holds an in-flight JPEG snapshot captured during an activity burst.
 type snapshotEntry struct {
+	privacyHeld bool
 	relPath     string
 	timestamp   int64
 	width       int
@@ -178,21 +179,25 @@ type pendingPIISnapshot struct {
 // activityMonitorState holds the runtime state for the activity monitor.
 // It is managed by App-level methods; not a standalone struct with its own goroutines.
 type activityMonitorState struct {
-	mu                sync.Mutex
-	monitor           activitymon.Monitor
-	capture           activitymon.ScreenCapture
-	buf               *activitybuf.RingBuffer
-	store             *ActivityStore
-	rotator           *StorageRotator
-	triager           *ActivityTriager
-	ocrWorker         *ActivityOCRWorker
-	ocrEngine         ocr.Engine   // dedicated OCR engine for PII masking
-	piiDetector       pii.Detector // ONNX-based PII detector
-	piiDetectorMu     sync.RWMutex // guards piiDetector while async init / Detect / Destroy overlap
-	piiInitInFlight   bool
-	piiInitRetryAfter time.Time
-	piiSem            chan struct{} // semaphore to limit concurrent PII goroutines
-	captureSem        chan struct{} // semaphore to prevent overlapping full-screen captures
+	mu                 sync.Mutex
+	monitor            activitymon.Monitor
+	capture            activitymon.ScreenCapture
+	buf                *activitybuf.RingBuffer
+	store              *ActivityStore
+	rotator            *StorageRotator
+	triager            *ActivityTriager
+	ocrWorker          *ActivityOCRWorker
+	ocrEngine          ocr.Engine   // dedicated OCR engine for PII masking
+	piiDetector        pii.Detector // ONNX-based PII detector
+	piiDetectorMu      sync.RWMutex // guards piiDetector while async init / Detect / Destroy overlap
+	newPrivacyDetector func(string, pii.ProgressFn) (pii.Detector, error)
+	privacyReleaseMu   sync.Mutex
+	privacyImageMu     sync.RWMutex
+	piiArrivalPending  bool
+	piiInitInFlight    bool
+	piiInitRetryAfter  time.Time
+	piiSem             chan struct{} // semaphore to limit concurrent PII goroutines
+	captureSem         chan struct{} // semaphore to prevent overlapping full-screen captures
 	// lastPIIResult caches the merged detection slice from the previous PII
 	// run so back-to-back frames with byte-identical OCR output skip a full
 	// ONNX inference. See runAsyncPIIMasking for correctness rationale.
@@ -467,9 +472,8 @@ const (
 	// a still-running PII pass are worth waiting out at a session boundary.
 	sessionEndCaptureWait = 5 * time.Second
 
-	// First-run / upgrade PII guard: while GLiNER is downloading/loading, keep
-	// screenshots in RAM only. The cap is deliberately small so a slow network
-	// cannot turn raw screenshot retention into an unbounded memory problem.
+	// Bound the startup queue while the detector opens. A missing model or a
+	// full queue sends captures through the local regex writer and durable hold.
 	pendingPIIQueueMaxFrames = 24
 	pendingPIIQueueMaxBytes  = 64 * 1024 * 1024
 	piiInitRetryDelay        = 5 * time.Minute
@@ -589,6 +593,7 @@ func (a *App) prepareActivityReads() {
 	mon := activitymon.New()
 	cap := activitymon.NewScreenCapture()
 	rotator := NewStorageRotator(store, activityRotatorConfigFor(readActivityRetentionConfig()))
+	rotator.onExpire = a.forgetAssistantCallsBefore
 
 	ocrEng := ocr.New()
 
@@ -621,7 +626,15 @@ func (a *App) startActivityMaintenance() <-chan struct{} {
 	store := a.activity.store
 	// Queue delays must not make this run's in-flight writes look abandoned.
 	beforeMs := launchStartedAt.UnixMilli()
-	a.deferLaunchTask("snapshot_reconcile", func() { reconcileSnapshotFiles(store, beforeMs) })
+	a.deferLaunchTask("snapshot_reconcile", func() {
+		if err := store.recoverPrivacyHolds(beforeMs); err != nil {
+			log.Printf("[privacy-hold] recover interrupted captures: %v", err)
+		}
+		reconcileSnapshotFiles(store, beforeMs)
+		if ready, _ := a.activity.piiDetectorState(); ready {
+			a.releasePrivacyHolds(a.activity)
+		}
+	})
 	recovered := a.deferLaunchTask("meeting_audio_recovery", func() { a.recoverMeetingAudio(store, meetingTranscriptRecoveryCutoff) })
 	a.ensureActivityTriagerStarted()
 	return recovered
@@ -633,7 +646,7 @@ func (a *App) startPIIDetectorAsync(am *activityMonitorState) {
 	}
 
 	am.piiDetectorMu.Lock()
-	if am.piiDetector != nil || am.piiInitInFlight {
+	if (am.piiDetector != nil && am.piiDetector.IsReady()) || am.piiInitInFlight {
 		am.piiDetectorMu.Unlock()
 		return
 	}
@@ -647,17 +660,29 @@ func (a *App) startPIIDetectorAsync(am *activityMonitorState) {
 
 	log.Printf("[activity] PII detector init started in background")
 	go func() {
-		det, err := pii.NewDetector(am.configDir, nil)
+		open := am.newPrivacyDetector
+		if open == nil {
+			open = pii.NewDetector
+		}
+		det, err := open(am.configDir, nil)
 
 		am.piiDetectorMu.Lock()
 		am.piiInitInFlight = false
+		arrived := am.piiArrivalPending
+		am.piiArrivalPending = false
 
 		if err != nil {
-			am.piiInitRetryAfter = time.Now().Add(piiInitRetryDelay)
+			if !arrived {
+				am.piiInitRetryAfter = time.Now().Add(piiInitRetryDelay)
+			}
 			am.piiDetectorMu.Unlock()
 			log.Printf("[activity] PII detector init failed (GLiNER disabled, regex masking still active): %v", err)
-			a.dropPendingPIISnapshots(am, "PII detector init failed")
-			a.resumeDeferredPIIExtract(am)
+			if !a.startPendingPIIDrain(am) {
+				a.resumeDeferredPIIExtract(am)
+			}
+			if arrived {
+				a.startPIIDetectorAsync(am)
+			}
 			return
 		}
 
@@ -684,6 +709,7 @@ func (a *App) startPIIDetectorAsync(am *activityMonitorState) {
 		if !a.startPendingPIIDrain(am) {
 			a.resumeDeferredPIIExtract(am)
 		}
+		a.releasePrivacyHolds(am)
 	}()
 }
 
@@ -739,7 +765,7 @@ func (am *activityMonitorState) queuePendingPIISnapshot(frame pendingPIISnapshot
 	}
 	size := int64(len(frame.jpegData))
 	if size > pendingPIIQueueMaxBytes {
-		log.Printf("[pii-mask] dropping pending screenshot larger than queue cap (%d > %d bytes)",
+		log.Printf("[pii-mask] processing screenshot outside startup queue; larger than queue cap (%d > %d bytes)",
 			size, int64(pendingPIIQueueMaxBytes))
 		return false
 	}
@@ -750,16 +776,9 @@ func (am *activityMonitorState) queuePendingPIISnapshot(frame pendingPIISnapshot
 		return false
 	}
 
-	dropped := 0
-	for len(am.pendingPIISnapshots) > 0 &&
-		(len(am.pendingPIISnapshots) >= pendingPIIQueueMaxFrames ||
-			am.pendingPIIBytes+size > int64(pendingPIIQueueMaxBytes)) {
-		old := am.pendingPIISnapshots[0]
-		am.pendingPIIBytes -= int64(len(old.jpegData))
-		old.jpegData = nil
-		am.pendingPIISnapshots[0] = pendingPIISnapshot{}
-		am.pendingPIISnapshots = am.pendingPIISnapshots[1:]
-		dropped++
+	if len(am.pendingPIISnapshots) >= pendingPIIQueueMaxFrames || am.pendingPIIBytes+size > pendingPIIQueueMaxBytes {
+		am.mu.Unlock()
+		return false
 	}
 
 	am.pendingPIISnapshots = append(am.pendingPIISnapshots, frame)
@@ -771,10 +790,7 @@ func (am *activityMonitorState) queuePendingPIISnapshot(frame pendingPIISnapshot
 	queueBytes := am.pendingPIIBytes
 	am.mu.Unlock()
 
-	if dropped > 0 {
-		log.Printf("[pii-mask] pending PII queue dropped %d oldest frame(s) to stay within cap", dropped)
-	}
-	if queueLen == 1 || dropped > 0 || queueLen == pendingPIIQueueMaxFrames {
+	if queueLen == 1 || queueLen == pendingPIIQueueMaxFrames {
 		log.Printf("[pii-mask] queued screenshot until GLiNER is ready (queued=%d, bytes=%d)",
 			queueLen, queueBytes)
 	}
@@ -802,10 +818,6 @@ func (a *App) dropPendingPIISnapshots(am *activityMonitorState, reason string) {
 
 func (a *App) startPendingPIIDrain(am *activityMonitorState) bool {
 	if a == nil || am == nil {
-		return false
-	}
-	ready, _ := am.piiDetectorState()
-	if !ready {
 		return false
 	}
 
@@ -836,7 +848,7 @@ func (a *App) drainPendingPIISnapshots(am *activityMonitorState) {
 		am.pendingPIIBytes = 0
 		am.mu.Unlock()
 
-		log.Printf("[pii-mask] draining %d queued screenshot(s) through GLiNER (bytes=%d)",
+		log.Printf("[pii-mask] masking %d queued screenshot(s) (bytes=%d)",
 			len(frames), queueBytes)
 		for i := range frames {
 			frame := frames[i]
@@ -850,17 +862,23 @@ func (a *App) drainPendingPIISnapshots(am *activityMonitorState) {
 			activityPipelineMetrics.piiLaunched.Add(1)
 			activityPipelineMetrics.piiInFlight.Add(1)
 			piiStart := time.Now()
-			writtenBytes, ok, ocrErr := am.maskAndWritePIISnapshot(frame.path, frame.jpegData, frame.quality, func() bool {
-				return a.shouldDiscardPIIOutput(am)
-			})
+			ready, _ := am.piiDetectorState()
+			var ocrErr error
+			if !ready {
+				ocrErr = a.maskAndKeepPrivacyHold(am, frame)
+			} else {
+				var written int64
+				var ok bool
+				written, ok, ocrErr = am.maskAndWritePIISnapshot(frame.path, frame.jpegData, frame.quality, func() bool { return a.shouldDiscardPIIOutput(am) }, true)
+				if ok {
+					frame.snapshot.sizeBytes = written
+					am.appendCapturedSnapshot(frame.snapshot, frame.bundleID, frame.parseHash)
+				}
+			}
 			activityPipelineMetrics.piiDurations.add(time.Since(piiStart))
 			activityPipelineMetrics.piiInFlight.Add(-1)
 			<-am.piiSem
 
-			if ok {
-				frame.snapshot.sizeBytes = writtenBytes
-				am.appendCapturedSnapshot(frame.snapshot, frame.bundleID, frame.parseHash)
-			}
 			frame.jpegData = nil
 			frames[i] = pendingPIISnapshot{}
 
@@ -869,6 +887,12 @@ func (a *App) drainPendingPIISnapshots(am *activityMonitorState) {
 			// another full budget. Drop the rest of this batch.
 			var timeoutErr *ocr.HelperTimeoutError
 			if errors.As(ocrErr, &timeoutErr) && timeoutErr.Cold {
+				if !ready {
+					for _, waiting := range frames[i+1:] {
+						a.keepFullyBlurredHold(am, waiting)
+					}
+					break
+				}
 				dropped := dropPendingPIIFrames(frames[i+1:])
 				if dropped > 0 {
 					log.Printf("[pii-mask] OCR helper overran its cold-start budget; dropped %d queued screenshot(s)", dropped)
@@ -902,11 +926,11 @@ func (a *App) shouldDiscardPIIOutput(am *activityMonitorState) bool {
 	return !enabled || a.activity != am
 }
 
-func (a *App) deferExtractSessionUntilPIIReady(am *activityMonitorState, triggerKind string) bool {
+func (a *App) deferLocalFlushWhilePIIStarting(am *activityMonitorState, triggerKind string) bool {
 	if a == nil || am == nil || am.ocrEngine == nil || !am.ocrEngine.IsSupported() {
 		return false
 	}
-	if triggerKind == "shutdown_in_meeting" {
+	if flushMustNotWait(triggerKind) {
 		return false
 	}
 	ready, initInFlight := am.piiDetectorState()
@@ -1184,11 +1208,14 @@ func (a *App) discardPendingActivityRecording(am *activityMonitorState) {
 		am.buf.Clear()
 	}
 
-	var snapshotPaths []string
+	var snapshotPaths, stagedPaths []string
 	am.mu.Lock()
 	if len(am.allSnapshots) > 0 && am.store != nil {
 		snapshotPaths = make([]string, 0, len(am.allSnapshots))
 		for _, snap := range am.allSnapshots {
+			if snap.privacyHeld {
+				stagedPaths = append(stagedPaths, snap.relPath)
+			}
 			if snap.relPath != "" {
 				snapshotPaths = append(snapshotPaths, filepath.Join(am.store.SnapshotsDir(), snap.relPath))
 			}
@@ -1226,6 +1253,9 @@ func (a *App) discardPendingActivityRecording(am *activityMonitorState) {
 	am.mu.Unlock()
 
 	am.comparer.reset()
+	for _, path := range stagedPaths {
+		am.store.discardStagedPrivacyHold(path)
+	}
 	for _, path := range snapshotPaths {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			log.Printf("[activity] failed to discard pending closed-eyes snapshot %s: %v", path, err)
@@ -2473,23 +2503,14 @@ func (a *App) captureSnapshotForEventWithWait(trigger string, sessionEndWait tim
 	// frame has nothing legible left to mask, so it is written as is.
 	ocrAvailable := am.ocrEngine != nil && am.ocrEngine.IsSupported()
 	if !unmaskedWriteAllowed(blur, ocrAvailable) {
-		ready, initInFlight := am.piiDetectorState()
-		if !ready && !initInFlight {
-			a.startPIIDetectorAsync(am)
-			ready, initInFlight = am.piiDetectorState()
-		}
-		if !ready && initInFlight {
-			queued := am.queuePendingPIISnapshot(pendingPIISnapshot{
-				path:      fullPath,
-				jpegData:  jpegData,
-				quality:   snapshotQuality,
-				snapshot:  snapshot,
-				bundleID:  captureBundleID,
-				parseHash: parsedHash,
-			})
-			if !queued {
-				log.Printf("[pii-mask] pending screenshot not queued; frame dropped until GLiNER is ready")
+		frame := pendingPIISnapshot{path: fullPath, jpegData: jpegData, quality: snapshotQuality, snapshot: snapshot, bundleID: captureBundleID, parseHash: parsedHash}
+		if trigger == "session_end" && sessionEndWait == 0 {
+			if ready, _ := am.piiDetectorState(); !ready {
+				a.keepFullyBlurredHold(am, frame)
+				return
 			}
+		}
+		if a.captureWhilePrivacyUnavailable(am, frame) {
 			return
 		}
 
@@ -2515,6 +2536,11 @@ func (a *App) captureSnapshotForEventWithWait(trigger string, sessionEndWait tim
 	} else {
 		// PII masking not available (or the whole frame is blurred), write
 		// the image with any sensitive blurs already applied.
+		ready, _ := am.piiDetectorState()
+		if !ready {
+			a.keepHeldPixels(am, pendingPIISnapshot{path: fullPath, snapshot: snapshot, bundleID: captureBundleID, parseHash: parsedHash}, jpegData)
+			return
+		}
 		if err := writeSnapshotFile(fullPath, jpegData); err != nil {
 			log.Printf("[activity] failed to write snapshot: %v", err)
 			return
@@ -2626,6 +2652,29 @@ func (am *activityMonitorState) reservePIIOCR(now time.Time, minInterval time.Du
 	}
 }
 
+func (snap snapshotEntry) activityRow(sessionID string) ActivitySnapshotRow {
+	return ActivitySnapshotRow{
+		PrivacyHeld: snap.privacyHeld,
+		SessionID:   sessionID,
+		Timestamp:   snap.timestamp,
+		FilePath:    snap.relPath,
+		Width:       snap.width,
+		Height:      snap.height,
+		SizeBytes:   snap.sizeBytes,
+		Trigger:     snap.trigger,
+		StorageTier: "hot",
+		AXText:      snap.axText,
+		BrowserURL:  snap.browserURL,
+		ContentType: snap.contentType,
+		App:         snap.app,
+		ParsedJSON:  snap.parsedJSON,
+		FocusRectX:  snap.focusRectX,
+		FocusRectY:  snap.focusRectY,
+		FocusRectW:  snap.focusRectW,
+		FocusRectH:  snap.focusRectH,
+	}
+}
+
 func (am *activityMonitorState) appendCapturedSnapshot(entry snapshotEntry, bundleID, parsedHash string) bool {
 	if am == nil {
 		return false
@@ -2733,7 +2782,11 @@ func writePIIProcessedSnapshot(path string, data []byte, shouldDiscard func() bo
 // maskAndWritePIISnapshot OCRs the frame, masks any PII it finds and writes
 // the result to path. ok reports that the file was written; ocrErr is the OCR
 // failure that dropped the frame, if that was the cause.
-func (am *activityMonitorState) maskAndWritePIISnapshot(path string, jpegData []byte, quality int, shouldDiscard func() bool) (writtenBytes int64, ok bool, ocrErr error) {
+func (am *activityMonitorState) maskAndWritePIISnapshot(path string, jpegData []byte, quality int, shouldDiscard func() bool, requireDetector bool) (writtenBytes int64, ok bool, ocrErr error) {
+	return am.processPIISnapshot(path, jpegData, quality, requireDetector, true, func(data []byte) (int64, bool) { return writePIIProcessedSnapshot(path, data, shouldDiscard) })
+}
+
+func (am *activityMonitorState) processPIISnapshot(path string, jpegData []byte, quality int, requireDetector, reuseCache bool, save func([]byte) (int64, bool)) (writtenBytes int64, ok bool, ocrErr error) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("[pii-mask] panic (frame dropped): %v", r)
@@ -2757,9 +2810,15 @@ func (am *activityMonitorState) maskAndWritePIISnapshot(path string, jpegData []
 	}
 	log.Printf("[ocr] breadcrumb done call_id=%d source=pii-mask duration_ms=%d observations=%d",
 		callID, time.Since(ocrStart).Milliseconds(), len(observations))
+	am.piiDetectorMu.RLock()
+	defer am.piiDetectorMu.RUnlock()
+	ready := am.piiDetector != nil && am.piiDetector.IsReady()
+	if requireDetector && !ready {
+		return 0, false, errors.New("privacy detector unavailable")
+	}
 	if len(observations) == 0 {
 		// No text found — image is clean, safe to write original.
-		written, ok := writePIIProcessedSnapshot(path, jpegData, shouldDiscard)
+		written, ok := save(jpegData)
 		return written, ok, nil
 	}
 
@@ -2772,27 +2831,33 @@ func (am *activityMonitorState) maskAndWritePIISnapshot(path string, jpegData []
 	var detections []pii.DetectionResult
 	var glinerCount, regexCount int
 	cached := am.lastPIIResult.Load()
+	if !ready || !reuseCache {
+		cached = nil
+	}
 	if cached != nil && cached.fingerprint == fingerprint {
 		detections = cached.detections
 	} else {
 		var glinerDetections []pii.DetectionResult
-		am.piiDetectorMu.RLock()
-		if am.piiDetector != nil && am.piiDetector.IsReady() {
+		if ready {
 			glinerDetections = am.piiDetector.Detect(observations)
 		}
-		am.piiDetectorMu.RUnlock()
+		if ready && !am.piiDetector.IsReady() {
+			return 0, false, errors.New("privacy inference failed")
+		}
 		regexDetections := pii.DetectWithRegex(observations)
 		detections = pii.MergeDetections(glinerDetections, regexDetections)
 		glinerCount = len(glinerDetections)
 		regexCount = len(regexDetections)
-		am.lastPIIResult.Store(&piiCacheEntry{
-			fingerprint: fingerprint,
-			detections:  detections,
-		})
+		if ready {
+			am.lastPIIResult.Store(&piiCacheEntry{
+				fingerprint: fingerprint,
+				detections:  detections,
+			})
+		}
 	}
 	if len(detections) == 0 {
 		// No PII detected — image is clean, safe to write original.
-		written, ok := writePIIProcessedSnapshot(path, jpegData, shouldDiscard)
+		written, ok := save(jpegData)
 		return written, ok, nil
 	}
 
@@ -2806,7 +2871,7 @@ func (am *activityMonitorState) maskAndWritePIISnapshot(path string, jpegData []
 		log.Printf("[pii-mask] mask failed (frame dropped): %v", maskErr)
 		return 0, false, nil
 	}
-	written, ok := writePIIProcessedSnapshot(path, masked, shouldDiscard)
+	written, ok := save(masked)
 	return written, ok, nil
 }
 
@@ -2858,7 +2923,7 @@ func (am *activityMonitorState) runAsyncPIIMasking(path string, jpegData []byte,
 			<-am.piiSem
 		}()
 
-		written, ok, _ := am.maskAndWritePIISnapshot(path, jpegData, quality, shouldDiscard)
+		written, ok, _ := am.maskAndWritePIISnapshot(path, jpegData, quality, shouldDiscard, true)
 		am.finishSnapshotWrite(write, written, ok)
 	}()
 	return piiMaskLaunched
@@ -3040,7 +3105,7 @@ func (a *App) extractSession(triggerKind string) {
 		return
 	}
 
-	if a.deferExtractSessionUntilPIIReady(am, triggerKind) {
+	if a.deferLocalFlushWhilePIIStarting(am, triggerKind) {
 		return
 	}
 
@@ -3316,25 +3381,7 @@ func (a *App) extractSession(triggerKind string) {
 	snapshotRows := make([]ActivitySnapshotRow, 0, len(snapshots))
 	var totalSize int64
 	for _, snap := range snapshots {
-		snapshotRows = append(snapshotRows, ActivitySnapshotRow{
-			SessionID:   sessionID,
-			Timestamp:   snap.timestamp,
-			FilePath:    snap.relPath,
-			Width:       snap.width,
-			Height:      snap.height,
-			SizeBytes:   snap.sizeBytes,
-			Trigger:     snap.trigger,
-			StorageTier: "hot",
-			AXText:      snap.axText,
-			BrowserURL:  snap.browserURL,
-			ContentType: snap.contentType,
-			App:         snap.app,
-			ParsedJSON:  snap.parsedJSON,
-			FocusRectX:  snap.focusRectX,
-			FocusRectY:  snap.focusRectY,
-			FocusRectW:  snap.focusRectW,
-			FocusRectH:  snap.focusRectH,
-		})
+		snapshotRows = append(snapshotRows, snap.activityRow(sessionID))
 		totalSize += snap.sizeBytes
 	}
 
@@ -3675,6 +3722,14 @@ func (a *App) extractSession(triggerKind string) {
 	}
 	snapshotsCommitted = true
 	am.markSnapshotWritesPersisted(snapshots)
+	for _, snap := range snapshots {
+		if snap.privacyHeld {
+			if ready, _ := am.piiDetectorState(); ready {
+				go a.releasePrivacyHolds(am)
+			}
+			break
+		}
+	}
 	audioCommitted = true
 	a.meetingRecordingMu.Unlock()
 	meetingRecordingFenceHeld = false
@@ -3737,7 +3792,9 @@ func (a *App) extractSession(triggerKind string) {
 	}
 
 	// Check if this session belongs to a previous day → trigger summary generation.
-	go a.onSessionDateRollover(session)
+	if !a.deferExtractSessionUntilPIIReady(am, session.ID) {
+		go a.onSessionDateRollover(session)
+	}
 }
 
 func scrubProtectedActivityEvent(evt *activitymon.ActivityEvent) bool {
@@ -4723,7 +4780,7 @@ func (a *App) GetActivityOCRMatches(sessionID, keyword string) ([]OCRMatchFrame,
 		return nil, nil
 	}
 
-	frames, err := a.activity.store.GetOCRMatchFrames(sessionID, keyword)
+	frames, err := a.activity.store.localOCRMatchFrames(sessionID, keyword)
 	if err != nil {
 		return nil, err
 	}
@@ -4748,7 +4805,7 @@ func (a *App) GetSnapshotOCRText(sessionID string, snapshotID int64) (string, er
 	if a.activity == nil || a.activity.store == nil {
 		return "", fmt.Errorf("activity monitor not initialized")
 	}
-	return a.activity.store.GetOCRTextBySnapshot(sessionID, snapshotID)
+	return a.activity.store.localOCRTextBySnapshot(sessionID, snapshotID)
 }
 
 // OCRHighlightBox represents a text region on a screenshot that matches the search keyword.

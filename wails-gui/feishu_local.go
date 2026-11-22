@@ -210,6 +210,7 @@ func resolveFeishuAPIBaseURL(brand string) string {
 	return feishuAPIBaseURL
 }
 
+//isoform:destination chat_bridges
 func postFeishuRegistration(ctx context.Context, brand string, form url.Values) (map[string]any, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, resolveFeishuRegistrationURL(brand), strings.NewReader(form.Encode()))
 	if err != nil {
@@ -462,6 +463,7 @@ func (r *feishuLocalReceiver) acquireThreadLock(threadKey string) func() {
 	}
 }
 
+//isoform:destination chat_bridges
 func (r *feishuLocalReceiver) run() {
 	defer close(r.done)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -877,6 +879,7 @@ func (p *feishuLocalPoster) tenantAccessToken(ctx context.Context) (string, erro
 	return resp.TenantAccessToken, nil
 }
 
+//isoform:destination chat_bridges
 func (p *feishuLocalPoster) doJSON(ctx context.Context, method, path, token string, body any, target any) error {
 	var r io.Reader
 	if body != nil {

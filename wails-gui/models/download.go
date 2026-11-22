@@ -40,7 +40,6 @@ func (m *Manager) launchLocked(id string) error {
 		defer cancel()
 		err := m.download(ctx, e, j.Source)
 		m.mu.Lock()
-		defer m.mu.Unlock()
 		m.running[id] = false
 		delete(m.jobCancels, id)
 		delete(m.jobDone, id)
@@ -69,6 +68,16 @@ func (m *Manager) launchLocked(id string) error {
 			_ = m.launchLocked(id)
 		}
 		m.changedLocked()
+		handler := m.onComplete
+		completed := job.State == "done" && handler != nil
+		if completed {
+			m.completions.Add(1)
+		}
+		m.mu.Unlock()
+		if completed {
+			defer m.completions.Done()
+			handler(m.ctx, e)
+		}
 	}()
 	return nil
 }
@@ -136,6 +145,8 @@ func fileURL(e Entry, f File, s Source) string {
 
 // transfer never publishes unverified bytes. Partial files survive interruptions;
 // a strong validator and the pinned full-file checksum make range resumes safe.
+//
+//isoform:destination metadata
 func transfer(parent context.Context, remote, dest, want string, bytes int64, progress func(int64), prepare ...func(int64) error) error {
 	if len(want) != 64 {
 		return errors.New("download requires a manifest checksum")

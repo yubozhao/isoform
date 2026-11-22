@@ -208,6 +208,11 @@ func (a *App) playbooksReady() bool {
 // GetPlaybooksState returns every plan and which channels can be reached.
 // Wails binding.
 func (a *App) GetPlaybooksState() (PlaybooksState, error) {
+	// Playbooks, SOPs and goals are off unless their switch is on
+	// (feature_switches.go).
+	if !featureOn(featurePlaybooks) {
+		return PlaybooksState{Plans: []PlaybookView{}, DefaultChannels: []string{}}, nil
+	}
 	state := PlaybooksState{Plans: []PlaybookView{}, DefaultChannels: append([]string(nil), playbookDefaultChannels...)}
 	if !a.playbooksReady() {
 		return state, nil
@@ -296,6 +301,11 @@ func playbookCronExpr(minuteOfDay int, weekdays bool) string {
 // confirmed, scheduled at the suggested time, allowed its sites, and its
 // results go to the default channels. Wails binding.
 func (a *App) AcceptPlaybookSuggestion(id string) (PlaybookView, error) {
+	// Playbooks, SOPs and goals are off unless their switch is on
+	// (feature_switches.go).
+	if !featureOn(featurePlaybooks) {
+		return PlaybookView{}, errFeatureOff(featurePlaybooks)
+	}
 	if !a.playbooksReady() {
 		return PlaybookView{}, errPlaybookStore
 	}
@@ -352,6 +362,11 @@ func (a *App) AcceptPlaybookSuggestion(id string) (PlaybookView, error) {
 // DeclinePlaybookSuggestion is "Not now": the draft stays on the Playbooks
 // page, and the detector never asks about the site again. Wails binding.
 func (a *App) DeclinePlaybookSuggestion(id string) (PlaybookView, error) {
+	// Playbooks, SOPs and goals are off unless their switch is on
+	// (feature_switches.go).
+	if !featureOn(featurePlaybooks) {
+		return PlaybookView{}, errFeatureOff(featurePlaybooks)
+	}
 	if !a.playbooksReady() {
 		return PlaybookView{}, errPlaybookStore
 	}
@@ -377,6 +392,11 @@ const playbookOfferSnooze = 14 * 24 * time.Hour
 // SnoozePlaybookSuggestion is Not now on a playbook offer in Tasks › Up next:
 // the offer stays unanswered and comes back in two weeks. Wails binding.
 func (a *App) SnoozePlaybookSuggestion(id string) (PlaybookView, error) {
+	// Playbooks, SOPs and goals are off unless their switch is on
+	// (feature_switches.go).
+	if !featureOn(featurePlaybooks) {
+		return PlaybookView{}, errFeatureOff(featurePlaybooks)
+	}
 	if !a.playbooksReady() {
 		return PlaybookView{}, errPlaybookStore
 	}
@@ -423,6 +443,11 @@ func (a *App) closePlaybookSuggestion(id, action string) {
 // and approves the sites the playbook names: the page shows them beside the
 // schedule, so saving is the user's yes to them. Wails binding.
 func (a *App) SetPlaybookSchedule(input PlaybookScheduleInput) (PlaybookView, error) {
+	// Playbooks, SOPs and goals are off unless their switch is on
+	// (feature_switches.go).
+	if !featureOn(featurePlaybooks) {
+		return PlaybookView{}, errFeatureOff(featurePlaybooks)
+	}
 	if !a.playbooksReady() {
 		return PlaybookView{}, errPlaybookStore
 	}
@@ -488,6 +513,11 @@ func (a *App) SetPlaybookSchedule(input PlaybookScheduleInput) (PlaybookView, er
 // without a schedule gets an on-demand one; the sites it names are approved
 // by this click, as the page shows them next to the button. Wails binding.
 func (a *App) RunPlaybookNow(id string, sites []string) (PlaybookView, error) {
+	// Playbooks, SOPs and goals are off unless their switch is on
+	// (feature_switches.go).
+	if !featureOn(featurePlaybooks) {
+		return PlaybookView{}, errFeatureOff(featurePlaybooks)
+	}
 	if !a.playbooksReady() {
 		return PlaybookView{}, errPlaybookStore
 	}

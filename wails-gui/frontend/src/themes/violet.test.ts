@@ -298,12 +298,11 @@ describe('Violet source and app parity', () => {
                 'components/permission-question-card.tsx',
                 'components/plan-review-card.tsx',
                 'components/settings/pages/assistant-page.tsx',
-                'components/settings/pages/learning-memory-page.tsx',
+                'components/settings/pages/memory-debug-page.tsx',
                 'components/sops/CreateSopDialog.tsx',
                 'components/sops/PlaybookDeliveryPanel.tsx',
                 'components/sops/PlaybookSuggestionCard.tsx',
                 'components/today/BriefAudioPlayer.tsx',
-                'components/today/TopicComposer.tsx',
                 'components/ui/button.tsx',
             ],
         };
@@ -425,7 +424,7 @@ describe('Violet source and app parity', () => {
     });
     it('gives raised panels over app grounds opaque token backings', () => {
         const groundPanels = [
-            'activity-day-view', 'activity-week-view', 'activity-noticed',
+            'activity-day-view',
             'activity-meeting-notes', 'activity-page', 'call-transcript',
             'entry-content', 'stream-card', 'compaction-banner',
             'composer-suggestions', 'chat-error-preview', 'plan-review-card',
@@ -449,7 +448,7 @@ describe('Violet source and app parity', () => {
         expect(unbackedAlphaFills(activity.replace('rounded-md bg-panel text-ink placeholder:', 'rounded-md bg-border/30 text-ink placeholder:')))
             .toContain('input: bg-border/30');
         const day = readFileSync(resolve(src, 'components/activity-day-view.tsx'), 'utf8');
-        expect(day.match(/<ul className="[^"]*bg-panel[^"]*"/g)).toHaveLength(2);
+        expect(day.match(/<ul className="[^"]*bg-panel[^"]*"/g)).toHaveLength(1);
         // Remaining translucent panels sit inside opaque dialogs or panels.
         // Media overlays and hover marks are not raised paper surfaces.
         // The WebKit fixture checks actual ground siblings.
@@ -618,8 +617,8 @@ describe('Polish 6 interaction roles', () => {
         expect(readFileSync(resolve(src, 'components/ui/button.tsx'), 'utf8')).toContain("link: 'text-accent underline-offset-4");
         const callers = [
             'components/today/TodayCaptureLine.tsx', 'components/today/TodayBriefSection.tsx',
-            'components/main-chat-proactive-card.tsx', 'components/activity-summary.tsx',
-            'components/settings/pages/storage-page.tsx',
+            'components/main-chat-proactive-card.tsx',
+            'components/settings/keep-times-sheet.tsx',
         ];
         for (const path of callers) {
             const source = readFileSync(resolve(src, path), 'utf8');
@@ -653,11 +652,11 @@ describe('Polish 6 interaction roles', () => {
     it('does not announce page-visible summary and saved-settings state with success toasts', () => {
         const app = readFileSync(resolve(src, 'App.tsx'), 'utf8');
         expect(app).not.toContain('Activity summary for ${label} is ready');
-        for (const path of ['components/settings/pages/recording-storage.ts', 'components/settings/pages/privacy-page.tsx', 'components/settings/pages/storage-page.tsx']) {
+        for (const path of ['components/settings/pages/recording-storage.ts', 'components/settings/keep-times-sheet.tsx']) {
             const source = readFileSync(resolve(src, path), 'utf8');
             expect(source, path).not.toMatch(/toast.success\(t\(["'](?:activityRetention|sensitiveApps|voiceInputApps|storage.screenshots)/);
         }
-        const memory = readFileSync(resolve(src, 'components/settings/pages/learning-memory-page.tsx'), 'utf8');
+        const memory = readFileSync(resolve(src, 'components/settings/pages/memory-debug-page.tsx'), 'utf8');
         for (const key of ['embedding.testPassedToast', 'embedding.testFailedToast']) {
             expect(memory).not.toContain(key);
         }

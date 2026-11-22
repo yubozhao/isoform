@@ -106,6 +106,14 @@ func (a *App) voiceMainChatCopy(m engagement.Moment, item *mainChatProactive) bo
 	if !proactivevoice.Supported(string(m.Kind)) {
 		return true
 	}
+	// Voice cards are off unless their switch is on (feature_switches.go): no
+	// source read and no model call. The cards that exist to quote a person or
+	// a promise are not posted; the status cards (brief ready, capture
+	// paused) keep their catalog copy.
+	if !featureOn(featureProactiveVoice) {
+		resetProactiveVoiceToGeneric(item, a.currentUILanguage())
+		return !proactiveVoiceContentKind(m.Kind)
+	}
 	a.mu.Lock()
 	available := a.runner != nil
 	a.mu.Unlock()
@@ -233,6 +241,17 @@ func (a *App) claimProactiveVoiceAttempt(ctx context.Context, m engagement.Momen
 		return false
 	}
 	return a.store.SetUIState(ctx, key, proactivevoice.PromptVersion) == nil
+}
+
+// proactiveVoiceContentKind says whether a voiced kind is a card about a
+// person or a promise (off with the voice switch), not a status card.
+func proactiveVoiceContentKind(kind engagement.Kind) bool {
+	switch kind {
+	case engagement.KindWaitingOnReply, engagement.KindCommitmentSlipping:
+		return true
+	default:
+		return false
+	}
 }
 
 func applyProactiveVoiceResult(item *mainChatProactive, job proactivevoice.Job, result proactivevoice.Output, addresses map[string]string) bool {

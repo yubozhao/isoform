@@ -66,6 +66,11 @@ func (a *App) workAgentName(id string) string {
 			return agent.Name
 		}
 	}
+	for _, agent := range a.disconnectedAgents() {
+		if agent.ID == id {
+			return agent.Name
+		}
+	}
 	return "your agent"
 }
 
@@ -148,9 +153,12 @@ func (a *App) UndoWork(id string) (WorkItem, error) {
 // phone: an answer older than the last one applied to the item is refused,
 // so a pair reordered between two paths can't flip an Undo.
 type workAnswerMeta struct {
-	Surface  string
-	DeviceID string
-	Seq      uint64
+	// Chat pins a reversible judgment to its own entry, even across a later answer.
+	correctionEntry string
+	expectedEntry   string
+	Surface         string
+	DeviceID        string
+	Seq             uint64
 }
 
 var workAnswerMu sync.Mutex
@@ -166,20 +174,79 @@ func (a *App) answerWork(ctx context.Context, id string, input WorkAnswerInput, 
 	workAnswerMu.Lock()
 	defer workAnswerMu.Unlock()
 	now := time.Now()
-	list, err := a.buildWorkList(ctx, now)
-	if err != nil {
-		return WorkItem{}, err
+	ledger := a.answersLedger()
+	var answers []AnswerRecord
+	var err error
+	if meta.correctionEntry != "" || meta.expectedEntry != "" {
+		answers, err = ledger.readEntries()
+		if err != nil {
+			return WorkItem{}, err
+		}
+		if err := ctx.Err(); err != nil {
+			return WorkItem{}, err
+		}
+	} else {
+		answers = ledger.entries()
 	}
-	item, ok := workFind(list, id)
-	if !ok {
-		// A brief's sentence is never in the list, but can be answered Not right.
-		if item, ok = a.workBriefSentenceItem(id); !ok {
-			return WorkItem{}, errWorkItemGone
+	var item WorkItem
+	var list WorkList
+	if meta.expectedEntry != "" {
+		// Undo uses the person's own recorded judgment. No observed source
+		// needs to be opened again, including while Closed Eyes is on.
+		for i := len(answers) - 1; i >= 0; i-- {
+			r := answers[i]
+			if r.ItemID != id || r.Action == answerActionShown {
+				continue
+			}
+			if r.EntryID != meta.expectedEntry || r.Source != workSourceBrief || (r.Action != workActionNo && !(r.Action == workActionEdit && r.NotSent)) {
+				return WorkItem{}, errWorkItemChanged
+			}
+			item = WorkItem{ID: id, Source: r.Source, Work: WorkBody{Title: r.Title}}
+			break
+		}
+		if item.ID == "" {
+			return item, errWorkItemChanged
+		}
+	} else {
+		if meta.correctionEntry != "" && a.IsClosedEyesModeEnabled() {
+			return item, errTodayChatObservationPaused
+		}
+		list, err = a.buildWorkList(ctx, now)
+		if err != nil {
+			return item, err
+		}
+		var ok bool
+		if item, ok = workFind(list, id); !ok {
+			// A brief sentence is answerable even though it is absent from the list.
+			if item, ok = a.workBriefSentenceItem(id); !ok {
+				return WorkItem{}, errWorkItemGone
+			}
 		}
 	}
 	sentence := workIsBriefSentence(item)
-	ledger := a.answersLedger()
-	answers := ledger.entries()
+	if meta.correctionEntry != "" {
+		if strings.TrimSpace(input.Before) != chatCorrectionBefore(item) {
+			return item, errWorkItemChanged
+		}
+		svc := a.mobileBriefSource()
+		if svc == nil {
+			return item, errMobileStoreUnavailable
+		}
+		schedule, err := svc.Schedule()
+		if err != nil {
+			return item, err
+		}
+		list.UndoUntil = ""
+		if slots := mobileBriefSlotTimes(now, time.Local, schedule); len(slots) > 0 {
+			list.UndoUntil = slots[0].At
+		}
+		if err := ctx.Err(); err != nil {
+			return item, err
+		}
+		if a.IsClosedEyesModeEnabled() {
+			return item, errTodayChatObservationPaused
+		}
+	}
 	if meta.Seq > 0 {
 		for _, record := range answers {
 			if record.ItemID == id && record.DeviceID == meta.DeviceID && record.Seq >= meta.Seq {
@@ -187,7 +254,7 @@ func (a *App) answerWork(ctx context.Context, id string, input WorkAnswerInput, 
 			}
 		}
 	}
-	record := AnswerRecord{ItemID: id, Kind: answerKindWork, Source: item.Source, Title: item.Work.Title, Action: input.Action, At: mobileTimestamp(now),
+	record := AnswerRecord{EntryID: meta.correctionEntry, ItemID: id, Kind: answerKindWork, Source: item.Source, Title: item.Work.Title, Action: input.Action, At: mobileTimestamp(now),
 		Surface: meta.Surface, DeviceID: meta.DeviceID, Seq: meta.Seq, UndoUntil: list.UndoUntil}
 	switch input.Action {
 	case workActionUndo:
@@ -331,6 +398,12 @@ func (a *App) answerWork(ctx context.Context, id string, input WorkAnswerInput, 
 		if item.State != workStateBack {
 			return item, errWorkItemChanged
 		}
+		// Not useful may say why, from the result's reasons (phone-agent
+		// v1.0.0 rule 17); Useful takes none.
+		if input.Reason != "" && (input.Action != workActionNotUseful || !workReasonAllowed(item, input.Reason)) {
+			return item, errWorkAnswerInvalid
+		}
+		record.Reason = input.Reason
 		if _, err := ledger.append(record); err != nil {
 			return item, err
 		}
@@ -344,6 +417,10 @@ func (a *App) answerWork(ctx context.Context, id string, input WorkAnswerInput, 
 	if input.Action != workActionUndo {
 		// Answered anywhere: its notification goes everywhere (notify B7).
 		a.noteWorkItemRead(item, now)
+	}
+	// Chat already has the answer identity. Its receipt needs no refreshed list.
+	if meta.expectedEntry != "" || meta.correctionEntry != "" {
+		return item, nil
 	}
 	after, err := a.buildWorkList(ctx, time.Now())
 	if err != nil {
@@ -404,13 +481,11 @@ func (a *App) dispatchWorkAnswer(ctx context.Context, item WorkItem, input WorkA
 		if input.Action == workActionNo {
 			answer = agentRequestNo
 		}
-		switch err := a.answerAgentRequest(strings.TrimPrefix(item.ID, "request:"), answer, time.Now()); {
-		case errors.Is(err, errAgentRequestOver):
+		err := a.answerAgentRequest(strings.TrimPrefix(item.ID, "request:"), answer, surface, time.Now())
+		if errors.Is(err, errAgentRequestOver) {
 			return workSent{}, errWorkItemChanged
-		case err != nil:
-			return workSent{}, err
 		}
-		return workSent{}, nil
+		return workSent{}, err
 	}
 	switch item.Source {
 	case workSourceTopic:
@@ -428,7 +503,11 @@ func (a *App) dispatchWorkAnswer(ctx context.Context, item WorkItem, input WorkA
 			// agent gets it in its inbox, or not from here.
 			agent := input.AgentID
 			if agent == "" {
-				agent = a.yourAgentChoice(workonit.KindOf(workonit.Input{Kind: item.Yes.Kind}))
+				chosen, err := a.yourAgentChoice(workonit.KindOf(workonit.Input{Kind: item.Yes.Kind}))
+				if err != nil {
+					return workSent{}, err
+				}
+				agent = chosen
 			}
 			if agent != "" && !workLocalAgent(agent) {
 				return a.handOffTopicProposal(ctx, item, agent, surface)
@@ -510,7 +589,11 @@ func (a *App) handOffWork(item WorkItem, text, agentID, surface string) (workSen
 	}
 	local := agentID
 	if local == "" {
-		local = a.yourAgentChoice(workonit.KindOf(in))
+		chosen, err := a.yourAgentChoice(workonit.KindOf(in))
+		if err != nil {
+			return workSent{}, err
+		}
+		local = chosen
 	}
 	if local != "" && !workLocalAgent(local) {
 		return workSent{}, errWorkAgentAway
@@ -754,9 +837,7 @@ func (a *App) applyWorkAnswers(items []WorkItem) []WorkItem {
 			results = a.workLinkResults()
 		}
 		if r, ok := results[record.HandoffID]; ok && item.State == workStateWithAgent {
-			item.State, item.Kind, item.Row = workStateBack, workKindResult, "result"
-			item.Work.Text = r.Summary
-			item.Files = a.workResultFiles(r.LinkID, r.Files)
+			workMarkBack(item, r.Summary, a.workResultFiles(r.LinkID, r.Files))
 		}
 	}
 	for i := range items {
@@ -800,16 +881,15 @@ func (a *App) applyWorkAnswers(items []WorkItem) []WorkItem {
 				answer.Line = item.Work.Title + ": kept with the meeting"
 			}
 		case workSourceAgent:
-			if item.Kind == workKindRequest && item.State == workStateOpen {
-				// A request is Yes or No; the agent reads the answer.
-				item.Answer, item.State = answer, workStateAnswered
-				if item.Request != nil {
-					verb := "allowed"
-					if record.Action == workActionNo {
-						verb = "declined"
-					}
-					answer.Line = item.Request.From.Name + "'s request to " + item.Request.To.Name + ": " + verb
+			if item.Kind == workKindRequest && item.Answer != nil {
+				// A failed Yes can end after the ledger recorded approval.
+				if item.Answer.Action == agentRequestRanOut {
+					continue
 				}
+				// The request owns delivery state. The ledger adds answer metadata.
+				answer.Line = item.Answer.Line
+				item.Answer = answer
+				continue
 			}
 		case workSourceBrief, workSourceDayOne:
 			item.Answer = answer
@@ -833,8 +913,17 @@ func (a *App) applyWorkAnswers(items []WorkItem) []WorkItem {
 				if a.handoffStore != nil {
 					if entry, err := a.handoffStore.Get(record.TaskID); err == nil {
 						if state, result := dailyTopicTaskState(entry); state != topicday.StateRunning {
-							item.State, item.Kind, item.Row = workStateBack, workKindResult, "result"
-							item.Work.Text = result
+							var files []WorkFile
+							if results == nil {
+								results = a.workLinkResults()
+							}
+							if r, ok := results[record.TaskID]; ok {
+								if strings.TrimSpace(result) == "" {
+									result = r.Summary
+								}
+								files = a.workResultFiles(r.LinkID, r.Files)
+							}
+							workMarkBack(item, result, files)
 						}
 					}
 				}
@@ -868,6 +957,12 @@ func workAnswerLine(title, action, reason, state string) string {
 		return title + ": back from your agent"
 	case action == workActionUseful:
 		return title + ": useful"
+	case action == workActionNotUseful && reason == "wrong_facts":
+		return title + ": not useful, wrong facts"
+	case action == workActionNotUseful && reason == "missed_point":
+		return title + ": not useful, missed the point"
+	case action == workActionNotUseful && reason == "myself":
+		return title + ": not useful, you'll do it yourself"
 	case action == workActionNotUseful:
 		return title + ": not useful"
 	case action == workActionNotMine:

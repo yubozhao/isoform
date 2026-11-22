@@ -53,6 +53,8 @@ const defaultOpenAIBase = "https://api.openai.com/v1"
 // in the version segment (e.g. https://api.openai.com/v1); we POST to
 // baseURL + "/chat/completions". Either apiKey or authToken is sent as the
 // bearer credential (apiKey wins when both are set).
+//
+//isoform:destination assistant
 func NewOpenAIClient(baseURL, apiKey, authToken string) *OpenAIClient {
 	// Mirror the Anthropic client's transport tuning: fail fast on
 	// connect/TLS so an offline machine surfaces an error instead of
@@ -202,6 +204,7 @@ func (c *OpenAIClient) Stream(ctx context.Context, req *Request, handler StreamH
 	return lastErr
 }
 
+//isoform:destination assistant
 func (c *OpenAIClient) doStream(ctx context.Context, oReq *oaiRequest, handler StreamHandler) error {
 	body, err := json.Marshal(oReq)
 	if err != nil {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -28,6 +29,8 @@ const (
 	mobileAttachmentMaxBytes    = 16 << 20
 	mobileAttachmentUploadWait  = 90 * time.Second
 	mobileAttachmentContentType = "application/octet-stream"
+	// mobileAttachmentTextType is the same sealed bytes as base64 text (PROTOCOL.md 17.2).
+	mobileAttachmentTextType = "text/plain"
 )
 
 var (
@@ -152,35 +155,66 @@ func uploadMobileBriefAudio(ctx context.Context, a *App, _ string, path string) 
 
 // uploadAttachment puts the sealed bytes on the relay with the hub credential
 // (PUT /v1/hub/attachments/{id}).
+//
+//isoform:destination relay
 func (c *mobileRelayClient) uploadAttachment(ctx context.Context, attachmentID string, sealed []byte) error {
 	if len(sealed) == 0 || len(sealed) > mobileAttachmentMaxBytes {
 		return errMobileAttachmentTooLarge
 	}
 	ctx, cancel := context.WithTimeout(ctx, mobileAttachmentUploadWait)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, c.hubOrigin()+"/v1/hub/attachments/"+attachmentID, bytes.NewReader(sealed))
+	status, relays, err := c.putAttachment(ctx, attachmentID, sealed, mobileAttachmentContentType)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.credential)
-	req.Header.Set("X-Yansu-Hub", c.hubID)
-	req.Header.Set("Content-Type", mobileAttachmentContentType)
-	req.ContentLength = int64(len(sealed))
-	resp, err := mobileAttachmentHTTPClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("could not reach the relay: %w", err)
+	if status == http.StatusForbidden && !relays {
+		// A 403 the relay did not write: a tunnel in front of it refused the bytes by what
+		// they happen to be, and would refuse them every time (2026-11-21: one sealed body
+		// in forty). As base64 text they hold nothing such a rule matches. A relay that
+		// takes no text answers 415 and the upload fails as it did.
+		text := make([]byte, base64.StdEncoding.EncodedLen(len(sealed)))
+		base64.StdEncoding.Encode(text, sealed)
+		if status, _, err = c.putAttachment(ctx, attachmentID, text, mobileAttachmentTextType); err != nil {
+			return err
+		}
 	}
-	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
-	if resp.StatusCode != http.StatusCreated {
-		return fmt.Errorf("%w (status %d)", errMobileAttachmentRejected, resp.StatusCode)
+	if status != http.StatusCreated {
+		return fmt.Errorf("%w (status %d)", errMobileAttachmentRejected, status)
 	}
 	return nil
+}
+
+// putAttachment sends one body and says the status and whether the answer is
+// the relay's own: every answer of the relay is JSON with "ok".
+//
+//isoform:destination relay
+func (c *mobileRelayClient) putAttachment(ctx context.Context, attachmentID string, body []byte, contentType string) (int, bool, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, c.hubOrigin()+"/v1/hub/attachments/"+attachmentID, bytes.NewReader(body))
+	if err != nil {
+		return 0, false, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.credential)
+	req.Header.Set("X-Yansu-Hub", c.hubID)
+	req.Header.Set("Content-Type", contentType)
+	req.ContentLength = int64(len(body))
+	resp, err := mobileAttachmentHTTPClient.Do(req)
+	if err != nil {
+		return 0, false, fmt.Errorf("could not reach the relay: %w", err)
+	}
+	defer resp.Body.Close()
+	answer, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	var shape struct {
+		OK *bool `json:"ok"`
+	}
+	relays := json.Unmarshal(answer, &shape) == nil && shape.OK != nil
+	return resp.StatusCode, relays, nil
 }
 
 // mobileAttachmentHTTPClient uploads attachments. It follows the proxy
 // settings the relay WebSocket uses and never follows redirects, so the
 // credential goes to the configured relay only.
+//
+//isoform:destination relay
 var mobileAttachmentHTTPClient = &http.Client{
 	Transport: &http.Transport{Proxy: http.ProxyFromEnvironment},
 	CheckRedirect: func(*http.Request, []*http.Request) error {

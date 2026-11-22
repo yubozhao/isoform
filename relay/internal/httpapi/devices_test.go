@@ -54,6 +54,100 @@ func TestRequestQueueReplayAndAck(t *testing.T) {
 	}
 }
 
+// A phone numbers a request, then seals and sends it. Requests sent together reach
+// the relay in any order. On 2026-11-20 the relay handed over only numbers above
+// the highest it had sent, and an acknowledgement deleted every number up to the
+// acknowledged one, so a part request that arrived after a later-numbered read was
+// answered 202, never reached the computer, and was deleted. Wake after wake the
+// relay accepted a few more requests than the computer served, and no recording
+// crossed.
+//
+// The shape of a wake: the app opens and sends eight reads, numbered 2 to 9, and a
+// part request numbered 1 that reaches the relay last. The computer acknowledges
+// reads while the part request is on its way and after it was handed over.
+func TestARequestThatArrivesAfterLaterNumberedOnesStillReachesTheComputer(t *testing.T) {
+	r := newRelay(t, "")
+	hubID, credential := uuid.NewString(), randomToken(t)
+	hc := r.connectHub(hubID, credential)
+	dev := r.pairDevice(hc, allScopes)
+	seqOf := func(frame map[string]any) uint64 {
+		var got struct {
+			Seq uint64 `json:"seq"`
+		}
+		if err := json.Unmarshal(mustMarshal(t, frame["env"]), &got); err != nil {
+			t.Fatal(err)
+		}
+		return got.Seq
+	}
+	replayed := func(hc *hubClient) []uint64 {
+		hc.barrier()
+		seqs := []uint64{}
+		for _, pending := range hc.pending {
+			if pending["t"] == "in" {
+				seqs = append(seqs, seqOf(pending))
+			}
+		}
+		return seqs
+	}
+
+	// The reads arrive, are handed over in order, and all but the last are acknowledged.
+	for seq := uint64(2); seq <= 9; seq++ {
+		r.expectStatus(r.postWith("/v1/requests", dev.bearer, requestEnvelope(t, dev, seq)), http.StatusAccepted, "a read")
+		if got := seqOf(hc.recvType("in")); got != seq {
+			t.Fatalf("delivery carried %d, want %d", got, seq)
+		}
+		if seq < 9 {
+			hc.send(map[string]any{"t": "ack", "dev": dev.id, "upTo": seq})
+		}
+	}
+	hc.barrier()
+
+	// The part request, numbered 1, arrives last. It is handed over all the same.
+	part := requestEnvelope(t, dev, 1)
+	r.expectStatus(r.postWith("/v1/requests", dev.bearer, part), http.StatusAccepted, "the part request, late")
+	frame := hc.recvType("in")
+	if seq := seqOf(frame); seq != 1 || !strings.Contains(string(mustMarshal(t, frame["env"])), part.CT) {
+		t.Fatalf("the part request was not delivered: %v", frame)
+	}
+
+	// The computer acknowledges read 9, which it was handed before the part request.
+	// The part request is not served yet: it stays. The computer goes away and comes
+	// back, and the part request, still unacknowledged, is handed over again; the
+	// acknowledged reads are not.
+	hc.send(map[string]any{"t": "ack", "dev": dev.id, "upTo": 9})
+	hc.barrier()
+	hc.conn.Close()
+	r.waitHubOnline(dev, false)
+	hc = r.connectHub(hubID, credential)
+	if got := replayed(hc); len(got) != 1 || got[0] != 1 {
+		t.Fatalf("after a reconnect the computer was handed %v, want only the part request (1)", got)
+	}
+
+	// An acknowledgement of a number this connection never handed over deletes nothing.
+	hc.send(map[string]any{"t": "ack", "dev": dev.id, "upTo": 9})
+	hc.barrier()
+	hc.conn.Close()
+	r.waitHubOnline(dev, false)
+	hc = r.connectHub(hubID, credential)
+	if got := replayed(hc); len(got) != 1 || got[0] != 1 {
+		t.Fatalf("an acknowledgement of another number deleted the part request: handed %v", got)
+	}
+
+	// Its own acknowledgement deletes it.
+	hc.send(map[string]any{"t": "ack", "dev": dev.id, "upTo": 1})
+	hc.barrier()
+	hc.conn.Close()
+	r.waitHubOnline(dev, false)
+	hc = r.connectHub(hubID, credential)
+	if got := replayed(hc); len(got) != 0 {
+		t.Fatalf("the acknowledged part request was handed over again: %v", got)
+	}
+
+	// A request nobody acknowledges does not stay for ever: the store drops it after
+	// RequestTTL (24 hours) and keeps at most MaxQueued (200) per phone:
+	// TestRequestQueueCapAndExpiry in the store's tests.
+}
+
 func TestRequestDeliveredWhileHubIsConnected(t *testing.T) {
 	r := newRelay(t, "")
 	hc := r.connectHub(uuid.NewString(), randomToken(t))
@@ -291,14 +385,29 @@ func TestScopeBearerAndExpiry(t *testing.T) {
 	r.expectStatus(r.getWith("/v1/presence", dev.bearer), http.StatusUnauthorized, "expired device")
 }
 
+// On 2026-11-20 a phone opened the app for thirty seconds: 48 requests for the
+// computer, each with a long-poll and an acknowledgement beside it. At 60 a
+// minute the relay refused everything after the eleventh second, the request
+// that hands a recorded part to the computer among them.
+func TestOpeningTheAppLeavesRoomForTheRequestsThatFollow(t *testing.T) {
+	r := newRelay(t, "")
+	dev := r.pairDevice(r.connectHub(uuid.NewString(), randomToken(t)), allScopes)
+	for range 50 {
+		r.expectStatus(r.getWith("/v1/presence", dev.bearer), http.StatusOK, "a read while the app opens")
+		r.expectStatus(r.getWith("/v1/responses?wait=0", dev.bearer), http.StatusOK, "its long-poll")
+		r.expectStatus(r.postWith("/v1/responses/ack", dev.bearer, map[string]uint64{"upTo": 0}), http.StatusOK, "its acknowledgement")
+	}
+	r.expectStatus(r.getWith("/v1/presence", dev.bearer), http.StatusOK, "the request after the app has opened")
+}
+
 func TestDeviceRequestRateLimit(t *testing.T) {
 	r := newRelay(t, "")
 	dev := r.pairDevice(r.connectHub(uuid.NewString(), randomToken(t)), allScopes)
-	for range 60 {
+	for range deviceRequestsPerMinute {
 		r.expectStatus(r.getWith("/v1/presence", dev.bearer), http.StatusOK, "within the minute budget")
 	}
 	limited := r.getWith("/v1/presence", dev.bearer)
-	r.expectStatus(limited, http.StatusTooManyRequests, "sixty-first request in a minute")
+	r.expectStatus(limited, http.StatusTooManyRequests, "one request past the minute's budget")
 	if limited.Header.Get("Retry-After") == "" {
 		t.Fatal("device rate limit omitted Retry-After")
 	}

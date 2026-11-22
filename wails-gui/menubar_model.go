@@ -12,8 +12,6 @@ import (
 	"time"
 )
 
-const menuBarMaxWaiting = 3
-
 // The badge is a local presentation receipt, never a resolution of the work.
 // Retain ids, not a count: replacing one waiting item must light the dot again.
 type menuBarAttention struct{ seen map[string]bool }
@@ -78,17 +76,17 @@ type menuBarMenuItem struct {
 // reused word for word.
 var menuBarCopy = map[string]map[string]string{
 	"en": {
-		"open": "Open Isoform", "make": "Make my brief now", "pause15": "Pause for 15 minutes", "resumeMenu": "Resume observing",
+		"open": "Open Isoform", "make": "Make my brief now", "closedFor15": "Closed Eyes for 15 minutes", "closedForHour": "Closed Eyes for an hour", "closedUntil": "Closed Eyes until I end it",
 		"settingsMenu": "Settings…", "quit": "Quit Isoform",
-		"observing": "seeing", "paused": "Closed Eyes · every device", "pausedUntil": "Closed Eyes · until {time} · every device", "off": "Observing is off", "starting": "Starting…",
+		"observing": "seeing", "paused": "Closed Eyes · every device", "pausedUntil": "Closed Eyes · until {time} · every device", "screenOff": "screen off",
 		"name": "Isoform", "watchListening": "watch listening", "watchNot": "watch not listening", "noWatch": "no watch paired", "closedEyes": "Closed Eyes", "openEyes": "Open eyes",
 		"markListening": "Listening", "markNotListening": "Not listening", "markClosed": "Closed Eyes",
 		"stillAnswer": "You can still answer while eyes are closed.", "allDone": "That's everything for now.", "nextBrief": "Next brief at {time}.",
-		"notSeeing": "not seeing", "openSettings": "Open System Settings", "troubleScreen": "Isoform hasn't seen your screen since {time}.", "troubleScreenWhy": "Screen Recording is off for Isoform.",
+		"notSeeing": "not seeing", "openSettings": "Open System Settings", "troubleScreen": "Isoform hasn't seen your screen since {time}.", "troubleScreenNever": "Isoform hasn't seen your screen yet.", "troubleScreenWhy": "Screen Recording is off for Isoform.",
 		"troubleSignedOut": "{assistant} has been signed out since {time}, so briefs are shorter and Chat can't answer.", "troublePhone": "Your phone hasn't checked in since {time}. Notifications show here until it does.",
 		"nextItem": "Next · {i} of {n} · {source}", "nextItemNoSource": "Next · {i} of {n}", "openToday": "Open Today", "quickChat": "Quick chat",
-		"yes": "Yes", "no": "No", "source_brief": "Your brief", "source_topic": "Your topics", "source_prep": "Meeting prep", "source_agent": "Your agent",
-		"pause": "Pause 15 min", "resume": "Resume", "turnOn": "Turn on",
+		"yes": "Yes", "no": "No", "source_brief": "Your brief", "source_topic": "Your topics", "source_prep": "Meeting prep", "source_agent": "Your agent", "source_day_one": "Day one",
+		"firstBrief": "Your first brief", "firstBriefAt": "at {time}",
 		"morning": "Hear your morning brief", "evening": "Hear your evening brief", "brief": "Hear your brief", "week": "Hear your week",
 		"read":    "Read your brief",
 		"dayTime": "{day}, {time}", "today": "Today", "yesterday": "Yesterday",
@@ -97,28 +95,27 @@ var menuBarCopy = map[string]map[string]string{
 		"signIn": "Sign in", "signedOut": "Tried {n} times. {ai} is signed out.", "signedOutOnce": "Tried 1 time. {ai} is signed out.", "yourAI": "Your AI",
 		"retry": "Isoform tries again at {time}.", "none": "No brief yet today", "madeLastNight": "Made last night at {time}", "madeYesterday": "Made yesterday at {time}", "madeAt": "Made at {time}", "madeOnDate": "Made {date} at {time}", "next": "Next brief tomorrow at {time}", "nextToday": "Next brief today at {time}",
 		"making": "Making your brief now.", "makingMorning": "Making your morning brief now.", "makingEvening": "Making your evening brief now.", "triedTimeout": "Tried {n} times. It timed out. Isoform tries again at {time}.", "triedTimeoutOnce": "Tried once. It timed out. Isoform tries again at {time}.", "playing": "{elapsed} of {length}",
-		"waiting": "Waiting on you", "seeAll": "See all {n} in Chat", "empty": "Nothing is waiting on you.",
 		"failed": "Could not load what is waiting on you. Your chat still has everything.",
 		"update": "{version} installs when you quit", "updateRestart": "{version} is ready", "restart": "Restart now",
 		"models":   "Downloading models · {percent}%",
 		"settings": "Settings", "footerQuit": "Quit", "onThisMac": "What Isoform sees", "openShortcut": "⌘⇧I",
-		"label": "Isoform, {state}, {n} waiting on you", "labelNone": "Isoform, {state}",
+		"label": "Isoform, {state}, {n} waiting on you", "labelNone": "Isoform, {state}", "labelNoState": "Isoform, {n} waiting on you", "menuTrouble": "Isoform, {line}",
 		"actionFailed":  "Could not complete that action. Open Isoform to try again.",
 		"signedOutLine": "{assistant} is signed out, so briefs are shorter and Chat can't answer.",
 	},
 	"zh-CN": {
 		"signedOutLine": "{assistant} 已退出登录，所以简报会更简短，聊天也无法回答。",
-		"open":          "打开 Isoform", "make": "立即生成简报", "pause15": "暂停 15 分钟", "resumeMenu": "恢复观察",
+		"open":          "打开 Isoform", "make": "立即生成简报", "closedFor15": "Closed Eyes 15 分钟", "closedForHour": "Closed Eyes 1 小时", "closedUntil": "Closed Eyes，直到我结束",
 		"settingsMenu": "设置…", "quit": "退出 Isoform",
-		"observing": "正在看", "paused": "Closed Eyes · 所有设备", "pausedUntil": "Closed Eyes · 至 {time} · 所有设备", "off": "观察已关闭", "starting": "正在启动…",
+		"observing": "正在看", "paused": "Closed Eyes · 所有设备", "pausedUntil": "Closed Eyes · 至 {time} · 所有设备", "screenOff": "屏幕已关闭",
 		"name": "Isoform", "watchListening": "手表正在听", "watchNot": "手表没在听", "noWatch": "没有配对手表", "closedEyes": "Closed Eyes", "openEyes": "睁眼",
 		"markListening": "正在听", "markNotListening": "没在听", "markClosed": "Closed Eyes",
 		"stillAnswer": "闭眼时你仍然可以回答。", "allDone": "目前就这些。", "nextBrief": "下一份简报在 {time}。",
-		"notSeeing": "看不到屏幕", "openSettings": "打开系统设置", "troubleScreen": "Isoform 自 {time} 起没能看到你的屏幕。", "troubleScreenWhy": "Isoform 的屏幕录制已关闭。",
+		"notSeeing": "看不到屏幕", "openSettings": "打开系统设置", "troubleScreen": "Isoform 自 {time} 起没能看到你的屏幕。", "troubleScreenNever": "Isoform 还没看到过你的屏幕。", "troubleScreenWhy": "Isoform 的屏幕录制已关闭。",
 		"troubleSignedOut": "{assistant} 自 {time} 起已退出登录，所以简报会更简短，聊天也无法回答。", "troublePhone": "你的手机自 {time} 起没有联系。在它联系之前，通知会显示在这里。",
 		"nextItem": "下一项 · 第 {i} 项，共 {n} 项 · {source}", "nextItemNoSource": "下一项 · 第 {i} 项，共 {n} 项", "openToday": "打开今天", "quickChat": "快速聊天",
-		"yes": "是", "no": "否", "source_brief": "你的简报", "source_topic": "你的主题", "source_prep": "会议准备", "source_agent": "你的 Agent",
-		"pause": "暂停 15 分钟", "resume": "恢复", "turnOn": "打开",
+		"yes": "是", "no": "否", "source_brief": "你的简报", "source_topic": "你的主题", "source_prep": "会议准备", "source_agent": "你的 Agent", "source_day_one": "Day one",
+		"firstBrief": "你的第一份简报", "firstBriefAt": "{time}",
 		"morning": "收听早间简报", "evening": "收听晚间简报", "brief": "收听简报", "week": "收听你的一周",
 		"read":    "阅读简报",
 		"dayTime": "{day} {time}", "today": "今天", "yesterday": "昨天",
@@ -127,12 +124,11 @@ var menuBarCopy = map[string]map[string]string{
 		"signIn": "登录", "signedOut": "已尝试 {n} 次。{ai} 已退出登录。", "signedOutOnce": "已尝试 1 次。{ai} 已退出登录。", "yourAI": "你的 AI",
 		"retry": "Isoform 会在{time}再试。", "none": "今天还没有简报", "madeLastNight": "昨晚 {time} 生成", "madeYesterday": "昨天 {time} 生成", "madeAt": "{time} 生成", "madeOnDate": "{date} {time} 生成", "next": "下一份在明天 {time}", "nextToday": "下一份在今天 {time}",
 		"making": "正在生成简报。", "makingMorning": "正在生成你的早间简报。", "makingEvening": "正在生成你的晚间简报。", "triedTimeout": "试了 {n} 次。超时了。Isoform 会在{time}再试。", "triedTimeoutOnce": "试了 1 次。超时了。Isoform 会在{time}再试。", "playing": "{elapsed} / {length}",
-		"waiting": "等你处理", "seeAll": "在聊天中查看全部 {n} 项", "empty": "没有等你处理的事。",
 		"failed": "没能读取等你处理的事。聊天里的内容都还在。",
 		"update": "退出时安装 Isoform {version}", "updateRestart": "{version} 已准备好", "restart": "立即重启",
 		"models":   "正在下载模型 · {percent}%",
 		"settings": "设置", "footerQuit": "退出", "onThisMac": "Isoform 能看到什么", "openShortcut": "⌘⇧I",
-		"label": "Isoform，{state}，{n} 项等你处理", "labelNone": "Isoform，{state}",
+		"label": "Isoform，{state}，{n} 项等你处理", "labelNone": "Isoform，{state}", "labelNoState": "Isoform，{n} 项等你处理", "menuTrouble": "Isoform，{line}",
 		"actionFailed": "无法完成操作。请打开 Isoform 重试。",
 	},
 }
@@ -156,23 +152,30 @@ func menuBarFill(template string, values ...string) string {
 }
 
 // menuBarMenu is the short native menu for right-click and Control-click.
-// The observation-state line, the Library submenu and Pause for 1 hour left
-// it in 1.0; the global privacy shortcut (Control-Option-Command-E) is its
-// own event tap and keeps working.
+// Closed Eyes is the one way to stop seeing (design S2, 2026-11-21): while
+// eyes are open it offers the phone's lengths, 15 minutes, an hour or until
+// the person ends it; while closed, Open eyes. The global privacy shortcut
+// (Control-Option-Command-E) is its own event tap and keeps working.
 func menuBarMenu(lang string, paused bool) []menuBarMenuItem {
 	w := menuBarWords(lang)
-	pause := menuBarMenuItem{ID: "pause15", Title: w["pause15"]}
-	if paused {
-		pause = menuBarMenuItem{ID: "resume", Title: w["resumeMenu"]}
-	}
 	sep := menuBarMenuItem{Separator: true}
-	return []menuBarMenuItem{
+	eyes := []menuBarMenuItem{
+		{ID: "closedEyes15", Title: w["closedFor15"]},
+		{ID: "closedEyes60", Title: w["closedForHour"]},
+		{ID: "closedEyes", Title: w["closedUntil"]},
+	}
+	if paused {
+		eyes = []menuBarMenuItem{{ID: "resume", Title: w["openEyes"]}}
+	}
+	menu := []menuBarMenuItem{
 		{ID: "open", Title: w["open"], Key: "i", Modifiers: []string{"command", "shift"}},
 		{ID: "make", Title: w["make"]}, sep,
-		pause, sep,
-		{ID: "settings", Title: w["settingsMenu"], Key: ",", Modifiers: []string{"command"}},
-		{ID: "quit", Title: w["quit"], Key: "q", Modifiers: []string{"command"}},
 	}
+	menu = append(menu, eyes...)
+	return append(menu, sep,
+		menuBarMenuItem{ID: "settings", Title: w["settingsMenu"], Key: ",", Modifiers: []string{"command"}},
+		menuBarMenuItem{ID: "quit", Title: w["quit"], Key: "q", Modifiers: []string{"command"}},
+	)
 }
 
 // menuBarNext is the popover's next item to answer: the first of Today's
@@ -188,15 +191,22 @@ type menuBarNext struct {
 	ToAgent bool `json:"toAgent,omitempty"`
 }
 
-// menuBarNextItem is the first open item of Your work (the shared list, B2)
-// as the popover's Next row, or nil when nothing is open.
-func menuBarNextItem(w map[string]string, list WorkList) *menuBarNext {
+// menuBarOpenWork is Your work's open items, in its order: the list Next is
+// the first of, the label counts and whose ids light the icon's dot.
+func menuBarOpenWork(list WorkList) []WorkItem {
 	open := make([]WorkItem, 0, len(list.Items))
 	for _, item := range list.Items {
 		if item.State == workStateOpen {
 			open = append(open, item)
 		}
 	}
+	return open
+}
+
+// menuBarNextItem is the first open item of Your work (the shared list, B2)
+// as the popover's Next row, or nil when nothing is open.
+func menuBarNextItem(w map[string]string, list WorkList) *menuBarNext {
+	open := menuBarOpenWork(list)
 	if len(open) == 0 {
 		return nil
 	}
@@ -226,11 +236,16 @@ func menuBarWatchWord(recordings []WatchRecording, now time.Time) string {
 	}
 }
 
-// menuBarStateLine is the mark's words, then the watch's.
+// menuBarStateLine is the mark's words, then the watch's. With no mark
+// words (the screen's state isn't known yet) it is the watch's part alone,
+// and empty when that isn't known either (design S8: never "Starting…").
 func menuBarStateLine(w map[string]string, mark string) string {
 	word, _ := menuBarWatch.Load().(string)
-	if word == "" {
+	switch {
+	case word == "":
 		return mark
+	case mark == "":
+		return w[word]
 	}
 	return mark + " · " + w[word]
 }
@@ -247,16 +262,10 @@ func watchListeningAt(recordings []WatchRecording, now time.Time) bool {
 	return false
 }
 
-type menuBarWaitingItem struct {
-	ID        string `json:"id"`
-	SessionID string `json:"sessionId"`
-	Title     string `json:"title"`
-	Detail    string `json:"detail"`
-}
-
 // menuBarBrief is the popover's brief row: ready (with a recording), read
 // (no recording; opens Today), trying (today's is still being tried), none
-// (nothing yet today) or making.
+// (nothing yet today), first (the first day, before the first brief) or
+// making.
 type menuBarBrief struct {
 	Kind    string  `json:"kind"`
 	ID      string  `json:"id,omitempty"`
@@ -269,14 +278,16 @@ type menuBarView struct {
 	Language string            `json:"language"`
 	Theme    string            `json:"theme"`
 	Words    map[string]string `json:"words"`
-	// Status is observing, paused, off or starting; State is its words.
-	Status     string               `json:"status"`
-	State      string               `json:"state"`
-	Paused     bool                 `json:"paused"`
-	Waiting    int                  `json:"waiting"`
-	Items      []menuBarWaitingItem `json:"items"`
-	WaitingIDs []string             `json:"-"`
-	Brief      menuBarBrief         `json:"brief"`
+	// Status is observing, paused, not_seeing, screen_off or starting (the
+	// screen's state not known yet); State is its words.
+	Status string `json:"status"`
+	State  string `json:"state"`
+	Paused bool   `json:"paused"`
+	// Waiting counts Your work's open items, the list Next is the first of;
+	// WaitingIDs are their ids, so a new one lights the icon's dot.
+	Waiting    int          `json:"waiting"`
+	WaitingIDs []string     `json:"-"`
+	Brief      menuBarBrief `json:"brief"`
 	// Next is the next item to answer on Today (computer-settings v1.0.1
 	// rule 8): its place in the list, its source, its title and one line.
 	Next *menuBarNext `json:"next,omitempty"`
@@ -301,7 +312,8 @@ type menuBarView struct {
 	Models string            `json:"models,omitempty"`
 	Menu   []menuBarMenuItem `json:"menu"`
 	Icon   menuBarIconState  `json:"icon"`
-	// Label is the icon's VoiceOver label: the state and the count.
+	// Label is the icon's VoiceOver label: the state and the count, or
+	// "Isoform, {line}" while a trouble line is up (pass-access v1.1.0 rule 3).
 	Label string `json:"label"`
 	Error string `json:"error,omitempty"`
 	// Loading marks the first second after launch, before the first read:
@@ -318,7 +330,7 @@ type menuBarView struct {
 // activity_start task), whether or not observing is on.
 var menuBarObservationStarted atomic.Bool
 
-// menuBarWaitingMemory is the last waiting list a read produced, in memory
+// menuBarWaitingMemory is the last work list summary a read produced, in memory
 // only (titles are personal content and are never written to disk). A
 // refresh that is slow or fails keeps showing it; the error is only for a
 // launch where no read has worked yet.
@@ -336,7 +348,6 @@ type menuBarWaitingMemory struct {
 	language  string
 	waiting   int
 	ids       []string
-	items     []menuBarWaitingItem
 	next      *menuBarNext
 	readAt    time.Time
 	retryAt   time.Time
@@ -371,8 +382,11 @@ func (m *menuBarWaitingMemory) settle(view *menuBarView, read bool, err error, n
 	if read && err == nil {
 		m.succeeded, m.held, m.language, m.waiting = true, true, view.Language, view.Waiting
 		m.ids = append([]string(nil), view.WaitingIDs...)
-		m.items = append([]menuBarWaitingItem(nil), view.Items...)
-		m.next = view.Next
+		m.next = nil
+		if view.Next != nil {
+			next := *view.Next
+			m.next = &next
+		}
 		m.readAt, m.retryAt = now, time.Time{}
 		return
 	}
@@ -380,25 +394,27 @@ func (m *menuBarWaitingMemory) settle(view *menuBarView, read bool, err error, n
 		m.dirty, m.retryAt = true, now.Add(menuBarWaitingRetry)
 	}
 	view.Error, view.WaitingPending = "", false
-	view.Waiting, view.WaitingIDs, view.Items, view.Next = 0, nil, []menuBarWaitingItem{}, nil
+	view.Waiting, view.WaitingIDs, view.Next = 0, nil, nil
 	switch {
 	case m.held && m.language == view.Language:
-		view.Next = m.next
+		if m.next != nil {
+			next := *m.next
+			view.Next = &next
+		}
 		view.Waiting = m.waiting
 		view.WaitingIDs = append([]string(nil), m.ids...)
-		view.Items = append([]menuBarWaitingItem(nil), m.items...)
 	case m.succeeded:
 		view.WaitingPending = true
 	default:
 		view.Error = view.Words["failed"]
 	}
-	view.Label = menuBarLabel(view.Words, view.State, view.Waiting)
+	view.Label = menuBarViewLabel(view)
 }
 
 // withdraw drops the held list after a privacy or source change; the next
 // good read fills it again.
 func (m *menuBarWaitingMemory) withdraw() {
-	m.held, m.waiting, m.ids, m.items, m.next = false, 0, nil, nil, nil
+	m.held, m.waiting, m.ids, m.next = false, 0, nil, nil
 }
 
 func menuBarDuration(seconds float64) string {
@@ -410,71 +426,23 @@ func menuBarDuration(seconds float64) string {
 }
 func menuBarLine(s string) string { return strings.Join(strings.Fields(s), " ") }
 
-// menuBarNeedNoChat prefixes a Needs you item that has no chat card, so
-// clicking it opens Tasks › Needs you instead of Chat.
-const menuBarNeedNoChat = "need:"
-
-// menuBarNeedItems is the first rows of Needs you in Tasks' order, and the id
-// of every row so a new one lights the dot.
-func menuBarNeedItems(needs []TodayNeed, lang string) ([]menuBarWaitingItem, []string) {
-	items := []menuBarWaitingItem{}
-	ids := make([]string, 0, len(needs))
-	for _, need := range needs {
-		id, session := menuBarNeedNoChat+need.ID, ""
-		if need.TargetKind == "chat_item" && need.TargetID != "" {
-			id, session = need.TargetID, need.ChatID
-		}
-		ids = append(ids, id)
-		if len(items) == menuBarMaxWaiting {
-			continue
-		}
-		title, detail := menuBarNeedLines(need, lang)
-		items = append(items, menuBarWaitingItem{ID: id, SessionID: session, Title: menuBarLine(title), Detail: menuBarLine(detail)})
+// menuBarViewLabel is the view's icon label: "Isoform, {line}" while a
+// trouble line is up, so the amber dot has words (pass-access v1.1.0 rule 3);
+// otherwise the state and the count.
+func menuBarViewLabel(view *menuBarView) string {
+	if view.SignOut != nil && view.SignOut.Line != "" {
+		return menuBarFill(view.Words["menuTrouble"], "line", view.SignOut.Line)
 	}
-	return items, ids
-}
-
-// menuBarNeedLines is one item format (shell review v1.0.2 B7): the sentence,
-// then what it's about. A chat card gives its headline and body; any other
-// Needs you item gives its sentence alone.
-func menuBarNeedLines(need TodayNeed, lang string) (string, string) {
-	language := normalizeUILanguage(lang)
-	if need.Item != nil {
-		var card mainChatProactive
-		if json.Unmarshal([]byte(need.Item.ToolInput), &card) == nil {
-			if card.Kind == "digest" {
-				card = menuBarDigestCard(card, need.Sentence)
-			}
-			title, detail := card.Headline, card.Body
-			if copy, ok := card.Localized[language]; ok {
-				title, detail = copy.Headline, copy.Body
-			}
-			if strings.TrimSpace(title) != "" {
-				return title, detail
-			}
-		}
-	}
-	if local := need.SentenceLocalized[language]; strings.TrimSpace(local) != "" {
-		return local, ""
-	}
-	return need.Sentence, ""
-}
-
-// menuBarDigestCard is the card in a digest that the need was projected from.
-func menuBarDigestCard(digest mainChatProactive, sentence string) mainChatProactive {
-	for _, card := range digest.Items {
-		line := strings.TrimSpace(card.Body)
-		if line == "" {
-			line = strings.TrimSpace(card.Headline)
-		}
-		if line == strings.TrimSpace(sentence) {
-			return card
-		}
-	}
-	return mainChatProactive{}
+	return menuBarLabel(view.Words, view.State, view.Waiting)
 }
 
 func menuBarLabel(w map[string]string, state string, waiting int) string {
+	if state == "" {
+		if waiting == 0 {
+			return w["name"]
+		}
+		return menuBarFill(w["labelNoState"], "n", fmt.Sprint(waiting))
+	}
 	if waiting == 0 {
 		return menuBarFill(w["labelNone"], "state", state)
 	}
@@ -592,6 +560,17 @@ func menuBarBriefRow(w map[string]string, lang string, latest MobileBriefV1, has
 	return row
 }
 
+// menuBarFirstBriefRow is the brief row on the first day, before the first
+// brief is made (computer-settings v1.2.0 20d, computer-today v1.1.0 rule
+// 1): a clock, "Your first brief" and "at {time}".
+func menuBarFirstBriefRow(w map[string]string, lang string, first FirstBriefTime) (menuBarBrief, bool) {
+	at, err := time.Parse(time.RFC3339, first.At)
+	if err != nil {
+		return menuBarBrief{}, false
+	}
+	return menuBarBrief{Kind: "first", Title: w["firstBrief"], Meta: menuBarFill(w["firstBriefAt"], "time", observationMenuClock(at.Local(), lang))}, true
+}
+
 // Reuse the existing read projections, including current source/privacy gates.
 // No new queue, stored copy of personal content, or inferred authority. This
 // runs in the background refresh only; a click never waits on it.
@@ -605,21 +584,11 @@ func (a *App) menuBarView(lang string, readWaiting bool) (perfValue menuBarView,
 	doing := a.GetDoingNow()
 	paused := doing.Kind == doingNowPaused
 	observing := a.isActivityMonitorRunning() || a.backgroundListeningRunningNow()
-	view := menuBarView{Language: lang, Theme: currentThemePreference(), Words: w, Paused: paused, Items: []menuBarWaitingItem{}}
-	switch {
-	case paused:
-		view.Status, view.State = "paused", menuBarStateLine(w, menuBarPausedState(w, lang, doing))
-	case observing:
-		view.Status, view.State = "observing", menuBarStateLine(w, w["observing"])
-	case !menuBarObservationStarted.Load():
-		// Launch starts observing a little after the window: until then
-		// the header says so instead of "Observing is off".
-		view.Status, view.State = "starting", w["starting"]
-	default:
-		view.Status, view.State = "off", w["off"]
-	}
+	view := menuBarView{Language: lang, Theme: currentThemePreference(), Words: w, Paused: paused}
+	trouble := a.menuBarTrouble(time.Now())
+	view.Status, view.State = menuBarStatus(w, lang, doing, paused, len(trouble) > 0 && trouble[0].Kind == troubleScreen,
+		a.menuBarScreenSwitchOff(), observing)
 	view.Menu = menuBarMenu(lang, paused)
-	view.Label = menuBarLabel(w, view.State, 0)
 	if status := a.GetUpdateStatus(); status.Status == "update-downloaded" && status.Version != "" {
 		view.Update = status.Version
 		view.UpdateRestart = status.RestartNeeded
@@ -628,12 +597,7 @@ func (a *App) menuBarView(lang string, readWaiting bool) (perfValue menuBarView,
 	view.QuickChat = quickChatHotkeyDisplay(currentQuickChatHotkey())
 	view.ClosedEyesKey = closedEyesHotkeyDisplay(goruntime.GOOS)
 	view.MarkLabel = menuBarMarkLabel(w, paused)
-	trouble := a.menuBarTrouble(time.Now())
 	view.SignOut = menuBarTroubleRow(w, lang, trouble)
-	if len(trouble) > 0 && trouble[0].Kind == troubleScreen && view.Status == "observing" {
-		// The state line says "not seeing" while the screen can't be seen.
-		view.State = menuBarStateLine(w, w["notSeeing"])
-	}
 	// The launch preload can run before startup starts the brief service.
 	if svc := a.ensureMobileBriefService(); svc != nil {
 		latest, ok := a.menuBarLatestBrief(svc)
@@ -649,28 +613,71 @@ func (a *App) menuBarView(lang string, readWaiting bool) (perfValue menuBarView,
 	} else {
 		view.Brief = menuBarBrief{Kind: "none", Title: w["none"]}
 	}
+	if view.Brief.Kind == "none" {
+		// The first day: the first brief's time, saved when setup finished.
+		if first, err := a.GetFirstBriefTime(); err == nil && first.At != "" {
+			if row, ok := menuBarFirstBriefRow(w, lang, first); ok {
+				view.Brief = row
+			}
+		}
+	}
+	view.Label = menuBarViewLabel(&view)
 	if view.Brief.Kind == "sign_in" {
 		view.Menu[1] = menuBarMenuItem{ID: "signIn:" + view.Brief.ID, Title: w["signIn"]}
 	}
 	if !readWaiting {
 		return view, nil
 	}
-	// Waiting on you is what Tasks › Needs you lists (evening walk B7):
-	// never a brief or another chat card that Tasks doesn't list.
-	needs, err := a.GetNeedsYou(0)
+	// Next, the count and the dot all come from Your work's open items
+	// (Tasks › Needs you is gone, computer-map 3.4). A failed read keeps the
+	// last list (menuBarWaitingMemory.settle), never "nothing".
+	list, err := a.GetWorkList()
 	if err != nil {
 		return view, err
 	}
-	view.Items, view.WaitingIDs = menuBarNeedItems(needs.Items, lang)
-	view.Waiting = len(needs.Items)
-	if list, err := a.GetWorkList(); err == nil {
-		view.Next = menuBarNextItem(w, list)
+	open := menuBarOpenWork(list)
+	view.Waiting, view.WaitingIDs = len(open), make([]string, 0, len(open))
+	for _, item := range open {
+		view.WaitingIDs = append(view.WaitingIDs, item.ID)
 	}
+	view.Next = menuBarNextItem(w, list)
 	if recordings, err := a.GetWatchRecordings(); err == nil {
 		menuBarWatch.Store(menuBarWatchWord(recordings, time.Now()))
 	}
-	view.Label = menuBarLabel(w, view.State, view.Waiting)
+	view.Label = menuBarViewLabel(&view)
 	return view, nil
+}
+
+// menuBarStatus is the state line in the mark's words (design S8,
+// computer-settings v1.2.0 rule 5), then the watch's part:
+//   - Closed Eyes: "Closed Eyes · until {time} · every device";
+//   - Screen Recording off for Isoform (trouble): "not seeing";
+//   - the person turned the screen off in What Isoform sees: "screen off",
+//     plain, since it is their choice;
+//   - seeing: "seeing";
+//   - otherwise the screen's state isn't known yet (the first second): the
+//     watch's part alone. An unknown state is never called off.
+func menuBarStatus(w map[string]string, lang string, doing DoingNow, paused, screenTrouble, screenOff, observing bool) (string, string) {
+	switch {
+	case paused:
+		return "paused", menuBarStateLine(w, menuBarPausedState(w, lang, doing))
+	case screenTrouble:
+		return "not_seeing", menuBarStateLine(w, w["notSeeing"])
+	case screenOff:
+		return "screen_off", menuBarStateLine(w, w["screenOff"])
+	case observing:
+		return "observing", menuBarStateLine(w, w["observing"])
+	}
+	return "starting", menuBarStateLine(w, "")
+}
+
+// menuBarScreenSwitchOff is the person's own screen switch in What Isoform
+// sees (a saved choice, read without asking macOS anything).
+func (a *App) menuBarScreenSwitchOff() bool {
+	if a == nil || a.store == nil || goruntime.GOOS != "darwin" {
+		return false
+	}
+	return !a.isPermissionEnabled("screen_recording")
 }
 
 // menuBarModels is the popover's model download line, or "" when nothing
@@ -927,7 +934,12 @@ func menuBarTroubleRow(w map[string]string, lang string, lines []TroubleLine) *m
 	}
 	switch first.Kind {
 	case troubleScreen:
-		return &menuBarSignOut{Kind: first.Kind, Line: menuBarFill(w["troubleScreen"], "time", since) + " " + w["troubleScreenWhy"], SignIn: w["openSettings"], Command: "openScreenSettings"}
+		what := menuBarFill(w["troubleScreen"], "time", since)
+		if first.Never {
+			// Never allowed: no time that would mean nothing (design S8).
+			what = w["troubleScreenNever"]
+		}
+		return &menuBarSignOut{Kind: first.Kind, Line: what + " " + w["troubleScreenWhy"], SignIn: w["openSettings"], Command: "openScreenSettings"}
 	case troubleSignedOut:
 		return &menuBarSignOut{Kind: first.Kind, Assistant: first.Assistant, Line: menuBarFill(w["troubleSignedOut"], "assistant", assistantSignOutDisplayName(first.Assistant), "time", since), SignIn: w["signIn"], Command: "signIn:" + first.Assistant}
 	case troublePhone:

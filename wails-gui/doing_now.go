@@ -13,8 +13,8 @@ import (
 	"wails-gui/storage"
 )
 
-// What Isoform is doing right now, in plain words: details in the sidebar's
-// ObservingStatus popover. The menu bar derives its observation state from
+// What Isoform is doing right now, in plain words. The menu bar derives its
+// observation state from
 // the same snapshot (observation_menu.go). It is read from state the app already keeps and
 // recomputed on the events that change that state (doingNowNudgeEvents) and
 // every doingNowPollInterval for the state no event announces (a meeting

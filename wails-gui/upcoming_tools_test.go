@@ -507,13 +507,16 @@ func TestUpcomingToolsAreForTheMacOnly(t *testing.T) {
 	if chatB10Enabled {
 		phoneTools += 2
 	}
+	// Both also get Chat's native reads of the person's day (chat_native_reads.go):
+	// asking about your day from the phone reads the same way (phone-chat rule 4).
+	phoneTools += len(chatNativeReadNames)
 	for _, tc := range []struct {
 		origin    promptOrigin
 		wantTools int
 		wantText  string
 	}{
 		{promptOriginPhone, phoneTools, "can be changed only on the computer"},
-		{promptOriginMac, 11, "call UpcomingList"}, // with DraftMessage, HandOffWork, CorrectIsoform and CiteSources
+		{promptOriginMac, 11 + len(chatNativeReadNames), "call UpcomingList"}, // with DraftMessage, HandOffWork, CorrectIsoform, CiteSources and the native reads
 	} {
 		if err := rig.app.executePrompt("move my weekly update", "", "m", "", main.LocalID, nil, false, false, "", nil, nil, "", "", tc.origin); err != nil {
 			t.Fatal(err)
@@ -526,6 +529,12 @@ func TestUpcomingToolsAreForTheMacOnly(t *testing.T) {
 		}
 		if len(input.ExtraTools) != tc.wantTools {
 			t.Fatalf("origin %q: %d tools, want %d", tc.origin, len(input.ExtraTools), tc.wantTools)
+		}
+		// The Upcoming tools stay on the computer whatever else a turn gets.
+		for _, tool := range input.ExtraTools {
+			if tc.origin == promptOriginPhone && strings.HasPrefix(tool.Name(), "Upcoming") {
+				t.Fatalf("a phone turn got %s", tool.Name())
+			}
 		}
 		prompt, _ := input.PromptFunc()
 		if !strings.Contains(prompt, tc.wantText) {

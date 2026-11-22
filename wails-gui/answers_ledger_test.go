@@ -224,3 +224,46 @@ func TestJudgmentStatsCountsByDayAndSource(t *testing.T) {
 		t.Fatalf("yesterday's topic = %+v", got)
 	}
 }
+
+// Your answers offers Undo only on a Your work answer that still stands and
+// can still be taken back until the next brief (redesign-activity v1.0.0
+// rule 10): never on About you's answers, an undone one, one that sent work
+// on, an agent's request, or after the brief closed it.
+func TestAnswersPageMarksWhatCanBeUndone(t *testing.T) {
+	app, _ := workAnswersTestApp(t)
+	if _, err := app.AnswerWork(workTestPrepID, WorkAnswerInput{Action: workActionNo, Reason: "not_now"}); err != nil {
+		t.Fatal(err)
+	}
+	app.recordAnswer(AnswerRecord{ItemID: "belief:m1", Kind: answerKindBelief, Action: workActionYes, Surface: workSurfaceComputer})
+	page, _ := app.GetAnswers(10, "")
+	if len(page.Answers) != 2 || page.Answers[0].CanUndo || !page.Answers[1].CanUndo {
+		t.Fatalf("before Undo = %+v", page.Answers)
+	}
+	if _, err := app.UndoWork(workTestPrepID); err != nil {
+		t.Fatal(err)
+	}
+	page, _ = app.GetAnswers(10, "")
+	if len(page.Answers) != 2 || page.Answers[1].CanUndo || !page.Answers[1].Undone {
+		t.Fatalf("after Undo = %+v", page.Answers)
+	}
+
+	now := time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC)
+	open := AnswerRecord{EntryID: "e1", ItemID: "w1", Kind: answerKindWork, Action: workActionYes, UndoUntil: now.Add(time.Hour).Format(time.RFC3339)}
+	standing := map[string]AnswerRecord{"w1": open}
+	if !answerCanUndo(open, standing, now) {
+		t.Fatal("an open answer can't be undone")
+	}
+	closed := open
+	closed.UndoUntil = now.Add(-time.Minute).Format(time.RFC3339)
+	sent := open
+	sent.TaskID = "t1"
+	older := open
+	older.EntryID = "e0"
+	request := open
+	request.ItemID = workRequestID("r1")
+	for name, record := range map[string]AnswerRecord{"closed": closed, "sent": sent, "older": older, "request": request} {
+		if answerCanUndo(record, map[string]AnswerRecord{record.ItemID: map[bool]AnswerRecord{true: open, false: record}[name == "older"]}, now) {
+			t.Fatalf("%s answer offered Undo", name)
+		}
+	}
+}

@@ -66,10 +66,10 @@ func TestPartsAfterAClosedRecordingAreKeptAsItsContinuation(t *testing.T) {
 		t.Fatalf("first recording changed: %+v", first)
 	}
 	// A repeat of a late part is answered from the index, with nothing fetched.
-	if view, found, err := store.has("dev-a", recordingID, 3); err != nil || !found || view.ID != continuation {
+	if view, found, err := store.storedPart("dev-a", recordingID, 3); err != nil || found == nil || view.ID != continuation {
 		t.Fatalf("repeat of a late part: %+v found=%v err=%v", view, found, err)
 	}
-	if _, found, _ := store.has("dev-a", recordingID, 4); found {
+	if _, found, _ := store.storedPart("dev-a", recordingID, 4); found != nil {
 		t.Fatal("a part that never came is reported as stored")
 	}
 	// The continuation closed too; what comes after it opens the next one.
@@ -117,14 +117,12 @@ func TestDeletingARecordingTakesItsContinuation(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(store.dir, recordingID)); !os.IsNotExist(err) {
 		t.Fatal("a late part of a deleted recording was stored")
 	}
-	if len(uploads.deleted) != before+1 {
-		t.Fatal("the relay copy of a late part of a deleted recording was left")
+	if len(uploads.deleted) != before {
+		t.Fatal("an unstored late part was deleted from the relay")
 	}
 }
 
-// A refused part's copy must not stay on the relay: 48 of them filled the
-// phone's quota there and stopped every later recording.
-func TestARefusedPartIsRemovedFromTheRelay(t *testing.T) {
+func TestRefusedRecordingPartStaysOnTheRelay(t *testing.T) {
 	store := newMobileRecordingStore(t.TempDir())
 	uploads := &mapUploads{bodies: map[string][]byte{}}
 	req := sealedRecordingPart(t, uploads, "dev-a", uuid.NewString(), 0, false, []byte("audio"), time.Now().Add(-time.Minute))
@@ -132,7 +130,7 @@ func TestARefusedPartIsRemovedFromTheRelay(t *testing.T) {
 	if _, _, err := receiveMobileRecordingPart(context.Background(), store, uploads, recordingTestHub, "dev-a", req); !errors.Is(err, errMobileRecordingSHA) {
 		t.Fatalf("err = %v", err)
 	}
-	if len(uploads.bodies) != 0 {
-		t.Fatal("the refused copy is still on the relay")
+	if len(uploads.bodies) != 1 {
+		t.Fatal("the refused copy was deleted from the relay")
 	}
 }

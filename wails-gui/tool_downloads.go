@@ -100,6 +100,7 @@ func (a *App) StartToolDownload(plan ToolDownloadPlan) error {
 	return a.toolDownloads.startGit(plan)
 }
 
+//isoform:destination metadata
 func (p *toolDownloadPlans) startGit(plan ToolDownloadPlan) error {
 	p.mu.Lock()
 	expected, ok := p.pending[plan.Token]

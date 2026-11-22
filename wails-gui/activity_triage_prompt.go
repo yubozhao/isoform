@@ -85,7 +85,7 @@ func (a *App) loadTriageFeatureFlags(ctx context.Context) triageFeatureFlags {
 		Shadow:     read(triageEnableShadowKey),
 		Automation: featureOn(featureAutomations) && read(triageEnableAutomationKey),
 		Handoff:    read(triageEnableHandoffKey),
-		SOP:        read(triageEnableSOPKey),
+		SOP:        featureOn(featurePlaybooks) && read(triageEnableSOPKey),
 	}
 }
 

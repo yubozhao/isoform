@@ -399,6 +399,19 @@ struct HubStatus: Decodable, Equatable, Sendable {
     var recordingDetail: Bool? = nil
     /// The computer takes the moments the wearer marked in a part (PROTOCOL.md 24.9).
     var recordingMarks: Bool? = nil
+    /// The computer fetches a recording part from the relay the phone names (PROTOCOL.md 24.2,
+    /// `upload.relay`), so a part may go over the direct path.
+    var recordingRelay: Bool? = nil
+    /// The computer keeps a part told ahead of its upload and fetches it by itself (24.2a).
+    var recordingAhead: Bool? = nil
+    /// The computer takes what the phone's recording passes came to, counts only (24.2b).
+    var recordingPasses: Bool? = nil
+    /// The computer takes `restarted` in a pass record (24.2b).
+    var recordingPassRestarts: Bool? = nil
+    /// The computer allows the phone to send pieces itself in a background wake, and takes
+    /// `sentInWake` in a pass record (24.2b). Its rollback switch: absent, the phone hands
+    /// every piece to the system as before.
+    var recordingInWakeSend: Bool? = nil
     /// The computer serves the conversations it found in the recordings (PROTOCOL.md 24.11).
     var recordingConversations: Bool? = nil
     /// The computer takes answers about who a speaker is (PROTOCOL.md 24.13).
@@ -407,6 +420,12 @@ struct HubStatus: Decodable, Equatable, Sendable {
     var watchListening: WatchListeningSetting? = nil
     /// "Notes for long talks" on the computer (PROTOCOL.md 24.12); absent on a computer that has no such setting.
     var watchNotes: WatchNotesSetting? = nil
+    /// Heart rate and Place as shared settings (PROTOCOL.md 24.15); absent on an older computer,
+    /// where the watch's own switches decide.
+    var watchHeartRate: WatchNotesSetting? = nil
+    var watchPlace: WatchNotesSetting? = nil
+    /// The computer takes the phone's word on whether a watch with Isoform is paired (24.15).
+    var watchPairing: Bool? = nil
     var briefSchedule: [ScheduledPhoneBrief]? = nil
     /// The computer serves Your work, the one list (B2), and its answers (B3). Older computers omit it.
     var work: Bool? = nil
@@ -601,6 +620,15 @@ actor HubChannel {
     private var pendingAcknowledgement: UInt64?
     private var pairingChangeDepth = 0
     private var pairingGeneration = UUID()
+    /// How long `abilities()` reuses the computer's last answer.
+    static let abilitiesReuse: TimeInterval = 30
+    private struct AbilitiesOwner: Equatable {
+        let generation: UUID
+        let hubID: String
+        let deviceID: String
+    }
+    private var knownAbilities: (owner: AbilitiesOwner, at: Date, status: HubStatus)?
+    private var abilitiesAsk: (owner: AbilitiesOwner, task: Task<HubStatus, Error>)?
     /// Called each time an answer or event from the computer arrives. The channel is the one place that hears the
     /// computer, so whatever waits for the computer to be back (queued chat messages) listens here.
     private var heardFromComputer: (@Sendable () -> Void)?
@@ -647,6 +675,33 @@ actor HubChannel {
 
     func status() async throws -> HubStatus {
         try await perform(.status).payload(HubStatus.self)
+    }
+
+    /// What the computer can do, for the checks made before a request ("does it take recordings?").
+    /// The answer changes only when the computer is updated, so callers share one request and reuse its
+    /// answer for a short time. Opening the app made eight status requests on 2026-11-20; each also costs a
+    /// long-poll and an acknowledgement at the relay. Anything that changes while the app runs (a pause, a
+    /// setting) is read with `status()`.
+    func abilities() async throws -> HubStatus {
+        // The answer belongs to one pairing: with none (unpaired) this throws, and another computer or
+        // another pairing of this phone never reads it.
+        let context = try makeContext()
+        let owner = AbilitiesOwner(generation: pairingGeneration, hubID: context.hubID, deviceID: context.deviceID)
+        if let known = knownAbilities, known.owner == owner,
+           Date().timeIntervalSince(known.at) < HubChannel.abilitiesReuse {
+            return known.status
+        }
+        knownAbilities = nil
+        if let asking = abilitiesAsk, asking.owner == owner {
+            return try await asking.task.value
+        }
+        let task = Task { try await self.status() }
+        abilitiesAsk = (owner, task)
+        defer { if abilitiesAsk?.owner == owner { abilitiesAsk = nil } }
+        // A request that fails throws here, so only an answer from the computer is ever kept.
+        let status = try await task.value
+        if pairingGeneration == owner.generation { knownAbilities = (owner, Date(), status) }
+        return status
     }
 
     func today() async throws -> MobileTodaySnapshot {

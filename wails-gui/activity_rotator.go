@@ -56,6 +56,9 @@ const (
 // StorageRotator manages tiered storage rotation for activity data.
 type StorageRotator struct {
 	store *ActivityStore
+	// onExpire hears each retention purge's threshold, so what was made
+	// from the expired activity ages out with it (See them's entries).
+	onExpire func(thresholdMs int64)
 
 	mu              sync.RWMutex
 	config          RotatorConfig
@@ -397,6 +400,9 @@ func (r *StorageRotator) purgeExpiredSessions(cfg RotatorConfig) {
 	// atomically protects any live members before discarding private summaries.
 	if err := r.store.purgeTimelineRunsOlderThan(thresholdMs); err != nil {
 		log.Printf("[activity-rotator] failed to purge expired timeline runs: %v", err)
+	}
+	if r.onExpire != nil {
+		r.onExpire(thresholdMs)
 	}
 }
 

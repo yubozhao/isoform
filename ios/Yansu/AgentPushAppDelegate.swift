@@ -43,6 +43,7 @@ final class AgentPushAppDelegate: NSObject, UIApplicationDelegate, UNUserNotific
         UNUserNotificationCenter.current().delegate = self
         NotificationCategories.register()
         BackgroundTodayRefresh.register()
+        BackgroundRecordingSend.register()
         return true
     }
 

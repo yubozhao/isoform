@@ -18,8 +18,7 @@ import (
 // and Codex sessions (docs/handoff-2026-10-28, sections 2 and 7). Pass 1 is
 // local and fast; pass 2 asks the person's own AI once per project. The view
 // answers from a small cache on disk, so Today and Chat open on what is
-// already known. Reads and writes are on by default and can be turned off in
-// Settings › Privacy; turning them off forgets everything that came from them.
+// already known. Each history source requires a saved Learn from it choice.
 
 const (
 	assistantHistoryEvent       = "assistant-history:updated"
@@ -70,19 +69,22 @@ type HistoryProject struct {
 // scan that may run at a time. writeMu serializes every write a scan makes to
 // memories and know-how; a forget takes it too, so nothing lands after it.
 type assistantHistoryState struct {
-	mu         sync.Mutex
-	loaded     bool
-	cache      assistantHistoryCache
-	running    bool
-	cancel     context.CancelFunc
-	generation uint64
-	writeMu    sync.Mutex
-	loopOnce   sync.Once
+	mu            sync.Mutex
+	loaded        bool
+	cache         assistantHistoryCache
+	running       bool
+	restart       bool
+	restartSource string
+	cancel        context.CancelFunc
+	generation    uint64
+	writeMu       sync.Mutex
+	loopOnce      sync.Once
 }
 
 // assistantHistoryCache is the persisted view. Pass 2 fields live on each
 // project and survive a pass 1 rescan of the same project.
 type assistantHistoryCache struct {
+	Partial      bool             `json:"partial,omitempty"`
 	Version      int              `json:"version"`
 	ScannedAt    int64            `json:"scannedAt"`
 	Assistants   []string         `json:"assistants"`
@@ -102,45 +104,14 @@ func assistantHistoryUnderTestWithoutHome() bool {
 	return testing.Testing() && strings.TrimSpace(os.Getenv(agentHomeEnv)) == ""
 }
 
-// readAssistantHistoryOn is the opt-out switch: absent means on.
-func readAssistantHistoryOn() bool {
-	return !loadConfig().AssistantHistoryOff
-}
-
-// GetReadAssistantHistory reports the Settings › Privacy switch.
-func (a *App) GetReadAssistantHistory() (bool, error) {
-	configMu.Lock()
-	defer configMu.Unlock()
-	cfg, err := loadConfigChecked()
-	if err != nil {
-		return false, err
-	}
-	return !cfg.AssistantHistoryOff, nil
-}
-
-// SetReadAssistantHistory turns reading on or off. Off cancels a running scan,
-// deletes the cache and forgets every memory and know-how item that came from
-// history; the frontend's Undo delays this call. On starts a scan.
-func (a *App) SetReadAssistantHistory(on bool) error {
-	if err := updateConfig(func(c *yansuConfig) {
-		c.AssistantHistoryOff = !on
-	}); err != nil {
-		return err
-	}
-	if on {
-		a.startAssistantHistoryScan(true)
-		a.emitAssistantHistoryUpdated()
-		return nil
-	}
-	return a.forgetAssistantHistory()
-}
-
 // GetAssistantHistory answers from the cache on disk; it never scans.
 func (a *App) GetAssistantHistory() AssistantHistoryView {
 	if a == nil {
 		return assistantHistoryEmptyView(false)
 	}
-	if !readAssistantHistoryOn() {
+	settings, err := readLearnFromIt()
+	allowed := settings.allowedSources()
+	if err != nil || len(allowed) == 0 {
 		return assistantHistoryEmptyView(false)
 	}
 	if assistantHistoryUnderTestWithoutHome() {
@@ -150,12 +121,15 @@ func (a *App) GetAssistantHistory() AssistantHistoryView {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	st.loadLocked()
-	return a.assistantHistoryViewLocked()
+	return a.assistantHistoryViewLocked(allowed)
 }
 
 // RefreshAssistantHistory starts a scan in the background when reading is on.
 // It is a no-op while one runs.
 func (a *App) RefreshAssistantHistory() error {
+	if _, err := readLearnFromIt(); err != nil {
+		return err
+	}
 	a.startAssistantHistoryScan(true)
 	return nil
 }
@@ -174,9 +148,9 @@ func assistantHistoryEmptyView(enabled bool) AssistantHistoryView {
 }
 
 // assistantHistoryViewLocked builds the view from the cache. Caller holds mu.
-func (a *App) assistantHistoryViewLocked() AssistantHistoryView {
+func (a *App) assistantHistoryViewLocked(allowed map[string]bool) AssistantHistoryView {
 	st := &a.assistantHistory
-	cache := st.cache
+	cache := filterHistoryCache(st.cache, allowed)
 	view := AssistantHistoryView{
 		Enabled:      true,
 		Assistants:   append([]string{}, cache.Assistants...),
@@ -265,21 +239,31 @@ func assistantHistoryCachePath() string {
 // startAssistantHistoryScan starts pass 1 (and pass 2) unless one is running,
 // reading is off, or observation is paused. With force false it also needs
 // the cache to be older than the 15-minute window.
-func (a *App) startAssistantHistoryScan(force bool) bool {
-	if a == nil || !readAssistantHistoryOn() || a.IsClosedEyesModeEnabled() {
+func (a *App) startAssistantHistoryScan(force bool) bool { return a.startHistorySourceScan(force, "") }
+
+func (a *App) startHistorySourceScan(force bool, only string) bool {
+	if a == nil || a.store == nil || assistantHistoryUnderTestWithoutHome() || a.IsClosedEyesModeEnabled() || !a.onboardingFinished(context.Background()) {
 		return false
 	}
-	if assistantHistoryUnderTestWithoutHome() {
+	settings, err := readLearnFromIt()
+	if err != nil || len(settings.allowedSources()) == 0 {
 		return false
 	}
 	st := &a.assistantHistory
 	st.mu.Lock()
 	if st.running {
+		if force && st.cancel == nil {
+			if st.restart && st.restartSource != only {
+				only = ""
+			}
+			st.restartSource = only
+			st.restart = true
+		}
 		st.mu.Unlock()
 		return false
 	}
 	st.loadLocked()
-	if !force && st.cache.ScannedAt > 0 && time.Since(time.UnixMilli(st.cache.ScannedAt)) < assistantHistoryStaleAfter {
+	if !force && !st.cache.Partial && st.cache.ScannedAt > 0 && time.Since(time.UnixMilli(st.cache.ScannedAt)) < assistantHistoryStaleAfter {
 		st.mu.Unlock()
 		return false
 	}
@@ -289,7 +273,7 @@ func (a *App) startAssistantHistoryScan(force bool) bool {
 	gen := st.generation
 	st.mu.Unlock()
 	a.emitAssistantHistoryUpdated()
-	go a.runAssistantHistoryScan(ctx, gen)
+	go a.runAssistantHistoryScan(ctx, gen, only)
 	return true
 }
 
@@ -309,7 +293,7 @@ func (a *App) scheduleAssistantHistory() {
 			}
 		}()
 	})
-	if a.store == nil || !readAssistantHistoryOn() || !a.onboardingFinished(context.Background()) {
+	if !a.prepareHistorySchedule() {
 		return
 	}
 	a.startAssistantHistoryScan(false)
@@ -317,16 +301,21 @@ func (a *App) scheduleAssistantHistory() {
 
 // runAssistantHistoryScan is the background worker: pass 1, then pass 2 for the
 // top projects with new sessions.
-func (a *App) runAssistantHistoryScan(ctx context.Context, gen uint64) {
+func (a *App) runAssistantHistoryScan(ctx context.Context, gen uint64, only string) {
 	defer a.beginPresence(mobilePresenceReadingHistory(mobileTaskRunner(loadAIProviderConfig().Provider)))()
 	st := &a.assistantHistory
 	completed := false
 	defer func() {
 		st.mu.Lock()
+		restart, source := st.restart, st.restartSource
+		st.restart = false
 		st.running = false
 		st.cancel = nil
 		st.mu.Unlock()
 		a.emitAssistantHistoryUpdated()
+		if restart {
+			a.startHistorySourceScan(true, source)
+		}
 		if completed {
 			a.portraitService().poke()
 		}
@@ -337,7 +326,10 @@ func (a *App) runAssistantHistoryScan(ctx context.Context, gen uint64) {
 		log.Printf("[assistant-history] folders unavailable: %v", err)
 		return
 	}
-	scan := scanAssistantHistory(roots, time.Now())
+	scan, err := a.scanAssistantHistory(ctx, roots, time.Now(), only)
+	if err != nil || ctx.Err() != nil || a.IsClosedEyesModeEnabled() {
+		return
+	}
 	if !a.assistantHistoryCurrent(ctx, gen) {
 		return
 	}
@@ -346,8 +338,18 @@ func (a *App) runAssistantHistoryScan(ctx context.Context, gen uint64) {
 		st.writeMu.Unlock()
 		return
 	}
+	settings, err := readLearnFromIt()
+	if err != nil {
+		st.writeMu.Unlock()
+		return
+	}
 	st.mu.Lock()
-	st.cache = mergeAssistantHistoryPass1(st.cache, scan)
+	prior := filterHistoryCache(st.cache, settings.allowedSources())
+	if only != "" {
+		st.cache = mergeNewHistorySource(prior, scan, only)
+	} else {
+		st.cache = mergeAssistantHistoryPass1(prior, scan)
+	}
 	st.saveLocked()
 	st.mu.Unlock()
 	st.writeMu.Unlock()
@@ -363,13 +365,49 @@ func (a *App) runAssistantHistoryScan(ctx context.Context, gen uint64) {
 // assistantHistoryCurrent reports whether the scan may still write: it is not
 // cancelled, and no off switch has happened since it started.
 func (a *App) assistantHistoryCurrent(ctx context.Context, gen uint64) bool {
-	if ctx.Err() != nil {
+	if ctx.Err() != nil || a.IsClosedEyesModeEnabled() {
 		return false
 	}
 	st := &a.assistantHistory
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	return st.generation == gen
+}
+
+// A newly enabled source has no prior contribution. Keep other sources'
+// cached counts without reopening them. The next scheduled full scan
+// reconciles the ranking and the model's summaries for shared projects.
+func mergeNewHistorySource(old assistantHistoryCache, scan assistantHistoryScan, source string) assistantHistoryCache {
+	keep := map[string]bool{}
+	for _, name := range historySources {
+		keep[name] = name != source
+	}
+	base := filterHistoryCache(old, keep)
+	byID := map[string]int{}
+	for i, p := range base.Projects {
+		byID[p.ID] = i
+	}
+	for _, p := range scan.Projects {
+		if i, ok := byID[p.ID]; ok {
+			prior := base.Projects[i]
+			p.Assistants = knowledgeProvenanceUnion(prior.Assistants, p.Assistants)
+			p.Sessions14d += prior.Sessions14d
+			p.SessionsThisWeek += prior.SessionsThisWeek
+			p.AgentSessions14d += prior.AgentSessions14d
+			p.LastAt = max(p.LastAt, prior.LastAt)
+			base.Projects[i] = p
+		} else {
+			base.Projects = append(base.Projects, p)
+		}
+		delete(base.Pass2Marks, p.ID)
+	}
+	base.Projects = rankHistoryProjects(base.Projects)
+	base.Assistants = knowledgeProvenanceUnion(base.Assistants, scan.Assistants)
+	base.Version = assistantHistoryCacheFormat
+	base.ScannedAt = scan.ScannedAt.UnixMilli()
+	base.Partial = true
+	base.Pass2Done = false
+	return base
 }
 
 // mergeAssistantHistoryPass1 replaces the pass 1 fields with a fresh scan and
@@ -380,12 +418,16 @@ func mergeAssistantHistoryPass1(old assistantHistoryCache, scan assistantHistory
 		previous[project.ID] = project
 	}
 	next := old
+	next.Partial = false
 	next.Version = assistantHistoryCacheFormat
 	next.ScannedAt = scan.ScannedAt.UnixMilli()
 	next.Assistants = append([]string{}, scan.Assistants...)
 	next.Projects = make([]HistoryProject, 0, len(scan.Projects))
 	for _, project := range scan.Projects {
 		if before, ok := previous[project.ID]; ok {
+			if old.Partial && len(project.Assistants) > 1 {
+				delete(next.Pass2Marks, project.ID)
+			}
 			project.Status = before.Status
 			project.OpenProblem = before.OpenProblem
 			project.OpenProblemAt = before.OpenProblemAt
@@ -436,6 +478,9 @@ func (a *App) runAssistantHistoryPass2(ctx context.Context, gen uint64, scan ass
 				return
 			}
 			log.Printf("[assistant-history] project not read: %v", err)
+			if !called {
+				return
+			}
 		}
 		// Only an answer from the model changes the project's text; a project
 		// with no readable session keeps what it had.
@@ -502,39 +547,156 @@ func (a *App) storeAssistantHistoryProject(ctx context.Context, gen uint64, proj
 	return errors.Join(errs...)
 }
 
-// forgetAssistantHistory runs after reading is switched off. It stops any
-// scan, takes the write lock so none lands afterwards, removes every memory
-// and know-how item with a history source, and clears the cache.
-func (a *App) forgetAssistantHistory() error {
+// Invalidate both an active model call and results waiting for the write lock.
+func (a *App) invalidateAssistantHistoryScan() {
 	st := &a.assistantHistory
 	st.mu.Lock()
 	st.generation++
 	if st.cancel != nil {
 		st.cancel()
+		st.cancel = nil
 	}
 	st.mu.Unlock()
+}
 
+func (a *App) forgetAssistantHistory() error {
+	a.invalidateAssistantHistoryScan()
+	defer a.emitAssistantHistoryUpdated()
+	return a.forgetAgentHistory("", nil)
+}
+
+func (a *App) forgetAgentHistory(source string, withdrawal *learnFromItSettings) error {
+	st := &a.assistantHistory
 	st.writeMu.Lock()
 	defer st.writeMu.Unlock()
-	err := a.forgetAssistantHistoryRecords()
-
 	st.mu.Lock()
-	st.cache = assistantHistoryCache{Version: assistantHistoryCacheFormat, Pass2Marks: map[string]int64{}}
-	st.loaded = true
-	if path := assistantHistoryCachePath(); path != "" {
-		if removeErr := os.Remove(path); removeErr != nil && !os.IsNotExist(removeErr) {
-			err = errors.Join(err, removeErr)
+	st.loadLocked()
+	cache := st.cache
+	st.mu.Unlock()
+	if err := a.forgetAssistantHistoryRecords(source, cache, withdrawal); err != nil {
+		return err
+	}
+	keep := map[string]bool{}
+	if source != "" {
+		for _, name := range historySources {
+			keep[name] = name != source
 		}
 	}
+	next := filterHistoryCache(cache, keep)
+	next.ScannedAt = 0
+	next.Pass2Done = false
+	next.BeliefCount, next.KnowHowCount = a.assistantHistoryCounts()
+	if source == "" {
+		if err := os.Remove(assistantHistoryCachePath()); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		next = assistantHistoryCache{Version: assistantHistoryCacheFormat, Pass2Marks: map[string]int64{}}
+	} else {
+		data, err := json.Marshal(next)
+		if err != nil {
+			return err
+		}
+		path := assistantHistoryCachePath()
+		if err = os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			return err
+		}
+		if err = writeKnowHowAtomic(path, data); err != nil {
+			return err
+		}
+	}
+	st.mu.Lock()
+	st.cache = next
 	st.mu.Unlock()
-	a.emitAssistantHistoryUpdated()
-	return err
+	return nil
+}
+
+// The old cache stores project aggregates. A mixed row cannot be split
+// safely, so discard it and let pass 1 rebuild it from permitted sessions.
+func filterHistoryCache(cache assistantHistoryCache, allowed map[string]bool) assistantHistoryCache {
+	next := cache
+	next.Assistants = nil
+	next.Projects = nil
+	next.Pass2Marks = map[string]int64{}
+	for _, name := range cache.Assistants {
+		if allowed[name] {
+			next.Assistants = append(next.Assistants, name)
+		}
+	}
+	for _, p := range cache.Projects {
+		safe := len(p.Assistants) > 0
+		for _, name := range p.Assistants {
+			safe = safe && allowed[name]
+		}
+		if safe {
+			next.Projects = append(next.Projects, p)
+			next.Pass2Marks[p.ID] = cache.Pass2Marks[p.ID]
+		}
+	}
+	return next
+}
+
+// Legacy project names are basenames and can collide. Use the union of
+// every matching project's assistants; unknown attribution is withdrawn.
+func historyRecordSources(fields map[string]any, cache assistantHistoryCache) []string {
+	if names := okfStringSlice(fields, "historyAgents"); len(names) > 0 {
+		return names
+	}
+	project := okfString(fields, "history_project")
+	if project == "" {
+		if apps := okfStringSlice(fields, "apps"); len(apps) > 0 {
+			project = apps[0]
+		}
+	}
+	var names []string
+	for _, p := range cache.Projects {
+		if p.Name == project && project != "" {
+			if len(p.Assistants) == 0 {
+				return nil
+			}
+			names = append(names, p.Assistants...)
+		}
+	}
+	return names
+}
+
+// When a legacy record is rewritten, persist the same conservative
+// attribution that Forget would use before the rewrite.
+func historyAgentsForExistingRecord(fields map[string]any) []string {
+	if names := okfStringSlice(fields, "historyAgents"); len(names) > 0 {
+		return names
+	}
+	var st assistantHistoryState
+	st.loadLocked()
+	if names := historyRecordSources(fields, st.cache); len(names) > 0 {
+		return names
+	}
+	return []string{"claude", "codex"}
+}
+
+func forgetHistoryRecord(content, source string, cache assistantHistoryCache) bool {
+	if source == "" {
+		return true
+	}
+	doc, ok := parseOKFDocument(content)
+	if !ok {
+		return true
+	}
+	names := historyRecordSources(doc.Frontmatter, cache)
+	if len(names) == 0 {
+		return true
+	}
+	for _, name := range names {
+		if name == source || (name != "claude" && name != "codex") {
+			return true
+		}
+	}
+	return false
 }
 
 // forgetAssistantHistoryRecords uses the same preview and forget path as the
 // Forget button (preview, then confirm with its token), so derived records and
 // version history go with each memory.
-func (a *App) forgetAssistantHistoryRecords() error {
+func (a *App) forgetAssistantHistoryRecords(agent string, cache assistantHistoryCache, withdrawal *learnFromItSettings) error {
 	var errs []error
 	dir, err := memoryDir()
 	if err != nil {
@@ -547,7 +709,7 @@ func (a *App) forgetAssistantHistoryRecords() error {
 	historyIDs := map[string]bool{}
 	for id, record := range records {
 		for _, content := range record.contents {
-			if parseMemoryFrontmatter(content).Source == assistantHistorySource {
+			if parseMemoryFrontmatter(content).Source == assistantHistorySource && forgetHistoryRecord(content, agent, cache) {
 				historyIDs[id] = true
 				break
 			}
@@ -556,6 +718,11 @@ func (a *App) forgetAssistantHistoryRecords() error {
 	// Capture the full descendant set before deleting any source. Know-how
 	// can cite a synthesis as well as an original history memory.
 	removedIDs := map[string]bool{}
+	if withdrawal != nil {
+		for _, id := range withdrawal.ForgetSources {
+			removedIDs[id] = true
+		}
+	}
 	unresolved := map[string]bool{}
 	for id := range historyIDs {
 		record := records[id]
@@ -576,6 +743,9 @@ func (a *App) forgetAssistantHistoryRecords() error {
 			}
 		}
 	}
+	if err := withdrawal.rememberForgetSources(removedIDs); err != nil {
+		return err
+	}
 	for id := range historyIDs {
 		if unresolved[id] {
 			continue
@@ -591,12 +761,13 @@ func (a *App) forgetAssistantHistoryRecords() error {
 			if planErr != nil {
 				err = planErr
 			} else {
-				err = a.ForgetMemoryEntry(id, preview.ConfirmationToken)
-				if err == nil {
-					for _, sourceID := range plan.scopeIDs {
-						removedIDs[sourceID] = true
-					}
+				for _, sourceID := range plan.scopeIDs {
+					removedIDs[sourceID] = true
 				}
+				if err = withdrawal.rememberForgetSources(removedIDs); err != nil {
+					return err
+				}
+				err = a.ForgetMemoryEntry(id, preview.ConfirmationToken)
 			}
 		}
 		if err != nil {
@@ -627,10 +798,14 @@ func (a *App) forgetAssistantHistoryRecords() error {
 			for _, id := range sourceIDs {
 				derived = derived || removedIDs[id] || memoryForgetHistoricalRefMatches(id, sourceIDs, removedIDs)
 			}
-			if source == assistantHistorySource || source == assistantHistoryClaudeMd || derived {
+			fromHistory := source == assistantHistorySource || source == assistantHistoryClaudeMd || len(okfStringSlice(doc.Frontmatter, "historyAgents")) > 0
+			if derived || (fromHistory && forgetHistoryRecord(entry.Content, agent, cache)) {
 				removedKnowledge[entry.ID], removedIDs[entry.ID], changed = true, true, true
 			}
 		}
+	}
+	if err := withdrawal.rememberForgetSources(removedIDs); err != nil {
+		return err
 	}
 	for id := range removedKnowledge {
 		if err := a.DeleteKnowledgeEntry(id); err != nil {
@@ -644,16 +819,20 @@ func (a *App) forgetAssistantHistoryRecords() error {
 // history found, waiting at most d for a running pass 1 to finish. Nil means no
 // history or not ready in time; the welcome then keeps its usual text.
 func (a *App) assistantHistoryAssistantsWithin(d time.Duration) []string {
-	if a == nil || !readAssistantHistoryOn() || assistantHistoryUnderTestWithoutHome() {
+	if a == nil || assistantHistoryUnderTestWithoutHome() {
 		return nil
 	}
 	st := &a.assistantHistory
 	deadline := time.Now().Add(d)
 	for {
+		s, err := readLearnFromIt()
+		if err != nil || len(s.allowedSources()) == 0 {
+			return nil
+		}
 		st.mu.Lock()
 		st.loadLocked()
 		if st.cache.ScannedAt > 0 {
-			assistants := append([]string{}, st.cache.Assistants...)
+			assistants := filterHistoryCache(st.cache, s.allowedSources()).Assistants
 			st.mu.Unlock()
 			return assistants
 		}

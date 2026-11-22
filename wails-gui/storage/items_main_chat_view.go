@@ -157,7 +157,7 @@ func (s *Store) LoadMainChatRowMetadata(ctx context.Context, sessionID string, i
 // LoadMainChatTopicBackfillRows bounds the one-time scan without loading chats
 // outside the main conversation or parsing arbitrary historical payloads.
 func (s *Store) LoadMainChatTopicBackfillRows(ctx context.Context, since int64) ([]StreamItemRow, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+mainChatViewColumns+` FROM stream_items i JOIN sessions s ON s.local_id=i.session_local_id AND s.kind='main' WHERE i.kind='system' AND i.tool_name IN ('main_chat_proactive','main_chat_report') AND i.created_at>=? ORDER BY i.created_at DESC,i.id DESC LIMIT 500`, since)
+	rows, err := s.committedReader().QueryContext(ctx, `SELECT `+mainChatViewColumns+` FROM stream_items i JOIN sessions s ON s.local_id=i.session_local_id AND s.kind='main' WHERE i.kind='system' AND i.tool_name IN ('main_chat_proactive','main_chat_report') AND i.created_at>=? ORDER BY i.created_at DESC,i.id DESC LIMIT 500`, since)
 	if err != nil {
 		return nil, err
 	}

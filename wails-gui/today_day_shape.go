@@ -198,7 +198,7 @@ func (a *App) todayDayShapeForDay(day, now time.Time, brief MobileBriefV1) (Toda
 	if connected && briefDayErr == nil && briefDay.Format("2006-01-02") == from.Format("2006-01-02") {
 		readable := a.mobileBriefForDelivery(brief)
 		question := mobileBriefClosingParagraph(readable)
-		if question.Hold != nil && a.todayHoldCalendarReadable(ctx, policy, readable, question) {
+		if question.Hold != nil && featureOn(featureCalendarHolds) && a.todayHoldCalendarReadable(ctx, policy, readable, question) {
 			out.Hold, _ = validatedTodayCalendarHold(question.Hold, from, now, out)
 		}
 	}

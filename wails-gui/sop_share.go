@@ -23,6 +23,11 @@ const sopImportMaxZipBytes = 20 << 20 // 20 MB
 // Returns the written path, or "" when the user cancels the dialog. Wails
 // binding.
 func (a *App) ExportSOP(id string) (string, error) {
+	// Playbooks, SOPs and goals are off unless their switch is on
+	// (feature_switches.go).
+	if !featureOn(featurePlaybooks) {
+		return "", errFeatureOff(featurePlaybooks)
+	}
 	if a.sopStore == nil {
 		return "", fmt.Errorf("sop store not ready")
 	}
@@ -62,6 +67,11 @@ func (a *App) ExportSOP(id string) (string, error) {
 // they are curated artifacts someone chose to share, not machine drafts.
 // Returns a zero Entry (ID=="") when the user cancels. Wails binding.
 func (a *App) ImportSOP() (sop.Entry, error) {
+	// Playbooks, SOPs and goals are off unless their switch is on
+	// (feature_switches.go).
+	if !featureOn(featurePlaybooks) {
+		return sop.Entry{}, errFeatureOff(featurePlaybooks)
+	}
 	if a.sopStore == nil {
 		return sop.Entry{}, fmt.Errorf("sop store not ready")
 	}

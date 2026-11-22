@@ -523,6 +523,8 @@ func (s *magpieSidecar) setHealthy(ok bool) {
 }
 
 // probe performs one GET against the loopback gateway.
+//
+//isoform:destination local
 func (s *magpieSidecar) probe(ctx context.Context, port int, path string) (int, []byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, magpieProbeTimeout)
 	defer cancel()
@@ -695,6 +697,8 @@ func (s *magpieSidecar) watchExternal(ctx context.Context, stop <-chan struct{})
 }
 
 // launch starts `magpie serve`, logging its output to the magpie log.
+//
+//isoform:destination assistant
 func (s *magpieSidecar) launch(bin string, port int) (*magpieChild, error) {
 	// The supervisor can restart without Start being called again.
 	if err := s.reconcileByok(); err != nil {

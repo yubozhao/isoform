@@ -50,6 +50,8 @@ func tavilyAPIKey() string {
 
 // tavilySearch runs a single web search. The caller is responsible for the
 // context deadline; a short one keeps a flaky network from stalling research.
+//
+//isoform:destination tavily
 func tavilySearch(ctx context.Context, query string, maxResults int) (*tavilyResponse, error) {
 	key := tavilyAPIKey()
 	if key == "" {

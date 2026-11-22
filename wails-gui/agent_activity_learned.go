@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"log"
 	"os"
 	"path/filepath"
@@ -211,24 +212,38 @@ func (a *App) cleanupAgentLearnedRecords(ctx context.Context) (agentCleanupResul
 		if err != nil {
 			return result, err
 		}
-		resolved := resolveHistoryRecordsAgent(ctx, roots, history)
-		if ctx.Err() != nil {
-			return result, ctx.Err()
-		}
-		// Codex archives finished threads' files; its thread index still
-		// places them by folder and time.
-		var unplaced []*agentCleanupRecord
-		for _, r := range history {
-			if _, ok := resolved[r]; !ok && r.assistant == "codex" {
-				unplaced = append(unplaced, r)
+		resolved := map[*agentCleanupRecord]bool{}
+		for _, source := range historySources {
+			var candidates []*agentCleanupRecord
+			for _, r := range history {
+				if r.assistant == source {
+					candidates = append(candidates, r)
+				}
 			}
-		}
-		if len(unplaced) > 0 {
-			for r, agent := range resolveCodexRecordsByThreads(readCodexThreadSpans(roots), unplaced) {
+			if len(candidates) == 0 {
+				continue
+			}
+			matches, err := a.resolveHistoryRecordsAgent(ctx, roots, source, candidates)
+			if err != nil {
+				return result, err
+			}
+			for r, agent := range matches {
 				resolved[r] = agent
 			}
 		}
+		settings, err := readLearnFromIt()
+		if err != nil {
+			return result, err
+		}
+		allowed := settings.allowedSources()
+		if a.IsClosedEyesModeEnabled() {
+			return result, errors.New("history cleanup paused")
+		}
 		for _, r := range history {
+			if !allowed[r.assistant] {
+				result.Unresolved++
+				continue
+			}
 			agent, ok := resolved[r]
 			if !agent && r.kind == "knowledge" && historyKnowHowIsAgentWork(r.knowKind, r.text) {
 				// Learned in an agent host about agent work: the brief's
@@ -427,7 +442,7 @@ type historyCleanupMatch struct {
 // time names, and reports whether every cited excerpt was agent work: none
 // of the turns the history reader saw there answered a prompt the person
 // typed. A record with any cited time it cannot place is left out.
-func resolveHistoryRecordsAgent(ctx context.Context, roots assistantHistoryRoots, records []*agentCleanupRecord) map[*agentCleanupRecord]bool {
+func (a *App) resolveHistoryRecordsAgent(ctx context.Context, roots assistantHistoryRoots, source string, records []*agentCleanupRecord) (map[*agentCleanupRecord]bool, error) {
 	oldest := time.Now()
 	for _, r := range records {
 		for _, at := range r.sessionsAt {
@@ -437,9 +452,10 @@ func resolveHistoryRecordsAgent(ctx context.Context, roots assistantHistoryRoots
 		}
 	}
 	cutoff := oldest.Add(-time.Hour)
-	var sessions []assistantHistorySession
-	sessions = append(sessions, scanClaudeHistorySessions(roots.Claude, cutoff)...)
-	sessions = append(sessions, scanCodexHistorySessions(roots.Codex, cutoff)...)
+	sessions, err := a.historySessionsFor(ctx, roots, source, cutoff)
+	if err != nil {
+		return nil, err
+	}
 	resolver := &assistantHistoryRootResolver{home: roots.Home, cache: map[string]string{}}
 	byProject := map[string][]int{}
 	for i := range sessions {
@@ -470,10 +486,10 @@ func resolveHistoryRecordsAgent(ctx context.Context, roots assistantHistoryRoots
 	}
 	best := map[key]historyCleanupMatch{}
 	for i, targets := range perFile {
-		if ctx.Err() != nil {
-			return nil
+		var matches []historyCleanupMatch
+		if err := a.withHistorySource(ctx, source, func() { matches = matchHistoryFileTargets(sessions[i], targets) }); err != nil {
+			return nil, err
 		}
-		matches := matchHistoryFileTargets(sessions[i], targets)
 		for j, m := range matches {
 			if m.delta > agentActivityMatchSlack {
 				continue
@@ -500,7 +516,22 @@ func resolveHistoryRecordsAgent(ctx context.Context, roots assistantHistoryRoots
 			out[r] = agent
 		}
 	}
-	return out
+	if source == "codex" {
+		var unplaced []*agentCleanupRecord
+		for _, r := range records {
+			if _, ok := out[r]; !ok {
+				unplaced = append(unplaced, r)
+			}
+		}
+		if len(unplaced) > 0 {
+			err = a.withHistorySource(ctx, source, func() {
+				for r, agent := range resolveCodexRecordsByThreads(readCodexThreadSpans(roots), unplaced) {
+					out[r] = agent
+				}
+			})
+		}
+	}
+	return out, err
 }
 
 // matchHistoryFileTargets reads one session file and, for each target time,
@@ -520,7 +551,7 @@ func matchHistoryFileTargets(session assistantHistorySession, targets []historyC
 			last = t.at
 		}
 	}
-	file, err := os.Open(session.Path)
+	file, err := historyOpenSession(session.Path)
 	if err != nil {
 		return out
 	}

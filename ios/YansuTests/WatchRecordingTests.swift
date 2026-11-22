@@ -424,6 +424,37 @@ final class WatchTodayCardTests: XCTestCase {
         XCTAssertNil(WatchRecordingWire.status(fromContext: odd))
     }
 
+    /// Bo, 2026-11-18: "Why the phone app don't have watch screen sometime?" The tab showed only
+    /// after the system reported the watch, so it was missing at launch and whenever no report
+    /// came. A phone that has had a watch keeps the tab; only "no watch is paired" removes it.
+    @MainActor
+    func testTheWatchTabStaysForAPhoneThatHasHadAWatch() throws {
+        let suite = "watch-tab-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let first = WatchRecordingsModel(defaults: defaults)
+        XCTAssertFalse(first.showsWatchTab, "a phone that never had a watch shows no tab")
+        first.connection = .noWatch
+        XCTAssertFalse(first.showsWatchTab)
+        first.connection = .appMissing
+        XCTAssertTrue(first.showsWatchTab)
+        first.connection = .ready(reachable: false)
+        XCTAssertTrue(first.showsWatchTab)
+
+        // The next launch, before the system has said anything, and if it never says.
+        let next = WatchRecordingsModel(defaults: defaults)
+        XCTAssertEqual(next.connection, .unknown)
+        XCTAssertTrue(next.showsWatchTab, "the tab is there at launch")
+        next.connection = .ready(reachable: true)
+        XCTAssertTrue(next.showsWatchTab)
+        // Only a plain report of no paired watch takes it away, and a later report brings it back.
+        next.connection = .noWatch
+        XCTAssertFalse(next.showsWatchTab)
+        next.connection = .unknown
+        XCTAssertTrue(next.showsWatchTab)
+    }
+
     @MainActor
     func testTheCardShowsWheneverIsoformIsOnTheWatch() {
         let model = WatchRecordingsModel()
@@ -545,7 +576,69 @@ final class WatchTabTests: XCTestCase {
         XCTAssertEqual(now(.ready(reachable: true), .stoppedToday).word, String(localized: "Off for today"))
         XCTAssertEqual(now(.ready(reachable: true), .notRecording).kind, .notListening)
         XCTAssertEqual(now(.appMissing, nil).kind, .setUp)
+        // A watch that has had Isoform and does not answer as having it: not "put it on your watch".
+        let away = now(.appAway, .recording)
+        XCTAssertEqual(away.kind, .unknown)
+        XCTAssertNotEqual(away.word, now(.appMissing, nil).word)
+        XCTAssertFalse(away.line.contains(String(localized: "Isoform isn't on it yet.")), away.line)
         XCTAssertEqual(now(.ready(reachable: true), nil).kind, .unknown)
+    }
+
+    /// 2026-11-21: twice right after an update the system said the watch app was not installed,
+    /// and the page said "Isoform isn't on it yet" and hid the hours and conversations. A watch
+    /// that has had Isoform is "away", keeps its tab, and is never told to set up again.
+    func testAWatchThatHadIsoformIsAwayNotMissing() {
+        XCTAssertEqual(WatchConnection.from(paired: false, installed: false, reachable: false, hadApp: true), .noWatch)
+        XCTAssertEqual(WatchConnection.from(paired: true, installed: false, reachable: false, hadApp: false), .appMissing)
+        XCTAssertEqual(WatchConnection.from(paired: true, installed: false, reachable: false, hadApp: true), .appAway)
+        XCTAssertEqual(WatchConnection.from(paired: true, installed: true, reachable: true, hadApp: false), .ready(reachable: true))
+        XCTAssertEqual(WatchConnection.from(paired: true, installed: true, reachable: false, hadApp: true), .ready(reachable: false))
+        XCTAssertTrue(WatchConnection.appAway.hasWatch)
+        XCTAssertTrue(WatchConnection.showsTab(.appAway, seenBefore: false))
+        XCTAssertNotNil(WatchRecordingsCopy.connection(.appAway))
+        XCTAssertNotEqual(WatchRecordingsCopy.connection(.appAway), WatchRecordingsCopy.connection(.appMissing))
+    }
+
+    /// Heart rate and Place are one choice for the computer, the phone and the watch (24.15).
+    /// The watch is told only what someone chose; until then, and with an older computer, its
+    /// own switches decide.
+    func testTheWatchIsToldOnlyWhatWasChosen() {
+        let unset = WatchContextSettingsAnswer(heartRate: WatchNotesSetting(on: false, chosen: false),
+                                               place: WatchNotesSetting(on: false, chosen: false))
+        XCTAssertTrue(unset.choices.isEmpty, "nobody chose: the watch keeps its own switches")
+        let mixed = WatchContextSettingsAnswer(heartRate: WatchNotesSetting(on: true, chosen: true),
+                                               place: WatchNotesSetting(on: false, chosen: nil))
+        XCTAssertEqual(mixed.choices, WatchContextChoices(heartRate: true, place: nil))
+        let off = WatchContextSettingsAnswer(heartRate: WatchNotesSetting(on: false, chosen: true),
+                                             place: WatchNotesSetting(on: false, chosen: true))
+        XCTAssertEqual(off.choices, WatchContextChoices(heartRate: false, place: false), "an explicit off is told")
+
+        // In the context the phone sends: left out when empty, read back as chosen.
+        let plain = WatchRecordingWire.context([:], choices: unset.choices)
+        XCTAssertNil(plain[WatchRecordingWire.choicesKey])
+        XCTAssertNil(WatchRecordingWire.choices(fromContext: plain))
+        XCTAssertNil(WatchRecordingWire.choices(fromContext: WatchRecordingWire.context([:])), "an older phone says nothing")
+        let told = WatchRecordingWire.context([:], choices: mixed.choices)
+        XCTAssertEqual(WatchRecordingWire.choices(fromContext: told), WatchContextChoices(heartRate: true, place: nil))
+        XCTAssertEqual(WatchRecordingWire.choices(fromContext: WatchRecordingWire.context([:], choices: off.choices)),
+                       WatchContextChoices(heartRate: false, place: false))
+
+        // A switch changed on the watch travels to the phone as one field.
+        let fromWatch = WatchContextChoices(place: true)
+        XCTAssertEqual(WatchContextChoices(userInfo: fromWatch.userInfo), fromWatch)
+        XCTAssertNil(WatchContextChoices(userInfo: [:]))
+        XCTAssertNil(WatchContextChoices(userInfo: [WatchContextChoices.requestKey: [String: Bool]()]))
+        XCTAssertNil(WatchPauseRequest(userInfo: fromWatch.userInfo), "it is not mistaken for a pause")
+        // Your data names Apple while Place is on, and for a week after it was last on.
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        XCTAssertTrue(WatchTabModel.namesApple(placeOn: true, lastOn: nil, now: now))
+        XCTAssertFalse(WatchTabModel.namesApple(placeOn: false, lastOn: nil, now: now))
+        XCTAssertFalse(WatchTabModel.namesApple(placeOn: nil, lastOn: nil, now: now), "an older computer: the phone cannot know")
+        XCTAssertTrue(WatchTabModel.namesApple(placeOn: false, lastOn: now.addingTimeInterval(-6 * 24 * 3600), now: now))
+        XCTAssertFalse(WatchTabModel.namesApple(placeOn: false, lastOn: now.addingTimeInterval(-8 * 24 * 3600), now: now))
+        XCTAssertEqual(String(localized: "data.appleArea"), "Apple, to name the area")
+        XCTAssertEqual(String(localized: "watch.set.placeSub"), "Adds the area, like \"Mission District\". Never the address.")
+        XCTAssertEqual(String(localized: "watch.set.heartSub"), "Adds \"heart rate raised\" beside what was said. Never the numbers.")
     }
 
     func testTheAmberLineOnlyWhenItMatters() {
@@ -915,6 +1008,14 @@ private final class Pushed: @unchecked Sendable {
     func set(_ names: [String: [String]]) { lock.withLock { value = names } }
 }
 
+/// Set when a hand-over waited in vain.
+private final class Late: @unchecked Sendable {
+    private let lock = NSLock()
+    private var late = false
+    var value: Bool { lock.withLock { late } }
+    func set() { lock.withLock { late = true } }
+}
+
 private actor StubRecordingHub: RecordingHubAPI {
     var available = true
     var posted: [RecordingPartRequest] = []
@@ -929,10 +1030,36 @@ private actor StubRecordingHub: RecordingHubAPI {
 
     var takesContext = false
     func set(takesContext: Bool) { self.takesContext = takesContext }
-    func recordingsAvailable() async throws -> Bool { available }
+    var availableError: Error?
+    func set(availableError: Error?) { self.availableError = availableError }
+    /// How often the computer was asked what it takes.
+    var asked = 0
+    func recordingAbilities() async throws -> RecordingAbilities {
+        asked += 1
+        guard try await recordingsAvailable() else { return RecordingAbilities() }
+        return RecordingAbilities(recordings: true, context: takesContext, marks: takesMarks, relay: takesRelay, ahead: takesAhead,
+                                  inWake: takesInWake ? true : nil)
+    }
+    var takesInWake = false
+    func set(takesInWake: Bool) { self.takesInWake = takesInWake }
+    func recordingsAvailable() async throws -> Bool {
+        if let availableError { throw availableError }
+        return available
+    }
     func recordingContextAvailable() async throws -> Bool { takesContext }
+    /// Parts whose request fails with an answer of the relay's.
+    var failingParts: Set<Int> = []
+    func set(failingParts: Set<Int>) { self.failingParts = failingParts }
+    /// Part requests that reached the computer's door, answered or not.
+    var attempts = 0
+    /// Parts whose request gets no answer.
+    var unansweredParts: Set<Int> = []
+    func set(unansweredParts: Set<Int>) { self.unansweredParts = unansweredParts }
     func postRecording(_ request: RecordingPartRequest) async throws -> RecordingView {
+        attempts += 1
         if let postError { throw postError }
+        if unansweredParts.contains(request.part) { throw RelayClientError.timedOut }
+        if failingParts.contains(request.part) { throw RelayClientError.server(status: 502, message: "") }
         posted.append(request)
         return RecordingView(id: request.recordingId, state: answerState)
     }
@@ -959,6 +1086,36 @@ private actor StubRecordingHub: RecordingHubAPI {
     func set(takesMarks: Bool) { self.takesMarks = takesMarks }
     func recordingMarksAvailable() async throws -> Bool { takesMarks }
 
+    var takesRelay = false
+    func set(takesRelay: Bool) { self.takesRelay = takesRelay }
+    func recordingRelayAvailable() async throws -> Bool { takesRelay }
+    var takesAhead = false
+    func set(takesAhead: Bool) { self.takesAhead = takesAhead }
+    func recordingAheadAvailable() async throws -> Bool { takesAhead }
+    /// Parts told ahead of their upload, and what the computer answers to them.
+    var told: [RecordingPartRequest] = []
+    var aheadState = "expected"
+    func set(aheadState: String) { self.aheadState = aheadState }
+    /// Runs inside every tell before it answers: an answer that is slow to come back.
+    var whileTelling: (@Sendable () async -> Void)?
+    func set(whileTelling: (@Sendable () async -> Void)?) { self.whileTelling = whileTelling }
+    func tellAhead(_ request: RecordingPartRequest) async throws -> RecordingView {
+        if let postError { throw postError }
+        await whileTelling?()
+        told.append(request)
+        return RecordingView(id: request.recordingId, state: aheadState)
+    }
+
+    /// Pass records the phone told, one array per telling.
+    var takesPasses = false
+    func set(takesPasses: Bool) { self.takesPasses = takesPasses }
+    var passesTold: [[RecordingPassRecord]] = []
+    func reportPasses(_ passes: [RecordingPassRecord]) async throws -> Bool {
+        guard takesPasses else { return false }
+        passesTold.append(passes)
+        return true
+    }
+
     var pauseSaid: WatchPause?
     var pauseError: Error?
     func set(pause: WatchPause?) { pauseSaid = pause }
@@ -984,7 +1141,60 @@ private actor StubRecordingHub: RecordingHubAPI {
     }
 }
 
-private final class StubUploads: RecordingUploadTransport, @unchecked Sendable {
+private final class StubUploads: RecordingUploadTransport, RecordingUploadAhead, @unchecked Sendable {
+    /// Parts left with the system before the computer was asked: (host, upload id).
+    private(set) var began: [(String, String)] = []
+    var takesAhead = true
+    /// Runs inside every hand-over before it ends: a slow hand-over.
+    var whileBeginning: (@Sendable () async -> Void)?
+    func begin(_ credentials: RelayCredentials, id: String, sealed: Data) async -> Bool {
+        await beginKnowing(credentials, id: id, sealed: sealed) != .no
+    }
+    /// Upload ids the relay holds whole although the phone was never told.
+    var wholeOnTheRelay: Set<String> = []
+    /// The system had held every part for minutes: each hand-over starts it afresh.
+    var startsAfresh = false
+    /// The relay does not answer: nothing is handed over.
+    var handsNothing = false
+    /// How each hand-over was asked for: with the send in a wake allowed, or not.
+    private(set) var inWakeAllowed: [Bool] = []
+    func beginKnowing(_ credentials: RelayCredentials, id: String, sealed: Data) async -> RecordingBegun {
+        await beginKnowing(credentials, id: id, sealed: sealed, inWake: false)
+    }
+    func beginKnowing(_ credentials: RelayCredentials, id: String, sealed: Data, inWake: Bool) async -> RecordingBegun {
+        await beginKnowing(credentials, id: id, sealed: sealed, inWake: inWake, taken: nil)
+    }
+    /// The relay holds nothing of any part: the computer's word is waited for, as on the phone.
+    var relayHoldsNothing = false
+    func beginKnowing(_ credentials: RelayCredentials, id: String, sealed: Data, inWake: Bool,
+                      taken: (@Sendable () async -> Bool)?) async -> RecordingBegun {
+        guard takesAhead else { return .no }
+        await whileBeginning?()
+        if relayHoldsNothing, let taken, await taken() { return .no }
+        return lockAhead.withLock {
+            inWakeAllowed.append(inWake)
+            if handsNothing { return .no }
+            began.append((credentials.origin.host ?? "", id))
+            if inWake { return .sentInWake }
+            if wholeOnTheRelay.contains(id) { return .whole }
+            return startsAfresh ? .handedAgain : .handed
+        }
+    }
+    private let lockAhead = NSLock()
+
+    /// What the relay says it holds of this phone's uploads; nil for a relay that cannot say.
+    var relayHolds: Set<String>?
+    /// How often the relay was asked what it holds.
+    private(set) var askedOnRelay = 0
+    func onRelay(_ credentials: RelayCredentials) async -> Set<String>? {
+        lockAhead.withLock {
+            askedOnRelay += 1
+            return relayHolds
+        }
+    }
+    /// The relay has no place for an upload it holds nothing of: it answers 429 to it.
+    var fullForNew = false
+
     private let lock = NSLock()
     private var stored: [String: Data] = [:]
     var error: Error?
@@ -993,8 +1203,29 @@ private final class StubUploads: RecordingUploadTransport, @unchecked Sendable {
     var arrivesAnyway = false
     /// Ids the phone handed over, in order, repeats included.
     private(set) var handed: [String] = []
+    /// The relay each try went to, by host, in order.
+    private(set) var hosts: [String] = []
+    /// Relays that fail, by host: nothing sent there is stored.
+    var down: [String: Error] = [:]
+    /// What each relay holds, by host.
+    private(set) var storedAt: [String: Set<String>] = [:]
 
+    /// Runs inside every upload before it is stored.
+    var whileStoring: (@Sendable () async -> Void)?
     func putUpload(_ credentials: RelayCredentials, id: String, sealed: Data) async throws {
+        await whileStoring?()
+        let host = credentials.origin.host ?? ""
+        let failure = lock.withLock { () -> Error? in
+            hosts.append(host)
+            if fullForNew, relayHolds?.contains(id) != true {
+                handed.append(id)
+                return RelayClientError.rateLimited(retryAfter: 600)
+            }
+            if let failure = down[host] { handed.append(id); return failure }
+            storedAt[host, default: []].insert(id)
+            return nil
+        }
+        if let failure { throw failure }
         let held = lock.withLock { () -> Bool in
             handed.append(id)
             if let before = stored[id] { precondition(before == sealed, "the same id must carry the same bytes") }
@@ -1048,11 +1279,11 @@ final class WatchRecordingForwarderTests: XCTestCase {
     }
 
     private func deliver(_ inbox: WatchRecordingInbox, _ forwarder: WatchRecordingForwarder, id: String, part: Int,
-                         last: Bool, audio: String) async throws -> WatchRecordingPartInfo {
+                         last: Bool, audio: String, at base: Double = 1_800_000_000) async throws -> WatchRecordingPartInfo {
         let source = directory.appendingPathComponent(UUID().uuidString)
         try Data(audio.utf8).write(to: source)
         let info = WatchRecordingPartInfo(recordingID: id, part: part, last: last,
-                                          startedAt: Date(timeIntervalSince1970: 1_800_000_000 + Double(part) * 900),
+                                          startedAt: Date(timeIntervalSince1970: base + Double(part) * 900),
                                           durationSeconds: 900, model: "Apple Watch")
         try inbox.accept(file: source, info: info)
         await forwarder.received(info)
@@ -1537,6 +1768,82 @@ final class WatchRecordingForwarderTests: XCTestCase {
         XCTAssertNil(nothing)
     }
 
+    /// The night of 2026-11-21: parts half sent in the evening held every place on the relay.
+    /// The watch then handed over older parts, which sort first. Each was refused with 429 and
+    /// the pass ended at the first refusal, so the half-sent parts were never finished and the
+    /// places never freed. The relay is asked what it holds: those parts go first, and a full
+    /// relay stops only the parts it holds nothing of.
+    func testAFullRelayStopsOnlyNewPartsAndBegunPartsGoFirst() async throws {
+        let hub = StubRecordingHub()
+        let uploads = StubUploads()
+        uploads.takesAhead = false
+        let (inbox, forwarder) = make(hub, uploads)
+        // The evening: two parts of a later recording are begun and do not arrive.
+        let later = WatchRecordingWire.newRecordingID()
+        let begunInfos = [try await deliver(inbox, forwarder, id: later, part: 0, last: false, audio: "evening one"),
+                          try await deliver(inbox, forwarder, id: later, part: 1, last: true, audio: "evening two")]
+        uploads.error = RelayClientError.offline
+        _ = await forwarder.drain()
+        let begun = Set(inbox.pending().compactMap { $0.uploading?.upload.id })
+        XCTAssertEqual(begun.count, 2, "both parts were handed over once and keep their upload ids")
+        // The night: the watch hands over three older parts.
+        let older = WatchRecordingWire.newRecordingID()
+        var olderInfos: [WatchRecordingPartInfo] = []
+        for part in 0..<3 {
+            olderInfos.append(try await deliver(inbox, forwarder, id: older, part: part, last: part == 2,
+                                                audio: "older \(part)", at: 1_700_000_000))
+        }
+        XCTAssertEqual(inbox.pending().first?.info.recordingID, older, "the older parts sort first")
+        // The morning: the relay holds the two begun uploads and has no place for a new one.
+        uploads.error = nil
+        uploads.relayHolds = begun
+        uploads.fullForNew = true
+        let before = uploads.handed.count
+        let outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .relayFull, "the phone still says the relay is full")
+        XCTAssertGreaterThanOrEqual(uploads.askedOnRelay, 1)
+        let morning = Array(uploads.handed.dropFirst(before))
+        XCTAssertTrue(morning.prefix(2).allSatisfy(begun.contains), "the begun parts go first: \(morning)")
+        XCTAssertEqual(morning.filter { !begun.contains($0) }.count, 1, "one refusal is enough to stop the new parts")
+        let left = inbox.pending().map(\.info.recordingID)
+        XCTAssertEqual(left, [older, older, older], "the begun parts reached the computer; the older ones wait")
+        for info in olderInfos {
+            XCTAssertTrue(FileManager.default.fileExists(atPath: inbox.audioURL(info).path), "nothing waiting is deleted")
+        }
+        for info in begunInfos {
+            XCTAssertFalse(FileManager.default.fileExists(atPath: inbox.audioURL(info).path), "taken by the computer")
+        }
+        XCTAssertEqual(inbox.pending().first?.refusals, 0, "a full relay is not a refusal of the part")
+
+        // A place is free: the older parts go at the next pass.
+        uploads.fullForNew = false
+        uploads.relayHolds = []
+        let next = await forwarder.drain()
+        XCTAssertEqual(next, .drained)
+        XCTAssertTrue(inbox.pending().isEmpty)
+    }
+
+    /// Without the relay's word (an older relay) nothing changes: the order stays, and a full
+    /// relay ends the pass as before.
+    func testWithoutTheRelaysWordTheOrderStays() {
+        func item(_ id: String, uploading: String?) -> WatchRecordingInbox.Pending {
+            let info = WatchRecordingPartInfo(recordingID: id, part: 0, last: true, startedAt: Date(timeIntervalSince1970: 1_800_000_000),
+                                              durationSeconds: 900, model: "Apple Watch")
+            var pending = WatchRecordingInbox.Pending(info: info, refusals: 0)
+            if let uploading {
+                pending.uploading = WatchRecordingInbox.HeldUpload(
+                    upload: RecordingPartRequest.Upload(id: uploading, key: "k", nonce: "n"), hubID: hubID, deviceID: deviceID, relay: "pinned")
+            }
+            return pending
+        }
+        let list = [item("a", uploading: nil), item("b", uploading: "u-b"), item("c", uploading: "u-c"), item("d", uploading: nil)]
+        XCTAssertEqual(WatchRecordingForwarder.begunFirst(list, onRelay: nil).map(\.info.recordingID), ["a", "b", "c", "d"])
+        XCTAssertEqual(WatchRecordingForwarder.begunFirst(list, onRelay: []).map(\.info.recordingID), ["a", "b", "c", "d"])
+        XCTAssertEqual(WatchRecordingForwarder.begunFirst(list, onRelay: ["u-c"]).map(\.info.recordingID), ["c", "a", "b", "d"],
+                       "a part the phone marked and the relay holds nothing of is not begun")
+        XCTAssertEqual(WatchRecordingForwarder.begunFirst(list, onRelay: ["u-b", "u-c", "other"]).map(\.info.recordingID), ["b", "c", "a", "d"])
+    }
+
     /// The relay keeps no more of this phone's recordings (48 refused copies did that on
     /// 2026-11-16): the phone says so, keeps the audio, and tries again by itself.
     func testAFullRelayIsSaidAndTriedAgain() async throws {
@@ -1562,6 +1869,1017 @@ final class WatchRecordingForwarderTests: XCTestCase {
 }
 
 extension WatchRecordingForwarderTests {
+    private func directContext(_ pinned: SessionContext) -> SessionContext {
+        SessionContext(credentials: RelayCredentials(origin: URL(string: "http://127.0.0.1:4321")!, bearer: "d"),
+                       hubID: pinned.hubID, deviceID: pinned.deviceID, keys: pinned.keys, route: .direct)
+    }
+
+    /// A forwarder for a pairing with two paths. `prefersDirect` is the path requests use now;
+    /// `directOpen` whether the direct tunnel is up.
+    private func makeTwoPaths(_ hub: StubRecordingHub, _ uploads: StubUploads, prefersDirect: Bool = false,
+                              directOpen: Bool = true) -> (WatchRecordingInbox, WatchRecordingForwarder) {
+        let inbox = WatchRecordingInbox(directory: directory.appendingPathComponent("inbox"))
+        let pinned = context()
+        let direct = directContext(pinned)
+        let clock = clock
+        let forwarder = WatchRecordingForwarder(
+            inbox: inbox, hub: hub, relay: uploads, now: { clock.now },
+            session: { prefersDirect && directOpen ? direct : pinned },
+            otherSession: { current in
+                switch current.route {
+                case .direct: return pinned
+                case .relay: return directOpen ? direct : nil
+                }
+            })
+        return (inbox, forwarder)
+    }
+
+    /// 2026-11-18: the public tunnel stopped answering twice in one afternoon and every time the
+    /// recordings stopped, although the phone still reached the computer over the direct path.
+    /// A part takes the path that is up, and the computer is told which relay holds it.
+    /// 2026-11-20: the pinned relay comes first. That day nothing from the phone arrived over
+    /// the direct path, and a part spent half a minute on it in every pass.
+    func testAPartGoesToThePinnedRelayFirstAndNamesItsRelay() async throws {
+        let hub = StubRecordingHub()
+        await hub.set(takesRelay: true)
+        let uploads = StubUploads()
+        let (inbox, forwarder) = makeTwoPaths(hub, uploads)
+        let id = WatchRecordingWire.newRecordingID()
+        _ = try await deliver(inbox, forwarder, id: id, part: 0, last: true, audio: "audio")
+        let outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .drained)
+        XCTAssertEqual(uploads.hosts, ["relay.example"], "the pinned relay first, and the direct path is not tried")
+        let posted = await hub.posted
+        XCTAssertEqual(posted.first?.upload.relay, "pinned")
+        XCTAssertTrue(inbox.pending().isEmpty)
+    }
+
+    func testWhenOnePathIsDownThePartTakesTheOther() async throws {
+        // The direct path is down: the pinned relay carries the part.
+        var hub = StubRecordingHub()
+        await hub.set(takesRelay: true)
+        var uploads = StubUploads()
+        uploads.down["127.0.0.1"] = RelayClientError.offline
+        var (inbox, forwarder) = makeTwoPaths(hub, uploads)
+        _ = try await deliver(inbox, forwarder, id: WatchRecordingWire.newRecordingID(), part: 0, last: true, audio: "a")
+        var outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .drained)
+        XCTAssertEqual(uploads.hosts, ["relay.example"], "the direct path is not even tried")
+        var posted = await hub.posted
+        XCTAssertEqual(posted.first?.upload.relay, "pinned")
+
+        // The pinned relay is down (the tunnel), or refuses the phone: the direct path carries it.
+        for failure in [RelayClientError.timedOut, .unauthorized, .unavailable] {
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent("inbox"))
+            hub = StubRecordingHub()
+            await hub.set(takesRelay: true)
+            uploads = StubUploads()
+            uploads.down["relay.example"] = failure
+            (inbox, forwarder) = makeTwoPaths(hub, uploads, directOpen: true)
+            _ = try await deliver(inbox, forwarder, id: WatchRecordingWire.newRecordingID(), part: 0, last: true, audio: "a")
+            outcome = await forwarder.drain()
+            XCTAssertEqual(outcome, .drained, "\(failure)")
+            posted = await hub.posted
+            XCTAssertEqual(posted.first?.upload.relay, "direct")
+        }
+
+        // Both down: the part waits, with its audio, and says the pinned relay's reason.
+        try? FileManager.default.removeItem(at: directory.appendingPathComponent("inbox"))
+        hub = StubRecordingHub()
+        await hub.set(takesRelay: true)
+        uploads = StubUploads()
+        uploads.down["127.0.0.1"] = RelayClientError.offline
+        uploads.down["relay.example"] = RelayClientError.unauthorized
+        (inbox, forwarder) = makeTwoPaths(hub, uploads)
+        let info = try await deliver(inbox, forwarder, id: WatchRecordingWire.newRecordingID(), part: 0, last: true, audio: "a")
+        outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .pairAgain)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: inbox.audioURL(info).path))
+        XCTAssertEqual(inbox.pending().first?.refusals, 0)
+
+        // A part that began on the direct path, and the direct path now fails in a way that is
+        // not "the path is down": the pinned relay carries it in the same pass.
+        try? FileManager.default.removeItem(at: directory.appendingPathComponent("inbox"))
+        hub = StubRecordingHub()
+        await hub.set(takesRelay: true)
+        uploads = StubUploads()
+        uploads.down["relay.example"] = RelayClientError.timedOut
+        uploads.down["127.0.0.1"] = RelayClientError.badRequest(message: "")
+        (inbox, forwarder) = makeTwoPaths(hub, uploads)
+        _ = try await deliver(inbox, forwarder, id: WatchRecordingWire.newRecordingID(), part: 0, last: true, audio: "a")
+        outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .waiting, "both failed: the pinned relay's reason stands")
+        XCTAssertEqual(inbox.pending().first?.uploading?.relay, "direct")
+        uploads.down["relay.example"] = nil
+        clock.advance(900)
+        outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .drained, "an error on the direct path does not end the pass")
+        posted = await hub.posted
+        XCTAssertEqual(posted.first?.upload.relay, "pinned")
+        XCTAssertEqual(Array(uploads.hosts.suffix(2)), ["127.0.0.1", "relay.example"])
+    }
+
+    /// A computer that only looks on the pinned relay gets every part there, also from a phone
+    /// whose requests go over the direct path now. Before, such a part went where the computer
+    /// did not look and was answered "upload missing".
+    func testAComputerThatDoesNotNameRelaysGetsThePartOnThePinnedRelay() async throws {
+        let hub = StubRecordingHub()
+        let uploads = StubUploads()
+        let (inbox, forwarder) = makeTwoPaths(hub, uploads, prefersDirect: true)
+        _ = try await deliver(inbox, forwarder, id: WatchRecordingWire.newRecordingID(), part: 0, last: true, audio: "a")
+        let outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .drained)
+        XCTAssertEqual(uploads.hosts, ["relay.example"])
+        let posted = await hub.posted
+        XCTAssertNil(posted.first?.upload.relay, "no field an older computer does not know")
+        let body = try JSONEncoder().encode(XCTUnwrap(posted.first))
+        XCTAssertFalse(String(decoding: body, as: UTF8.self).contains("\"relay\""))
+    }
+
+    /// A part that began on one relay goes on there while that path is up, and the copy the
+    /// relay holds is named to the computer when the computer was the one that could not answer.
+    func testAPartStaysOnTheRelayWhereItBeganAndAHeldCopyKeepsItsRelay() async throws {
+        let hub = StubRecordingHub()
+        await hub.set(takesRelay: true)
+        let uploads = StubUploads()
+        // The direct path is down at first, so the part begins on the pinned relay and stays
+        // in the system's hands there.
+        uploads.down["127.0.0.1"] = RelayClientError.offline
+        uploads.down["relay.example"] = RecordingUploadInFlight()
+        let (inbox, forwarder) = makeTwoPaths(hub, uploads)
+        _ = try await deliver(inbox, forwarder, id: WatchRecordingWire.newRecordingID(), part: 0, last: true, audio: "a")
+        var outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .sending, "with the system, on its way: nothing is in the way")
+        XCTAssertEqual(inbox.pending().first?.uploading?.relay, "pinned")
+        // Both paths are up again: it goes on where it began, not from zero on the other.
+        uploads.down = [:]
+        await hub.set(postError: HubRequestError.rejected(status: 503, message: "the computer could not fetch the recording yet"))
+        outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .waiting)
+        XCTAssertEqual(uploads.hosts.last, "relay.example")
+        XCTAssertEqual(inbox.pending().first?.held?.relay, "pinned")
+        // The computer answers: the held copy is posted with its relay, nothing is uploaded again.
+        let tries = uploads.hosts.count
+        await hub.set(postError: nil)
+        outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .drained)
+        XCTAssertEqual(uploads.hosts.count, tries)
+        let posted = await hub.posted
+        XCTAssertEqual(posted.first?.upload.relay, "pinned")
+    }
+
+    /// 2026-11-18, 15:00: the app asked the computer three things over a slow relay before its
+    /// first upload, was gone after 25 seconds, and had handed nothing over. Parts go to the
+    /// system first, on every wake, for a computer that last said it takes recordings; and they
+    /// go also while the computer cannot be asked, because the upload needs only the relay.
+    func testWaitingPartsAreLeftWithTheSystemBeforeTheComputerIsAsked() async throws {
+        let hub = StubRecordingHub()
+        let uploads = StubUploads()
+        let (inbox, forwarder) = makeTwoPaths(hub, uploads, prefersDirect: true)
+        // The first part ever: nothing is known about the computer, so nothing goes ahead.
+        _ = try await deliver(inbox, forwarder, id: WatchRecordingWire.newRecordingID(), part: 0, last: true, audio: "a")
+        var outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .drained)
+        XCTAssertTrue(uploads.began.isEmpty)
+
+        // Now the computer is known to take recordings. It cannot be reached, and two more
+        // parts wait than go to the system at once.
+        await hub.set(availableError: RelayClientError.timedOut)
+        let id = WatchRecordingWire.newRecordingID()
+        let all = WatchRecordingForwarder.uploadsAtOnce + 2
+        for part in 0..<all {
+            _ = try await deliver(inbox, forwarder, id: id, part: part, last: part == all - 1, audio: "part \(part)")
+        }
+        let before = uploads.began.count
+        outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .waiting, "the computer was not reached")
+        let handed = uploads.began.dropFirst(before)
+        XCTAssertEqual(handed.count, WatchRecordingForwarder.uploadsAtOnce, "the first parts are with the system all the same")
+        XCTAssertEqual(Set(handed.map(\.0)), ["relay.example"], "on the pinned relay, where every computer looks")
+        XCTAssertEqual(inbox.pending().count, all, "nothing leaves the phone before the computer has it")
+        XCTAssertEqual(inbox.pending().first?.uploading?.relay, "pinned")
+        // The same ids on the next wake: the same bytes, nothing sealed anew.
+        let ids = handed.map(\.1)
+        _ = await forwarder.drain()
+        // The hand-overs run side by side, so their order is not fixed.
+        XCTAssertEqual(Set(uploads.began.suffix(WatchRecordingForwarder.uploadsAtOnce).map(\.1)), Set(ids))
+
+        // What the computer said is remembered across launches.
+        let clock = clock
+        let pinned = context()
+        let reopened = WatchRecordingForwarder(inbox: inbox, hub: hub, relay: uploads, now: { clock.now }, session: { pinned })
+        let count = uploads.began.count
+        _ = await reopened.drain()
+        XCTAssertEqual(uploads.began.count, count + WatchRecordingForwarder.uploadsAtOnce)
+    }
+
+    /// 2026-11-19: four parts were whole on the relay and in seven wakes of 30 seconds the
+    /// computer was never told. The hand-overs came first, one after the other, and one took 25
+    /// seconds. A part the relay holds is told to the computer while hand-overs are still under
+    /// way, and every hand-over begun still ends before the pass does.
+    func testTheComputerIsToldOfAHeldPartWhileOthersAreStillHandedOver() async throws {
+        let hub = StubRecordingHub()
+        let uploads = StubUploads()
+        let (inbox, forwarder) = makeTwoPaths(hub, uploads, prefersDirect: true)
+        _ = try await deliver(inbox, forwarder, id: WatchRecordingWire.newRecordingID(), part: 0, last: true, audio: "a")
+        var outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .drained)
+
+        // Three parts wait. The first reaches the relay, and the computer does not answer.
+        await hub.set(postError: RelayClientError.timedOut)
+        let id = WatchRecordingWire.newRecordingID()
+        for part in 0..<3 {
+            _ = try await deliver(inbox, forwarder, id: id, part: part, last: part == 2, audio: "part \(part)")
+        }
+        outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .waiting)
+        XCTAssertEqual(inbox.pending().filter { $0.held != nil }.count, 1, "one part is whole on the relay")
+        let toldBefore = await hub.posted.count
+
+        // Next wake: every hand-over is slow. It ends only once the computer was told of the
+        // held part, or after five seconds.
+        await hub.set(postError: nil)
+        let late = Late()
+        uploads.whileBeginning = {
+            for _ in 0..<100 {
+                if await hub.posted.count > toldBefore { return }
+                try? await Task.sleep(nanoseconds: 50_000_000)
+            }
+            late.set()
+        }
+        let began = uploads.began.count
+        outcome = await forwarder.drain()
+        XCTAssertFalse(late.value, "the computer was told while the hand-overs were under way")
+        XCTAssertEqual(uploads.began.count, began + 2, "both waiting parts were handed over before the pass ended")
+        XCTAssertEqual(outcome, .drained)
+        let parts = await hub.posted.suffix(3).map(\.part)
+        XCTAssertEqual(parts.first, 0, "the held part first")
+        XCTAssertEqual(Set(parts), [0, 1, 2])
+        XCTAssertTrue(inbox.pending().isEmpty)
+    }
+
+    /// 2026-11-19: the phone had to be awake once more after each upload to tell the computer,
+    /// and four whole parts waited on the relay for five hours. With a computer that takes it,
+    /// the phone tells the computer when it hands a part to the system; the computer fetches the
+    /// part by itself. "Expected" never takes a part off the phone; only the computer's own copy does.
+    func testTheComputerIsToldWhenAPartIsHandedOverAndThePartStaysUntilItHasIt() async throws {
+        let hub = StubRecordingHub()
+        await hub.set(takesAhead: true)
+        let uploads = StubUploads()
+        let (inbox, forwarder) = makeTwoPaths(hub, uploads, prefersDirect: true)
+        _ = try await deliver(inbox, forwarder, id: WatchRecordingWire.newRecordingID(), part: 0, last: true, audio: "a")
+        var outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .drained)
+        let toldAtFirst = await hub.told.count
+        XCTAssertEqual(toldAtFirst, 0, "nothing is told ahead before the computer said it takes it")
+
+        // Two parts are handed to the system; their uploads are still on the way.
+        uploads.error = RecordingUploadInFlight()
+        let id = WatchRecordingWire.newRecordingID()
+        for part in 0..<2 {
+            _ = try await deliver(inbox, forwarder, id: id, part: part, last: part == 1, audio: "part \(part)")
+        }
+        let posted = await hub.posted.count
+        outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .sending)
+        let told = await hub.told
+        XCTAssertEqual(Set(told.map(\.part)), [0, 1])
+        XCTAssertTrue(told.allSatisfy { $0.ahead == true && $0.upload.relay == "pinned" && $0.recordingId == id })
+        XCTAssertEqual(inbox.pending().count, 2, "expected is not received: both parts stay on the phone")
+        XCTAssertTrue(inbox.pending().allSatisfy { $0.told == true })
+        let postedAfter = await hub.posted.count
+        XCTAssertEqual(postedAfter, posted, "nothing was said in the usual way while the uploads were on the way")
+        let body = String(decoding: try JSONEncoder().encode(told[0]), as: UTF8.self)
+        XCTAssertTrue(body.contains("\"ahead\":true"))
+
+        // The phone slept, the uploads arrived, the computer fetched them and removed the relay's
+        // copies. Next wake: the computer is asked first, nothing goes up again, the parts leave.
+        await hub.set(aheadState: "received")
+        uploads.relayHoldsNothing = true
+        let began = uploads.began.count
+        let handed = uploads.handed.count
+        // A wake within the minute leaves the parts alone: nothing is told, asked or sent again.
+        let toldSoFar = await hub.told.count
+        outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .sending)
+        let toldWithinTheMinute = await hub.told.count
+        XCTAssertEqual(toldWithinTheMinute, toldSoFar, "a part told a moment ago is not told again")
+        XCTAssertEqual(uploads.began.count, began)
+        XCTAssertEqual(uploads.handed.count, handed)
+        clock.advance(WatchRecordingForwarder.tellAgainAfter + 1)
+        outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .drained)
+        XCTAssertEqual(uploads.began.count, began, "no part was handed over again")
+        XCTAssertEqual(uploads.handed.count, handed, "no part was uploaded again")
+        XCTAssertTrue(inbox.pending().isEmpty)
+    }
+
+    /// 2026-11-20, 7:46 PM: four parts became whole on the relay in the second the app left.
+    /// The computer had not been told of them, since the tell came after the hand-over, and
+    /// it asked for none until the phone woke again. The tell goes out beside the hand-over.
+    func testTheComputerIsToldWhileAPartIsStillBeingHandedOver() async throws {
+        let hub = StubRecordingHub()
+        await hub.set(takesAhead: true)
+        let uploads = StubUploads()
+        let (inbox, forwarder) = makeTwoPaths(hub, uploads, prefersDirect: true)
+        _ = try await deliver(inbox, forwarder, id: WatchRecordingWire.newRecordingID(), part: 0, last: true, audio: "a")
+        _ = await forwarder.drain()
+
+        uploads.error = RecordingUploadInFlight()
+        let id = WatchRecordingWire.newRecordingID()
+        _ = try await deliver(inbox, forwarder, id: id, part: 0, last: true, audio: "b")
+        let toldBefore = await hub.told.count
+        let seen = Late()
+        uploads.whileBeginning = {
+            // The hand-over has not ended; the computer hears of the part all the same.
+            for _ in 0..<200 {
+                if await hub.told.count > toldBefore { seen.set(); return }
+                try? await Task.sleep(nanoseconds: 10_000_000)
+            }
+        }
+        _ = await forwarder.drain()
+        XCTAssertTrue(seen.value, "the computer was told before the hand-over ended")
+        let told = await hub.told.filter { $0.recordingId == id }
+        XCTAssertEqual(told.count, 1, "and it is told once, not again after the hand-over")
+        XCTAssertEqual(inbox.pending().count, 1, "the part stays on the phone until the computer has it")
+        XCTAssertTrue(inbox.pending().allSatisfy { $0.told == true })
+    }
+
+    /// The tell went out and the hand-over then failed. Nothing is lost by it: the part stays
+    /// on the phone, is not marked as told, and goes up at the next pass.
+    func testATellWhoseHandOverFailsLeavesThePartWaiting() async throws {
+        let hub = StubRecordingHub()
+        await hub.set(takesAhead: true)
+        let uploads = StubUploads()
+        let (inbox, forwarder) = makeTwoPaths(hub, uploads, prefersDirect: true)
+        _ = try await deliver(inbox, forwarder, id: WatchRecordingWire.newRecordingID(), part: 0, last: true, audio: "a")
+        _ = await forwarder.drain()
+
+        uploads.error = RecordingUploadInFlight()
+        uploads.handsNothing = true
+        let id = WatchRecordingWire.newRecordingID()
+        _ = try await deliver(inbox, forwarder, id: id, part: 0, last: true, audio: "b")
+        _ = await forwarder.drain()
+        XCTAssertEqual(inbox.pending().count, 1, "the part is still on the phone")
+        XCTAssertTrue(inbox.pending().allSatisfy { $0.told != true }, "and it does not count as told")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: inbox.audioURL(inbox.pending()[0].info).path), "with its file")
+
+        uploads.handsNothing = false
+        clock.advance(WatchRecordingForwarder.tellAgainAfter + 1)
+        _ = await forwarder.drain()
+        XCTAssertTrue(inbox.pending().allSatisfy { $0.told == true }, "the next pass hands it over and tells it")
+    }
+
+    /// A pass says how many held parts it started afresh, and a computer from before that
+    /// count gets a record without it.
+    func testAPassCountsTheHeldPartsItStartedAfresh() async throws {
+        let hub = StubRecordingHub()
+        await hub.set(takesAhead: true)
+        let uploads = StubUploads()
+        let (inbox, forwarder) = makeTwoPaths(hub, uploads, prefersDirect: true)
+        _ = try await deliver(inbox, forwarder, id: WatchRecordingWire.newRecordingID(), part: 0, last: true, audio: "a")
+        _ = await forwarder.drain()
+
+        uploads.error = RecordingUploadInFlight()
+        uploads.startsAfresh = true
+        let id = WatchRecordingWire.newRecordingID()
+        for part in 0..<2 {
+            _ = try await deliver(inbox, forwarder, id: id, part: part, last: part == 1, audio: "part \(part)")
+        }
+        _ = await forwarder.drain()
+        let passes = await forwarder.passes
+        let record = try XCTUnwrap(passes.last)
+        XCTAssertEqual(record.restarted, 2)
+        XCTAssertEqual(record.beganHanded, 2)
+        XCTAssertEqual(inbox.pending().count, 2, "both parts are still on the phone")
+
+        XCTAssertEqual(RecordingPassRecord.forComputer([record], takesRestarts: true)[0].restarted, 2)
+        let older = RecordingPassRecord.forComputer([record], takesRestarts: false)[0]
+        XCTAssertNil(older.restarted)
+        XCTAssertFalse(String(decoding: try JSONEncoder().encode(older), as: UTF8.self).contains("restarted"))
+    }
+
+    /// 2026-11-20: the computer answered a second tell in under a second, the answer reached
+    /// the phone 8 and 13 seconds later, and the hand-over waited for it; the wake was over
+    /// before a piece went. The hand-over of a part told before does not wait for that answer.
+    func testAPartToldBeforeIsHandedOverWithoutWaitingForTheComputer() async throws {
+        let hub = StubRecordingHub()
+        await hub.set(takesAhead: true)
+        let uploads = StubUploads()
+        let (inbox, forwarder) = makeTwoPaths(hub, uploads, prefersDirect: true)
+        _ = try await deliver(inbox, forwarder, id: WatchRecordingWire.newRecordingID(), part: 0, last: true, audio: "a")
+        _ = await forwarder.drain()
+        uploads.error = RecordingUploadInFlight()
+        _ = try await deliver(inbox, forwarder, id: WatchRecordingWire.newRecordingID(), part: 0, last: true, audio: "b")
+        _ = await forwarder.drain()
+        XCTAssertTrue(inbox.pending().allSatisfy { $0.told == true })
+
+        clock.advance(WatchRecordingForwarder.tellAgainAfter + 1)
+        let began = uploads.began.count
+        let handedFirst = Flag(false)
+        // The answer comes back only after the hand-over, or after two seconds if it never does.
+        await hub.set(whileTelling: {
+            for _ in 0..<200 where uploads.began.count == began {
+                try? await Task.sleep(nanoseconds: 10_000_000)
+            }
+            handedFirst.value = uploads.began.count > began
+        })
+        _ = await forwarder.drain()
+        XCTAssertTrue(handedFirst.value, "the hand-over went ahead while the answer was on its way")
+        XCTAssertEqual(inbox.pending().count, 1, "the part stays until the computer has it")
+    }
+
+    /// The send in a wake is the computer's to allow: a computer that does not say so gets
+    /// the hand-over as before and a record without the count.
+    func testTheSendInAWakeIsTheComputersToAllow() async throws {
+        let hub = StubRecordingHub()
+        await hub.set(takesAhead: true)
+        let uploads = StubUploads()
+        let (inbox, forwarder) = makeTwoPaths(hub, uploads, prefersDirect: true)
+        _ = try await deliver(inbox, forwarder, id: WatchRecordingWire.newRecordingID(), part: 0, last: true, audio: "a")
+        _ = await forwarder.drain()
+        XCTAssertFalse(uploads.inWakeAllowed.contains(true), "not allowed: never asked for")
+
+        await hub.set(takesInWake: true)
+        _ = try await deliver(inbox, forwarder, id: WatchRecordingWire.newRecordingID(), part: 0, last: true, audio: "b")
+        _ = await forwarder.drain()
+        // The computer's word is known from the pass before: the next wake uses it.
+        _ = try await deliver(inbox, forwarder, id: WatchRecordingWire.newRecordingID(), part: 0, last: true, audio: "c")
+        _ = await forwarder.drain()
+        XCTAssertEqual(uploads.inWakeAllowed.last, true)
+        let passes = await forwarder.passes
+        let record = try XCTUnwrap(passes.last)
+        XCTAssertGreaterThanOrEqual(record.sentInWake ?? 0, 1)
+
+        let older = RecordingPassRecord.forComputer([record], takesRestarts: true, takesInWake: false)[0]
+        XCTAssertNil(older.sentInWake)
+        XCTAssertFalse(String(decoding: try JSONEncoder().encode(older), as: UTF8.self).contains("sentInWake"))
+        XCTAssertNotNil(RecordingPassRecord.forComputer([record], takesRestarts: false, takesInWake: true)[0].sentInWake)
+    }
+
+    /// A computer that does not say it takes parts told ahead is never sent one: an older
+    /// computer refuses a request with a field it does not know.
+    func testAnOlderComputerIsNeverToldAhead() async throws {
+        let hub = StubRecordingHub()
+        let uploads = StubUploads()
+        let (inbox, forwarder) = makeTwoPaths(hub, uploads, prefersDirect: true)
+        _ = try await deliver(inbox, forwarder, id: WatchRecordingWire.newRecordingID(), part: 0, last: true, audio: "a")
+        _ = await forwarder.drain()
+        let id = WatchRecordingWire.newRecordingID()
+        for part in 0..<2 {
+            _ = try await deliver(inbox, forwarder, id: id, part: part, last: part == 1, audio: "part \(part)")
+        }
+        let outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .drained)
+        let told = await hub.told
+        XCTAssertTrue(told.isEmpty)
+        let posted = await hub.posted
+        XCTAssertEqual(posted.count, 3)
+        for request in posted {
+            XCTAssertNil(request.ahead)
+            XCTAssertFalse(String(decoding: try JSONEncoder().encode(request), as: UTF8.self).contains("ahead"))
+        }
+        XCTAssertTrue(inbox.pending().isEmpty)
+    }
+
+    /// 2026-11-19, 6:48 PM: the phone was awake for eight seconds. A pass asked the computer for
+    /// its status five times before it told it of the first part, and one part was taken. A pass
+    /// asks what the computer takes once, however many parts wait.
+    func testAPassAsksTheComputerWhatItTakesOnce() async throws {
+        let hub = StubRecordingHub()
+        await hub.set(takesContext: true)
+        await hub.set(takesMarks: true)
+        await hub.set(takesRelay: true)
+        let uploads = StubUploads()
+        let (inbox, forwarder) = makeTwoPaths(hub, uploads, prefersDirect: true)
+        let id = WatchRecordingWire.newRecordingID()
+        for part in 0..<3 {
+            _ = try await deliver(inbox, forwarder, id: id, part: part, last: part == 2, audio: "part \(part)")
+        }
+        let before = await hub.asked
+        let outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .drained)
+        let asked = await hub.asked
+        XCTAssertEqual(asked - before, 1)
+        let posted = await hub.posted
+        XCTAssertEqual(posted.count, 3)
+    }
+
+    /// 2026-11-19, 3:12 PM: four parts were whole on the relay, the computer had not taken them,
+    /// and they held all four places, so the phone uploaded nothing new. A part the relay holds
+    /// whole takes no place: in the same wake the next parts go to the system, also while the
+    /// computer cannot be asked. Recording everything comes first.
+    func testPartsTheRelayHoldsWholeTakeNoPlaceFromNewOnes() async throws {
+        let hub = StubRecordingHub()
+        let uploads = StubUploads()
+        let (inbox, forwarder) = makeTwoPaths(hub, uploads, prefersDirect: true)
+        _ = try await deliver(inbox, forwarder, id: WatchRecordingWire.newRecordingID(), part: 0, last: true, audio: "a")
+        var outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .drained)
+
+        // Two more parts wait than go to the system at once, and the computer cannot be reached.
+        let atOnce = WatchRecordingForwarder.uploadsAtOnce, all = atOnce + 2
+        await hub.set(availableError: RelayClientError.timedOut)
+        let id = WatchRecordingWire.newRecordingID()
+        for part in 0..<all {
+            _ = try await deliver(inbox, forwarder, id: id, part: part, last: part == all - 1, audio: "part \(part)")
+        }
+        var before = uploads.began.count
+        _ = await forwarder.drain()
+        let first = uploads.began.dropFirst(before).map(\.1)
+        XCTAssertEqual(first.count, atOnce)
+
+        // They arrive while the phone sleeps. Next wake, still no computer: the phone learns the
+        // relay holds those, and the last two go to the system in the same wake.
+        uploads.wholeOnTheRelay = Set(first)
+        before = uploads.began.count
+        outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .waiting)
+        let second = uploads.began.dropFirst(before).map(\.1)
+        XCTAssertEqual(Set(second).subtracting(first).count, 2, "both new parts went to the system")
+        XCTAssertEqual(inbox.pending().filter { $0.held != nil }.count, atOnce, "they are remembered as whole on the relay")
+        XCTAssertEqual(inbox.pending().count, all, "nothing leaves the phone before the computer has it")
+
+        // A third wake: the held parts are not asked about again and take no place.
+        before = uploads.began.count
+        _ = await forwarder.drain()
+        XCTAssertTrue(Set(uploads.began.dropFirst(before).map(\.1)).isDisjoint(with: first))
+
+        // The computer is back: every part crosses.
+        await hub.set(availableError: nil)
+        uploads.wholeOnTheRelay = []
+        outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .drained)
+        XCTAssertTrue(inbox.pending().isEmpty)
+        let parts = await hub.posted.suffix(all).map(\.part)
+        XCTAssertEqual(Set(parts), Set(0..<all))
+    }
+
+    /// The 08:30 wake on 2026-11-20: ten parts the relay holds whole, eight of them asked
+    /// about in that wake, and no part request reached the computer. The phone said nothing of
+    /// what its pass did. Each pass now leaves a record of counts, and the computer is told.
+    func testAPassLeavesARecordOfWhatItCameTo() async throws {
+        let hub = StubRecordingHub()
+        let uploads = StubUploads()
+        let (inbox, forwarder) = make(hub, uploads)
+        await hub.set(takesAhead: true)
+        await hub.set(takesPasses: true)
+        _ = try await deliver(inbox, forwarder, id: WatchRecordingWire.newRecordingID(), part: 0, last: true, audio: "a")
+        var outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .drained)
+
+        // Ten parts wait; the computer stops answering part requests. Wake after wake the parts
+        // go to the system, four at a time, and arrive on the relay while the phone sleeps.
+        await hub.set(postError: RelayClientError.timedOut)
+        let id = WatchRecordingWire.newRecordingID()
+        for part in 0..<10 {
+            _ = try await deliver(inbox, forwarder, id: id, part: part, last: part == 9, audio: "part \(part)")
+        }
+        for _ in 0..<4 {
+            clock.advance(900)
+            _ = await forwarder.drain()
+            uploads.wholeOnTheRelay = Set(uploads.began.map(\.1))
+        }
+        clock.advance(900)
+        XCTAssertEqual(inbox.pending().count, 10, "nothing leaves the phone before the computer has it")
+
+        // The wake of 08:30: every part is whole on the relay and the computer hears of none.
+        outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .waiting)
+        var passes = await forwarder.passes
+        var record = try XCTUnwrap(passes.last)
+        XCTAssertEqual(record.pending, 10)
+        XCTAssertEqual(record.whole, 10, "the relay holds all ten")
+        XCTAssertEqual(record.taken, 0)
+        XCTAssertEqual(record.posted, 10, "every whole part was told, side by side")
+        XCTAssertEqual(record.outcome, "waiting")
+        XCTAssertEqual(record.stoppedBy, "part-relay-timed-out")
+        XCTAssertNotNil(record.seconds)
+        let told = await hub.passesTold
+        XCTAssertEqual(told.last?.last?.startedAt, record.startedAt, "the computer was told of this pass")
+        XCTAssertEqual(told.flatMap { $0 }.filter { $0.startedAt == record.startedAt && $0.seconds != nil }.count, 1,
+                       "an ended pass is told once")
+
+        // The computer answers again: the next pass says ten taken.
+        await hub.set(postError: nil)
+        uploads.wholeOnTheRelay = []
+        clock.advance(900)
+        outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .drained)
+        passes = await forwarder.passes
+        record = try XCTUnwrap(passes.last)
+        XCTAssertEqual(record.taken, 10)
+        XCTAssertEqual(record.outcome, "drained")
+        XCTAssertNil(record.stoppedBy)
+
+        // The records are kept across a restart, the newest twenty.
+        let (_, again) = make(hub, uploads)
+        let kept = await again.passes
+        XCTAssertEqual(kept.last, record)
+        XCTAssertLessThanOrEqual(kept.count, WatchRecordingForwarder.passesKept)
+    }
+
+    /// One part request without an answer used to end the pass: a wake of seconds told at most
+    /// one part. Whole parts are told side by side when the pass starts, with what the computer
+    /// said it takes the last time, and the others cross although one gets no answer.
+    func testWholePartsAreToldSideBySideAndOneWithoutAnAnswerDoesNotStopTheOthers() async throws {
+        let hub = StubRecordingHub()
+        let uploads = StubUploads()
+        let (inbox, forwarder) = make(hub, uploads)
+        _ = try await deliver(inbox, forwarder, id: WatchRecordingWire.newRecordingID(), part: 0, last: true, audio: "a")
+        var outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .drained, "the computer said what it takes; the phone remembers")
+
+        // Ten parts arrive whole on the relay while the computer cannot be reached.
+        await hub.set(postError: RelayClientError.offline)
+        let id = WatchRecordingWire.newRecordingID()
+        for part in 0..<10 {
+            _ = try await deliver(inbox, forwarder, id: id, part: part, last: part == 9, audio: "part \(part)")
+        }
+        for _ in 0..<4 {
+            clock.advance(900)
+            _ = await forwarder.drain()
+            uploads.wholeOnTheRelay = Set(uploads.began.map(\.1))
+        }
+        clock.advance(900)
+        _ = await forwarder.drain()
+        XCTAssertEqual(inbox.pending().filter { $0.held != nil }.count, 10)
+
+        // The computer is back, and the request for the first part gets no answer. The computer
+        // cannot say what it takes either: the phone tells with what it remembered.
+        await hub.set(postError: nil)
+        await hub.set(unansweredParts: [0])
+        await hub.set(availableError: RelayClientError.timedOut)
+        var before = await hub.attempts
+        clock.advance(900)
+        outcome = await forwarder.drain()
+        var after = await hub.attempts
+        XCTAssertEqual(after - before, 10, "all ten requests went out although nothing could be asked first")
+        XCTAssertEqual(inbox.pending().map(\.info.part), [0], "nine crossed; the unanswered one stays")
+        XCTAssertEqual(outcome, .waiting)
+        var passes = await forwarder.passes
+        XCTAssertEqual(passes.last?.taken, 9)
+        XCTAssertEqual(passes.last?.posted, 10)
+
+        // Next wake the first part gets its answer.
+        await hub.set(unansweredParts: [])
+        await hub.set(availableError: nil)
+        before = await hub.attempts
+        clock.advance(900)
+        outcome = await forwarder.drain()
+        after = await hub.attempts
+        XCTAssertEqual(after - before, 1, "only the part that is left is told again")
+        XCTAssertEqual(outcome, .drained)
+        XCTAssertTrue(inbox.pending().isEmpty)
+        passes = await forwarder.passes
+        XCTAssertEqual(passes.last?.taken, 1)
+    }
+
+    /// On 2026-11-20 one part kept failing while the app was open. Every answer from the
+    /// computer asks for a pass, a pass that ended on the failure started the next at once, and
+    /// passes ran every two to three seconds for minutes. A pass that did not send everything
+    /// does not start the next one by itself, and one failing part does not keep the parts
+    /// behind it from their turn.
+    func testAFailingPartNeitherLoopsThePassNorHoldsUpTheOthers() async throws {
+        let hub = StubRecordingHub()
+        let uploads = StubUploads()
+        let (inbox, forwarder) = make(hub, uploads)
+        _ = try await deliver(inbox, forwarder, id: WatchRecordingWire.newRecordingID(), part: 0, last: true, audio: "a")
+        var outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .drained)
+
+        // Three parts wait. The request for the first fails with an error of the relay's.
+        uploads.takesAhead = false
+        let id = WatchRecordingWire.newRecordingID()
+        for part in 0..<3 {
+            _ = try await deliver(inbox, forwarder, id: id, part: part, last: part == 2, audio: "part \(part)")
+        }
+        await hub.set(failingParts: [0])
+        // While the pass runs, another one is asked for, as an open app does all the time.
+        uploads.whileStoring = { _ = await forwarder.drain() }
+        let passesBefore = await forwarder.passes.count
+        outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .waiting)
+        let passesAfter = await forwarder.passes.count
+        XCTAssertEqual(passesAfter - passesBefore, 1, "the pass that ended waiting did not start another")
+        XCTAssertEqual(inbox.pending().map(\.info.part), [0], "the two parts behind the failing one crossed")
+        let passes = await forwarder.passes
+        let record = try XCTUnwrap(passes.last)
+        XCTAssertEqual(record.taken, 2)
+        XCTAssertGreaterThan(record.skipped, 0)
+    }
+
+    /// A part whose new uploads are refused too does not start afresh for ever: each start
+    /// leaves a half-done upload on the relay. Two starts per part, then it keeps its upload
+    /// until the next version of the app.
+    func testAPartStartsAfreshAtMostTwiceInOneVersion() async throws {
+        let hub = StubRecordingHub()
+        let uploads = StubUploads()
+        uploads.takesAhead = false
+        let inbox = WatchRecordingInbox(directory: directory.appendingPathComponent("inbox"))
+        let pinned = context()
+        let clock = clock
+        func launch(_ build: String) -> WatchRecordingForwarder {
+            WatchRecordingForwarder(inbox: inbox, hub: hub, relay: uploads, now: { clock.now }, session: { pinned }, build: build)
+        }
+        var forwarder = launch("100")
+        _ = try await deliver(inbox, forwarder, id: WatchRecordingWire.newRecordingID(), part: 0, last: true, audio: "a")
+        _ = await forwarder.drain()
+        _ = try await deliver(inbox, forwarder, id: WatchRecordingWire.newRecordingID(), part: 0, last: true, audio: "b")
+        uploads.error = RelayClientError.server(status: 500, message: "")
+        var ids: [String] = []
+        // Twelve refused tries: three for the first upload, three for each fresh one, and more.
+        for _ in 0..<12 {
+            clock.advance(900)
+            _ = await forwarder.drain()
+            if let id = inbox.pending().first?.uploading?.upload.id, ids.last != id { ids.append(id) }
+        }
+        XCTAssertEqual(ids.count, 3, "the first upload and two fresh ones, no more")
+        XCTAssertEqual(inbox.pending().first?.uploading?.upload.id, ids.last, "the part keeps its last upload")
+        XCTAssertEqual(inbox.pending().count, 1, "and its audio")
+
+        // The same version, started again: still no further fresh start.
+        forwarder = launch("100")
+        for _ in 0..<4 {
+            clock.advance(900)
+            _ = await forwarder.drain()
+        }
+        XCTAssertEqual(inbox.pending().first?.uploading?.upload.id, ids.last)
+
+        // A new version of the app gets its own tries.
+        forwarder = launch("101")
+        for _ in 0..<3 {
+            clock.advance(900)
+            _ = await forwarder.drain()
+        }
+        XCTAssertNotEqual(inbox.pending().first?.uploading?.upload.id, ids.last, "the new version starts the part afresh")
+        XCTAssertEqual(inbox.pending().count, 1)
+    }
+
+    /// The count of refusals is kept across launches: a phone that starts the app afresh for
+    /// each wake still reaches three, and the stuck part heals.
+    func testRefusalsAreCountedAcrossLaunches() async throws {
+        let hub = StubRecordingHub()
+        let uploads = StubUploads()
+        uploads.takesAhead = false
+        var (inbox, forwarder) = make(hub, uploads)
+        _ = try await deliver(inbox, forwarder, id: WatchRecordingWire.newRecordingID(), part: 0, last: true, audio: "a")
+        _ = await forwarder.drain()
+        _ = try await deliver(inbox, forwarder, id: WatchRecordingWire.newRecordingID(), part: 0, last: true, audio: "b")
+        uploads.error = RelayClientError.server(status: 500, message: "")
+        var first: String?
+        for launch in 0..<3 {
+            // Each wake is a new run of the app.
+            (inbox, forwarder) = make(hub, uploads)
+            clock.advance(900)
+            _ = await forwarder.drain()
+            if launch == 0 { first = inbox.pending().first?.uploading?.upload.id }
+            if launch < 2 { XCTAssertEqual(inbox.pending().first?.uploading?.upload.id, first, "the same upload so far") }
+        }
+        XCTAssertNotNil(first)
+        XCTAssertNil(inbox.pending().first?.uploading, "the third refusal, in the third run, starts the part afresh")
+        uploads.error = nil
+        (inbox, forwarder) = make(hub, uploads)
+        clock.advance(900)
+        let outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .drained)
+        XCTAssertTrue(inbox.pending().isEmpty)
+    }
+
+    /// One upload failed every try for two hours on 2026-11-20. After three refusals in a row
+    /// the part starts a new upload under a new id; the audio never leaves the phone meanwhile.
+    func testAnUploadTheRelayKeepsRefusingStartsAfresh() async throws {
+        let hub = StubRecordingHub()
+        let uploads = StubUploads()
+        uploads.takesAhead = false
+        let (inbox, forwarder) = make(hub, uploads)
+        _ = try await deliver(inbox, forwarder, id: WatchRecordingWire.newRecordingID(), part: 0, last: true, audio: "a")
+        _ = await forwarder.drain()
+
+        let info = try await deliver(inbox, forwarder, id: WatchRecordingWire.newRecordingID(), part: 0, last: true, audio: "b")
+        uploads.error = RelayClientError.badRequest(message: "")
+        var ids: Set<String> = []
+        for _ in 0..<3 {
+            clock.advance(900)
+            let outcome = await forwarder.drain()
+            XCTAssertEqual(outcome, .waiting)
+            if let id = inbox.pending().first?.uploading?.upload.id { ids.insert(id) }
+        }
+        XCTAssertEqual(ids.count, 1, "the same upload was tried each time")
+        XCTAssertNil(inbox.pending().first?.uploading, "after three refusals the part forgets that upload")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: inbox.audioURL(info).path), "the audio stays on the phone")
+
+        // The next try is a new upload, and it goes through.
+        uploads.error = nil
+        clock.advance(900)
+        let outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .drained)
+        XCTAssertTrue(inbox.pending().isEmpty)
+        let fresh = try XCTUnwrap(uploads.handed.last)
+        XCTAssertFalse(ids.contains(fresh), "under a new id")
+
+        // Being offline is not a refusal: the upload is kept however often that happens.
+        _ = try await deliver(inbox, forwarder, id: WatchRecordingWire.newRecordingID(), part: 0, last: true, audio: "c")
+        uploads.error = RelayClientError.offline
+        for _ in 0..<5 {
+            clock.advance(900)
+            _ = await forwarder.drain()
+        }
+        XCTAssertNotNil(inbox.pending().first?.uploading, "an upload that only could not be reached is kept")
+    }
+
+    /// A wake that finds a pass still running starts none. That is counted and told    /// A wake that finds a pass still running starts none. That is counted and told, with the
+    /// running pass's record, so a pass that hangs does not hide itself.
+    func testAWakeThatFindsAPassRunningIsCountedAndTold() async throws {
+        let hub = StubRecordingHub()
+        let uploads = StubUploads()
+        let (inbox, forwarder) = make(hub, uploads)
+        await hub.set(takesPasses: true)
+        _ = try await deliver(inbox, forwarder, id: WatchRecordingWire.newRecordingID(), part: 0, last: true, audio: "a")
+        _ = await forwarder.drain()
+
+        _ = try await deliver(inbox, forwarder, id: WatchRecordingWire.newRecordingID(), part: 0, last: true, audio: "b")
+        let release = Late()
+        uploads.whileBeginning = {
+            for _ in 0..<200 where !release.value { try? await Task.sleep(nanoseconds: 20_000_000) }
+        }
+        let stuck = Task { await forwarder.drain() }
+        for _ in 0..<200 where await forwarder.passes.count < 2 { try await Task.sleep(nanoseconds: 10_000_000) }
+        let outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .waiting)
+        let now = await forwarder.passes
+        let running = try XCTUnwrap(now.last)
+        XCTAssertNil(running.seconds, "the pass has not ended")
+        XCTAssertEqual(running.skipped, 1)
+        let told = await hub.passesTold
+        XCTAssertEqual(told.last?.last?.skipped, 1, "the computer hears of the running pass and the skipped wake")
+        XCTAssertNil(told.last?.last?.seconds)
+
+        release.set()
+        _ = await stuck.value
+        let later = await forwarder.passes
+        let ended = try XCTUnwrap(later.first { $0.startedAt == running.startedAt })
+        XCTAssertNotNil(ended.seconds)
+        let after = await hub.passesTold
+        XCTAssertEqual(after.last?.last?.seconds, ended.seconds, "and again when it ends")
+    }
+
+    /// A pass the app was closed under leaves a record with no end. The next run closes it as
+    /// cut off and tells it once; on 2026-11-20 three such records went out with every report.
+    func testAPassCutOffByTheAppClosingIsToldOnce() async throws {
+        let hub = StubRecordingHub()
+        let uploads = StubUploads()
+        let (inbox, forwarder) = make(hub, uploads)
+        await hub.set(takesPasses: true)
+        _ = try await deliver(inbox, forwarder, id: WatchRecordingWire.newRecordingID(), part: 0, last: true, audio: "a")
+        _ = await forwarder.drain()
+
+        // A pass hangs in a hand-over, and the app is closed: the record on disk has no end.
+        _ = try await deliver(inbox, forwarder, id: WatchRecordingWire.newRecordingID(), part: 0, last: true, audio: "b")
+        let release = Late()
+        uploads.whileBeginning = {
+            for _ in 0..<400 where !release.value { try? await Task.sleep(nanoseconds: 20_000_000) }
+        }
+        let stuck = Task { await forwarder.drain() }
+        for _ in 0..<200 where await forwarder.passes.count < 2 { try await Task.sleep(nanoseconds: 10_000_000) }
+        let open = await forwarder.passes
+        XCTAssertNil(open.last?.seconds)
+
+        // The app starts again.
+        uploads.whileBeginning = nil
+        let (_, next) = make(hub, uploads)
+        let read = await next.passes
+        XCTAssertEqual(read.last?.outcome, WatchRecordingForwarder.cutOff)
+        XCTAssertEqual(read.last?.seconds, 0)
+        XCTAssertEqual(read.last?.startedAt, open.last?.startedAt)
+        let before = await hub.passesTold.flatMap { $0 }.filter { $0.outcome == WatchRecordingForwarder.cutOff }.count
+        clock.advance(900)
+        _ = await next.drain()
+        clock.advance(900)
+        _ = await next.drain()
+        let after = await hub.passesTold.flatMap { $0 }.filter { $0.outcome == WatchRecordingForwarder.cutOff }.count
+        XCTAssertEqual(after - before, 1, "the cut-off pass is told once")
+        release.set()
+        _ = await stuck.value
+    }
+
+    func testAnErrorsWordCarriesItsStatus() {
+        XCTAssertEqual(RecordingPassRecord.word(RelayClientError.server(status: 500, message: "x")), "relay-500")
+        XCTAssertEqual(RecordingPassRecord.word(RelayClientError.notFound), "relay-404")
+        XCTAssertEqual(RecordingPassRecord.word(RelayClientError.timedOut), "relay-timed-out")
+        XCTAssertEqual(RecordingPassRecord.word(HubRequestError.rejected(status: 409, message: "x")), "computer-409")
+        XCTAssertEqual(RecordingPassRecord.word(HubRequestError.noAnswer), "computer-no-answer")
+        XCTAssertEqual(RecordingPassRecord.word(RecordingUploadInFlight()), "upload-on-the-way")
+    }
+
+    /// A suspended app keeps "a pass is running" for as long as the system keeps the app. A pass
+    /// that has done nothing for three minutes no longer holds back the next wake: that wake
+    /// sends the parts itself, and its record says a stale pass was replaced.
+    func testAPassThatDidNothingForThreeMinutesIsReplaced() async throws {
+        let hub = StubRecordingHub()
+        let uploads = StubUploads()
+        let (inbox, forwarder) = make(hub, uploads)
+        await hub.set(takesPasses: true)
+        _ = try await deliver(inbox, forwarder, id: WatchRecordingWire.newRecordingID(), part: 0, last: true, audio: "a")
+        _ = await forwarder.drain()
+
+        // The next pass hangs in its first hand-over.
+        _ = try await deliver(inbox, forwarder, id: WatchRecordingWire.newRecordingID(), part: 0, last: true, audio: "b")
+        let release = Late()
+        let hung = Late()
+        uploads.whileBeginning = {
+            guard !hung.value else { return }
+            hung.set()
+            for _ in 0..<400 where !release.value { try? await Task.sleep(nanoseconds: 20_000_000) }
+        }
+        let stuck = Task { await forwarder.drain() }
+        for _ in 0..<200 where !hung.value { try await Task.sleep(nanoseconds: 10_000_000) }
+
+        // A wake two minutes later still waits for it: a pass may wait that long for one answer.
+        clock.advance(120)
+        var outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .waiting)
+        XCTAssertEqual(inbox.pending().count, 1)
+
+        // A wake after three more minutes of nothing does not.
+        clock.advance(WatchRecordingForwarder.staleAfter + 1)
+        outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .drained)
+        XCTAssertTrue(inbox.pending().isEmpty, "the part crossed without the hung pass")
+        var passes = await forwarder.passes
+        let fresh = try XCTUnwrap(passes.last)
+        XCTAssertEqual(fresh.replacedStale, 1)
+        XCTAssertEqual(fresh.taken, 1)
+        XCTAssertEqual(fresh.outcome, "drained")
+        let stale = try XCTUnwrap(passes.dropLast().last)
+        XCTAssertNil(stale.seconds, "the hung pass has not ended")
+        XCTAssertEqual(stale.skipped, 1)
+        let posted = await hub.posted.count
+
+        // The hung pass comes back: it ends, sends nothing more and does not undo the outcome.
+        release.set()
+        _ = await stuck.value
+        passes = await forwarder.passes
+        XCTAssertNotNil(passes.dropLast().last?.seconds)
+        XCTAssertEqual(passes.last, fresh.reported == true ? fresh : passes.last)
+        XCTAssertEqual(passes.last?.taken, 1)
+        let after = await hub.posted.count
+        XCTAssertEqual(after, posted, "the replaced pass sent no part request of its own")
+        let last = await forwarder.lastOutcome
+        XCTAssertEqual(last, .drained)
+        // And the next wake runs as usual.
+        outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .drained)
+    }
+
+    /// Try again sends refused parts now. On 2026-11-18 parts an older computer had refused were
+    /// waiting hours for their turn after the computer was updated; the card said "1 hour couldn't
+    /// reach your computer" and Try again did not touch them.
+    func testTryAgainSendsRefusedPartsNow() async throws {
+        let hub = StubRecordingHub()
+        let uploads = StubUploads()
+        let (inbox, forwarder) = make(hub, uploads)
+        let id = WatchRecordingWire.newRecordingID()
+        _ = try await deliver(inbox, forwarder, id: id, part: 0, last: true, audio: "audio")
+        await hub.set(postError: HubRequestError.rejected(status: 400, message: "the recording is not valid"))
+        await refuse(forwarder, times: WatchRecordingInbox.maxRefusals - 1)
+        // The last refusal, with no time passing after it: the part's next turn is hours away.
+        _ = await forwarder.drain()
+        var rows = await forwarder.recordings()
+        XCTAssertEqual(rows.first?.state, .failed)
+        XCTAssertGreaterThan(try XCTUnwrap(inbox.pending().first?.nextTry), clock.now)
+
+        // The computer was updated. Without waiting for the part's turn:
+        await hub.set(postError: nil)
+        var outcome = await forwarder.drain()
+        XCTAssertFalse(inbox.pending().isEmpty, "its turn has not come, so a pass leaves it")
+        await forwarder.retryRefused()
+        XCTAssertEqual(inbox.pending().first?.refusals, 0)
+        outcome = await forwarder.drain()
+        XCTAssertEqual(outcome, .drained)
+        XCTAssertTrue(inbox.pending().isEmpty)
+        rows = await forwarder.recordings()
+        XCTAssertNotEqual(rows.first?.state, .failed)
+    }
+
+    func testThePathsAPartMayTake() {
+        let pinned = context()
+        let direct = directContext(pinned)
+        func names(_ first: SessionContext, _ other: SessionContext?, _ takesRelay: Bool) -> [String] {
+            WatchRecordingForwarder.paths(first: first, other: other, takesRelay: takesRelay).map(WatchRecordingForwarder.relayName)
+        }
+        XCTAssertEqual(names(pinned, direct, true), ["pinned", "direct"])
+        XCTAssertEqual(names(direct, pinned, true), ["pinned", "direct"])
+        XCTAssertEqual(names(pinned, direct, false), ["pinned"])
+        XCTAssertEqual(names(direct, pinned, false), ["pinned"])
+        // One path only: a pinned pairing with the tunnel closed, or a pairing that is direct only.
+        XCTAssertEqual(names(pinned, nil, true), ["pinned"])
+        XCTAssertEqual(names(direct, nil, false), ["direct"])
+        // The direct path's address is inside the app; iOS cannot upload to it with the app closed.
+        XCTAssertTrue(RecordingPieceUploads.isInsideTheApp(direct.credentials.origin))
+        XCTAssertFalse(RecordingPieceUploads.isInsideTheApp(pinned.credentials.origin))
+    }
+
     /// The relay refused this phone's credentials (2026-11-16 to 11-17: every upload got 401 and
     /// the Watch tab only said it was waiting). The phone says to pair again, keeps the audio,
     /// counts nothing against the part, and sends it once the relay accepts the phone again.
@@ -1600,7 +2918,7 @@ extension WatchRecordingForwarderTests {
         _ = try await deliver(inbox, forwarder, id: id, part: 1, last: true, audio: "second")
 
         var outcome = await forwarder.drain()
-        XCTAssertEqual(outcome, .waiting)
+        XCTAssertEqual(outcome, .sending, "with the system, on its way: nothing is in the way")
         XCTAssertEqual(Set(uploads.handed).count, 2, "both parts were handed over in one pass")
         XCTAssertEqual(inbox.pending().count, 2)
         XCTAssertTrue(inbox.pending().allSatisfy { $0.refusals == 0 && $0.held == nil && $0.uploading != nil })
@@ -1674,4 +2992,14 @@ private final class TestClock: @unchecked Sendable {
     private var value = Date(timeIntervalSince1970: 1_800_100_000)
     var now: Date { lock.withLock { value } }
     func advance(_ seconds: TimeInterval) { lock.withLock { value = value.addingTimeInterval(seconds) } }
+}
+
+private final class Flag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: Bool
+    init(_ value: Bool) { stored = value }
+    var value: Bool {
+        get { lock.withLock { stored } }
+        set { lock.withLock { stored = newValue } }
+    }
 }

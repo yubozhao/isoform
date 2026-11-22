@@ -67,7 +67,8 @@ type nodeKey struct {
 }
 
 type Supervisor struct {
-	cfg Config
+	cfg          Config
+	stopListener func(listenerRecord) error
 
 	// lifecycle serializes Start and Stop; acquire it before mu.
 	lifecycle     sync.Mutex
@@ -92,6 +93,7 @@ type Supervisor struct {
 func New(cfg Config) *Supervisor {
 	return &Supervisor{
 		cfg:           cfg,
+		stopListener:  stopRecordedListener,
 		snapshot:      Snapshot{State: StateOff},
 		changed:       make(chan struct{}),
 		processes:     make(map[string]*exec.Cmd),
@@ -128,6 +130,18 @@ func (s *Supervisor) Start(ctx context.Context) error {
 	if err := os.Chmod(filepath.Join(s.cfg.StateDir, "relay"), 0700); err != nil {
 		return s.failLocked(fmt.Errorf("secure relay state directory: %w", err))
 	}
+	lock, err := lockListenerState(s.cfg.StateDir)
+	if err != nil {
+		return s.failLocked(err)
+	}
+	// The listener worker owns the lock once startup succeeds.
+	started := false
+	defer func() {
+		if !started && lock != nil {
+			_ = lock.Close()
+		}
+	}()
+	s.reapListener()
 	key, err := loadOrCreateKey(s.keyPath())
 	if err != nil {
 		return s.failLocked(err)
@@ -145,7 +159,14 @@ func (s *Supervisor) Start(ctx context.Context) error {
 	s.signalLocked()
 	s.wg.Add(3)
 	go s.runRelay()
-	go s.runDumbpipe()
+	started = true
+	go func() {
+		defer s.wg.Done()
+		if lock != nil {
+			defer lock.Close()
+		}
+		s.runDumbpipe()
+	}()
 	go s.monitorRelay()
 	return nil
 }
@@ -252,7 +273,6 @@ func (s *Supervisor) runRelay() {
 }
 
 func (s *Supervisor) runDumbpipe() {
-	defer s.wg.Done()
 	s.runChild("dumbpipe", func() (*exec.Cmd, error) {
 		s.mu.Lock()
 		secret := s.secret
@@ -278,7 +298,7 @@ func (s *Supervisor) runChild(name string, factory childFactory, reset <-chan st
 			s.failRunning(fmt.Errorf("start %s: %w", name, err))
 			return
 		}
-		outputDone, logFile, err := s.startChild(name, cmd)
+		outputDone, cleanup, err := s.startChild(name, cmd)
 		if err != nil {
 			s.failRunning(fmt.Errorf("start %s: %w", name, err))
 			return
@@ -288,7 +308,7 @@ func (s *Supervisor) runChild(name string, factory childFactory, reset <-chan st
 		go func() {
 			err := cmd.Wait()
 			<-outputDone
-			_ = logFile.Close()
+			cleanup()
 			wait <- err
 			close(childDone)
 		}()
@@ -335,7 +355,7 @@ func (s *Supervisor) runChild(name string, factory childFactory, reset <-chan st
 	}
 }
 
-func (s *Supervisor) startChild(name string, cmd *exec.Cmd) (<-chan struct{}, *os.File, error) {
+func (s *Supervisor) startChild(name string, cmd *exec.Cmd) (<-chan struct{}, func(), error) {
 	logPath := filepath.Join(s.cfg.StateDir, name+".log")
 	logFile, logWriter, err := openCappedLog(logPath)
 	if err != nil {
@@ -350,10 +370,31 @@ func (s *Supervisor) startChild(name string, cmd *exec.Cmd) (<-chan struct{}, *o
 		_ = logFile.Close()
 		return nil, nil, err
 	}
-	configureProcessGroup(cmd)
-	if err := cmd.Start(); err != nil {
+	var terminal *os.File
+	var record listenerRecord
+	if name == "dumbpipe" {
+		record = newListenerRecord(cmd)
+		terminal, err = startListener(cmd)
+	} else {
+		configureProcessGroup(cmd)
+		err = cmd.Start()
+	}
+	if err != nil {
+		_ = stderr.Close()
 		_ = logFile.Close()
 		return nil, nil, err
+	}
+	if name == "dumbpipe" {
+		record.PID = cmd.Process.Pid
+		if err := record.save(s.listenerPath()); err != nil {
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+			if terminal != nil {
+				_ = terminal.Close()
+			}
+			_ = logFile.Close()
+			return nil, nil, err
+		}
 	}
 	s.mu.Lock()
 	s.processes[name] = cmd
@@ -385,7 +426,15 @@ func (s *Supervisor) startChild(name string, cmd *exec.Cmd) (<-chan struct{}, *o
 			s.logLine(name, line)
 		}
 	}()
-	return done, logFile, nil
+	return done, func() {
+		_ = logFile.Close()
+		if terminal != nil {
+			_ = terminal.Close()
+		}
+		if name == "dumbpipe" {
+			s.clearListenerRecord()
+		}
+	}, nil
 }
 
 // ticketRedactingWriter keeps an endpoint ticket that dumbpipe prints on
@@ -457,6 +506,7 @@ func openCappedLog(path string) (*os.File, *cappedWriter, error) {
 	return logFile, &cappedWriter{writer: logFile, remaining: remaining}, nil
 }
 
+//isoform:destination relay
 func (s *Supervisor) monitorRelay() {
 	defer s.wg.Done()
 	client := &http.Client{Timeout: 1200 * time.Millisecond}

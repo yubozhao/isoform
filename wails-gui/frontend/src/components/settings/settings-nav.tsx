@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import {
     Activity,
     Bell,
+    Brain,
     ChevronDown,
     Gauge,
     Globe,
@@ -42,6 +43,7 @@ export const DEV_TOOLS_TOPIC_ICONS: Record<DevToolsTopicId, ComponentType<{ clas
     "ax-parser": SearchCode,
     triage: ListFilter,
     "purpose-map": Target,
+    "memory-debug": Brain,
     "browser-bridge": Globe,
     "notification-tests": Bell,
     "perf-analysis": Gauge,

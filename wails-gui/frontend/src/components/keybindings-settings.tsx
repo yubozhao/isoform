@@ -1,20 +1,20 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChevronDown, RotateCcw } from 'lucide-react';
+import { RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
-import { ConfirmDialog } from '@/components/confirm-dialog';
 import { SettingsCard, SettingsRow } from '@/components/settings/settings-primitives';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
     comboEquals,
     comboToDisplayString,
+    comboToSpokenString,
     eventToCombo,
+    findFixedKeyClash,
     type KeybindingAction,
     type KeyCombo,
     type useKeybindings,
 } from '@/hooks/useKeybindings';
-import { SettingsFailureLine, useSettingsFailure } from '@/components/settings/settings-failure';
+import { useSettingsFailure } from '@/components/settings/settings-failure';
 import {
     GetQuickChatHotkey,
     SetQuickChatHotkey,
@@ -23,7 +23,7 @@ import {
 import { EventsOn } from '../../wailsjs/runtime/runtime';
 import { isMac, isWindows } from '@/lib/platform';
 
-const QUICK_CHAT_GLOBAL_ID = 'quick-chat-global';
+export const QUICK_CHAT_GLOBAL_ID = 'quick-chat-global';
 
 // Keep the persisted KeyCombo shape, including sentinels for double tap and Off.
 const QUICK_CHAT_PRESETS = [
@@ -34,19 +34,29 @@ const QUICK_CHAT_PRESETS = [
     { id: 'off', combo: { meta: false, ctrl: false, alt: false, shift: false, key: 'off' } },
 ] as const;
 
-type Keybindings = ReturnType<typeof useKeybindings>;
+export type Keybindings = ReturnType<typeof useKeybindings>;
 
 // ── Shared recording and saving ──
 
-// One recorder per card: which row is listening for keys, plus the save and
-// reset rules shared by every shortcut (conflict check, and the Quick Chat
-// round trip to the Go hook).
-function useShortcutEditor(keybindings: Keybindings) {
+/** A recorded combo that another row already uses: shown under the row
+ *  that was recording, and nothing is saved (computer-keys v1.0.0 r4). */
+export interface ShortcutClash {
+    actionId: string;
+    /** The name of the row that already has these keys. */
+    row: string;
+}
+
+// One recorder per surface: which row is listening for keys, plus the save
+// and reset rules shared by every shortcut (conflict check, and the Quick
+// Chat round trip to the Go hook).
+export function useShortcutEditor(keybindings: Keybindings) {
     const { t } = useTranslation('settings');
     const [recordingId, setRecordingId] = useState<string | null>(null);
+    const [clash, setClash] = useState<ShortcutClash | null>(null);
     const { failure, fail, clear } = useSettingsFailure();
 
     const startRecording = useCallback((actionId: string) => {
+        setClash(null);
         setRecordingId(actionId);
     }, []);
 
@@ -56,15 +66,22 @@ function useShortcutEditor(keybindings: Keybindings) {
 
     const saveCombo = useCallback(
         (actionId: string, combo: KeyCombo) => {
-            const conflict = keybindings.findConflict(combo, actionId);
-            if (conflict) {
-                fail(
-                    t('keybindings.toasts.conflict', {
-                        action: keybindings.actions.find((entry) => entry.id === conflict)?.label,
-                    }),
-                );
+            const fixed = findFixedKeyClash(combo);
+            if (fixed) {
+                setClash({ actionId, row: t(fixed.labelKey as never) as string });
+                setRecordingId(null);
                 return;
             }
+            const conflict = keybindings.findConflict(combo, actionId);
+            if (conflict) {
+                setClash({
+                    actionId,
+                    row: keybindings.actions.find((entry) => entry.id === conflict)?.label ?? conflict,
+                });
+                setRecordingId(null);
+                return;
+            }
+            setClash(null);
             // Quick Chat is OS-level: the renderer never sees its keystrokes,
             // so we push the combo down to Go which retunes the platform hook
             // (Windows WH_KEYBOARD_LL / macOS CGEventTap). At least one
@@ -120,24 +137,13 @@ function useShortcutEditor(keybindings: Keybindings) {
         [keybindings, quickChatDefault, t, fail, clear],
     );
 
-    return { recordingId, startRecording, cancelRecording, saveCombo, resetBinding, failure };
+    return { recordingId, startRecording, cancelRecording, saveCombo, resetBinding, failure, clash };
 }
 
-// ── Quick Chat shortcut (General, everyday) ──
-
-interface QuickChatShortcutCardProps {
-    keybindings: Keybindings;
-}
-
-/** The system-wide Quick Chat hotkey, on its own card because it is the one
- *  shortcut most people change. */
-export function QuickChatShortcutCard({ keybindings }: QuickChatShortcutCardProps) {
-    const { t } = useTranslation('settings');
-    const action = keybindings.actions.find((a) => a.id === QUICK_CHAT_GLOBAL_ID);
+/** Reads the Quick Chat hotkey the Go side persisted into `keybindings` once
+ *  on mount, and reports whether that read is still running. */
+export function useQuickChatHotkeyHydration(keybindings: Keybindings): boolean {
     const [loading, setLoading] = useState(true);
-    const [saving, setSaving] = useState(false);
-    const savingRef = useRef(false);
-    const { failure, fail, clear } = useSettingsFailure();
 
     // Hydrate the OS-level Quick Chat hotkey from Go on mount. The Go
     // side persists this binding to ~/.yansu-agent/quick_chat_hotkey.json
@@ -169,6 +175,24 @@ export function QuickChatShortcutCard({ keybindings }: QuickChatShortcutCardProp
         // We intentionally only run this on mount.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+    return loading;
+}
+
+// ── Quick Chat shortcut (General, everyday) ──
+
+interface QuickChatShortcutCardProps {
+    keybindings: Keybindings;
+}
+
+/** The system-wide Quick Chat hotkey, on its own card because it is the one
+ *  shortcut most people change. */
+export function QuickChatShortcutCard({ keybindings }: QuickChatShortcutCardProps) {
+    const { t } = useTranslation('settings');
+    const action = keybindings.actions.find((a) => a.id === QUICK_CHAT_GLOBAL_ID);
+    const loading = useQuickChatHotkeyHydration(keybindings);
+    const [saving, setSaving] = useState(false);
+    const savingRef = useRef(false);
+    const { failure, fail, clear } = useSettingsFailure();
 
     if (!action || (!isMac && !isWindows)) return null;
 
@@ -224,165 +248,32 @@ export function QuickChatShortcutCard({ keybindings }: QuickChatShortcutCardProp
     );
 }
 
-// ── Keyboard shortcuts (General > Advanced) ──
-
-interface KeybindingsSettingsProps {
-    keybindings: Keybindings;
-    vimMode: boolean;
-    onVimModeChange: (enabled: boolean) => void;
-}
-
-/** In-app shortcuts, the read-only system-wide Pause observing shortcut and
- *  Vim-style navigation, on one card. Quick Chat has its own card and the
- *  developer-only shortcuts are not listed. */
-export function KeybindingsSettings({
-    keybindings,
-    vimMode,
-    onVimModeChange,
-}: KeybindingsSettingsProps) {
-    const { t } = useTranslation('settings');
-    const editor = useShortcutEditor(keybindings);
-    const [vimExpanded, setVimExpanded] = useState(false);
-    const [confirmResetOpen, setConfirmResetOpen] = useState(false);
-
-    // Editable shortcuts first, then the read-only system-wide ones.
-    const listed = keybindings.actions.filter(
-        (a) => a.id !== QUICK_CHAT_GLOBAL_ID && !a.devOnly,
-    );
-    const shortcuts = [
-        ...listed.filter((a) => !a.readonly),
-        ...listed.filter((a) => a.readonly),
-    ];
-    const customized = shortcuts.filter(
-        (a) => !a.readonly && keybindings.isCustomized(a.id),
-    );
-
-    // Resets the shortcuts on this card; Quick Chat keeps its own reset.
-    const handleResetAll = () => {
-        for (const action of customized) {
-            editor.resetBinding(action.id);
-        }
-    };
-
-    return (
-        <SettingsCard
-            title={t('keybindings.title')}
-            description={t('keybindings.description')}
-        >
-            <div className="flex flex-col">
-                {shortcuts.map((action) => (
-                    <ShortcutRow
-                        key={action.id}
-                        action={action}
-                        title={action.label}
-                        description={action.description}
-                        currentCombo={keybindings.getCombo(action.id) ?? action.defaultCombo}
-                        isCustomized={keybindings.isCustomized(action.id)}
-                        recording={editor.recordingId === action.id}
-                        onRecord={editor.startRecording}
-                        onCancelRecord={editor.cancelRecording}
-                        onSaveCombo={editor.saveCombo}
-                        onReset={editor.resetBinding}
-                    />
-                ))}
-                <SettingsFailureLine failure={editor.failure} className="py-1" />
-                <SettingsRow
-                    title={t('keybindings.vim.title')}
-                    description={t('keybindings.vim.description')}
-                    control={
-                        <Switch
-                            checked={vimMode}
-                            onCheckedChange={onVimModeChange}
-                            aria-label={t('keybindings.vim.title')}
-                        />
-                    }
-                />
-            </div>
-
-            <div className="flex flex-col gap-2 pt-1">
-                <button
-                    type="button"
-                    aria-expanded={vimExpanded}
-                    onClick={() => setVimExpanded((v) => !v)}
-                    className="flex items-center gap-1.5 self-start text-xs text-muted hover:text-ink transition-colors"
-                >
-                    <ChevronDown
-                        aria-hidden
-                        className={`h-3 w-3 shrink-0 transition-transform ${vimExpanded ? 'rotate-180' : ''}`}
-                    />
-                    {vimExpanded ? t('keybindings.vim.hideKeys') : t('keybindings.vim.showKeys')}
-                </button>
-                {vimExpanded && (
-                    <div className="flex flex-col">
-                        {!vimMode && (
-                            <p className="settings-row-desc">{t('keybindings.vim.offReason')}</p>
-                        )}
-                        <div className={`flex flex-col ${vimMode ? '' : 'opacity-60'}`}>
-                            {keybindings.vimActions.map((action) => (
-                                <ShortcutRow
-                                    key={action.id}
-                                    action={action}
-                                    currentCombo={action.defaultCombo}
-                                    isCustomized={false}
-                                    recording={false}
-                                    onRecord={editor.startRecording}
-                                    onCancelRecord={editor.cancelRecording}
-                                    onSaveCombo={editor.saveCombo}
-                                    onReset={editor.resetBinding}
-                                />
-                            ))}
-                        </div>
-                        <p className="text-[11px] text-muted mt-2">
-                            {t('keybindings.vim.readonlyHint')}
-                        </p>
-                    </div>
-                )}
-            </div>
-
-            {customized.length > 0 && (
-                <div className="flex justify-end pt-3">
-                    <Button variant="outline" size="sm" onClick={() => setConfirmResetOpen(true)}>
-                        <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
-                        {t('keybindings.resetAll')}
-                    </Button>
-                </div>
-            )}
-            <ConfirmDialog
-                open={confirmResetOpen}
-                onOpenChange={setConfirmResetOpen}
-                title={t('keybindings.resetAllConfirm.title')}
-                description={t('keybindings.resetAllConfirm.description')}
-                confirmLabel={t('keybindings.resetAllConfirm.confirm')}
-                onConfirm={handleResetAll}
-            />
-        </SettingsCard>
-    );
-}
-
 // ── ShortcutRow ──
 
 interface ShortcutRowProps {
     action: KeybindingAction;
-    /** Overrides the command's own label, for a row that stands on its own card. */
-    title?: string;
-    /** Overrides the command's own description. */
-    description?: string;
     currentCombo: KeyCombo;
     isCustomized: boolean;
     recording: boolean;
+    /** Words after the keys, such as "always this one" on Closed Eyes. */
+    note?: string;
+    /** "Already used by {row}." under the row; nothing was saved. */
+    clashRow?: string;
     onRecord: (actionId: string) => void;
     onCancelRecord: () => void;
     onSaveCombo: (actionId: string, combo: KeyCombo) => void;
     onReset: (actionId: string) => void;
 }
 
-function ShortcutRow({
+/** One shortcut in the Keyboard shortcuts sheet: its name, its keys and,
+ *  unless it is fixed, a Change button that records new keys. */
+export function ShortcutRow({
     action,
-    title,
-    description,
     currentCombo,
     isCustomized,
     recording,
+    note,
+    clashRow,
     onRecord,
     onCancelRecord,
     onSaveCombo,
@@ -470,50 +361,62 @@ function ShortcutRow({
         };
     }, [recording, onCancelRecord]);
 
-    const label = title ?? (t(`keybindings.commands.${action.id}.label` as never) as string);
-    const detail =
-        description ?? (t(`keybindings.commands.${action.id}.description` as never) as string);
+    const label = t(`keybindings.commands.${action.id}.label` as never) as string;
+    const keys = comboToDisplayString(currentCombo);
+    const spoken = comboToSpokenString(currentCombo, t as (key: string) => string);
 
     return (
-        <div ref={rowRef} className="settings-row">
-            <div className="flex flex-col min-w-0">
-                <span className="settings-row-title truncate">{label}</span>
-                {detail && <span className="settings-row-desc">{detail}</span>}
-            </div>
-
-            <div className="flex items-center gap-1.5 shrink-0">
-                {/* Key chord pill */}
-                <button
-                    type="button"
-                    onClick={() => !action.readonly && onRecord(action.id)}
-                    disabled={action.readonly}
-                    aria-label={recording ? undefined : `${label}: ${comboToDisplayString(currentCombo)}`}
-                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-mono transition-all ${
-                        recording
-                            ? 'border border-accent-2 ring-1 ring-accent-2/40 bg-accent-2/5 text-accent-2 animate-pulse'
-                            : action.readonly
-                              ? 'bg-ink/5 text-muted cursor-default'
-                              : 'bg-background border border-border text-ink hover:border-ink/20 cursor-pointer'
-                    }`}
-                >
-                    {recording ? t('keybindings.recordPlaceholder') : comboToDisplayString(currentCombo)}
-                </button>
-
-                {/* Reset button (only for customized, non-readonly actions) */}
-                {isCustomized && !action.readonly && (
-                    <button
-                        type="button"
-                        onClick={() => {
-                            onReset(action.id);
-                        }}
-                        className="p-1 rounded-md text-muted hover:text-ink hover:bg-ink/[0.03] transition-colors"
-                        title={t('keybindings.resetTooltip')}
-                        aria-label={t('keybindings.resetTooltip')}
+        <div ref={rowRef} className="flex flex-col border-b border-border py-2.5 last:border-b-0">
+            <div className="flex items-center justify-between gap-4">
+                <span className="min-w-0 truncate text-[13px] text-ink">{label}</span>
+                <div className="flex shrink-0 items-center gap-2">
+                    {note && <span className="text-xs text-subtle">{note}</span>}
+                    <kbd
+                        aria-hidden={!action.readonly}
+                        aria-label={action.readonly ? t('keys.fixedRowLabel', { name: label, keys: spoken }) : undefined}
+                        className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 font-mono text-xs transition-all ${
+                            recording
+                                ? 'animate-pulse border border-accent-2 bg-accent-2/5 text-accent-2 ring-1 ring-accent-2/40'
+                                : action.readonly
+                                  ? 'bg-ink/5 text-muted'
+                                  : 'border border-border bg-background text-ink'
+                        }`}
                     >
-                        <RotateCcw className="h-3 w-3" />
-                    </button>
-                )}
+                        {recording ? t('keybindings.recordPlaceholder') : keys}
+                    </kbd>
+                    {isCustomized && !action.readonly && !recording && (
+                        <button
+                            type="button"
+                            onClick={() => onReset(action.id)}
+                            className="rounded-md p-1 text-muted transition-colors hover:bg-ink/[0.03] hover:text-ink"
+                            title={t('keybindings.resetTooltip')}
+                            aria-label={t('keybindings.resetTooltip')}
+                        >
+                            <RotateCcw className="h-3 w-3" />
+                        </button>
+                    )}
+                    {!action.readonly && (
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            data-keys-change=""
+                            aria-label={t('keys.rowLabel', { name: label, keys: spoken })}
+                            onClick={() => (recording ? onCancelRecord() : onRecord(action.id))}
+                        >
+                            {t('keys.change')}
+                        </Button>
+                    )}
+                </div>
             </div>
+            <span className="sr-only" aria-live="polite">
+                {recording ? t('keys.recording', { keys: spoken }) : ''}
+            </span>
+            {clashRow && (
+                <p role="alert" className="mt-1 text-[12px] text-copper">
+                    {t('keys.clash', { row: clashRow })}
+                </p>
+            )}
         </div>
     );
 }

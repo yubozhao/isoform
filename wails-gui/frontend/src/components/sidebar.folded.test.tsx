@@ -84,10 +84,6 @@ async function expectFoldedRail() {
         expect(Number(icon.getAttribute("width"))).toBeGreaterThan(0);
         expect(Number(icon.getAttribute("height"))).toBeGreaterThan(0);
     }
-    const observing = await screen.findByRole("button", { name: t("observingStatus.label") });
-    expectPainted(observing.querySelector("span span")!);
-    const account = within(rail).getByRole("button", { name: t("userMenu.account", { name: "Bo" }) });
-    expectPainted(within(account).getByText("B"));
     expectPainted(within(rail).getByLabelText(t("sidebar.toAnswer", { count: 2 })));
 }
 

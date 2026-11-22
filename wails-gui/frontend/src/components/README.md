@@ -43,7 +43,6 @@ components/
 | `chat-error-card.tsx` | Renders classified upstream chat errors (quota, billing, auth, network, etc.) with recovery hints; quota and billing errors link to Settings > Assistant (See usage) |
 | `chat-error-preview.tsx` | Dev-only gallery for visually iterating on `ChatErrorCard` variants (`#dev=chat-errors`) |
 | `file-attachment-preview.tsx` | Chips and image thumbnails for files attached to the composer or a user message |
-| `observing-status.tsx` | Live sidebar badge/pill indicating whether the native activity monitor is observing the workspace |
 | `permission-question-card.tsx` | Agent permission question card with selectable action buttons, skip action, and free-text "Other" input |
 | `animated-ellipsis.tsx` | Three-dot cycling ellipsis for inline "running" labels |
 | `first-chat-welcome.tsx` | Builds the welcome greeting for first-time sessions, including connected provider status and suggestion chips |
@@ -82,7 +81,7 @@ components/
 | Component | Description |
 |-----------|-------------|
 | `activity-page.tsx` | Full-screen activity view: the day page (daily digest, merged "what you worked on" list, learned entries), the week digest, and the screen timeline (virtualized session list, screenshots, OCR search, video playback controls, per-frame OCR highlight overlay) |
-| `activity-summary.tsx` | The digest card (Chat about this day/week, Copy, Regenerate) shared by the Activity page's Day and Week views |
+| `activity-summary.tsx` | `copyTextToClipboard`, the clipboard helper the old day digest card shared (About you's portrait uses it) |
 | `knowledge-page.tsx` | How you do things (RC 2 D5 + RC 3 confirm moment): cards by kind from `ListKnowHow` with scope chips, the `GetKnowHowCandidate` proposal banner with its draft review (Confirm / Edit steps / Not a how-to, Undo on the result), the `GetKnowHowMatch` banner, a detail whose buttons prepare a main-chat request, and Technical details with the raw entry and its Activity sessions |
 | `memory-page.tsx` | Memory management UI backed by Wails calls; supports keyword search, entry editing, and memory configuration |
 | `memory-dream-dialog.tsx` | Nightly memory consolidation dialog: overview, settings, run history, and archive management |
@@ -94,12 +93,12 @@ components/
 |-----------|-------------|
 | `settings-page.tsx` | Settings dialog shell: sidebar (`settings/settings-nav.tsx`), page header with the page subtitle, deep-link resolution, and the Developer tools pages |
 | `settings/settings-registry.ts` | The Settings pages and sidebar sections (labels, one-line subtitles, icons, search keywords, legacy id aliases) and `resolveSettingsTopic()` |
-| `settings/pages/*.tsx` | One file per Settings page (General, Notifications, Assistant, Observation, Learning and memory, Privacy, iPhone, Skills, Tool servers, Chat apps, Other AI apps, Help and about) |
+| `settings/pages/*.tsx` | One file per Settings page (What Isoform sees, Closed Eyes, Your data, Your agents, Agent of You, Your phone, Briefs and notifications, Learning and memory, Privacy, Storage, Plugins, Tool servers, Chat apps, Other AI apps, About), plus the parts they share: `about-settings.tsx` (About's name, Open at login, language, appearance and models rows) and `read-aloud-settings.tsx` (the Hear it voice on Briefs and notifications) |
 | `settings/settings-advanced.tsx` | Shared "Advanced" disclosure for Settings pages; remembers its open state per page, and opens again on every navigation that asks for it (sidebar or Search and commands keyword search, `openSettings(topic, { advanced: true })`, `settings:open` with `{ advanced }`) through the `SettingsAdvancedRevealContext` counter; also the anchor scrolling helpers |
 | `settings/pages/chat-apps/*` | Chat apps drill-ins: `bot-setups.tsx` (Slack, Discord, Telegram), `wechat-setup.tsx`, `feishu-setup.tsx`, `disconnect-button.tsx`, and `chat-app-status.ts` (the shared `{ configured, online }` status each setup reports) |
-| `keybindings-settings.tsx` | Live key recording, conflict detection, and reset to defaults |
+| `keybindings-settings.tsx` | Shared shortcut editor (live key recording, clash check, reset, the Quick chat OS hotkey round trip), the sheet's `ShortcutRow`, and the Quick Chat card on Settings › General |
+| `keys-sheet.tsx` | Keyboard shortcuts sheet (Cmd+/): every key grouped by where it works, Change on the rows that can change, the Vim switch and the focus note |
 | `mcp-hub-settings.tsx` | MCP (Model Context Protocol) server hub: discover local servers, import/install from registry, enable/disable, restart, and manage per-server configuration |
-| `skill-hub-settings.tsx` | Skill hub management: install skills from GitHub/local/agent dir/ClawHub, search registries, enable/disable, and manage installed skills |
 | `use-yansu-anywhere-settings.tsx` | The Other AI apps card (copy the install prompt for other assistants), plus `UseYansuAnywhereDetails` for that page's Advanced section (what other assistants can recall, examples, the full install prompt) |
 | `ai-memory-import-dialog.tsx` | Dialog for configuring and importing AI memory from external sources (used during onboarding and from settings) |
 
@@ -123,7 +122,7 @@ components/
 
 | Component | Description |
 |-----------|-------------|
-| `search-dialog.tsx` | Search and commands (`Cmd+K` and the sidebar's Search) on the `ui/command` primitive: `SearchEverything` results by place, chats, Upcoming, one-time work, projects, Library pages, every Settings page from the settings registry, and the actions; a chat message opens scrolled to it (`hooks/useChatMessageJump.ts`) |
+| `search-dialog.tsx` | Find (`Cmd+K`) on the `ui/command` primitive, in computer-find v1.0.0 order: Ready (Your work), Conversations, People, Claims and Your answers (`FindAnything`), Go to (the five places with their keys, then Settings), then topics and chats (`SearchEverything` and titles) and every Settings page; know-how lines join Claims; matched words in bold; no commands from the settings registry; a chat message opens scrolled to it (`hooks/useChatMessageJump.ts`) |
 | `markdown-content.tsx` | Streaming markdown renderer with `streamdown`, `remark-gfm`, and Prism syntax highlighting; includes a streaming pacer, custom action-protocol URL handling, and lazy activity-session UUID linking |
 | `entry-content.tsx` | Markdown renderer for memory/knowledge entries with keyword highlighting, frontmatter parsing, and clickable activity session links |
 | `patch-view.tsx` | Unified diff renderer that parses custom patch format (`*** Update/Add/Delete File:` headers) and displays add/remove/context lines with color highlighting |
@@ -323,7 +322,7 @@ Feature components consume backend data through custom hooks (e.g., `useAgentStr
 No component-level configuration files. Runtime behavior is controlled by:
 
 - **Theme**: CSS variable tokens (`--accent`, `--ink`, `--muted`, `--error`, `--shadow-soft`, etc.) defined in the global stylesheet and toggled via the `useTheme` hook
-- **Keybindings**: Stored in `~/.claude/keybindings.json` on the host and surfaced through the `useKeybindings` hook; editable via `KeybindingsSettings`
+- **Keybindings**: Stored in `~/.claude/keybindings.json` on the host and surfaced through the `useKeybindings` hook; editable in the Keyboard shortcuts sheet (`KeysSheet`, Cmd+/)
 - **Settings**: Persisted by the Go backend (`App.GetSettings` / `App.SaveSettings`) and accessed through `settings-page.tsx`
 - **Locale**: `i18n` initializes with the host locale and falls back to English; new strings must be added to both `en/` and `zh-CN/` locale files
 

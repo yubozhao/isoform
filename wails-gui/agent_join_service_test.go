@@ -5,26 +5,23 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"testing"
 
 	"wails-gui/internal/agentjoin"
 	"wails-gui/internal/workonit"
 )
 
-func newAgentJoinTestApp(t *testing.T) (*App, *atomic.Bool) {
+func newAgentJoinTestApp(t *testing.T) *App {
 	t.Helper()
 	t.Setenv(taskLinkAddrEnv, "127.0.0.1:0")
 	t.Setenv(taskLinkBaseURLEnv, "")
 	app, _ := newWorkOnItTestApp(t, true)
-	on := &atomic.Bool{}
-	on.Store(true)
 	app.taskLinks.dir = t.TempDir()
-	app.taskLinks.enabled = on.Load
 	app.agentJoin.dir = t.TempDir()
 	t.Cleanup(app.shutdownTaskLinks)
-	return app, on
+	return app
 }
 
 func agentJoinCall(t *testing.T, method, url, body string) (int, map[string]string, string) {
@@ -46,7 +43,7 @@ func agentJoinCall(t *testing.T, method, url, body string) (int, map[string]stri
 // only after the person's Allow; it shows in Your agents as connected,
 // survives a restart, and Disconnect ends it.
 func TestAgentJoinsThroughTheListener(t *testing.T) {
-	app, _ := newAgentJoinTestApp(t)
+	app := newAgentJoinTestApp(t)
 	start, err := app.StartAgentJoin()
 	if err != nil {
 		t.Fatal(err)
@@ -104,25 +101,56 @@ func TestAgentJoinsThroughTheListener(t *testing.T) {
 	}
 }
 
-// TestAgentJoinOffAndClosedEyes: no join link while task links are off or
-// Closed Eyes is on, and an open link stops answering when either turns.
-func TestAgentJoinOffAndClosedEyes(t *testing.T) {
-	app, on := newAgentJoinTestApp(t)
+// TestAgentJoinWorksUnderClosedEyes (agents G2): making the join link is
+// the person's yes; no switch and not Closed Eyes stop it, and the code and
+// Yes still decide who joins.
+func TestAgentJoinWorksUnderClosedEyes(t *testing.T) {
+	app := newAgentJoinTestApp(t)
+	app.closedEyes.enabled.Store(true)
 	start, err := app.StartAgentJoin()
+	if err != nil {
+		t.Fatalf("start under Closed Eyes: %v", err)
+	}
+	if status, _, _ := agentJoinCall(t, http.MethodGet, start.Link, ""); status != http.StatusOK {
+		t.Fatalf("join page under Closed Eyes: %d", status)
+	}
+	status, got, _ := agentJoinCall(t, http.MethodPost, start.Link, `{"name":"Helper","device":"a laptop","mayOpen":"the notes folder"}`)
+	if status != http.StatusAccepted || got["check"] == "" {
+		t.Fatalf("answer: %d %v", status, got)
+	}
+	if len(app.GetConnectedAgents()) != 0 {
+		t.Fatal("joined before the person's Yes")
+	}
+	if err := app.AnswerAgentJoin(true); err != nil {
+		t.Fatalf("yes under Closed Eyes: %v", err)
+	}
+	if _, st, _ := agentJoinCall(t, http.MethodGet, start.Link+"/status", ""); st["token"] == "" {
+		t.Fatalf("status = %v", st)
+	}
+	if len(app.GetConnectedAgents()) != 1 {
+		t.Fatalf("connected = %+v", app.GetConnectedAgents())
+	}
+}
+
+// TestNoCodeReadsTheTaskLinksSwitch (agents G2): the task_links_enabled
+// switch had no UI and is gone; nothing may read it again.
+func TestNoCodeReadsTheTaskLinksSwitch(t *testing.T) {
+	files, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatal(err)
 	}
-	app.closedEyes.enabled.Store(true)
-	if _, err := app.StartAgentJoin(); err != errTaskLinksClosedEyes {
-		t.Fatalf("start under Closed Eyes: %v", err)
-	}
-	if status, _, _ := agentJoinCall(t, http.MethodGet, start.Link, ""); status != http.StatusGone || app.GetAgentJoin() != nil {
-		t.Fatalf("open link under Closed Eyes: %d", status)
-	}
-	app.closedEyes.enabled.Store(false)
-	on.Store(false)
-	if _, err := app.StartAgentJoin(); err != errTaskLinksOff {
-		t.Fatalf("start with task links off: %v", err)
+	needle := "task_links" + "_enabled"
+	for _, name := range files {
+		if strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		data, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(data), needle) {
+			t.Errorf("%s still names %s", name, needle)
+		}
 	}
 }
 
@@ -134,7 +162,7 @@ func TestAnyOtherAgentKeepsItsOwnName(t *testing.T) {
 			t.Errorf("%q = %q, want %q", name, got, want)
 		}
 	}
-	app, _ := newAgentJoinTestApp(t)
+	app := newAgentJoinTestApp(t)
 	svc := app.agentJoinService()
 	svc.Restore([]agentjoin.Agent{{ID: "ag_x", Name: "Ana's Helper", JoinedAt: 1}})
 	v := agentView(t, app.yourAgents(), "ag_x")
@@ -146,7 +174,7 @@ func TestAnyOtherAgentKeepsItsOwnName(t *testing.T) {
 // TestTaskLinkReadyWhileTheFrontRuns: the front makes task links reach
 // agents anywhere, so Work on it offers them while it runs.
 func TestTaskLinkReadyWhileTheFrontRuns(t *testing.T) {
-	app, _ := newAgentJoinTestApp(t)
+	app := newAgentJoinTestApp(t)
 	if app.taskLinkHandoffReady() {
 		t.Fatal("ready with only loopback")
 	}

@@ -20,12 +20,12 @@ describe("Windows Quick Chat presets", () => {
         bindings.get.mockResolvedValue(null);
         bindings.set.mockResolvedValue(undefined);
     });
-    it.each(["en", "zh-CN"])("names the Windows global pause as lasting until resumed in %s", async (language) => {
+    it.each(["en", "zh-CN"])("names the Windows global pause Closed Eyes in %s", async (language) => {
         await i18n.changeLanguage(language);
         const { result } = renderHook(() => useKeybindings());
         const action = result.current.actions.find((entry) => entry.id === "pause-observing")!;
-        expect(action.label).toBe(language === "en" ? "Pause observing until resumed" : "暂停观察，直到手动恢复");
-        expect(action.description).toContain(language === "en" ? "the menu-bar pause lasts one hour" : "菜单栏中的暂停仅持续一小时");
+        // A product term: zh-CN keeps it in English.
+        expect(action.label).toBe("Closed Eyes");
         expect(action.defaultCombo).toEqual({ meta: false, ctrl: true, alt: true, shift: true, key: "e" });
     });
     it.each(["en", "zh-CN"])("preserves the Windows default and offers only supported shortcuts in %s", async (language) => {

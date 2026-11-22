@@ -94,9 +94,12 @@ export function getSetupRecord(
 
 /** What a main-chat report's action opens (mirrors Go mainChatTarget). */
 export interface MainChatReportTarget {
-    kind: 'session' | 'handoff' | 'knowledge' | 'memory' | 'automation' | 'today' | 'upcoming' | 'suggestion' | 'settings' | 'playbook' | 'calendar' | 'person' | 'mail' | 'thread' | 'tasks' | 'none';
+    kind: 'session' | 'handoff' | 'knowledge' | 'memory' | 'automation' | 'today' | 'upcoming' | 'suggestion' | 'settings' | 'playbook' | 'calendar' | 'person' | 'mail' | 'thread' | 'tasks' | 'activity' | 'watch' | 'none';
     id?: string;
     runId?: string;
+    /** For a watch conversation: its local day (YYYY-MM-DD), so Activity ›
+     *  Watch opens on that day with the conversation open. */
+    day?: string;
 }
 
 export interface MainChatProactiveEvidence {
@@ -542,10 +545,16 @@ export function getChatCorrectionUndo(item: Pick<StreamItem, 'kind' | 'toolName'
 // their own gates, and the phrases in the answer that lean on each.
 export const CHAT_SOURCES_TOOL = 'main_chat_sources';
 
+/** The kinds of thing an answer can say it read (Go chatSourceKinds). */
+export const CHAT_SOURCE_KINDS = ['memory', 'person', 'activity', 'call', 'watch', 'mail', 'calendar', 'brief'] as const;
+export type ChatSourceKind = typeof CHAT_SOURCE_KINDS[number];
+
 export interface ChatSource {
-    kind: 'memory' | 'person';
+    kind: ChatSourceKind;
     id: string;
     title: string;
+    /** When it happened (unix ms); absent for a note or a person. */
+    at?: number;
     target: MainChatReportTarget;
 }
 
@@ -563,7 +572,7 @@ export function getChatSources(item: Pick<StreamItem, 'kind' | 'toolName' | 'too
     if (!raw || typeof raw !== 'object') return null;
     const payload = raw as Partial<ChatSourcesPayload>;
     const sources = (Array.isArray(payload.sources) ? payload.sources : []).filter((source): source is ChatSource =>
-        Boolean(source) && (source.kind === 'memory' || source.kind === 'person') && typeof source.title === 'string' && source.title.trim() !== '' && Boolean(source.target));
+        Boolean(source) && (CHAT_SOURCE_KINDS as readonly string[]).includes(source.kind) && typeof source.title === 'string' && source.title.trim() !== '' && Boolean(source.target));
     if (sources.length === 0) return null;
     const claims = (Array.isArray(payload.claims) ? payload.claims : []).filter((claim) => typeof claim?.text === 'string' && Number.isInteger(claim.source));
     return { sources, claims };

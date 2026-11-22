@@ -488,7 +488,8 @@ func buildRoutinePlaybook(c routineCandidate, lang string) sop.Entry {
 // every hour. The activity store opens in the background at launch, so each
 // pass checks for it rather than this start.
 func (a *App) startPlaybookRoutines(ctx context.Context) {
-	if a == nil || a.sopStore == nil || a.playbookPlans == nil {
+	// No background loop while playbooks are off (feature_switches.go).
+	if a == nil || a.sopStore == nil || a.playbookPlans == nil || !featureOn(featurePlaybooks) {
 		return
 	}
 	go func() {
