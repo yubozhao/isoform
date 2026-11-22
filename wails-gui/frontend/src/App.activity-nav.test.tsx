@@ -94,8 +94,12 @@ vi.mock('@/hooks/useKeybindings', async (importOriginal) => {
         ...actual,
         useKeybindings: () => ({
             ...actual.useKeybindings(),
-            // Command K is the only shortcut these navigation tests press.
-            findMatchingAction: (e: KeyboardEvent) => (e.metaKey && e.key === 'k' ? 'command-palette' : null),
+            // Command K, Command / and Command T are the only shortcuts these
+            // navigation tests press; T must match nothing (New chat went).
+            findMatchingAction: (e: KeyboardEvent) =>
+                e.metaKey && e.key === 'k' ? 'command-palette'
+                    : e.metaKey && e.key === '/' ? 'keyboard-shortcuts'
+                        : null,
         }),
     };
 });
@@ -130,6 +134,11 @@ vi.mock('@/components/ui/dialog', async () => {
         DialogClose: ({ children }: any) => children,
     };
 });
+// The sheet itself is covered by keys-sheet.test.tsx; here only who opens it.
+vi.mock('@/components/keys-sheet', () => ({ KeysSheet: (props: any) => {
+    fixture.pages.KeysSheet = props;
+    return props.open ? <output data-testid="KeysSheet" /> : null;
+} }));
 vi.mock('@/components/ui/popover', () => ({
     Popover: ({ children }: any) => children,
     PopoverTrigger: ({ children }: any) => children,
@@ -142,7 +151,7 @@ vi.mock('@/components/stream-body', () => ({ StreamBody: (props: any) => {
 vi.mock('@/components/sidebar', () => ({ Sidebar: (props: any) => {
     fixture.sidebarProps = props;
     return null;
-}, UserPopoverMenu: () => null }));
+} }));
 vi.mock('@/components/ui/avatar', () => ({ Avatar: () => null }));
 vi.mock('@/components/composer', () => ({ Composer: (props: Record<string, unknown>) => { fixture.composerProps = props; return null; } }));
 vi.mock('@/components/main-chat-setup-card', () => ({ MainChatSetupCard: () => null }));
@@ -365,9 +374,8 @@ describe('App Activity/Library navigation', () => {
         expect(screen.getByTestId("AgentsPage")).toBeInTheDocument();
         expect(screen.queryByTestId("TasksPage")).toBeNull();
         expect(localStorage.getItem("yansu.appMode")).toBe("agents");
-        // All tasks, from the Agents page.
-        await act(async () => fixture.pages.AgentsPage.onOpenTasks());
-        expect(screen.getByTestId("TasksPage")).toBeInTheDocument();
+        // No All tasks on Agents (computer-today v1.0.0 rule 9).
+        expect(fixture.pages.AgentsPage.onOpenTasks).toBeUndefined();
         await act(async () => fixture.sidebarProps!.onOpenToday());
         // Goals are a group in About you now (sidebar handoff, section 5).
         await act(async () => fixture.pages.TodayPage.handlers.onOpenGoals());
@@ -391,8 +399,9 @@ describe('App Activity/Library navigation', () => {
         expect(localStorage.getItem("yansu.appMode")).toBe("agents");
         await act(async () => fixture.sidebarProps!.onOpenAgents());
         expect(screen.getByTestId("AgentsPage")).toBeInTheDocument();
-        // The selection doesn't come back with All tasks.
-        await act(async () => fixture.pages.AgentsPage.onOpenTasks());
+        // The selection doesn't come back when Today opens Tasks.
+        await act(async () => fixture.sidebarProps!.onOpenToday());
+        await act(async () => fixture.pages.TodayPage.handlers.onOpenTasks());
         expect(fixture.pages.TasksPage.openHandoffId).toBeNull();
     });
 
@@ -573,9 +582,11 @@ describe('App Activity/Library navigation', () => {
 
     it('clears a one-time People profile selection on a fresh Activity open', async () => {
         await mountApp();
-        await emit('notification:clicked', 'settings:activity-pipeline');
-        await act(async () => fixture.pages.SettingsPage.onOpenProfile());
-        expect(fixture.pages.PeoplePage.initialSelection).toBe('self');
+        // Settings' "Open your card" link went with Learning and memory
+        // (settings batch D3); a person opened from Find is the same kind of
+        // one-time selection.
+        await act(async () => fixture.pages.SearchDialog.actions.openPerson('person-7'));
+        expect(fixture.pages.PeoplePage.initialSelection).toEqual({ personId: 'person-7' });
         await emit('activity:open');
         await act(async () => fixture.sidebarProps!.onOpenYou('people'));
         expect(fixture.pages.PeoplePage.initialSelection).toBeUndefined();
@@ -594,8 +605,9 @@ describe('App Activity/Library navigation', () => {
         pageSwitch.begun.length = 0;
         await act(async () => fixture.sidebarProps!.onOpenAgents());
         expect(pageSwitch.begun).toEqual(['agents']);
-        await act(async () => fixture.pages.AgentsPage.onOpenTasks());
-        expect(pageSwitch.begun).toEqual(['agents', 'tasks']);
+        await act(async () => fixture.sidebarProps!.onOpenToday());
+        await act(async () => fixture.pages.TodayPage.handlers.onOpenTasks());
+        expect(pageSwitch.begun).toEqual(['agents', 'today', 'tasks']);
     });
 
     it('has no Library menu: the library:open event is not listened to, and nothing opens', async () => {
@@ -664,6 +676,38 @@ describe('App Search and commands', () => {
         expect(fixture.pages.SearchDialog.open).toBe(true);
         fireEvent.keyDown(window, { key: 'k', metaKey: true });
         expect(fixture.pages.SearchDialog.open).toBe(false);
+    });
+
+    it('opens the Keyboard shortcuts sheet with Command / from Today and over Settings', async () => {
+        await mountApp();
+        await act(async () => fixture.sidebarProps!.onOpenToday());
+        expect(screen.queryByTestId('KeysSheet')).not.toBeInTheDocument();
+        fireEvent.keyDown(window, { key: '/', metaKey: true });
+        expect(screen.getByTestId('KeysSheet')).toBeInTheDocument();
+        await act(async () => fixture.pages.KeysSheet.onOpenChange(false));
+        expect(screen.queryByTestId('KeysSheet')).not.toBeInTheDocument();
+
+        await emit('settings:open', 'general');
+        expect(screen.getByTestId('SettingsPage')).toBeInTheDocument();
+        fireEvent.keyDown(window, { key: '/', metaKey: true });
+        expect(screen.getByTestId('KeysSheet')).toBeInTheDocument();
+        expect(screen.getByTestId('SettingsPage')).toBeInTheDocument();
+    });
+
+    it('opens the sheet, not Settings, from the keybindings link (the Help menu sends it)', async () => {
+        await mountApp();
+        await emit('settings:open', 'keybindings');
+        expect(screen.getByTestId('KeysSheet')).toBeInTheDocument();
+        expect(screen.queryByTestId('SettingsPage')).not.toBeInTheDocument();
+        await act(async () => fixture.pages.KeysSheet.onOpenChange(false));
+        expect(screen.queryByTestId('KeysSheet')).not.toBeInTheDocument();
+    });
+
+    it('opens You › About you, not Settings, from the old Learning and memory link (settings batch D3)', async () => {
+        await mountApp();
+        await emit('settings:open', 'memory');
+        expect(screen.getByLabelText('MemoryPage selection')).toBeVisible();
+        expect(screen.queryByTestId('SettingsPage')).not.toBeInTheDocument();
     });
 
     it('opens a person on People with that person selected', async () => {

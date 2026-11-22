@@ -207,8 +207,11 @@ final class AppEnvironmentPairingIsolationTests: XCTestCase {
         let fixture = try makeFixture()
         try await pair(fixture, hub: TestHub())
         // At this UTC time the legacy clock says morning, but a configured slot says evening.
+        // The day is yesterday, not a fixed date: the cache keeps a brief's text for 30 days, so a
+        // brief dated 2026-10-20 left the history on 2026-11-20 and this test began to fail.
+        let day = String(Date().addingTimeInterval(-24 * 60 * 60).ISO8601Format().prefix(10))
         let saved = MobileBriefV1(briefId: "requested", slot: "on_request", displaySlot: "evening",
-            localDate: "2026-10-20", timezone: "America/Los_Angeles", asOf: "2026-10-20T09:00:00Z")
+            localDate: day, timezone: "America/Los_Angeles", asOf: "\(day)T09:00:00Z")
         try fixture.environment.cache.save(saved)
         fixture.environment.brief.loadCached()
         let entry = try XCTUnwrap(fixture.environment.brief.history.first)

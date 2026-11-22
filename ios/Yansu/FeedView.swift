@@ -158,10 +158,6 @@ struct FeedView: View {
 
     var body: some View {
         content(now: Date())
-        // The watch line: only when hours wait for the computer or failed; it opens the Watch tab.
-        .safeAreaInset(edge: .top, spacing: 0) {
-            WatchTodayLine(model: WatchRecordingsModel.shared) { router.selectedTab = .watch }
-        }
         .overlay(alignment: .top) {
             if let notice = router.linkNotice {
                 NoticeBanner(message: notice, dismiss: { router.linkNotice = nil })
@@ -177,15 +173,11 @@ struct FeedView: View {
             await refresh(latest: false)
         }
         .yansuScreen()
-        // The bar shows the Isoform mark; the title names this tab on a pushed screen's back button.
+        // The title is words only: the mark lives in one place, the Watch item of the tab bar and
+        // the rail (phone-duo v1.0.0 rule 13). It names this tab on a pushed screen's back button.
         .navigationTitle(String(localized: "Today"))
         .navigationBarTitleDisplayMode(.large)
         .tabRootBar()
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                WatchTodayMark(model: WatchRecordingsModel.shared) { router.selectedTab = .watch }
-            }
-        }
         .environment(\.titleBarScrolled, pageScrolled)
         .navigationDestination(isPresented: $showingPastBriefs) {
             PastBriefsView()
@@ -317,13 +309,7 @@ struct FeedView: View {
         if showsSelectedItem, let selectedID, let card = cards.first(where: { $0.id == selectedID }) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    DuoFoldSafeControl(foldX: foldX, windowWidth: windowWidth,
-                                       width: 72, height: 40) {
-                        Button(String(localized: "Close")) { onClose?() }
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(YansuTheme.accent)
-                            .accessibilityIdentifier("duo.today.item.close")
-                    }
+                    // The pane's bar has the back button (phone-duo v1.0.0 rule 7): no Close here.
                     matchedCard(card, now: now, actionsAtTop: true, isSource: true)
                 }
                 .padding(YansuTheme.gutter)
@@ -660,6 +646,9 @@ struct FeedView: View {
             .font(.subheadline)
             .foregroundStyle(YansuTheme.secondary)
             .accessibilityIdentifier("feed.summary")
+            // The watch line: under the date, scrolling with the page, never pinned (phone-duo v1.0.0 rule 12).
+            // Always there when a watch is paired; it opens the Watch tab.
+            WatchTodayLine(model: WatchRecordingsModel.shared) { router.selectedTab = .watch }
             if let cause {
                 Button { showingComputer = true } label: {
                     HStack(spacing: 5) {

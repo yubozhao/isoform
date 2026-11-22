@@ -52,5 +52,52 @@
         "fromHistory": "来自你的 {{history}}",
         "fromCalendar": "来自你的日历",
         "localLine": "截图和音频不会离开这台电脑。"
+    },
+    "why": {
+        "title": "依据",
+        "notThis": "不是这个",
+        "notThisLabel": "不是这个：{{what}}",
+        "notThisFailed": "没能移除，请重试。",
+        "empty": "还没有 Isoform 看到的内容与此相关。",
+        "importedEmpty": "从 {{label}} 导入。还没有 Isoform 看到的内容与此相关。",
+        "failed": "无法加载这条的来源。",
+        "retry": "重试",
+        "untitled": "在 {{app}} 中的一段时间",
+        "imported": "从 {{label}} 导入",
+        "from": "来自{{list}}",
+        "fromThisWeek": "来自本周的{{list}}",
+        "day": {
+            "today": "今天",
+            "yesterday": "昨天",
+            "undated": "关联"
+        },
+        "source": {
+            "screen": "屏幕",
+            "mail": "邮件",
+            "calendar": "日历",
+            "call": "通话",
+            "watch": "手表",
+            "messages": "信息",
+            "agent": "你的智能体",
+            "chat": "聊天"
+        },
+        "count": {
+            "screen_one": "屏幕上的 1 个时刻",
+            "screen_other": "屏幕上的 {{count}} 个时刻",
+            "mail_one": "1 封邮件",
+            "mail_other": "{{count}} 封邮件",
+            "calendar_one": "1 场会议",
+            "calendar_other": "{{count}} 场会议",
+            "call_one": "1 次通话",
+            "call_other": "{{count}} 次通话",
+            "watch_one": "1 段手表录音",
+            "watch_other": "{{count}} 段手表录音",
+            "messages_one": "1 条信息",
+            "messages_other": "{{count}} 条信息",
+            "agent_one": "与智能体的 1 次会话",
+            "agent_other": "与智能体的 {{count}} 次会话",
+            "chat_one": "1 次聊天",
+            "chat_other": "{{count}} 次聊天"
+        }
     }
 }

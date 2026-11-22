@@ -30,7 +30,11 @@ const (
 	// longPollMax caps every long-poll wait.
 	longPollMax = 25 * time.Second
 	// deviceRequestsPerMinute limits one device's authenticated requests.
-	deviceRequestsPerMinute = 60
+	// Opening the app sends about fifty requests in half a minute, and each
+	// one costs a long-poll and an acknowledgement on top. At 60 the app's own
+	// reads used the minute up in eleven seconds on 2026-11-20, and the relay
+	// refused the request that hands a recorded part to the computer.
+	deviceRequestsPerMinute = 600
 	// claimAttempts limits claims per pairing and per client in claimWindow.
 	claimAttempts = 10
 	claimWindow   = 10 * time.Minute
@@ -86,11 +90,12 @@ func New(st *store.Store, hubs *hub.Manager, n *notify.Notifier, pushConfig push
 		"/v1/presence":      {http.MethodGet: h.presence},
 		"/v1/brief/latest":  {http.MethodGet: h.latestBrief},
 		"/v1/briefs":        {http.MethodGet: h.listBriefs},
-		"/v1/requests":      {http.MethodPost: h.postRequest},
+		"/v1/requests":      {http.MethodPost: logRequest(h.postRequest)},
 		"/v1/responses":     {http.MethodGet: h.responses},
 		"/v1/responses/ack": {http.MethodPost: h.ackResponses},
 		"/v1/push/token":    {http.MethodPut: h.pushToken, http.MethodDelete: h.pushToken},
 		"/v1/devices/me":    {http.MethodDelete: h.unpair},
+		"/v1/uploads":       {http.MethodGet: h.listUploads},
 		"/v1/hub/sms/subscription": {
 			http.MethodGet: h.smsSubscription, http.MethodPost: h.smsSubscription, http.MethodDelete: h.smsSubscription,
 		},
@@ -111,12 +116,13 @@ func New(st *store.Store, hubs *hub.Manager, n *notify.Notifier, pushConfig push
 // requests, then routes by exact path and method.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if len(r.Header.Values("Origin")) > 0 {
-		reply(w, http.StatusForbidden, nil, "Browser origins are not supported")
+		refuse(w, r, http.StatusForbidden, "Browser origins are not supported")
 		return
 	}
 	address := clientIP(r)
 	if !h.acquire(address) {
 		setRetryAfter(w, time.Second)
+		h.logLimit(w, r, "inflight_address", inflightPerAddress, inflightPerAddress)
 		reply(w, http.StatusTooManyRequests, nil, "Too many open requests")
 		return
 	}
@@ -147,18 +153,18 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if strings.HasPrefix(r.URL.Path, "/v1/uploads/") {
-		h.uploadRoute(w, r)
+		logUpload(w, r, "/v1/uploads/", h.uploadRoute)
 		return
 	}
 	if strings.HasPrefix(r.URL.Path, "/v1/hub/uploads/") {
-		h.hubUploadRoute(w, r)
+		logUpload(w, r, "/v1/hub/uploads/", h.hubUploadRoute)
 		return
 	}
 	reply(w, http.StatusNotFound, nil, "Route not found")
 }
 
 func (h *Handler) health(w http.ResponseWriter, _ *http.Request) {
-	reply(w, http.StatusOK, map[string]any{"protocolVersion": protocolVersion, "service": "isoform-relay", "status": "ok"}, "")
+	reply(w, http.StatusOK, map[string]any{"protocolVersion": protocolVersion, "service": "isoform-relay", "status": "ok", "uploadPieces": true, "uploadPiecesAnyOrder": true, "uploadList": true, "uploadsAsText": true, "attachmentsAsText": true}, "")
 }
 
 // envelope is the {ok,data,error} response body.
@@ -195,6 +201,39 @@ func decodeBody(w http.ResponseWriter, r *http.Request, target any) bool {
 		return false
 	}
 	return true
+}
+
+// limitRoute returns only registered paths and templates, even when the
+// in-flight check rejects a request before routing.
+func (h *Handler) limitRoute(r *http.Request) string {
+	path := r.URL.Path
+	if _, ok := h.routes[path]; ok {
+		return path
+	}
+	for _, prefix := range refusalPrefixes {
+		if tail, ok := strings.CutPrefix(path, prefix); ok {
+			_, suffix, nested := strings.Cut(tail, "/")
+			if !nested {
+				return prefix + "{id}"
+			}
+			switch prefix + suffix {
+			case "/v1/uploads/pieces", "/v1/pairings/claim", "/v1/notices/receipts":
+				return prefix + "{id}/" + suffix
+			}
+			return "unknown"
+		}
+	}
+	return "unknown"
+}
+
+// Fixed-window buckets stop counting at their cap.
+func (h *Handler) allow(w http.ResponseWriter, r *http.Request, name, subject string, cap int, window time.Duration, now time.Time) bool {
+	ok, retry := h.limits.Allow(name+":"+subject, cap, window, now)
+	if !ok {
+		setRetryAfter(w, retry)
+		h.logLimit(w, r, name, int64(cap), int64(cap))
+	}
+	return ok
 }
 
 // acquire counts one open request for address, refusing past inflightPerAddress.
@@ -237,6 +276,7 @@ func (h *Handler) authLocked(w http.ResponseWriter, r *http.Request) bool {
 	over, retry := h.limits.Exceeded(authFailureKey(r), authFailuresPerAddress, h.Now())
 	if over {
 		setRetryAfter(w, retry)
+		h.logLimit(w, r, "auth_failures", authFailuresPerAddress, authFailuresPerAddress)
 		reply(w, http.StatusTooManyRequests, nil, "Too many failed authentications")
 	}
 	return over
@@ -246,7 +286,7 @@ func (h *Handler) authLocked(w http.ResponseWriter, r *http.Request) bool {
 // block and answers 401 with message.
 func (h *Handler) authFailed(w http.ResponseWriter, r *http.Request, message string) {
 	h.limits.Allow(authFailureKey(r), authFailuresPerAddress, authFailureWindow, h.Now())
-	reply(w, http.StatusUnauthorized, nil, message)
+	refuse(w, r, http.StatusUnauthorized, message)
 }
 
 // bearerToken extracts a well-formed bearer credential from an Authorization header.
@@ -258,6 +298,14 @@ func bearerToken(header string) (string, bool) {
 // authDevice resolves the bearer, enforces scope and the per-device rate limit,
 // and records activity. It writes the error response itself.
 func (h *Handler) authDevice(w http.ResponseWriter, r *http.Request, scope string) (store.Device, bool) {
+	return h.authDeviceWithin(w, r, scope, "device_rate", deviceRequestsPerMinute)
+}
+
+// authDeviceWithin is authDevice with the request counted in the named budget.
+// The upload routes keep their own: a recording goes up as many small pieces,
+// and counted with everything else they used up the minute in seconds, so the
+// relay refused the rest of the pieces and the app's own requests with them.
+func (h *Handler) authDeviceWithin(w http.ResponseWriter, r *http.Request, scope, budget string, perMinute int) (store.Device, bool) {
 	if h.authLocked(w, r) {
 		return store.Device{}, false
 	}
@@ -278,11 +326,10 @@ func (h *Handler) authDevice(w http.ResponseWriter, r *http.Request, scope strin
 		return store.Device{}, false
 	}
 	if scope != "" && !device.Has(scope) {
-		reply(w, http.StatusForbidden, nil, "Device lacks the required scope")
+		refuse(w, r, http.StatusForbidden, "Device lacks the required scope")
 		return store.Device{}, false
 	}
-	if allowed, retry := h.limits.Allow("device:"+device.ID, deviceRequestsPerMinute, time.Minute, now); !allowed {
-		setRetryAfter(w, retry)
+	if !h.allow(w, r, budget, device.ID, perMinute, time.Minute, now) {
 		reply(w, http.StatusTooManyRequests, nil, "Too many requests")
 		return store.Device{}, false
 	}
@@ -379,7 +426,11 @@ func parseUint(values []string, max uint64) (uint64, bool) {
 	return parsed, true
 }
 
-// storeContext bounds one store call from an HTTP handler.
+// storeCallTimeout is how long one store call from an HTTP handler may take.
+var storeCallTimeout = 5 * time.Second
+
+// storeContext bounds one store call from an HTTP handler. It is made right
+// before the call: time spent reading a request's body is not the store's.
 func storeContext(parent context.Context) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(parent, 5*time.Second)
+	return context.WithTimeout(parent, storeCallTimeout)
 }

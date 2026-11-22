@@ -3,14 +3,14 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { useFirstDay } from '@/hooks/useFirstDay';
 import { useDoingNow } from '@/hooks/useDoingNow';
-import { ChevronDown, ChevronRight, Film, Trash2, Zap } from 'lucide-react';
-import { EventsOn } from '../../wailsjs/runtime/runtime';
-import { GenerateDailySummary } from '../../wailsjs/go/main/App';
+import { ChevronDown, Film, Trash2, Zap } from 'lucide-react';
 import {
     DeleteActivity,
     GetActivitiesInRange,
+    GetActivityFeed,
     GetDayThreads,
     GetRecentMeetingNotes,
+    type ActivityFeedRow,
     type ActivityOutcome,
     type ActivityRunFrame,
     type ActivityThreadView,
@@ -35,25 +35,16 @@ import {
     type WorkedOnView,
 } from './activity-stitched';
 import type { main } from '../../wailsjs/go/models';
-import { EntryDetail } from '@/components/entry-content';
-import { GetAboutYou } from '@/lib/page-queries';
-import { humanMemoryText, memoryPoints } from '@/lib/memory-content';
-import { memoryArea } from '@/lib/communication';
-import { useBeliefReview, reviewOpen, NotQuiteField, ReviewOutcome } from '@/components/about-you/new-this-week';
-import { Button } from '@/components/ui/button';
-import type { AboutYouBelief } from '@/lib/wails-shim-app';
 import { AppGlyph, FrameLightbox, RunFrameThumb, useAppIcons } from './activities-view';
-import { AISummaryCard, cleanSummaryText } from './activity-summary';
 import { ActivityRowActions } from './activity-row-actions';
-import { ActivityNoticed } from './activity-noticed';
-import type { MobileBriefActivityTarget } from '@/lib/wails-shim-app';
 import type { TodayChatContextRef } from '@/lib/today-chat-navigation';
 import { warmTodayChatDrafts } from '@/lib/today-chat-prepared';
 import { MeetingNotesCard } from './activity-meeting-notes';
 import { ActivityCaptureLine } from './activity-capture-line';
-import { ActivityFeed } from './activity-feed';
+import { ActivityFeed, ActivityFeedRowItem, useActivityForget } from './activity-feed';
+import type { TodayTopic } from '@/components/today/topics';
 import { cn } from '../lib/utils';
-import { ACTION_LINK } from './activity-inline-notice';
+import { ACTION_LINK, ActivityInlineNotice } from './activity-inline-notice';
 import {
     dayEndMs,
     dayStartMs,
@@ -64,9 +55,9 @@ import {
     type CronRunWithJobName,
 } from './timeline/useCalendarData';
 
-// The Activity page's Day view: the day's digest ("Your day"), one merged
-// list of what you worked on (activities, meetings, Isoform's scheduled
-// runs), and what Isoform learned. Everything technical (run counts, keyword
+// The Activity page's Day view: the day's feed ("Your day", the record only)
+// and one merged list of what you worked on (activities, meetings, Isoform's
+// scheduled runs). Everything technical (run counts, keyword
 // chips, raw run output) stays out of this view. What you worked on shows the
 // day "Stitched by work" (activity-stitched.tsx, the RC 1 timeline) or "As
 // recorded", the merged list itself.
@@ -125,38 +116,19 @@ export function displayableRunResult(summary: string | undefined): string | null
     return text;
 }
 
-// Immutable helpers for tracking which dates have an in-flight generation.
-// Returns the same instance when the operation is a no-op so React state
-// equality prevents unnecessary re-renders (Set is reference-compared).
-function addDate(set: ReadonlySet<string>, date: string): ReadonlySet<string> {
-    if (set.has(date)) return set;
-    const next = new Set(set);
-    next.add(date);
-    return next;
-}
-
-function removeDate(set: ReadonlySet<string>, date: string): ReadonlySet<string> {
-    if (!set.has(date)) return set;
-    const next = new Set(set);
-    next.delete(date);
-    return next;
-}
-
 const sectionLabelClass = 'text-[11px] uppercase tracking-[0.08em] font-semibold text-muted/80 mb-2 px-1';
 
 const WORKED_ON_VIEWS: WorkedOnView[] = ['stitched', 'recorded'];
 
 // ── Day view ──
 
-/** The Day view's three sections. The Activity page's section panel shows one
- *  at a time; an undefined section renders all three stacked (the layout the
- *  Day view had before the panel). */
-export type ActivityDaySection = 'yourDay' | 'workedOn' | 'learned';
+/** The Day view's two sections: Your day (the day's feed) and the Screen
+ *  tab's What you worked on. The Activity page's tabs show one at a time; an
+ *  undefined section renders both stacked. */
+export type ActivityDaySection = 'yourDay' | 'workedOn';
 
 export interface ActivityDayViewProps {
     date: Date;
-    noticedFocus?: MobileBriefActivityTarget | null;
-    onNoticedFocusConsumed?: (focus: MobileBriefActivityTarget) => void;
     /** A thread to open in "What you worked on" once its rows are loaded. */
     initialThreadId?: string | null;
     onInitialThreadConsumed?: (threadId: string) => void;
@@ -164,63 +136,43 @@ export interface ActivityDayViewProps {
     bridgePort: number;
     /** Day data from the page-level useCalendarData. */
     dailyData: main.DailySummaryData | null;
-    dayLoading: boolean;
-    /** The day has no answer yet, or its first failed read is being retried: hold the card. */
-    dayPending?: boolean;
-    /** The day's read failed twice and nothing is saved: say so, with a retry. */
-    dayFailed?: boolean;
-    onRetryDay?: () => void;
     automationRuns: CronRunWithJobName[];
-    knowledge: main.KnowledgeEntry[];
-    memoryEntries: main.MemoryEntry[];
-    hourRange: { start: number; end: number };
-    maxHourly: number;
-    reloadDailySummary: () => Promise<void>;
     /** "Chat about this" on a moment: the prepared words go in the main chat
      *  box, unsent, with the moment as context (Today's route). */
     onStartChat?: (prompt: string, context: TodayChatContextRef) => void;
-    /** Opens a capture session in the Screen timeline view (learned-entry
-     *  session links). */
-    onOpenSession: (sessionId: string) => void;
     /** Opens a scheduled run's detail dialog (the automation that ran). */
     onOpenRunDetail: (jobId: string) => void;
-    /** When set, only this section renders (the Activity page's section panel
-     *  shows one section at a time). Undefined renders all three stacked. */
+    /** When set, only this section renders (the Activity page's tabs show one
+     *  section at a time). Undefined renders both stacked. */
     section?: ActivityDaySection;
     /** A suggestion's source link reveals its moment in What you worked on. */
     onSectionChange?: (section: ActivityDaySection) => void;
     /** Reports the day's row counts (unfiltered) so the section panel can
-     *  label "What you worked on" and "What it learned" with them. */
-    onCountsChange?: (counts: { workedOn: number; learned: number }) => void;
+     *  label "What you worked on" with them. */
+    onCountsChange?: (counts: { workedOn: number }) => void;
     /** What you worked on: "Stitched by work" or "As recorded". The Activity
      *  page keeps the pick; without it the view keeps its own, Stitched first. */
     workedOnView?: WorkedOnView;
     onWorkedOnViewChange?: (view: WorkedOnView) => void;
     /** The Screen tab's other view: scrub the day in the Screen timeline. */
     onOpenTimeline?: () => void;
+    /** Your day's rows: a watch conversation opens on the Watch tab, on its day. */
+    onOpenConversation?: (conversationId: string, startMs: number) => void;
+    /** A row's topic opens beside Today. */
+    onOpenTopic?: (topic: TodayTopic) => void;
+    /** A call's recording opens in the Screen timeline. */
+    onOpenRecording?: (sessionId: string) => void;
 }
 
 export function ActivityDayView({
     date,
-    noticedFocus,
-    onNoticedFocusConsumed,
     initialThreadId,
     onInitialThreadConsumed,
     searchQuery,
     bridgePort,
     dailyData,
-    dayLoading,
-    dayPending: dayPendingProp,
-    dayFailed = false,
-    onRetryDay,
     automationRuns,
-    knowledge,
-    memoryEntries,
-    hourRange,
-    maxHourly,
-    reloadDailySummary,
     onStartChat: startChat,
-    onOpenSession,
     onOpenRunDetail,
     section,
     onSectionChange,
@@ -228,6 +180,9 @@ export function ActivityDayView({
     workedOnView,
     onWorkedOnViewChange,
     onOpenTimeline,
+    onOpenConversation,
+    onOpenTopic,
+    onOpenRecording,
 }: ActivityDayViewProps) {
     const { t, i18n } = useTranslation('activity');
     const dateStr = formatDateStr(date);
@@ -309,54 +264,6 @@ export function ActivityDayView({
     }, [dayStart, dayEnd]);
     const meetings = useActivitySessionQuery(`meetings:${dateStr}`, loadMeetings) ?? NO_MEETINGS;
 
-    // ── Digest generation state (backend lifecycle events are the
-    //    authoritative signal; the RPC await alone can hang under hot
-    //    reload — same reasoning as the old Calendar page) ──
-    const [summaryErrorDate, setSummaryErrorDate] = useState<string | null>(null);
-    const [generatingDates, setGeneratingDates] = useState<ReadonlySet<string>>(() => new Set());
-    useEffect(() => {
-        const onGenerating = (eventDate: unknown) => {
-            if (typeof eventDate === 'string') setGeneratingDates((prev) => addDate(prev, eventDate));
-        };
-        const onDone = (eventDate: unknown) => {
-            if (typeof eventDate === 'string') setGeneratingDates((prev) => removeDate(prev, eventDate));
-        };
-        const c1 = EventsOn('activity:summary-generating', onGenerating);
-        const c2 = EventsOn('activity:summary-ready', onDone);
-        const c3 = EventsOn('activity:summary-error', onDone);
-        return () => {
-            c1();
-            c2();
-            c3();
-        };
-    }, []);
-    const generating = generatingDates.has(dateStr);
-
-    const handleGenerateDigest = useCallback(async () => {
-        // Optimistically mark in-progress so the UI updates instantly, before
-        // the backend's summary-generating event arrives. The event listeners
-        // and the timeout fallback clear it — not the RPC await alone.
-        setSummaryErrorDate(null);
-        setGeneratingDates((prev) => addDate(prev, dateStr));
-        // Safety net for the case where neither the RPC nor any backend event
-        // ever lands (process killed mid-flight, IPC torn down). The backend
-        // caps the LLM call at 120s; 240s covers that plus IPC slack.
-        const timeoutId = window.setTimeout(() => {
-            setGeneratingDates((prev) => removeDate(prev, dateStr));
-        }, 240_000);
-        try {
-            await GenerateDailySummary(dateStr);
-            // Explicit refetch: the summary-ready event can be missed even
-            // when the summary itself updates.
-            await reloadDailySummary();
-        } catch {
-            setSummaryErrorDate(dateStr);
-        } finally {
-            window.clearTimeout(timeoutId);
-            setGeneratingDates((prev) => removeDate(prev, dateStr));
-        }
-    }, [dateStr, reloadDailySummary]);
-
     // ── The merged "What you worked on" list, newest first ──
     const workItems = useMemo<WorkItem[]>(() => {
         const out: WorkItem[] = [];
@@ -387,31 +294,6 @@ export function ActivityDayView({
         out.sort((a, b) => b.startMs - a.startMs);
         return out;
     }, [activities, threads, meetings, automationRuns]);
-
-    const learnedEntries = useMemo<LearnedEntry[]>(() => {
-        const out: LearnedEntry[] = [];
-        for (const entry of knowledge) {
-            out.push({
-                id: `knowledge-${entry.id}`,
-                kind: 'knowledge',
-                title: entry.title || t('day.untitled'),
-                content: entry.content ?? '',
-                timestamp: entry.date ? new Date(entry.date).getTime() : 0,
-            });
-        }
-        for (const entry of memoryEntries) {
-            out.push({
-                id: `memory-${entry.id}`,
-                kind: 'memory',
-                title: entry.title || t('day.untitled'),
-                content: entry.content ?? '',
-                timestamp: entry.modTime || 0,
-                memory: entry,
-            });
-        }
-        out.sort((a, b) => b.timestamp - a.timestamp);
-        return out;
-    }, [knowledge, memoryEntries, t]);
 
     const query = searchQuery.trim().toLowerCase();
 
@@ -515,16 +397,6 @@ export function ActivityDayView({
         () => (query ? workItems.filter((item) => workItemMatchesQuery(item, query)) : workItems),
         [workItems, query],
     );
-    const visibleLearned = useMemo(
-        () =>
-            query
-                ? learnedEntries.filter(
-                      (entry) =>
-                          entry.title.toLowerCase().includes(query) || entry.content.toLowerCase().includes(query),
-                  )
-                : learnedEntries,
-        [learnedEntries, query],
-    );
 
     // The section panel labels two sections with their row counts; report the
     // unfiltered totals so a search query never shrinks them.
@@ -547,49 +419,19 @@ export function ActivityDayView({
             : null;
     const workedOnCount = view === 'stitched' ? stitchedRowModel.threads.length : workItems.length;
     useEffect(() => {
-        onCountsChange?.({ workedOn: workedOnCount, learned: learnedEntries.length });
-    }, [onCountsChange, workedOnCount, learnedEntries.length]);
+        onCountsChange?.({ workedOn: workedOnCount });
+    }, [onCountsChange, workedOnCount]);
 
     // One accordion row open at a time across both lists.
     const [openItemId, setOpenItemId] = useState<string | null>(null);
-    const [learnedShown, setLearnedShown] = useState({ memory: LEARNED_PAGE, knowledge: LEARNED_PAGE });
-    useEffect(() => setLearnedShown({ memory: LEARNED_PAGE, knowledge: LEARNED_PAGE }), [dateStr, query]);
     const handleToggleItem = useCallback((itemId: string) => {
         setOpenItemId((current) => (current === itemId ? null : itemId));
     }, []);
-    // A moment inside a thread to open (a suggestion's "From ..." link).
-    const [focusMomentId, setFocusMomentId] = useState<string | null>(null);
-    const [pendingMomentId, setPendingMomentId] = useState<string | null>(null);
-    const [scrollMomentId, setScrollMomentId] = useState<string | null>(null);
-    const handleMomentFocusConsumed = useCallback((momentId: string) => {
-        setFocusMomentId((current) => current === momentId ? null : current);
-    }, []);
     useEffect(() => {
         setOpenItemId(null);
-        setPendingMomentId(null);
-        setFocusMomentId(null);
-        setScrollMomentId(null);
         setSelectedThreadId(null);
         setScrollThreadId(null);
     }, [dateStr]);
-    useEffect(() => {
-        if (!pendingMomentId || !threadsLoaded) return;
-        const direct = workItems.find((w) => w.kind === 'activity' && w.activity.id === pendingMomentId);
-        const thread = workItems.find((w) => w.kind === 'thread' && w.moments.some((m) => m.id === pendingMomentId));
-        if (!direct && !thread) return;
-        setOpenItemId((direct ?? thread)!.id);
-        setFocusMomentId(thread ? pendingMomentId : null);
-        setScrollMomentId(pendingMomentId);
-        setPendingMomentId(null);
-    }, [pendingMomentId, workItems, threadsLoaded]);
-    useEffect(() => {
-        if (!scrollMomentId) return;
-        const frame = requestAnimationFrame(() => {
-            document.getElementById(`moment-${scrollMomentId}`)?.scrollIntoView({ block: 'nearest' });
-            setScrollMomentId(null);
-        });
-        return () => cancelAnimationFrame(frame);
-    }, [scrollMomentId, dateStr]);
     const [lightbox, setLightbox] = useState<{ frames: ActivityRunFrame[]; index: number } | null>(null);
     const openFrame = useCallback((frames: ActivityRunFrame[], index: number) => setLightbox({ frames, index }), []);
     const handleMeetingDeleted = useCallback((meetingKey: string) => {
@@ -598,96 +440,15 @@ export function ActivityDayView({
         );
     }, [dateStr]);
 
-    // ── Derived digest numbers ──
-    const displaySummary = cleanSummaryText(dailyData?.aiSummary ?? '');
-    const activeMs = dailyData?.totalActiveMs ?? 0;
-    const topTwoApps = (dailyData?.appBreakdown ?? []).slice(0, 2);
-    const appsText =
-        topTwoApps.length === 0
-            ? null
-            : topTwoApps.length === 1
-              ? topTwoApps[0].appName
-              : t('day.appsJoin', { first: topTwoApps[0].appName, second: topTwoApps[1].appName });
-    const isFuture = dayStart > dayStartMs(new Date());
-    const dayPending = dayPendingProp ?? dayLoading;
-    // Empty copy and Write it need an answer: a saved day, or a read that settled with none.
-    const dayAnswered = !!dailyData && !dayPending && !dayFailed;
-    const nothingToShow =
-        !dayPending &&
-        !dayFailed &&
-        !displaySummary &&
-        activeMs === 0 &&
-        workItems.length === 0 &&
-        learnedEntries.length === 0 &&
-        !activitiesFailed &&
-        !threadsFailed &&
-        !generating;
-
+    // Your day is the record only (computer-conformance-answers A4): the
+    // day's feed, newest first, and nothing Isoform wrote about it.
     const yourDaySection = (
-        <>
-            <section>
-                <h3 className={sectionLabelClass}>{t('day.yourDay')}</h3>
-                <AISummaryCard
-                    key={dateStr}
-                    isToday={isToday}
-                    summary={dailyData?.aiSummary ?? ''}
-                    summaryStatus={dailyData?.aiSummaryStatus ?? 'none'}
-                    cachedLanguage={dailyData?.aiSummaryLanguage}
-                    generating={generating}
-                    autoStatus={dailyData?.autoStatus}
-                    onGenerate={handleGenerateDigest}
-                    askContext={{ sourceKind: 'summary', sourceId: dateStr }}
-                    scope="daily"
-                    isPartial={dailyData?.isPartial}
-                    summaryCreatedAt={dailyData?.summaryCreatedAt}
-                    emptyActionLabel={isFuture || !dayAnswered ? undefined : t('summary.card.writeIt')}
-                    emptyText={isFuture || !dayAnswered ? undefined : t('summary.card.dayNotWritten')}
-                    pending={dayPending}
-                    failed={dayFailed}
-                    onRetry={onRetryDay}
-                >
-                    {activeMs > 0 && (
-                        <div className="border-t border-border/60 pt-3 space-y-3">
-                            <p className="text-[12px] text-muted">
-                                {appsText
-                                    ? t('day.activeLineWithApps', {
-                                          duration: formatDurationMs(activeMs),
-                                          apps: appsText,
-                                      })
-                                    : t('day.activeLineNoApps', { duration: formatDurationMs(activeMs) })}
-                            </p>
-                            <DayDetails
-                                hourly={dailyData?.hourlyActive ?? []}
-                                appBreakdown={dailyData?.appBreakdown ?? []}
-                                hourRange={hourRange}
-                                maxHourly={maxHourly}
-                            />
-                        </div>
-                    )}
-                </AISummaryCard>
-                {summaryErrorDate === dateStr && <p role="alert" className="mt-2 text-[12px] text-copper">{t('summary.card.writeFailed')}</p>}
-            </section>
-            <section>
-                <h3 className={sectionLabelClass}>{t('feed.label')}</h3>
-                <p className="mb-2 px-1 text-[12.5px] text-muted">{t('act.sub')}</p>
-                <ActivityFeed date={date} />
-            </section>
-            <ActivityNoticed
-                key={dateStr}
-                dateStr={dateStr}
-                focus={noticedFocus}
-                onFocusConsumed={onNoticedFocusConsumed}
-                onOpenMoment={(momentId) => {
-                    // A moment opens in the list as it was recorded.
-                    setView('recorded');
-                    setPendingMomentId(momentId);
-                    onSectionChange?.('workedOn');
-                }}
-                pickUp={pickUp}
-                onPickUpShow={showPickUp}
-                onPickUpLater={pickUpLater}
-            />
-        </>
+        <ActivityFeed
+            date={date}
+            onOpenConversation={onOpenConversation}
+            onOpenTopic={onOpenTopic}
+            onOpenRecording={onOpenRecording}
+        />
     );
 
     // The Your day fallback (while the digest loads) shows the list as
@@ -778,10 +539,8 @@ export function ActivityDayView({
                             onSelectThread={setSelectedThreadId}
                             scrollThreadId={scrollThreadId}
                             onScrolled={clearScrollThread}
-                            // Stacked (no section panel) the pick-up already shows
-                            // under Isoform noticed.
                             pickUp={
-                                section && pickUp && visibleStitched.some((item) => item.thread.id === pickUp.threadId)
+                                pickUp && visibleStitched.some((item) => item.thread.id === pickUp.threadId)
                                     ? pickUp
                                     : null
                             }
@@ -804,8 +563,6 @@ export function ActivityDayView({
                                             key={item.id}
                                             item={item}
                                             threads={threads}
-                                            focusMomentId={focusMomentId}
-                                            onFocusMomentConsumed={handleMomentFocusConsumed}
                                             open={openItemId === item.id || (item.kind === 'thread' && !!query)}
                                             onToggleItem={handleToggleItem}
                                             bridgePort={bridgePort}
@@ -829,56 +586,12 @@ export function ActivityDayView({
                         </>
                     )}
                 </div>
+                {withSwitch && <ScreenAgentRuns date={date} />}
             </section>
         );
     };
     const workedOnSection = renderWorkedOn(view, true);
 
-    const learnedSection = (
-        <section>
-            <h3 className={sectionLabelClass}>{t('day.learned')}</h3>
-            {visibleLearned.length > 0 ? (
-                <div className="space-y-4">
-                    {learnedGroups(visibleLearned).map((group) => (
-                        <div key={group.kind}>
-                            <h4 className="px-1 pb-1.5 text-[12px] font-medium text-muted">
-                                {group.kind === 'memory' ? t('day.learnedAboutYou') : t('day.learnedKnowHow')}
-                            </h4>
-                            <ul className="divide-y divide-border/60 rounded-xl border border-border bg-panel overflow-hidden">
-                                {group.entries.slice(0, learnedShown[group.kind]).map((entry) => (
-                                    <LearnedRow
-                                        key={entry.id}
-                                        entry={entry}
-                                        open={openItemId === entry.id}
-                                        onToggleItem={handleToggleItem}
-                                        onOpenSession={onOpenSession}
-                                    />
-                                ))}
-                            </ul>
-                            {group.entries.length > learnedShown[group.kind] && (
-                                <button
-                                    type="button"
-                                    onClick={() =>
-                                        setLearnedShown((shown) => ({
-                                            ...shown,
-                                            [group.kind]: shown[group.kind] + LEARNED_PAGE,
-                                        }))
-                                    }
-                                    className="mt-1.5 px-1 text-[12px] text-muted hover:text-ink transition-colors"
-                                >
-                                    {t('day.learnedShowMore')}
-                                </button>
-                            )}
-                        </div>
-                    ))}
-                </div>
-            ) : (
-                <p className="text-[12px] text-muted/70 px-1">
-                    {query ? t('day.noMatches', { query: searchQuery.trim() }) : t('day.sectionEmpty')}
-                </p>
-            )}
-        </section>
-    );
 
     return (
         // The page remounts on every open; the day's scroll offset survives in
@@ -896,15 +609,11 @@ export function ActivityDayView({
                         {/* One section at a time (the Activity page's panel). */}
                         {section === 'yourDay' && yourDaySection}
                         {section === 'workedOn' && workedOnSection}
-                        {section === 'learned' && learnedEntries.length > 0 && learnedSection}
                     </>
-                ) : nothingToShow ? (
-                    <p className="py-16 text-center text-[13px] text-muted/70">{t('day.empty')}</p>
                 ) : (
                     <>
                         {yourDaySection}
                         {(workItems.length > 0 || query || activitiesFailed || threadsFailed) && workedOnSection}
-                        {(learnedEntries.length > 0 || query) && learnedSection}
                     </>
                 )}
             </div>
@@ -962,11 +671,52 @@ function workItemMatchesQuery(item: WorkItem, query: string): boolean {
     }
 }
 
+/** The day's agent runs the screen saw (conformance answers v1.1.0 P1, AC9):
+ *  Screen rows, "Screen · {agent}", with the line saying they worked on their
+ *  own. They come after your own rows and are not counted in your time or
+ *  your work. They are the feed's agent rows, so Forget is the feed's. */
+function ScreenAgentRuns({ date }: { date: Date }) {
+    const { t } = useTranslation('activity');
+    const [rows, setRows] = useState<ActivityFeedRow[] | null>(null);
+    const [failed, setFailed] = useState(false);
+    const start = dayStartMs(date);
+    const end = dayEndMs(date);
+    const load = useCallback(() => {
+        GetActivityFeed(start, end)
+            .then((list) => {
+                setRows((list ?? []).filter((row) => row.kind === 'agent'));
+                setFailed(false);
+            })
+            .catch(() => setFailed(true));
+    }, [start, end]);
+    useEffect(() => {
+        setRows(null);
+        load();
+    }, [load]);
+    const forget = useActivityForget(
+        (row) => setRows((prev) => (prev ?? []).filter((r) => r.id !== row.id)),
+        load,
+    );
+    if (!failed && (rows === null || rows.length === 0) && !forget.notice) return forget.dialog;
+    return (
+        <div className="mt-4" data-testid="worked-on-agent-runs">
+            {failed && <ActivityInlineNotice notice={{ tone: 'error', text: t('day.agentRunsFailed'), onAction: load }} />}
+            {forget.notice}
+            {rows && rows.length > 0 && (
+                <ol className="flex flex-col">
+                    {rows.map((row) => (
+                        <ActivityFeedRowItem key={row.id} row={row} onForget={forget.ask} />
+                    ))}
+                </ol>
+            )}
+            {forget.dialog}
+        </div>
+    );
+}
+
 interface WorkItemRowProps {
     item: WorkItem;
     threads: ActivityThreadView[];
-    focusMomentId?: string | null;
-    onFocusMomentConsumed?: (momentId: string) => void;
     open: boolean;
     onToggleItem: (itemId: string) => void;
     bridgePort: number;
@@ -990,8 +740,6 @@ const WorkItemRow = memo(function WorkItemRow({
     onActivityDeleted,
     onActivityChanged,
     onStartChat,
-    focusMomentId,
-    onFocusMomentConsumed,
 }: WorkItemRowProps) {
     const onToggle = useCallback(() => onToggleItem(item.id), [onToggleItem, item.id]);
     const moveControl = (activityId: string, currentThreadId: string | null): ReactNode => (
@@ -1022,8 +770,6 @@ const WorkItemRow = memo(function WorkItemRow({
                     moments={item.moments}
                     open={open}
                     onToggle={onToggle}
-                    focusMomentId={focusMomentId}
-                    onFocusMomentConsumed={onFocusMomentConsumed}
                     renderMoment={(moment, momentOpen, onMomentToggle) => (
                         <ActivityWorkRow
                             key={moment.id}
@@ -1060,9 +806,7 @@ const WorkItemRow = memo(function WorkItemRow({
     prev.item === next.item &&
     prev.threads === next.threads &&
     prev.open === next.open &&
-    prev.focusMomentId === next.focusMomentId &&
-    prev.bridgePort === next.bridgePort &&
-    prev.onFocusMomentConsumed === next.onFocusMomentConsumed);
+    prev.bridgePort === next.bridgePort);
 
 const rowTimeClass = 'w-14 shrink-0 text-[11px] text-muted/80 tabular-nums pt-[2px]';
 
@@ -1352,301 +1096,6 @@ function RunWorkRow({ run, onOpenRunDetail }: { run: CronRunWithJobName; onOpenR
                 )}
             </button>
         </li>
-    );
-}
-
-// ── "What it learned" rows ──
-
-interface LearnedEntry {
-    id: string;
-    kind: 'knowledge' | 'memory';
-    title: string;
-    content: string;
-    timestamp: number;
-    memory?: main.MemoryEntry;
-}
-
-const LEARNED_PAGE = 20;
-
-// About you first, then How you do things; one row per belief (the newest
-// copy of the same words), newest first.
-function learnedGroups(entries: LearnedEntry[]): { kind: LearnedEntry['kind']; entries: LearnedEntry[] }[] {
-    const kinds: LearnedEntry['kind'][] = ['memory', 'knowledge'];
-    return kinds
-        .map((kind) => {
-            const seen = new Set<string>();
-            const out: LearnedEntry[] = [];
-            for (const entry of [...entries].sort((a, b) => b.timestamp - a.timestamp)) {
-                if (entry.kind !== kind) continue;
-                const key = entry.title.trim().toLowerCase().replace(/\s+/g, ' ');
-                if (seen.has(key)) continue;
-                seen.add(key);
-                out.push(entry);
-            }
-            return { kind, entries: out };
-        })
-        .filter((group) => group.entries.length > 0);
-}
-
-const LearnedRow = memo(function LearnedRow({
-    entry,
-    open,
-    onToggleItem,
-    onOpenSession,
-}: {
-    entry: LearnedEntry;
-    open: boolean;
-    onToggleItem: (itemId: string) => void;
-    onOpenSession: (sessionId: string) => void;
-}) {
-    const { t } = useTranslation('activity');
-    const onToggle = useCallback(() => onToggleItem(entry.id), [onToggleItem, entry.id]);
-    return (
-        <li>
-            <button
-                type="button"
-                onClick={onToggle}
-                aria-expanded={open}
-                className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-surface-hover transition-colors"
-            >
-                <span className="flex-1 min-w-0 text-[13px] text-ink break-words">{entry.title}</span>
-                <ChevronDown
-                    className={`h-3.5 w-3.5 shrink-0 text-muted/60 transition-transform ${open ? 'rotate-180' : ''}`}
-                />
-            </button>
-            {open && (
-                <div className="px-4 pb-4 pt-1">
-                    {entry.kind === 'memory' && entry.memory ? (
-                        <ActivityBelief entry={entry.memory} rowText={entry.title} />
-                    ) : entry.content ? (
-                        <EntryDetail
-                            content={entry.content}
-                            onOpenActivitySession={onOpenSession}
-                            cardPadding="px-5 py-4"
-                            compactSessions
-                            collapsibleSessions
-                        />
-                    ) : (
-                        <p className="text-[13px] text-muted/70 italic">{t('day.noContent')}</p>
-                    )}
-                </div>
-            )}
-        </li>
-    );
-// Same closure exclusion as WorkItemRow: the handlers are day-stable.
-}, (prev, next) => prev.entry === next.entry && prev.open === next.open);
-
-// Reuse About you's review lifecycle so correction and Forget have the same
-// source checks and undo behavior here as on the belief's home page.
-function ActivityBelief({ entry, rowText }: { entry: main.MemoryEntry; rowText: string }) {
-    const { t, i18n } = useTranslation(['activity', 'memory']);
-    const [belief, setBelief] = useState<AboutYouBelief | null | undefined>(undefined);
-    const [current, setCurrent] = useState(entry);
-    const [loadError, setLoadError] = useState(false);
-    const [reload, setReload] = useState(0);
-    useEffect(() => {
-        let active = true;
-        setLoadError(false);
-        GetAboutYou().then((view) => {
-            if (active) setBelief(view.beliefs?.find((item) => item.id === entry.id) ?? null);
-        }).catch(() => { if (active) setLoadError(true); });
-        return () => { active = false; };
-    }, [entry.id, reload]);
-    const changed = useCallback(() => setReload((value) => value + 1), []);
-    const review = useBeliefReview({
-        onConfirmed: setCurrent,
-        onForgotten: changed,
-        onChanged: changed,
-        contentOf: (id) => id === current.id ? current.content : undefined,
-    });
-    const text = memoryPoints(current.content)
-        .filter((point) => !/^\*\*[^*]+\*\*:/.test(point.text))
-        .map((point) => humanMemoryText(point.text))
-        .join(' ');
-    const item = { id: entry.id, text, where: '', status: belief?.status, portraitCandidate: belief?.portraitCandidate };
-    const result = review.results[entry.id];
-    const area = memoryArea(belief?.area ?? entry.area);
-    const source = belief?.source === 'assistant-history' && (belief.sourceAssistant === 'claude' || belief.sourceAssistant === 'codex')
-        ? t('belief.history', { assistant: belief.sourceAssistant === 'claude' ? 'Claude Code' : 'Codex' })
-        : t('belief.activity');
-    const sourceAt = belief?.sourceAt || belief?.firstLearnedAt || entry.updatedAt || entry.modTime;
-    const sourceTime = sourceAt > 0 ? new Date(sourceAt).toLocaleTimeString(i18n.language, { hour: 'numeric', minute: '2-digit' }) : '';
-    // The row already says the belief; its sentence shows once (activity
-    // review v1.0.3 #5), here only when the row's words differ.
-    const plain = (value: string) => value.trim().replace(/[.\s]+$/, '').toLowerCase();
-    const repeat = !text || plain(text) === plain(rowText);
-    return (
-        <div className="flex flex-col gap-2.5 text-[13px]">
-            {!repeat && <p className="text-ink whitespace-pre-wrap">{text}</p>}
-            {loadError ? (
-                <p className="text-copper" role="alert">{t('belief.loadFailed')} <button type="button" className={ACTION_LINK} onClick={changed}>{t('belief.retry')}</button></p>
-            ) : belief !== undefined ? (
-                <>
-                    <p className="text-muted">{source}{sourceTime && ` · ${sourceTime}`}</p>
-                    <p className="text-muted">{t('belief.location', { area: t(`memory:aboutYou.areas.${area}`) })}</p>
-                    {reviewOpen(result) ? (
-                        <>
-                            {result?.kind === 'confirmFailed' && <p className="text-copper" role="alert">{t('memory:aboutYou.review.confirmFailed')}</p>}
-                            <div className="flex flex-wrap gap-1.5">
-                                <Button size="sm" onClick={() => void review.confirm(entry.id)}>{t('memory:aboutYou.review.confirm')}</Button>
-                                <Button size="sm" variant="secondary" onClick={() => review.ask(entry.id)}>{t('memory:aboutYou.review.notQuite')}</Button>
-                                <Button size="sm" variant="outline" onClick={() => review.forget(entry.id)}>{t('memory:aboutYou.review.forget')}</Button>
-                            </div>
-                        </>
-                    ) : result?.kind === 'asking' || result?.kind === 'saving' || result?.kind === 'answerFailed' ? <NotQuiteField item={item} review={review} /> : <ReviewOutcome item={item} review={review} />}
-                </>
-            ) : null}
-        </div>
-    );
-}
-
-// ── Details disclosure: the hour chart and top applications ──
-
-function DayDetails({
-    hourly,
-    appBreakdown,
-    hourRange,
-    maxHourly,
-}: {
-    hourly: number[];
-    appBreakdown: main.AppUsageStat[];
-    hourRange: { start: number; end: number };
-    maxHourly: number;
-}) {
-    const { t } = useTranslation('activity');
-    const [open, setOpen] = useState(false);
-    const [hoveredHour, setHoveredHour] = useState<number | null>(null);
-
-    let peakHour = -1;
-    let peakMinutes = 0;
-    for (let h = 0; h < hourly.length; h++) {
-        if ((hourly[h] || 0) > peakMinutes) {
-            peakMinutes = hourly[h];
-            peakHour = h;
-        }
-    }
-    const formatHourLabel = (h: number) => {
-        if (h === 0) return t('day.midnight');
-        if (h < 12) return t('day.hourAm', { hour: h });
-        if (h === 12) return t('day.noon');
-        return t('day.hourPm', { hour: h - 12 });
-    };
-
-    return (
-        <div>
-            <button
-                type="button"
-                onClick={() => setOpen((o) => !o)}
-                aria-expanded={open}
-                className="flex items-center gap-1 text-[11px] text-muted hover:text-ink transition-colors"
-            >
-                {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                {t('day.details')}
-            </button>
-            {open && (
-                <div className="mt-3 grid grid-cols-1 lg:grid-cols-[minmax(0,1.2fr)_minmax(220px,0.8fr)] gap-4">
-                    <div>
-                        <h5 className="text-[10px] uppercase tracking-[0.08em] font-semibold text-muted/80 mb-3">
-                            {t('day.byHour')}
-                        </h5>
-                        {hourly.length === 0 ? (
-                            <p className="text-[12px] text-muted/70 py-2">{t('day.noHourly')}</p>
-                        ) : (
-                            <>
-                                <div className="flex items-stretch gap-[3px] h-[72px] relative">
-                                    {Array.from({ length: hourRange.end - hourRange.start + 1 }, (_, i) => {
-                                        const hour = hourRange.start + i;
-                                        const minutes = hourly[hour] || 0;
-                                        const pct = maxHourly > 0 ? minutes / maxHourly : 0;
-                                        const isPeak = hour === peakHour && minutes > 0;
-                                        return (
-                                            <div
-                                                key={hour}
-                                                className="flex-1 flex flex-col items-center justify-end gap-1 relative group cursor-default"
-                                                onMouseEnter={() => setHoveredHour(hour)}
-                                                onMouseLeave={() => setHoveredHour(null)}
-                                            >
-                                                <div
-                                                    className="w-full rounded-[3px] bg-accent transition-all"
-                                                    style={{
-                                                        height: `${Math.max(pct * 100, minutes > 0 ? 6 : 0)}%`,
-                                                        opacity: minutes > 0 ? (isPeak ? 1 : 0.3 + 0.6 * pct) : 0.06,
-                                                    }}
-                                                />
-                                                {hoveredHour === hour && minutes > 0 && (
-                                                    <div className="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 text-[10px] font-medium text-ink bg-panel border border-border rounded-md shadow-sm whitespace-nowrap z-10 tabular-nums">
-                                                        {t('day.hourTooltip', { hour: formatHourLabel(hour), minutes })}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                                <div className="flex justify-between mt-2">
-                                    {Array.from({ length: hourRange.end - hourRange.start + 1 }, (_, i) => {
-                                        const hour = hourRange.start + i;
-                                        const total = hourRange.end - hourRange.start;
-                                        const show = i === 0 || i === total || hour % 3 === 0;
-                                        return (
-                                            <span
-                                                key={hour}
-                                                className={`flex-1 text-center text-[9px] tabular-nums ${hour === peakHour ? 'text-accent font-semibold' : 'text-muted/60'}`}
-                                            >
-                                                {show ? hour : ''}
-                                            </span>
-                                        );
-                                    })}
-                                </div>
-                            </>
-                        )}
-                    </div>
-                    <div className="border-t border-border/60 lg:border-t-0 lg:border-l lg:pl-4 pt-3 lg:pt-0">
-                        <h5 className="text-[10px] uppercase tracking-[0.08em] font-semibold text-muted/80 mb-3">
-                            {t('day.topApps')}
-                        </h5>
-                        <DayTopApplications apps={appBreakdown} />
-                    </div>
-                </div>
-            )}
-        </div>
-    );
-}
-
-function DayTopApplications({ apps }: { apps: main.AppUsageStat[] }) {
-    const { t } = useTranslation('activity');
-    const topApps = (apps ?? []).slice(0, 4);
-    useAppIcons(topApps.map((app) => app.bundleId ?? ''));
-    if (topApps.length === 0) {
-        return <p className="text-[12px] text-muted/70 py-2">{t('day.noApps')}</p>;
-    }
-    return (
-        <div className="space-y-2">
-            {topApps.map((app) => (
-                <div key={app.appName} className="flex items-center gap-2.5">
-                    <AppGlyph
-                        appKey={app.bundleId ?? ''}
-                        appName={app.appName}
-                        className="size-6 shrink-0 rounded-md text-[10px]"
-                    />
-                    <div className="min-w-0 flex-1">
-                        <div className="flex items-baseline gap-2">
-                            <span className="text-[12px] text-ink truncate" title={app.appName}>
-                                {app.appName}
-                            </span>
-                            <span className="ml-auto text-[10px] text-muted/70 tabular-nums">
-                                {formatDurationMs(app.activeMs)}
-                            </span>
-                        </div>
-                        <div className="mt-1 h-[5px] bg-panel-warm rounded-full overflow-hidden">
-                            <div
-                                className="h-full bg-accent rounded-full transition-[width] duration-300"
-                                style={{ width: `${Math.max(app.percentage, 2)}%` }}
-                            />
-                        </div>
-                    </div>
-                </div>
-            ))}
-        </div>
     );
 }
 

@@ -198,6 +198,17 @@ func newStoreWithSnapshotOptions(dbPath string, snapshots snapshotOptions) (*Sto
 	return s, nil
 }
 
+// ISOFORM_STORE_READS_ON_WRITER=1 restores the writer for the migrated
+// Store reads. Stream pagination and UI state keep their own routing.
+var storeReadsOnWriter = os.Getenv("ISOFORM_STORE_READS_ON_WRITER") == "1"
+
+func (s *Store) committedReader() *sql.DB {
+	if storeReadsOnWriter {
+		return s.db
+	}
+	return s.streamReader()
+}
+
 func (s *Store) streamReader() *sql.DB {
 	if s.streamReadDB != nil {
 		return s.streamReadDB
@@ -364,13 +375,18 @@ func (s *Store) ClearActiveSessionReferences(ctx context.Context, sessionLocalID
 }
 
 // schemaVersion is the latest migration this binary implements and may stamp.
-const schemaVersion = 75
+const schemaVersion = 77
 
 // supportedSchemaVersion is the audited compatibility ceiling. Keep the newer
 // stamp refusal in place when raising this ceiling alongside implemented
 // migrations. Contact provenance uses v61, contact links v62. RC 1 topics (#140)
-// v63, context uses v64, People merges v65, answer chips v66, outbound sends v67.
-const supportedSchemaVersion = 75
+// v63, context uses v64, People merges v65, answer chips v66, outbound sends v67,
+// the assistant call record v76, what each entry made v77.
+const supportedSchemaVersion = 77
+
+// SettingsDefaultsMarker is seeded only when the initial schema is created.
+const SettingsDefaultsMarker = "defaults_2026_11_21_migrated"
+const SettingsDefaultsFresh = "fresh"
 
 // SchemaVersion is the schema this binary stamps, for tests outside the package.
 const SchemaVersion = schemaVersion
@@ -432,6 +448,7 @@ func (s *Store) migrate() error {
 				key   TEXT PRIMARY KEY,
 				value TEXT NOT NULL
 			);
+			INSERT OR IGNORE INTO ui_state(key, value) VALUES ('` + SettingsDefaultsMarker + `', '` + SettingsDefaultsFresh + `');
 		`); err != nil {
 			return fmt.Errorf("migration v1: %w", err)
 		}
@@ -1599,6 +1616,22 @@ func (s *Store) migrate() error {
 	if version < 75 {
 		if err := migrateMessageAsks(s.db); err != nil {
 			return fmt.Errorf("migration v75 message asks: %w", err)
+		}
+	}
+
+	// v76: the record of what each assistant call was given, by name and
+	// time, never the text (assistant_calls.go).
+	if version < 76 {
+		if err := s.migrateAssistantCalls(); err != nil {
+			return fmt.Errorf("migration v76 assistant calls: %w", err)
+		}
+	}
+
+	// v77: what each assistant call entry made, for See them's "Made: {n}
+	// claims to check".
+	if version < 77 {
+		if err := s.migrateAssistantCallsMade(); err != nil {
+			return fmt.Errorf("migration v77 assistant call made: %w", err)
 		}
 	}
 

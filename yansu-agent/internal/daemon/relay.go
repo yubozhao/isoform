@@ -88,6 +88,7 @@ func (a *RelayAdapter) Listen(ctx context.Context, handler func(Event)) error {
 	}
 }
 
+//isoform:destination yansu_backend
 func (a *RelayAdapter) connectAndListen(ctx context.Context, handler func(Event)) error {
 	// Build WS URL from backend base URL
 	wsURL := a.backendURL

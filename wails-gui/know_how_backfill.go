@@ -222,6 +222,13 @@ func (a *App) classifyKnowHowKinds(ctx context.Context, inputs []knowHowBackfill
 	if runner == nil {
 		return nil, errors.New("runner unavailable")
 	}
+	ctx, given, opened := withLearningScope(ctx, "about")
+	if opened {
+		defer a.finishAssistantCall(given)
+	}
+	for _, in := range inputs {
+		given.add("knowledge", in.ID, 1)
+	}
 	payload, err := json.Marshal(inputs)
 	if err != nil {
 		return nil, err

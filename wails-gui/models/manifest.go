@@ -288,17 +288,28 @@ type verifiedFileState struct {
 // A cached verification is tied to the file identity and kernel change time,
 // as well as size and modification time. Size alone never establishes trust.
 func verifiedFile(path string, before os.FileInfo, want string) bool {
+	ok, _ := verifiedFileChecked(path, before, want)
+	return ok
+}
+
+func verifiedFileChecked(path string, before os.FileInfo, want string) (bool, error) {
 	change := fileChangeStamp(before)
 	verifiedFiles.Lock()
 	cached, ok := verifiedFiles.files[path]
 	verifiedFiles.Unlock()
 	if change != "" && ok && cached.sha == want && cached.change == change && os.SameFile(cached.info, before) && cached.info.Size() == before.Size() && cached.info.ModTime() == before.ModTime() {
-		return true
+		return true, nil
 	}
 	got, err := hashFile(path)
 	after, statErr := os.Stat(path)
-	if err != nil || statErr != nil || got != want || !os.SameFile(before, after) || before.Size() != after.Size() || before.ModTime() != after.ModTime() || change != fileChangeStamp(after) {
-		return false
+	if err != nil {
+		return false, err
+	}
+	if statErr != nil {
+		return false, statErr
+	}
+	if got != want || !os.SameFile(before, after) || before.Size() != after.Size() || before.ModTime() != after.ModTime() || change != fileChangeStamp(after) {
+		return false, nil
 	}
 	if change != "" {
 		verifiedFiles.Lock()
@@ -308,5 +319,41 @@ func verifiedFile(path string, before os.FileInfo, want string) bool {
 		verifiedFiles.files[path] = verifiedFileState{after, change, want}
 		verifiedFiles.Unlock()
 	}
-	return true
+	return true, nil
+}
+
+// MemoryModelStatus reports the catalog download size and checks both pinned
+// MiniLM files using the same verification cache as the inference runtime.
+func MemoryModelStatus(configDir string) (bool, int64, error) {
+	for _, e := range Catalog() {
+		if e.ID != "minilm" {
+			continue
+		}
+		ready := true
+		for _, f := range e.Files {
+			path := filepath.Join(configDir, "models", f.Path)
+			info, err := os.Stat(path)
+			if os.IsNotExist(err) {
+				ready = false
+				continue
+			}
+			if err != nil {
+				return false, 0, err
+			}
+			if !info.Mode().IsRegular() {
+				return false, 0, fmt.Errorf("expected model file at %s", path)
+			}
+			if info.Size() != *f.Bytes {
+				ready = false
+				continue
+			}
+			ok, err := verifiedFileChecked(path, info, *f.SHA256)
+			if err != nil {
+				return false, 0, err
+			}
+			ready = ready && ok
+		}
+		return ready, *e.SizeBytes, nil
+	}
+	return false, 0, fmt.Errorf("memory model is missing from catalog")
 }

@@ -66,7 +66,6 @@ func TestFrontEndToEndWithTheRealBinaries(t *testing.T) {
 	a.front.dir = filepath.Join(dir, "computer")
 	a.front.enabled = func() bool { return true }
 	a.taskLinks.dir = t.TempDir()
-	a.taskLinks.enabled = func() bool { return true }
 	a.front.certFunc = func(hostname, _ string) func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
 		cert, p := selfSignedFor(t, hostname)
 		e2eRoots = p

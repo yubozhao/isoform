@@ -8,19 +8,19 @@ import (
 	"sync"
 )
 
-// Telemetry tier is the persisted "Share diagnostic data" choice. The default
-// remains detailed for compatibility; off prevents all telemetry network calls
-// and enqueueing. Both tiers are still passed to the embedded agent for its
+// Telemetry tier is the persisted "Share diagnostic data" choice. Fresh installs
+// start off. Off prevents all telemetry network calls and enqueueing.
+// Both tiers are still passed to the embedded agent for its
 // local structural diagnostics, but the desktop PostHog sink only accepts the
 // content-free product events documented in docs/product-telemetry.md.
 // Upstream error telemetry contains only the status code, a stable error class
 // and body length; upstream error bodies are never sent.
-// Legacy "basic" values normalize to the existing detailed default on load.
+// Legacy "basic" values normalize to the historical detailed tier on load.
 const (
 	TelemetryTierOff      = "off"
 	TelemetryTierDetailed = "detailed"
 
-	defaultTelemetryTier = TelemetryTierDetailed
+	defaultTelemetryTier = TelemetryTierOff
 
 	telemetryTierFile = "telemetry_tier.txt"
 )
@@ -42,29 +42,32 @@ func telemetryTierPath() string {
 	return filepath.Join(dir, telemetryTierFile)
 }
 
-// loadTelemetryTierFromDisk reads the persisted value at startup so
-// the agent runner can ask currentTelemetryTier() before the React
-// side has mounted. Falls back to the default when the file is
-// missing or contains an unrecognised value.
-func loadTelemetryTierFromDisk() {
-	path := telemetryTierPath()
+// Existing installs historically interpreted every noncanonical tier as detailed.
+func readTelemetryTier(path string, fresh bool) (tier string, found bool, err error) {
 	if path == "" {
-		return
+		return "", false, fmt.Errorf("could not resolve telemetry tier path")
 	}
 	b, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		// A dangling symlink is an unreadable saved choice.
+		if _, statErr := os.Lstat(path); os.IsNotExist(statErr) {
+			return "", false, nil
+		}
+	}
 	if err != nil {
-		return
+		return "", false, err
 	}
 	v := strings.TrimSpace(string(b))
 	if !isValidTelemetryTier(v) {
-		return
+		if fresh && v != "basic" {
+			return "", false, fmt.Errorf("invalid saved telemetry tier")
+		}
+		v = TelemetryTierDetailed
 	}
-	telemetryTierMu.Lock()
-	telemetryTier = v
-	telemetryTierMu.Unlock()
+	return v, true, nil
 }
 
-// GetTelemetryTier is the Wails binding the Privacy settings panel
+// GetTelemetryTier is the Wails binding the About settings card
 // reads on mount. Returns the on-disk value (or the default) — the
 // React side never sees an empty string so it can render the radio
 // group without a hydration flash.
@@ -72,7 +75,7 @@ func (a *App) GetTelemetryTier() string {
 	return currentTelemetryTier()
 }
 
-// SetTelemetryTier is the Wails binding the Privacy settings panel
+// SetTelemetryTier is the Wails binding the About settings card
 // calls when the user picks a different tier. Returns an error so the
 // frontend Promise rejects on disk-full / permission-denied / invalid-
 // tier failures and the toast can fire — silent failure here would
@@ -85,6 +88,9 @@ func (a *App) SetTelemetryTier(tier string) error {
 	}
 	telemetryTierSaveMu.Lock()
 	defer telemetryTierSaveMu.Unlock()
+	if a.settingsDefaultsHeldOff.Load() {
+		return errSettingsDefaultsUnavailable
+	}
 
 	path := telemetryTierPath()
 	if path == "" {
@@ -95,25 +101,8 @@ func (a *App) SetTelemetryTier(tier string) error {
 			return fmt.Errorf("create config dir: %w", err)
 		}
 	}
-	// Replace atomically so a failed write cannot truncate a persisted opt-out.
-	file, err := os.CreateTemp(filepath.Dir(path), ".telemetry-tier-*")
-	if err != nil {
-		return fmt.Errorf("persist telemetry tier: %w", err)
-	}
-	defer os.Remove(file.Name())
-	if err := file.Chmod(0o644); err != nil {
-		file.Close()
-		return fmt.Errorf("persist telemetry tier: %w", err)
-	}
-	if _, err := file.WriteString(v); err != nil {
-		file.Close()
-		return fmt.Errorf("persist telemetry tier: %w", err)
-	}
-	if err := file.Close(); err != nil {
-		return fmt.Errorf("persist telemetry tier: %w", err)
-	}
-	if err := os.Rename(file.Name(), path); err != nil {
-		return fmt.Errorf("persist telemetry tier: %w", err)
+	if err := persistTelemetryTier(path, v, false); err != nil {
+		return err
 	}
 	telemetryTierMu.Lock()
 	telemetryTier = v
@@ -144,4 +133,31 @@ func isValidTelemetryTier(v string) bool {
 	default:
 		return false
 	}
+}
+
+func persistTelemetryTier(path, v string, onlyIfAbsent bool) error {
+	// Replace atomically so a failed write cannot truncate a persisted opt-out.
+	file, err := os.CreateTemp(filepath.Dir(path), ".telemetry-tier-*")
+	if err != nil {
+		return fmt.Errorf("persist telemetry tier: %w", err)
+	}
+	defer os.Remove(file.Name())
+	if err := file.Chmod(0o644); err != nil {
+		file.Close()
+		return fmt.Errorf("persist telemetry tier: %w", err)
+	}
+	if _, err := file.WriteString(v); err != nil {
+		file.Close()
+		return fmt.Errorf("persist telemetry tier: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("persist telemetry tier: %w", err)
+	}
+	if onlyIfAbsent {
+		return os.Link(file.Name(), path)
+	}
+	if err := os.Rename(file.Name(), path); err != nil {
+		return fmt.Errorf("persist telemetry tier: %w", err)
+	}
+	return nil
 }

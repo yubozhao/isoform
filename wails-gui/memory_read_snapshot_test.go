@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -100,12 +101,13 @@ func countMemoryFilesOfThisGoroutine(t testing.TB) *countingMemoryFiles {
 	return counter
 }
 
-// fakeMemoryReadClock lets a test move past memoryFolderCheckEvery.
+// fakeMemoryReadClock holds time still between explicit advances.
 func fakeMemoryReadClock(t testing.TB) func(time.Duration) {
 	t.Helper()
 	var offset atomic.Int64
 	previous := memoryReadNow
-	memoryReadNow = func() time.Time { return time.Now().Add(time.Duration(offset.Load())) }
+	start := time.Now()
+	memoryReadNow = func() time.Time { return start.Add(time.Duration(offset.Load())) }
 	t.Cleanup(func() { memoryReadNow = previous })
 	return func(d time.Duration) { offset.Add(int64(d)) }
 }
@@ -154,12 +156,28 @@ func historyCount(entries []MemoryEntry) int {
 	return n
 }
 
+const memoryReadSnapshotChildEnv = "ISOFORM_MEMORY_READ_SNAPSHOT_TEST"
+
 func TestRepeatedMemoryReadsTouchNoFilesWhileUnchanged(t *testing.T) {
+	// A reader left by another test can follow HOME into the fixture and
+	// populate parsedNotes before the measured cold read. Isolate the cache,
+	// file counter and fixture together in a fresh test process.
+	if os.Getenv(memoryReadSnapshotChildEnv) != "1" {
+		executable, err := os.Executable()
+		if err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.CommandContext(t.Context(), executable, "-test.run=^"+t.Name()+"$", "-test.v",
+			fmt.Sprintf("-test.cpu=%d", runtime.GOMAXPROCS(0)))
+		cmd.Env = append(os.Environ(), memoryReadSnapshotChildEnv+"=1")
+		out, err := cmd.CombinedOutput()
+		if err != nil || !bytes.Contains(out, []byte("--- PASS: "+t.Name()+" ")) {
+			t.Fatalf("isolated memory read test: %v\n%s", err, out)
+		}
+		return
+	}
+
 	t.Setenv("HOME", t.TempDir())
-	// The first read is counted, so no note may be parsed already (as in the
-	// other counting tests here).
-	parsedNotes.reset()
-	t.Cleanup(parsedNotes.reset)
 	dir := writeFictionalMemoryFolder(t, fictionalMemoryNotes)
 	advance := fakeMemoryReadClock(t)
 	files := countMemoryFiles(t)

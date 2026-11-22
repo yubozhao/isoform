@@ -125,6 +125,8 @@ func WithUserAgent(u string) ClientOption {
 // warmup, queue depth, upstream Anthropic load) — not a connectivity
 // problem. A 10s cap there was killing real requests whose proxy TTFB
 // spiked past 10s, surfacing as spurious "Connection problem" cards.
+//
+//isoform:destination assistant
 func NewClient(opts ...ClientOption) *Client {
 	transport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
@@ -481,6 +483,7 @@ func shouldRetry(err error) bool {
 	return retryableStatus(he.Status)
 }
 
+//isoform:destination assistant
 func (c *Client) doStream(ctx context.Context, req *Request, handler StreamHandler) error {
 	body, err := json.Marshal(req)
 	if err != nil {

@@ -77,14 +77,18 @@ struct YourDataView: View {
     var sentHub: AgentsHubAPI? = nil
     /// Your voice's page, when the computer keeps a voice sample from this phone (rule 12).
     var voicePage: AnyView? = nil
-    var openSees: () -> Void
+    /// What Isoform sees, the first row under "Kept on your computer" (phone-duo v1.1.0 rule 1).
+    var seesHub: SeesHubAPI? = nil
     @ObservedObject private var watchRecordings = WatchRecordingsModel.shared
+    @ObservedObject private var watchTab = WatchTabModel.shared
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 group(String(localized: "data.computer")) {
-                    Button(action: openSees) {
+                    NavigationLink {
+                        IsoformSeesPage(hub: seesHub)
+                    } label: {
                         row(String(localized: "data.seen"), sub: String(localized: "data.seenSub"), chevron: true)
                     }
                     .buttonStyle(.plain)
@@ -133,6 +137,13 @@ struct YourDataView: View {
                         .accessibilityIdentifier("data.sent")
                     } else {
                         row(String(localized: "data.sent"), sub: String(localized: "data.sentWhere"))
+                    }
+                    // With Place on, the watch asks Apple to name the area (design's
+                    // data.appleArea). Shown while Place is on and for a week after.
+                    if watchTab.namesAppleForTheArea {
+                        Divider().overlay(YansuTheme.borderSubtle)
+                        row(String(localized: "data.appleArea"), sub: String(localized: "data.appleAreaSub"))
+                            .accessibilityIdentifier("data.appleArea")
                     }
                 }
                 Text("data.foot")

@@ -65,6 +65,16 @@ interface TodayComposerDraft {
      *  the draft is then sent as an ordinary message, with a quiet note. */
     context?: ComposerSourceContext;
     preview?: TodayChatPreview;
+    /** Set when the message is attached to something with nothing written
+     *  yet (an Ask about {topic}, computer-conformance-answers v1.2.0 T11):
+     *  the chip and placeholder stay until it is taken off or sent. */
+    about?: ComposerAbout;
+}
+
+/** The chip a message attached to something shows, and its field's words. */
+export interface ComposerAbout {
+    title: string;
+    placeholder?: string;
 }
 
 // ── Shared send helper ──
@@ -404,7 +414,7 @@ export function useComposerInput({
     const setPrompt = useCallback((value: string) => {
         composerRevisionRef.current += 1;
         promptRevisionRef.current += 1;
-        const draft = (todayDraftRef.current?.context?.offerReferences || (todayDraftRef.current?.preview?.status === 'loading' && !todayDraftRef.current.context)) ? todayDraftRef.current : !value.trim() ? null : todayDraftHistoryRef.current.has(value)
+        const draft = (todayDraftRef.current?.about || todayDraftRef.current?.context?.offerReferences || (todayDraftRef.current?.preview?.status === 'loading' && !todayDraftRef.current.context)) ? todayDraftRef.current : !value.trim() ? null : todayDraftHistoryRef.current.has(value)
             ? todayDraftHistoryRef.current.get(value)! : todayDraftRef.current;
         todayDraftRef.current = draft;
         rememberTodayDraft(value, draft);
@@ -414,7 +424,7 @@ export function useComposerInput({
     const replacePrompt = useCallback((value: string) => {
         composerRevisionRef.current += 1;
         promptRevisionRef.current += 1;
-        const draft = (todayDraftRef.current?.context?.offerReferences || (todayDraftRef.current?.preview?.status === 'loading' && !todayDraftRef.current.context)) ? todayDraftRef.current : todayDraftHistoryRef.current.get(value) ?? null;
+        const draft = (todayDraftRef.current?.about || todayDraftRef.current?.context?.offerReferences || (todayDraftRef.current?.preview?.status === 'loading' && !todayDraftRef.current.context)) ? todayDraftRef.current : todayDraftHistoryRef.current.get(value) ?? null;
         todayDraftRef.current = draft;
         rememberTodayDraft(value, draft);
         setTodayPreview(draft?.preview);
@@ -429,6 +439,26 @@ export function useComposerInput({
         setPromptState(text);
         setImages([]);
         setFiles([]);
+    }, []);
+    // Attached with nothing written (T11): the chip and the placeholder show,
+    // the field is empty and nothing is sent until the person types.
+    const [, setAboutRevision] = useState(0);
+    const attachAbout = useCallback((sessionId: string, context: TodayChatContextRef, about: ComposerAbout) => {
+        composerRevisionRef.current += 1;
+        promptRevisionRef.current += 1;
+        todayDraftRef.current = { sessionId, context, about };
+        setTodayPreview(undefined);
+        setPromptState('');
+        setImages([]);
+        setFiles([]);
+        setAboutRevision((n) => n + 1);
+    }, []);
+    const detachAbout = useCallback(() => {
+        if (!todayDraftRef.current?.about) return;
+        composerRevisionRef.current += 1;
+        todayDraftRef.current = null;
+        setTodayPreview(undefined);
+        setAboutRevision((n) => n + 1);
     }, []);
     const prefillOfferPrompt = useCallback((sessionId: string, text: string, reference: TaskOfferReference) => {
         prefillTodayPrompt(sessionId, text, { sourceKind: 'task_offer', sourceId: reference.id, offerReferences: [{ ...reference }] });
@@ -1345,6 +1375,9 @@ export function useComposerInput({
         prefillTodayPrompt,
         prefillOfferPrompt,
         prepareTodayPrompt,
+        attachAbout,
+        detachAbout,
+        about: todayDraftRef.current?.sessionId === activeSession?.localId ? todayDraftRef.current?.about : undefined,
         attachTodayBrief,
         getDraftRevision,
         beginTodayBrief,

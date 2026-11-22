@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AssistantHistoryView, CalendarFirstDay, HistoryProject, WatchedToday } from "@/lib/wails-shim-app";
 import type { FirstDay } from "@/hooks/useFirstDay";
 import { firstDayStarters, meetingStarter, projectWithProblem, type StarterText } from "@/lib/first-day-starters";
-import { GettingToKnowYou, YourProjects, firstDayLine, watchedDuration, type GettingToKnowYouProps } from "./today/TodayFirstDay";
+import { GettingToKnowYou, firstDayLine, watchedDuration, type GettingToKnowYouProps } from "./today/TodayFirstDay";
 import { CalendarPeopleSection, nextMeetingLine } from "./people-first-day";
 import { FirstDayChatStarters } from "./main-chat/first-day-starters";
 
@@ -194,16 +194,6 @@ describe("Getting to know you", () => {
         expect(row).toHaveTextContent("Ready above");
         fireEvent.click(within(row as HTMLElement).getByRole("button"));
         expect(props.onOpenBrief).toHaveBeenCalled();
-    });
-});
-
-describe("Your projects", () => {
-    it("shows the three busiest projects with the history as source", () => {
-        const projects = ["a", "b", "c", "d"].map((id, i) => project({ id, name: id, sessions14d: i }));
-        render(<YourProjects history={history({ projects, assistants: ["claude", "codex"] })} now={NOW} />);
-        const cards = Array.from(document.querySelectorAll("[data-project-card]")).map((c) => c.getAttribute("data-project-card"));
-        expect(cards).toEqual(["d", "c", "b"]);
-        expect(screen.getByTestId("your-projects")).toHaveTextContent("Claude Code and Codex history");
     });
 });
 

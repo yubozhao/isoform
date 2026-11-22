@@ -52,6 +52,7 @@ func (*WebFetchTool) NeedsPermission(input map[string]any) (bool, PermissionProm
 	return false, PermissionPrompt{}
 }
 
+//isoform:destination assistant_search
 func (t *WebFetchTool) Execute(ctx context.Context, call ToolCall) (ToolResult, error) {
 	raw, _ := call.Input["url"].(string)
 	if raw == "" {

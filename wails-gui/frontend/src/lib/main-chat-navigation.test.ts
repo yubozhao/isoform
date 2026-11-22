@@ -68,6 +68,15 @@ describe('main chat App routing', () => {
         expect(h.openToday).not.toHaveBeenCalled();
     });
 
+    it('opens a watch source on its conversation and day, and the Watch tab without a day', async () => {
+        const h = { ...handlers(), openWatch: vi.fn(), openActivityConversation: vi.fn() };
+        await openMainChatTarget({ kind: 'watch', id: 'conv-1', day: '2026-11-19' }, h);
+        expect(h.openActivityConversation).toHaveBeenCalledWith('2026-11-19', 'conv-1');
+        expect(h.openWatch).not.toHaveBeenCalled();
+        await openMainChatTarget({ kind: 'watch', id: 'conv-1' }, h);
+        expect(h.openWatch).toHaveBeenCalledOnce();
+    });
+
     it('opens only the installed Mail app and never uses message data as a URL', async () => {
         const h = handlers();
         await openMainChatTarget({ kind: 'mail', id: 'mailto:someone@example.com?body=private', runId: 'https://untrusted.invalid' }, h);

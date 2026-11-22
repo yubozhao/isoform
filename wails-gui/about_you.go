@@ -43,11 +43,20 @@ type AboutYouBelief struct {
 	// AgentPractice marks a belief about how the person runs their coding
 	// agents (hubs, PRs, workers). Set only while the agent section is on.
 	AgentPractice bool `json:"agentPractice,omitempty"`
+	// ConfirmedHow is how a confirmed belief was confirmed: "confirmed",
+	// "edited" or "said" (about_you_confirmed_how.go); ConfirmedHowAt is when.
+	ConfirmedHow   string `json:"confirmedHow,omitempty"`
+	ConfirmedHowAt int64  `json:"confirmedHowAt,omitempty"`
+	// ImportedFrom names the other AI a claim was brought in from.
+	ImportedFrom string `json:"importedFrom,omitempty"`
 }
 
 type AboutYouTotals struct {
 	Beliefs   int `json:"beliefs"`
 	Confirmed int `json:"confirmed"`
+	// NotQuite counts the claims the person said No to; Confirmed plus
+	// NotQuite is every judged claim.
+	NotQuite int `json:"notQuite"`
 }
 
 type AboutYouStorage struct {
@@ -60,8 +69,11 @@ type AboutYouStorage struct {
 type AboutYouView struct {
 	Beliefs     []AboutYouBelief `json:"beliefs"`
 	NewThisWeek []string         `json:"newThisWeek"`
-	Totals      AboutYouTotals   `json:"totals"`
-	Storage     AboutYouStorage  `json:"storage"`
+	// ImportMore holds the unjudged imported claims past the first
+	// aboutYouImportShown, by the AI they came from.
+	ImportMore []AboutYouImportMore `json:"importMore"`
+	Totals     AboutYouTotals       `json:"totals"`
+	Storage    AboutYouStorage      `json:"storage"`
 	// AgentSection groups agent-practice beliefs under one collapsed
 	// section and caps them among the top beliefs (flag, default off).
 	AgentSection bool `json:"agentSection,omitempty"`
@@ -90,12 +102,13 @@ func (a *App) getAboutYouNow() (AboutYouView, error) {
 	if err != nil {
 		return AboutYouView{}, err
 	}
-	out := AboutYouView{Beliefs: []AboutYouBelief{}, NewThisWeek: []string{}}
+	out := AboutYouView{Beliefs: []AboutYouBelief{}, NewThisWeek: []string{}, ImportMore: []AboutYouImportMore{}}
 	now := time.Now()
 	today := localBeliefDay(now)
 	weekStart := today.AddDate(0, 0, -6).UnixMilli()
 	nextDay := today.AddDate(0, 0, 1).UnixMilli()
-	var newBeliefs []AboutYouBelief
+	var newBeliefs, imported []AboutYouBelief
+	answers := a.beliefAnswers()
 	candidates := a.portraitService().candidateIDs()
 	out.AgentSection = a.aboutYouAgentSectionEnabled()
 	for _, entry := range entries {
@@ -105,12 +118,23 @@ func (a *App) getAboutYouNow() (AboutYouView, error) {
 		}
 		belief.PortraitCandidate = candidates[belief.ID]
 		belief.AgentPractice = out.AgentSection && beliefNamesAgentPractice(belief.Title)
+		answer, answered := answers[belief.ID]
+		belief.ConfirmedHow, belief.ConfirmedHowAt = confirmedHow(belief, answer, answered)
+		belief.ImportedFrom = importedMemoryLabel(belief.Source)
 		out.Beliefs = append(out.Beliefs, belief)
-		if belief.Status == "confirmed" {
+		switch belief.Status {
+		case "confirmed":
 			out.Totals.Confirmed++
+		case "not_quite":
+			out.Totals.NotQuite++
 		}
-		// An answered belief lives in its group, not in New this week.
-		if belief.Status != "confirmed" && belief.Status != "not_quite" && belief.FirstLearnedAt >= weekStart && belief.FirstLearnedAt < nextDay {
+		// An answered belief lives in its group, not in New this week. An
+		// imported one stays first until it is judged, whatever its week.
+		unjudged := belief.Status != "confirmed" && belief.Status != "not_quite"
+		switch {
+		case unjudged && belief.ImportedFrom != "":
+			imported = append(imported, belief)
+		case unjudged && belief.FirstLearnedAt >= weekStart && belief.FirstLearnedAt < nextDay:
 			newBeliefs = append(newBeliefs, belief)
 		}
 		out.Storage.Bytes += entry.SizeBytes
@@ -121,7 +145,9 @@ func (a *App) getAboutYouNow() (AboutYouView, error) {
 		}
 		return newBeliefs[i].FirstLearnedAt > newBeliefs[j].FirstLearnedAt
 	})
-	out.NewThisWeek = topNewBeliefIDs(newBeliefs, 5)
+	shown, more := importedNewBeliefIDs(imported)
+	out.NewThisWeek = append(shown, topNewBeliefIDs(newBeliefs, 5)...)
+	out.ImportMore = more
 	out.Totals.Beliefs, out.Storage.Files = len(entries), len(entries)
 	status := a.GetMemoryStatus()
 	out.Storage.Chunks, out.Storage.VectorReady = status.Chunks, status.VectorReady

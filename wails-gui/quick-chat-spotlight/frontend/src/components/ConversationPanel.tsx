@@ -49,6 +49,7 @@ type Action =
     | { type: "set_streaming"; streaming: boolean }
     | { type: "clear_permission"; eventId?: string }
     | { type: "edit_truncate"; itemId: string; newContent: string }
+    | { type: "append_item"; item: import("@/types").StreamItem }
     | { type: "reset" };
 
 function reduce(state: StreamState, action: Action): StreamState {
@@ -70,6 +71,11 @@ function reduce(state: StreamState, action: Action): StreamState {
             return clearPermission(state, action.eventId);
         case "edit_truncate":
             return editAndTruncate(state, action.itemId, action.newContent);
+        case "append_item":
+            // A row the main chat wrote for this exchange (its sources line),
+            // once, even when the snapshot already had it.
+            if (state.items.some((item) => item.id === action.item.id)) return state;
+            return { ...state, items: [...state.items, action.item] };
         case "reset":
             return initialStreamState;
     }
@@ -168,6 +174,9 @@ export function ConversationPanel({ detection, userPrompt, sessionLocalId, first
                 break;
             case "deliverable_proposed":
                 setDeliverable(ev.data);
+                break;
+            case "item":
+                dispatch({ type: "append_item", item: fromStreamItemData(ev.data) });
                 break;
             case "user_message":
             case "assistant_started":

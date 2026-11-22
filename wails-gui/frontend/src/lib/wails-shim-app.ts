@@ -572,6 +572,9 @@ export interface TroubleLine {
     kind: "screen" | "signed_out" | "offline" | "phone";
     since: string;
     assistant?: string;
+    /** On a phone line: the watch was listening when the phone went quiet
+     *  (computer-conformance-answers v1.4.0 W3). */
+    watchListening?: boolean;
     fix?: "open_settings" | "sign_in";
 }
 export interface TroubleList {
@@ -579,12 +582,31 @@ export interface TroubleList {
 }
 export const GetTrouble = appBinding<[], TroubleList>("GetTrouble");
 export const OpenTroubleFix = appBinding<[string], void>("OpenTroubleFix");
+export interface FindingProviderView {
+    choice: "local" | "ollama" | "openai";
+    hasOpenAIKey: boolean;
+    address?: string;
+    onThisComputer?: boolean;
+    localModelDownloaded: boolean;
+    localModelBytes: number;
+}
+export const GetFindingProvider = appBinding<[], FindingProviderView>("GetFindingProvider");
+export const SetFindingProvider = appBinding<[FindingProviderView["choice"], string, string], FindingProviderView>("SetFindingProvider");
+
 // Settings › Your data's numbers (your_data_summary.go).
 export interface YourDataSummary {
     retentionDays: number;
     ignoredApps: number;
+    findingLeaves?: { service: "openai" | "ollama"; address?: string; thisWeek?: number };
     handoffsThisWeek: number;
     pairedDevices: number;
+    /** This week's briefs and Chat answers the assistant was given data for (See them's record).
+     *  Omitted when the record can't be read: show its failure line, never a zero. */
+    assistantBriefs?: number;
+    assistantAnswers?: number;
+    /** This week's proposals it wrote and stretches of the day it read. */
+    assistantProposals?: number;
+    assistantDay?: number;
     answers: number;
     answersSince?: string;
     screenBytes: number;
@@ -596,8 +618,82 @@ export interface YourDataSummary {
     watchBytes?: number;
     agentsHistoryItems?: number;
     agentsHistoryBytes?: number;
+    /** This week's hand-offs per agent: "claude-code", "codex", or "" for the app's own assistant. */
+    handoffsByAgent?: Record<string, number>;
+    callsOn?: boolean;
+    messagesOn?: boolean;
+    agentsHistoryOn?: boolean;
 }
 export const GetYourDataSummary = appBinding<[], YourDataSummary>("GetYourDataSummary");
+// See them: what the assistant was given this week, by name and time (assistant_given.go).
+export interface AssistantGivenSource {
+    kind: string;
+    count: number;
+}
+export interface AssistantGivenStretch {
+    from: number;
+    to: number;
+    times: number;
+    screen: boolean;
+    everyMinutes: number;
+    wechat: number;
+    calls: number;
+    messages: number;
+}
+export interface AssistantGivenWatch {
+    from: number;
+    to: number;
+    name?: string;
+}
+export interface AssistantGivenBrief {
+    briefId: string;
+    at: number;
+    sources: AssistantGivenSource[];
+}
+export interface AssistantGivenAnswer {
+    itemId?: string;
+    at: number;
+    question?: string;
+    sources: AssistantGivenSource[];
+    /** False for an answer that names nothing it read: Forget can't remove it. */
+    removable: boolean;
+}
+/** "{name} · {n} times · From: summaries Isoform already wrote". */
+export interface AssistantGivenPass {
+    pass: "purpose" | "work_profile" | "questions" | "self_dream" | "weekly" | "recent";
+    times: number;
+}
+/** One hour of a background pass in a group: "10 AM · Learning about you · 3 times". */
+export interface AssistantGivenHour {
+    group: "sense" | "about" | "work";
+    from: number;
+    to: number;
+    times: number;
+    made?: number;
+    sources: AssistantGivenSource[];
+    /** False when it names nothing it read: counted by the hour (see.byHour). */
+    removable: boolean;
+}
+export interface AssistantGivenProposal {
+    proposalId: string;
+    at: number;
+    title?: string;
+}
+export interface AssistantGivenView {
+    stretches: AssistantGivenStretch[];
+    watch: AssistantGivenWatch[];
+    briefs: AssistantGivenBrief[];
+    answers: AssistantGivenAnswer[];
+    proposals: AssistantGivenProposal[];
+    sense: AssistantGivenHour[];
+    about: AssistantGivenHour[];
+    work: AssistantGivenHour[];
+    /** The summary-reading passes, one row each for the week, in Learning about you (design T14). */
+    passes: AssistantGivenPass[];
+    /** Calls the record keeps that no group shows yet. */
+    held: number;
+}
+export const GetAssistantGiven = appBinding<[], AssistantGivenView>("GetAssistantGiven");
 // Saves Your answers to a file the person picks; false when cancelled.
 export const ExportAnswers = appBinding<[], boolean>("ExportAnswers");
 export const DeleteAnswers = appBinding<[], void>("DeleteAnswers");
@@ -1030,6 +1126,9 @@ export interface MobileBriefRef {
     sourceId: string;
     label: string;
     observedAt: string;
+    /** The kind "In this brief" lists it under (Go brief_sources.go);
+     *  absent for a source of none of them. */
+    group?: "calendar" | "mail" | "messages" | "reminders" | "calls" | "watch" | "agents" | "screen";
 }
 
 export interface MobileBriefSections {
@@ -1184,13 +1283,6 @@ export interface MobileBriefWeek {
     ask?: { day?: string; text: string; message: string; cardId?: string; topicId?: string; hold?: TodayDayShapeHold };
 }
 
-export interface YourWeekEntry {
-    briefId?: string;
-    timeZone?: string;
-    week?: MobileBriefWeek;
-    cards: MobileBriefCard[];
-}
-
 // Today's brief (wails-gui/brief_today.go): today's newest brief, whether one
 // is being built, the next slot, and what Isoform cannot see when it is empty.
 export type TodayBriefMissing = "screen_recording" | "accessibility" | "calendars";
@@ -1316,7 +1408,15 @@ export const ListPastBriefs = appBinding<[], MobileBriefSummary[]>("ListPastBrie
  *  words are composed on the computer; the clients group items by state. */
 /** key names a fixed phrase and at a time (rendered in the reader's day words); text is the fallback. */
 export interface WorkTextPart { text: string; ref?: string; key?: string; at?: string }
+export interface WorkRequest {
+    from: { agentId: string; name: string };
+    to: { agentId: string; name: string };
+    moves?: string;
+    sendError?: string;
+    sendReason?: string;
+}
 export interface WorkItem {
+    request?: WorkRequest;
     id: string;
     kind: "done" | "offered" | "claim" | "result" | "check" | string;
     row: "draft" | "prep" | "check" | "offered" | "claim" | "result" | string;
@@ -1333,9 +1433,17 @@ export interface WorkItem {
     reasons: string[];
     answer?: { action: string; reason?: string; edited?: { before: string; after: string }; at: string; surface: string; line?: string; undoUntil?: string; notSent?: boolean };
     agent?: { name: string; since?: string };
+    /** A result's files (PROTOCOL.md 26.6): id is what open_file takes;
+     *  where says where it lives; readable is text the phone may read. */
+    files?: WorkFile[];
+    /** Work the person took back from its agent (26.6). */
+    takenBack?: { agentId?: string; agentName: string; at: string; undoUntil?: string };
+    expiresAt?: string;
     createdAt: string;
     order: number;
 }
+/** A file an agent made with its result (Go work_handoff_actions.go WorkFile). */
+export interface WorkFile { id: string; name: string; where: string; readable: boolean; bytes?: number }
 export interface WorkList {
     v: number;
     version: string;
@@ -1352,6 +1460,7 @@ export interface WorkList {
 export interface WorkAnswerInput { action: string; reason?: string; before?: string; after?: string; removed?: string[]; agentId?: string; send?: boolean; recordId?: string }
 export const GetWorkList = appBinding<[], WorkList>("GetWorkList");
 export const AnswerWork = appBinding<[id: string, input: WorkAnswerInput], WorkItem>("AnswerWork");
+export const SendAgentRequestAgain = appBinding<[requestID: string], void>("SendAgentRequestAgain");
 export const UndoWork = appBinding<[id: string], WorkItem>("UndoWork");
 export const SaveMorningBriefWeekIntent = appBinding<[briefID: string, answer: string], void>("SaveMorningBriefWeekIntent");
 export const PostMorningBriefWeekAnswer = appBinding<[briefID: string, previous: string, answer: string], void>("PostMorningBriefWeekAnswer");
@@ -1372,7 +1481,6 @@ export const GetPersonBrief = appBinding<[string], PersonBrief | null>("GetPerso
 export const OpenPersonReplyDraft = appBinding<[string, string, string], string>("OpenPersonReplyDraft");
 export const PostTodayClosingAnswer = appBinding<[briefID: string, cardID: string, shownMessage: string, previous: string], NonNullable<TodayBriefView["closingAnswer"]>>("PostTodayClosingAnswer");
 export const ChangeMorningBriefWeekIntent = appBinding<[briefID: string, previous: string, answer: string], void>("ChangeMorningBriefWeekIntent");
-export const GetYourWeekForDate = appBinding<[string], YourWeekEntry>("GetYourWeekForDate");
 
 // New finds on the user's topics (wails-gui/topic_finds.go).
 export interface TopicFind {
@@ -4062,13 +4170,7 @@ export interface NoticedSuggestion {
     why: string;
     routine?: NoticedRoutineDraft;
 }
-export interface NoticedRoutineSaved {
-    home: "schedule" | "knowhow";
-    id: string;
-}
 export const GetDayNoticed = appBinding<[string], NoticedSuggestion[]>("GetDayNoticed");
-export const DismissNoticed = appBinding<[string, string], void>("DismissNoticed");
-export const UndoDismissNoticed = appBinding<[string, string], void>("UndoDismissNoticed");
 export interface TodayNoticedSchedule { id: string; revision: string; proof: string }
 export const AddTodayNoticedSchedule = appBinding<[MobileBriefActivityTarget], TodayNoticedSchedule>("AddTodayNoticedSchedule");
 export const UndoTodayNoticedSchedule = appBinding<[MobileBriefActivityTarget, TodayNoticedSchedule], void>("UndoTodayNoticedSchedule");
@@ -4076,7 +4178,6 @@ export const CorrectTodayWeekBelief = appBinding<[string, string, string, string
 export const UndoTodayWeekBelief = appBinding<[string, string], void>("UndoTodayWeekBelief");
 export const CanUndoTodayWeekBelief = appBinding<[string], boolean>("CanUndoTodayWeekBelief");
 export const EditTodayNoticedSchedule = appBinding<[MobileBriefActivityTarget, TodayNoticedSchedule, string, NoticedRoutineDraft | null], TodayNoticedSchedule>("EditTodayNoticedSchedule");
-export const SaveNoticedRoutine = appBinding<[string, string, NoticedRoutineDraft], NoticedRoutineSaved>("SaveNoticedRoutine");
 export interface ActivityThreadResumePoint {
     kind: "path" | "pr" | "repo" | "figure";
     label: string;
@@ -4150,7 +4251,7 @@ export const SendWorkOnIt = appBinding<[string, string, string], WorkOnItSent>("
 export const SetWorkOnItHandle = appBinding<[string, string], void>("SetWorkOnItHandle");
 // Your agents: one for code, one for everything else (your_agents.go, phone-map B4).
 export type YourAgentReach = "connected" | "connected_computer" | "on_computer" | "its_app" | "by_text" | "disconnected";
-export interface YourAgentView { id: string; name: string; kind: WorkOnItKind; reach: YourAgentReach; found: boolean; connected: boolean; connectedHere?: boolean; lastWorkedAt?: number; disconnectedAt?: number }
+export interface YourAgentView { learnFromIt?: boolean; id: string; name: string; kind: WorkOnItKind; reach: YourAgentReach; found: boolean; connected: boolean; connectedHere?: boolean; lastWorkedAt?: number; disconnectedAt?: number; connectedAt?: number; opens?: boolean }
 export interface YourAgents { choices: Record<WorkOnItKind, string>; agents: YourAgentView[] }
 export interface WorkOnItHandoff { id: string; sourceKind: WorkOnItSourceKind; sourceId?: string; kind: WorkOnItKind; agentId: string; method: WorkOnItMethod; via?: string; text: string; sent?: string; sentAt: number; surface: "computer" | "phone"; agentName?: string; taskId?: string; taskState?: "running" | "done" | "failed"; taskResult?: string }
 export const GetYourAgents = appBinding<[], YourAgents>("GetYourAgents");
@@ -4184,6 +4285,9 @@ export const OpenAgentFile = appBinding<[string, string], void>("OpenAgentFile")
 export type HandoffState = "sent" | "opened" | "has_it" | "working" | "back" | "no_word" | "couldnt_start" | "taken_back";
 export interface HandoffStatus { id: string; agentId: string; agentName: string; title: string; sentAt: number; state: HandoffState; line?: string; since?: number }
 export const GetHandoffStatuses = appBinding<[], HandoffStatus[]>("GetHandoffStatuses");
+// An agent's card (agents_card.go): Open {agent}, and the hand-offs judged Useful.
+export const OpenAgentApp = appBinding<[string], void>("OpenAgentApp");
+export const GetUsefulHandoffs = appBinding<[], string[]>("GetUsefulHandoffs");
 export const AskAgentAgain = appBinding<[string], HandoffStatus>("AskAgentAgain");
 export const TakeHandoffBack = appBinding<[string], HandoffStatus>("TakeHandoffBack");
 export const ConfirmActivityThreadLink = appBinding<[string], void>("ConfirmActivityThreadLink");
@@ -4376,8 +4480,32 @@ export type AssistantHistoryView = {
 };
 export const GetAssistantHistory = appBinding<[], AssistantHistoryView>("GetAssistantHistory");
 export const RefreshAssistantHistory = appBinding<[], void>("RefreshAssistantHistory");
+// Wails v2 references map value types in App.d.ts without emitting their models.
+declare module "@wails-generated-models" {
+    namespace main {
+        interface LearnFromItView { agentId: string; on: boolean; changedAt: number; available: boolean }
+    }
+}
+export type LearnFromItView = import("@wails-generated-models").main.LearnFromItView;
+export const GetLearnFromIt = appBinding<[], Record<string, LearnFromItView>>("GetLearnFromIt");
+export const SetLearnFromIt = appBinding<[string, boolean], void>("SetLearnFromIt");
 export const GetReadAssistantHistory = appBinding<[], boolean>("GetReadAssistantHistory");
 export const SetReadAssistantHistory = appBinding<[boolean], void>("SetReadAssistantHistory");
+/** "Listen on your watch" as Settings › What Isoform sees shows it (watch_listen_off.go). */
+export interface WatchListeningView {
+    off: boolean;
+    since?: string;
+    hasWatch: boolean;
+}
+export const GetWatchListening = appBinding<[], WatchListeningView>("GetWatchListening");
+export const TurnOffWatchListening = appBinding<[], WatchListeningView>("TurnOffWatchListening");
+/** WeChat pictures in What Isoform sees › Screen (activity_vision_switch.go). */
+export interface ActivityVisionView {
+    enabled: boolean;
+    privacyModelReady: boolean;
+}
+export const GetActivityVision = appBinding<[], ActivityVisionView>("GetActivityVision");
+export const SetActivityVisionEnabled = appBinding<[boolean], ActivityVisionView>("SetActivityVisionEnabled");
 export type CalendarWeekPerson = {
     key: string; name: string; email: string; principalId: string;
     nextMeetingTitle: string; nextMeetingAt: number; recurring: boolean; meetingsThisWeek: number;
@@ -5735,20 +5863,10 @@ export const GetStorageStartupStatus = appBinding<[], StorageStartupStatus>(
     "GetStorageStartupStatus",
 );
 
-// EnsureDailySummary / EnsureWeeklySummary: explicit bindings so the static
-// ESM imports in the activity screens resolve against the shim even while the
-// generated wailsjs file lags the Go App struct (see CLAUDE.md rule 14). Each
-// returns the cached data immediately and starts at most one background
-// generation; AutoStatus on the payload reports "ready" | "refreshing" |
-// "unavailable".
 export const EnsureDailySummary = appBinding<
     [string],
     main.DailySummaryData
 >("EnsureDailySummary");
-export const EnsureWeeklySummary = appBinding<
-    [string],
-    main.WeeklySummaryData
->("EnsureWeeklySummary");
 
 // Persists one chat row from the frontend's own StreamItemData (the generated
 // class type also needs convertValues, which a plain row never has).
@@ -5834,6 +5952,35 @@ export interface WatchRecordingLine {
     /** The wearer marked the moment these words were said. */
     marked: boolean;
 }
+export interface WatchSetting {
+    on: boolean;
+    chosen: boolean;
+}
+
+export interface WatchSettingsView {
+    paired: boolean | null;
+    lastHeardAt?: string;
+    listening: { off: boolean; since?: string };
+    notes: WatchSetting;
+    heartRate: WatchSetting;
+    place: WatchSetting;
+}
+
+export const GetWatchSettings = appBinding<[], WatchSettingsView>('GetWatchSettings');
+export const SetWatchNotes = appBinding<[boolean], WatchSettingsView>('SetWatchNotes');
+export const SetWatchHeartRate = appBinding<[boolean], WatchSettingsView>('SetWatchHeartRate');
+export const SetWatchPlace = appBinding<[boolean], WatchSettingsView>('SetWatchPlace');
+export const SetWatchListeningOff = appBinding<[], WatchSettingsView>('SetWatchListeningOff');
+
+/** Settings › Your watch's phone-quiet (W3, W5) and listening-off-pending (W7) lines. */
+export interface WatchPhoneQuietView {
+    quiet: boolean;
+    since?: string;
+    listening: boolean;
+    offPending: boolean;
+}
+export const GetWatchPhoneQuiet = appBinding<[], WatchPhoneQuietView>('GetWatchPhoneQuiet');
+
 export const GetWatchRecordings = appBinding<[], WatchRecording[]>('GetWatchRecordings');
 export const GetWatchRecordingTranscript = appBinding<[string], WatchRecordingLine[]>('GetWatchRecordingTranscript');
 export const DeleteWatchRecording = appBinding<[string], void>('DeleteWatchRecording');
@@ -5860,6 +6007,8 @@ export interface WatchConversation {
     summary: string;
     decisions: string[];
     followups: WatchConversationFollowup[];
+    /** Names the person gave its speakers, by label. */
+    speakerNames?: Record<string, string>;
 }
 export interface WatchConversationFollowup {
     text: string;
@@ -5888,11 +6037,26 @@ export interface ActivityFeedRow {
     surface?: string;
     outcome?: 'sent' | 'taken' | 'done' | 'not_done' | 'no_word';
     doneMs?: number;
-    cause?: 'screen' | 'signed_out' | 'offline' | 'restarted';
+    cause?: 'screen' | 'signed_out' | 'offline' | 'restarted' | 'phone';
     ongoing?: boolean;
+    /** The consent that let Isoform have the row; set by the backend only. */
+    basis: ActivityFeedBasis;
+    /** Watch conversation rows: who spoke ("you" first, then given names),
+     *  how many voices have no name, the marks, and whether it has notes. */
+    conversation?: boolean;
+    speakers?: string[];
+    otherVoices?: number;
+    marks?: number;
+    hasNote?: boolean;
+}
+/** Consent keys (activity_feed.go): screen, yes, watch, closed_eyes,
+ *  assistant, learn, messages. agent is set where consent is per agent. */
+export interface ActivityFeedBasis {
+    setting: 'screen' | 'yes' | 'watch' | 'closed_eyes' | 'assistant' | 'learn' | 'messages';
+    agent?: string;
 }
 export interface ActivityForgetItem {
-    kind: 'topic' | 'goal' | 'screen' | 'moment' | 'words' | 'audio' | 'copies' | 'notes';
+    kind: 'topic' | 'goal' | 'screen' | 'moment' | 'words' | 'audio' | 'copies' | 'notes' | 'followup' | 'claim' | 'conversation' | 'agent_work';
     title?: string;
     startMs?: number;
     endMs?: number;
@@ -5907,13 +6071,15 @@ export interface ActivityForgetPreview {
 export const GetActivityFeed = appBinding<[number, number], ActivityFeedRow[]>('GetActivityFeed');
 export const GetActivityForgetPreview = appBinding<[ActivityFeedKind, string], ActivityForgetPreview>('GetActivityForgetPreview');
 export const ForgetActivityFeedRow = appBinding<[ActivityFeedKind, string], void>('ForgetActivityFeedRow');
+// The Watch tab's rows: the feed's watch rows over a stretch (activity_feed_watch.go).
+export const GetActivityWatchRows = appBinding<[number, number], ActivityFeedRow[]>('GetActivityWatchRows');
 
 // The answers ledger (answers_ledger.go; PROTOCOL.md section 26.2).
-export type AnswerAction = 'yes' | 'no' | 'not_mine' | 'edit' | 'useful' | 'not_useful';
+export type AnswerAction = 'yes' | 'no' | 'not_mine' | 'edit' | 'useful' | 'not_useful' | 'not_this_topic' | 'not_this';
 export interface AnswerView {
     id: string;
     item: string;
-    kind: 'work' | 'belief' | 'portrait' | 'correction';
+    kind: 'work' | 'belief' | 'portrait' | 'correction' | 'activity';
     title?: string;
     action: AnswerAction;
     reason?: string;
@@ -5924,6 +6090,8 @@ export interface AnswerView {
     source?: string;
     deviceId?: string;
     undone?: boolean;
+    /** Your work's standing answer that Undo can still take back, until the next brief. */
+    canUndo?: boolean;
 }
 export interface AnswersPage {
     answers: AnswerView[];
@@ -5931,6 +6099,9 @@ export interface AnswersPage {
 }
 export const GetAnswers = appBinding<[number, string], AnswersPage>('GetAnswers');
 export interface JudgmentCounts {
+    topicCorrections?: number;
+    /** Not this on a moment of a claim's Why: a correction, not an answer. */
+    momentCorrections?: number;
     shown: number;
     answered: number;
     accepted: number;
@@ -6215,6 +6386,12 @@ export interface AboutYouBelief {
     /** A belief about how the person runs their coding agents; set only while
      *  AboutYouView.agentSection is on. */
     agentPractice?: boolean;
+    /** How a confirmed belief was confirmed: Yes, Edit, or the person's own
+     *  note (about_you_confirmed_how.go), and when. */
+    confirmedHow?: "confirmed" | "edited" | "said";
+    confirmedHowAt?: number;
+    /** The other AI a claim was brought in from ("ChatGPT"). */
+    importedFrom?: string;
 }
 export interface CommunicationDraftExample {
     id: string;
@@ -6232,7 +6409,9 @@ export interface CommunicationDraftExample {
 export interface AboutYouView {
     beliefs: AboutYouBelief[];
     newThisWeek: string[];
-    totals: { beliefs: number; confirmed: number };
+    /** Unjudged imported claims past the first 20, by the AI they came from. */
+    importMore?: { label: string; ids: string[] }[];
+    totals: { beliefs: number; confirmed: number; notQuite?: number };
     storage: { files: number; bytes: number; chunks: number; vectorReady: boolean };
     /** Groups agent-practice beliefs under one collapsed section (flag, default off). */
     agentSection?: boolean;
@@ -6267,6 +6446,41 @@ export const GetBackgroundListening = appBinding<[], boolean>("GetBackgroundList
 export const LoadUIState = appBinding<[string], string>("LoadUIState");
 export const GetCommunicationDraftExamples = appBinding<[string], CommunicationDraftExample[]>("GetCommunicationDraftExamples");
 export const GetMemoryEvidenceReadable = appBinding<[string], ReadableEvidence[]>("GetMemoryEvidenceReadable");
+// Why (why.go, redesign v1.0.0 rule 16): the moments a claim or a piece of
+// work came from, by day and source; titles only, never captured text.
+export type WhyKind = 'claim' | 'work';
+export type WhySource = 'screen' | 'mail' | 'calendar' | 'call' | 'watch' | 'messages' | 'agent' | 'chat';
+export interface WhyMoment {
+    id: string;
+    at: number;
+    source: WhySource;
+    app?: string;
+    title?: string;
+    activitySessionId?: string;
+    feedRowId?: string;
+    canNotThis: boolean;
+}
+export interface WhyDay {
+    /** Local day, YYYY-MM-DD; "" for links without a time. */
+    day: string;
+    moments: WhyMoment[];
+}
+export interface WhySummary {
+    total: number;
+    bySource: Partial<Record<WhySource, number>>;
+    thisWeek: number;
+    importedFrom?: string;
+}
+export interface WhyView {
+    kind: WhyKind;
+    id: string;
+    summary: WhySummary;
+    days: WhyDay[];
+}
+export const GetWhy = appBinding<[WhyKind, string], WhyView>("GetWhy");
+// Not mine on an About you claim (about_you_not_mine.go).
+export const NotMineMemoryEntry = appBinding<[string], void>("NotMineMemoryEntry");
+export const NotThis = appBinding<[WhyKind, string, string], void>("NotThis");
 export const GetEntryUses = appBinding<[string, string], EntryUses>("GetEntryUses");
 export const GetEntryUseCounts = appBinding<[string, string[]], Record<string, number>>("GetEntryUseCounts");
 // Settings Overview (RC 1 A7, settings_overview.go): one structured section
@@ -6600,3 +6814,43 @@ export const NoteFindSearch = appBinding<[string], void>("NoteFindSearch");
 export const ListFindSearches = appBinding<[number, number], FindSearch[]>("ListFindSearches");
 export const ForgetFindSearch = appBinding<[string], void>("ForgetFindSearch");
 export const ForgetFound = appBinding<[string, string, string], void>("ForgetFound");
+
+// Forget one watch conversation (watch_conversation_forget.go)
+export interface WatchConversationAudioCut {
+    recordingId: string;
+    startMs: number;
+    endMs: number;
+}
+export interface WatchConversationForgetItem {
+    id: string;
+    title: string;
+}
+export interface WatchConversationForgetPreview {
+    id: string;
+    name: string;
+    lineCount: number;
+    audio: WatchConversationAudioCut[];
+    hasNote: boolean;
+    followups: WatchConversationForgetItem[];
+    claims: WatchConversationForgetItem[];
+    stayingWithAgents: string[];
+    count: number;
+}
+export const GetWatchConversationForgetPreview = appBinding<[string], WatchConversationForgetPreview>("GetWatchConversationForgetPreview");
+export const ForgetWatchConversation = appBinding<[string], void>("ForgetWatchConversation");
+
+// Activity row topics and open targets (activity_row_topic.go)
+export interface ActivityOpenTarget {
+    kind: 'page' | 'file' | 'call';
+    label: string;
+}
+export interface ActivityRowDetail {
+    kind: ActivityFeedKind;
+    id: string;
+    topicId?: string;
+    topicName?: string;
+    open?: ActivityOpenTarget;
+}
+export const GetActivityRowDetails = appBinding<[number, number], ActivityRowDetail[]>('GetActivityRowDetails');
+export const OpenActivityRow = appBinding<[ActivityFeedKind, string], void>('OpenActivityRow');
+export const NotThisTopic = appBinding<[ActivityFeedKind, string, string], void>('NotThisTopic');

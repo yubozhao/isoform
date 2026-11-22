@@ -47,6 +47,7 @@ func listenIPC(appID string) (net.Listener, error) {
 	return l, nil
 }
 
+//isoform:destination local
 func dialIPC(appID string, timeout time.Duration) (net.Conn, error) {
 	path, err := socketPath(appID)
 	if err != nil {

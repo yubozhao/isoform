@@ -129,3 +129,25 @@ describe("TodayBriefBand", () => {
         expect(first).toHaveTextContent(/Your first brief comes at 6:00\sPM, made from today on this computer\./);
     });
 });
+
+describe("TodayBriefBand at every size (computer-window v1.0.0 rules 6, 7, 9)", () => {
+    beforeEach(async () => { await i18n.changeLanguage("en"); });
+    afterEach(cleanup);
+
+    it("reads its first sentences, capped at 720 and two lines under 640 tall", () => {
+        band();
+        const lead = screen.getByTestId("brief-band-lead");
+        expect(lead).toHaveTextContent("Daily test brief: the Halcyon review is the first thing today.");
+        expect(lead).toHaveClass("max-w-[720px]", "[@media(max-height:639px)]:line-clamp-2");
+    });
+
+    it("has In this brief as a column at 880 and as one line with Past briefs below it", () => {
+        band();
+        expect(screen.getByTestId("brief-band-contents")).toHaveClass("hidden", "@min-[880px]:flex");
+        const line = screen.getByTestId("brief-band-contents-line");
+        expect(line).toHaveClass("@min-[880px]:hidden");
+        expect(line.textContent).toContain(" · ");
+        expect(screen.getByTestId("brief-band-past-inline")).toBeInTheDocument();
+        expect(screen.getByTestId("today-brief-band-frame")).toHaveClass("@container");
+    });
+});

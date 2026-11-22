@@ -1362,12 +1362,14 @@ func (a *App) SaveMemoryDiary(content string) error {
 }
 
 // GetMemoryConfig returns the current memory store configuration.
-func (a *App) GetMemoryConfig() MemoryStoreConfig {
+func (a *App) GetMemoryConfig() (MemoryStoreConfig, error) {
 	dataRoot, err := flavorDataDir()
 	if err != nil {
-		return MemoryStoreConfig{}
+		return MemoryStoreConfig{}, err
 	}
-	return loadMemoryStoreConfig(dataRoot)
+	cfg, err := loadMemoryStoreConfig(dataRoot)
+	cfg.APIKey = ""
+	return cfg, err
 }
 
 // SaveMemoryConfig saves the memory store configuration and reinitializes the store.
@@ -1376,7 +1378,31 @@ func (a *App) SaveMemoryConfig(cfg MemoryStoreConfig) error {
 	if err != nil {
 		return err
 	}
+	a.memoryConfigMu.Lock()
+	defer a.memoryConfigMu.Unlock()
+	saved, err := loadMemoryStoreConfig(cfgDir)
+	if err != nil {
+		return err
+	}
+	if key := strings.TrimSpace(cfg.APIKey); key != "" && key != strings.TrimSpace(saved.APIKey) {
+		return fmt.Errorf("save the OpenAI key in Your AI")
+	}
+	cfg.APIKey = saved.APIKey
+	return a.applyMemoryConfig(cfgDir, cfg)
+}
+
+func (a *App) applyMemoryConfig(cfgDir string, cfg MemoryStoreConfig) error {
+	if cfg.BaseURL != "" {
+		if _, err := findingURL(cfg.BaseURL); err != nil {
+			return err
+		}
+	}
+	ms, err := NewMemoryStore(cfgDir, cfg, a.emitDownloadProgress)
+	if err != nil {
+		return err
+	}
 	if err := saveMemoryStoreConfig(cfgDir, cfg); err != nil {
+		ms.Close()
 		return err
 	}
 
@@ -1389,9 +1415,8 @@ func (a *App) SaveMemoryConfig(cfg MemoryStoreConfig) error {
 		oldStore.Close()
 	}
 
-	ms, err := NewMemoryStore(cfgDir, cfg, a.emitDownloadProgress)
-	if err != nil {
-		return err
+	if a.activity != nil && a.activity.store != nil {
+		a.activity.store.SetEmbedder(ms.onDeviceEmbedder())
 	}
 
 	a.mu.Lock()
@@ -1403,7 +1428,9 @@ func (a *App) SaveMemoryConfig(cfg MemoryStoreConfig) error {
 			a.emitBrowserEvent("memory:updated", map[string]string{"reason": "index"})
 		}
 	})
-	go ms.Run(a.ctx)
+	if a.ctx != nil {
+		go ms.Run(a.ctx)
+	}
 
 	return nil
 }
@@ -1438,6 +1465,20 @@ func (a *App) TestEmbedding(cfg MemoryStoreConfig) TestEmbeddingResult {
 	cfgDir, err := flavorDataDir()
 	if err != nil {
 		return TestEmbeddingResult{Error: err.Error()}
+	}
+
+	if cfg.Provider == "openai" {
+		findingSendMu.RLock()
+		defer findingSendMu.RUnlock()
+		saved, err := loadMemoryStoreConfig(cfgDir)
+		if err != nil {
+			return TestEmbeddingResult{Error: err.Error()}
+		}
+		if saved.effectiveFindingProvider() != "openai" || (cfg.APIKey != "" && strings.TrimSpace(cfg.APIKey) != strings.TrimSpace(saved.APIKey)) ||
+			strings.TrimRight(cfg.BaseURL, "/") != strings.TrimRight(saved.BaseURL, "/") {
+			return TestEmbeddingResult{Error: "Save the OpenAI settings before testing the connection."}
+		}
+		cfg.APIKey = saved.APIKey
 	}
 
 	embedder := resolveEmbeddingProvider(cfgDir, cfg, a.emitDownloadProgress)

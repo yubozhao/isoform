@@ -258,15 +258,13 @@
         "show": "Show sidebar",
         "waitingOverflow": "9+",
         "rowWaiting": "{{label}}, {{state}}",
-        "rowUnread": "{{label}}, unread",
         "waiting": "{{count}} waiting on you",
         "newChat": "New chat",
         "searchShortcutMac": "⌘K",
         "searchShortcutOther": "Ctrl K",
         "chat": "Chat",
-        "unread": "Unread",
         "agents": "Agents",
-        "agentsWaiting": "{{count}} waiting for your Yes",
+        "agentsWaiting": "{{count}} waiting for your yes",
         "toAnswer": "{{count}} to answer",
         "phone": {
             "none": "Phone · not paired",
@@ -281,6 +279,7 @@
         "closedEyes": "Closed Eyes",
         "closedEyesOn": "Eyes closed · open them",
         "railWithCount": "{{place}}, {{detail}}",
+        "railHover": "{{name}} · {{key}}",
         "showWithKey": "Show the sidebar · {{key}}",
         "pose": {
             "listening": "Listening",
@@ -302,83 +301,50 @@
         "forget": "Forget",
         "forgetFailed": "Couldn't forget it. Try again.",
         "findFoot": "What you search for is kept on this computer, in Activity.",
-        "title": "Search and commands",
-        "description": "Search your topics, chats, activity, people and settings, or run a command.",
-        "placeholder": "Search or run a command",
-        "inputLabel": "Search everything",
+        "title": "Find",
+        "description": "Find anything Isoform keeps, ready work first, or go to a page.",
+        "placeholder": "Find anything Isoform keeps",
+        "inputLabel": "Find anything Isoform keeps",
         "count_one": "{{count}} result",
         "count_other": "{{count}} results",
         "searching": "Searching",
-        "noResults": "Nothing matches “{{query}}” in your topics, chats, activity, people, goals, know-how, About you or settings.",
+        "noResults": "Nothing matches “{{query}}”.",
         "failed": "Could not search {{places}} right now.",
-        "pausedNote": "Observing is paused, so nothing Isoform saw is searched.",
-        "topicsGathering": "Isoform is gathering your topics.",
+        "pausedNote": "Closed Eyes is on, so nothing Isoform saw is searched.",
         "enterToOpen": "Enter to open",
-        "mainChat": "Go to chat",
         "openFailed": "Could not open that. It may have been removed or hidden.",
-        "pauseFailed": "Could not change observing. Try again.",
         "hints": {
             "anywhere": "{{combo}} from anywhere",
             "move": "Up and down to move",
-            "open": "Enter to open or run",
+            "open": "Enter to open",
             "close": "Esc to clear or close",
             "words": "Searches the words, not just titles"
         },
         "groups": {
-            "conversations": "Conversations",
-            "claims": "Claims",
-            "answers": "Your answers",
             "ready": "Ready",
-            "recent": "Recent",
-            "actions": "Actions",
             "topics": "Topics",
+            "conversations": "Conversations",
+            "people": "People",
+            "claims": "Claims",
             "chats": "Chat",
-            "activity": "Activity",
-            "people": "Who you know",
-            "goals": "Goals",
-            "knowHow": "How you do things",
-            "aboutYou": "About you",
-            "upcoming": "Scheduled",
-            "handoffs": "Tasks",
-            "projects": "Projects",
-            "pages": "Pages",
+            "answers": "Your answers",
+            "goTo": "Go to"
+        },
+        "goTo": {
             "settings": "Settings"
         },
         "places": {
             "topic": "topics",
             "chat": "chats",
-            "activity": "Activity",
             "person": "people",
-            "goal": "goals",
-            "know_how": "How you do things",
-            "about_you": "About you",
-            "handoffs": "tasks"
-        },
-        "actions": {
-            "pause": "Pause observing",
-            "resume": "Resume observing",
-            "brief": "Make my brief now",
-            "toggleSidebar": "Show or hide the sidebar",
-            "settings": "Open Settings",
-            "activity": "Open Activity",
-            "knowHow": "Open How you do things",
-            "aboutYou": "Open About you"
+            "know_how": "How you do things"
         },
         "meta": {
             "ready": "Ready",
-            "today": "Today",
             "chat": "Chat",
             "topic": "Topic",
-            "moment": "Activity",
-            "thread": "Activity thread",
             "person": "Person",
-            "goal": "Goal",
-            "knowHow": "How you do things",
-            "aboutYou": "About you",
-            "upcoming": "Scheduled",
-            "handoff": "Task",
-            "project": "Project",
-            "page": "Page"
+            "knowHow": "How you do things"
         },
         "when": {
             "today": "today",
@@ -407,14 +373,6 @@
         "deleteFailed": "This chat couldn't be deleted. Try again."
     },
     "observingStatus": {
-        "label": "Observing in background",
-        "title": "Observing in background",
-        "ariaLabel": "Background observing: {{state}}",
-        "description": {
-            "screenAndAudio": "Isoform watches your screen and listens for speech to learn from your work. Everything stays on this computer.",
-            "screen": "Isoform watches your screen to learn from your work. Everything stays on this computer.",
-            "audio": "Isoform listens for speech to learn from your work. Everything stays on this computer."
-        },
         "doingNow": {
             "paused": "Paused",
             "meeting": "Listening to your {{app}} call",
@@ -425,17 +383,7 @@
             "watching": "Observing in background",
             "listening": "Listening quietly",
             "idle": "Not observing"
-        },
-        "pausedUntil": "Observing paused until {{time}}",
-        "paused": "Observing paused",
-        "notObserving": "Not observing",
-        "pause15": "Pause 15 min",
-        "pause60": "Pause 1 hour",
-        "resume": "Resume observing",
-        "settings": "Observation settings",
-        "counts": "Today: {{screens}} screens, {{minutes}} minutes of speech.",
-        "changeFailed": "Could not change observing. Try again.",
-        "countsFailed": "Today’s counts are unavailable."
+        }
     },
     "markdownContent": {
         "copyButton": {
@@ -881,13 +829,9 @@
         "saveName": "Save",
         "cancelName": "Cancel",
         "nameSaveError": "Your name was not saved. Try again.",
-        "account": "{{name}}, account menu",
-        "updateReady": "Update ready",
         "aboutDescription": "What Isoform believes about you",
         "knowHowDescription": "Your how-tos, decisions and fixes",
         "peopleDescription": "People, and what’s open with each",
-        "shortcuts": "Keyboard shortcuts",
-        "help": "Help and feedback",
         "profile": "Profile",
         "settingsShortcutMac": "⌘ ,",
         "settingsShortcutOther": "Ctrl ,",
@@ -1048,8 +992,7 @@
         "planDay": "Plan the rest of my day",
         "free": "Free {{ranges}}",
         "range": "{{start}} to {{end}}",
-        "rangesJoin": " and ",
-        "placeholder": "Ask about your day, a project or a person…"
+        "rangesJoin": " and "
     },
     "whatIsoformSees": {
         "names": {
@@ -1101,7 +1044,7 @@
             "title": "Only when you say so",
             "line": "Isoform doesn't send, delete or accept anything until you say so."
         },
-        "foot": "Change these in Settings › Privacy",
+        "foot": "Change these in Settings › What Isoform sees",
         "title": "What Isoform sees",
         "loadFailed": "Could not load what Isoform sees.",
         "close": "Close",
@@ -1272,7 +1215,7 @@
         "signIn": "Sign in",
         "signedOut": "{{assistant}} has been signed out since {{time}}, so briefs are shorter and Chat can't answer.",
         "offline": "No internet since {{time}}. Briefs are shorter until it's back.",
-        "phone": "Your phone hasn't checked in since {{time}}. Notifications show here until it does.",
+        "phone": "Your phone hasn't been in touch since {{time}}, so nothing from your watch has come since. Open Isoform on your phone to send it.",
         "more_one": "{{count}} more ›",
         "more_other": "{{count}} more ›"
     },
@@ -1288,6 +1231,16 @@
             "foundHere": "Found on this computer",
             "byText": "By text message · not connected"
         },
+        "state": {
+            "connected": "Connected",
+            "notConnected": "Not connected",
+            "disconnected": "Disconnected"
+        },
+        "where": {
+            "here": "on this computer",
+            "itsApp": "in its app; you open it",
+            "byText": "by text message"
+        },
         "working": "Working: {{title}}",
         "workingDot": "Working",
         "between": "Today, between you and your agents",
@@ -1296,8 +1249,6 @@
         "whatWent": "What went",
         "isBack": "{{agent}} is back",
         "status": {
-            "blocked": "Blocked",
-            "declined": "Declined",
             "sent": "Sent · {{time}}",
             "opened": "Opened in {{agent}} · {{time}}",
             "has": "{{agent}} has it",
@@ -1308,7 +1259,9 @@
             "couldntStart": "{{agent}} couldn't start",
             "said": "{{agent}} said: {{line}}",
             "sendAgain": "Send again",
-            "takenBack": "Taken back. {{agent}} can't open it any more; anything it already made stays with {{agent}}."
+            "takenBack": "Taken back. {{agent}} can't open it any more; anything it already made stays with {{agent}}.",
+            "nothingSent": "Nothing was sent.",
+            "openAgent": "Open {{agent}}"
         },
         "made": "Made by your agents",
         "thisWeek": "this week",
@@ -1319,9 +1272,6 @@
         },
         "connect": "Connect an agent",
         "disconnect": "Disconnect",
-        "makeCode": "Make it your agent for code",
-        "makeElse": "Make it your agent for everything else",
-        "showAll": "All agents",
         "failed": "Couldn't read your agents.",
         "actionFailed": "That didn't work. Try again.",
         "retry": "Try again",
@@ -1333,9 +1283,9 @@
             "connectThis": "Connect",
             "anyOther": "Any other agent",
             "pasteIntoTitle": "Connect {{agent}}",
-            "anyOtherHelp": "Paste it into Claude, ChatGPT, Grok, Gemini, Muse, Devin, or any agent that can read a link and run a command. It asks which device it works on, what it may open, and to confirm you; then it joins. The link works for 10 minutes.",
+            "anyOtherHelp": "Paste it into Claude, ChatGPT, Grok, Gemini, Devin, or any agent that can read a link and run a command. It asks which device it works on, what it may open, and to confirm you; then it joins. The link works for 10 minutes.",
             "pasteInto": "Paste this into {{agent}}. It reads the link, asks you three things, then joins. The link works for 10 minutes.",
-            "localOnly": "Only agents on this computer can read this link. Turn on the agent address in Settings › Other AI apps for agents anywhere.",
+            "localOnly": "Only agents on this computer can read this link.",
             "copy": "Copy",
             "copied": "Copied",
             "waiting": "Waiting for your agent to join · the link works for 10 minutes",
@@ -1345,7 +1295,6 @@
             "denied": "Not joined",
             "expired": "The link ran out",
             "newLink": "Make a new link",
-            "off": "Agents can't connect while task links are off or Closed Eyes is on.",
             "connectAsk": "Connect {{agent}}? It will receive the work you say yes to, and post results back. It sees only what each hand-off sends.",
             "connectFailed": "Couldn't connect {{agent}}. Make sure it's installed and signed in on this computer.",
             "cancel": "Cancel",
@@ -1373,7 +1322,6 @@
         },
         "backFromTask": "{{agent}} is back",
         "notFinished": "{{agent}} didn't finish",
-        "allTasks": "All tasks",
         "emptyTitle": "Connect the agents you already use",
         "emptyBody": "A yes on offered work goes to them, and what they make comes back to Your work for you to judge. They see only what each hand-off sends.",
         "untilThen": "Until you connect one, a yes on offered work copies it for you to paste.",
@@ -1383,6 +1331,48 @@
         "workingLine": "Working · {{line}}",
         "hasIt": "Has it: {{title}}",
         "lastWorked": "Last worked {{day}}",
-        "disconnectAsk": "Disconnect {{agent}}? It stops getting hand-offs at once, and can't use Isoform's tools any more. What it already made stays with it."
+        "disconnectAsk": "Disconnect {{agent}}? It stops getting hand-offs at once, and can't use Isoform's tools any more. What it already made stays with it.",
+        "rowLine": "{{job}} · {{state}}",
+        "disconnectedOn": "Disconnected · {{date}}",
+        "connectAgain": "Connect again",
+        "back": "‹ {{label}}",
+        "card": {
+            "close": "Close {{agent}}",
+            "connectedOn": "Connected {{date}}",
+            "runsWhenStarted": "runs when Isoform starts it",
+            "job": "Its job",
+            "jobCode": "For code: work that touches a repository",
+            "jobElse": "For everything else",
+            "jobNone": "Not now",
+            "changeJob": "Change its job ›",
+            "forCode": "For code",
+            "forElse": "For everything else",
+            "notNow": "Not now",
+            "mayOpenTitle": "What it may open",
+            "mayOpen": "Only what each hand-off sends, and new branches in {{repos}}.",
+            "mayOpenOther": "Only what each hand-off sends, and {{what}}.",
+            "week": "This week",
+            "weekHandoffs_one": "{{count}} hand-off",
+            "weekHandoffs_other": "{{count}} hand-offs",
+            "weekBack": "{{count}} back",
+            "weekUseful": "{{count}} useful"
+        },
+        "learnNotHere": "Not available for agents in their own app.",
+        "learned": "Learned from them",
+        "learnedFoot": "From each agent's own history, only where you turned Learn from it on.",
+        "learnOffAll": "Learn from it is off for every agent.",
+        "learnChoose": "Choose ›",
+        "learn": {
+            "title": "Learn from it",
+            "body": "Read {{agent}}'s own history on this computer (its sessions, the files it changed) as a source, with Forget. Off until you turn it on.",
+            "offTitle": "Turn off Learn from it for {{agent}}?",
+            "offBody": "Isoform stops reading {{agent}}'s history and forgets what it learned from it.",
+            "offConfirm": "Turn off",
+            "line_one": "{{agents}}: {{count}} session on {{project}} this week",
+            "line_other": "{{agents}}: {{count}} sessions on {{project}} this week",
+            "none": "Nothing read this week.",
+            "failed": "Couldn't read what Isoform learned from your agents.",
+            "and": "{{a}} and {{b}}"
+        }
     }
 }

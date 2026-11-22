@@ -4,7 +4,6 @@ import '@/i18n';
 import { MeetingRecordingRow } from './settings/pages/observation-page';
 import { MemoryPage } from './memory-page';
 import { KnowledgePage } from './knowledge-page';
-import { ObservingStatus } from './observing-status';
 import { useCronJobs } from '@/hooks/useCronJobs';
 import { useMainChatView } from '@/hooks/useMainChatView';
 import { useMainChatWaitingCount } from '@/hooks/useMainChatWaitingCount';
@@ -60,7 +59,6 @@ function BindingPollShell({ page }: { page: Page }) {
     useMainChatWaitingCount();
     useMainChatView({ enabled: page === 'chat', items: [] });
     return <>
-        <ObservingStatus />
         {page === 'chat' ? <div data-testid="chat-page" /> : null}
         {page === 'memory' ? <MemoryPage /> : null}
         {page === 'knowledge' ? <KnowledgePage /> : null}
@@ -118,7 +116,10 @@ describe('idle binding reads', () => {
 
         const counts = Object.fromEntries(watched.map((name) => [name, binding(name).mock.calls.length]));
         console.log(`[binding-polls] five-minute wire calls ${JSON.stringify(counts)}`);
-        expect(binding('GetBackgroundListening')).toHaveBeenCalledTimes(1);
+        // The sidebar's observing row (which read listening) is gone (design
+        // S3/A5), so nothing in this shell needs to read it; at most once.
+        const listeningReads = binding('GetBackgroundListening').mock.calls.length;
+        expect(listeningReads).toBeLessThanOrEqual(1);
         expect(binding('GetAutomaticMeetingRecordingEnabled')).toHaveBeenCalledTimes(1);
         // Thirty show transitions may each refresh a mounted page once.
         for (const name of ['GetMemoryEntries', 'GetKnowledgeEntries']) expect(binding(name).mock.calls.length, name).toBeLessThanOrEqual(31);
@@ -128,7 +129,7 @@ describe('idle binding reads', () => {
         await emit('automatic-meeting-recording:changed', true);
         await expect(GetBackgroundListening()).resolves.toBe(true);
         await expect(GetAutomaticMeetingRecordingEnabled()).resolves.toBe(true);
-        expect(binding('GetBackgroundListening')).toHaveBeenCalledTimes(1);
+        expect(binding('GetBackgroundListening')).toHaveBeenCalledTimes(listeningReads);
         expect(binding('GetAutomaticMeetingRecordingEnabled')).toHaveBeenCalledTimes(1);
 
         shell.rerender(<BindingPollShell page="memory" />);

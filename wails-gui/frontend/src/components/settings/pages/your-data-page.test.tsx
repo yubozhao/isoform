@@ -12,6 +12,14 @@ const mocks = vi.hoisted(() => ({
     deleteAnswers: vi.fn(async () => {}),
     startForget: vi.fn(async () => ({ state: "running", steps: [{ id: "memory", state: "waiting" }] })),
     forgetStatus: { state: "idle", steps: [] } as Record<string, unknown>,
+    workProfile: { approvedVersion: 0 } as Record<string, unknown>,
+    workProfileFails: false,
+}));
+vi.mock("@/lib/work-profile", () => ({
+    getWorkProfile: vi.fn(async () => {
+        if (mocks.workProfileFails) throw new Error("read timed out");
+        return mocks.workProfile;
+    }),
 }));
 vi.mock("@/lib/wails-shim-app", () => ({
     GetYourDataSummary: vi.fn(async () => {
@@ -25,14 +33,20 @@ vi.mock("@/lib/wails-shim-app", () => ({
     GetForgetEverything: vi.fn(async () => mocks.forgetStatus),
 }));
 vi.mock("../../../../wailsjs/runtime/runtime", () => ({ EventsOn: vi.fn(() => () => {}) }));
+// The keep-times sheet is tested on its own (keep-times-sheet.test.tsx).
+vi.mock("@/components/settings/keep-times-sheet", () => ({
+    KeepTimesSheet: ({ open }: { open: boolean }) => (open ? <div data-testid="keep-times-sheet" /> : null),
+}));
 
 const row = (key: string) => document.querySelector(`[data-your-data-row=${key}]`) as HTMLElement;
 
 describe("Settings › Your data", () => {
     beforeEach(async () => {
         await i18n.changeLanguage("en");
-        mocks.summary = { retentionDays: 30, ignoredApps: 3, handoffsThisWeek: 4, pairedDevices: 1, answers: 12, answersSince: "2026-11-02T17:00:00Z", screenBytes: 2 * 1024 ** 3, audioBytes: 300 * 1024 ** 2, usedBytes: 3 * 1024 ** 3, capBytes: 10 * 1024 ** 3, messagesNotes: 5, messagesBytes: 2048, watchBytes: 50 * 1024 ** 2, agentsHistoryItems: 4, agentsHistoryBytes: 4096 };
+        mocks.summary = { retentionDays: 30, ignoredApps: 3, handoffsThisWeek: 4, pairedDevices: 1, answers: 12, answersSince: "2026-11-02T17:00:00Z", screenBytes: 2 * 1024 ** 3, audioBytes: 300 * 1024 ** 2, usedBytes: 3 * 1024 ** 3, capBytes: 10 * 1024 ** 3, messagesNotes: 5, messagesBytes: 2048, watchBytes: 50 * 1024 ** 2, agentsHistoryItems: 4, agentsHistoryBytes: 4096, callsOn: true, messagesOn: true, agentsHistoryOn: true } as never;
         mocks.fail = false;
+        mocks.workProfile = { approvedVersion: 0 };
+        mocks.workProfileFails = false;
     });
 
     it("keeps the six sources of What Isoform sees in its order, with keep times, sizes and the whole", async () => {
@@ -49,7 +63,7 @@ describe("Settings › Your data", () => {
         expect(row("total")).toHaveTextContent("of 10");
         expect(row("total")).toHaveTextContent("When it's full, the oldest goes first.");
         expect(row("answers")).toHaveTextContent("12 answers since November 2");
-        expect(row("agents")).toHaveTextContent("Only what each task's What it gets lists · 4 tasks this week");
+        expect(row("agents")).toHaveTextContent("Only what each hand-off's What went lists");
         expect(row("devices")).toHaveTextContent(en.yourData.devicesSub);
         expect(row("notifications")).toHaveTextContent(en.yourData.notificationsSub);
         expect(screen.getByText(en.privacy.voices.title)).toBeInTheDocument();
@@ -62,20 +76,93 @@ describe("Settings › Your data", () => {
         mocks.summary = { retentionDays: 0, ignoredApps: 1, handoffsThisWeek: 1, pairedDevices: 0, answers: 0 };
         render(<YourDataPage />);
         expect(await screen.findByText("The apps you use · 1 app never seen · kept until you delete it")).toBeInTheDocument();
-        expect(row("agents")).toHaveTextContent("1 task this week");
+        expect(row("agents")).toHaveTextContent("this week 1");
         expect(row("devices")).toHaveTextContent(en.yourData.devicesNone);
         expect(row("answers")).toHaveTextContent(en.yourData.answersNone);
+    });
+
+    it("counts this week's hand-offs per agent in the design's words (computer-data v1.0.0 rule 5)", async () => {
+        mocks.summary = { ...mocks.summary, handoffsThisWeek: 4, handoffsByAgent: { codex: 3, "": 1 } } as never;
+        render(<YourDataPage />);
+        await screen.findByText(/3 apps never seen/);
+        expect(row("agents")).toHaveTextContent("Only what each hand-off's What went lists · this week 4: Codex 3, the AI you chose 1");
+    });
+
+    it("says Off with Turn on for a source whose switch is off, and opens that source", async () => {
+        mocks.summary = { ...mocks.summary, callsOn: false, messagesOn: false, agentsHistoryOn: false } as never;
+        const onOpenPage = vi.fn();
+        render(<YourDataPage onOpenPage={onOpenPage} />);
+        await screen.findByText(/3 apps never seen/);
+        for (const key of ["calls", "messages", "agentsHistory"]) {
+            expect(row(key)).toHaveTextContent(/^.*Off/);
+            expect(row(key)).not.toHaveTextContent("kept 30 days");
+        }
+        expect(row("messages")).not.toHaveTextContent(en.yourData.messagesSub);
+        fireEvent.click(within(row("calls")).getByRole("button", { name: en.yourData.turnOn }));
+        fireEvent.click(within(row("messages")).getByRole("button", { name: en.yourData.turnOn }));
+        fireEvent.click(within(row("agentsHistory")).getByRole("button", { name: en.yourData.turnOn }));
+        expect(onOpenPage.mock.calls).toEqual([
+            ["activity", { anchor: "sees-calls" }],
+            ["activity", { anchor: "sees-messages" }],
+            ["activity", { anchor: "sees-agents" }],
+        ]);
+    });
+
+    it("never says agents' history is off while its switch is on (it is on unless turned off)", async () => {
+        mocks.summary = { ...mocks.summary, agentsHistoryOn: true } as never;
+        render(<YourDataPage />);
+        await screen.findByText(/3 apps never seen/);
+        expect(row("agentsHistory")).toHaveTextContent(en.yourData.agentsHistoryOnSub);
+        expect(row("agentsHistory")).not.toHaveTextContent(/Off/);
+        expect(JSON.stringify(en.yourData)).not.toContain("Off for every agent");
+    });
+
+    it("lists Agent of You under What leaves only once a work profile was approved, with its claim count", async () => {
+        render(<YourDataPage />);
+        await screen.findByText(/3 apps never seen/);
+        expect(row("agentOfYou")).toBeNull();
+        cleanup();
+        mocks.workProfile = { approvedVersion: 2, approved: { lines: [{ id: "a", removed: false, filtered: false }, { id: "b", removed: true, filtered: false }, { id: "c", removed: false, filtered: false }] } };
+        render(<YourDataPage />);
+        expect(await screen.findByText("The 2 claims Agent of You can say")).toBeInTheDocument();
+        expect(row("agentOfYou")).toHaveTextContent(en.yourData.aoy);
+    });
+
+    it("shows a switch it couldn't read as a failure with Try again, never as off or on", async () => {
+        const { messagesOn: _m, agentsHistoryOn: _h, ...unread } = mocks.summary as Record<string, unknown>;
+        mocks.summary = unread as never; // messagesOn and agentsHistoryOn couldn't be read
+        render(<YourDataPage />);
+        await screen.findByText(/3 apps never seen/);
+        for (const key of ["messages", "agentsHistory"]) {
+            expect(row(key)).toHaveTextContent(en.yourData.switchReadFailed);
+            expect(row(key)).not.toHaveTextContent(/\bOff\b/);
+            expect(within(row(key)).queryByRole("button", { name: en.yourData.turnOn })).toBeNull();
+            expect(within(row(key)).getByRole("button", { name: /Try again/ })).toBeInTheDocument();
+        }
+        expect(row("agentsHistory")).not.toHaveTextContent(en.yourData.agentsHistoryOnSub);
+        expect(row("messages")).not.toHaveTextContent(en.yourData.messagesSub);
+    });
+
+    it("says it couldn't read Agent of You's profile rather than hiding the row", async () => {
+        mocks.workProfileFails = true;
+        render(<YourDataPage />);
+        expect(await screen.findByText(en.yourData.aoyReadFailed)).toBeInTheDocument();
+        expect(row("agentOfYou")).toHaveTextContent(en.yourData.aoy);
     });
 
     it("opens the page that changes each source", async () => {
         const onOpenPage = vi.fn();
         render(<YourDataPage onOpenPage={onOpenPage} />);
         await screen.findByText(/3 apps never seen/);
-        // Change is the keep time (Storage); Messages opens its source.
-        fireEvent.click(within(row("screen")).getByRole("button", { name: en.yourData.change }));
+        // Change on a keep time or the total opens the keep-times sheet here
+        // (settings batch D2: Storage went); Messages opens its source.
+        expect(screen.queryByTestId("keep-times-sheet")).not.toBeInTheDocument();
+        for (const key of ["screen", "calls", "total"]) {
+            fireEvent.click(within(row(key)).getByRole("button", { name: en.yourData.change }));
+            expect(screen.getByTestId("keep-times-sheet")).toBeInTheDocument();
+        }
         fireEvent.click(within(row("messages")).getByRole("button", { name: en.yourData.change }));
-        fireEvent.click(within(row("total")).getByRole("button", { name: en.yourData.change }));
-        expect(onOpenPage.mock.calls.map((call) => call[0])).toEqual(["storage", "activity", "storage"]);
+        expect(onOpenPage.mock.calls.map((call) => call[0])).toEqual(["activity"]);
     });
 
     it("says so when the numbers can't be read, and keeps the rows", async () => {

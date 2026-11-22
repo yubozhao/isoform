@@ -21,7 +21,19 @@ final class WatchLink: NSObject, WCSessionDelegate, @unchecked Sendable {
         // Parts go up as background uploads: the system finishes them while the app is closed.
         let uploads = RecordingBackgroundUploads.shared
         uploads.onEnded = { [weak self] in self?.drain() }
-        let forwarder = WatchRecordingForwarder(inbox: inbox, hub: hub, relay: uploads, session: { try vault.session() })
+        // Why hours waited is said only when iOS says it (phone-watch v1.2.0 rule 1).
+        uploads.onCancelReason = { reason in
+            guard let cause = WatchWaitCause(rawValue: reason) else { return }
+            Task { @MainActor in WatchRecordingsModel.shared.noteWaitCause(cause) }
+        }
+        // A part goes up in pieces, so a cut costs one piece and not the part: sent by the app
+        // while it is open, handed to the system piece by piece while it is not.
+        let pieces = RecordingPieceUploads(relay: RelayClient.shared, whole: uploads, background: uploads,
+                                           stopWhole: { await uploads.cancel($0) })
+        // A part takes the path that is up: the direct one first when the computer fetches from
+        // it, the pinned relay otherwise.
+        let forwarder = WatchRecordingForwarder(inbox: inbox, hub: hub, relay: pieces, session: { try vault.session() },
+                                                otherSession: { vault.otherSession(than: $0) })
         self.inbox = inbox
         self.forwarder = forwarder
         Task { [weak self] in
@@ -35,6 +47,7 @@ final class WatchLink: NSObject, WCSessionDelegate, @unchecked Sendable {
         WCSession.default.activate()
         observers.append(NotificationCenter.default.addObserver(
             forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+                self?.readSession()
                 self?.drain()
             })
     }
@@ -44,22 +57,50 @@ final class WatchLink: NSObject, WCSessionDelegate, @unchecked Sendable {
         Task { await drainNow() }
     }
 
+    /// A pass asked for from here is running.
+    @MainActor private var draining = false
+
+    /// After a pass that ended waiting, no pass is started before this, however often one is
+    /// asked for; the retry timer starts it then. A tap on Try again and a background run are
+    /// not held back.
+    @MainActor private var restUntil: Date?
+    static let restAfterWaiting: TimeInterval = 10
+
     @MainActor
-    private func drainNow() async {
+    private func drainNow(now: Bool = false) async {
         guard let forwarder else { return }
+        // Every answer from the computer asks for a pass (AppEnvironment, "heard from the
+        // computer"), so an open app asks most of a time a second. While a pass runs the
+        // forwarder only notes that another one is wanted; the rest of this (background time, the
+        // list, the retry timer) is done once, by the pass that runs.
+        if draining {
+            _ = await forwarder.drain()
+            return
+        }
+        if !now, let restUntil, Date() < restUntil {
+            // The retry set after the last pass stands; asking again must not push it out.
+            if retryTask == nil { scheduleRetry(at: restUntil) }
+            return
+        }
+        draining = true
+        defer { draining = false }
         // Ask for time to finish when the app is in the background (a part just arrived).
         let application = UIApplication.shared
         let task = application.beginBackgroundTask(withName: "watch-recordings")
         let outcome = await forwarder.drain()
         WatchRecordingsModel.shared.show(await forwarder.recordings(), outcome: outcome)
         WatchRecordingsModel.shared.checked(at: Date())
-        scheduleRetry(at: await forwarder.nextRetry())
+        restUntil = outcome == .drained || outcome == .sending ? nil : Date().addingTimeInterval(Self.restAfterWaiting)
+        let next = await forwarder.nextRetry()
+        scheduleRetry(at: next)
+        // While parts wait, iOS is also asked for a longer run when the phone is idle.
+        BackgroundRecordingSend.schedule(waiting: next != nil)
         if task != .invalid { application.endBackgroundTask(task) }
     }
 
     /// Sends what is waiting, from a background refresh: waiting parts never depend on a tap.
     @MainActor
-    func drainInBackground() async { await drainNow() }
+    func drainInBackground() async { await drainNow(now: true) }
 
     /// While the app runs, what is still waiting is sent again when its turn comes.
     @MainActor
@@ -84,7 +125,11 @@ final class WatchLink: NSObject, WCSessionDelegate, @unchecked Sendable {
         if session.activationState == .activated, session.isReachable {
             session.sendMessage([WatchRecordingWire.syncMessageKey: true], replyHandler: nil, errorHandler: nil)
         }
-        await drainNow()
+        // Uploads iOS has held for a while are started afresh: asked to send now, it sends now.
+        await RecordingBackgroundUploads.shared.stopHeld(olderThan: 30)
+        // Parts the computer refused are tried again now, not when their turn comes.
+        await forwarder.retryRefused()
+        await drainNow(now: true)
         await forwarder.refreshStates()
         WatchRecordingsModel.shared.show(await forwarder.recordings(), outcome: nil)
     }
@@ -142,6 +187,16 @@ final class WatchLink: NSObject, WCSessionDelegate, @unchecked Sendable {
 
     func pauseUntil() async -> Date? { await forwarder?.pauseUntil() }
 
+    /// Heart rate and Place as the computer has them; nil from a computer with no such settings.
+    /// Read after `listeningAllowed`, which asks the computer.
+    func contextSettings() async -> WatchContextSettingsAnswer? { await forwarder?.contextSettings }
+
+    func setContext(heartRate: Bool? = nil, place: Bool? = nil) async -> WatchContextSettingsAnswer? {
+        guard let forwarder, let settings = await forwarder.setContext(heartRate: heartRate, place: place) else { return nil }
+        pushAll()
+        return settings
+    }
+
     /// Whether listening on the watch is allowed; nil when the computer has no such setting.
     func listeningAllowed() async -> Bool? {
         guard let forwarder else { return nil }
@@ -188,9 +243,23 @@ final class WatchLink: NSObject, WCSessionDelegate, @unchecked Sendable {
         Task { await WatchRecordingsModel.shared.show(await forwarder.recordings(), outcome: nil) }
     }
 
+    /// On every return to the app: a session that never activated is activated again, and an
+    /// active one is read again, so a missed report never leaves the phone without its watch.
+    private func readSession() {
+        let session = WCSession.default
+        if session.activationState == .activated {
+            publishConnection(session)
+        } else {
+            session.activate()
+        }
+    }
+
     private func publishConnection(_ session: WCSession) {
-        let connection: WatchConnection = !session.isPaired ? .noWatch
-            : !session.isWatchAppInstalled ? .appMissing : .ready(reachable: session.isReachable)
+        let defaults = UserDefaults.standard
+        if session.isPaired, session.isWatchAppInstalled { defaults.set(true, forKey: WatchConnection.hadAppKey) }
+        let connection = WatchConnection.from(paired: session.isPaired, installed: session.isWatchAppInstalled,
+                                              reachable: session.isReachable,
+                                              hadApp: defaults.bool(forKey: WatchConnection.hadAppKey))
         let onWatch = WatchRecordingWire.summaries(fromContext: session.receivedApplicationContext)
         let status = WatchRecordingWire.status(fromContext: session.receivedApplicationContext)
         endOffIfWearerStarted(status: status, onWatch: onWatch)
@@ -211,9 +280,15 @@ final class WatchLink: NSObject, WCSessionDelegate, @unchecked Sendable {
             let pause = await forwarder.currentPause()
             let serial = await forwarder.pauseSerial
             let listenOff = await forwarder.listenOffSince
+            let choices = await forwarder.contextChoices
             let session = WCSession.default
+            // The computer hears whether a watch with Isoform is paired, once it is known.
+            if session.activationState == .activated {
+                await forwarder.reportPairing(session.isPaired && session.isWatchAppInstalled)
+            }
             guard session.activationState == .activated, session.isPaired, session.isWatchAppInstalled else { return }
-            try? session.updateApplicationContext(WatchRecordingWire.context(states, names: names, pause: pause, pauseSerial: serial, listenOff: listenOff))
+            try? session.updateApplicationContext(WatchRecordingWire.context(states, names: names, pause: pause, pauseSerial: serial,
+                                                                             listenOff: listenOff, choices: choices))
         }
     }
 
@@ -254,6 +329,16 @@ final class WatchLink: NSObject, WCSessionDelegate, @unchecked Sendable {
     }
 
     private func carry(_ payload: [String: Any]) {
+        // The wearer changed Heart rate or Place on the watch: the computer keeps the one choice.
+        if let forwarder, let choice = WatchContextChoices(userInfo: payload) {
+            Task {
+                let application = await UIApplication.shared
+                let task = await application.beginBackgroundTask(withName: "watch-context-choice")
+                if await forwarder.setContext(heartRate: choice.heartRate, place: choice.place) != nil { self.pushAll() }
+                if task != .invalid { await application.endBackgroundTask(task) }
+            }
+            return
+        }
         guard let forwarder, let request = WatchPauseRequest(userInfo: payload) else { return }
         Task {
             let application = await UIApplication.shared
@@ -265,6 +350,8 @@ final class WatchLink: NSObject, WCSessionDelegate, @unchecked Sendable {
 
     func session(_ session: WCSession, didReceive file: WCSessionFile) {
         // The file is removed when this method returns, so it is copied before anything else.
+        // A file from the watch: Isoform is on it, whatever the system said a moment ago.
+        UserDefaults.standard.set(true, forKey: WatchConnection.hadAppKey)
         guard let inbox, let forwarder, let info = WatchRecordingPartInfo(metadata: file.metadata) else { return }
         do {
             try inbox.accept(file: file.fileURL, info: info)

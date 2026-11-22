@@ -563,6 +563,7 @@ func (t systemProactiveSendTransport) Send(ctx context.Context, send storage.Out
 	}
 }
 
+//isoform:destination chat_bridges
 func (a *App) sendMainChatSlack(ctx context.Context, send storage.OutboundSendRow) error {
 	if !validMainChatDraftRecipient(mainChatProactiveDraft{To: send.DraftTo, Channel: "slack"}) || strings.TrimSpace(send.Text) == "" {
 		return errors.New("invalid Slack draft")

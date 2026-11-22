@@ -156,7 +156,7 @@ func TestScanAssistantHistoryCountsAgentSessionsApart(t *testing.T) {
 	writeHistoryFile(t, filepath.Join(codexSessions, "2026", "11", "12", "rollout-a.jsonl"), at, codexExecMetaLine(t, repo))
 	writeHistoryFile(t, filepath.Join(codexSessions, "2026", "11", "12", "rollout-b.jsonl"), at, codexExecMetaLine(t, agentsOnly))
 
-	scan := scanAssistantHistory(assistantHistoryRoots{Home: home, Claude: claudeProjects, Codex: codexSessions}, now)
+	scan := fixtureHistoryScan(t, assistantHistoryRoots{Home: home, Claude: claudeProjects, Codex: codexSessions}, now)
 	if len(scan.Projects) != 1 || scan.Projects[0].Name != "app" {
 		t.Fatalf("projects = %+v, want only app", scan.Projects)
 	}

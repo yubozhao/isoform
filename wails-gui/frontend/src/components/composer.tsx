@@ -86,6 +86,10 @@ interface ComposerProps {
     scopeControl?: ReactNode;
     /** Replaces the box's usual placeholder (the main chat on the first day). */
     placeholder?: string;
+    /** What the message is attached to (phone-chat v1.0.0 rule 10): the
+     *  chip "About: {title} ×" above the field. × or Backspace in an empty
+     *  field takes it off; nothing is sent until the person types. */
+    about?: { title: string; onRemove: () => void };
     prompt: string;
     todayPreview?: TodayChatPreview;
     onPromptChange: (value: string) => void;
@@ -194,6 +198,7 @@ function formatBytes(bytes: number): string {
 export function Composer({
     scopeControl,
     placeholder,
+    about,
     prompt,
     todayPreview,
     onPromptChange,
@@ -235,7 +240,7 @@ export function Composer({
     wideMode = false,
 }: ComposerProps) {
     const { t } = useTranslation("app");
-    useTranslation("chat");
+    const { t: tChat } = useTranslation("chat");
     const inputDisabled = !ready || !hasProject;
     const voiceBusy =
         voiceState === "recording" || voiceState === "transcribing";
@@ -517,6 +522,11 @@ export function Composer({
             ) {
                 return;
             }
+            if (about && event.key === "Backspace" && prompt === "") {
+                event.preventDefault();
+                about.onRemove();
+                return;
+            }
             if (showSlashSuggestions) {
                 if (event.key === "ArrowDown") {
                     event.preventDefault();
@@ -559,8 +569,10 @@ export function Composer({
             onKeyDown(event);
         },
         [
+            about,
             applySlashCommand,
             onKeyDown,
+            prompt,
             showSlashSuggestions,
             slashCandidates,
             slashIndex,
@@ -769,6 +781,17 @@ export function Composer({
                     <p className="mb-2 px-3 py-2 rounded-lg bg-error-bg text-error text-xs border border-error-border">
                         {contextError}
                     </p>
+                )}
+
+                {about && (
+                    <div className="mt-1 min-w-0">
+                        <span className="inline-flex min-h-6 max-w-full items-center gap-1 rounded-md border border-border bg-panel-warm pl-2.5 pr-0.5 text-[12px] text-ink" data-testid="composer-about-chip">
+                            <span className="min-w-0 max-w-[360px] whitespace-normal [overflow-wrap:anywhere]">{tChat("about.item", { title: about.title })}</span>
+                            <Button size="icon" variant="quiet" className="size-5 rounded-md" aria-label={tChat("about.remove", { title: about.title })} onClick={about.onRemove}>
+                                <X className="size-3" />
+                            </Button>
+                        </span>
+                    </div>
                 )}
 
                 {/* Pending queued messages */}

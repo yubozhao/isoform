@@ -28,10 +28,10 @@ import {
     ListAIProviderPresets,
 } from "@/lib/wails-shim-app";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ModelAccountsSettings } from "@/components/model-accounts-card";
 import { SettingsCard, SettingsSectionHeader } from "@/components/settings/settings-primitives";
 import { SettingsFailureLine, useSettingsFailure } from "@/components/settings/settings-failure";
 import { YourAgentsSection } from "./your-agents-section";
+import { YourAISection } from "./your-ai-section";
 
 // Non-preset picker entries: the two external-agent backends. The Isoform
 // gateway has been retired, so it is no longer selectable. API providers
@@ -701,8 +701,12 @@ export function AssistantPage() {
     return (
         <div className="flex flex-col gap-6">
             <YourAgentsSection />
-            <ModelAccountsSettings ownKeyForm={<AIProviderSettingsCard flat />} />
-            <p className="settings-row-desc">{t("assistantMcp.otherAppsPointer")}</p>
+            {/* Interim: Your AI stays on this page, where the model accounts
+                were, under its own heading until the Settings registry's
+                "Your AI" entry (just before Your agents) renders
+                YourAISection (G1). Then these two lines go. */}
+            <SettingsSectionHeader title={t("yourAI.title")} />
+            <YourAISection />
         </div>
     );
 }

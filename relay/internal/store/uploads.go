@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"isoform-relay/internal/limit"
 )
 
 // Uploads are sealed files a phone sends to its hub, today a recording made on
@@ -23,8 +25,15 @@ const (
 	// MaxUploadBytes bounds one upload body. A longer recording is sent in
 	// several parts.
 	MaxUploadBytes = 16 << 20
-	// KeptUploads is how many uploads one device keeps waiting for its hub.
-	KeptUploads = 48
+	// KeptUploads is how many uploads one device keeps waiting for its hub,
+	// whole or still arriving. The bytes are the real bound
+	// (MaxUploadBytesPerDevice): this count only keeps a flood of tiny uploads
+	// out. Until 2026-11-22 it was 48. A phone with a backlog of hundreds of
+	// parts hands fifteen to iOS in a wake; when the app was then closed for a
+	// night, the half-sent ones kept all 48 places for their 48 hours, every
+	// new part was refused, and the pass ended before it reached the parts
+	// that would have freed a place.
+	KeptUploads = 512
 	// UploadTTL is how long an upload waits for its hub. It outlives the
 	// 24-hour request TTL so a request replayed late still finds its body.
 	UploadTTL = 48 * time.Hour
@@ -43,6 +52,16 @@ var (
 
 // ErrQuotaFull reports a device whose waiting uploads already fill its quota.
 var ErrQuotaFull = errors.New("upload quota is full")
+
+func waitingUploadQuota(count int, bytes, incoming int64) error {
+	if count >= KeptUploads {
+		return &limit.Refusal{Name: "waiting_uploads", Count: int64(count), Cap: KeptUploads, Err: ErrQuotaFull}
+	}
+	if bytes+incoming > MaxUploadBytesPerDevice {
+		return &limit.Refusal{Name: "waiting_upload_bytes", Count: bytes, Cap: MaxUploadBytesPerDevice, Err: ErrQuotaFull}
+	}
+	return nil
+}
 
 const uploadsSchema = `
 CREATE TABLE IF NOT EXISTS uploads (
@@ -129,21 +148,36 @@ func (s *Store) recordUpload(ctx context.Context, device Device, id string, size
 	default:
 		return err
 	}
-	var count int
-	var used int64
+	// The same id arriving in pieces is replaced by this whole body.
+	if _, err = tx.ExecContext(ctx, "DELETE FROM upload_piece_marks WHERE id IN (SELECT id FROM upload_pieces WHERE id=? AND device_id=?)", id, device.ID); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, "DELETE FROM upload_pieces WHERE id=? AND device_id=?", id, device.ID); err != nil {
+		return err
+	}
+	var count, arriving int
+	var used, reserved int64
 	if err = tx.QueryRowContext(ctx, "SELECT count(*), COALESCE(SUM(size),0) FROM uploads WHERE device_id=? AND expires_at>?", device.ID, millis(now)).Scan(&count, &used); err != nil {
+		return err
+	}
+	// Uploads still arriving in pieces hold their whole size (upload_pieces.go).
+	if err = tx.QueryRowContext(ctx, "SELECT count(*), COALESCE(SUM(total),0) FROM upload_pieces WHERE device_id=? AND expires_at>?", device.ID, millis(now)).Scan(&arriving, &reserved); err != nil {
 		return err
 	}
 	if size > MaxUploadBytesPerDevice {
 		return ErrTooLarge
 	}
-	if count >= KeptUploads || used+size > MaxUploadBytesPerDevice {
-		return ErrQuotaFull
+	if err := waitingUploadQuota(count+arriving, used+reserved, size); err != nil {
+		return err
 	}
-	var total int64
+	var total, allReserved int64
 	if err = tx.QueryRowContext(ctx, "SELECT COALESCE(SUM(size),0) FROM uploads WHERE expires_at>?", millis(now)).Scan(&total); err != nil {
 		return err
 	}
+	if err = tx.QueryRowContext(ctx, "SELECT COALESCE(SUM(total),0) FROM upload_pieces WHERE expires_at>?", millis(now)).Scan(&allReserved); err != nil {
+		return err
+	}
+	total += allReserved
 	if total+size > MaxUploadStoreBytes {
 		return ErrStorageFull
 	}
@@ -216,6 +250,7 @@ func (s *Store) sweepUploads(ctx context.Context, now time.Time) (int64, error) 
 		return 0, err
 	}
 	s.removeOrphanUploads(ctx, now)
+	s.sweepUploadPieces(ctx, now)
 	return result.RowsAffected()
 }
 

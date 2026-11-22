@@ -20,8 +20,6 @@ final class NotificationRouter: ObservableObject {
     }
 
     @Published var isTabBarCompact = false
-    /// The wide layout has no Watch tab: choosing Watch there opens its page as a sheet instead.
-    @Published var showsWatchSheet = false
     /// True while a brief correction is open. The floating tab bar steps aside then, so Send and Cancel stay clear of it.
     @Published var isCorrecting = false
     /// Task threads on screen; the tab bar steps away while one is open (Phone Threads §1).

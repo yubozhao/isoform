@@ -389,6 +389,76 @@ final class HubRequestsTests: XCTestCase {
         await channel.prepareForPairingChange()
     }
 
+    /// On 2026-11-20 opening the app made eight status requests, each a request, a long-poll and an
+    /// acknowledgement at the relay, and the relay refused what came after. The checks share one.
+    func testOpeningTheAppAsksTheComputerWhatItCanDoOnce() async throws {
+        let vault = try makeVault()
+        let relay = ImmediateHubTransport(context: try vault.session())
+        let channel = HubChannel(vault: vault, relay: relay)
+        async let first = channel.abilities()
+        async let second = channel.recordingAbilities()
+        async let third = channel.workAvailable()
+        _ = try await (first, second, third)
+        _ = try await channel.brainDumpAvailable()
+        _ = try await channel.noticesReadAvailable()
+        _ = try await channel.recordingAbilities()
+        let sends = await relay.sendTimes
+        XCTAssertEqual(sends.count, 1, "Every check of what the computer can do shares one request")
+        await relay.releaseAcknowledgement()
+        await channel.prepareForPairingChange()
+        await channel.finishPairingChange()
+    }
+
+    func testUnpairingDropsWhatTheComputerSaidItCanDo() async throws {
+        let vault = try makeVault()
+        let relay = ImmediateHubTransport(context: try vault.session())
+        let channel = HubChannel(vault: vault, relay: relay)
+        _ = try await channel.abilities()
+        await relay.releaseAcknowledgement()
+        try vault.wipe()
+        do {
+            _ = try await channel.abilities()
+            XCTFail("With no pairing there is no computer to answer for")
+        } catch {}
+        let sends = await relay.sendTimes
+        XCTAssertEqual(sends.count, 1)
+    }
+
+    func testPairingAgainAsksTheNewComputerWhatItCanDo() async throws {
+        let vault = try makeVault()
+        let relay = ImmediateHubTransport(context: try vault.session())
+        let channel = HubChannel(vault: vault, relay: relay)
+        _ = try await channel.abilities()
+        await relay.releaseAcknowledgement()
+        await channel.prepareForPairingChange()
+        let next = ImmediateHubTransport(context: try storePairing(in: vault))
+        await channel.finishPairingChange()
+        let other = HubChannel(vault: vault, relay: next)
+        _ = try await other.abilities()
+        let asked = await next.sendTimes
+        XCTAssertEqual(asked.count, 1, "Each channel keeps its own answer")
+        await next.releaseAcknowledgement()
+        do { _ = try await channel.abilities() } catch {}
+        let old = await relay.sendTimes
+        XCTAssertEqual(old.count, 2, "After a pairing change the old answer is not reused")
+        await channel.prepareForPairingChange()
+        await other.prepareForPairingChange()
+    }
+
+    func testAFailedAskIsNotKept() async throws {
+        let vault = try makeVault()
+        let relay = ImmediateHubTransport(context: try vault.session(), failSends: 1)
+        let channel = HubChannel(vault: vault, relay: relay)
+        do {
+            _ = try await channel.abilities()
+            XCTFail("The relay refused the request")
+        } catch {}
+        let status = try await channel.abilities()
+        XCTAssertEqual(status.hubName, "Test Mac", "The next ask goes to the computer again")
+        await relay.releaseAcknowledgement()
+        await channel.prepareForPairingChange()
+    }
+
     func testConcurrentRequestsShareTheResponsePollWithoutWaitingForAcknowledgement() async throws {
         let vault = try makeVault()
         let relay = ImmediateHubTransport(context: try vault.session(), expectedRequests: 2)
@@ -882,6 +952,7 @@ final class HubRequestsTests: XCTestCase {
 /// sends arrive, matching the relay's wake-on-response long-poll rather than sleeping for its wait cap.
 private actor ImmediateHubTransport: HubTransport {
     private let context: SessionContext
+    private var failSends: Int
     private let expectedRequests: Int
     private let onAckCancel: @Sendable () -> Void
     private let failFirstAcknowledgement: Bool
@@ -895,7 +966,9 @@ private actor ImmediateHubTransport: HubTransport {
     private(set) var acknowledgements: [UInt64] = []
 
     init(context: SessionContext, expectedRequests: Int = 1, onAckCancel: @escaping @Sendable () -> Void = {},
-         failFirstAcknowledgement: Bool = false, onAcknowledgement: @escaping @Sendable (UInt64) -> Void = { _ in }) {
+         failFirstAcknowledgement: Bool = false, onAcknowledgement: @escaping @Sendable (UInt64) -> Void = { _ in },
+         failSends: Int = 0) {
+        self.failSends = failSends
         self.context = context
         self.expectedRequests = expectedRequests
         self.onAckCancel = onAckCancel
@@ -904,6 +977,10 @@ private actor ImmediateHubTransport: HubTransport {
     }
 
     func sendRequest(_ credentials: RelayCredentials, envelope: RelayEnvelope) async throws {
+        if failSends > 0 {
+            failSends -= 1
+            throw RelayClientError.rateLimited(retryAfter: nil)
+        }
         sendTimes.append(FirstLoadTrace.now)
         let plaintext = try RelayCrypto.openEnvelope(try RelayCrypto.base64URLDecode(envelope.ct),
                                                      key: context.keys.d2h, hub: context.hubID,

@@ -39,12 +39,12 @@ describe("no side chat entry point on the desktop", () => {
             expect(locale.mainChat.report.side_chat.brought_back).toBeTruthy();
             expect(locale.mainChat.fallback.sideChat).toBeTruthy();
         }
-        // Search and commands offers "Go to chat", never "New chat"
+        // Find offers Go to › Chat (the sidebar's name), never "New chat"
         // (RC 2 decision 5).
         expect(enApp.searchDialog).not.toHaveProperty("newChat");
         expect(JSON.stringify(enApp.searchDialog)).not.toMatch(/new chat/i);
-        expect(enApp.searchDialog.mainChat).toBe("Go to chat");
-        expect(zhApp.searchDialog.mainChat).toBe("前往聊天");
+        expect(enApp.searchDialog.groups.goTo).toBe("Go to");
+        expect(enApp.sidebar.mainChat).toBe("Chat");
         expect(enApp.searchDialog.groups.chats).toBe("Chat");
         expect(zhApp.searchDialog.groups.chats).toBe("聊天");
     });

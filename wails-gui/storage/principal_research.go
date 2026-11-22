@@ -19,7 +19,7 @@ func (s *Store) GetPrincipalResearch(ctx context.Context, principalID string) (P
 		r          PrincipalResearchRow
 		sourcesRaw string
 	)
-	err := s.db.QueryRowContext(ctx, `
+	err := s.committedReader().QueryRowContext(ctx, `
 		SELECT principal_id, status, summary, markdown, sources, model, error, researched_at, created_at, updated_at
 		  FROM principal_research
 		 WHERE principal_id = ? AND EXISTS (SELECT 1 FROM principals p WHERE p.id=principal_id AND p.merged_into='')`, principalID,

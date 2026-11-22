@@ -71,19 +71,51 @@ export const PAUSE_OBSERVING_COMBO = pauseObservingCombo();
 export const PAGE_KEYS = ['today', 'chat', 'agents', 'activity', 'you'] as const;
 export type PageKey = (typeof PAGE_KEYS)[number];
 
+function plainKey(key: string, mods: Partial<KeyCombo> = {}): KeyCombo {
+    return { meta: false, ctrl: false, alt: false, shift: false, key, ...mods };
+}
+
+/** A key the Keyboard shortcuts sheet lists but nothing here binds: Today
+ *  and Chat handle them. `labelKey` is its row name in `settings`. */
+export interface ListedFixedKey {
+    labelKey: string;
+    combos: KeyCombo[];
+}
+
+/** On an item in Your work (computer-keys v1.0.0 r2), in the sheet's order. */
+export const ITEM_FIXED_KEYS: ListedFixedKey[] = [
+    { labelKey: 'keys.item.move', combos: [plainKey('arrowup'), plainKey('arrowdown')] },
+    { labelKey: 'keys.item.yes', combos: [plainKey('y')] },
+    { labelKey: 'keys.item.no', combos: [plainKey('n')] },
+    { labelKey: 'keys.item.notMine', combos: [plainKey('m')] },
+    { labelKey: 'keys.item.edit', combos: [plainKey('e')] },
+    { labelKey: 'keys.item.undo', combos: [primaryCombo(false, 'z')] },
+];
+export const HEAR_FIXED_KEY: ListedFixedKey = { labelKey: 'keys.hear', combos: [plainKey(' ')] };
+export const NEW_LINE_FIXED_KEY: ListedFixedKey = { labelKey: 'keys.newLine', combos: [plainKey('enter', { shift: true })] };
+
+/** The fixed key a combo would take, if any: a binding may not use one, or
+ *  pressing it would stop answering items or playing the brief. */
+export function findFixedKeyClash(combo: KeyCombo): ListedFixedKey | null {
+    for (const fixed of [...ITEM_FIXED_KEYS, HEAR_FIXED_KEY, NEW_LINE_FIXED_KEY]) {
+        if (fixed.combos.some((taken) => comboEquals(taken, combo))) return fixed;
+    }
+    return null;
+}
+
 const DEFAULT_KEYBINDINGS: KeybindingAction[] = [
     // Global shortcuts
     {
         id: 'command-palette',
-        label: 'Command palette',
-        description: 'Open search and commands',
+        label: 'Find',
+        description: 'Find anything in Isoform',
         group: 'global',
         defaultCombo: primaryCombo(false, 'k'),
         readonly: false,
     },
     {
         id: 'toggle-sidebar',
-        label: 'Toggle sidebar',
+        label: 'Show or hide the sidebar',
         description: 'Show or hide the left sidebar',
         group: 'global',
         defaultCombo: primaryCombo(false, 'b'),
@@ -91,8 +123,8 @@ const DEFAULT_KEYBINDINGS: KeybindingAction[] = [
     },
     {
         id: 'open-settings',
-        label: 'Open settings',
-        description: 'Open the settings page',
+        label: 'Settings',
+        description: 'Open Settings',
         group: 'global',
         defaultCombo: primaryCombo(false, ','),
         readonly: false,
@@ -103,14 +135,6 @@ const DEFAULT_KEYBINDINGS: KeybindingAction[] = [
         description: '',
         group: 'global',
         defaultCombo: primaryCombo(false, '/'),
-        readonly: false,
-    },
-    {
-        id: 'new-chat',
-        label: 'New chat',
-        description: 'Start a new chat session',
-        group: 'global',
-        defaultCombo: primaryCombo(false, 't'),
         readonly: false,
     },
     // The pages, in the sidebar's order (pass-access v1.0.0 rule 1).
@@ -142,8 +166,8 @@ const DEFAULT_KEYBINDINGS: KeybindingAction[] = [
         // same — the recorded combo is mirrored down to Go via
         // SetQuickChatHotkey so the OS hook fires it from any app.
         id: 'quick-chat-global',
-        label: 'Quick Chat',
-        description: 'Summon the Quick Chat Spotlight from any app',
+        label: 'Quick chat',
+        description: 'Open Quick chat from any app',
         group: 'global',
         defaultCombo: quickChatGlobalCombo(),
         readonly: false,
@@ -152,8 +176,8 @@ const DEFAULT_KEYBINDINGS: KeybindingAction[] = [
         ? [
               {
                   id: 'pause-observing',
-                  label: 'Pause observing',
-                  description: 'Pause or resume screen and audio observation from any app',
+                  label: 'Closed Eyes',
+                  description: 'Stop or start observing from any app',
                   group: 'global' as const,
                   defaultCombo: PAUSE_OBSERVING_COMBO,
                   readonly: true,
@@ -163,7 +187,7 @@ const DEFAULT_KEYBINDINGS: KeybindingAction[] = [
     // Composer
     {
         id: 'send-prompt',
-        label: 'Send prompt',
+        label: 'Send',
         description: 'Submit the current message',
         group: 'composer',
         defaultCombo: { meta: false, ctrl: false, alt: false, shift: false, key: 'enter' },
@@ -323,6 +347,35 @@ export function comboToDisplayString(combo: KeyCombo): string {
     return parts.join('+');
 }
 
+const KEY_SPOKEN: Record<string, string> = {
+    ' ': 'space',
+    enter: 'enter',
+    escape: 'escape',
+    arrowup: 'up',
+    arrowdown: 'down',
+    arrowleft: 'left',
+    arrowright: 'right',
+    backspace: 'backspace',
+    delete: 'delete',
+    tab: 'tab',
+    'opt-opt': 'optionTwice',
+    off: 'off',
+};
+
+/** A combo as words for a screen reader ("Option Space", "Command K"),
+ *  with the key names from `settings:keys.spoken.*`. */
+export function comboToSpokenString(combo: KeyCombo, t: (key: string) => string): string {
+    const word = (id: string) => t(`keys.spoken.${id}`);
+    const parts: string[] = [];
+    if (combo.ctrl) parts.push(word('control'));
+    if (combo.alt) parts.push(word(isMac ? 'option' : 'alt'));
+    if (combo.shift) parts.push(word('shift'));
+    if (combo.meta) parts.push(word(isMac ? 'command' : 'windows'));
+    const named = KEY_SPOKEN[combo.key];
+    parts.push(named ? word(named) : combo.key.toUpperCase());
+    return parts.join(' ');
+}
+
 export function eventToCombo(e: KeyboardEvent): KeyCombo | null {
     if (['Meta', 'Control', 'Alt', 'Shift'].includes(e.key)) return null;
     return {
@@ -338,14 +391,11 @@ export function eventToCombo(e: KeyboardEvent): KeyCombo | null {
 
 export function useKeybindings() {
     const { t } = useTranslation('settings');
-    const actions = useMemo(() => DEFAULT_KEYBINDINGS.map((action) => {
-        const translationId = action.id === 'pause-observing' && isMac ? 'pause-observing-one-hour' : action.id;
-        return {
-            ...action,
-            label: t(`keybindings.commands.${translationId}.label` as never) as string,
-            description: t(`keybindings.commands.${translationId}.description` as never) as string,
-        };
-    }), [t]);
+    const actions = useMemo(() => DEFAULT_KEYBINDINGS.map((action) => ({
+        ...action,
+        label: t(`keybindings.commands.${action.id}.label` as never) as string,
+        description: t(`keybindings.commands.${action.id}.description` as never) as string,
+    })), [t]);
     const [overrides, setOverrides] = useState<Record<string, KeyCombo>>(loadOverrides);
 
     useEffect(() => {

@@ -103,22 +103,35 @@ call. That view is never replayed if sharing is enabled later.
 
 ## Event contract
 
+### What is sent
+
+No event-specific property carries free text. `TestTelemetryAllowlistCarriesNoFreeText`
+checks the serialized properties at a loopback receiver, including attempts to
+override install, build, OS and SDK metadata. The SDK obtains its own OS
+metadata from the host after Isoform validates the event.
+
 Only the events below are allowed. Unknown legacy agent events are dropped.
 
 | Event | Meaning |
 |---|---|
 | `app.open` | The desktop app opens. |
-| `app.active_time` | A bounded interval of active, foreground desktop usage. |
-| `app.daily_active` | At most one active-day ping per install per UTC day. |
+| `app.active_time` | Foreground duration in `active_seconds` and a random `session_id`. |
+| `app.daily_active` | UTC `date`, at most once per active day per install. |
 | `brief.first_seen` | The install's first brief view. |
-| `chat.turn_sent` | A sent chat turn, counted without its text. A validated Today source can identify its surface and product-map action. |
+| `chat.turn_sent` | `count` is 1. Optional `source` contains the Today `surface` and its product-map `action`. |
 | `playbook.run` | A successfully completed playbook run (terminal `ok`), without its name, instructions, or output. Running, skipped, and failed attempts are not counted. |
 | `iphone.paired` | A completed iPhone pairing, without device or person details. |
-| `today.action`, `phone_today.action` | A Today action's product-map ID, kind, outcome, and elapsed milliseconds. |
-| `today.section_seen` | A visible Today section and the number of rows shown. |
+| `today.action`, `phone_today.action` | Product-map `action`, `kind`, `outcome`, and `ms_to_result`. |
+| `tasks.action` | Tasks product-map `action`, `kind`, `outcome`, and `ms_to_result`. |
+| `today.section_seen`, `tasks.section_seen` | Fixed `section` and number of visible `rows`. |
+| `assistant.signed_out` | `assistant` is `claude-code` or `codex`. |
+| `assistant.signed_out_fixed` | `assistant` and elapsed `seconds`. |
+| `phone_chat.queued` | Queue milestone with no event-specific properties. |
+| `phone_chat.sent_after_wait` | Elapsed `wait_minutes`. |
+| `phone_chat.undone` | Number undone in `count`. |
 | `update.checked` | One release check: `result` is `none`, `found`, or `error`. An error carries only `error_class` (`network`, `http`, `feed`, or `other`), never the message or URL. |
 | `update.staged` | A newer release was verified and is waiting to install: `from` and `to` version strings. |
-| `update.installed` | An install swapped the app: `from`, `to`, `how` (`quit` when the app quit with an update waiting, or `restart_now` for Restart now), and `waited_days`, the whole days from staging to install. |
+| `update.installed` | An install swapped the app: `from`, `to`, `how` (`quit` when the app quit with an update waiting, or `restart_now` for Restart now), and optional `waited_days`, the whole days from staging to install. |
 | `update.quit_probe` | The headless check that runs before a quit install: `result` is `passed` or `failed`, and `reason` is `clean`, `timeout`, `exit_status`, `signal`, or `launch_error`. A failed probe leaves the update staged. |
 | `update.rolled_back` | A quit install that never acked healthy and was restored at launch: `from` is the failed version, `to` the restored one, and `attempts` the unacked launches counted before the restore. |
 | `update.running` | The first launch of an installed version: `version`, `how`, and `release_to_run_minutes` when the feed publishes a release time. |
@@ -133,6 +146,12 @@ All events carry `app_version`, `flavor`, `build_channel` (`release` for
 duration. Event-specific properties are allowlisted; arbitrary caller
 properties cannot pass through. PostHog person-profile processing is disabled,
 and `$geoip_disable` prevents IP-based geographic enrichment.
+The SDK adds `$lib`, `$lib_version`, `$go_version`, `$os`, and, when available,
+`$os_version` and Linux `$os_distro`. The app version comes from the build.
+The SDK copies host-supplied version and distribution labels without a
+free-text check. See the [field audit](hub-reviews/codex-telemetry-allowlist-audit-self.md)
+for their sources and the scope of the guard.
+
 Locale is cached from the persisted language setting at startup and updated
 only after a successful language save; event capture does not read SQLite.
 
@@ -145,8 +164,8 @@ make the network connection anonymous. Ingest proxies and service access logs
 have their own retention settings; the PostHog project setting does not prove
 those logs discard IP addresses.
 
-The schema never includes screen text, audio, file names, URLs, people, memory,
-chat text, playbook content, or agent tool inputs and outputs. No browser
+The event allowlist excludes screen text, audio, file names, URLs, people,
+memory, chat text, playbook content, and agent tool inputs and outputs. No browser
 autocapture, page views, session recording, or identify calls are enabled.
 
 ## Release gate: verify IP discard before adding a key

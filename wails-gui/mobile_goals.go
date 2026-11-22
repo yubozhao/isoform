@@ -563,6 +563,11 @@ func (bridge *mobileBridge) serveGoalList(w http.ResponseWriter, r *http.Request
 		}
 		after = &key
 	}
+	// Goals are off unless their switch is on: the phone gets an empty page.
+	if !featureOn(featurePlaybooks) {
+		mobileJSON(w, http.StatusOK, mobileGoalPage(nil, nil, mobileGoalsNow(), limit, nil), "")
+		return
+	}
 	details, err := bridge.app.userPurposeDetails()
 	if err != nil {
 		mobileJSON(w, http.StatusServiceUnavailable, nil, errMobileStoreUnavailable.Error())

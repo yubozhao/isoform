@@ -80,30 +80,63 @@ func (a *App) connectedAgentFor(agentID string) (ConnectedAgentView, bool) {
 	return found, ok
 }
 
-// connectedHandoffReady says a Yes for this agent can go to its inbox now.
+// connectedHandoffReady says a Yes for this agent can go to its inbox now,
+// for the menu. An unread setting shows as not ready there; routing uses
+// connectedHandoffReadyErr.
 func (a *App) connectedHandoffReady(agentID string) bool {
-	if a.agentConnectedHere(agentID) {
-		return !a.IsClosedEyesModeEnabled()
+	ok, _ := a.connectedHandoffReadyErr(agentID)
+	return ok
+}
+
+// connectedHandoffReadyErr is connectedHandoffReady with the read error: a
+// setting that can't be read fails the hand-off rather than routing it as
+// if the agent weren't connected.
+func (a *App) connectedHandoffReadyErr(agentID string) (bool, error) {
+	here, err := a.agentConnectedHere(agentID)
+	if err != nil {
+		return false, err
+	}
+	if here {
+		return !a.IsClosedEyesModeEnabled(), nil
 	}
 	if a.agentsAllowed() != nil {
-		return false
+		return false, nil
 	}
 	_, ok := a.connectedAgentFor(agentID)
-	return ok
+	return ok, nil
 }
 
 // sendWorkOnItConnected hands the task to a connected agent: a task pinned
 // to a coding agent connected here (its id returned), or the joined agent's
 // inbox.
 func (a *App) sendWorkOnItConnected(task workonit.Task, agentID, recordID string) (string, error) {
-	if a.agentConnectedHere(agentID) {
+	// Probe before the connection and Closed Eyes checks so a change while
+	// the CLI is running still takes effect before the hand-off.
+	signedOut := false
+	if backend := agentHereBackend(agentID); task.SourceKind == agentRequestSource && backend != "" {
+		signedIn, probeErr := agentHereSignedIn(backend)
+		signedOut = probeErr == nil && !signedIn
+	}
+	here, err := a.agentConnectedHere(agentID)
+	if err != nil {
+		return "", err
+	}
+	if here {
 		if a.IsClosedEyesModeEnabled() {
 			return "", errWorkOnItClosedEyes
+		}
+		if signedOut {
+			return "", errAgentHereSignedOut
 		}
 		return a.startAgentHereTask(task, agentID)
 	}
 	if err := a.agentsAllowed(); err != nil {
 		return "", err
+	}
+	// A request addressed to a local catalog agent cannot be redirected to a
+	// later join after the local connection was removed.
+	if task.SourceKind == agentRequestSource && agentHereBackend(agentID) != "" {
+		return "", errAgentNotConnected
 	}
 	joined, ok := a.connectedAgentFor(agentID)
 	if !ok {
@@ -138,6 +171,9 @@ func (a *App) agentInboxResulted(item agentinbox.Item, result agentinbox.Result)
 		LinkID: item.ID, AgentID: agentID, SourceKind: item.SourceKind, SourceID: item.SourceID,
 		Status: result.Status, Summary: result.Summary, Links: result.Links, Files: names,
 		TakenAt: item.TakenAt, ResultAt: a.taskLinks.clock().UnixMilli(), Via: "inbox",
+	}
+	if item.SourceKind == agentRequestSource {
+		record.RequestText = result.Text
 	}
 	if err := a.rewriteTaskLinkResults(func(results []TaskLinkResult) []TaskLinkResult {
 		return append(results, record)
@@ -280,28 +316,44 @@ func (a *App) handOffToConnectedAgent(in workonit.Input, agentID, surface string
 	}
 	kind := workonit.KindOf(in)
 	if agentID == "" {
-		agentID = a.yourAgentChoice(kind)
+		chosen, err := a.yourAgentChoice(kind)
+		if err != nil {
+			return "", "", err
+		}
+		agentID = chosen
 	}
-	if !a.connectedHandoffReady(agentID) {
+	ready, err := a.connectedHandoffReadyErr(agentID)
+	if err != nil {
+		return "", "", err
+	}
+	if !ready {
 		return "", "", errAgentNotConnected
 	}
 	s := a.workOnIt()
 	task := workonit.Task{ID: workOnItID(), SourceKind: in.SourceKind, SourceID: in.SourceID, Kind: kind, Text: workonit.PrepareText(in, workOnItWords(a.currentUILanguage())), PreparedAt: s.clock()}
 	recordID := workOnItID()
-	taskID, err := a.sendWorkOnItConnected(task, agentID, recordID)
+	_, err = a.deliverConnectedTask(task, agentID, recordID, surface)
 	if err != nil {
 		return "", "", err
 	}
-	record := workonit.Record{ID: recordID, SourceKind: task.SourceKind, AgentID: agentID, Method: workonit.MethodConnected, SentAt: s.clock().UnixMilli(), Status: workonit.StatusSent}
+	return recordID, agentID, nil
+}
+
+func (a *App) deliverConnectedTask(task workonit.Task, agentID, recordID, surface string) (string, error) {
+	taskID, err := a.sendWorkOnItConnected(task, agentID, recordID)
+	if err != nil {
+		return "", err
+	}
+	record := workonit.Record{ID: recordID, SourceKind: task.SourceKind, AgentID: agentID, Method: workonit.MethodConnected, SentAt: a.workOnIt().clock().UnixMilli(), Status: workonit.StatusSent}
 	if err := a.workOnItAppend(record); err != nil {
 		log.Printf("[work-on-it] record not saved: %v", err)
 	}
 	a.keepWorkOnItHandoff(workonit.Handoff{
-		ID: recordID, SourceKind: task.SourceKind, SourceID: task.SourceID, Kind: kind, AgentID: agentID,
-		Method: workonit.MethodConnected, Via: connectedVia(taskID), Text: task.Text, SentAt: record.SentAt, Surface: surface, TaskID: taskID,
+		ID: recordID, SourceKind: task.SourceKind, SourceID: task.SourceID, Kind: task.Kind, AgentID: agentID,
+		Method: workonit.MethodConnected, Via: connectedVia(taskID), Title: task.Title, Text: task.Text, SentAt: record.SentAt, Surface: surface, TaskID: taskID,
 	})
 	log.Printf("[work-on-it] sent source=%s agent=%s method=connected surface=%s", task.SourceKind, agentID, surface)
-	return recordID, agentID, nil
+	return taskID, nil
 }
 
 func (bridge *mobileBridge) serveAgentHandoff(w http.ResponseWriter, r *http.Request, device mobileDeviceRecord) {
@@ -339,7 +391,7 @@ func (bridge *mobileBridge) serveAgentHandoff(w http.ResponseWriter, r *http.Req
 			mobileJSON(w, http.StatusConflict, nil, err.Error())
 		case errors.Is(err, errWorkOnItBadSource), errors.Is(err, errWorkOnItNoTitle):
 			mobileJSON(w, http.StatusBadRequest, nil, err.Error())
-		case errors.Is(err, errWorkOnItClosedEyes), errors.Is(err, errTaskLinksOff), errors.Is(err, errTaskLinksClosedEyes):
+		case errors.Is(err, errWorkOnItClosedEyes), errors.Is(err, errTaskLinksClosedEyes):
 			mobileJSON(w, http.StatusConflict, nil, "your computer isn't taking agent work right now")
 		case err != nil:
 			log.Printf("[your-agents] phone hand-off failed: %v", err)

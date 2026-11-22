@@ -15,8 +15,9 @@ func TestGetYourDataSummaryCountsThisWeeksHandoffsOnly(t *testing.T) {
 	app := &App{handoffStore: store}
 	old := time.Now().Add(-8 * 24 * time.Hour).UnixMilli()
 	for _, entry := range []handoff.Entry{
-		{ID: "this-week", Status: handoff.StatusInProgress},
-		{ID: "today", Status: handoff.StatusInProgress},
+		{ID: "this-week", Status: handoff.StatusInProgress, Backend: "codex"},
+		{ID: "today", Status: handoff.StatusInProgress, Backend: "codex"},
+		{ID: "app", Status: handoff.StatusInProgress},
 		{ID: "last-month", Status: handoff.StatusInProgress, CreatedAt: old, UpdatedAt: old},
 	} {
 		if _, err := store.Save(entry); err != nil {
@@ -27,8 +28,13 @@ func TestGetYourDataSummaryCountsThisWeeksHandoffsOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.HandoffsThisWeek != 2 {
-		t.Fatalf("handoffs this week = %d, want 2", got.HandoffsThisWeek)
+	if got.HandoffsThisWeek != 3 {
+		t.Fatalf("handoffs this week = %d, want 3", got.HandoffsThisWeek)
+	}
+	// Per agent, for "this week {n}: {agent} {k}" (computer-data v1.0.0 rule 5);
+	// last month's isn't counted.
+	if got.HandoffsByAgent["codex"] != 2 || got.HandoffsByAgent[""] != 1 || len(got.HandoffsByAgent) != 2 {
+		t.Fatalf("handoffs by agent = %v, want codex 2 and the app's own 1", got.HandoffsByAgent)
 	}
 	if got.IgnoredApps < 1 || got.RetentionDays < 0 {
 		t.Fatalf("summary = %+v", got)
@@ -43,7 +49,7 @@ func TestGetYourDataSummaryReadsZeroWithoutStores(t *testing.T) {
 	if got.CapBytes <= 0 || got.UsedBytes != 0 {
 		t.Fatalf("storage without stores = %+v", got)
 	}
-	if got.HandoffsThisWeek != 0 || got.PairedDevices != 0 {
+	if got.HandoffsThisWeek != 0 || got.PairedDevices != 0 || got.HandoffsByAgent == nil {
 		t.Fatalf("summary without stores = %+v", got)
 	}
 }
@@ -67,5 +73,20 @@ func TestGetYourDataSummaryCountsKeptAnswers(t *testing.T) {
 	}
 	if got.AnswersSince != first.At {
 		t.Fatalf("answers since = %q, want the first answer's %q", got.AnswersSince, first.At)
+	}
+}
+
+// A read that fails is unknown, never off: without a store the Messages
+// switch can't be read, so messagesOn is nil rather than false.
+func TestGetYourDataSummaryLeavesAnUnreadableSwitchUnknown(t *testing.T) {
+	got, err := (&App{}).GetYourDataSummary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.MessagesOn != nil {
+		t.Fatalf("messagesOn = %v without a store; want unknown (nil)", *got.MessagesOn)
+	}
+	if got.CallsOn == nil {
+		t.Fatal("callsOn is always readable")
 	}
 }

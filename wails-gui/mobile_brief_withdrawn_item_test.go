@@ -18,9 +18,7 @@ func TestMobileBriefWithdrawnNoticedItemDropsOnlyItsOwnItems(t *testing.T) {
 		t.Fatalf("setup: want at least 2 noticed items, got %d", before)
 	}
 	withdrawn := seeded[0]
-	if err := app.DismissNoticed(noticedTestDay, withdrawn.ID); err != nil {
-		t.Fatal(err)
-	}
+	seedNoticedDismissal(t, app, withdrawn)
 	got, withheld := app.mobileBriefDelivery(brief)
 	if withheld.Reason != "" {
 		t.Fatalf("one withdrawn item withheld the whole brief: %+v", withheld)

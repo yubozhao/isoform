@@ -296,6 +296,8 @@ func (c *mobileRelayClient) detach() {
 
 // connectOnce runs one connection from dial to failure: register, heartbeat, and
 // dispatch frames until the socket ends or the relay replaces it.
+//
+//isoform:destination relay
 func (c *mobileRelayClient) connectOnce(ctx context.Context) error {
 	dialer := websocket.Dialer{HandshakeTimeout: mobileRelayHandshake, Proxy: http.ProxyFromEnvironment}
 	header := http.Header{}

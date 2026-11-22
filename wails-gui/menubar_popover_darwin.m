@@ -337,9 +337,9 @@ static NSAppearance *isoformMenuBarAppearance(NSString *theme) {
         }
     } else if ([command isEqual:@"close"]) [self closeWithReason:@"web close"];
     else if (self.shown) {
-        // Pause, Resume, playing the brief and Make my brief now keep it
+        // Open eyes, playing the brief and Make my brief now keep it
         // open; anything that brings Isoform forward closes it.
-        BOOL stays = [command isEqual:@"pause15"] || [command isEqual:@"resume"] || [command hasPrefix:@"play:"] || [command isEqual:@"makeHere"];
+        BOOL stays = [command isEqual:@"resume"] || [command hasPrefix:@"play:"] || [command isEqual:@"makeHere"];
         if (!stays) [self closeWithReason:@"web action"];
         goMenuBarCommand((char *)command.UTF8String);
     }

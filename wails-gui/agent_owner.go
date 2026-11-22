@@ -324,6 +324,7 @@ func agentOwnerWatchJob(ctx context.Context, env agentOwnerEnv, identity, id str
 	}
 }
 
+//isoform:destination agent_of_you
 func agentOwnerStream(ctx context.Context, env agentOwnerEnv, identity, id, lastID string) string {
 	state, err := loadYourAgentState(env.reservation)
 	if err != nil || agentOwnerIdentity(env.client.base, state.Hub) != identity {

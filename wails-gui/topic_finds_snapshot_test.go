@@ -17,7 +17,9 @@ func newSnapshotTestApp(t *testing.T) *App {
 	t.Setenv("YANSU_MOBILE_STATE_DIR", t.TempDir())
 	app := newTopicFindsTestApp(t)
 	app.ctx = t.Context()
+	app.topicFindsCtx = t.Context()
 	svc := app.topicsSvc()
+	t.Cleanup(svc.waitFindsRefresh)
 	svc.findsSnap.launchDelay = 0
 	svc.findsSnap.eventDelay = 0
 	// This launch has already refreshed once, so a read does not start the launch check.
@@ -28,15 +30,19 @@ func newSnapshotTestApp(t *testing.T) *App {
 func TestTopicFindsRefreshRequiresAndStopsWithAppLifecycle(t *testing.T) {
 	app := newTopicFindsTestApp(t)
 	svc := app.topicsSvc()
-	svc.scheduleFindsRefresh(app, time.Now().Add(time.Hour))
-	svc.findsSnap.mu.Lock()
-	running := svc.findsSnap.running
-	svc.findsSnap.mu.Unlock()
-	if running {
-		t.Fatal("refresh started without an app lifecycle")
+	// A Wails event context alone does not own a background refresh.
+	for _, eventContext := range []context.Context{nil, context.Background()} {
+		app.ctx = eventContext
+		svc.scheduleFindsRefresh(app, time.Now().Add(time.Hour))
+		svc.findsSnap.mu.Lock()
+		running := svc.findsSnap.running
+		svc.findsSnap.mu.Unlock()
+		if running {
+			t.Fatal("refresh started without an app lifecycle")
+		}
 	}
 	ctx, cancel := context.WithCancel(t.Context())
-	app.ctx = ctx
+	app.topicFindsCtx = ctx
 	svc.scheduleFindsRefresh(app, time.Now().Add(time.Hour))
 	svc.findsSnap.mu.Lock()
 	done := svc.findsSnap.done
@@ -47,11 +53,38 @@ func TestTopicFindsRefreshRequiresAndStopsWithAppLifecycle(t *testing.T) {
 	cancel()
 	<-done
 	svc.findsSnap.mu.Lock()
-	running = svc.findsSnap.running
+	running := svc.findsSnap.running
 	due := svc.findsSnap.dueAt
 	svc.findsSnap.mu.Unlock()
 	if running || !due.IsZero() || svc.findsSnap.refreshes.Load() != 0 {
 		t.Fatal("cancelled lifecycle retained or ran a queued refresh")
+	}
+}
+
+func TestCanceledTopicFindsRefreshDrainsWithoutPublishing(t *testing.T) {
+	app := newSnapshotTestApp(t)
+	svc := app.topicsSvc()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	app.topicFindsCtx = ctx
+	entered, finish := make(chan struct{}), make(chan struct{})
+	svc.findsSnap.computeHook = func() { close(entered); <-finish }
+	svc.scheduleFindsRefresh(app, time.Now())
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		close(finish)
+		t.Fatal("refresh did not reach publication")
+	}
+	cancel()
+	svc.scheduleFindsRefresh(app, time.Now())
+	close(finish)
+	svc.waitFindsRefresh()
+	if n := svc.findsSnap.refreshes.Load(); n != 1 {
+		t.Fatalf("ran %d computations during shutdown, want 1", n)
+	}
+	if _, err := os.Stat(svc.findsSnapshotPath()); !os.IsNotExist(err) {
+		t.Fatalf("canceled computation published a snapshot: stat error = %v", err)
 	}
 }
 
@@ -127,7 +160,7 @@ func TestSavedFindsViewIsNotWrittenWhenTheStampMovesDuringCompute(t *testing.T) 
 		pii.SetUserSensitiveApps(map[string]string{"com.example.private": "work"})
 	}
 	t.Cleanup(func() { svc.findsSnap.computeHook = nil })
-	app.refreshTopicFinds()
+	app.refreshTopicFinds(t.Context())
 	if _, err := os.Stat(svc.findsSnapshotPath()); err == nil {
 		t.Fatal("a view computed across a privacy change was saved")
 	}
@@ -228,7 +261,7 @@ func TestAFailedRefreshKeepsTheSavedRow(t *testing.T) {
 	if err := os.Mkdir(svc.findsSnapshotPath()+".tmp", 0o700); err != nil {
 		t.Fatal(err)
 	}
-	app.refreshTopicFinds()
+	app.refreshTopicFinds(t.Context())
 	after, err := os.ReadFile(svc.findsSnapshotPath())
 	if err != nil {
 		t.Fatal("the saved view was removed by a failed refresh: ", err)

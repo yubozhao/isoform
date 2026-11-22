@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -188,12 +189,17 @@ func TestTodayChatSendInjectsOnceWithoutPersistingSourceText(t *testing.T) {
 // real source lookup. WaitCount proves it is queued before Stop is pressed.
 func blockTodayLookup(t *testing.T, db *sql.DB) (func(), func()) {
 	t.Helper()
+	maxOpen := db.Stats().MaxOpenConnections
 	db.SetMaxOpenConns(1)
 	conn, err := db.Conn(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = conn.Close() })
+	release := sync.OnceFunc(func() {
+		_ = conn.Close()
+		db.SetMaxOpenConns(maxOpen)
+	})
+	t.Cleanup(release)
 	before := db.Stats().WaitCount
 	wait := func() {
 		t.Helper()
@@ -206,7 +212,18 @@ func blockTodayLookup(t *testing.T, db *sql.DB) (func(), func()) {
 		}
 		t.Fatal("Today source lookup did not reach the blocked database")
 	}
-	return wait, func() { _ = conn.Close() }
+	return wait, release
+}
+
+// Occupy both routes so a bounded state read sees contention on either pool.
+func blockStateStoreReads(t *testing.T, store *storage.Store) func() {
+	t.Helper()
+	_, releaseWriter := blockTodayLookup(t, peopleProfileStorageDB(store))
+	_, releaseReader := blockTodayLookup(t, peopleProfileStorageReadDB(store))
+	return func() {
+		releaseReader()
+		releaseWriter()
+	}
 }
 
 func TestPrepareTodayChatTurnStopCancelsSourceLookup(t *testing.T) {

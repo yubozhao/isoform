@@ -58,7 +58,7 @@ func (h *Handler) pushToken(w http.ResponseWriter, r *http.Request) {
 		reply(w, http.StatusConflict, nil, "Push device limit reached for this hub")
 		return
 	case errors.Is(err, store.ErrNotFound):
-		reply(w, http.StatusUnauthorized, nil, "Device authentication required")
+		refuse(w, r, http.StatusUnauthorized, "Device authentication required")
 		return
 	default:
 		reply(w, http.StatusInternalServerError, nil, "Unable to register push notifications")

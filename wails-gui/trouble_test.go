@@ -84,3 +84,39 @@ func TestMenuBarTroubleRowSaysTheFirstWithItsOneFix(t *testing.T) {
 		t.Fatalf("signed-out row = %+v", signed)
 	}
 }
+
+// Design S8: the screen's trouble says "yet" to someone Isoform has never
+// seen the screen of, and "since {time}" once the grant was seen. A failed
+// read of the flag keeps "since".
+func TestTroubleScreenNeverUntilTheGrantIsSeen(t *testing.T) {
+	off := []PermissionItem{{Key: "screen_recording", Toggleable: true, Enabled: true, Granted: false}}
+	granted := []PermissionItem{{Key: "screen_recording", Toggleable: true, Enabled: true, Granted: true}}
+	app := mainChatTestApp(t)
+	if !app.troubleScreenNever(off) {
+		t.Fatal("never granted must say yet")
+	}
+	if app.troubleScreenNever(granted) {
+		t.Fatal("granted is not never")
+	}
+	if app.troubleScreenNever(off) {
+		t.Fatal("seen granted and then off must say since")
+	}
+	w := menuBarWords("en")
+	since := time.Date(2026, 11, 21, 15, 10, 0, 0, time.Local).UTC().Format(time.RFC3339)
+	yet := menuBarTroubleRow(w, "en", []TroubleLine{{Kind: troubleScreen, Since: since, Never: true}})
+	if yet == nil || yet.Line != "Isoform hasn't seen your screen yet. Screen Recording is off for Isoform." || yet.Command != "openScreenSettings" {
+		t.Fatalf("never row %+v", yet)
+	}
+	seen := menuBarTroubleRow(w, "en", []TroubleLine{{Kind: troubleScreen, Since: since}})
+	if seen == nil || seen.Line != "Isoform hasn't seen your screen since 3:10 PM. Screen Recording is off for Isoform." {
+		t.Fatalf("since row %+v", seen)
+	}
+
+	failing := mainChatTestApp(t)
+	if err := failing.store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if failing.troubleScreenNever(off) {
+		t.Fatal("a failed flag read must keep since")
+	}
+}

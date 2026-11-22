@@ -49,9 +49,20 @@ func (a *App) beginStorageStartup(ctx context.Context) {
 func (a *App) startStorageStartup(ctx context.Context, open func() (*storage.Store, error), startServices func()) {
 	a.storageStartup.start(func() (*storage.Store, error) {
 		a.closedEyes.policyPending.Store(true)
-		return open()
+		store, err := open()
+		if err != nil {
+			return nil, err
+		}
+		a.restoreSettingsDefaults(ctx, store)
+		return store, nil
 	}, func(store *storage.Store) {
 		a.store = store
+		telemetryTierSaveMu.Lock()
+		a.telemetry.SetSharingEnabled(telemetrySharingOn())
+		telemetryTierSaveMu.Unlock()
+		a.telemetry.Capture("app.open", nil)
+		recordLaunchStage("telemetry_ready")
+		a.restoreWatchContextChoices()
 		recordLaunchStage("observation_policy_start")
 		briefPolicyPending.Store(true)
 		a.restoreObservationPolicy()

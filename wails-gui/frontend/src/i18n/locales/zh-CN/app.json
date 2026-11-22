@@ -258,13 +258,11 @@
         "show": "显示侧边栏",
         "waitingOverflow": "9+",
         "rowWaiting": "{{label}}，{{state}}",
-        "rowUnread": "{{label}}，未读",
         "waiting": "{{count}} 项等你处理",
         "newChat": "新聊天",
         "searchShortcutMac": "⌘K",
         "searchShortcutOther": "Ctrl K",
         "chat": "对话",
-        "unread": "未读",
         "agents": "Agents",
         "agentsWaiting": "{{count}} 项等你同意",
         "toAnswer": "{{count}} 项待回答",
@@ -281,6 +279,7 @@
         "closedEyes": "Closed Eyes",
         "closedEyesOn": "已闭眼 · 点此睁眼",
         "railWithCount": "{{place}}，{{detail}}",
+        "railHover": "{{name}} · {{key}}",
         "showWithKey": "显示侧边栏 · {{key}}",
         "pose": {
             "listening": "正在听",
@@ -302,83 +301,50 @@
         "forget": "忘掉",
         "forgetFailed": "没能忘掉，请重试。",
         "findFoot": "你搜索的内容保存在这台电脑上，可在“动态”里看到。",
-        "title": "搜索与命令",
-        "description": "搜索你的主题、对话、活动、人物和设置，或运行一条命令。",
-        "placeholder": "搜索或运行命令",
-        "inputLabel": "搜索全部内容",
+        "title": "查找",
+        "description": "查找 Isoform 保存的一切，待处理的工作在前，或前往某个页面。",
+        "placeholder": "查找 Isoform 保存的一切",
+        "inputLabel": "查找 Isoform 保存的一切",
         "count_one": "{{count}} 个结果",
         "count_other": "{{count}} 个结果",
         "searching": "正在搜索",
-        "noResults": "你的主题、对话、活动、人物、目标、你的方法、关于你和设置中都没有与“{{query}}”匹配的内容。",
+        "noResults": "没有与“{{query}}”匹配的内容。",
         "failed": "暂时无法搜索{{places}}。",
-        "pausedNote": "观察已暂停，因此不会搜索 Isoform 看到的内容。",
-        "topicsGathering": "Isoform 正在收集你的话题。",
+        "pausedNote": "Closed Eyes 已开启，因此不会搜索 Isoform 看到的内容。",
         "enterToOpen": "按 Enter 打开",
-        "mainChat": "前往聊天",
         "openFailed": "无法打开。它可能已被删除或隐藏。",
-        "pauseFailed": "无法更改观察状态，请再试一次。",
         "hints": {
             "anywhere": "在任何地方按 {{combo}}",
             "move": "上下方向键移动",
-            "open": "Enter 打开或运行",
+            "open": "Enter 打开",
             "close": "Esc 清除或关闭",
             "words": "搜索内容中的文字，而不只是标题"
         },
         "groups": {
-            "conversations": "对话",
-            "claims": "判断",
-            "answers": "你的回答",
             "ready": "待处理",
-            "recent": "最近",
-            "actions": "操作",
             "topics": "主题",
+            "conversations": "对话",
+            "people": "人物",
+            "claims": "判断",
             "chats": "聊天",
-            "activity": "活动",
-            "people": "你认识的人",
-            "goals": "目标",
-            "knowHow": "你的方法",
-            "aboutYou": "关于你",
-            "upcoming": "定时任务",
-            "handoffs": "任务",
-            "projects": "项目",
-            "pages": "页面",
+            "answers": "你的回答",
+            "goTo": "前往"
+        },
+        "goTo": {
             "settings": "设置"
         },
         "places": {
             "topic": "主题",
             "chat": "对话",
-            "activity": "活动",
             "person": "人物",
-            "goal": "目标",
-            "know_how": "你的方法",
-            "about_you": "关于你",
-            "handoffs": "任务"
-        },
-        "actions": {
-            "pause": "暂停观察",
-            "resume": "恢复观察",
-            "brief": "立即生成我的简报",
-            "toggleSidebar": "显示或隐藏侧边栏",
-            "settings": "打开设置",
-            "activity": "打开活动",
-            "knowHow": "打开你的方法",
-            "aboutYou": "打开关于你"
+            "know_how": "你的方法"
         },
         "meta": {
             "ready": "待处理",
-            "today": "今日",
             "chat": "对话",
             "topic": "主题",
-            "moment": "活动",
-            "thread": "活动线索",
             "person": "人物",
-            "goal": "目标",
-            "knowHow": "你的方法",
-            "aboutYou": "关于你",
-            "upcoming": "定时任务",
-            "handoff": "任务",
-            "project": "项目",
-            "page": "页面"
+            "knowHow": "你的方法"
         },
         "when": {
             "today": "今天",
@@ -407,14 +373,6 @@
         "rename": "重命名"
     },
     "observingStatus": {
-        "label": "后台观察中",
-        "title": "后台观察中",
-        "ariaLabel": "后台观察：{{state}}",
-        "description": {
-            "screenAndAudio": "Isoform 观察屏幕并聆听语音，从你的工作中学习。所有内容都留在这台电脑上。",
-            "screen": "Isoform 观察屏幕，从你的工作中学习。所有内容都留在这台电脑上。",
-            "audio": "Isoform 聆听语音，从你的工作中学习。所有内容都留在这台电脑上。"
-        },
         "doingNow": {
             "paused": "已暂停",
             "meeting": "正在听你的 {{app}} 通话",
@@ -425,17 +383,7 @@
             "watching": "后台观察中",
             "listening": "正在安静地聆听",
             "idle": "未在观察"
-        },
-        "pausedUntil": "观察已暂停至 {{time}}",
-        "paused": "观察已暂停",
-        "notObserving": "未在观察",
-        "pause15": "暂停 15 分钟",
-        "pause60": "暂停 1 小时",
-        "resume": "恢复观察",
-        "settings": "观察设置",
-        "counts": "今天：{{screens}} 张屏幕，{{minutes}} 分钟语音。",
-        "changeFailed": "无法更改观察状态，请重试。",
-        "countsFailed": "无法获取今天的统计。"
+        }
     },
     "markdownContent": {
         "copyButton": {
@@ -881,13 +829,9 @@
         "saveName": "保存",
         "cancelName": "取消",
         "nameSaveError": "称呼没有保存，请再试一次。",
-        "account": "{{name}}，账户菜单",
-        "updateReady": "更新已就绪",
         "aboutDescription": "Isoform 对你的了解",
         "knowHowDescription": "你的做法、决定和修复",
         "peopleDescription": "认识的人和待办的事",
-        "shortcuts": "键盘快捷键",
-        "help": "帮助与反馈",
         "profile": "个人资料",
         "settingsShortcutMac": "⌘ ,",
         "settingsShortcutOther": "Ctrl ,",
@@ -1048,8 +992,7 @@
         "planDay": "帮我安排今天剩下的时间",
         "free": "空闲时段：{{ranges}}",
         "range": "{{start}} 到 {{end}}",
-        "rangesJoin": "、",
-        "placeholder": "问问你的一天、某个项目或某个人…"
+        "rangesJoin": "、"
     },
     "whatIsoformSees": {
         "names": {
@@ -1101,7 +1044,7 @@
             "title": "只有你同意才会做",
             "line": "你同意之前，Isoform 不会发送、删除或接受任何东西。"
         },
-        "foot": "在 设置 › 隐私 里修改",
+        "foot": "在 设置 › Isoform 看到的 里修改",
         "title": "Isoform 能看到什么",
         "loadFailed": "无法读取 Isoform 能看到的内容。",
         "close": "关闭",
@@ -1272,7 +1215,7 @@
         "signIn": "登录",
         "signedOut": "{{assistant}} 自 {{time}} 起已退出登录，所以简报会更简短，聊天也无法回答。",
         "offline": "自 {{time}} 起没有网络。恢复前简报会更简短。",
-        "phone": "你的手机自 {{time}} 起没有联系。在它联系之前，通知会显示在这里。",
+        "phone": "你的手机自 {{time}} 起没有联系过，所以之后手表里的内容都还没有传过来。在手机上打开 Isoform 把它发过来。",
         "more_one": "还有 {{count}} 项 ›",
         "more_other": "还有 {{count}} 项 ›"
     },
@@ -1288,6 +1231,16 @@
             "foundHere": "在这台电脑上找到",
             "byText": "通过短信 · 未连接"
         },
+        "state": {
+            "connected": "已连接",
+            "notConnected": "未连接",
+            "disconnected": "已断开"
+        },
+        "where": {
+            "here": "在这台电脑上",
+            "itsApp": "在它自己的 App 里；由你打开",
+            "byText": "通过短信"
+        },
         "working": "进行中：{{title}}",
         "workingDot": "进行中",
         "between": "今天，你和你的代理之间",
@@ -1296,8 +1249,6 @@
         "whatWent": "发出的内容",
         "isBack": "{{agent}} 回来了",
         "status": {
-            "blocked": "受阻",
-            "declined": "已拒绝",
             "sent": "已发送 · {{time}}",
             "opened": "已在 {{agent}} 中打开 · {{time}}",
             "has": "{{agent}} 已收到",
@@ -1308,7 +1259,9 @@
             "couldntStart": "{{agent}} 无法开始",
             "said": "{{agent}} 说：{{line}}",
             "sendAgain": "再发一次",
-            "takenBack": "已收回。{{agent}} 不能再打开它；它已经做出的东西仍留在 {{agent}} 那里。"
+            "takenBack": "已收回。{{agent}} 不能再打开它；它已经做出的东西仍留在 {{agent}} 那里。",
+            "nothingSent": "什么都没有发送。",
+            "openAgent": "打开 {{agent}}"
         },
         "made": "你的代理做出的东西",
         "thisWeek": "本周",
@@ -1319,9 +1272,6 @@
         },
         "connect": "连接代理",
         "disconnect": "断开连接",
-        "makeCode": "设为你写代码的代理",
-        "makeElse": "设为你处理其他事的代理",
-        "showAll": "所有代理",
         "failed": "无法读取你的代理。",
         "actionFailed": "没有成功，请再试一次。",
         "retry": "再试一次",
@@ -1333,9 +1283,9 @@
             "connectThis": "连接",
             "anyOther": "其他任何代理",
             "pasteIntoTitle": "连接 {{agent}}",
-            "anyOtherHelp": "把它粘贴到 Claude、ChatGPT、Grok、Gemini、Muse、Devin，或任何能读取链接并运行命令的代理中。它会问你它在哪台设备上工作、可以打开什么，并确认是你；然后它就会加入。链接 10 分钟内有效。",
+            "anyOtherHelp": "把它粘贴到 Claude、ChatGPT、Grok、Gemini、Devin，或任何能读取链接并运行命令的代理中。它会问你它在哪台设备上工作、可以打开什么，并确认是你；然后它就会加入。链接 10 分钟内有效。",
             "pasteInto": "把这段粘贴到 {{agent}}。它会读取链接，问你三件事，然后加入。链接 10 分钟内有效。",
-            "localOnly": "只有这台电脑上的代理能读取这个链接。在“设置 › 其他 AI 应用”中打开代理地址，任何地方的代理都能连接。",
+            "localOnly": "只有这台电脑上的代理能读取这个链接。",
             "copy": "复制",
             "copied": "已复制",
             "waiting": "正在等待你的代理加入 · 链接 10 分钟内有效",
@@ -1345,7 +1295,6 @@
             "denied": "未加入",
             "expired": "链接已过期",
             "newLink": "生成新链接",
-            "off": "任务链接关闭或闭眼模式开启时，代理无法连接。",
             "connectAsk": "连接 {{agent}}？它会收到你同意的工作，并把结果发回。它只能看到每次交接发送的内容。",
             "connectFailed": "无法连接 {{agent}}。请确认它已安装并在这台电脑上登录。",
             "cancel": "取消",
@@ -1373,7 +1322,6 @@
         },
         "backFromTask": "{{agent}} 回来了",
         "notFinished": "{{agent}} 没有完成",
-        "allTasks": "所有任务",
         "emptyTitle": "连接你已经在用的代理",
         "emptyBody": "你同意的工作会交给它们，它们做出的东西会回到“你的工作”，由你来判断。它们只能看到每次交接发送的内容。",
         "untilThen": "在连接之前，同意的工作会被复制下来，供你粘贴。",
@@ -1383,6 +1331,48 @@
         "workingLine": "进行中 · {{line}}",
         "hasIt": "已收到：{{title}}",
         "lastWorked": "上次工作：{{day}}",
-        "disconnectAsk": "断开 {{agent}}？它会立即停止收到交接，也不能再使用 Isoform 的工具。它已经做出的东西仍留在它那里。"
+        "disconnectAsk": "断开 {{agent}}？它会立即停止收到交接，也不能再使用 Isoform 的工具。它已经做出的东西仍留在它那里。",
+        "rowLine": "{{job}} · {{state}}",
+        "disconnectedOn": "已断开 · {{date}}",
+        "connectAgain": "重新连接",
+        "back": "‹ {{label}}",
+        "card": {
+            "close": "关闭 {{agent}}",
+            "connectedOn": "连接于 {{date}}",
+            "runsWhenStarted": "由 Isoform 启动时运行",
+            "job": "它的工作",
+            "jobCode": "写代码：涉及代码仓库的工作",
+            "jobElse": "其他所有事",
+            "jobNone": "暂不",
+            "changeJob": "更改它的工作 ›",
+            "forCode": "写代码",
+            "forElse": "其他所有事",
+            "notNow": "暂不",
+            "mayOpenTitle": "它可以打开什么",
+            "mayOpen": "只有每次交接发送的内容，以及 {{repos}} 中的新分支。",
+            "mayOpenOther": "只有每次交接发送的内容，以及{{what}}。",
+            "week": "本周",
+            "weekHandoffs_one": "{{count}} 次交接",
+            "weekHandoffs_other": "{{count}} 次交接",
+            "weekBack": "{{count}} 次回来",
+            "weekUseful": "{{count}} 次有用"
+        },
+        "learnNotHere": "在它自己 App 里的代理不支持此功能。",
+        "learned": "从它们那里学到的",
+        "learnedFoot": "来自每个代理自己的历史，只限你打开了“从它学习”的代理。",
+        "learnOffAll": "所有代理的“从它学习”都已关闭。",
+        "learnChoose": "选择 ›",
+        "learn": {
+            "title": "从它学习",
+            "body": "把 {{agent}} 在这台电脑上的历史（它的会话、它改动的文件）作为来源读取，可随时忘记。在你打开之前一直关闭。",
+            "offTitle": "关闭 {{agent}} 的“从它学习”？",
+            "offBody": "Isoform 会停止读取 {{agent}} 的历史，并忘记从中学到的内容。",
+            "offConfirm": "关闭",
+            "line_one": "{{agents}}：本周在 {{project}} 上 {{count}} 次会话",
+            "line_other": "{{agents}}：本周在 {{project}} 上 {{count}} 次会话",
+            "none": "本周没有读取任何内容。",
+            "failed": "无法读取 Isoform 从你的代理那里学到的内容。",
+            "and": "{{a}} 和 {{b}}"
+        }
     }
 }

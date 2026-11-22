@@ -1,5 +1,5 @@
-import { lastActivityDate, lastActivityScope, lastActivityScroll, lastTimelineFilters, rememberActivityDate, rememberActivityScope, rememberActivityScroll, rememberTimelineFilters } from './timeline/activity-session-cache';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { lastActivityDate, lastActivityScroll, lastTimelineFilters, rememberActivityDate, rememberActivityScroll, rememberTimelineFilters } from './timeline/activity-session-cache';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
@@ -13,7 +13,6 @@ import {
     ChevronRight,
     AlertTriangle,
     Film,
-    Watch,
     Play,
     Pause,
     Maximize2,
@@ -30,9 +29,6 @@ import {
     Activity as ActivityIcon,
     Info,
     ClipboardCopy,
-    Sun,
-    Bot,
-    MessageSquareReply,
 } from 'lucide-react';
 import { ActivityOpenChatContext } from './activity-ask-inline';
 import { ActivityInlineNotice, type ActivityNotice } from './activity-inline-notice';
@@ -40,9 +36,7 @@ import { SearchIcon } from '@/assets/icons/SearchIcon';
 import { RedactionShieldIcon } from '@/components/icons/redaction-shield-icon';
 import { ActivityDayView, type ActivityDaySection } from './activity-day-view';
 import type { WorkedOnView } from './activity-stitched';
-import type { MobileBriefActivityTarget, MobileBriefCard } from '@/lib/wails-shim-app';
-import type { TodayActionHandlers } from '@/components/today/types';
-import { ActivityWeekView } from './activity-week-view';
+import type { MobileBriefActivityTarget } from '@/lib/wails-shim-app';
 import { AutomationDetailDialog } from '@/components/automations/AutomationDetailDialog';
 import {
     formatDateStr,
@@ -102,15 +96,24 @@ import { ActivityAnswers } from './activity-answers';
 import { MarkdownContent } from '@/components/markdown-content';
 import { CopyButton } from '@/components/copy-button';
 import { isWindows } from '@/lib/platform';
+import type { TodayTopic } from '@/components/today/topics';
 import { EventsOn } from '../../wailsjs/runtime/runtime';
 import type { main, activitymon } from '../../wailsjs/go/models';
 
-/** The sections the Activity page's left panel offers (computer-activity
- *  v1.0.0 tabs: Your day, Screen, Watch, Agents). 'workedOn' and 'timeline'
- *  are the Screen tab's two views. 'learned' has no tab any more (it moved to
- *  You) but still opens for links that name it. 'agents' is the timeline's
- *  agent rows. */
-export type ActivitySectionId = 'yourDay' | 'workedOn' | 'learned' | 'timeline' | 'watch' | 'agents' | 'answers';
+/** The Activity page's sections (computer-activity v1.0.0 tabs: Your day,
+ *  Screen, Watch, Agents, Your answers). 'workedOn' and 'timeline' are the
+ *  Screen tab's two views. 'agents' is the feed's agent rows. */
+export type ActivitySectionId = 'yourDay' | 'workedOn' | 'timeline' | 'watch' | 'agents' | 'answers';
+
+/** The header's tabs, in order; Screen opens on What you worked on. */
+const ACTIVITY_TABS = [
+    { id: 'yourDay', labelKey: 'day.yourDay' },
+    { id: 'workedOn', labelKey: 'act.tabScreen' },
+    { id: 'watch', labelKey: 'act.tabWatch' },
+    { id: 'agents', labelKey: 'act.tabAgents' },
+    { id: 'answers', labelKey: 'act.tabAnswers' },
+] as const satisfies readonly { id: ActivitySectionId; labelKey: string }[];
+type ActivityTabId = (typeof ACTIVITY_TABS)[number]['id'];
 
 interface ActivityPageProps {
     /** Optional close handler (Escape ladder's last rung). The page is a main
@@ -118,14 +121,22 @@ interface ActivityPageProps {
      *  exits fullscreen. */
     onClose?: () => void;
     initialSessionId?: string | null;
-    /** The day the Day/Week views open on (YYYY-MM-DD). Defaults to today.
+    /** The day Your day opens on (YYYY-MM-DD). Defaults to today.
      *  This is what callers that used to open the Calendar page now drive. */
     initialDate?: string | null;
+    /** Today's "open in Activity" for a suggestion. Isoform noticed left
+     *  Activity (computer-conformance-answers A4), so it opens Your day on
+     *  the target's date and is consumed at once. */
     noticedFocus?: MobileBriefActivityTarget | null;
     onNoticedFocusConsumed?: (focus: MobileBriefActivityTarget) => void;
     /** A thread the Day view's "What you worked on" opens and scrolls to. */
     initialThreadId?: string | null;
     onInitialThreadConsumed?: (threadId: string) => void;
+    /** A watch conversation the Watch tab opens on arrival (App's
+     *  openActivityConversation, with initialDate its day). */
+    initialConversationId?: string | null;
+    /** A row's topic opens beside Today (App's openTopic). */
+    onOpenTopic?: (topic: TodayTopic) => void;
     /** Scheduled automations — powers the Day view's "Open result" dialog. */
     cronJobs: CronJobsProp;
     backButton?: {
@@ -137,17 +148,12 @@ interface ActivityPageProps {
      *  though the page unmounts when another main view shows. */
     section: ActivitySectionId;
     onSectionChange: (section: ActivitySectionId) => void;
-    /** Optional: called when the user clicks "Chat about this day/week" from
-     *  the Day or Week view. Parent should leave the page and start a new
-     *  chat session seeded with a question about the given date. */
     /** Open in Chat under an in-place answer: shows the main chat. */
     onOpenChat?: () => void;
     /** Optional: "Chat about this" on a Day view moment. The parent leaves the
      *  page and puts the prepared words in the main chat box, unsent, with
      *  the moment as the chat's context (the Today route, item 64). */
     onStartChat?: (prompt: string, context: TodayChatContextRef) => void;
-    yourWeekHandlers?: TodayActionHandlers;
-    onYourWeekCard?: (briefId: string, card: MobileBriefCard, ask?: boolean) => void;
     /** Snapshots that should be visually flagged as "used by the triage
      *  prompt" — set when the Activity Pipeline settings page jumps here so
      *  an operator can audit the sampling strategy against the rest of the
@@ -2009,21 +2015,22 @@ function formatDayNavLabel(date: Date, todayLabel: string, yesterdayLabel: strin
 }
 
 // ── Main activity page ───────────────────────────────────────────────
-export function ActivityPage({ onClose, initialSessionId, initialDate, noticedFocus, onNoticedFocusConsumed, initialThreadId, onInitialThreadConsumed, cronJobs, backButton, section, onSectionChange, onOpenChat, onStartChat, yourWeekHandlers, onYourWeekCard, highlightedFrames, highlightedPipelineRunId, restrictToSessionIds, initialEventTimestamp, highlightedSenderName }: ActivityPageProps) {
+export function ActivityPage({ onClose, initialSessionId, initialDate, noticedFocus, onNoticedFocusConsumed, initialThreadId, onInitialThreadConsumed, initialConversationId, onOpenTopic, cronJobs, backButton, section, onSectionChange, onOpenChat, onStartChat, highlightedFrames, highlightedPipelineRunId, restrictToSessionIds, initialEventTimestamp, highlightedSenderName }: ActivityPageProps) {
     const { t } = useTranslation('activity');
-    // The scope switch in the section panel: Day shows the picked day
-    // section, Week the week containing the picked day. The Screen timeline
-    // is a section of its own and ignores the scope (it has its own time
-    // filter). A session jump (memory / knowledge / people / chat link)
-    // lands directly on the Screen timeline, as before.
-    // A plain revisit (no deep link in any prop) restores the scope and
-    // timeline filters the last visit left; a deep link starts fresh.
+    // One day at a time (computer-conformance-answers A4): previous and next beside the
+    // date steps through days. The Screen timeline has its own time filter.
+    // A session jump (memory / knowledge / people / chat link) lands
+    // directly on the Screen timeline, as before.
+    // A plain revisit (no deep link in any prop) restores the timeline
+    // filters the last visit left; a deep link starts fresh.
     const freshOpen = Boolean(initialSessionId || initialDate || noticedFocus || initialThreadId || highlightedFrames?.length || highlightedPipelineRunId || restrictToSessionIds?.length || initialEventTimestamp || highlightedSenderName);
-    const [scope, setScopeState] = useState<'day' | 'week'>(() => (freshOpen ? 'day' : lastActivityScope() ?? 'day'));
-    const setScope = useCallback((next: 'day' | 'week') => {
-        setScopeState(next);
-        rememberActivityScope(next);
-    }, []);
+    // A suggestion link from Today opens Your day on its date (App sets
+    // initialDate with it); there is nothing on the day to focus any more.
+    useEffect(() => {
+        if (!noticedFocus) return;
+        if (section !== 'yourDay') onSectionChange('yourDay');
+        onNoticedFocusConsumed?.(noticedFocus);
+    }, [noticedFocus, section, onSectionChange, onNoticedFocusConsumed]);
     // Shorthand that keeps the old viewMode conditionals readable: the
     // Screen timeline section shows the snapshot view.
     const isTimeline = section === 'timeline';
@@ -2035,15 +2042,15 @@ export function ActivityPage({ onClose, initialSessionId, initialDate, noticedFo
     const isAgents = section === 'agents';
     const isAnswers = section === 'answers';
     const daySection: ActivityDaySection = isTimeline || isWatch || isAgents || isAnswers ? 'yourDay' : section;
-    // The day the Day and Week views show. The section panel's prev/next
-    // buttons and date picker drive it; useCalendarData keeps the month
-    // heatmap (day dots) and the day's learned entries and scheduled runs.
+    // The day Your day, Screen and Agents show. The header's previous and next buttons and date
+    // picker drive it; useCalendarData keeps the month heatmap (day dots)
+    // and the day's scheduled runs.
     const [selectedDate, setSelectedDate] = useState<Date>(() =>
         initialDate ? new Date(initialDate + 'T00:00:00') : lastActivityDate ?? new Date(),
     );
     const [datePopoverOpen, setDatePopoverOpen] = useState(false);
     useEffect(() => rememberActivityDate(selectedDate), [selectedDate]);
-    const calendarData = useCalendarData(cronJobs, selectedDate, setSelectedDate, datePopoverOpen, section === 'learned');
+    const calendarData = useCalendarData(cronJobs, selectedDate, setSelectedDate, datePopoverOpen);
     // The scheduled run whose detail dialog is open (Day view "Open result").
     const [detailJobId, setDetailJobId] = useState<string | null>(null);
     const [sessionsFailed, setSessionsFailed] = useState(false);
@@ -2343,6 +2350,20 @@ export function ActivityPage({ onClose, initialSessionId, initialDate, noticedFo
             })
             .catch(select);
     }, [onSectionChange]);
+
+    // A watch conversation from a row of Your day opens in place: the Watch
+    // tab, on the conversation's own day, with its page open.
+    const [openConversationId, setOpenConversationId] = useState<string | null>(initialConversationId ?? null);
+    const openConversation = useCallback((conversationId: string, startMs: number) => {
+        const at = new Date(startMs);
+        setSelectedDate(new Date(at.getFullYear(), at.getMonth(), at.getDate()));
+        setOpenConversationId(conversationId);
+        onSectionChange('watch');
+    }, [onSectionChange]);
+    // Leaving the Watch tab drops the arrival, so coming back shows the list.
+    useEffect(() => {
+        if (section !== 'watch') setOpenConversationId(null);
+    }, [section]);
 
     // Fetch bridge port on mount, retrying if the bridge isn't ready yet.
     useEffect(() => {
@@ -3532,13 +3553,13 @@ export function ActivityPage({ onClose, initialSessionId, initialDate, noticedFo
         [detail, bridgePort, findClosestSnapshotIndex],
     );
 
-    // ── Header date label + navigation (Day and Week views) ──
+    // ── Header date label + navigation (one day at a time) ──
     const dayNavLabel = formatDayNavLabel(
         selectedDate,
-        t('summary.labels.today') as string,
-        t('summary.labels.yesterday') as string,
+        t('dayNav.today') as string,
+        t('dayNav.yesterday') as string,
     );
-    const dayStep = scope === 'week' ? 7 : 1;
+    const dayStep = 1;
     const shiftSelectedDate = (days: number) => {
         const next = new Date(selectedDate);
         next.setDate(next.getDate() + days);
@@ -3553,187 +3574,183 @@ export function ActivityPage({ onClose, initialSessionId, initialDate, noticedFo
         return next.getTime() > today.getTime();
     })();
 
+    // The header's tabs: Screen holds both its views (What you worked on and
+    // the Screen timeline); arrow keys move between tabs, as on You.
+    const tabIds = useId();
+    const activeTab: ActivityTabId = isTimeline ? 'workedOn' : section;
+    const moveTab = (from: ActivityTabId, step: 1 | -1) => {
+        const index = ACTIVITY_TABS.findIndex((tab) => tab.id === from);
+        const next = ACTIVITY_TABS[(index + step + ACTIVITY_TABS.length) % ACTIVITY_TABS.length].id;
+        onSectionChange(next);
+        document.getElementById(`${tabIds}-tab-${next}`)?.focus();
+    };
+
     // What you worked on: Stitched by work or As recorded, kept across days.
     const [workedOnView, setWorkedOnView] = useState<WorkedOnView>('stitched');
 
     return (
         <div className="flex min-h-0 flex-1 flex-col">
-            {/* Unified header row spanning full width — matches Knowledge/Memory/People */}
-            <div className="flex items-center gap-3 border-b border-border px-4 py-3 shrink-0">
-                {backButton ? (
+            {/* Header: the title, its sub-line, then the tabs with the date
+                beside them (computer-activity v1.0.0 rules 1-2; the same tab
+                bar as You). */}
+            <header className="flex flex-col gap-2 px-10 pt-9 pb-4 shrink-0">
+                {backButton && (
                     <button
                         type="button"
                         onClick={backButton.onClick}
-                        className="min-w-0 inline-flex items-center gap-1.5 text-sm font-semibold text-ink hover:text-accent-2 transition-colors shrink-0"
+                        className="min-w-0 w-fit inline-flex items-center gap-1.5 text-sm font-semibold text-ink hover:text-accent-2 transition-colors"
                     >
                         <ChevronLeft className="h-4 w-4 shrink-0" />
                         <span className="truncate">{backButton.label}</span>
                     </button>
-                ) : (
-                    <h2 className="text-sm font-semibold text-ink shrink-0">{t('title')}</h2>
                 )}
-
-                {/* Search — the existing activity search: it filters the Screen
-                    timeline's session list (backend keyword + semantic match) and
-                    the Day view's lists. */}
-                <div className="relative w-52 shrink-0">
-                    <SearchIcon className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted" />
-                    <input
-                        type="text"
-                        placeholder={t('searchPlaceholder') as string}
-                        value={searchText}
-                        onChange={(e) => setSearchText(e.target.value)}
-                        className="w-full pl-7 pr-2 py-1.5 text-[12px] rounded-md bg-panel text-ink placeholder:text-muted/60 outline-none focus:ring-1 focus:ring-accent-2/40 transition-colors"
-                    />
-                    {searchText && (
-                        <button
-                            onClick={() => setSearchText('')}
-                            className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-muted hover:text-ink"
-                        >
-                            <X className="h-3 w-3" />
-                        </button>
-                    )}
-                </div>
-
-                <div className="flex-1" />
-            </div>
-
-            <div
-                className="flex-1 min-h-0 flex flex-row"
-                style={{ '--wails-draggable': 'no-drag' } as React.CSSProperties}
-            >
-                {/* ── Section panel: the date (prev/next + picker), the
-                    Day | Week switch, and one row per section. Only the
-                    picked section shows on the right; the pick lives in the
-                    parent so it is remembered for the app session. ── */}
-                <nav aria-label={t('sections.label') as string} className="w-[220px] shrink-0 flex flex-col border-r border-border px-3 py-3 gap-4">
+                <h1 className="m-0 text-[26px] font-normal leading-[1.3] text-ink">{t('title')}</h1>
+                <p className="m-0 text-sm text-muted">{t('act.sub')}</p>
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                    <div
+                        role="tablist"
+                        aria-label={t('sections.label') as string}
+                        className="flex w-fit max-w-full flex-wrap gap-0.5 rounded-[10px] border border-border bg-panel-warm p-[3px]"
+                    >
+                        {ACTIVITY_TABS.map(({ id, labelKey }) => {
+                            const active = id === activeTab;
+                            return (
+                                <button
+                                    key={id}
+                                    id={`${tabIds}-tab-${id}`}
+                                    type="button"
+                                    role="tab"
+                                    data-activity-section={id}
+                                    aria-selected={active}
+                                    aria-controls={`${tabIds}-panel`}
+                                    tabIndex={active ? 0 : -1}
+                                    onClick={() => onSectionChange(id)}
+                                    onKeyDown={(event) => {
+                                        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+                                        event.preventDefault();
+                                        moveTab(id, event.key === 'ArrowRight' ? 1 : -1);
+                                    }}
+                                    className={cn(
+                                        'flex h-[30px] items-center rounded-lg px-3 text-[13px] font-medium text-ink transition-colors duration-[120ms]',
+                                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus',
+                                        active ? 'bg-surface-active' : 'hover:bg-surface-hover',
+                                    )}
+                                >
+                                    {t(labelKey)}
+                                </button>
+                            );
+                        })}
+                    </div>
+                    <div className="flex-1" />
+                    {/* The date with previous and next for the tabs that show one day; Watch
+                        and Your answers have none, and the Screen timeline
+                        has its own time filter in its sidebar. */}
                     {!isTimeline && !isWatch && !isAnswers && (
-                        <div className="flex flex-col gap-3">
-                            {/* Date navigation — the Screen timeline has its own
-                                time filter in its sidebar, so it hides this. */}
-                            <div className="flex items-center gap-0.5">
-                                <button
-                                    type="button"
-                                    onClick={() => shiftSelectedDate(-dayStep)}
-                                    className="p-1 rounded-md text-muted hover:text-ink hover:bg-surface-hover transition-colors"
-                                    title={t('dayNav.previous') as string}
-                                    aria-label={t('dayNav.previous') as string}
-                                >
-                                    <ChevronLeft className="h-3.5 w-3.5" />
-                                </button>
-                                <Popover open={datePopoverOpen} onOpenChange={setDatePopoverOpen}>
-                                    <PopoverTrigger asChild>
-                                        <button
-                                            type="button"
-                                            className="flex flex-1 min-w-0 items-center justify-center gap-1.5 px-2 py-1 text-[12px] font-medium text-ink rounded-md hover:bg-surface-hover transition-colors"
-                                            title={t('dayNav.pickDate') as string}
-                                        >
-                                            <span className="truncate">{dayNavLabel}</span>
-                                            <ChevronDown className="h-3 w-3 text-muted/60 shrink-0" />
-                                        </button>
-                                    </PopoverTrigger>
-                                    <PopoverContent className="w-auto p-0" align="start">
-                                        <CalendarWidget
-                                            mode="single"
-                                            selected={selectedDate}
-                                            onSelect={(d) => {
-                                                if (d) {
-                                                    setSelectedDate(d);
-                                                    setDatePopoverOpen(false);
-                                                }
-                                            }}
-                                            month={calendarData.displayMonth}
-                                            onMonthChange={calendarData.setDisplayMonth}
-                                            weekStartsOn={1}
-                                            disabled={{ after: new Date() }}
-                                            components={{
-                                                DayButton: ({ day, modifiers, ...buttonProps }) => {
-                                                    const dateStr = formatDateStr(day.date);
-                                                    const stats = calendarData.heatmapData.get(dateStr);
-                                                    const hasActivity = stats
-                                                        ? stats.activeMs > 0 ||
-                                                          stats.knowledgeCount > 0 ||
-                                                          stats.memoryCount > 0 ||
-                                                          stats.automationCreatedCount > 0 ||
-                                                          stats.automationRunCount > 0
-                                                        : false;
-                                                    return (
-                                                        <button {...buttonProps}>
-                                                            {buttonProps.children}
-                                                            {hasActivity && (
-                                                                <span
-                                                                    aria-hidden
-                                                                    className={`pointer-events-none absolute bottom-1 left-1/2 -translate-x-1/2 h-[3px] w-[3px] rounded-full ${modifiers.selected ? 'bg-panel' : 'bg-accent/70'}`}
-                                                                />
-                                                            )}
-                                                        </button>
-                                                    );
-                                                },
-                                            }}
-                                        />
-                                    </PopoverContent>
-                                </Popover>
-                                <button
-                                    type="button"
-                                    onClick={() => shiftSelectedDate(dayStep)}
-                                    disabled={nextDayDisabled}
-                                    className="p-1 rounded-md text-muted hover:text-ink hover:bg-surface-hover disabled:text-muted/40 disabled:hover:bg-transparent transition-colors"
-                                    title={t('dayNav.next') as string}
-                                    aria-label={t('dayNav.next') as string}
-                                >
-                                    <ChevronRight className="h-3.5 w-3.5" />
-                                </button>
-                            </div>
-
-                            {/* Day | Week scope switch */}
-                            <div className="flex items-center gap-1 rounded-lg bg-panel-warm p-0.5">
-                                {(['day', 'week'] as const).map((mode) => (
+                        <div className="flex items-center gap-0.5" data-testid="activity-day-nav">
+                            <button
+                                type="button"
+                                onClick={() => shiftSelectedDate(-dayStep)}
+                                className="p-1 rounded-md text-muted hover:text-ink hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus transition-colors"
+                                title={t('dayNav.previous') as string}
+                                aria-label={t('dayNav.previous') as string}
+                            >
+                                <ChevronLeft className="h-3.5 w-3.5" />
+                            </button>
+                            <Popover open={datePopoverOpen} onOpenChange={setDatePopoverOpen}>
+                                <PopoverTrigger asChild>
                                     <button
-                                        key={mode}
                                         type="button"
-                                        onClick={() => setScope(mode)}
-                                        className={`flex-1 px-2 py-1 text-[11px] rounded-md transition-colors ${
-                                            scope === mode
-                                                ? 'bg-panel text-ink shadow-[var(--shadow-soft)]'
-                                                : 'text-muted hover:text-ink'
-                                        }`}
+                                        className="flex min-w-0 items-center justify-center gap-1.5 px-2 py-1 text-[13px] font-medium text-ink rounded-md hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus transition-colors"
+                                        title={t('dayNav.pickDate') as string}
                                     >
-                                        {t(`viewMode.${mode}`)}
+                                        <span className="truncate">{dayNavLabel}</span>
+                                        <ChevronDown className="h-3 w-3 text-muted/60 shrink-0" />
                                     </button>
-                                ))}
-                            </div>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-auto p-0" align="end">
+                                    <CalendarWidget
+                                        mode="single"
+                                        selected={selectedDate}
+                                        onSelect={(d) => {
+                                            if (d) {
+                                                setSelectedDate(d);
+                                                setDatePopoverOpen(false);
+                                            }
+                                        }}
+                                        month={calendarData.displayMonth}
+                                        onMonthChange={calendarData.setDisplayMonth}
+                                        weekStartsOn={1}
+                                        disabled={{ after: new Date() }}
+                                        components={{
+                                            DayButton: ({ day, modifiers, ...buttonProps }) => {
+                                                const dateStr = formatDateStr(day.date);
+                                                const stats = calendarData.heatmapData.get(dateStr);
+                                                const hasActivity = stats
+                                                    ? stats.activeMs > 0 ||
+                                                      stats.knowledgeCount > 0 ||
+                                                      stats.memoryCount > 0 ||
+                                                      stats.automationCreatedCount > 0 ||
+                                                      stats.automationRunCount > 0
+                                                    : false;
+                                                return (
+                                                    <button {...buttonProps}>
+                                                        {buttonProps.children}
+                                                        {hasActivity && (
+                                                            <span
+                                                                aria-hidden
+                                                                className={`pointer-events-none absolute bottom-1 left-1/2 -translate-x-1/2 h-[3px] w-[3px] rounded-full ${modifiers.selected ? 'bg-panel' : 'bg-accent/70'}`}
+                                                            />
+                                                        )}
+                                                    </button>
+                                                );
+                                            },
+                                        }}
+                                    />
+                                </PopoverContent>
+                            </Popover>
+                            <button
+                                type="button"
+                                onClick={() => shiftSelectedDate(dayStep)}
+                                disabled={nextDayDisabled}
+                                className="p-1 rounded-md text-muted hover:text-ink hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus disabled:text-muted/40 disabled:hover:bg-transparent transition-colors"
+                                title={t('dayNav.next') as string}
+                                aria-label={t('dayNav.next') as string}
+                            >
+                                <ChevronRight className="h-3.5 w-3.5" />
+                            </button>
                         </div>
                     )}
-
-                    {/* Sections — one shows at a time on the right. Picking a
-                        day section while the Week scope shows returns to Day. */}
-                    <div className="flex flex-col gap-1">
-                        {([
-                            { id: 'yourDay' as const, labelKey: 'day.yourDay', Icon: Sun, active: scope === 'day' && section === 'yourDay', pick: () => { setScope('day'); onSectionChange('yourDay'); } },
-                            { id: 'workedOn' as const, labelKey: 'act.tabScreen', Icon: Film, active: (scope === 'day' && section === 'workedOn') || isTimeline, pick: () => { setScope('day'); onSectionChange('workedOn'); } },
-                            { id: 'watch' as const, labelKey: 'act.tabWatch', Icon: Watch, active: isWatch, pick: () => onSectionChange('watch') },
-                            { id: 'agents' as const, labelKey: 'act.tabAgents', Icon: Bot, active: isAgents, pick: () => onSectionChange('agents') },
-                            { id: 'answers' as const, labelKey: 'act.tabAnswers', Icon: MessageSquareReply, active: isAnswers, pick: () => onSectionChange('answers') },
-                        ]).map(({ id, labelKey, Icon, active, pick }) => (
+                    {/* Search — the existing activity search: it filters the
+                        Screen timeline's session list (backend keyword +
+                        semantic match) and What you worked on. */}
+                    <div className="relative w-52 shrink-0">
+                        <SearchIcon className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted" />
+                        <input
+                            type="text"
+                            placeholder={t('searchPlaceholder') as string}
+                            value={searchText}
+                            onChange={(e) => setSearchText(e.target.value)}
+                            className="w-full pl-7 pr-2 py-1.5 text-[12px] rounded-md bg-panel text-ink placeholder:text-muted/60 outline-none focus:ring-1 focus:ring-accent-2/40 transition-colors"
+                        />
+                        {searchText && (
                             <button
-                                key={id}
-                                type="button"
-                                data-activity-section={id}
-                                aria-current={active ? 'page' : undefined}
-                                onClick={pick}
-                                className={`flex items-center gap-2 w-full px-3 py-[5px] text-[13px] rounded-md transition-colors duration-[var(--motion-duration-fast)] ease-[var(--motion-ease-out)] cursor-pointer ${
-                                    active
-                                        ? 'bg-surface-active text-ink'
-                                        : 'text-muted hover:bg-surface-hover'
-                                }`}
+                                onClick={() => setSearchText('')}
+                                className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-muted hover:text-ink"
                             >
-                                <Icon className="size-3.5 shrink-0" />
-                                <span className="flex-1 min-w-0 text-left truncate">{t(labelKey as never) as string}</span>
+                                <X className="h-3 w-3" />
                             </button>
-                        ))}
+                        )}
                     </div>
-                </nav>
+                </div>
+            </header>
 
+            <div
+                id={`${tabIds}-panel`}
+                role="tabpanel"
+                aria-labelledby={`${tabIds}-tab-${activeTab}`}
+                className="flex-1 min-h-0 flex flex-row border-t border-border"
+                style={{ '--wails-draggable': 'no-drag' } as React.CSSProperties}
+            >
                 {/* ── Left sidebar: the Screen timeline's session list. The Day
                     and Week views navigate by date via the section panel, so
                     the session-oriented filters and list would be unrelated
@@ -3994,57 +4011,39 @@ export function ActivityPage({ onClose, initialSessionId, initialDate, noticedFo
                         <ActivityWatchRecordings
                             bridgePort={bridgePort}
                             onOpenSession={openSessionInTimeline}
+                            openConversationId={openConversationId}
                         />
                     ) : isAnswers ? (
                         <ActivityAnswers />
                     ) : isAgents ? (
                         <div className="flex-1 overflow-y-auto">
                             <div className="mx-auto max-w-2xl px-6 py-6">
-                                <ActivityFeed date={selectedDate} kinds={['handoff', 'agent']} emptyText={t('feed.emptyAgents')} />
+                                <ActivityFeed date={selectedDate} kinds={['handoff']} emptyText={t('feed.emptyAgents')} />
                             </div>
                         </div>
-                    ) : !isTimeline && scope === 'day' ? (
+                    ) : !isTimeline ? (
                         <ActivityDayView
                             date={selectedDate}
-                            noticedFocus={noticedFocus}
-                            onNoticedFocusConsumed={onNoticedFocusConsumed}
                             initialThreadId={initialThreadId}
                             onInitialThreadConsumed={onInitialThreadConsumed}
                             searchQuery={debouncedKeyword}
                             bridgePort={bridgePort}
                             dailyData={calendarData.dailyData}
-                            dayLoading={calendarData.dayLoading}
-                            dayPending={calendarData.dayPending}
-                            dayFailed={calendarData.dayFailed}
-                            onRetryDay={calendarData.retryDay}
                             automationRuns={calendarData.automationRuns}
-                            knowledge={calendarData.knowledge}
-                            memoryEntries={calendarData.memoryEntries}
-                            hourRange={calendarData.hourRange}
-                            maxHourly={calendarData.maxHourly}
-                            reloadDailySummary={calendarData.reloadDailySummary}
                             onStartChat={onStartChat}
-                            onOpenSession={openSessionInTimeline}
                             onOpenRunDetail={setDetailJobId}
                             section={daySection}
                             onSectionChange={onSectionChange}
                             workedOnView={workedOnView}
                             onWorkedOnViewChange={setWorkedOnView}
                             onOpenTimeline={() => { setSelectedApps(null); onSectionChange('timeline'); }}
-                        />
-                    ) : !isTimeline && scope === 'week' ? (
-                        <ActivityWeekView
-                            date={selectedDate}
-                            onOpenDay={(dateStr) => {
-                                setSelectedDate(new Date(dateStr + 'T00:00:00'));
-                                setScope('day');
-                            }}
-                            yourWeekHandlers={yourWeekHandlers}
-                            onYourWeekCard={onYourWeekCard}
+                            onOpenConversation={openConversation}
+                            onOpenTopic={onOpenTopic}
+                            onOpenRecording={openSessionInTimeline}
                         />
                     ) : null}
                     </ActivityOpenChatContext.Provider>
-                    {isWatch || isAgents || isAnswers || (!isTimeline && (scope === 'day' || scope === 'week')) ? null : (
+                    {!isTimeline ? null : (
                     <>
                     {sessionsFailed && (
                         <ActivityInlineNotice notice={{ tone: 'error', text: t('timeline.sessionsFailed'), onAction: () => refreshSessionsRef.current() }} className="px-8 pt-4" />

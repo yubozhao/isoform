@@ -115,7 +115,7 @@ export function SidebarFoot({ collapsed, onOpenSettings, onOpenPhone, closedEyes
 
     if (collapsed) {
         return (
-            <div data-sidebar-foot className="flex flex-col items-center gap-1 w-full pb-1">
+            <div data-sidebar-foot className="flex flex-col items-center gap-1 w-full pb-3">
                 <Button variant="quiet" size="icon" aria-label={phoneText} title={phoneText} onClick={onOpenPhone} data-phone-line={phone} className="relative">
                     <Smartphone className="size-[15px]" />
                     {/* The rail keeps the line's state as a dot: green connected, grey not (computer-window rule 4). */}
@@ -139,7 +139,7 @@ export function SidebarFoot({ collapsed, onOpenSettings, onOpenPhone, closedEyes
     }
 
     return (
-        <div data-sidebar-foot className="px-3 flex flex-col gap-0.5 pb-1">
+        <div data-sidebar-foot className="px-3 flex flex-col gap-0.5 pb-3">
             <button type="button" className={`${lineClass} hover:bg-surface-hover cursor-pointer text-left`} onClick={onOpenPhone} data-phone-line={phone}>
                 <Smartphone className="size-[14px] shrink-0" />
                 <span className="flex-1 min-w-0 truncate">{phoneText}</span>

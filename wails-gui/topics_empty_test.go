@@ -293,14 +293,7 @@ func TestTodaySnapshotReadsWhileRefreshWaitsOnPrivacyStore(t *testing.T) {
 	// Ordinary historical labels now verify on bootstrap. Keep this guard's
 	// withheld-all case by deterministically making pause history unavailable
 	// until the bounded read finishes, then let full publication proceed.
-	revision, err := a.store.ReadRevision(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	releasePrivacy, err := a.store.LockReadRevision(t.Context(), revision)
-	if err != nil {
-		t.Fatal(err)
-	}
+	releasePrivacy := blockStateStoreReads(t, a.store)
 	t.Cleanup(releasePrivacy)
 	var first TodayTopicsView
 	elapsed := coldReadBestOfThree(t, func() {

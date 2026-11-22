@@ -33,6 +33,8 @@ func isAllowedWeChatCDNHost(host string) bool {
 // body is AES-128-ECB ciphertext with PKCS7 padding — symmetric with our upload
 // flow in wechat_send.go. Prefers `FullURL` (already encodes the query param);
 // falls back to `URL + ?encrypted_query_param=...` otherwise.
+//
+//isoform:destination chat_bridges
 func (c *wechatAPIClient) DownloadAndDecryptMedia(ctx context.Context, media *wechatMediaRef) ([]byte, string, error) {
 	if media == nil {
 		return nil, "", fmt.Errorf("nil media")

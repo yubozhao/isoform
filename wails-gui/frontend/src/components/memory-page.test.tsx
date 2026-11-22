@@ -40,6 +40,12 @@ const mocks = vi.hoisted(() => ({
     moveGoal: vi.fn(),
     createGoal: vi.fn(),
     translateAll: vi.fn(),
+    notMine: vi.fn(),
+    getWhy: vi.fn(),
+    notThis: vi.fn(),
+    confirmPortrait: vi.fn(),
+    notQuitePortrait: vi.fn(),
+    undoConfirmPortrait: vi.fn(),
     events: new Map<string, Set<(value: unknown) => void>>(),
 }));
 
@@ -63,6 +69,12 @@ vi.mock('@/lib/wails-shim-app', () => ({
     NotQuiteMemoryEntry: mocks.notQuite,
     UndoNotQuiteMemoryEntry: mocks.undoNotQuite,
     UndoMemoryWording: mocks.undoWording,
+    NotMineMemoryEntry: mocks.notMine,
+    GetWhy: mocks.getWhy,
+    NotThis: mocks.notThis,
+    ConfirmAboutYouPortrait: mocks.confirmPortrait,
+    NotQuiteAboutYouPortrait: mocks.notQuitePortrait,
+    UndoConfirmAboutYouPortrait: mocks.undoConfirmPortrait,
     GetMemoryVersion: mocks.getVersion,
     TranslateMemoryEntryToCurrentLanguage: vi.fn(),
     TranslateMemoryVersionToCurrentLanguage: vi.fn(),
@@ -281,12 +293,14 @@ describe('MemoryPage editing and forgetting', () => {
     });
 
     it.each([
-        ['en', 'Mark "Writing style" as wrongly attributed', 'Wrong subject?', 'This is actually about another person, not me.', 'Review removal', 'Correct this attribution?', 'Confirm correction', 'Attribution corrected'],
-        ['zh-CN', '标记「Writing style」为主体归属错误', '搞错主体了？', '这条其实是另一个人的事,不是我的。', '查看移除范围', '更正这条记忆的归属？', '确认更正', '已更正记忆归属'],
-    ])('uses correction-specific preview and confirmation after rejecting attribution in %s', async (language, rejectAction, rejectTitle, reason, reviewAction, correctionTitle, confirmAction, successTitle) => {
+        ['en', 'More memory actions', 'Wrong subject', 'Wrong subject?', 'This is actually about another person, not me.', 'Review removal', 'Correct this attribution?', 'Confirm correction', 'Attribution corrected'],
+        ['zh-CN', '更多记忆操作', '搞错主体了', '搞错主体了？', '这条其实是另一个人的事,不是我的。', '查看移除范围', '更正这条记忆的归属？', '确认更正', '已更正记忆归属'],
+    ])('uses correction-specific preview and confirmation after rejecting attribution in %s', async (language, menu, rejectAction, rejectTitle, reason, reviewAction, correctionTitle, confirmAction, successTitle) => {
         await i18n.changeLanguage(language);
         await renderSelected();
-        fireEvent.click(screen.getByRole('button', { name: rejectAction }));
+        // The row's attribution button went with the card grid; Wrong subject lives in the detail's More menu.
+        await openDetailMenu(menu);
+        fireEvent.click(await screen.findByRole('menuitem', { name: rejectAction }));
         const rejectDialog = screen.getByRole('dialog', { name: rejectTitle });
         fireEvent.click(within(rejectDialog).getByRole('radio', { name: reason }));
         fireEvent.click(within(rejectDialog).getByRole('button', { name: reviewAction }));
@@ -344,7 +358,8 @@ describe('MemoryPage editing and forgetting', () => {
     it('edits the full plain text within its fixed area group and saves it', async () => {
         await renderSelected();
         expect(screen.getByRole('button', { name: /^Other\s*1$/ })).toBeInTheDocument();
-        expect(screen.getAllByText('A preference').some((node) => node.tagName === 'SPAN')).toBe(true);
+        // No kind labels on claim lines any more (the detail keeps its own).
+        expect(within(screen.getByTestId('belief-groups')).queryByText('A preference')).not.toBeInTheDocument();
         fireEvent.click(screen.getByRole('button', { name: 'Edit wording' }));
         const editor = screen.getByRole('textbox', { name: 'Memory point' });
         expect(editor).toHaveValue('You prefer detailed replies.');
@@ -355,7 +370,10 @@ describe('MemoryPage editing and forgetting', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Save' }));
         await waitFor(() => expect(mocks.saveEntry).toHaveBeenCalledWith(entry.id, edited));
         await waitFor(() => expect(screen.queryByRole('textbox', { name: 'Memory point' })).not.toBeInTheDocument());
-        expect(screen.getByRole('button', { name: 'You prefer concise replies.' })).toBeInTheDocument();
+        const detail = screen.getByRole('complementary', { name: 'Belief detail' });
+        expect(within(detail).getByRole('button', { name: 'You prefer concise replies.' })).toBeInTheDocument();
+        // The claim line in the list reads the saved words too.
+        expect(within(screen.getByTestId('belief-groups')).getByRole('button', { name: 'You prefer concise replies.' })).toBeInTheDocument();
         expect(mocks.notify).not.toHaveBeenCalled();
         expect(screen.getByRole('button', { name: /^Other\s*1$/ })).toBeInTheDocument();
     });
@@ -367,14 +385,14 @@ describe('MemoryPage editing and forgetting', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
         expect(mocks.saveEntry).not.toHaveBeenCalled();
         expect(screen.queryByRole('textbox', { name: 'Memory point' })).not.toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'You prefer detailed replies.' })).toBeInTheDocument();
+        expect(within(screen.getByRole('complementary', { name: 'Belief detail' })).getByRole('button', { name: 'You prefer detailed replies.' })).toBeInTheDocument();
     });
 
     it('clears the active draft when its memory is forgotten and starts the next edit as a new record', async () => {
         await renderSelected();
         fireEvent.click(screen.getByRole('button', { name: 'Edit wording' }));
         fireEvent.change(screen.getByRole('textbox', { name: 'Memory point' }), { target: { value: 'Draft that must be discarded' } });
-        fireEvent.click(screen.getByRole('button', { name: 'Forget "Writing style"' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Forget this' }));
         const dialog = screen.getByRole('dialog');
         await within(dialog).findByText('Detailed communication preference');
         mocks.getEntries.mockResolvedValue([]);
@@ -431,17 +449,6 @@ describe('MemoryPage editing and forgetting', () => {
         await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
         expect(screen.queryByRole('heading', { name: entry.title })).not.toBeInTheDocument();
         expect(mocks.notify).not.toHaveBeenCalled();
-    });
-
-    it('opens the same preview from a grouped row and cancelling leaves it untouched', async () => {
-        await renderSelected();
-        fireEvent.click(screen.getByRole('button', { name: 'Forget "Writing style"' }));
-        const dialog = screen.getByRole('dialog');
-        await within(dialog).findByText('Detailed communication preference');
-        fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
-        expect(mocks.forgetEntry).not.toHaveBeenCalled();
-        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-        expect(screen.getByRole('heading', { name: entry.title })).toBeInTheDocument();
     });
 
     it('cannot forget before the preview has loaded', async () => {
@@ -554,71 +561,6 @@ describe('MemoryPage memory-first browsing', () => {
         expect(document.body.innerHTML).not.toContain(id);
         fireEvent.click(copyAction);
         expect(writeText).toHaveBeenCalledWith(id);
-    });
-
-    it.each([
-        ['en', 'Search what Isoform believes', 'Filter by kind', 'Edit "You prefer concise replies."', 'Forget "You prefer concise replies."'],
-        ['zh-CN', '搜索 Isoform 对你的认识', '按类型筛选', '编辑「You prefer concise replies.」', '忘记“You prefer concise replies.”'],
-    ])('combines text search and kind filtering with direct edit and forget actions in %s', async (language, search, filter, edit, forget) => {
-        await i18n.changeLanguage(language);
-        const topic = { ...entry, id: 'topic-id', title: 'Another topic', dimension: 'topic_highlight', content: '# Another topic\nYou use concise project plans.' };
-        resetDefaults([untitled, topic]);
-        // The index can be unavailable; local body matches still work.
-        mocks.search.mockRejectedValue(new Error('offline'));
-        render(<MemoryPage devToolsUnlocked initialSelectedId={id} />);
-        await screen.findByRole('heading', { name: 'You prefer concise replies.' });
-        fireEvent.change(screen.getByRole('textbox', { name: search }), { target: { value: 'CONCISE' } });
-        fireEvent.change(screen.getByRole('combobox', { name: filter }), { target: { value: 'preference' } });
-        await waitFor(() => expect(mocks.search).toHaveBeenCalledWith('CONCISE', 20));
-        expect(screen.getByRole('button', { name: /You prefer concise replies\./, pressed: true })).toBeInTheDocument();
-        expect(screen.queryByRole('button', { name: /You prefer concise project plans\./ })).not.toBeInTheDocument();
-        fireEvent.click(screen.getByRole('button', { name: edit }));
-        expect(screen.getByRole('textbox', { name: language === 'en' ? 'Memory point' : '记忆要点' })).toHaveValue('You prefer concise replies.');
-        fireEvent.click(screen.getByRole('button', { name: forget }));
-        await waitFor(() => expect(mocks.getPreview).toHaveBeenCalledWith(id));
-        const dialog = screen.getByRole('dialog');
-        expect((await within(dialog).findAllByText('You prefer concise replies.')).length).toBeGreaterThan(0);
-        expect(dialog).not.toHaveTextContent(id);
-    });
-
-    it('filters the belief list by text and kind', async () => {
-        const topic = { ...entry, id: 'topic-id', title: 'Project plans', dimension: 'topic_highlight', content: '# Project plans\nYou use concise project plans.' };
-        resetDefaults([untitled, topic]);
-        render(<MemoryPage devToolsUnlocked />);
-        expect(await screen.findAllByRole('button', { name: /Project plans.*You use concise project plans/, pressed: false })).toHaveLength(1);
-        fireEvent.change(screen.getByRole('textbox', { name: 'Search what Isoform believes' }), { target: { value: 'CONCISE' } });
-        fireEvent.change(screen.getByRole('combobox', { name: 'Filter by kind' }), { target: { value: 'preference' } });
-        expect(screen.getAllByRole('button', { name: /You prefer concise replies\./, pressed: false })).toHaveLength(1);
-        expect(screen.queryByRole('button', { name: /Project plans.*You use concise project plans/, pressed: false })).not.toBeInTheDocument();
-    });
-
-    // About you v1.0.0 Y18: no Searching words; nothing matching names the query.
-    it('says nothing matches the query, without Searching words', async () => {
-        mocks.search.mockReturnValueOnce(new Promise(() => {}));
-        render(<MemoryPage devToolsUnlocked />);
-        await screen.findAllByRole('button', { name: /You prefer concise replies\./, pressed: false });
-        fireEvent.change(screen.getByRole('textbox', { name: 'Search what Isoform believes' }), { target: { value: 'zebra' } });
-        await waitFor(() => expect(mocks.search).toHaveBeenCalledWith('zebra', 20));
-        expect(screen.queryByText('Searching...')).not.toBeInTheDocument();
-        expect(screen.getByText('Nothing matches “zebra”.')).toBeInTheDocument();
-    });
-
-    it('deduplicates indexed chunks into the same memory rows without exposing paths and ignores stale searches', async () => {
-        let resolveFirst!: (results: unknown[]) => void;
-        mocks.search.mockReturnValueOnce(new Promise((resolve) => { resolveFirst = resolve; }));
-        mocks.search.mockResolvedValueOnce([{ path: id + '.md', startLine: 10, endLine: 12 }, { path: id + '.md', startLine: 20, endLine: 22 }]);
-        render(<MemoryPage devToolsUnlocked initialSelectedId={id} />);
-        await screen.findByRole('heading', { name: 'You prefer concise replies.' });
-        const search = screen.getByRole('textbox', { name: 'Search what Isoform believes' });
-        fireEvent.change(search, { target: { value: 'first query' } });
-        await waitFor(() => expect(mocks.search).toHaveBeenCalledWith('first query', 20));
-        fireEvent.change(search, { target: { value: 'communication style' } });
-        await waitFor(() => expect(mocks.search).toHaveBeenCalledWith('communication style', 20));
-        expect(await screen.findByRole('button', { name: /You prefer concise replies\./, pressed: true })).toBeInTheDocument();
-        await act(async () => resolveFirst([]));
-        expect(screen.getAllByRole('button', { name: /You prefer concise replies\./, pressed: true })).toHaveLength(1);
-        expect(screen.queryByText(id + '.md')).not.toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Edit "You prefer concise replies."' })).toBeInTheDocument();
     });
 });
 
@@ -760,7 +702,8 @@ describe('MemoryPage human-first detail', () => {
         fireEvent.change(screen.getByRole('textbox', { name: 'Memory point' }), { target: { value: 'Unsaved sentence' } });
         const detail = screen.getByRole('complementary', { name: 'Belief detail' });
         fireEvent.click(within(detail).getByRole('button', { name: 'Technical details' }));
-        fireEvent.click(screen.getByRole('button', { name: /Planning.*You plan on paper/, pressed: false }));
+        // The claim's words open its detail.
+        fireEvent.click(within(screen.getByTestId('belief-groups')).getByRole('button', { name: 'You plan on paper.' }));
         expect(await screen.findByRole('heading', { name: 'Planning' })).toBeInTheDocument();
         expect(screen.queryByRole('textbox', { name: 'Memory point' })).not.toBeInTheDocument();
         expect(within(screen.getByRole('complementary', { name: 'Belief detail' })).getByRole('button', { name: 'Technical details' })).toHaveAttribute('aria-expanded', 'false');
@@ -800,35 +743,6 @@ describe('MemoryPage human-first detail', () => {
         expect(screen.queryByRole('heading', { name: entry.title })).not.toBeInTheDocument();
         expect(onOpenChange).not.toHaveBeenCalled();
         fireEvent.keyDown(screen.getByRole('heading', { name: 'What Isoform believes about you' }), { key: 'Escape' });
-        expect(onOpenChange).toHaveBeenCalledWith(false);
-    });
-
-    it('clears a search on Escape before closing the belief, then the dialog', async () => {
-        const onOpenChange = vi.fn();
-        function Host() {
-            const escapeRef = useRef<(() => boolean) | null>(null);
-            const [open, setOpen] = useState(true);
-            return (
-                <Dialog open={open} onOpenChange={(next) => { onOpenChange(next); setOpen(next); }}>
-                    <RetainedDialogContent open={open} retain={false} onEscapeKeyDown={(e) => { if (escapeRef.current?.()) e.preventDefault(); }}>
-                        <DialogTitle>About you</DialogTitle>
-                        <MemoryPage initialSelectedId={entry.id} escapeRef={escapeRef} />
-                    </RetainedDialogContent>
-                </Dialog>
-            );
-        }
-        render(<Host />);
-        await screen.findByRole('heading', { name: entry.title });
-        const search = screen.getByRole('textbox', { name: 'Search what Isoform believes' });
-        fireEvent.change(search, { target: { value: 'replies' } });
-        search.focus();
-        fireEvent.keyDown(search, { key: 'Escape' });
-        expect(search).toHaveValue('');
-        expect(screen.getByRole('heading', { name: entry.title })).toBeInTheDocument();
-        fireEvent.keyDown(search, { key: 'Escape' });
-        expect(screen.queryByRole('heading', { name: entry.title })).not.toBeInTheDocument();
-        expect(onOpenChange).not.toHaveBeenCalled();
-        fireEvent.keyDown(search, { key: 'Escape' });
         expect(onOpenChange).toHaveBeenCalledWith(false);
     });
 
@@ -882,9 +796,9 @@ describe('About you overview', () => {
         const agents = await screen.findByRole('button', { name: /^How you work with your agents\s*1$/ });
         expect(screen.getByRole('button', { name: /^Work\s*1$/ })).toBeInTheDocument();
         // Collapsed by default: the belief is not listed until it is opened.
-        expect(screen.queryByRole('button', { name: /Planning.*You plan the week/ })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'You plan the week on Sunday evening.' })).not.toBeInTheDocument();
         fireEvent.click(agents);
-        expect(await screen.findByRole('button', { name: /Planning.*You plan the week/ })).toBeInTheDocument();
+        expect(await screen.findByRole('button', { name: 'You plan the week on Sunday evening.' })).toBeInTheDocument();
         expect(screen.getByText('How you run your coding agents. Kept apart from what Isoform learns about you.')).toBeInTheDocument();
     });
 
@@ -898,32 +812,35 @@ describe('About you overview', () => {
         expect(screen.queryByRole('button', { name: /How you work with your agents/ })).not.toBeInTheDocument();
     });
 
-    it('groups beliefs by fixed area with a kind label, confidence bar and status', async () => {
+    // computer-you v1.0.0 rule 4: the rest by area, each a claim line; no
+    // confidence bars, kind labels or status chips in the list any more.
+    it('groups unjudged claims by fixed area as claim lines, with no confidence bar, kind label or chip', async () => {
         mocks.getAbout.mockResolvedValue({ ...aboutFor([entry, second]), beliefs: [
-            { ...aboutFor([entry]).beliefs[0], area: 'work', status: 'confirmed', confidence: 4 },
+            { ...aboutFor([entry]).beliefs[0], area: 'work', confidence: 4 },
             { ...aboutFor([second]).beliefs[0], area: 'people', status: 'learned_today', confidence: 1 },
         ] });
         render(<MemoryPage devToolsUnlocked />);
-        const preference = await screen.findByRole('button', { name: /Writing style.*You prefer detailed replies/, pressed: false });
-        expect(within(preference).getByRole('img', { name: 'Confidence 4 of 4' })).toBeInTheDocument();
-        expect(within(preference).getByText('Confirmed')).toBeInTheDocument();
-        const learned = screen.getByRole('button', { name: /Planning.*You plan the week/, pressed: false });
-        expect(within(learned).getByRole('img', { name: 'Confidence 1 of 4' })).toBeInTheDocument();
-        // v1.0.2 Y36: the status slot says only Inferred or Confirmed.
-        expect(within(learned).getByText('Inferred')).toBeInTheDocument();
-        expect(within(learned).queryByText('Learned today')).not.toBeInTheDocument();
-        expect(screen.getByRole('button', { name: /^Work\s*1$/ })).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: /^People\s*1$/ })).toBeInTheDocument();
+        const groups = await screen.findByTestId('belief-groups');
+        expect(within(groups).getByRole('button', { name: /^Work\s*1$/ })).toBeInTheDocument();
+        expect(within(groups).getByRole('button', { name: /^People\s*1$/ })).toBeInTheDocument();
+        const lines = within(groups).getAllByRole('article');
+        expect(lines).toHaveLength(2);
+        for (const line of lines) {
+            expect(line).toHaveAttribute('data-claim-row');
+            expect(line).toHaveTextContent('Right?');
+        }
+        expect(screen.queryByRole('img', { name: /^Confidence \d of 4$/ })).not.toBeInTheDocument();
+        expect(document.querySelector('[data-status]')).toBeNull();
+        expect(screen.queryByText('Inferred')).not.toBeInTheDocument();
+        expect(screen.queryByText('A preference')).not.toBeInTheDocument();
+        expect(screen.queryByText('Something I learned about you')).not.toBeInTheDocument();
         expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
-        expect(screen.getAllByText('A preference').some((node) => node.tagName === 'SPAN')).toBe(true);
-        expect(screen.getAllByText('Something I learned about you').some((node) => node.tagName === 'SPAN')).toBe(true);
     });
 
     // jsdom has no layout, so this guards the layout classes: area groups
-    // stack at full width (never grid cells side by side), each group's rows
-    // flow into columns, and New this week cards are wide enough for their
-    // three buttons on one row.
-    it('stacks belief groups at full width and keeps review cards wide enough for one button row', async () => {
+    // stack at full width (never grid cells side by side) and each group's
+    // claim lines stack too.
+    it('stacks belief groups and their claim lines at full width', async () => {
         mocks.getAbout.mockImplementation(async () => aboutFor([entry, second], { newThisWeek: [second.id] }));
         render(<MemoryPage devToolsUnlocked />);
         const groups = await screen.findByTestId('belief-groups');
@@ -931,12 +848,12 @@ describe('About you overview', () => {
         expect(groups.className).not.toMatch(/\bgrid\b|grid-template-columns/);
         expect(groups.children).toHaveLength(1);
         for (const rows of screen.getAllByTestId('belief-group-rows')) {
-            expect(rows).toHaveClass('grid');
-            expect(rows.className).toContain('repeat(auto-fill,minmax(min(100%,340px),1fr))');
+            expect(rows).toHaveClass('flex', 'flex-col');
+            expect(rows.className).not.toMatch(/\bgrid\b/);
         }
         const cards = screen.getByTestId('review-cards');
-        const min = Number(cards.className.match(/minmax\(min\(100%,(\d+)px\)/)?.[1]);
-        expect(min).toBeGreaterThanOrEqual(300);
+        expect(cards).toHaveClass('flex', 'flex-col');
+        expect(within(cards).getAllByRole('article')).toHaveLength(1);
     });
 
     it('keeps the storage numbers folded under Technical details', async () => {
@@ -957,7 +874,7 @@ describe('About you overview', () => {
         expect(alert).toHaveTextContent('Could not load what Isoform believes about you.');
         mocks.getEntries.mockResolvedValue([entry, second]);
         fireEvent.click(within(alert).getByRole('button', { name: 'Try again' }));
-        expect(await screen.findByRole('button', { name: /Planning.*You plan the week/, pressed: false })).toBeInTheDocument();
+        expect(await screen.findByRole('button', { name: 'You plan the week on Sunday evening.' })).toBeInTheDocument();
     });
 
     it('says when confidence and new beliefs cannot be read, keeps the beliefs, and retries', async () => {
@@ -965,10 +882,12 @@ describe('About you overview', () => {
         render(<MemoryPage devToolsUnlocked />);
         const alert = await screen.findByRole('alert');
         expect(alert).toHaveTextContent('Could not load what is new this week or how sure Isoform is.');
-        expect(screen.getByRole('button', { name: /Planning.*You plan the week/, pressed: false })).toBeInTheDocument();
-        mocks.getAbout.mockResolvedValue({ ...aboutFor([entry, second]), beliefs: aboutFor([entry, second], { confidence: 3 }).beliefs });
+        expect(screen.getByRole('button', { name: 'You plan the week on Sunday evening.' })).toBeInTheDocument();
+        mocks.getAbout.mockResolvedValue(aboutFor([entry, second], { newThisWeek: [second.id] }));
         fireEvent.click(within(alert).getByRole('button', { name: 'Try again' }));
-        expect(await screen.findAllByRole('img', { name: 'Confidence 3 of 4' })).toHaveLength(2);
+        // The read is back: the new claim moves up to To check.
+        const toCheck = await screen.findByRole('region', { name: 'To check' });
+        expect(within(toCheck).getByRole('button', { name: 'You plan the week on Sunday evening.' })).toBeInTheDocument();
         expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     });
 
@@ -980,73 +899,7 @@ describe('About you overview', () => {
     });
 });
 
-describe('About you portrait', () => {
-    const second = { ...entry, id: 'second', title: 'Planning', content: '# Planning\n- You plan the week on Sunday evening.\n' };
-    beforeEach(async () => {
-        vi.resetAllMocks();
-        window.localStorage.clear();
-        await i18n.changeLanguage('en');
-        resetDefaults([entry, second]);
-    });
-
-    it('opens the beliefs behind a phrase; Show in Beliefs opens the belief', async () => {
-        mocks.getPortrait.mockResolvedValue(readyPortrait([
-            { text: 'You ' },
-            { text: 'want detailed replies', memoryIds: ['gone', entry.id] },
-            { text: ' and ' },
-            { text: 'plan on Sundays', memoryIds: ['second'], confirmed: true },
-            { text: '.' },
-        ]));
-        render(<MemoryPage devToolsUnlocked />);
-        expect(await screen.findByRole('heading', { level: 2, name: 'The Blueprint Builder' })).toBeInTheDocument();
-        expect(screen.queryByRole('button', { name: 'You' })).not.toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'plan on Sundays' })).toHaveAttribute('data-underline', 'solid');
-        expect(screen.getByRole('button', { name: 'want detailed replies' })).toHaveAttribute('data-underline', 'dotted');
-        fireEvent.click(screen.getByRole('button', { name: 'plan on Sundays' }));
-        const popover = await screen.findByRole('dialog');
-        expect(popover).toHaveTextContent('Why Isoform says this');
-        expect(popover).toHaveTextContent('You plan the week on Sunday evening.');
-        fireEvent.click(within(popover).getByRole('button', { name: 'Show in Beliefs' }));
-        expect(await screen.findByRole('heading', { level: 2, name: 'Planning' })).toBeInTheDocument();
-    });
-
-    // About you v1.0.0 Y5: Not quite on a phrase opens the decided review field.
-    it('opens the review field from a phrase Not quite', async () => {
-        mocks.getPortrait.mockResolvedValue(readyPortrait([
-            { text: 'You ' },
-            { text: 'want detailed replies', memoryIds: [entry.id] },
-            { text: '.' },
-        ]));
-        render(<MemoryPage />);
-        fireEvent.click(await screen.findByRole('button', { name: 'want detailed replies' }));
-        const popover = await screen.findByRole('dialog');
-        fireEvent.click(within(popover).getByRole('button', { name: 'Not quite' }));
-        expect(await screen.findByText(/What.s closer\? You can leave it blank\./)).toBeInTheDocument();
-        expect(mocks.notify).not.toHaveBeenCalled();
-    });
-
-    it('says the portrait is on its way while Isoform is still learning', async () => {
-        render(<MemoryPage devToolsUnlocked />);
-        expect(await screen.findByRole('heading', { level: 2, name: 'On its way' })).toBeInTheDocument();
-        // v1.0.2 Y34: the waiting portrait counts nothing.
-        expect(screen.getByText('Isoform writes your portrait after about 4 more days of your work.')).toBeInTheDocument();
-        expect(screen.queryByText(/of 20 beliefs|of 5 days/)).not.toBeInTheDocument();
-        expect(screen.queryByText(/Loading/)).not.toBeInTheDocument();
-    });
-
-    it('never shows a load error: an unreadable portrait waits for the rewrite', async () => {
-        mocks.getPortrait.mockRejectedValueOnce(new Error('portrait_unavailable'));
-        render(<MemoryPage devToolsUnlocked />);
-        expect(await screen.findByRole('heading', { level: 1 })).toBeInTheDocument();
-        await act(async () => {});
-        expect(screen.queryByText(/Could not load your portrait/)).not.toBeInTheDocument();
-        mocks.getPortrait.mockResolvedValue(learningPortrait());
-        await emitEvent('portrait:updated');
-        expect(await screen.findByRole('heading', { level: 2, name: 'On its way' })).toBeInTheDocument();
-    });
-});
-
-describe('About you new this week', () => {
+describe('About you To check', () => {
     const fresh = { ...entry, id: 'fresh', title: 'Short calls', apps: ['Zoom', 'loginwindow'], content: '# Short calls\n- You keep calls short before 11 AM.\n' };
     beforeEach(async () => {
         vi.resetAllMocks();
@@ -1061,7 +914,7 @@ describe('About you new this week', () => {
     afterEach(() => vi.useRealTimers());
 
     async function card() {
-        const section = await screen.findByRole('region', { name: 'New this week' });
+        const section = await screen.findByRole('region', { name: 'To check' });
         return within(section).getByRole('article', { name: /You keep calls short before 11 AM\./ });
     }
 
@@ -1075,7 +928,7 @@ describe('About you new this week', () => {
         expect(screen.queryByText('1 to check')).not.toBeInTheDocument();
     });
 
-    it('says Learned today once on a New this week card, as the line, not as a chip too (Y32)', async () => {
+    it('says Learned today once on a To check line, as the line, not as a chip too (Y32)', async () => {
         mocks.getAbout.mockResolvedValue(aboutFor([entry, fresh], { newThisWeek: ['fresh'], status: 'learned_today' }));
         render(<MemoryPage devToolsUnlocked />);
         const article = await card();
@@ -1092,23 +945,22 @@ describe('About you new this week', () => {
         expect(article).not.toHaveTextContent('“');
     });
 
-    it("confirms in one click with That's me: the chip flips, the line says what it means, Undo takes it back", async () => {
+    it('confirms in one click with Yes: the line says what it means, Undo takes it back', async () => {
         render(<MemoryPage devToolsUnlocked />);
         const article = await card();
-        expect(within(article).getByText('Inferred')).toHaveAttribute('data-status', 'inferred');
-        mocks.getAbout.mockImplementation(async () => aboutFor([entry, fresh]));
+        // No status chip on a claim line.
+        expect(article.querySelector('[data-status]')).toBeNull();
         fireEvent.click(within(article).getByRole('button', { name: 'Yes' }));
         await waitFor(() => expect(mocks.confirm).toHaveBeenCalledWith('fresh'));
         const line = await within(article).findByText('Confirmed. Isoform treats this as fact now.');
         expect(line).toHaveAttribute('role', 'status');
         expect(line).toHaveFocus();
-        expect(within(article).getByText('Confirmed')).toHaveAttribute('data-status', 'confirmed');
+        // The answered line keeps its place, without its answer buttons.
+        expect(within(article).queryByRole('button', { name: 'No' })).not.toBeInTheDocument();
         expect(screen.queryByText('All checked')).not.toBeInTheDocument();
         expect(mocks.forgetEntry).not.toHaveBeenCalled();
         // No toast: the answer is the line on the card.
         expect(mocks.notify).not.toHaveBeenCalled();
-        // The list chip changes with it.
-        expect(screen.getByRole('button', { name: /Short calls/, pressed: false })).toHaveTextContent('Confirmed');
 
         fireEvent.click(within(article).getByRole('button', { name: 'Undo' }));
         await waitFor(() => expect(mocks.undoConfirm).toHaveBeenCalledWith('fresh'));
@@ -1116,8 +968,8 @@ describe('About you new this week', () => {
     });
 
     // computer-you v1.0.0 rule 3: every line is a claim, "Right?" with Yes,
-    // No and Edit, and Y, N and E answer the focused one.
-    it('judges a claim with the keyboard: Y confirms, N stops using it, E asks for the words', async () => {
+    // No, Not mine and Edit, and Y, N, M and E answer the focused one.
+    it('judges a claim with the keyboard: Y confirms, N stops using it, E opens Edit', async () => {
         mocks.notQuite.mockResolvedValue(0);
         render(<MemoryPage devToolsUnlocked />);
         const article = await card();
@@ -1125,7 +977,7 @@ describe('About you new this week', () => {
         expect(article).toHaveAttribute('tabindex', '0');
         article.focus();
         fireEvent.keyDown(article, { key: 'e' });
-        expect(within(article).getByRole('textbox', { name: 'What’s closer? You can leave it blank.' })).toHaveFocus();
+        expect(within(article).getByRole('textbox', { name: 'Editing' })).toHaveFocus();
         fireEvent.keyDown(within(article).getByRole('textbox'), { key: 'Escape' });
         expect(await within(article).findByRole('button', { name: 'Yes' })).toBeInTheDocument();
         fireEvent.keyDown(article, { key: 'n' });
@@ -1164,20 +1016,17 @@ describe('About you new this week', () => {
         expect(within(article).getByRole('button', { name: 'Yes' })).toBeEnabled();
     });
 
-    it('asks Not quite in place; left blank, Isoform stops using it, and Undo puts it back', async () => {
+    // redesign v1.0.0 section 1: No stops using it at once; Edit is the words path.
+    it('answers No at once, with no words field, and Undo puts it back', async () => {
         mocks.notQuite.mockResolvedValue(0);
         render(<MemoryPage devToolsUnlocked />);
         const article = await card();
-        fireEvent.click(within(article).getByRole('button', { name: 'Edit' }));
-        const field = within(article).getByRole('textbox', { name: 'What’s closer? You can leave it blank.' });
-        expect(field).toHaveFocus();
-        expect(field).toHaveAttribute('placeholder', 'You keep calls short before 11 AM.');
-        // Not in the side pane any more.
-        expect(screen.queryByRole('textbox', { name: 'Memory point' })).not.toBeInTheDocument();
-        fireEvent.click(within(article).getByRole('button', { name: 'Save' }));
+        fireEvent.click(within(article).getByRole('button', { name: 'No' }));
         await waitFor(() => expect(mocks.notQuite).toHaveBeenCalledWith('fresh'));
         expect(await within(article).findByText('Isoform stopped using this.')).toBeInTheDocument();
-        expect(within(article).getByText('Not quite', { selector: '[data-status]' })).toHaveAttribute('data-status', 'not_quite');
+        expect(within(article).queryByRole('textbox')).not.toBeInTheDocument();
+        expect(screen.queryByText('What’s closer? You can leave it blank.')).not.toBeInTheDocument();
+        expect(mocks.rewordEntry).not.toHaveBeenCalled();
         expect(mocks.saveEntry).not.toHaveBeenCalled();
         fireEvent.click(within(article).getByRole('button', { name: 'Undo' }));
         await waitFor(() => expect(mocks.undoNotQuite).toHaveBeenCalledWith('fresh', 0));
@@ -1214,7 +1063,7 @@ describe('About you new this week', () => {
         await waitFor(() => expect(mocks.forgetEntry).toHaveBeenCalledWith('fresh', 'reviewed-scope-v1'));
         expect(mocks.getPreview).toHaveBeenCalledWith('fresh');
         expect(await within(article).findByText('Forgotten. Isoform won’t learn it again for 30 days.')).toBeInTheDocument();
-        expect(screen.queryByRole('button', { name: /Short calls/, pressed: false })).not.toBeInTheDocument();
+        expect(within(screen.getByTestId('belief-groups')).queryByRole('button', { name: 'You keep calls short before 11 AM.' })).not.toBeInTheDocument();
     });
 
     it('says nothing was removed when the one-click forget fails, and retries', async () => {
@@ -1260,7 +1109,7 @@ describe('About you new this week', () => {
         expect(screen.queryByText('Could not forget this. Nothing was removed.')).not.toBeInTheDocument();
     });
 
-    it('returns Not quite to the open card on Cancel or Esc, and with words saves the wording with Undo', async () => {
+    it('returns Edit to the open line on Cancel or Esc, and with words saves the wording with Undo', async () => {
         mocks.rewordEntry.mockImplementation(async (id: string, content: string) => ({ ...fresh, id, content, source: 'user_edit' }));
         mocks.undoWording.mockResolvedValue({ ...fresh });
         render(<MemoryPage devToolsUnlocked />);
@@ -1273,25 +1122,31 @@ describe('About you new this week', () => {
         fireEvent.keyDown(within(article).getByRole('textbox'), { key: 'Escape' });
         expect(within(article).getByRole('button', { name: 'Yes' })).toBeInTheDocument();
         fireEvent.click(within(article).getByRole('button', { name: 'Edit' }));
-        const field = within(article).getByRole('textbox');
+        const field = within(article).getByRole('textbox', { name: 'Editing' });
+        // The field starts with the claim; blank words don't save (No is that answer).
+        expect(field).toHaveValue('You keep calls short before 11 AM.');
+        expect(within(article).getByText('Isoform keeps your change and learns from it.')).toBeInTheDocument();
+        fireEvent.change(field, { target: { value: '   ' } });
+        expect(within(article).getByRole('button', { name: 'Save' })).toBeDisabled();
+        fireEvent.keyDown(field, { key: 'Enter' });
+        expect(mocks.rewordEntry).not.toHaveBeenCalled();
         fireEvent.change(field, { target: { value: 'You keep calls short before noon.' } });
         // Return saves.
         fireEvent.keyDown(field, { key: 'Enter' });
         // The words are kept as an Edit in the answers ledger, beside the save.
         await waitFor(() => expect(mocks.rewordEntry).toHaveBeenCalledWith('fresh', fresh.content.replace('You keep calls short before 11 AM.', 'You keep calls short before noon.'), 'You keep calls short before noon.'));
         expect(await within(article).findByText('Corrected. Isoform will use your wording.')).toBeInTheDocument();
-        expect(within(article).getByText('Confirmed', { selector: '[data-status]' })).toBeInTheDocument();
         fireEvent.click(within(article).getByRole('button', { name: 'Undo' }));
         await waitFor(() => expect(mocks.undoWording).toHaveBeenCalledWith('fresh', 'You keep calls short before noon.'));
     });
 
-    it('keeps the confirmation when the belief is edited after That’s me', async () => {
+    it('keeps the confirmation when the belief is edited after Yes', async () => {
         const confirmedContent = '---\nconfirmed_at: 2026-10-22T09:00:00Z\n---\n' + fresh.content;
         mocks.confirm.mockResolvedValue({ ...fresh, content: confirmedContent });
         mocks.saveEntry.mockImplementation(async (id: string, content: string) => ({ ...fresh, id, content }));
         render(<MemoryPage devToolsUnlocked initialSelectedId="fresh" />);
         const detail = await screen.findByRole('complementary', { name: 'Belief detail' });
-        fireEvent.click(await within(detail).findByRole('button', { name: 'That’s me' }));
+        fireEvent.click(await within(detail).findByRole('button', { name: 'Yes' }));
         await waitFor(() => expect(mocks.confirm).toHaveBeenCalledWith('fresh'));
         await waitFor(() => expect(within(detail).getByRole('button', { name: 'Edit wording' })).toBeEnabled());
         fireEvent.click(within(detail).getByRole('button', { name: 'Edit wording' }));
@@ -1304,9 +1159,9 @@ describe('About you new this week', () => {
         mocks.confirm.mockRejectedValueOnce(new Error('suppressed'));
         render(<MemoryPage devToolsUnlocked initialSelectedId="fresh" />);
         const detail = await screen.findByRole('complementary', { name: 'Belief detail' });
-        fireEvent.click(await within(detail).findByRole('button', { name: 'That’s me' }));
+        fireEvent.click(await within(detail).findByRole('button', { name: 'Yes' }));
         expect(await within(detail).findByRole('alert')).toHaveTextContent("Didn't save.");
-        expect(within(detail).getByRole('button', { name: 'That’s me' })).toBeEnabled();
+        expect(within(detail).getByRole('button', { name: 'Yes' })).toBeEnabled();
     });
 
     it('cancels a pending forget when the page jumps to Activity and stays mounted behind it', async () => {
@@ -1348,63 +1203,81 @@ describe('About you new this week', () => {
         expect(mocks.forgetEntry).not.toHaveBeenCalled();
     });
 
-    it("answers in the detail the same way, keeps Edit wording and Forget, and says when later", async () => {
+    it('answers in the detail with Yes, No and Edit, keeps Edit wording and Forget, and says when later', async () => {
         render(<MemoryPage devToolsUnlocked initialSelectedId="fresh" />);
         const detail = await screen.findByRole('complementary', { name: 'Belief detail' });
-        expect(within(detail).getByRole('button', { name: 'Not quite' })).toBeInTheDocument();
-        fireEvent.click(await within(detail).findByRole('button', { name: 'That’s me' }));
+        expect(within(detail).getByRole('button', { name: 'No' })).toBeInTheDocument();
+        expect(within(detail).getByRole('button', { name: 'Edit' })).toBeInTheDocument();
+        // Not mine and the old names are only on the line, never in the detail.
+        expect(within(detail).queryByRole('button', { name: 'Not mine' })).not.toBeInTheDocument();
+        expect(within(detail).queryByRole('button', { name: 'That’s me' })).not.toBeInTheDocument();
+        expect(within(detail).queryByRole('button', { name: 'Not quite' })).not.toBeInTheDocument();
+        fireEvent.click(await within(detail).findByRole('button', { name: 'Yes' }));
         expect(await within(detail).findByText('Confirmed. Isoform treats this as fact now.')).toBeInTheDocument();
         expect(within(detail).getByRole('button', { name: 'Undo' })).toBeInTheDocument();
         expect(within(detail).getByRole('button', { name: 'Edit wording' })).toBeInTheDocument();
         expect(within(detail).getByRole('button', { name: 'Forget this' })).toBeInTheDocument();
-        expect(within(detail).queryByRole('button', { name: 'Not quite' })).not.toBeInTheDocument();
+        expect(within(detail).queryByRole('button', { name: 'No' })).not.toBeInTheDocument();
         cleanup();
         pageQueryCache.clear();
 
-        // Later: a confirmed belief says when, and offers Not quite.
+        // Later: a confirmed belief says when, and offers No.
         mocks.getAbout.mockImplementation(async () => aboutFor([entry, fresh], { status: 'confirmed', confirmedAt: Date.now() }));
         render(<MemoryPage devToolsUnlocked initialSelectedId="fresh" />);
         let later = await screen.findByRole('complementary', { name: 'Belief detail' });
         expect(await within(later).findByText('You confirmed this today.')).toBeInTheDocument();
-        expect(within(later).getByRole('button', { name: 'Not quite' })).toBeInTheDocument();
-        expect(within(later).queryByRole('button', { name: 'That’s me' })).not.toBeInTheDocument();
+        expect(within(later).getByRole('button', { name: 'No' })).toBeInTheDocument();
+        expect(within(later).queryByRole('button', { name: 'Yes' })).not.toBeInTheDocument();
         cleanup();
         pageQueryCache.clear();
 
-        // A Not quite belief says Isoform isn't using it, and offers That's me.
+        // A No belief says Isoform isn't using it, and offers Yes.
         mocks.getAbout.mockImplementation(async () => aboutFor([entry, fresh], { status: 'not_quite', notQuiteAt: Date.now() - 86_400_000 }));
         render(<MemoryPage devToolsUnlocked initialSelectedId="fresh" />);
         later = await screen.findByRole('complementary', { name: 'Belief detail' });
         expect(await within(later).findByText('You said not quite yesterday. Isoform isn’t using it.')).toBeInTheDocument();
-        fireEvent.click(within(later).getByRole('button', { name: 'That’s me' }));
+        fireEvent.click(within(later).getByRole('button', { name: 'Yes' }));
         await waitFor(() => expect(mocks.confirm).toHaveBeenCalledWith('fresh'));
-        // Undo puts Not quite back.
+        // Undo puts No back.
         mocks.notQuite.mockResolvedValue(0);
         fireEvent.click(await within(later).findByRole('button', { name: 'Undo' }));
         await waitFor(() => expect(mocks.notQuite).toHaveBeenCalledWith('fresh'));
         expect(mocks.undoConfirm).toHaveBeenCalledWith('fresh');
     });
 
-    it("keeps That's me in the detail when the About you read fails, and hides it for a confirmed file", async () => {
+    it('edits from the detail with the same Edit field, saving the words', async () => {
+        mocks.rewordEntry.mockImplementation(async (id: string, content: string) => ({ ...fresh, id, content, source: 'user_edit' }));
+        render(<MemoryPage devToolsUnlocked initialSelectedId="fresh" />);
+        const detail = await screen.findByRole('complementary', { name: 'Belief detail' });
+        fireEvent.click(within(detail).getByRole('button', { name: 'Edit' }));
+        const field = within(detail).getByRole('textbox', { name: 'Editing' });
+        expect(field).toHaveValue('You keep calls short before 11 AM.');
+        fireEvent.change(field, { target: { value: 'You keep calls short before noon.' } });
+        fireEvent.click(within(detail).getByRole('button', { name: 'Save' }));
+        await waitFor(() => expect(mocks.rewordEntry).toHaveBeenCalledWith('fresh', fresh.content.replace('You keep calls short before 11 AM.', 'You keep calls short before noon.'), 'You keep calls short before noon.'));
+        expect(await within(detail).findByText('Corrected. Isoform will use your wording.')).toBeInTheDocument();
+    });
+
+    it('keeps Yes in the detail when the About you read fails, and hides it for a confirmed file', async () => {
         mocks.getAbout.mockRejectedValue(new Error('store'));
         const confirmedFile = { ...entry, content: '---\nconfirmed_at: 2026-10-22T09:00:00Z\n---\n' + entry.content };
         resetDefaults([confirmedFile, fresh]);
         mocks.getAbout.mockRejectedValue(new Error('store'));
         const { unmount } = render(<MemoryPage devToolsUnlocked initialSelectedId="fresh" />);
         let detail = await screen.findByRole('complementary', { name: 'Belief detail' });
-        fireEvent.click(within(detail).getByRole('button', { name: 'That’s me' }));
+        fireEvent.click(within(detail).getByRole('button', { name: 'Yes' }));
         await waitFor(() => expect(mocks.confirm).toHaveBeenCalledWith('fresh'));
         unmount();
         render(<MemoryPage devToolsUnlocked initialSelectedId={entry.id} />);
         detail = await screen.findByRole('complementary', { name: 'Belief detail' });
         await within(detail).findByRole('button', { name: 'Edit wording' });
-        expect(within(detail).queryByRole('button', { name: 'That’s me' })).not.toBeInTheDocument();
+        expect(within(detail).queryByRole('button', { name: 'Yes' })).not.toBeInTheDocument();
     });
 
-    it("confirms from the detail with That's me too", async () => {
+    it('confirms from the detail with Yes too', async () => {
         render(<MemoryPage devToolsUnlocked initialSelectedId="fresh" />);
         const detail = await screen.findByRole('complementary', { name: 'Belief detail' });
-        fireEvent.click(await within(detail).findByRole('button', { name: 'That’s me' }));
+        fireEvent.click(await within(detail).findByRole('button', { name: 'Yes' }));
         await waitFor(() => expect(mocks.confirm).toHaveBeenCalledWith('fresh'));
     });
 });
@@ -1447,7 +1320,7 @@ describe('About you communication', () => {
         mocks.confirm.mockResolvedValue(communicationEntry);
     });
 
-    it('orders every fixed area, hides empty groups, keeps kind labels and puts unknown or missing areas in Other', async () => {
+    it('orders every fixed area, hides empty groups and puts unknown or missing areas in Other', async () => {
         const areas = ['communication', 'work', 'people', 'tools', 'routines', 'interests', 'other'];
         const entries = areas.map((_, index) => ({
             ...entry,
@@ -1469,11 +1342,13 @@ describe('About you communication', () => {
             'How you communicate1', 'Work1', 'People1', 'Tools and apps1', 'Routines1', 'Interests1', 'Other2',
         ]);
         expect(within(groups).getByText('Learned only from messages you sent. Drafts follow these.')).toBeInTheDocument();
-        expect(within(groups).getAllByText('Something I learned about you').length).toBe(8);
+        // Every claim is one line; kind labels went with the card grid.
+        expect(within(groups).getAllByRole('article')).toHaveLength(8);
+        expect(within(groups).queryByText('Something I learned about you')).not.toBeInTheDocument();
         expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
     });
 
-    it('shows sent-message evidence on New this week and confirms that drafts will follow it', async () => {
+    it('shows sent-message evidence on To check and confirms that drafts will follow it', async () => {
         mocks.getAbout.mockImplementation(async () => aboutFor([communicationEntry], {
             newThisWeek: ['communication'],
             area: 'communication',
@@ -1482,7 +1357,8 @@ describe('About you communication', () => {
             evidenceLastAt: Date.now(),
         }));
         render(<MemoryPage devToolsUnlocked />);
-        const article = await screen.findByRole('article', { name: /You write to Jia in Chinese\./ });
+        const toCheck = await screen.findByRole('region', { name: 'To check' });
+        const article = within(toCheck).getByRole('article', { name: /You write to Jia in Chinese\./ });
         expect(article).toHaveTextContent('How you communicate');
         expect(article).toHaveTextContent('14 messages you sent');
         expect(article).toHaveTextContent('Sep 30, 2026 to today');
@@ -1514,7 +1390,7 @@ describe('About you communication', () => {
         expect(within(detail).getByText(example.text)).toBeInTheDocument();
         expect(within(detail).getByText('Written the way you write to 加一: Chinese, 2 sentences, no greeting.')).toBeInTheDocument();
         fireEvent.click(within(detail).getByRole('button', { name: 'Change' }));
-        expect(screen.getByRole('button', { name: /Language with Jia.*You write to Jia/, pressed: true })).toBeInTheDocument();
+        expect(within(screen.getByRole('complementary', { name: 'Belief detail' })).getByRole('heading', { name: 'Language with Jia' })).toBeInTheDocument();
         expect(mocks.getExamples).toHaveBeenCalledWith('communication');
     });
 
@@ -1545,7 +1421,7 @@ describe('About you communication', () => {
         });
         expect(screen.queryByText(example.text)).not.toBeInTheDocument();
         const readsBeforeReopen = mocks.getExamples.mock.calls.length;
-        fireEvent.click(await screen.findByRole('button', { name: /Language with Jia.*You write to Jia/ }));
+        fireEvent.click(await within(screen.getByTestId('belief-groups')).findByRole('button', { name: 'You write to Jia in Chinese.' }));
         await waitFor(() => expect(mocks.getExamples.mock.calls.length).toBeGreaterThan(readsBeforeReopen));
         await waitFor(() => expect(screen.queryByText('How a draft shows it')).not.toBeInTheDocument());
         expect(screen.queryByText(example.text)).not.toBeInTheDocument();
@@ -1560,7 +1436,7 @@ describe('About you communication', () => {
             for (const listener of [...(mocks.events.get('memory:withdrawn') ?? [])]) listener(undefined);
         });
         const readsBeforeReopen = mocks.getExamples.mock.calls.length;
-        fireEvent.click(await screen.findByRole('button', { name: /Language with Jia.*You write to Jia/ }));
+        fireEvent.click(await within(screen.getByTestId('belief-groups')).findByRole('button', { name: 'You write to Jia in Chinese.' }));
         await waitFor(() => expect(mocks.getExamples.mock.calls.length).toBeGreaterThan(readsBeforeReopen));
         await waitFor(() => expect(screen.queryByText('How a draft shows it')).not.toBeInTheDocument());
         await act(async () => resolveFirst([example]));
@@ -1607,19 +1483,21 @@ describe('Decision 11: everything the Memory page had stays reachable', () => {
         mocks.getVersion.mockResolvedValue('# Writing style\n- **Dimension**: user_insight\n\nYou prefer short replies.\n');
     });
 
-    it('keeps search, the kind filter and the source in Technical details after fixed area grouping replaces the switch', async () => {
+    // Design answer A7: About you has no search box and no kind filter (Find's Claims group finds a claim).
+    it('builds no search box or kind filter, and keeps the source in Technical details', async () => {
         render(<MemoryPage devToolsUnlocked initialSelectedId={entry.id} />);
-        expect(await screen.findByRole('textbox', { name: 'Search what Isoform believes' })).toBeInTheDocument();
-        expect(screen.getByRole('combobox', { name: 'Filter by kind' })).toBeInTheDocument();
+        const detail = await screen.findByRole('complementary', { name: 'Belief detail' });
+        expect(screen.queryByRole('textbox', { name: 'Search what Isoform believes' })).toBeNull();
+        expect(screen.queryByRole('searchbox')).toBeNull();
+        expect(screen.queryByRole('combobox')).toBeNull();
         expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
-        const detail = screen.getByRole('complementary', { name: 'Belief detail' });
+        expect(mocks.search).not.toHaveBeenCalled();
         fireEvent.click(within(detail).getByRole('button', { name: 'Technical details' }));
         expect(within(detail).getByText('User edited')).toBeInTheDocument();
     });
 
     it.each([
         ['Add a note about you', 'Add a note about you'],
-        ['Import from AI tools', 'Import dialog open'],
         ['Memory Dream', 'Dream dialog open'],
         ['Translate memories', 'Translate memories'],
     ])('opens %s from the page More menu', async (item, opened) => {
@@ -1672,7 +1550,9 @@ describe('Decision 11: everything the Memory page had stays reachable', () => {
     it('keeps developer items out of About you until developer tools are on', async () => {
         render(<MemoryPage />);
         await openPageMenu();
-        expect(await screen.findByRole('menuitem', { name: 'Import from AI tools' })).toBeInTheDocument();
+        expect(await screen.findByRole('menuitem', { name: 'Add a note about you' })).toBeInTheDocument();
+        // Import moved out of the menu to the link under To check.
+        expect(screen.queryByRole('menuitem', { name: 'Import from AI tools' })).not.toBeInTheDocument();
         expect(screen.queryByRole('menuitem', { name: 'Memory Dream' })).not.toBeInTheDocument();
         expect(screen.queryByRole('menuitem', { name: 'Re-index memory files' })).not.toBeInTheDocument();
     });
@@ -1712,7 +1592,7 @@ describe('Decision 11: everything the Memory page had stays reachable', () => {
         fireEvent.click(await screen.findByRole('button', { name: 'Not right' }));
         expect(await screen.findByRole('dialog', { name: 'Wrong subject?' })).toBeInTheDocument();
         fireEvent.click(within(screen.getByRole('dialog', { name: 'Wrong subject?' })).getByRole('button', { name: 'Cancel' }));
-        fireEvent.click(screen.getByRole('button', { name: 'You prefer detailed replies.' }));
+        fireEvent.click(within(screen.getByRole('complementary', { name: 'Belief detail' })).getByRole('button', { name: 'You prefer detailed replies.' }));
         expect(screen.getByRole('textbox', { name: 'Memory point' })).toHaveValue('You prefer detailed replies.');
         fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
         fireEvent.click(screen.getByRole('button', { name: 'Forget this' }));
@@ -1739,8 +1619,8 @@ describe('MemoryPage with the page query cache', () => {
         // A warm reopen has the goal lists cached too; the Goals group paints them at once.
         pageQueryCache.set('ListGoals', [], { tracking: [], done: [], held: [] });
         const { container } = render(<MemoryPage devToolsUnlocked />);
-        expect(screen.getByRole('button', { name: /Writing style.*You prefer detailed replies/, pressed: false })).toBeInTheDocument();
-        expect(screen.getByText('You want detailed replies')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'You prefer detailed replies.' })).toBeInTheDocument();
+        expect(screen.getByTestId('in-one-line')).toHaveTextContent('You want detailed replies');
         expect(container.querySelector('[aria-busy="true"]')).toBeNull();
         await act(async () => {});
     });
@@ -1763,8 +1643,8 @@ describe('MemoryPage with the page query cache', () => {
         await act(async () => {
             resolvePortrait(readyPortrait([{ text: 'You want detailed replies', memoryIds: [entry.id] }]));
         });
-        expect(screen.getByRole('button', { name: /Writing style.*You prefer detailed replies/, pressed: false })).toBeInTheDocument();
-        expect(screen.getByText('You want detailed replies')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'You prefer detailed replies.' })).toBeInTheDocument();
+        expect(await screen.findByTestId('in-one-line')).toHaveTextContent('You want detailed replies');
         expect(container.querySelector('[aria-busy="true"]')).toBeNull();
     });
 
@@ -1782,11 +1662,12 @@ describe('MemoryPage with the page query cache', () => {
     it('About you v1.0.0 Y2: on day one Check these first is the first section, and its line never says three', async () => {
         dayOne();
         const { container } = render(<MemoryPage />);
-        const heading = await screen.findByText('Check these first');
+        const heading = await screen.findByRole('heading', { level: 2, name: 'Check these first' });
         expect(screen.getByText('From your Claude Code history')).toBeInTheDocument();
         expect(container.textContent).not.toMatch(/three/i);
-        const portrait = screen.getAllByText('Your portrait')[0];
-        expect(heading.compareDocumentPosition(portrait) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        // In one line waits for a written portrait, so Check these first leads.
+        expect(screen.queryByTestId('in-one-line')).toBeNull();
+        expect(screen.getAllByRole('heading', { level: 2 })[0]).toBe(heading);
         expect(screen.getByText(/^2 beliefs from your Claude Code history\. You haven't confirmed any yet\. Stored on your computer\./)).toBeInTheDocument();
     });
 
@@ -1809,14 +1690,11 @@ describe('MemoryPage with the page query cache', () => {
         }
     });
 
-    it('a privacy sweep withdraws the hidden retained page — beliefs, portrait, search text — before the re-read lands, then a permitted read recovers', async () => {
+    it('a privacy sweep withdraws the hidden retained page — beliefs and its one line — before the re-read lands, then a permitted read recovers', async () => {
         mocks.getPortrait.mockResolvedValue(readyPortrait([{ text: 'You want detailed replies', memoryIds: [entry.id] }]));
         const view = render(<MemoryPage devToolsUnlocked active={false} />);
-        expect(await screen.findByRole('button', { name: /You prefer detailed replies/ })).toBeInTheDocument();
-        expect(await screen.findByText('You want detailed replies')).toBeInTheDocument();
-        // A remembered search narrows the list; it holds text too.
-        fireEvent.change(screen.getByRole('textbox', { name: 'Search what Isoform believes' }), { target: { value: 'detailed' } });
-        expect(screen.getByRole('textbox', { name: 'Search what Isoform believes' })).toHaveValue('detailed');
+        expect(await screen.findByRole('button', { name: 'You prefer detailed replies.' })).toBeInTheDocument();
+        expect(await screen.findByTestId('in-one-line')).toHaveTextContent('You want detailed replies');
 
         // The sweep's re-read hangs: nothing may paint pre-transition text.
         mocks.getEntries.mockImplementation(() => new Promise(() => {}));
@@ -1824,42 +1702,42 @@ describe('MemoryPage with the page query cache', () => {
         mocks.getStatus.mockImplementation(() => new Promise(() => {}));
         mocks.getPortrait.mockImplementation(() => new Promise(() => {}));
         await emitEvent('memory:withdrawn');
-        expect(screen.queryByRole('button', { name: /You prefer detailed replies/ })).not.toBeInTheDocument();
-        expect(screen.queryByText('You want detailed replies')).not.toBeInTheDocument();
-        expect(screen.queryByRole('textbox', { name: 'Search what Isoform believes' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'You prefer detailed replies.' })).not.toBeInTheDocument();
+        expect(screen.queryByTestId('in-one-line')).toBeNull();
+        expect(document.body).not.toHaveTextContent('You want detailed replies');
 
         // Reopening while the reads are still held shows the skeleton, never
         // the withdrawn beliefs.
         view.rerender(<MemoryPage devToolsUnlocked active={true} />);
-        expect(screen.queryByRole('button', { name: /You prefer detailed replies/ })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'You prefer detailed replies.' })).not.toBeInTheDocument();
 
         // A later ordinary change re-reads: what is still permitted returns.
         resetDefaults([entry]);
         await emitEvent('memory:withdrawn');
-        expect(await screen.findByRole('button', { name: /You prefer detailed replies/ })).toBeInTheDocument();
+        expect(await screen.findByRole('button', { name: 'You prefer detailed replies.' })).toBeInTheDocument();
     });
 
     it('a privacy sweep with failing reads shows the retry, never the withdrawn beliefs', async () => {
         render(<MemoryPage devToolsUnlocked />);
-        expect(await screen.findByRole('button', { name: /You prefer detailed replies/ })).toBeInTheDocument();
+        expect(await screen.findByRole('button', { name: 'You prefer detailed replies.' })).toBeInTheDocument();
         mocks.getEntries.mockRejectedValue(new Error('gone'));
         mocks.getAbout.mockRejectedValue(new Error('gone'));
         mocks.getStatus.mockRejectedValue(new Error('gone'));
         await emitEvent('closed-eyes:changed');
-        expect(screen.queryByRole('button', { name: /You prefer detailed replies/ })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'You prefer detailed replies.' })).not.toBeInTheDocument();
         expect(await screen.findByRole('alert')).toHaveTextContent('Could not load what Isoform believes about you.');
     });
 
     it('the portrait follows every privacy sweep, not just Forget', async () => {
         mocks.getPortrait.mockResolvedValue(readyPortrait([{ text: 'You want detailed replies', memoryIds: [entry.id] }]));
         render(<MemoryPage devToolsUnlocked />);
-        expect(await screen.findByText('You want detailed replies')).toBeInTheDocument();
+        expect(await screen.findByTestId('in-one-line')).toHaveTextContent('You want detailed replies');
         mocks.getPortrait.mockImplementation(() => new Promise(() => {}));
         mocks.getEntries.mockImplementation(() => new Promise(() => {}));
         mocks.getAbout.mockImplementation(() => new Promise(() => {}));
         mocks.getStatus.mockImplementation(() => new Promise(() => {}));
         await emitEvent('permissions:changed');
-        expect(screen.queryByText('You want detailed replies')).not.toBeInTheDocument();
+        expect(document.body).not.toHaveTextContent('You want detailed replies');
     });
 });
 
@@ -1903,12 +1781,20 @@ describe('MemoryPage goals group', () => {
         expect(within(group).getByRole('button', { name: 'Mark done, Send Dana the notes' })).toBeInTheDocument();
     });
 
+    it('shows no Goals group while goals are off', async () => {
+        (globalThis as Record<string, unknown>).__isoformFeatureSwitchesForTest = { automations: true, playbooks: false, proactiveVoice: true, calendarHolds: true };
+        mocks.listGoals.mockResolvedValue(GOAL_PAGE);
+        render(<MemoryPage devToolsUnlocked />);
+        await screen.findByRole('region', { name: 'To check' });
+        expect(screen.queryByRole('region', { name: 'Goals' })).toBeNull();
+    });
+
     // computer-you v1.0.0 rule 4: new claims first, then the rest.
-    it('shows New this week first, then the Goals group and the belief groups', async () => {
+    it('shows To check first, then the Goals group and the belief groups', async () => {
         mocks.listGoals.mockResolvedValue(GOAL_PAGE);
         render(<MemoryPage devToolsUnlocked />);
         const goalsGroup = await screen.findByRole('region', { name: 'Goals' });
-        const review = await screen.findByRole('region', { name: 'New this week' });
+        const review = await screen.findByRole('region', { name: 'To check' });
         const groups = await screen.findByTestId('belief-groups');
         expect(review.compareDocumentPosition(goalsGroup) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
         expect(goalsGroup.compareDocumentPosition(groups) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -2024,6 +1910,7 @@ describe('About you design review v1.0.0', () => {
 
     // computer-activity v1.1.0, 15f: every claim judged says so, once, with the count.
     it('says nothing is new when every claim is judged', async () => {
+        mocks.getAbout.mockImplementation(async () => aboutFor([entry], { status: 'confirmed', confirmedAt: Date.now() }));
         render(<MemoryPage />);
         const nothing = await screen.findByTestId('you-nothing-new');
         expect(nothing).toHaveTextContent('Nothing new to check this week.');
@@ -2080,11 +1967,13 @@ describe('MemoryPage one card per idea', () => {
         resetDefaults(fiveCopies);
         mocks.getAbout.mockImplementation(async () => aboutFor(fiveCopies, { newThisWeek: fiveCopies.map((row) => row.id), area: 'communication' }));
         render(<MemoryPage devToolsUnlocked />);
-        const review = await screen.findByRole('region', { name: 'New this week' });
-        expect(within(review).getAllByRole('article')).toHaveLength(1);
-        expect(within(review).getByText('Seen 5 times')).toBeInTheDocument();
+        const review = await screen.findByRole('region', { name: 'To check' });
+        const lines = within(review).getAllByRole('article');
+        expect(lines).toHaveLength(1);
+        expect(lines[0]).toHaveTextContent(/Seen 5 times/);
+        // The idea is checked in To check, so the rest doesn't list it again.
         const groups = await screen.findByTestId('belief-groups');
-        expect(within(groups).getAllByText('Seen 5 times')).toHaveLength(1);
+        expect(within(groups).queryAllByRole('article')).toHaveLength(0);
     });
 
     it('counts ideas, not copies, in the group heading', async () => {
@@ -2101,10 +1990,17 @@ describe('MemoryPage one card per idea', () => {
         resetDefaults(rows);
         mocks.getAbout.mockImplementation(async () => aboutFor(rows, { newThisWeek: ['short', 'detailed'], area: 'communication' }));
         render(<MemoryPage devToolsUnlocked />);
-        const review = await screen.findByRole('region', { name: 'New this week' });
-        expect(within(review).getAllByRole('article')).toHaveLength(2);
-        expect(within(review).queryAllByText(/^Seen \d+ times$/)).toHaveLength(0);
-        expect(screen.getByRole('button', { name: /How you communicate/ })).toHaveTextContent(/How you communicate\s*2$/);
+        const review = await screen.findByRole('region', { name: 'To check' });
+        const lines = within(review).getAllByRole('article');
+        expect(lines).toHaveLength(2);
+        for (const line of lines) expect(line).not.toHaveTextContent(/Seen 5 times/);
+        cleanup();
+        resetPageQueries();
+        // In the rest, the group counts each idea.
+        mocks.getAbout.mockImplementation(async () => aboutFor(rows, { area: 'communication' }));
+        render(<MemoryPage devToolsUnlocked />);
+        expect(await screen.findByRole('button', { name: /How you communicate/ })).toHaveTextContent(/How you communicate\s*2$/);
+        expect(within(screen.getByTestId('belief-groups')).getAllByRole('article')).toHaveLength(2);
     });
 
     it('forgets every copy when the card is forgotten from its detail', async () => {
@@ -2120,11 +2016,11 @@ describe('MemoryPage one card per idea', () => {
         expect(mocks.forgetEntry.mock.calls.map((call) => call[0]).sort()).toEqual(fiveCopies.map((row) => row.id).sort());
     });
 
-    it('lists every copy from the New this week card before forgetting them all', async () => {
+    it('lists every copy from the To check line before forgetting them all', async () => {
         resetDefaults(fiveCopies);
         mocks.getAbout.mockImplementation(async () => aboutFor(fiveCopies, { newThisWeek: fiveCopies.map((row) => row.id), area: 'communication' }));
         render(<MemoryPage devToolsUnlocked />);
-        const review = await screen.findByRole('region', { name: 'New this week' });
+        const review = await screen.findByRole('region', { name: 'To check' });
         fireEvent.click(within(review).getByRole('button', { name: /^Forget: / }));
         const dialog = await screen.findByRole('dialog', { name: 'Forget this?' });
         expect(within(within(dialog).getByTestId('forget-copies')).getAllByRole('listitem')).toHaveLength(4);
@@ -2144,5 +2040,272 @@ describe('MemoryPage one card per idea', () => {
         for (const id of ['copy-1', 'copy-2', 'copy-3', 'copy-4']) {
             expect(within(detail).getByText(new RegExp(`Evidence seen in ${id}`))).toBeInTheDocument();
         }
+    });
+});
+
+// redesign-you v1.0.0: every idea on About you is one claim line, and the
+// page reads In one line, To check, Confirmed, the rest by area, Not right.
+describe('About you claim lines', () => {
+    const fresh = { ...entry, id: 'fresh', title: 'Short calls', content: '# Short calls\n- You keep calls short before 11 AM.\n' };
+    const plans = { ...entry, id: 'plans', title: 'Plans', content: '# Plans\n- You plan the week on Sunday evening.\n' };
+    const beliefOf = (row: Entry, overrides: Record<string, unknown> = {}) => ({ ...aboutFor([row]).beliefs[0], ...overrides });
+
+    beforeEach(async () => {
+        vi.resetAllMocks();
+        window.localStorage.clear();
+        await i18n.changeLanguage('en');
+        resetDefaults([entry, fresh]);
+        mocks.getAbout.mockImplementation(async () => aboutFor([entry, fresh], { newThisWeek: ['fresh'] }));
+        mocks.confirm.mockImplementation(async (id: string) => (id === 'fresh' ? { ...fresh } : { ...entry }));
+        mocks.notQuite.mockResolvedValue(0);
+        mocks.notMine.mockResolvedValue(undefined);
+        mocks.undoNotQuite.mockResolvedValue(undefined);
+        mocks.getWhy.mockImplementation(async (kind: string, id: string) => ({ kind, id, summary: { total: 0, bySource: {}, thisWeek: 0 }, days: [] }));
+    });
+    afterEach(() => vi.useRealTimers());
+
+    async function toCheckLine() {
+        const section = await screen.findByRole('region', { name: 'To check' });
+        return within(section).getByRole('article', { name: /You keep calls short before 11 AM\./ });
+    }
+    async function restLine() {
+        const groups = await screen.findByTestId('belief-groups');
+        return within(groups).findByRole('article', { name: /You prefer detailed replies\./ });
+    }
+
+    it('reads every claim as Right? with Yes, No, Not mine, Edit and Why, in To check and in the rest', async () => {
+        render(<MemoryPage />);
+        const lines = [await toCheckLine(), await restLine()];
+        for (const line of lines) {
+            expect(line).toHaveAttribute('data-claim-row');
+            expect(line).toHaveAttribute('tabindex', '0');
+            expect(line).toHaveAttribute('aria-keyshortcuts', 'Y N M E');
+            expect(line).toHaveTextContent('Right?');
+            for (const name of ['Yes', 'No', 'Not mine', 'Edit', 'Why']) {
+                expect(within(line).getByRole('button', { name })).toBeInTheDocument();
+            }
+            expect(within(line).getByRole('button', { name: /^Forget: / })).toBeInTheDocument();
+        }
+        // No card grid: no pressed rows, confidence bars or chips.
+        expect(screen.queryByRole('button', { pressed: true })).toBeNull();
+        expect(screen.queryByRole('img', { name: /^Confidence/ })).toBeNull();
+        // The claim's words open its detail.
+        fireEvent.click(within(lines[1]).getByRole('button', { name: 'You prefer detailed replies.' }));
+        const detail = await screen.findByRole('complementary', { name: 'Belief detail' });
+        expect(within(detail).getByRole('heading', { name: entry.title })).toBeInTheDocument();
+    });
+
+    it('moves with the arrows and answers the focused line with Y and E; M is Not mine after the 10-second Undo', async () => {
+        vi.useFakeTimers({ shouldAdvanceTime: true });
+        render(<MemoryPage />);
+        const line = await toCheckLine();
+        const rest = await restLine();
+        line.focus();
+        fireEvent.keyDown(line, { key: 'ArrowDown' });
+        expect(rest).toHaveFocus();
+        fireEvent.keyDown(rest, { key: 'ArrowUp' });
+        expect(line).toHaveFocus();
+        fireEvent.keyDown(line, { key: 'y' });
+        await waitFor(() => expect(mocks.confirm).toHaveBeenCalledWith('fresh'));
+
+        fireEvent.keyDown(rest, { key: 'E' });
+        const field = within(rest).getByRole('textbox', { name: 'Editing' });
+        expect(field).toHaveValue('You prefer detailed replies.');
+        // A key typed into the field is left alone.
+        fireEvent.keyDown(field, { key: 'y' });
+        expect(mocks.confirm).toHaveBeenCalledTimes(1);
+        fireEvent.keyDown(field, { key: 'Escape' });
+        expect(within(rest).getByRole('button', { name: 'Not mine' })).toBeInTheDocument();
+
+        fireEvent.keyDown(rest, { key: 'm' });
+        // Only what the app does: the claim goes; no path takes its moments off you yet.
+        expect(within(rest).getByRole('status')).toHaveTextContent("Not yours, so it's gone.");
+        expect(within(rest).getByRole('status')).not.toHaveTextContent(/moments/);
+        expect(within(rest).getByRole('button', { name: 'Undo' })).toHaveFocus();
+        fireEvent.click(within(rest).getByRole('button', { name: 'Undo' }));
+        await act(async () => { vi.advanceTimersByTime(10_000); });
+        expect(mocks.notMine).not.toHaveBeenCalled();
+
+        fireEvent.click(within(rest).getByRole('button', { name: 'Not mine' }));
+        await act(async () => { vi.advanceTimersByTime(10_000); });
+        await waitFor(() => expect(mocks.notMine).toHaveBeenCalledWith(entry.id));
+        expect(mocks.notMine).toHaveBeenCalledTimes(1);
+        // Not mine is not a Forget: no preview, no forget.
+        expect(mocks.getPreview).not.toHaveBeenCalled();
+        expect(mocks.forgetEntry).not.toHaveBeenCalled();
+    });
+
+    it('says the portrait in one line, with Yes, No and Edit but no Not mine, and without its name', async () => {
+        mocks.getPortrait.mockResolvedValue(readyPortrait([
+            { text: 'You build ' },
+            { text: 'careful systems', memoryIds: [entry.id] },
+            { text: ' and keep calls short.' },
+        ]));
+        mocks.confirmPortrait.mockResolvedValue([entry.id]);
+        render(<MemoryPage />);
+        const section = await screen.findByTestId('in-one-line');
+        expect(within(section).getByRole('heading', { level: 2, name: 'In one line' })).toBeInTheDocument();
+        const line = within(section).getByRole('article', { name: 'You build careful systems and keep calls short.' });
+        expect(line).toHaveTextContent('Right?');
+        for (const name of ['Yes', 'No', 'Edit']) expect(within(line).getByRole('button', { name })).toBeInTheDocument();
+        expect(within(line).queryByRole('button', { name: 'Not mine' })).toBeNull();
+        expect(line).toHaveAttribute('aria-keyshortcuts', 'Y N E');
+        // In one line comes before To check.
+        const toCheck = await screen.findByRole('region', { name: 'To check' });
+        expect(section.compareDocumentPosition(toCheck) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        // The named portrait card is gone.
+        expect(screen.queryByText(/Blueprint/)).toBeNull();
+        expect(screen.queryByRole('button', { name: 'That’s me' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Not quite' })).toBeNull();
+        // M does nothing here: the portrait is about you by definition.
+        line.focus();
+        fireEvent.keyDown(line, { key: 'm' });
+        expect(mocks.notMine).not.toHaveBeenCalled();
+        expect(within(line).getByRole('button', { name: 'Yes' })).toBeInTheDocument();
+        fireEvent.keyDown(line, { key: 'y' });
+        await waitFor(() => expect(mocks.confirmPortrait).toHaveBeenCalledOnce());
+        expect(await within(line).findByText('Confirmed. Isoform treats this as fact now.')).toBeInTheDocument();
+    });
+
+    it('edits the one line in place, saving the words as the note', async () => {
+        mocks.getPortrait.mockResolvedValue(readyPortrait([{ text: 'You build careful systems.' }]));
+        mocks.notQuitePortrait.mockResolvedValue(undefined);
+        render(<MemoryPage />);
+        const section = await screen.findByTestId('in-one-line');
+        fireEvent.click(within(section).getByRole('button', { name: 'Edit' }));
+        const field = within(section).getByRole('textbox', { name: 'Editing' });
+        expect(field).toHaveValue('You build careful systems.');
+        fireEvent.change(field, { target: { value: ' ' } });
+        expect(within(section).getByRole('button', { name: 'Save' })).toBeDisabled();
+        fireEvent.change(field, { target: { value: 'You build careful systems, then ship fast.' } });
+        fireEvent.click(within(section).getByRole('button', { name: 'Save' }));
+        await waitFor(() => expect(mocks.notQuitePortrait).toHaveBeenCalledWith('You build careful systems, then ship fast.'));
+        expect(await within(section).findByText('Rewriting with your note. This version stays until then.')).toBeInTheDocument();
+    });
+
+    it('hides In one line until the portrait is written, and says so with Try again when it cannot be read', async () => {
+        const { unmount } = render(<MemoryPage />);
+        await toCheckLine();
+        await act(async () => {});
+        expect(screen.queryByTestId('in-one-line')).toBeNull();
+        unmount();
+        resetPageQueries();
+
+        mocks.getPortrait.mockRejectedValue(new Error('portrait_unavailable'));
+        render(<MemoryPage />);
+        const failed = await screen.findByTestId('in-one-line-failed');
+        expect(failed).toHaveAttribute('role', 'alert');
+        expect(failed).toHaveTextContent("Couldn't load your one line.");
+        mocks.getPortrait.mockResolvedValue(readyPortrait([{ text: 'You build careful systems.' }]));
+        fireEvent.click(within(failed).getByRole('button', { name: 'Try again' }));
+        expect(await screen.findByTestId('in-one-line')).toHaveTextContent('You build careful systems.');
+    });
+
+    it('lists Confirmed with how each was confirmed and no answer buttons, with How to work with me inside it', async () => {
+        const said = { ...entry, id: 'said', title: 'Said', content: '# Said\n- You write in the morning.\n' };
+        const edited = { ...entry, id: 'edited', title: 'Edited', content: '# Edited\n- You keep calls short before noon.\n' };
+        const work = { ...entry, id: 'work', title: 'Work', content: '# Work\n- Send me the short version first.\n' };
+        const rows = [entry, said, edited, work];
+        const confirmedAt = new Date(2026, 10, 20, 12).getTime();
+        const date = new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric' }).format(new Date(confirmedAt));
+        resetDefaults(rows);
+        mocks.getAbout.mockResolvedValue({ ...aboutFor(rows), beliefs: [
+            beliefOf(entry, { status: 'confirmed', confirmedAt, confirmedHow: 'confirmed', confirmedHowAt: confirmedAt }),
+            beliefOf(said, { status: 'confirmed', confirmedAt: confirmedAt - 1000, confirmedHow: 'said' }),
+            beliefOf(edited, { status: 'confirmed', confirmedAt: confirmedAt - 2000, confirmedHow: 'edited' }),
+            beliefOf(work, { status: 'confirmed', confirmedAt }),
+        ] });
+        mocks.getPortrait.mockResolvedValue({
+            ...readyPortrait([{ text: 'You build careful systems.' }]),
+            workWithMe: [{ text: 'Send me the short version first.', memoryIds: ['work'], area: 'work', confirmed: true }],
+        });
+        render(<MemoryPage />);
+        const section = await screen.findByTestId('about-you-confirmed');
+        await waitFor(() => expect(within(section).getAllByTestId('confirmed-row')).toHaveLength(4));
+        expect(within(section).getByRole('heading', { level: 2, name: 'Confirmed' })).toBeInTheDocument();
+        const group = within(section).getByTestId('work-with-me');
+        expect(group).toHaveTextContent('How to work with me');
+        expect(group).toHaveTextContent('Send me the short version first.');
+        expect(within(section).getAllByTestId('confirmed-how').map((node) => node.textContent)).toEqual([
+            `You confirmed · ${date}`, `You confirmed · ${date}`, 'You said', 'You edited',
+        ]);
+        // Judged already: no Right?, no answers, not a claim line.
+        expect(section).not.toHaveTextContent('Right?');
+        for (const name of ['Yes', 'No', 'Not mine', 'Edit']) expect(within(section).queryByRole('button', { name })).toBeNull();
+        expect(section.querySelector('[data-claim-row]')).toBeNull();
+        // Nor are they listed again in the rest.
+        expect(within(screen.getByTestId('belief-groups')).queryAllByRole('article')).toHaveLength(0);
+        fireEvent.click(within(section).getByRole('button', { name: 'You write in the morning.' }));
+        const detail = await screen.findByRole('complementary', { name: 'Belief detail' });
+        expect(within(detail).getByRole('heading', { name: 'Said' })).toBeInTheDocument();
+    });
+
+    it('folds Not right to one line with Show, and Undo sends a claim back to be checked', async () => {
+        const at = Date.now() - 86_400_000;
+        const rows = [
+            { ...entry, id: 'nr-a', title: 'A', content: '# A\n- You skip breakfast.\n' },
+            { ...entry, id: 'nr-b', title: 'B', content: '# B\n- You run at night.\n' },
+            { ...entry, id: 'nr-c', title: 'C', content: '# C\n- You dislike meetings.\n' },
+        ];
+        resetDefaults(rows);
+        mocks.getAbout.mockResolvedValue({ ...aboutFor(rows), beliefs: rows.map((row, index) => beliefOf(row, { status: 'not_quite', notQuiteAt: at - index * 1000 })) });
+        render(<MemoryPage />);
+        const section = await screen.findByTestId('about-you-not-right');
+        expect(within(section).getByRole('heading', { level: 2, name: 'Not right' })).toBeInTheDocument();
+        expect(within(section).getByTestId('not-right-folded')).toHaveTextContent('You skip breakfast. · You run at night. · and 1 more');
+        expect(within(section).queryAllByTestId('not-right-row')).toHaveLength(0);
+        fireEvent.click(within(section).getByRole('button', { name: 'Show' }));
+        const lines = within(section).getAllByTestId('not-right-row');
+        expect(lines).toHaveLength(3);
+        expect(within(lines[0]).queryByRole('button', { name: 'Yes' })).toBeNull();
+        fireEvent.click(within(lines[1]).getByRole('button', { name: 'Undo' }));
+        await waitFor(() => expect(mocks.undoNotQuite).toHaveBeenCalledWith('nr-b', 0));
+        expect(mocks.confirm).not.toHaveBeenCalled();
+    });
+
+    // computer-activity v1.1.0 rule 5: the count is the judged ideas, not every belief.
+    it('counts only judged claims when nothing is new to check', async () => {
+        const rows = [entry, fresh, plans];
+        resetDefaults(rows);
+        mocks.getAbout.mockResolvedValue({ ...aboutFor(rows), beliefs: [
+            beliefOf(entry, { status: 'confirmed', confirmedAt: Date.now() }),
+            beliefOf(fresh, { status: 'not_quite', notQuiteAt: Date.now() }),
+            beliefOf(plans),
+        ] });
+        render(<MemoryPage />);
+        const nothing = await screen.findByTestId('you-nothing-new');
+        await waitFor(() => expect(nothing).toHaveTextContent("You've judged all 2 things Isoform thinks about you."));
+        // The unjudged claim still waits in the rest.
+        expect(within(screen.getByTestId('belief-groups')).getByRole('article', { name: /You plan the week on Sunday evening\./ })).toBeInTheDocument();
+    });
+
+    it('opens the import dialog from the link under To check, or under the header when nothing is to check', async () => {
+        const importLink = /^Bring in what another AI knows about you/;
+        const { unmount } = render(<MemoryPage />);
+        const toCheck = await screen.findByRole('region', { name: 'To check' });
+        await waitFor(() => expect(within(toCheck).getByRole('button', { name: importLink })).toBeInTheDocument());
+        expect(screen.getAllByRole('button', { name: importLink })).toHaveLength(1);
+        fireEvent.click(within(toCheck).getByRole('button', { name: importLink }));
+        expect(await screen.findByText('Import dialog open')).toBeInTheDocument();
+        unmount();
+        resetPageQueries();
+
+        mocks.getAbout.mockImplementation(async () => aboutFor([entry, fresh]));
+        render(<MemoryPage />);
+        await screen.findByTestId('you-nothing-new');
+        expect(screen.queryByRole('region', { name: 'To check' })).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: importLink }));
+        expect(await screen.findByText('Import dialog open')).toBeInTheDocument();
+    });
+
+    it('opens Why on a claim line and reads where that claim came from', async () => {
+        render(<MemoryPage />);
+        const line = await restLine();
+        fireEvent.click(within(line).getByRole('button', { name: 'Why' }));
+        await waitFor(() => expect(mocks.getWhy).toHaveBeenCalledWith('claim', entry.id));
+        expect(await screen.findByRole('dialog')).toBeInTheDocument();
+        // Why only reads: the claim isn't answered.
+        expect(mocks.confirm).not.toHaveBeenCalled();
+        expect(mocks.notThis).not.toHaveBeenCalled();
     });
 });

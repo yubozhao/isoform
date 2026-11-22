@@ -16,12 +16,14 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
 	"wails-gui/internal/agentinbox"
 	"wails-gui/internal/tasklink"
+	"wails-gui/internal/topicday"
 )
 
 type agentMCPState struct {
@@ -82,15 +84,13 @@ func (a *App) agentMCPHandler() http.Handler {
 		s.handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Cache-Control", "no-store")
 			w.Header().Set("X-Robots-Tag", "noindex, nofollow")
-			if err := a.agentsAllowed(); err != nil {
-				http.Error(w, "Your person's Isoform isn't taking agent work right now.", http.StatusServiceUnavailable)
-				return
-			}
 			transport.ServeHTTP(w, r)
 		})
 	})
 	return s.handler
 }
+
+var errAgentMCPNotTaking = errors.New("your person's Isoform isn't taking agent work right now. Try again later")
 
 var errAgentMCPNotConnected = errors.New("not connected to Isoform: ask your person to connect you from Agents in Isoform, then use the address it gives")
 
@@ -162,7 +162,14 @@ func (a *App) agentMCPTools() []agentMCPTool {
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
-			result := handle(ctx, agentID, req)
+			// Joining works during Closed Eyes (connecting sees and keeps
+			// nothing); every tool that reads or sends refuses (agents G2).
+			var result *mcp.CallToolResult
+			if err := a.agentsAllowed(); err != nil {
+				result = mcp.NewToolResultError(errAgentMCPNotTaking.Error())
+			} else {
+				result = handle(ctx, agentID, req)
+			}
 			if fresh != "" {
 				base, _ := ctx.Value(agentMCPBaseKey).(string)
 				notice := mcp.NewTextContent("You're connected to your person's Isoform. The join address no longer works. Your own address, shown once: " +
@@ -229,16 +236,12 @@ func (a *App) agentMCPTools() []agentMCPTool {
 		{
 			tool: mcp.NewTool("ask_agent", mcp.WithDescription("Ask another of your person's agents for something, through Isoform. Your person says yes first."),
 				mcp.WithString("to", mcp.Required()), mcp.WithString("ask", mcp.Required())),
-			handle: withAgent(func(context.Context, string, mcp.CallToolRequest) *mcp.CallToolResult {
-				return mcp.NewToolResultError("Asking another agent isn't available yet. Say what you need in your result instead.")
-			}),
+			handle: withAgent(a.askAgent),
 		},
 		{
 			tool: mcp.NewTool("get_answer", mcp.WithDescription("The answer to a request you made with ask_agent, once it's there."),
 				mcp.WithString("id", mcp.Required())),
-			handle: withAgent(func(context.Context, string, mcp.CallToolRequest) *mcp.CallToolResult {
-				return mcp.NewToolResultError("There is no request with that id.")
-			}),
+			handle: withAgent(a.getAgentAnswer),
 		},
 	}
 }
@@ -260,7 +263,8 @@ func agentMCPResult(req mcp.CallToolRequest) (agentinbox.Result, error) {
 			}
 		}
 	}
-	if text := req.GetString("result", ""); strings.TrimSpace(text) != "" {
+	text := req.GetString("result", "")
+	if strings.TrimSpace(text) != "" {
 		files = append([]map[string]any{{"name": "result.md", "text": text}}, files...)
 	}
 	if len(files) > 0 {
@@ -270,5 +274,122 @@ func agentMCPResult(req mcp.CallToolRequest) (agentinbox.Result, error) {
 	if err != nil {
 		return agentinbox.Result{}, err
 	}
-	return agentinbox.ParseResult(data)
+	result, err := agentinbox.ParseResult(data)
+	if err == nil && strings.TrimSpace(text) != "" {
+		result.Text = text
+	}
+	return result, err
+}
+
+func (a *App) askAgent(_ context.Context, caller string, req mcp.CallToolRequest) *mcp.CallToolResult {
+	to, ask := strings.TrimSpace(req.GetString("to", "")), agentRequestBound(req.GetString("ask", ""))
+	if to == "" || ask == "" {
+		return mcp.NewToolResultError("Name the agent and say what you want it to do.")
+	}
+	target, name, err := a.agentRequestTarget(to, caller)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error())
+	}
+	r, err := a.createAgentRequest(caller, target, "", a.workAgentName(caller)+" wants "+name+" to "+ask, ask, time.Time{})
+	if err != nil {
+		return mcp.NewToolResultError("Isoform couldn't save the request.")
+	}
+	return mcp.NewToolResultText("Asked. Your person says yes or no in Isoform. Request id: " + r.ID + ". Check with get_answer.")
+}
+
+func (a *App) agentRequestTarget(to, caller string) (string, string, error) {
+	joined := a.GetConnectedAgents()
+	self := errors.New("You can't ask yourself.")
+	// Prefer a connection id to any display name. Pin joined targets to that
+	// connection so a later agent with the same name cannot receive the ask.
+	for _, c := range joined {
+		if strings.EqualFold(to, c.ID) {
+			if c.ID == caller {
+				return "", "", self
+			}
+			return c.ID, c.Name, nil
+		}
+	}
+	for _, c := range joined {
+		if c.ID == caller && (strings.EqualFold(to, c.Name) || strings.EqualFold(to, c.CatalogID)) {
+			return "", "", self
+		}
+	}
+	agents, err := a.GetYourAgents()
+	if err != nil {
+		return "", "", errors.New("Isoform couldn't check your person's agents.")
+	}
+	for _, agent := range agents.Agents {
+		if !strings.EqualFold(to, agent.ID) && !strings.EqualFold(to, agent.Name) {
+			continue
+		}
+		if agent.ConnectedHere {
+			return agent.ID, agent.Name, nil
+		}
+		if c, ok := a.connectedAgentFor(agent.ID); ok {
+			if c.ID == caller {
+				return "", "", self
+			}
+			return c.ID, c.Name, nil
+		}
+		return "", "", fmt.Errorf("%s can't be asked through Isoform yet. Say what you need in your result instead.", to)
+	}
+	for _, c := range joined {
+		if strings.EqualFold(to, c.Name) {
+			return c.ID, c.Name, nil
+		}
+	}
+	return "", "", fmt.Errorf("Your person has no agent called %s.", to)
+}
+
+func (a *App) getAgentAnswer(_ context.Context, caller string, req mcp.CallToolRequest) *mcp.CallToolResult {
+	r, ok := a.getAgentRequest(req.GetString("id", ""))
+	if !ok || r.From != caller {
+		return mcp.NewToolResultError("There is no request with that id.")
+	}
+	switch r.Answer {
+	case agentRequestNo:
+		return mcp.NewToolResultText("Your person said no.")
+	case agentRequestRanOut:
+		return mcp.NewToolResultText("No answer from your person.")
+	case agentRequestYes:
+		name := a.workAgentName(r.To)
+		if r.ExpiresAt <= time.Now().UnixMilli() && a.agentRequestSendFailed(r) {
+			return mcp.NewToolResultText("No answer from " + name + "; the request ran out.")
+		}
+		unreachable := "Your person said yes, but " + name + " couldn't be reached."
+		if r.TargetHandoffID == "" {
+			return mcp.NewToolResultText(unreachable)
+		}
+		// If Isoform stopped between delivery and its receipt, check this
+		// task or inbox item before reporting that the send failed.
+		unconfirmed := r.SendError == agentRequestUnconfirmed
+		if r.TargetTaskID != "" {
+			state, summary := a.workOnItTaskState(r.TargetTaskID)
+			if state == "" && unconfirmed {
+				return mcp.NewToolResultText(unreachable)
+			}
+			switch state {
+			case topicday.StateDone, topicday.StateFailed:
+				return agentMCPJSON(map[string]string{"summary": summary, "status": state})
+			}
+		} else {
+			result, found, err := a.agentRequestResult(r)
+			if err != nil {
+				return mcp.NewToolResultError("Isoform couldn't read this answer.")
+			}
+			if found {
+				return agentMCPJSON(map[string]any{"summary": result.Summary, "result": result.RequestText, "files": result.Files})
+			}
+			if unconfirmed {
+				item, ok := a.agentInboxService().Find(r.TargetHandoffID)
+				if !ok || item.AgentID != r.To || item.SourceID != r.ID {
+					return mcp.NewToolResultText(unreachable)
+				}
+			}
+		}
+		return mcp.NewToolResultText("Your person said yes. " + name + " has it; no answer yet.")
+	default:
+		return mcp.NewToolResultText("Waiting for your person's yes, until " + time.UnixMilli(r.ExpiresAt).Format(time.RFC3339) + ".")
+	}
 }

@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import i18n from '@/i18n';
-import { MainChatSummary } from './main-chat-filter-row';
+import { MainChatSummary } from './main-chat-header';
 
 afterEach(cleanup);
 

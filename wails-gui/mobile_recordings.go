@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -119,22 +120,26 @@ type MobileRecordingRequest struct {
 	Part           int    `json:"part"`
 	// Last marks the final part. A recording still running does not know its
 	// part count, so each finished part is sent as it is cut.
-	Last            bool                    `json:"last"`
-	Upload          MobileRecordingUpload   `json:"upload"`
-	SHA256          string                  `json:"sha256"`
-	Bytes           int64                   `json:"bytes"`
-	Mime            string                  `json:"mime"`
-	StartedAt       string                  `json:"startedAt"`
-	DurationSeconds float64                 `json:"durationSeconds"`
-	Source          string                  `json:"source"`
-	Title           string                  `json:"title,omitempty"`
-	Device          *MobileRecordingContext `json:"device,omitempty"`
+	Last            bool                      `json:"last"`
+	Upload          mobileRecordingPartUpload `json:"upload"`
+	SHA256          string                    `json:"sha256"`
+	Bytes           int64                     `json:"bytes"`
+	Mime            string                    `json:"mime"`
+	StartedAt       string                    `json:"startedAt"`
+	DurationSeconds float64                   `json:"durationSeconds"`
+	Source          string                    `json:"source"`
+	Title           string                    `json:"title,omitempty"`
+	Device          *MobileRecordingContext   `json:"device,omitempty"`
 	// Context is the wearer's heart rate and coarse location during this part
 	// (24.4). Optional; sent only to a computer that advertises it.
 	Context *MobileRecordingPartContext `json:"context,omitempty"`
 	// Marks are the moments the wearer marked during this part, in seconds
 	// from its start (24.9). Optional; sent only to a computer that advertises it.
 	Marks []float64 `json:"marks,omitempty"`
+	// Ahead is true when the phone says this before the upload is on the relay
+	// (24.2a): the computer keeps the request and fetches when the relay has it.
+	// Sent only to a computer that advertises it.
+	Ahead bool `json:"ahead,omitempty"`
 }
 
 // MobileRecordingUpload names the sealed part on the relay and its key.
@@ -143,6 +148,16 @@ type MobileRecordingUpload struct {
 	Key   string `json:"key"`
 	Nonce string `json:"nonce"`
 }
+
+type mobileRecordingPartUpload struct {
+	MobileRecordingUpload
+	Relay string `json:"relay,omitempty"`
+}
+
+const (
+	mobileRecordingRelayPinned = "pinned"
+	mobileRecordingRelayDirect = "direct"
+)
 
 // MobileRecordingContext is optional, coarse context the watch knew. Nothing
 // here is required, and none of it is location.
@@ -154,6 +169,7 @@ type MobileRecordingContext struct {
 type mobileRecordingPart struct {
 	Part            int     `json:"part"`
 	UploadID        string  `json:"uploadId"`
+	UploadRelay     string  `json:"uploadRelay,omitempty"`
 	File            string  `json:"file"`
 	Bytes           int64   `json:"bytes"`
 	SHA256          string  `json:"sha256"`
@@ -168,7 +184,8 @@ type mobileRecordingPart struct {
 	// PausedCut is set when a pause touched the part and the paused minutes
 	// were cut out of its audio: the file is shorter than DurationSeconds and
 	// its times no longer line up with the clock.
-	PausedCut bool `json:"pausedCut,omitempty"`
+	PausedCut        bool                `json:"pausedCut,omitempty"`
+	ConversationCuts []watchPartInterval `json:"conversationCuts,omitempty"`
 	// Marks are the moments the wearer marked, seconds from the part's start.
 	// Removed together with the audio.
 	Marks []float64 `json:"marks,omitempty"`
@@ -190,9 +207,10 @@ type mobileRecording struct {
 	// OwnerVoice says how the transcript's speech was labelled by speaker.
 	OwnerVoice string `json:"ownerVoice,omitempty"`
 	// AudioRemoved is set once the audio was deleted after its keep time.
-	AudioRemoved bool   `json:"audioRemoved,omitempty"`
-	ReceivedAt   string `json:"receivedAt"`
-	UpdatedAt    string `json:"updatedAt"`
+	AudioRemoved       bool   `json:"audioRemoved,omitempty"`
+	ReceivedAt         string `json:"receivedAt"`
+	LastPartReceivedAt string `json:"lastPartReceivedAt,omitempty"`
+	UpdatedAt          string `json:"updatedAt"`
 	// ContinuationOf and FirstPart are set on a row that holds the parts that
 	// arrived after the recording they belong to was closed: the recording's
 	// id as the phone knows it, and the number its part 0 has there
@@ -242,9 +260,61 @@ type mobileRecordingStore struct {
 	dir string
 	now func() time.Time
 
-	mu         sync.Mutex
-	recordings map[string]*mobileRecording
-	loaded     bool
+	mu             sync.Mutex
+	recordings     map[string]*mobileRecording
+	loaded         bool
+	cutDB          *sql.DB
+	forgetPreviews map[string][32]byte // guarded by watchCutMu
+
+	// The devices paired now, as the bridge last said (setPaired). Its own
+	// lock, so the bridge can set it while it holds its own.
+	pairedMu    sync.Mutex
+	paired      map[string]bool
+	pairedKnown bool
+}
+
+// setPaired tells the store which devices are paired now.
+func (s *mobileRecordingStore) setPaired(ids []string) {
+	paired := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		paired[id] = true
+	}
+	s.pairedMu.Lock()
+	s.paired, s.pairedKnown = paired, true
+	s.pairedMu.Unlock()
+}
+
+// claimLocked reports whether deviceID may read and add to rec. A recording
+// belongs to the phone that sent it. A phone that pairs again gets a new
+// device id, and on 2026-11-18 that made the computer refuse every later part
+// of the recordings that phone had started ("the recording is not valid"). So a
+// recording whose device is no longer paired passes to the paired phone that
+// names it: the id is a random UUID, and only the phone that made the
+// recording holds it. The recording's continuations pass with it. The caller
+// saves the index.
+func (s *mobileRecordingStore) claimLocked(rec *mobileRecording, deviceID string) bool {
+	if rec.DeviceID == deviceID {
+		return true
+	}
+	s.pairedMu.Lock()
+	passes := s.pairedKnown && s.paired[deviceID] && !s.paired[rec.DeviceID]
+	s.pairedMu.Unlock()
+	if !passes {
+		return false
+	}
+	from := rec.DeviceID
+	root := rec.ID
+	if rec.ContinuationOf != "" {
+		root = rec.ContinuationOf
+	}
+	for _, other := range s.recordings {
+		if other.DeviceID == from && (other.ID == root || other.ContinuationOf == root) {
+			other.DeviceID = deviceID
+		}
+	}
+	rec.DeviceID = deviceID
+	log.Printf("[recordings] %s passes to the phone's new pairing", rec.ID)
+	return true
 }
 
 func newMobileRecordingStore(stateDir string) *mobileRecordingStore {
@@ -254,6 +324,9 @@ func newMobileRecordingStore(stateDir string) *mobileRecordingStore {
 func (s *mobileRecordingStore) loadLocked() error {
 	if s.loaded {
 		return nil
+	}
+	if err := s.recoverWatchCutLocked(); err != nil {
+		return err
 	}
 	s.recordings = map[string]*mobileRecording{}
 	raw, err := os.ReadFile(filepath.Join(s.dir, "index.json"))
@@ -296,36 +369,45 @@ func (s *mobileRecordingStore) saveLocked() error {
 	return mobileRecordingWriteFile(filepath.Join(s.dir, "index.json"), raw, 0600)
 }
 
-// has reports whether the part is already stored, so a repeat is answered
-// without fetching again.
-func (s *mobileRecordingStore) has(deviceID, recordingID string, part int) (MobileRecordingView, bool, error) {
+// storedPart returns the recorded upload for a repeat. A deleted recording
+// returns its view alone, so a late part cannot bring it back.
+func (s *mobileRecordingStore) storedPart(deviceID, recordingID string, part int) (MobileRecordingView, *mobileRecordingPart, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.loadLocked(); err != nil {
-		return MobileRecordingView{}, false, err
+		return MobileRecordingView{}, nil, err
 	}
 	rec := s.recordings[recordingID]
-	if rec == nil || rec.DeviceID != deviceID {
-		return MobileRecordingView{}, false, nil
+	if rec == nil {
+		return MobileRecordingView{}, nil, nil
+	}
+	if rec.DeviceID != deviceID {
+		if !s.claimLocked(rec, deviceID) {
+			return MobileRecordingView{}, nil, nil
+		}
+		if err := s.saveLocked(); err != nil {
+			s.loaded = false
+			return MobileRecordingView{}, nil, err
+		}
 	}
 	if rec.State == mobileRecordingDeleted {
 		// A part of a deleted recording is never fetched or stored again.
-		return rec.view(), true, nil
+		return rec.view(), nil, nil
 	}
 	// A part past the end of a closed recording lives in its continuation.
 	rec, part = s.rowForPartLocked(rec, part, false, "")
 	if rec == nil {
-		return MobileRecordingView{}, false, nil
+		return MobileRecordingView{}, nil, nil
 	}
 	if rec.State == mobileRecordingDeleted {
-		return rec.view(), true, nil
+		return rec.view(), nil, nil
 	}
 	for _, got := range rec.Received {
 		if got.Part == part {
-			return rec.view(), true, nil
+			return rec.view(), &got, nil
 		}
 	}
-	return MobileRecordingView{}, false, nil
+	return MobileRecordingView{}, nil, nil
 }
 
 // addPart writes a part's plaintext and records it. It reports whether the
@@ -338,7 +420,7 @@ func (s *mobileRecordingStore) addPart(deviceID string, req MobileRecordingReque
 	}
 	now := mobileTimestamp(s.now())
 	rec := s.recordings[req.RecordingID]
-	if rec != nil && rec.DeviceID != deviceID {
+	if rec != nil && !s.claimLocked(rec, deviceID) {
 		return MobileRecordingView{}, false, errMobileRecordingInvalid
 	}
 	if rec != nil && rec.State != mobileRecordingDeleted {
@@ -354,6 +436,9 @@ func (s *mobileRecordingStore) addPart(deviceID string, req MobileRecordingReque
 	}
 	for _, got := range rec.Received {
 		if got.Part == req.Part {
+			if got.SHA256 != req.SHA256 || got.Bytes != req.Bytes {
+				return MobileRecordingView{}, false, errMobileRecordingSHA
+			}
 			return rec.view(), rec.complete(), nil
 		}
 	}
@@ -378,8 +463,6 @@ func (s *mobileRecordingStore) addPart(deviceID string, req MobileRecordingReque
 		// Already transcribing or done: a late part cannot change it.
 		return MobileRecordingView{}, false, errMobileRecordingInvalid
 	}
-	rec.Parts = parts
-	s.recordings[rec.ID] = rec
 	folder := filepath.Join(s.dir, rec.ID)
 	if err := os.MkdirAll(folder, 0700); err != nil {
 		return MobileRecordingView{}, false, err
@@ -388,32 +471,35 @@ func (s *mobileRecordingStore) addPart(deviceID string, req MobileRecordingReque
 	if err := mobileRecordingWriteFile(filepath.Join(folder, name), plaintext, 0600); err != nil {
 		return MobileRecordingView{}, false, err
 	}
-	rec.Received = append(rec.Received, mobileRecordingPart{Part: req.Part, UploadID: req.Upload.ID, File: name,
+	rec.Parts = parts
+	s.recordings[rec.ID] = rec
+	rec.Received = append(rec.Received, mobileRecordingPart{Part: req.Part, UploadID: req.Upload.ID, UploadRelay: req.Upload.Relay, File: name,
 		Bytes: int64(len(plaintext)), SHA256: req.SHA256, StartedAt: req.StartedAt, DurationSeconds: req.DurationSeconds,
 		Context: sanitizeMobileRecordingContext(req.Context),
 		Marks:   sanitizeMobileRecordingMarks(req.Marks, req.DurationSeconds)})
 	sort.Slice(rec.Received, func(i, j int) bool { return rec.Received[i].Part < rec.Received[j].Part })
+	rec.LastPartReceivedAt = now
 	rec.UpdatedAt = now
 	if err := s.saveLocked(); err != nil {
+		// A retry must read the committed index before acknowledging the part.
+		s.loaded = false
 		return MobileRecordingView{}, false, err
 	}
 	return rec.view(), rec.complete(), nil
 }
 
-// setState moves a recording to a state and saves. It reports false, and
-// changes nothing, when the recording was deleted meanwhile.
-func (s *mobileRecordingStore) setState(id, state, sessionID string, words int, failure string) bool {
+// setState returns errWatchRecordingNotFound only when the index confirms
+// the recording is missing or its audio has been removed.
+func (s *mobileRecordingStore) setState(id, state, sessionID string, words int, failure string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.loadLocked(); err != nil {
-		return true
+		log.Printf("[recordings] index read failed: %v", err)
+		return err
 	}
 	rec := s.recordings[id]
-	if rec == nil {
-		return true
-	}
-	if rec.State == mobileRecordingDeleted {
-		return false
+	if rec == nil || rec.AudioRemoved || rec.State == mobileRecordingDeleted {
+		return errWatchRecordingNotFound
 	}
 	rec.State, rec.Error, rec.UpdatedAt = state, failure, mobileTimestamp(s.now())
 	if sessionID != "" {
@@ -424,8 +510,9 @@ func (s *mobileRecordingStore) setState(id, state, sessionID string, words int, 
 	}
 	if err := s.saveLocked(); err != nil {
 		log.Printf("[recordings] index save failed: %v", err)
+		return err
 	}
-	return true
+	return nil
 }
 
 // setOwnerVoice records how a recording's speech was labelled by speaker.
@@ -449,6 +536,7 @@ func (s *mobileRecordingStore) pending() []mobileRecording {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.loadLocked(); err != nil {
+		log.Printf("[recordings] index read failed: %v", err)
 		return nil
 	}
 	var out []mobileRecording
@@ -457,7 +545,7 @@ func (s *mobileRecordingStore) pending() []mobileRecording {
 		if rec.closeIfAbandoned(s.now()) {
 			changed = true
 		}
-		if rec.complete() && (rec.State == mobileRecordingReceived || rec.State == mobileRecordingTranscribing) {
+		if !rec.AudioRemoved && rec.complete() && (rec.State == mobileRecordingReceived || rec.State == mobileRecordingTranscribing) {
 			copied := *rec
 			copied.Received = append([]mobileRecordingPart(nil), rec.Received...)
 			out = append(out, copied)
@@ -509,14 +597,27 @@ func (s *mobileRecordingStore) list(deviceID string, ids []string, limit int, wi
 		wanted[id] = true
 	}
 	var out []MobileRecordingView
+	claimed := false
 	for _, rec := range s.recordings {
-		if rec.DeviceID != deviceID || (len(wanted) > 0 && !wanted[rec.ID]) {
+		if len(wanted) > 0 && !wanted[rec.ID] {
 			continue
+		}
+		if rec.DeviceID != deviceID {
+			// Only a recording the phone names can pass to its new pairing.
+			if len(wanted) == 0 || !s.claimLocked(rec, deviceID) {
+				continue
+			}
+			claimed = true
 		}
 		if rec.State == mobileRecordingDeleted && !withDeleted {
 			continue
 		}
 		out = append(out, rec.view())
+	}
+	if claimed {
+		if err := s.saveLocked(); err != nil {
+			return nil, err
+		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ReceivedAt > out[j].ReceivedAt })
 	if len(out) > limit {
@@ -535,6 +636,10 @@ var mobileRecordingLaunchOnce sync.Once
 // audio of recordings transcribed more than mobileRecordingAudioKeep ago. The
 // index row stays, so the phone still reads the recording's state.
 func (s *mobileRecordingStore) retryFailedAndPrune() {
+	s.retryFailed(true)
+}
+
+func (s *mobileRecordingStore) retryFailed(launch bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.loadLocked(); err != nil {
@@ -544,9 +649,15 @@ func (s *mobileRecordingStore) retryFailedAndPrune() {
 	for _, rec := range s.recordings {
 		switch rec.State {
 		case mobileRecordingFailed:
+			if rec.AudioRemoved || (!launch && rec.Error != mobileSpeechNotReady) {
+				continue
+			}
 			rec.State, rec.Error = mobileRecordingReceived, ""
 			changed = true
 		case mobileRecordingTranscribed:
+			if !launch {
+				continue
+			}
 			updated, err := time.Parse(time.RFC3339, rec.UpdatedAt)
 			if err != nil || s.now().Sub(updated) < mobileRecordingAudioKeep || rec.AudioRemoved {
 				continue
@@ -650,6 +761,11 @@ func validateMobileRecordingRequest(req MobileRecordingRequest, now time.Time) e
 	default:
 		return errMobileRecordingInvalid
 	}
+	switch req.Upload.Relay {
+	case "", mobileRecordingRelayPinned, mobileRecordingRelayDirect:
+	default:
+		return errMobileRecordingInvalid
+	}
 	switch req.Source {
 	case "watch", "phone":
 	default:
@@ -662,49 +778,94 @@ func validateMobileRecordingRequest(req MobileRecordingRequest, now time.Time) e
 	return nil
 }
 
-// receiveMobileRecordingPart fetches, opens, checks and stores one part, then
-// removes it from the relay. A part already stored is answered from the index.
-func receiveMobileRecordingPart(ctx context.Context, store *mobileRecordingStore, fetcher mobileUploadFetcher, hubID, deviceID string, req MobileRecordingRequest) (MobileRecordingView, bool, error) {
-	if view, found, err := store.has(deviceID, req.RecordingID, req.Part); err != nil || found {
-		if found {
-			// The relay copy may outlive a lost answer; removing it again is harmless.
-			_ = fetcher.deleteUpload(ctx, req.Upload.ID)
-		}
+// The primary client serves the pinned relay or, on a ticket-only computer,
+// the direct relay itself. A pinned computer can also have a direct client.
+type mobileRecordingRelays struct {
+	app         *App
+	primaryName string
+	primary     mobileUploadFetcher
+	direct      mobileUploadFetcher
+}
+
+func (bridge *mobileBridge) recordingRelaysLocked() mobileRecordingRelays {
+	relays := mobileRecordingRelays{app: bridge.app, primaryName: mobileRecordingRelayPinned}
+	if mobileRemoteAccessMode(bridge.relay.URL) {
+		relays.primaryName = mobileRecordingRelayDirect
+	}
+	if bridge.client != nil {
+		relays.primary = bridge.client
+	}
+	if direct := bridge.direct.Load(); direct != nil {
+		relays.direct = direct
+	}
+	return relays
+}
+
+func (relays mobileRecordingRelays) client(name string) mobileUploadFetcher {
+	switch name {
+	case relays.primaryName:
+		return relays.primary
+	case mobileRecordingRelayDirect:
+		return relays.direct
+	default:
+		return nil
+	}
+}
+
+func (relays mobileRecordingRelays) receivePart(ctx context.Context, store *mobileRecordingStore, hubID, deviceID string, req MobileRecordingRequest) (MobileRecordingView, bool, error) {
+	view, stored, err := store.storedPart(deviceID, req.RecordingID, req.Part)
+	if err != nil || view.State == mobileRecordingDeleted {
+		// A tombstone acknowledges deletion without touching the upload.
 		return view, false, err
+	}
+	if stored != nil {
+		if stored.SHA256 != req.SHA256 || stored.Bytes != req.Bytes {
+			return MobileRecordingView{}, false, errMobileRecordingSHA
+		}
+		// Retry cleanup only for the upload we actually opened and stored.
+		client := relays.client(stored.UploadRelay)
+		if client != nil && stored.UploadID == req.Upload.ID && (req.Upload.Relay == "" || req.Upload.Relay == stored.UploadRelay) {
+			_ = client.deleteUpload(ctx, stored.UploadID)
+		}
+		return view, false, nil
 	}
 	key, keyErr := base64.RawURLEncoding.DecodeString(req.Upload.Key)
 	nonce, nonceErr := base64.RawURLEncoding.DecodeString(req.Upload.Nonce)
 	if keyErr != nil || nonceErr != nil {
 		return MobileRecordingView{}, false, errMobileAttachmentKey
 	}
-	sealed, err := fetcher.downloadUpload(ctx, req.Upload.ID)
-	if err != nil {
-		return MobileRecordingView{}, false, err
+	unnamed := req.Upload.Relay == ""
+	if unnamed {
+		req.Upload.Relay = relays.primaryName
 	}
-	// A part refused from here on is refused for good, so its copy on the
-	// relay is of no use: left there, refused copies fill the phone's quota
-	// and nothing else gets through. The phone keeps the audio.
-	refused := func(err error) (MobileRecordingView, bool, error) {
-		log.Printf("[recordings] part %d of %s refused: %v", req.Part, req.RecordingID, err)
-		if errors.Is(err, errMobileRecordingSHA) || errors.Is(err, errMobileAttachmentRejected) || errors.Is(err, errMobileRecordingInvalid) {
-			_ = fetcher.deleteUpload(ctx, req.Upload.ID)
-		}
+	client := relays.client(req.Upload.Relay)
+	if client == nil {
+		return MobileRecordingView{}, false, errMobileStoreUnavailable
+	}
+	sealed, err := client.downloadUpload(ctx, req.Upload.ID)
+	if unnamed && errors.Is(err, errMobileRecordingGone) && relays.direct != nil && req.Upload.Relay == mobileRecordingRelayPinned {
+		req.Upload.Relay, client = mobileRecordingRelayDirect, relays.direct
+		sealed, err = client.downloadUpload(ctx, req.Upload.ID)
+	}
+	if err != nil {
 		return MobileRecordingView{}, false, err
 	}
 	plaintext, err := openMobileUpload(key, nonce, hubID, deviceID, req.Upload.ID, sealed)
 	if err != nil {
-		return refused(err)
+		return MobileRecordingView{}, false, err
 	}
 	sum := sha256.Sum256(plaintext)
 	if int64(len(plaintext)) != req.Bytes || hex.EncodeToString(sum[:]) != req.SHA256 {
-		return refused(errMobileRecordingSHA)
+		return MobileRecordingView{}, false, errMobileRecordingSHA
 	}
+	release := relays.app.filterWatchContext(&req)
 	view, complete, err := store.addPart(deviceID, req, plaintext)
+	release()
 	if err != nil {
-		return refused(err)
+		return MobileRecordingView{}, false, err
 	}
-	if err := fetcher.deleteUpload(ctx, req.Upload.ID); err != nil {
-		log.Printf("[recordings] relay copy of %s not removed yet: %v", req.Upload.ID, err)
+	if err := client.deleteUpload(ctx, req.Upload.ID); err != nil {
+		log.Printf("[recordings] relay copy of %s not removed yet", req.Upload.ID)
 	}
 	return view, complete, nil
 }
@@ -720,49 +881,66 @@ func (bridge *mobileBridge) serveRecordingPost(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if err := validateMobileRecordingRequest(req, time.Now()); err != nil {
+		// Nothing of a request that is not valid is written, only that it came.
+		log.Printf("[recordings] a part was refused: %v", err)
 		mobileJSON(w, http.StatusBadRequest, nil, err.Error())
 		return
 	}
+	// From here every way this request ends is one line in the log. On 2026-11-19 four
+	// finished parts sat on the relay for hours, and nothing here said whether the phone had
+	// asked the computer to take them or what it was told.
 	if bridge.app != nil && bridge.app.IsClosedEyesModeEnabled() {
 		// The phone keeps the recording and sends it after observing resumes.
+		log.Printf("[recordings] part %d of %s waits: observing is paused here", req.Part, req.RecordingID)
 		mobileJSON(w, http.StatusConflict, map[string]string{"code": "observation_paused"}, "observing is paused on this computer")
 		return
 	}
 	bridge.mu.Lock()
-	client, identity, store := bridge.client, bridge.identity, bridge.recordingStoreLocked()
+	relays, identity, store := bridge.recordingRelaysLocked(), bridge.identity, bridge.recordingStoreLocked()
 	bridge.mu.Unlock()
-	if client == nil || identity == nil || store == nil {
+	if identity == nil || store == nil {
+		log.Printf("[recordings] part %d of %s waits: the computer is not ready", req.Part, req.RecordingID)
 		mobileJSON(w, http.StatusServiceUnavailable, nil, errMobileStoreUnavailable.Error())
 		return
 	}
 	ctx, cancel := context.WithTimeout(bridge.ctx, mobileRecordingFetchWait)
 	defer cancel()
-	view, complete, err := receiveMobileRecordingPart(ctx, store, client, identity.HubID, device.DeviceID, req)
+	// Apply the choices at announcement and again before either disk write.
+	release := bridge.app.filterWatchContext(&req)
+	release()
+	view, complete, err := relays.receivePart(ctx, store, identity.HubID, device.DeviceID, req)
 	switch {
 	case err == nil:
+	case errors.Is(err, errMobileRecordingGone) && req.Ahead:
+		// Told ahead of its upload: kept, and fetched when the relay has it. The
+		// answer says "expected", never "received": the phone keeps the part.
+		if err := bridge.expectRecordingPart(store, device.DeviceID, req, time.Now()); err != nil {
+			log.Printf("[recordings] part %d of %s not kept as expected: %v", req.Part, req.RecordingID, err)
+			mobileJSON(w, http.StatusServiceUnavailable, nil, errMobileStoreUnavailable.Error())
+			return
+		}
+		bridge.mu.Lock()
+		bridge.startExpectedRecordingsLocked()
+		bridge.mu.Unlock()
+		log.Printf("[recordings] part %d of %s expected", req.Part, req.RecordingID)
+		mobileJSON(w, http.StatusAccepted, MobileRecordingView{ID: req.RecordingID, State: mobileRecordingStateExpected}, "")
+		return
 	case errors.Is(err, errMobileRecordingGone):
+		log.Printf("[recordings] part %d of %s is not on the relay", req.Part, req.RecordingID)
 		mobileJSON(w, http.StatusNotFound, map[string]string{"code": "upload_missing"}, err.Error())
 		return
 	case errors.Is(err, errMobileRecordingSHA), errors.Is(err, errMobileAttachmentRejected), errors.Is(err, errMobileAttachmentKey), errors.Is(err, errMobileRecordingInvalid):
+		log.Printf("[recordings] part %d of %s refused: %v", req.Part, req.RecordingID, err)
 		mobileJSON(w, http.StatusBadRequest, nil, err.Error())
 		return
 	default:
-		log.Printf("[recordings] part %d of %s not received: %v", req.Part, req.RecordingID, err)
+		log.Printf("[recordings] part %d of %s not received", req.Part, req.RecordingID)
 		mobileJSON(w, http.StatusServiceUnavailable, nil, "the computer could not fetch the recording yet")
 		return
 	}
-	// The row that took the part is the recording itself, or its continuation
-	// for a part that came after the recording was closed. The phone reads the
-	// id it sent.
-	stored := view.ID
-	view.ID = req.RecordingID
-	if bridge.app != nil {
-		// Recorded while observing was paused here: gone before anything reads it.
-		bridge.app.dropPausedMobileRecordingOnReceipt(store, stored)
-	}
-	if complete && bridge.app != nil {
-		bridge.app.startMobileRecordingTranscription()
-	}
+	// A part told ahead earlier and sent now in the usual way is no longer expected.
+	store.forgetExpected(device.DeviceID, req.RecordingID, req.Part)
+	view = bridge.recordingPartTaken(store, req, view, complete)
 	mobileJSON(w, http.StatusAccepted, view, "")
 }
 
@@ -820,6 +998,18 @@ func (bridge *mobileBridge) recordingStoreLocked() *mobileRecordingStore {
 		// The store lives for the process, as does this subscription.
 		subscribePrivacyWithdrawals(store.onPrivacyWithdrawal)
 	}
+	// The mobile bridge can be initialized before activity storage is ready.
+	if bridge.app != nil && bridge.app.activity != nil && bridge.app.activity.store != nil {
+		store.mu.Lock()
+		store.cutDB = bridge.app.activity.store.db
+		store.mu.Unlock()
+	}
+	// The caller holds bridge.mu, so this is the set of paired devices now.
+	paired := make([]string, 0, len(bridge.devices))
+	for id := range bridge.devices {
+		paired = append(paired, id)
+	}
+	store.setPaired(paired)
 	return store
 }
 
@@ -855,6 +1045,7 @@ func (c *mobileRelayClient) hubUploadRequest(ctx context.Context, method, upload
 	return resp, nil
 }
 
+//isoform:destination relay
 func (c *mobileRelayClient) hubUploadNewRequest(ctx context.Context, method, uploadID string) (*http.Request, error) {
 	if !mobileValidUUID(uploadID) {
 		return nil, errMobileRecordingInvalid
@@ -902,6 +1093,8 @@ var mobileRecordingFFmpeg = func(ffmpegPath, in, out string) ([]byte, error) {
 
 // --- Transcription ---
 
+const mobileSpeechNotReady = "speech is not set up on this computer"
+
 // mobileRecordingTranscriber turns one part file into timed speech segments.
 // The default decodes with the bundled ffmpeg and runs the after-call engine;
 // tests replace it.
@@ -914,7 +1107,7 @@ var mobileRecordingTranscriber = func(a *App, path string) ([]mobileRecordingSeg
 	transcriber, release := a.afterCallTranscriber()
 	defer release()
 	if transcriber == nil {
-		return nil, errors.New("speech is not set up on this computer")
+		return nil, errors.New(mobileSpeechNotReady)
 	}
 	info, err := readMeetingWAVInfo(wavPath)
 	if err != nil {
@@ -1005,14 +1198,27 @@ func (bridge *mobileBridge) resumeRecordingTranscription() {
 		// Once per launch: a recording that failed (speech not set up yet, a
 		// decode that could not run) gets another try, and audio whose
 		// transcript is old enough is removed.
-		mobileRecordingLaunchOnce.Do(func() { store.retryFailedAndPrune() })
-		if len(store.pending()) > 0 {
-			bridge.app.transcribeMobileRecordings(bridge.ctx, store)
-		}
+		bridge.app.retryMobileRecordings(bridge.ctx, store, true)
 		// Also names what an earlier launch left unnamed, and drops names of deleted hours.
 		bridge.app.nameWatchConversations(bridge.ctx, store)
 		bridge.app.noteWatchConversations(bridge.ctx, store)
 	}()
+}
+
+// Hold the worker across requeue and drain. An arrival waits for an in-flight
+// decode to record its failure before looking for speech-setup failures.
+func (a *App) retryMobileRecordings(ctx context.Context, store *mobileRecordingStore, launch bool) {
+	mobileRecordingWorker.Lock()
+	defer mobileRecordingWorker.Unlock()
+	if ctx.Err() != nil {
+		return
+	}
+	if launch {
+		mobileRecordingLaunchOnce.Do(store.retryFailedAndPrune)
+	} else {
+		store.retryFailed(false)
+	}
+	a.transcribeMobileRecordingsLocked(ctx, store)
 }
 
 // transcribeMobileRecordings is the worker loop.
@@ -1021,6 +1227,10 @@ func (a *App) transcribeMobileRecordings(ctx context.Context, store *mobileRecor
 		return
 	}
 	defer mobileRecordingWorker.Unlock()
+	a.transcribeMobileRecordingsLocked(ctx, store)
+}
+
+func (a *App) transcribeMobileRecordingsLocked(ctx context.Context, store *mobileRecordingStore) {
 	for ctx.Err() == nil {
 		pending := store.pending()
 		if len(pending) == 0 {
@@ -1031,17 +1241,32 @@ func (a *App) transcribeMobileRecordings(ctx context.Context, store *mobileRecor
 			// Paused: the recording waits on disk and is transcribed after resume.
 			return
 		}
-		store.setState(rec.ID, mobileRecordingTranscribing, "", 0, "")
+		if err := store.setState(rec.ID, mobileRecordingTranscribing, "", 0, ""); err != nil {
+			if errors.Is(err, errWatchRecordingNotFound) {
+				continue
+			}
+			return
+		}
 		sessionID, words, err := a.transcribeMobileRecording(store, rec)
 		if err != nil {
 			log.Printf("[recordings] %s not transcribed: %v", rec.ID, err)
-			store.setState(rec.ID, mobileRecordingFailed, "", 0, err.Error())
+			if stateErr := store.setState(rec.ID, mobileRecordingFailed, "", 0, err.Error()); stateErr != nil && !errors.Is(stateErr, errWatchRecordingNotFound) {
+				// setState logged the index error. Let a later worker retry.
+				return
+			}
 			continue
 		}
-		log.Printf("[recordings] %s transcribed: %d words", rec.ID, words)
-		if !store.setState(rec.ID, mobileRecordingTranscribed, sessionID, words, "") && sessionID != "" {
+		switch err := store.setState(rec.ID, mobileRecordingTranscribed, sessionID, words, ""); err {
+		case nil:
+			log.Printf("[recordings] %s transcribed: %d words", rec.ID, words)
+		case errWatchRecordingNotFound:
 			// Deleted while it was transcribed: the transcript goes too.
-			a.deleteMobileRecordingSession(sessionID)
+			if sessionID != "" {
+				a.deleteMobileRecordingSession(sessionID)
+			}
+		default:
+			// The index is unavailable. Keep the saved transcript.
+			return
 		}
 	}
 }
@@ -1061,6 +1286,8 @@ func (a *App) transcribeMobileRecording(store *mobileRecordingStore, rec mobileR
 		return "", 0, fmt.Errorf("the pause log could not be read: %w", err)
 	}
 	var events []activitymon.ActivityEvent
+	// A nonzero start is the earliest eligible part timestamp. It says
+	// nothing about whether recognition heard speech in that part.
 	var start, end int64
 	words := 0
 	for i, part := range rec.Received {
@@ -1102,8 +1329,7 @@ func (a *App) transcribeMobileRecording(store *mobileRecordingStore, rec mobileR
 		return "", 0, errors.New("observing was paused during transcription")
 	}
 	if len(events) == 0 {
-		// Nothing was said, or all of it was said during a pause: the
-		// recording is done, with no session.
+		// The decode succeeded with no eligible speech. Finish without a session.
 		store.dropPausedAudio(rec.ID, pauses, false)
 		return "", 0, nil
 	}
@@ -1146,7 +1372,12 @@ func mobileRecordingSpeechEvents(segments []mobileRecordingSegment, partStart ti
 		if text == "" {
 			continue
 		}
+		var endAt int64
+		if seg.End > seg.Start {
+			endAt = partStart.Add(seg.End).UnixMilli()
+		}
 		events = append(events, activitymon.ActivityEvent{
+			SpeechEndAt:  endAt,
 			Timestamp:    partStart.Add(seg.Start).UnixMilli(),
 			Kind:         activitymon.EventSpeech,
 			AppBundleID:  bundleID,

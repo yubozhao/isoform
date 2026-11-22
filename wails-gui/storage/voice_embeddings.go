@@ -72,7 +72,7 @@ func (s *Store) CreateVoiceEmbedding(ctx context.Context, row VoiceEmbeddingRow)
 // ListVoiceEmbeddingsByPrincipal returns all enrolled samples for a
 // principal, newest first.
 func (s *Store) ListVoiceEmbeddingsByPrincipal(ctx context.Context, principalID string) ([]VoiceEmbeddingRow, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.committedReader().QueryContext(ctx, `
 		SELECT id, principal_id, embedding, dim, sample_rate, audio_seconds, label, captured_at
 		  FROM principal_voice_embeddings
 		 WHERE principal_id = ? AND EXISTS (SELECT 1 FROM principals p WHERE p.id=principal_id AND p.merged_into='')
@@ -102,7 +102,7 @@ func (s *Store) ListVoiceEmbeddingsByPrincipal(ctx context.Context, principalID 
 // to any principal of the given kind. Used by the verification cache
 // loader on app startup to fetch all Self enrollments in one query.
 func (s *Store) ListVoiceEmbeddingsForKind(ctx context.Context, kind string) ([]VoiceEmbeddingRow, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.committedReader().QueryContext(ctx, `
 		SELECT pve.id, pve.principal_id, pve.embedding, pve.dim, pve.sample_rate,
 		       pve.audio_seconds, pve.label, pve.captured_at
 		  FROM principal_voice_embeddings pve
@@ -149,7 +149,7 @@ func (s *Store) DeleteVoiceEmbedding(ctx context.Context, id int64) error {
 // caller only needs to render an "N samples enrolled" status badge.
 func (s *Store) CountVoiceEmbeddingsByPrincipal(ctx context.Context, principalID string) (int, error) {
 	var n int
-	if err := s.db.QueryRowContext(ctx,
+	if err := s.committedReader().QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM principal_voice_embeddings WHERE principal_id = ? AND EXISTS (SELECT 1 FROM principals p WHERE p.id=principal_id AND p.merged_into='')`, principalID,
 	).Scan(&n); err != nil {
 		return 0, fmt.Errorf("count voice embeddings: %w", err)

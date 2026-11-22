@@ -218,11 +218,14 @@ func (s *topicsService) findsEventDelay() time.Duration {
 // scheduleFindsRefresh queues one refresh no earlier than at. Requests that
 // arrive while one is queued keep the earlier time; one goroutine runs them.
 func (s *topicsService) scheduleFindsRefresh(a *App, at time.Time) {
-	if a == nil || a.ctx == nil || a.ctx.Err() != nil {
+	if a == nil || a.topicFindsCtx == nil {
 		return
 	}
 	s.findsSnap.mu.Lock()
 	defer s.findsSnap.mu.Unlock()
+	if a.topicFindsCtx.Err() != nil {
+		return
+	}
 	if s.findsSnap.dueAt.IsZero() || at.Before(s.findsSnap.dueAt) {
 		s.findsSnap.dueAt = at
 	}
@@ -231,7 +234,18 @@ func (s *topicsService) scheduleFindsRefresh(a *App, at time.Time) {
 	}
 	s.findsSnap.running = true
 	s.findsSnap.done = make(chan struct{})
-	go s.runFindsRefreshes(a, a.ctx, s.findsSnap.done)
+	go s.runFindsRefreshes(a, a.topicFindsCtx, s.findsSnap.done)
+}
+
+// After cancellation, no new refresh can be scheduled. Drain a refresh
+// already computing its view before its source stores are closed.
+func (s *topicsService) waitFindsRefresh() {
+	s.findsSnap.mu.Lock()
+	done := s.findsSnap.done
+	s.findsSnap.mu.Unlock()
+	if done != nil {
+		<-done
+	}
 }
 
 // runFindsRefreshes runs queued refreshes one at a time, on a thread that has
@@ -265,16 +279,15 @@ func (s *topicsService) runFindsRefreshes(a *App, ctx context.Context, done chan
 		s.findsSnap.mu.Lock()
 		s.findsSnap.dueAt = time.Time{}
 		s.findsSnap.mu.Unlock()
-		a.refreshTopicFinds()
+		a.refreshTopicFinds(ctx)
 	}
 }
 
 // refreshTopicFinds computes the view and saves it only if the privacy stamp
 // held across the computation. It emits topics:finds when the view changed.
-func (a *App) refreshTopicFinds() {
+func (a *App) refreshTopicFinds(ctx context.Context) {
 	svc := a.topicsSvc()
 	svc.findsSnap.refreshes.Add(1)
-	ctx := context.Background()
 	before := a.savedCopyStamp(ctx)
 	// The full check is taken before the view, so a change during the view's
 	// computation leaves a mismatch for the next check to find.
@@ -290,7 +303,7 @@ func (a *App) refreshTopicFinds() {
 	svc.findsSnap.mu.Lock()
 	svc.findsSnap.lastRefresh = time.Now()
 	svc.findsSnap.mu.Unlock()
-	if before == "" || before != after || deep == "" {
+	if ctx.Err() != nil || before == "" || before != after || deep == "" {
 		return
 	}
 	raw, err := json.Marshal(view)

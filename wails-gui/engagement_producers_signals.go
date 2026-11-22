@@ -364,7 +364,10 @@ func engagementPurposeSignals(detail PurposeOpenLoopDetail, now time.Time) []eng
 	case PurposeKindCommitment:
 		moment, ok = engagementCommitmentSlippingMoment(detail, now)
 	case PurposeKindGoal:
-		moment, ok = engagementGoalCheckInMoment(detail, now)
+		// No goal check-ins while goals are off (feature_switches.go).
+		if featureOn(featurePlaybooks) {
+			moment, ok = engagementGoalCheckInMoment(detail, now)
+		}
 	}
 	if !ok {
 		return nil

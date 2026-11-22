@@ -271,9 +271,11 @@ func TestNoPausedSecondSurvivesInATouchedPartsAudio(t *testing.T) {
 	if n := store.dropPausedAudio(recordingID, pauses, true); n != 0 {
 		t.Fatalf("changed %d parts on receipt", n)
 	}
-	if n := store.dropPausedAudio(recordingID, pauses, false); n != 1 {
-		t.Fatalf("changed %d parts, want 1", n)
-	}
+	oldPauses, oldTranscriber := mobileRecordingPauses, mobileRecordingTranscriber
+	t.Cleanup(func() { mobileRecordingPauses, mobileRecordingTranscriber = oldPauses, oldTranscriber })
+	mobileRecordingPauses = func(*App) ([]observationPause, error) { return pauses, nil }
+	mobileRecordingTranscriber = func(*App, string) ([]mobileRecordingSegment, error) { return nil, nil }
+	(&App{}).transcribeMobileRecordings(context.Background(), store)
 	path := filepath.Join(store.dir, recordingID, "part-00.m4a")
 	info, err := os.Stat(path)
 	if err != nil {

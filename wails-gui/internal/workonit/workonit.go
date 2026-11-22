@@ -247,6 +247,7 @@ func KindOf(in Input) string {
 
 // Task is a prepared task, held in memory until it is sent or dropped.
 type Task struct {
+	Title      string    `json:"title,omitempty"`
 	ID         string    `json:"id"`
 	SourceKind string    `json:"sourceKind"`
 	SourceID   string    `json:"sourceId"`
@@ -385,6 +386,7 @@ func (r Record) DueToAsk(now time.Time) bool {
 // (phone-map B4), for Your data. It stays on the computer; the person can
 // forget it, and a withdrawn source takes its hand-offs with it.
 type Handoff struct {
+	Title      string `json:"title,omitempty"`
 	ID         string `json:"id"` // the Record's id
 	SourceKind string `json:"sourceKind"`
 	SourceID   string `json:"sourceId,omitempty"`

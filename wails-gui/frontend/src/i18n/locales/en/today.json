@@ -141,7 +141,8 @@
         "activityWeek": "What did I do in the week of {{date}}? Give me a recap grouped by topic, with people, projects, and decisions.",
         "summary": "Help me review my activity summary for {{date}}.",
         "deadline": "Help me plan the next step for \"{{title}}\" before its deadline.",
-        "askFind": "Explain how \"{{title}}\" relates to what I am working on."
+        "askFind": "Explain how \"{{title}}\" relates to what I am working on.",
+        "askTopic": "What's new with {{topic}}?"
     },
     "contextNote": {
         "withBrief": "Isoform could not load this item's details, so it adds today's brief instead.",
@@ -828,6 +829,14 @@
         "undoFailed": "Couldn't undo it."
     },
     "ctoday": {
+        "timesFailed": "Couldn't read your brief times.",
+        "agentsFailed": "Couldn't read your agents.",
+        "askAgain": "Ask again",
+        "takeBack": "Take it back",
+        "takenBack": "Taken back. {{agent}} can't open it any more; anything it already made stays with {{agent}}.",
+        "takenBackItem": "Taken back from {{agent}} at {{time}}. Hand it to someone else, or keep it for later.",
+        "dayOne_one": "{{count}} to answer · day one",
+        "dayOne_other": "{{count}} to answer · day one",
         "firstTitle": "Your first brief",
         "firstAt": "at {{time}}",
         "firstBody": "Your first brief comes at {{time}}, made from today on this computer. Until then, here's what Isoform can already do.",
@@ -875,7 +884,9 @@
         "workSub": "{{n}} to answer · {{m}} back from your agents",
         "withAgents": "With your agents",
         "move": "{{i}} of {{n}} · ↑↓ to move",
-        "keys": "move · answer · edit · undo"
+        "keys": "move · answer · edit · undo",
+        "fromWatch_one": "From your watch: {{count}} conversation",
+        "fromWatch_other": "From your watch: {{count}} conversations"
     },
     "work": {
         "title": "Your work",
@@ -913,6 +924,7 @@
             "result": "Result"
         },
         "reason": {
+            "missed_point": "Missed the point",
             "already_done": "Already done",
             "not_now": "Not now",
             "not_useful": "Not useful",
@@ -977,7 +989,21 @@
             "wrong_person": "Wrong person",
             "already_done": "Already done",
             "not_mine": "Not mine"
-        }
+        },
+        "inBrief": "In this brief",
+        "eachWhy": "Each opens its Why.",
+        "whyEmpty": "Nothing to show for this source.",
+        "kind": {
+            "calendar": "Calendar",
+            "mail": "Mail",
+            "messages": "Messages",
+            "reminders": "Reminders",
+            "calls": "Calls and meetings",
+            "watch": "Your watch",
+            "agents": "Your agents",
+            "screen": "Screen"
+        },
+        "sourceLine": "{{day}} · {{kind}} · {{label}}"
     },
     "topic": {
         "kindProject": "Project",

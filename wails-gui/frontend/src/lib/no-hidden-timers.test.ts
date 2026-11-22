@@ -20,7 +20,7 @@ const sources = import.meta.glob([
     '../components/about-you/new-this-week.tsx',
     '../components/settings-page.tsx',
     '../components/settings/pages/observation-page.tsx',
-    '../components/settings/pages/storage-page.tsx',
+    '../components/settings/keep-times-sheet.tsx',
     '../components/settings/pages/chat-apps/bot-setups.tsx',
     '../components/mobile-connection-settings.tsx',
     '../components/model-accounts-card.tsx',

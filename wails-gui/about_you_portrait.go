@@ -1593,6 +1593,14 @@ func (s *AboutYouPortraitService) write(ctx context.Context, path string, now ti
 	// gets the reasons and writes it again. An empty answer gets its own
 	// immediate retry first. The better answer is kept.
 	possible := portraitPossibleRoles(selected, facts)
+	// See them: the beliefs the portrait reads, by id.
+	ctx, given, opened := withLearningScope(ctx, "about")
+	if opened {
+		defer s.app.finishAssistantCall(given)
+	}
+	for _, id := range ids {
+		given.add("memory", id, 1)
+	}
 	retried, emptyRetried := false, false
 	for calls := 0; calls < 3; calls++ {
 		output, err := s.app.runEphemeralClaudeModelObserved(ctx, agent.BackendHintEphemeral, prompt, s.app.chatTaskModel(), func(event *agent.StreamEvent) {

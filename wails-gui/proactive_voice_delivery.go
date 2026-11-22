@@ -212,6 +212,10 @@ func (a *App) projectProactiveVoiceItem(ctx context.Context, item *mainChatProac
 	changed := a.projectThreadOutcomeItem(ctx, item, lang) || generated || journey
 	if journey {
 		a.projectEngagementJourneyItem(ctx, item, lang)
+	} else if generated && !featureOn(featureProactiveVoice) {
+		// Voice cards are off: a card voiced earlier shows its catalog copy,
+		// with no source read and no receipt check (feature_switches.go).
+		withdrawProactiveVoice(item, lang)
 	} else if generated {
 		if !a.proactiveVoiceReceiptAllowsRead(ctx, item.VoiceReceipt, item.Kind, proactiveVoicePresentationHash(*item), false) || !a.projectProactiveCommitmentSentence(ctx, item, lang) {
 			withdrawProactiveVoice(item, lang)

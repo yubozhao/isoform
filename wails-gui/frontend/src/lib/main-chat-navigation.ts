@@ -21,6 +21,12 @@ export interface MainChatTargetHandlers {
     openCalendar: () => void;
     openPeople: () => void;
     openThread: (id: string) => void;
+    /** Opens Activity on this session (a chat source's Activity session or call). */
+    openActivitySession?: (id: string) => void;
+    /** Opens Activity on the watch's conversations (a chat source from the watch). */
+    openWatch?: () => void;
+    /** Opens Activity › Watch on a day with one conversation open. */
+    openActivityConversation?: (day: string, conversationId: string) => void;
     openTasksUpNext?: () => void;
     openExternalURL: (url: string) => Promise<void>;
 }
@@ -34,6 +40,8 @@ export function mainChatTargetOpens(target: MainChatReportTarget | undefined): b
         case 'memory':
         case 'playbook':
         case 'thread':
+        case 'activity':
+        case 'watch':
             return Boolean(target.id);
         case 'knowledge':
         case 'automation':
@@ -92,6 +100,15 @@ export async function openMainChatTarget(target: MainChatReportTarget, handlers:
             return;
         case 'thread':
             if (target.id) handlers.openThread(target.id);
+            return;
+        case 'activity':
+            if (target.id) handlers.openActivitySession?.(target.id);
+            return;
+        case 'watch':
+            // That conversation on its day (Activity's openActivityConversation);
+            // without a day or the handler, the Watch tab.
+            if (target.id && target.day && handlers.openActivityConversation) handlers.openActivityConversation(target.day, target.id);
+            else handlers.openWatch?.();
             return;
         case 'mail':
             // Open the installed app only. Message ids and text are never

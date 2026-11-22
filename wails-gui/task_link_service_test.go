@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -17,17 +16,14 @@ import (
 
 const taskLinkTestText = "Draft the reply to Dana about the venue."
 
-func newTaskLinkTestApp(t *testing.T) (*App, *atomic.Bool) {
+func newTaskLinkTestApp(t *testing.T) *App {
 	t.Helper()
 	t.Setenv(taskLinkAddrEnv, "127.0.0.1:0")
 	t.Setenv(taskLinkBaseURLEnv, "")
-	on := &atomic.Bool{}
-	on.Store(true)
 	a := &App{}
 	a.taskLinks.dir = t.TempDir()
-	a.taskLinks.enabled = on.Load
 	t.Cleanup(a.shutdownTaskLinks)
-	return a, on
+	return a
 }
 
 func taskLinkToken(t *testing.T, link string) string {
@@ -56,7 +52,7 @@ func taskLinkPost(t *testing.T, a *App, token, body string) *httptest.ResponseRe
 }
 
 func TestTaskLinkCreateServesOnLoopbackAndRecordsTheResult(t *testing.T) {
-	a, _ := newTaskLinkTestApp(t)
+	a := newTaskLinkTestApp(t)
 	var taken, resulted int
 	a.taskLinks.onTaken = func(tasklink.Link) { taken++ }
 	a.taskLinks.onResult = func(tasklink.Link, tasklink.Result) { resulted++ }
@@ -104,7 +100,7 @@ func TestTaskLinkCreateServesOnLoopbackAndRecordsTheResult(t *testing.T) {
 }
 
 func TestTaskLinkSurvivesARestartAsAHashOnly(t *testing.T) {
-	a, _ := newTaskLinkTestApp(t)
+	a := newTaskLinkTestApp(t)
 	link, err := a.createTaskLink(tasklink.Link{ID: "task-1", AgentID: "claude", Text: taskLinkTestText})
 	if err != nil {
 		t.Fatal(err)
@@ -121,15 +117,15 @@ func TestTaskLinkSurvivesARestartAsAHashOnly(t *testing.T) {
 	if info.Mode().Perm() != 0o600 {
 		t.Fatalf("open file mode = %v, want 0600", info.Mode().Perm())
 	}
-	restarted, _ := newTaskLinkTestApp(t)
+	restarted := newTaskLinkTestApp(t)
 	restarted.taskLinks.dir = a.taskLinks.dir
 	if rec := taskLinkGet(t, restarted, token); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), taskLinkTestText) {
 		t.Fatalf("GET after restart = %d %q", rec.Code, rec.Body)
 	}
 }
 
-func TestTaskLinkOffOrClosedEyesRefusesAndWithdraws(t *testing.T) {
-	a, on := newTaskLinkTestApp(t)
+func TestTaskLinkClosedEyesRefusesAndWithdraws(t *testing.T) {
+	a := newTaskLinkTestApp(t)
 	link, err := a.createTaskLink(tasklink.Link{ID: "task-1", AgentID: "claude", Text: taskLinkTestText})
 	if err != nil {
 		t.Fatal(err)
@@ -146,14 +142,14 @@ func TestTaskLinkOffOrClosedEyesRefusesAndWithdraws(t *testing.T) {
 	if rec := taskLinkGet(t, a, taskLinkToken(t, link)); rec.Code != http.StatusGone {
 		t.Fatalf("GET after Closed Eyes = %d, want 410", rec.Code)
 	}
-	on.Store(false)
-	if _, err := a.createTaskLink(tasklink.Link{ID: "task-3", AgentID: "claude", Text: taskLinkTestText}); err != errTaskLinksOff {
-		t.Fatalf("create while off = %v", err)
+	// No switch: with Closed Eyes off a new link is made again.
+	if _, err := a.createTaskLink(tasklink.Link{ID: "task-3", AgentID: "claude", Text: taskLinkTestText}); err != nil {
+		t.Fatalf("create after Closed Eyes = %v", err)
 	}
 }
 
 func TestTaskLinkPrivacyWithdrawalSpendsOpenLinksButRetentionDoesNot(t *testing.T) {
-	a, _ := newTaskLinkTestApp(t)
+	a := newTaskLinkTestApp(t)
 	a.taskLinkStore()
 	first, err := a.createTaskLink(tasklink.Link{ID: "task-1", AgentID: "claude", SourceKind: "brief_item", SourceID: "item-1", Text: taskLinkTestText})
 	if err != nil {
@@ -174,7 +170,7 @@ func TestTaskLinkPrivacyWithdrawalSpendsOpenLinksButRetentionDoesNot(t *testing.
 }
 
 func TestTaskLinkWithdrawnSourceDropsItsResults(t *testing.T) {
-	a, _ := newTaskLinkTestApp(t)
+	a := newTaskLinkTestApp(t)
 	for _, src := range []string{"item-1", "item-2"} {
 		link, err := a.createTaskLink(tasklink.Link{ID: "task-" + src, AgentID: "claude", SourceKind: "brief_item", SourceID: src, Text: taskLinkTestText})
 		if err != nil {
@@ -205,7 +201,7 @@ func TestTaskLinkListenerBindsOnlyLoopback(t *testing.T) {
 			t.Errorf("%s: %v", addr, err)
 		}
 	}
-	a, _ := newTaskLinkTestApp(t)
+	a := newTaskLinkTestApp(t)
 	t.Setenv(taskLinkAddrEnv, "0.0.0.0:0")
 	if err := a.startTaskLinkListener(); err != errTaskLinkNotLoopback {
 		t.Fatalf("start on 0.0.0.0 = %v", err)
@@ -213,7 +209,7 @@ func TestTaskLinkListenerBindsOnlyLoopback(t *testing.T) {
 }
 
 func TestTaskLinkBaseURLMustBeAnHTTPSOrigin(t *testing.T) {
-	a, _ := newTaskLinkTestApp(t)
+	a := newTaskLinkTestApp(t)
 	t.Setenv(taskLinkBaseURLEnv, "https://tasks.example.test/")
 	if base, err := a.taskLinkBaseURL(); err != nil || base != "https://tasks.example.test" {
 		t.Fatalf("base = %q %v", base, err)

@@ -6,6 +6,7 @@ import {
     ConfirmMemoryEntry,
     ForgetMemoryEntry,
     GetMemoryForgetPreview,
+    NotMineMemoryEntry,
     NotQuiteMemoryEntry,
     RewordMemoryEntry,
     UndoConfirmMemoryEntry,
@@ -19,6 +20,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { activeInterval } from '@/lib/app-activity';
 import { slotStatus } from '@/components/about-you/belief-status';
+import { WhyLine } from '@/components/why/why-line';
 
 /** How long a one-click Forget waits for Undo before it runs. */
 export const FORGET_UNDO_MS = 10_000;
@@ -33,9 +35,10 @@ export type ReviewResult =
     | { kind: 'corrected'; wording: string; undoFailed?: boolean }
     /** copyAt: when each copy of the idea was marked, for Undo (one card, every copy). */
     | { kind: 'notQuite'; confirmedAt: number; copyAt?: Record<string, number>; undoFailed?: boolean }
-    | { kind: 'pending'; until: number }
-    | { kind: 'forgetting' }
-    | { kind: 'forgotten'; days: number }
+    /** notMine: Not mine waits for Undo the same way, then the claim goes as someone else's. */
+    | { kind: 'pending'; until: number; notMine?: boolean }
+    | { kind: 'forgetting'; notMine?: boolean }
+    | { kind: 'forgotten'; days: number; notMine?: boolean }
     | { kind: 'forgetFailed' };
 
 export interface ReviewItem {
@@ -142,10 +145,17 @@ export function useBeliefReview({
         }
     }, [contentOf, idsOf, onChanged, onConfirmed, set]);
 
-    const runForget = useCallback(async (id: string) => {
+    const runForget = useCallback(async (id: string, notMine = false) => {
         timers.current.delete(id);
-        set(id, { kind: 'forgetting' });
+        set(id, { kind: 'forgetting', notMine });
         try {
+            if (notMine) {
+                // Not mine (design answer A6): every copy goes as someone else's.
+                for (const copy of idsOf(id)) await NotMineMemoryEntry(copy);
+                set(id, { kind: 'forgotten', days: 0, notMine: true });
+                onForgotten(id);
+                return;
+            }
             // Every copy goes, so the idea cannot come back from a copy.
             let days = 0;
             for (const copy of idsOf(id)) {
@@ -173,6 +183,14 @@ export function useBeliefReview({
         set(id, { kind: 'pending', until: Date.now() + FORGET_UNDO_MS });
         timers.current.set(id, window.setTimeout(() => void runForgetRef.current(id), FORGET_UNDO_MS));
     }, [idsOf, onForgetCopies, set]);
+
+    /** Not mine: the claim is about someone else. It waits FORGET_UNDO_MS for Undo, then goes. */
+    const notMine = useCallback((id: string) => {
+        if (timers.current.has(id)) return;
+        setNow(Date.now());
+        set(id, { kind: 'pending', until: Date.now() + FORGET_UNDO_MS, notMine: true });
+        timers.current.set(id, window.setTimeout(() => void runForgetRef.current(id, true), FORGET_UNDO_MS));
+    }, [set]);
 
     /** Drop a card's state: Cancel, a pending Forget's Undo, or its belief handled elsewhere. */
     const cancel = useCallback((id: string) => {
@@ -235,7 +253,7 @@ export function useBeliefReview({
         timers.current.clear();
     }, []);
 
-    return { results, now, confirm, ask, answerNotQuite, forget, cancel, undo, cancelPending, retryForget: runForget };
+    return { results, now, confirm, ask, answerNotQuite, forget, notMine, cancel, undo, cancelPending, retryForget: runForget };
 }
 
 export type BeliefReview = ReturnType<typeof useBeliefReview>;
@@ -389,13 +407,13 @@ export function ReviewOutcome({ item, review, className }: { item: ReviewItem; r
             tone = 'text-copper';
             break;
         case 'pending':
-            message = t('aboutYou.review.forgetPending', { count: Math.round(FORGET_UNDO_MS / 1000) });
+            message = result.notMine ? t('aboutYou.review.notMineDoneClaimOnly') : t('aboutYou.review.forgetPending', { count: Math.round(FORGET_UNDO_MS / 1000) });
             break;
         case 'forgetting':
-            message = t('forget.forgetting');
+            message = result.notMine ? t('aboutYou.review.notMineDoneClaimOnly') : t('forget.forgetting');
             break;
         case 'forgotten':
-            message = t('aboutYou.review.forgotten', { count: result.days });
+            message = result.notMine ? t('aboutYou.review.notMineDoneClaimOnly') : t('aboutYou.review.forgotten', { count: result.days });
             break;
         case 'forgetFailed':
             message = t('aboutYou.review.forgetFailed');
@@ -414,11 +432,11 @@ export function ReviewOutcome({ item, review, className }: { item: ReviewItem; r
                 tabIndex={-1}
                 role={failed ? 'alert' : 'status'}
                 aria-busy={result.kind === 'forgetting' || result.kind === 'saving'}
-                className={cn('outline-none', result.kind === 'pending' && 'sr-only')}
+                className={cn('outline-none', result.kind === 'pending' && !result.notMine && 'sr-only')}
             >
                 {message}
             </div>
-            {result.kind === 'pending' && (
+            {result.kind === 'pending' && !result.notMine && (
                 <span aria-hidden="true">
                     {t('aboutYou.review.forgetPending', { count: Math.max(1, Math.ceil((result.until - review.now) / 1000)) })}
                 </span>
@@ -437,7 +455,7 @@ export function ReviewOutcome({ item, review, className }: { item: ReviewItem; r
                 </span>
             )}
             {result.kind === 'forgetFailed' && (
-                <Button size="sm" variant="secondary" onClick={() => void review.retryForget(item.id)}>
+                <Button size="sm" variant="secondary" onClick={() => void review.retryForget(item.id, false)}>
                     {t('aboutYou.retry')}
                 </Button>
             )}
@@ -462,7 +480,7 @@ function focusClaim(from: HTMLElement, step: 1 | -1) {
  * Today); the arrows move between claims. Keys typed into a field, or with a
  * modifier, are left alone.
  */
-export function claimKeyAction(event: Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'altKey' | 'target'> & { isComposing?: boolean }): 'yes' | 'no' | 'edit' | 'next' | 'previous' | null {
+export function claimKeyAction(event: Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'altKey' | 'target'> & { isComposing?: boolean }): 'yes' | 'no' | 'notMine' | 'edit' | 'next' | 'previous' | null {
     // pass-access v1.0.0 rule 2: never while typing, an input method composing included.
     if (event.metaKey || event.ctrlKey || event.altKey || event.isComposing) return null;
     const target = event.target as HTMLElement | null;
@@ -474,6 +492,9 @@ export function claimKeyAction(event: Pick<KeyboardEvent, 'key' | 'metaKey' | 'c
         case 'n':
         case 'N':
             return 'no';
+        case 'm':
+        case 'M':
+            return 'notMine';
         case 'e':
         case 'E':
             return 'edit';
@@ -487,29 +508,89 @@ export function claimKeyAction(event: Pick<KeyboardEvent, 'key' | 'metaKey' | 'c
 }
 
 /**
- * One claim: where it came from, "Right?" and the claim, then Yes, No and
- * Edit (computer-you v1.0.0 rule 3). Yes confirms it; No stops Isoform using
- * it; Edit asks for the right words. Forget stays, quieter, beside the source.
+ * Edit on a claim, say it my way (redesign v1.0.0, edit.*): the claim in the
+ * person's words, Save and Cancel, and what Isoform does with it. Blank words
+ * don't save: No is the answer for a claim that isn't right.
  */
-function ReviewCard({ item, review }: { item: ReviewItem; review: BeliefReview }) {
+export function ClaimEditField({ item, review }: { item: ReviewItem; review: BeliefReview }) {
+    const { t } = useTranslation('memory');
+    const fieldId = useId();
+    const [words, setWords] = useState(item.text);
+    const saving = review.results[item.id]?.kind === 'saving';
+    const failed = review.results[item.id]?.kind === 'answerFailed';
+    const empty = !words.trim();
+    const save = () => {
+        if (!empty) void review.answerNotQuite(item.id, words);
+    };
+    return (
+        <div className="flex flex-col gap-2 rounded-[10px] bg-panel-warm p-3">
+            <label htmlFor={fieldId} className="text-[12.5px] text-muted">{t('aboutYou.edit.label')}</label>
+            <textarea
+                id={fieldId}
+                autoFocus
+                rows={1}
+                value={words}
+                disabled={saving}
+                onChange={(event) => setWords(event.target.value)}
+                onKeyDown={(event) => {
+                    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                        event.preventDefault();
+                        save();
+                    } else if (event.key === 'Escape') {
+                        // Esc cancels the field, not the page.
+                        event.preventDefault();
+                        event.stopPropagation();
+                        review.cancel(item.id);
+                    }
+                }}
+                className="max-h-[calc(3*1.45em+18px)] min-h-[calc(1.45em+18px)] w-full resize-none rounded-lg border border-border bg-panel px-2.5 py-2 text-[13.5px] leading-[1.45] text-ink [field-sizing:content] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
+            />
+            <div className="flex flex-wrap items-center gap-1.5">
+                <Button size="sm" disabled={saving || empty} aria-busy={saving} onClick={save}>{t('aboutYou.review.save')}</Button>
+                <Button size="sm" variant="outline" disabled={saving} onClick={() => review.cancel(item.id)}>{t('aboutYou.review.cancel')}</Button>
+                <span className="text-[12.5px] text-muted">{t('aboutYou.edit.kept')}</span>
+            </div>
+            {failed && (
+                <p role="alert" className="m-0 flex flex-wrap items-center gap-2 text-[12.5px] text-copper">
+                    <span>{t('aboutYou.review.wordsFailed')}</span>
+                    <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-[12.5px] text-accent hover:underline" onClick={save}>{t('aboutYou.retry')}</button>
+                </p>
+            )}
+        </div>
+    );
+}
+
+/** The focus ring and rounded highlight every claim line shares (no left bar). */
+export const CLAIM_ROW_CLASS = 'flex flex-col gap-1.5 rounded-xl px-3 py-2.5 transition-colors duration-[160ms] hover:bg-surface-hover focus-visible:bg-surface-active focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus motion-reduce:transition-none';
+
+/**
+ * One claim: where it came from with Why, "Right?" and the claim, then Yes,
+ * No and Edit on Y, N and E (computer-you v1.0.0 rule 3; redesign v1.0.0
+ * section 1). Yes confirms it; No stops Isoform using it and keeps it under
+ * Not right; Edit says it the person's way. Forget stays, quieter, beside
+ * the answers. The same line answers everywhere on About you.
+ */
+export function ClaimLine({ item, review, onWhy, onOpen }: { item: ReviewItem; review: BeliefReview; onWhy?: (id: string) => void; onOpen?: (id: string) => void }) {
     const { t } = useTranslation(['memory', 'common']);
     const result = review.results[item.id];
     const open = reviewOpen(result);
     const forgetting = result?.kind === 'pending' || result?.kind === 'forgetting' || result?.kind === 'forgotten';
-    const status = answeredStatus(result, item.status);
-    const answer = (action: 'yes' | 'no' | 'edit') => {
+    const answer = (action: 'yes' | 'no' | 'notMine' | 'edit') => {
         if (action === 'yes') void review.confirm(item.id);
         else if (action === 'no') void review.answerNotQuite(item.id, '');
+        else if (action === 'notMine') review.notMine(item.id);
         else review.ask(item.id);
     };
+    const where = [item.where, (item.copies ?? 0) > 1 ? t('aboutYou.review.copies', { count: item.copies }) : ''].filter(Boolean).join(' · ');
 
     return (
         <article
             // pass-access v1.0.0 rule 4: one element, read in order: source, sentence, what Yes does.
             aria-label={item.where ? t('aboutYou.review.cardLabel', { where: item.where, text: item.text }) : t('aboutYou.review.cardLabelNoSource', { text: item.text })}
             tabIndex={0}
+            // No data-claim-id: a memory's ID stays out of the DOM (it is copied only from the detail's More menu).
             data-claim-row
-            aria-keyshortcuts="Y N E"
+            aria-keyshortcuts="Y N M E"
             onKeyDown={(event) => {
                 const action = claimKeyAction({ key: event.key, metaKey: event.metaKey, ctrlKey: event.ctrlKey, altKey: event.altKey, target: event.target, isComposing: event.nativeEvent.isComposing });
                 if (!action) return;
@@ -522,31 +603,33 @@ function ReviewCard({ item, review }: { item: ReviewItem; review: BeliefReview }
                 event.preventDefault();
                 answer(action);
             }}
-            className={cn(
-                'flex flex-col gap-2.5 rounded-xl border border-border p-4',
-                open || result?.kind === 'asking' ? 'bg-panel' : 'bg-panel-warm',
-            )}
+            className={CLAIM_ROW_CLASS}
         >
-            <div className="flex items-start gap-2">
-                {item.where && <span className="min-w-0 flex-1 text-xs text-muted">{item.where}</span>}
-                {(item.copies ?? 0) > 1 && <span className="text-xs text-muted">{t('aboutYou.review.copies', { count: item.copies })}</span>}
-                {!forgetting && status !== 'learned_today' && <BeliefChip status={status} className="ml-auto" />}
-            </div>
+            <WhyLine kind="claim" where={where} onWhy={onWhy ? () => onWhy(item.id) : undefined} />
             <p className={cn('m-0 text-sm leading-[1.45] text-ink break-words', forgetting && 'text-muted line-through')}>
-                {!forgetting && <span className="mr-1.5 text-muted">{t('aboutYou.review.right')}</span>}
-                <span>{t('aboutYou.review.quote', { text: item.text })}</span>
+                {!forgetting && open && <span className="mr-1.5 text-muted">{t('aboutYou.review.right')}</span>}
+                {onOpen ? (
+                    <button type="button" tabIndex={-1} onClick={() => onOpen(item.id)} className="cursor-pointer border-0 bg-transparent p-0 text-left text-ink hover:underline">
+                        {t('aboutYou.review.quote', { text: item.text })}
+                    </button>
+                ) : (
+                    <span>{t('aboutYou.review.quote', { text: item.text })}</span>
+                )}
             </p>
             {open ? (
                 <>
                     {result?.kind === 'confirmFailed' && (
                         <p role="alert" className="m-0 text-[12.5px] text-copper">{t('aboutYou.review.confirmFailed')}</p>
                     )}
-                    <div className="mt-auto flex flex-wrap items-center gap-1.5">
+                    <div className="flex flex-wrap items-center gap-1.5">
                         <Button size="sm" aria-keyshortcuts="Y" onClick={() => answer('yes')}>
                             {t('aboutYou.review.yes')}
                         </Button>
                         <Button size="sm" variant="secondary" aria-keyshortcuts="N" onClick={() => answer('no')}>
                             {t('aboutYou.review.no')}
+                        </Button>
+                        <Button size="sm" variant="secondary" aria-keyshortcuts="M" onClick={() => answer('notMine')}>
+                            {t('aboutYou.review.notMine')}
                         </Button>
                         <Button size="sm" variant="outline" aria-keyshortcuts="E" onClick={() => answer('edit')}>
                             {t('aboutYou.review.edit')}
@@ -562,9 +645,9 @@ function ReviewCard({ item, review }: { item: ReviewItem; review: BeliefReview }
                     </div>
                 </>
             ) : result?.kind === 'asking' || result?.kind === 'saving' || result?.kind === 'answerFailed' ? (
-                <NotQuiteField item={item} review={review} />
+                <ClaimEditField item={item} review={review} />
             ) : (
-                <ReviewOutcome item={item} review={review} className="mt-auto" />
+                <ReviewOutcome item={item} review={review} />
             )}
         </article>
     );
@@ -576,31 +659,39 @@ export function NewThisWeek({
     headingId = 'about-you-review',
     title,
     hint,
+    onWhy,
+    onOpen,
+    footer,
 }: {
     items: ReviewItem[];
     review: BeliefReview;
     headingId?: string;
-    /** The first days' "Check these first", in place of "New this week". */
+    /** The first days' "Check these first", in place of "To check". */
     title?: string;
     /** The line beside that title, in place of the count left. */
     hint?: string;
+    /** Why on a claim: the moments it came from. */
+    onWhy?: (id: string) => void;
+    /** The claim's words open its detail. */
+    onOpen?: (id: string) => void;
+    /** Below the claims (the import link). */
+    footer?: ReactNode;
 }) {
     const { t } = useTranslation(['memory', 'common']);
-    if (items.length === 0) return null;
+    if (items.length === 0 && !footer) return null;
 
     return (
         <section aria-labelledby={headingId} className="flex flex-col gap-3">
             <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1.5">
-                <h2 id={headingId} className="m-0 text-lg font-semibold text-ink">{title ?? t('aboutYou.review.title')}</h2>
+                <h2 id={headingId} className="m-0 text-lg font-semibold text-ink">{title ?? t('aboutYou.toCheck')}</h2>
                 {hint && <span className="text-[13px] text-muted">{hint}</span>}
             </div>
-            {/* 300px keeps Yes, No, Edit and Forget on one row in English;
-                narrower windows get one card per row. */}
-            <div data-testid="review-cards" className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr))]">
+            <div data-testid="review-cards" className="-mx-3 flex flex-col gap-0.5">
                 {items.map((item) => (
-                    <ReviewCard key={item.id} item={item} review={review} />
+                    <ClaimLine key={item.id} item={item} review={review} onWhy={onWhy} onOpen={onOpen} />
                 ))}
             </div>
+            {footer}
         </section>
     );
 }

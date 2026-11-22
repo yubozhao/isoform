@@ -45,9 +45,14 @@ type PostHogTelemetry struct {
 // NewPostHogTelemetry uses only build-injected configuration. An unconfigured
 // build or saved opt-out never initializes the network client.
 func NewPostHogTelemetry() *PostHogTelemetry {
+	t := newDormantPostHogTelemetry()
+	t.SetSharingEnabled(telemetrySharingOn())
+	return t
+}
+
+func newDormantPostHogTelemetry() *PostHogTelemetry {
 	t := &PostHogTelemetry{dataDir: configDirOrFallback()}
 	t.key, t.config.Endpoint = envPostHogConfig()
-	t.SetSharingEnabled(telemetrySharingOn())
 	return t
 }
 
@@ -75,6 +80,8 @@ func (t *telemetryTransport) RoundTrip(req *http.Request) (*http.Response, error
 
 // SetSharingEnabled applies a successfully persisted preference. Retire the
 // old transport before closing; a canceled context aborts in-flight uploads.
+//
+//isoform:destination telemetry
 func (t *PostHogTelemetry) SetSharingEnabled(enabled bool) {
 	if t == nil {
 		return

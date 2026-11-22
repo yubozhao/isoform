@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Check } from "lucide-react";
 import {
     BuildSetupClaims,
+    GetSetupPermissions,
     ConfirmMemoryEntry,
     NotQuiteMemoryEntry,
     ReviseSetupClaim,
@@ -15,24 +16,72 @@ import { Button } from "@/components/ui/button";
 // v1.0.0 rule 3): three to five claims from the calendar and mail, read just
 // now, each with where it came from, answered with Y, N or E. Each claim is a
 // belief in About you, so the answers land in You and Your answers.
+//
+// With no claims (setup-answers answer 6) the step is never shown empty:
+// onNothing tells the setup to mark the rail and go on to step 3. "needs"
+// is when neither calendar nor mail was allowed in step 1, so nothing is read;
+// "later" is when they were read and gave nothing yet, so Is this right?
+// arrives on Today. A read that fails is shown with Try again, never skipped.
+
+/** The reading line stays at least this long before an empty read skips the
+ * step: a shorter flash reads as a glitch, and the rail's "Later · on Today"
+ * needs a beat on this step to be seen as this step's answer. */
+export const RIGHT_NOTHING_HOLD_MS = 800;
+
+export type RightNothing = "later" | "needs";
+
+/** The permissions the claims are read from: the calendar itself, and Mail. */
+const CLAIM_SOURCES = ["calendars", "automation_mail"];
 
 type Answer = { kind: "yes" } | { kind: "no"; confirmedAt: number } | { kind: "edit"; text: string } | { kind: "editing"; draft: string };
 
-export function RightStep() {
+export function RightStep({ onNothing }: { onNothing: (why: RightNothing) => void }) {
     const { t, i18n } = useTranslation("onboarding");
     const [claims, setClaims] = useState<SetupClaim[] | null>(null);
     const [answers, setAnswers] = useState<Record<string, Answer>>({});
     const [failed, setFailed] = useState(false);
+    const [readFailed, setReadFailed] = useState(false);
+    const [attempt, setAttempt] = useState(0);
 
     useEffect(() => {
         let live = true;
-        BuildSetupClaims()
-            .then((read) => live && setClaims(read.status === "ready" ? read.claims : []))
-            .catch(() => live && setClaims([]));
+        let timer: number | undefined;
+        const shownAt = Date.now();
+        const nothing = (why: RightNothing) => {
+            timer = window.setTimeout(
+                () => live && onNothing(why),
+                Math.max(0, RIGHT_NOTHING_HOLD_MS - (Date.now() - shownAt)),
+            );
+        };
+        setReadFailed(false);
+        void (async () => {
+            const perms = await GetSetupPermissions().catch(() => null);
+            if (!live) return;
+            if (perms) {
+                const allowed = perms.answers.some(
+                    (a) => CLAIM_SOURCES.includes(a.key) && (a.state === "on" || a.state === "onAfterReopen"),
+                );
+                if (!allowed) {
+                    nothing("needs");
+                    return;
+                }
+            }
+            try {
+                const read = await BuildSetupClaims();
+                if (!live) return;
+                if (read.status === "ready" && read.claims.length > 0) setClaims(read.claims);
+                else nothing("later");
+            } catch {
+                if (live) setReadFailed(true);
+            }
+        })();
         return () => {
             live = false;
+            window.clearTimeout(timer);
         };
-    }, []);
+        // onNothing is read once per attempt.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [attempt]);
 
     const answer = useCallback(async (claim: SetupClaim, kind: "yes" | "no" | "edit") => {
         setFailed(false);
@@ -96,12 +145,17 @@ export function RightStep() {
         <div className="sv3-step" data-testid="setup-v3-right">
             <h2 className="sv3-step-title">{t("setup.step2")}</h2>
             <p className="sv3-body">{t("setup.rightLead")}</p>
-            {claims === null ? (
+            {readFailed ? (
+                <div className="sv3-read-failed" role="alert" data-testid="setup-v3-right-failed">
+                    <p className="sv3-warn">{t("setup.rightReadFailed")}</p>
+                    <Button size="sm" variant="outline" onClick={() => setAttempt((n) => n + 1)}>
+                        {t("setup.tryAgain")}
+                    </Button>
+                </div>
+            ) : claims === null ? (
                 <p className="sv3-quiet" data-testid="setup-v3-right-reading">
                     {t("setup.rightReading")}
                 </p>
-            ) : claims.length === 0 ? (
-                <p className="sv3-quiet">{t("setup.rightNothing")}</p>
             ) : (
                 <ul className="sv3-rows">
                     {claims.map((claim) => {

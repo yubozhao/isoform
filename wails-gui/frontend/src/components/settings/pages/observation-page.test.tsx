@@ -8,7 +8,6 @@ import { ObservationPage } from "./observation-page";
 const mocks = vi.hoisted(() => ({
     handlers: new Map<string, Set<(...args: unknown[]) => void>>(),
     isPaused: vi.fn(),
-    setPaused: vi.fn(),
     getPermissions: vi.fn(),
     setPermission: vi.fn(),
     requestPermission: vi.fn(),
@@ -25,11 +24,7 @@ const mocks = vi.hoisted(() => ({
     removeSpeechModel: vi.fn(),
     audioStatus: vi.fn(),
     monitorStatus: vi.fn(),
-    retentionDays: vi.fn(),
     calendarOverview: vi.fn(),
-    holdSettings: vi.fn(),
-    setOfferHolds: vi.fn(),
-    setHoldCalendar: vi.fn(),
     setCalendarPeek: vi.fn(),
     syncCalendars: vi.fn(),
     remindersOverview: vi.fn(),
@@ -46,9 +41,29 @@ const mocks = vi.hoisted(() => ({
     forgetMessages: vi.fn(),
     listPrincipals: vi.fn(),
     captureCounts: vi.fn(),
+    getWatchListening: vi.fn(),
+    turnOffWatchListening: vi.fn(),
+    getReadHistory: vi.fn(),
+    setReadHistory: vi.fn(),
+    assistantChoice: vi.fn(),
+    modelChoices: vi.fn(),
+    getVision: vi.fn(),
+    setVision: vi.fn(),
+    planSpeech: vi.fn(),
     emit: vi.fn(),
     toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn() },
 }));
+
+function speechPlan(over: Record<string, unknown> = {}) {
+    return {
+        planId: "p", choices: {}, requiredBytes: 0, modelsFolder: "",
+        items: [{ id: "live", bytes: 1_500_000_000, fileCount: 1, source: { kind: "mirror", url: "" }, host: "", licence: { name: "", url: "", nonCommercial: false }, nonCommercial: false }],
+        totalBytes: 1_500_000_000,
+        freeBytes: 400_000_000,
+        enoughSpace: false,
+        ...over,
+    };
+}
 
 function speechModel(over: Record<string, unknown> = {}) {
     return {
@@ -70,7 +85,6 @@ vi.mock("@/lib/wails-shim-app", () => ({
     GetDailyTopics: vi.fn(async () => ({ enabled: false, topics: [] })),
     SetDailyTopicsEnabled: vi.fn(async (enabled: boolean) => ({ enabled, topics: [] })),
     IsClosedEyesModeEnabled: mocks.isPaused,
-    SetClosedEyesModeEnabled: mocks.setPaused,
     GetPlatformPermissions: mocks.getPermissions,
     SetPermissionEnabled: mocks.setPermission,
     RequestPermission: mocks.requestPermission,
@@ -87,11 +101,7 @@ vi.mock("@/lib/wails-shim-app", () => ({
     RemoveAfterCallSpeechModel: mocks.removeSpeechModel,
     GetBackgroundAudioStatus: mocks.audioStatus,
     GetActivityMonitorStatus: mocks.monitorStatus,
-    GetActivityRetentionDays: mocks.retentionDays,
     GetCalendarOverview: mocks.calendarOverview,
-    GetHoldSettings: mocks.holdSettings,
-    SetOfferHolds: mocks.setOfferHolds,
-    SetHoldCalendar: mocks.setHoldCalendar,
     SetCalendarPeekEnabled: mocks.setCalendarPeek,
     SyncCalendarsNow: mocks.syncCalendars,
     GetRemindersOverview: mocks.remindersOverview,
@@ -108,6 +118,24 @@ vi.mock("@/lib/wails-shim-app", () => ({
     ForgetMessages: mocks.forgetMessages,
     ListPrincipals: mocks.listPrincipals,
     GetCaptureCounts: mocks.captureCounts,
+    GetWatchListening: mocks.getWatchListening,
+    TurnOffWatchListening: mocks.turnOffWatchListening,
+    GetReadAssistantHistory: mocks.getReadHistory,
+    SetReadAssistantHistory: mocks.setReadHistory,
+    LoadUIState: vi.fn(async () => ""),
+    SaveUIState: vi.fn(async () => undefined),
+    GetAssistantChoice: mocks.assistantChoice,
+    GetModelChoices: mocks.modelChoices,
+    GetActivityVision: mocks.getVision,
+    SetActivityVisionEnabled: mocks.setVision,
+    PlanSetupModelDownload: mocks.planSpeech,
+    GetSensitiveApps: vi.fn(async () => []),
+    AddSensitiveApp: vi.fn(),
+    RemoveSensitiveApp: vi.fn(),
+    GetVoiceInputApps: vi.fn(async () => []),
+    AddVoiceInputApp: vi.fn(),
+    RemoveVoiceInputApp: vi.fn(),
+    ListSystemApps: vi.fn(async () => []),
 }));
 
 vi.mock("../../../../wailsjs/runtime/runtime", () => ({
@@ -300,7 +328,6 @@ describe("ObservationPage", () => {
         mocks.handlers.clear();
         localStorage.clear();
         mocks.isPaused.mockResolvedValue(false);
-        mocks.setPaused.mockResolvedValue(undefined);
         mocks.captureCounts.mockResolvedValue({ paused: false, notReady: false, todayStart: 0, weekStart: 0, sources: [] });
         mocks.getPermissions.mockResolvedValue(macPermissions());
         mocks.setPermission.mockResolvedValue(undefined);
@@ -318,11 +345,7 @@ describe("ObservationPage", () => {
         mocks.removeSpeechModel.mockResolvedValue(undefined);
         mocks.audioStatus.mockResolvedValue({ running: true, activeSources: ["microphone"], screenLocked: false });
         mocks.monitorStatus.mockResolvedValue({ monitoring: true, snapshotCount: 0, storageMB: 0 });
-        mocks.retentionDays.mockResolvedValue(30);
         mocks.calendarOverview.mockResolvedValue(calendarOverview());
-        mocks.holdSettings.mockResolvedValue({ granted: true, offerHolds: true, calendarId: "work", calendars: [{ id: "work", title: "Work", sourceId: "account", sourceTitle: "Account", isDefault: true }, { id: "home", title: "Home", sourceId: "other", sourceTitle: "Personal", isDefault: false }] });
-        mocks.setOfferHolds.mockResolvedValue(undefined);
-        mocks.setHoldCalendar.mockResolvedValue(undefined);
         mocks.setCalendarPeek.mockResolvedValue(undefined);
         mocks.syncCalendars.mockResolvedValue(undefined);
         mocks.remindersOverview.mockResolvedValue(remindersOverview());
@@ -341,35 +364,230 @@ describe("ObservationPage", () => {
             { id: "p1", kind: "contact", displayName: "Priya" },
             { id: "me", kind: "self", displayName: "Sam" },
         ]);
+        mocks.getWatchListening.mockResolvedValue({ off: false, hasWatch: true });
+        mocks.turnOffWatchListening.mockResolvedValue({ off: true, since: "2026-11-21T10:00:00Z", hasWatch: true });
+        mocks.getReadHistory.mockResolvedValue(true);
+        mocks.setReadHistory.mockResolvedValue(undefined);
+        mocks.assistantChoice.mockResolvedValue({ answering: "claude-code" });
+        mocks.modelChoices.mockResolvedValue({ jobs: [] });
+        mocks.getVision.mockResolvedValue({ enabled: true, privacyModelReady: true });
+        mocks.setVision.mockImplementation(async (enabled: boolean) => ({ enabled, privacyModelReady: true }));
+        mocks.planSpeech.mockResolvedValue(speechPlan({ items: [] }));
     });
 
     afterEach(() => {
         localStorage.clear();
     });
 
-    it("lists the sources in the agreed order, with Closed Eyes on its own page, and keeps the rest under Advanced", async () => {
+    it("lists one row per source in the design's order, each with its line and one switch (S2, S2a-S2f)", async () => {
+        mocks.getPermissions.mockResolvedValue(withMessages(withMail(macPermissions()), { granted: false, enabled: false }));
         render(<ObservationPage />);
 
-        // computer-settings v1.0.0 rule 2: Screen, Calls and meetings, Mail
-        // and calendar, Messages.
-        const anchors = [...document.querySelectorAll("[data-settings-anchor^=sees-]")].map((el) => el.getAttribute("data-settings-anchor"));
-        expect(anchors).toEqual(["sees-screen", "sees-calls", "sees-mail", "sees-calendar", "sees-messages"]);
-        expect(screen.queryByRole("switch", { name: "Pause observing" })).toBeNull();
-        expect(screen.getByText("Watch my screen")).toBeInTheDocument();
-        expect(screen.getByText("Listen")).toBeInTheDocument();
+        await waitFor(() => expect(screen.getByRole("switch", { name: "Screen" })).toBeInTheDocument());
+        await screen.findByRole("switch", { name: "Your watch" });
+        const rows = [...document.querySelectorAll("[data-testid^=sees-row-]")].map((el) => el.getAttribute("data-testid"));
+        expect(rows).toEqual(["sees-row-screen", "sees-row-calls", "sees-row-mail", "sees-row-messages", "sees-row-watch", "sees-row-agents"]);
+        const words = [
+            ["Screen", "What's on screen and your history in Chrome and browsers like it, with the apps you exclude left out"],
+            ["Calls and meetings", "What you say and your recorded calls, transcribed on this computer"],
+            ["Mail, calendar and reminders", "Your accounts on this computer, read where they are"],
+            ["Messages", "Your iMessage and text conversations with people you know, on this computer"],
+            ["Your watch", "Talk it hears while on your wrist, by the hour"],
+            ["Your agents' history", "What Claude Code and Codex did on this computer"],
+        ];
+        for (const [title, line] of words) {
+            expect(screen.getByText(title)).toBeInTheDocument();
+            expect(screen.getByText(line)).toBeInTheDocument();
+        }
+        for (const id of ["screen", "calls", "mail", "messages", "watch", "agents"]) {
+            const row = screen.getByTestId(`sees-row-${id}`);
+            await waitFor(() => expect(within(row).getAllByRole("switch")).toHaveLength(1));
+        }
+        // The cards live in the details now.
+        expect(screen.queryByText("Watch my screen")).toBeNull();
+        expect(screen.queryByText("Calendars Isoform can see")).toBeNull();
+        // computer-settings v1.3.0 rule 1: Proposals live on Briefs and notifications.
+        expect(screen.queryByText("Proposals from your topics")).toBeNull();
+    });
+
+    it("has no Copy, no calendar holds, no Privacy links and no Pause (S26)", async () => {
+        for (const source of [undefined, "sees-mail", "sees-screen", "sees-calls"]) {
+            const { unmount } = render(<ObservationPage anchor={source} />);
+            await waitFor(() => expect(mocks.getPermissions).toHaveBeenCalled());
+            expect(screen.queryByText("Note what I copy")).toBeNull();
+            expect(screen.queryByRole("switch", { name: "Offer to hold time" })).toBeNull();
+            expect(screen.queryByText("On the Privacy page")).toBeNull();
+            expect(screen.queryByRole("button", { name: "Open Privacy" })).toBeNull();
+            expect(screen.queryByText(/Pause observing/)).toBeNull();
+            unmount();
+        }
+    });
+
+    it("opens each source's details in place and comes back to the rows (S3)", async () => {
+        mocks.getPermissions.mockResolvedValue(withFiles(withMessages(withMail(macPermissions()))));
+        render(<ObservationPage />);
+        const details: [string, string, string][] = [
+            ["Screen", "screen", "Watch my screen"],
+            ["Calls and meetings", "calls", "Listen"],
+            ["Mail, calendar and reminders", "mail", "Calendars Isoform can see"],
+            ["Messages", "messages", "Messages Isoform can see"],
+            ["Your agents' history", "agents", "Read my Claude Code and Codex history"],
+        ];
+        for (const [title, id, card] of details) {
+            fireEvent.click(await screen.findByRole("button", { name: `Open ${title}` }));
+            expect(await screen.findByTestId(`sees-details-${id}`)).toBeInTheDocument();
+            expect(await screen.findByText(card)).toBeInTheDocument();
+            fireEvent.click(screen.getByRole("button", { name: "What Isoform sees" }));
+            await screen.findByTestId("sees-rows");
+        }
+        // Screen holds the apps Isoform never sees and Files (T2); Calls the apps it doesn't listen to.
+        fireEvent.click(screen.getByRole("button", { name: "Open Screen" }));
+        expect(await screen.findByText("Hidden from screen recordings")).toBeInTheDocument();
+        expect(await screen.findByText("Recent files")).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: "What Isoform sees" }));
+        fireEvent.click(await screen.findByRole("button", { name: "Open Calls and meetings" }));
+        expect(await screen.findByText("Apps Isoform does not listen to")).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: "What Isoform sees" }));
+        fireEvent.click(await screen.findByRole("button", { name: "Open Mail, calendar and reminders" }));
+        expect(await screen.findByText("Reminders Isoform can see")).toBeInTheDocument();
+        expect(screen.getByText("Mail Isoform can see")).toBeInTheDocument();
+        // Your watch has no details.
+        fireEvent.click(screen.getByRole("button", { name: "What Isoform sees" }));
+        await screen.findByTestId("sees-rows");
+        expect(screen.queryByRole("button", { name: "Open Your watch" })).toBeNull();
+    }, 20_000);
+
+    it("lands deep links on their source's details (sees-screen, sees-calls, sees-mail, sees-calendar, sees-messages)", async () => {
+        const cases: [string, string][] = [
+            ["sees-screen", "screen"],
+            ["sees-calls", "calls"],
+            ["sees-mail", "mail"],
+            ["sees-calendar", "mail"],
+            ["sees-messages", "messages"],
+            ["sees-assistant", "agents"],
+        ];
+        for (const [anchor, id] of cases) {
+            const { container, unmount } = render(<ObservationPage anchor={anchor} />);
+            expect(await screen.findByTestId(`sees-details-${id}`)).toBeInTheDocument();
+            expect(container.querySelector(`[data-settings-anchor="sees-${id}"]`)).not.toBeNull();
+            if (anchor === "sees-calendar") expect(container.querySelector('[data-settings-anchor="sees-calendar"]')).not.toBeNull();
+            unmount();
+        }
+        // A new link with no anchor, as from the sidebar, goes back to the rows.
+        const { rerender } = render(<ObservationPage anchor="sees-calls" anchorKey={1} />);
+        expect(await screen.findByTestId("sees-details-calls")).toBeInTheDocument();
+        rerender(<ObservationPage anchorKey={2} />);
+        expect(await screen.findByTestId("sees-rows")).toBeInTheDocument();
+    });
+
+    it("says it couldn't read a switch, with Try again, never Off", async () => {
+        mocks.getPermissions.mockRejectedValueOnce(new Error("no"));
+        mocks.getWatchListening.mockRejectedValueOnce(new Error("no"));
+        mocks.getReadHistory.mockRejectedValueOnce(new Error("no"));
+        mocks.getListening.mockRejectedValueOnce(new Error("no"));
+        render(<ObservationPage />);
+        for (const id of ["screen", "calls", "mail", "messages", "watch", "agents"]) {
+            const row = screen.getByTestId(`sees-row-${id}`);
+            await waitFor(() => expect(within(row).getByText("Couldn't read whether this is on")).toBeInTheDocument());
+            expect(within(row).queryByRole("switch")).toBeNull();
+            expect(within(row).getByRole("button", { name: "Try again" })).toBeInTheDocument();
+        }
+        fireEvent.click(within(screen.getByTestId("sees-row-watch")).getByRole("button", { name: "Try again" }));
+        await waitFor(() => expect(within(screen.getByTestId("sees-row-watch")).getByRole("switch")).toBeChecked());
+    });
+
+    it("turns mail, calendar and reminders off together, and shows on while any one reads", async () => {
+        mocks.getPermissions.mockResolvedValue(
+            withMail(macPermissions({ calendars: { enabled: false }, reminders: { enabled: false } }), { enabled: true }),
+        );
+        render(<ObservationPage />);
+        const row = await screen.findByRole("switch", { name: "Mail, calendar and reminders" });
+        await waitFor(() => expect(row).toBeChecked());
+        fireEvent.click(row);
+        await waitFor(() => expect(mocks.setPermission).toHaveBeenCalledWith("automation_mail", false));
+        expect(mocks.setPermission).not.toHaveBeenCalledWith("calendars", expect.anything());
+        expect(mocks.setPermission).not.toHaveBeenCalledWith("screen_recording", expect.anything());
+    });
+
+    it("hints Messages' Full Disk Access: plain while off, amber while on without it (S4)", async () => {
+        mocks.getPermissions.mockResolvedValue(withMessages(macPermissions(), { granted: false, enabled: false }));
+        const { unmount } = render(<ObservationPage />);
+        const off = await screen.findByTestId("sees-hint-messages");
+        expect(off).toHaveTextContent("Needs Full Disk Access · asked when you turn it on");
+        expect(off.className).not.toContain("text-warning");
+        unmount();
+
+        mocks.getPermissions.mockResolvedValue(withMessages(macPermissions(), { granted: false, enabled: true }));
+        render(<ObservationPage />);
+        await waitFor(() => expect(screen.getByTestId("sees-hint-messages")).toHaveTextContent(/^Needs Full Disk Access$/));
+        expect(screen.getByTestId("sees-hint-messages").className).toContain("text-warning");
+        expect(screen.getByRole("switch", { name: "Messages" })).toBeChecked();
+    });
+
+    it("asks once when Messages is turned on without access, with Open System Settings and Not now (S4)", async () => {
+        mocks.getPermissions.mockResolvedValue(withMessages(macPermissions(), { granted: false, enabled: false }));
+        render(<ObservationPage />);
+        const messages = await screen.findByRole("switch", { name: "Messages" });
+        await waitFor(() => expect(messages).not.toBeDisabled());
+        fireEvent.click(messages);
+        await waitFor(() => expect(mocks.setPermission).toHaveBeenCalledWith("messages_history", true));
         expect(
-            screen.getByText("Capture status, apps Isoform does not listen to and how long recordings are kept"),
+            await screen.findByText(
+                "Isoform reads your conversations with people you know, to know who's waiting on you and what you promised. It keeps them on this computer, and Claude Code reads them as it reads your screen. It needs Full Disk Access, which you give in System Settings.",
+            ),
         ).toBeInTheDocument();
-        expect(screen.queryByText("Capture status")).not.toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: "Not now" }));
+        await waitFor(() => expect(screen.queryByRole("button", { name: "Open System Settings" })).toBeNull());
+        expect(mocks.requestPermission).not.toHaveBeenCalled();
 
-        fireEvent.click(screen.getByRole("button", { name: /Advanced/ }));
+        mocks.setPermission.mockClear();
+        mocks.getPermissions.mockResolvedValue(withMessages(macPermissions(), { granted: false, enabled: false }));
+        fireEvent.click(await screen.findByRole("switch", { name: "Messages" }));
+        fireEvent.click(await screen.findByRole("button", { name: "Open System Settings" }));
+        await waitFor(() => expect(mocks.requestPermission).toHaveBeenCalledWith("messages_history"));
+    });
 
-        expect(await screen.findByText("Capture status")).toBeInTheDocument();
-        await waitFor(() => expect(screen.getByText("Kept for 30 days now.")).toBeInTheDocument());
+    it("turns Messages on without asking once Full Disk Access is given", async () => {
+        mocks.getPermissions.mockResolvedValue(withMessages(macPermissions(), { granted: true, enabled: false }));
+        render(<ObservationPage />);
+        const messages = await screen.findByRole("switch", { name: "Messages" });
+        await waitFor(() => expect(messages).not.toBeDisabled());
+        fireEvent.click(messages);
+        await waitFor(() => expect(mocks.setPermission).toHaveBeenCalledWith("messages_history", true));
+        expect(screen.queryByRole("button", { name: "Open System Settings" })).toBeNull();
+    });
+
+    it("turns listening on the watch off as the phone does, and never on (S2e)", async () => {
+        render(<ObservationPage />);
+        const watch = await screen.findByRole("switch", { name: "Your watch" });
+        await waitFor(() => expect(watch).toBeChecked());
+        fireEvent.click(watch);
+        await waitFor(() => expect(mocks.turnOffWatchListening).toHaveBeenCalledTimes(1));
+        await waitFor(() => expect(screen.getByRole("switch", { name: "Your watch" })).not.toBeChecked());
+        expect(screen.getByRole("switch", { name: "Your watch" })).toBeDisabled();
+        expect(screen.getByTestId("sees-hint-watch")).toHaveTextContent("Off. Tap the mark on your watch to start listening.");
+    });
+
+    it("says there is no watch yet, with no switch", async () => {
+        mocks.getWatchListening.mockResolvedValue({ off: false, hasWatch: false });
+        render(<ObservationPage />);
+        expect(await screen.findByText("No watch with Isoform yet. Put Isoform on your watch from your phone.")).toBeInTheDocument();
+        expect(within(screen.getByTestId("sees-row-watch")).queryByRole("switch")).toBeNull();
+    });
+
+    it("shows agents' history on unless turned off, with Undo in the row", async () => {
+        render(<ObservationPage />);
+        const history = await screen.findByRole("switch", { name: "Your agents' history" }, { timeout: 3000 });
+        expect(history).toBeChecked();
+        fireEvent.click(history);
+        expect(await screen.findByText(/Stopping in 5 seconds/)).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+        await waitFor(() => expect(screen.getByRole("switch", { name: "Your agents' history" })).toBeChecked());
+        expect(mocks.setReadHistory).not.toHaveBeenCalled();
     });
 
     it("says what Watch my screen keeps, typed text and Chromium history included (ST2 v1.0.1)", async () => {
-        render(<ObservationPage />);
+        render(<ObservationPage anchor="sees-screen" />);
         await screen.findByText("Watch my screen");
         expect(
             screen.getByText(
@@ -379,7 +597,7 @@ describe("ObservationPage", () => {
     });
 
     it("shows the call transcription model and removes it", async () => {
-        render(<ObservationPage />);
+        render(<ObservationPage anchor="sees-calls" />);
         expect(
             await screen.findByText(/Qwen3-ASR 0.6B, .* on this computer\. A call that ends while it is ready is transcribed again with it\./),
         ).toBeInTheDocument();
@@ -396,7 +614,7 @@ describe("ObservationPage", () => {
         mocks.getSpeechModel.mockResolvedValue(
             speechModel({ status: "low_disk", lastError: "not enough free disk space: 900 MB free, about 2848 MB needed" }),
         );
-        render(<ObservationPage />);
+        render(<ObservationPage anchor="sees-calls" />);
         expect(
             await screen.findByText(
                 "Qwen3-ASR 0.6B was not downloaded: not enough free disk space: 900 MB free, about 2848 MB needed. It tries again after a later call.",
@@ -407,12 +625,12 @@ describe("ObservationPage", () => {
 
     it("offers Remove for a partial download left on disk", async () => {
         mocks.getSpeechModel.mockResolvedValue(speechModel({ status: "absent", enabled: false, removable: true }));
-        render(<ObservationPage />);
+        render(<ObservationPage anchor="sees-calls" />);
         expect(await screen.findByRole("button", { name: "Remove" })).toBeInTheDocument();
     });
 
     it("keeps the computer's sound outside calls off until turned on", async () => {
-        render(<ObservationPage />);
+        render(<ObservationPage anchor="sees-calls" />);
         const toggle = await screen.findByRole("switch", { name: "Hear the computer outside calls" });
         await waitFor(() => expect(toggle).not.toBeDisabled());
         expect(toggle).not.toBeChecked();
@@ -422,25 +640,94 @@ describe("ObservationPage", () => {
         expect(toggle).toBeChecked();
     });
 
+    it("says on Calls and meetings that speech recognition needs room, in amber, until the model is here (S9)", async () => {
+        mocks.planSpeech.mockResolvedValue(speechPlan());
+        render(<ObservationPage />);
+        const hint = await screen.findByTestId("sees-speech-space");
+        const need = within(hint).getByText(/^Speech recognition needs .+ free · .+ free now$/);
+        expect(need.className).toContain("text-warning");
+        expect(within(hint).getByText("Calls and your watch's talk are kept, and transcribed once it's here.").className).not.toContain("text-warning");
+        expect(within(screen.getByTestId("sees-row-calls")).getByTestId("sees-speech-space")).toBe(hint);
+        expect(mocks.planSpeech).toHaveBeenCalledWith(expect.any(Object), ["privacy", "memory"]);
+    });
+
+    it("has no speech hint once the model is here, or while there is room for it", async () => {
+        render(<ObservationPage />);
+        await waitFor(() => expect(mocks.planSpeech).toHaveBeenCalled());
+        expect(screen.queryByTestId("sees-speech-space")).toBeNull();
+        mocks.planSpeech.mockResolvedValue(speechPlan({ enoughSpace: true }));
+        act(() => { window.dispatchEvent(new Event("focus")); });
+        await waitFor(() => expect(mocks.planSpeech).toHaveBeenCalledTimes(2));
+        expect(screen.queryByTestId("sees-speech-space")).toBeNull();
+        expect(screen.queryByText(/Speech recognition needs/)).toBeNull();
+    });
+
+    it("says it couldn't read the speech model, with Try again, never a size", async () => {
+        mocks.planSpeech.mockRejectedValueOnce(new Error("no"));
+        render(<ObservationPage />);
+        const row = screen.getByTestId("sees-row-calls");
+        expect(await within(row).findByText("Couldn't read whether speech recognition is on this computer.")).toBeInTheDocument();
+        expect(within(row).queryByText(/Speech recognition needs/)).toBeNull();
+        mocks.planSpeech.mockResolvedValue(speechPlan());
+        fireEvent.click(within(row).getByRole("button", { name: "Try again" }));
+        expect(await within(row).findByTestId("sees-speech-space")).toBeInTheDocument();
+    });
+
+    it("shows no speech hint while listening is off", async () => {
+        mocks.getListening.mockResolvedValue(false);
+        mocks.planSpeech.mockResolvedValue(speechPlan());
+        render(<ObservationPage />);
+        await screen.findByRole("switch", { name: "Calls and meetings" });
+        expect(screen.queryByTestId("sees-speech-space")).toBeNull();
+        expect(mocks.planSpeech).not.toHaveBeenCalled();
+    });
+
+    it("puts WeChat pictures in Screen's details with their own switch, naming the assistant (S18)", async () => {
+        render(<ObservationPage anchor="sees-screen" />);
+        const words = "WeChat windows as pictures, when their text can't be read · sent to Claude Code";
+        const toggle = await screen.findByRole("switch", { name: words });
+        expect(within(screen.getByTestId("sees-details-screen")).getByTestId("sees-wechat-pictures")).toBeInTheDocument();
+        expect(toggle).toBeChecked();
+        expect(screen.queryByText(/Pictures wait until the privacy model/)).toBeNull();
+        fireEvent.click(toggle);
+        await waitFor(() => expect(mocks.setVision).toHaveBeenCalledWith(false));
+        await waitFor(() => expect(screen.getByRole("switch", { name: words })).not.toBeChecked());
+        expect(mocks.setPermission).not.toHaveBeenCalled();
+    });
+
+    it("says WeChat pictures wait while the privacy model is missing (S13)", async () => {
+        mocks.getVision.mockResolvedValue({ enabled: true, privacyModelReady: false });
+        render(<ObservationPage anchor="sees-screen" />);
+        expect(
+            await screen.findByText("Pictures wait until the privacy model, which masks pictures of your screen, is on this computer."),
+        ).toBeInTheDocument();
+    });
+
+    it("says it couldn't read the WeChat pictures switch, with Try again and no switch", async () => {
+        mocks.getVision.mockRejectedValueOnce(new Error("no"));
+        render(<ObservationPage anchor="sees-screen" />);
+        const card = await screen.findByTestId("sees-wechat-pictures");
+        expect(await within(card).findByText("Couldn't read whether this is on")).toBeInTheDocument();
+        expect(within(card).queryByRole("switch")).toBeNull();
+        fireEvent.click(within(card).getByRole("button", { name: "Try again" }));
+        expect(await within(card).findByRole("switch")).toBeChecked();
+    });
+
     it("follows Closed Eyes from any surface: the sources wait while eyes are closed", async () => {
         render(<ObservationPage />);
-        await waitFor(() => expect(screen.getByRole("switch", { name: "Watch my screen" })).not.toBeDisabled());
+        await waitFor(() => expect(screen.getByRole("switch", { name: "Screen" })).not.toBeDisabled());
 
         emit("closed-eyes:changed", true);
-        await waitFor(() =>
-            expect(screen.getByRole("switch", { name: "Watch my screen" })).toBeDisabled(),
-        );
-        expect(screen.getByRole("switch", { name: "Listen" })).toBeDisabled();
-        expect(screen.getByText("Paused. Isoform is not watching or listening right now.")).toBeInTheDocument();
+        await waitFor(() => expect(screen.getByRole("switch", { name: "Screen" })).toBeDisabled());
+        expect(screen.getByRole("switch", { name: "Calls and meetings" })).toBeDisabled();
+        expect(screen.getByText("Closed Eyes is on. Nothing is seen or kept until you open them.")).toBeInTheDocument();
 
         emit("closed-eyes:changed", false);
-        await waitFor(() =>
-            expect(screen.getByRole("switch", { name: "Watch my screen" })).not.toBeDisabled(),
-        );
+        await waitFor(() => expect(screen.getByRole("switch", { name: "Screen" })).not.toBeDisabled());
     });
 
     it("writes every screen permission key so they always agree", async () => {
-        render(<ObservationPage />);
+        render(<ObservationPage anchor="sees-screen" />);
         const watch = screen.getByRole("switch", { name: "Watch my screen" });
         await waitFor(() => expect(watch).toBeChecked());
         await waitFor(() => expect(watch).not.toBeDisabled());
@@ -456,7 +743,7 @@ describe("ObservationPage", () => {
     });
 
     it("lists the calendars Isoform can see with their source and last read time", async () => {
-        render(<ObservationPage />);
+        render(<ObservationPage anchor="sees-mail" />);
 
         expect(await screen.findByText("Calendars Isoform can see")).toBeInTheDocument();
         expect(await screen.findByText("Google")).toBeInTheDocument();
@@ -473,31 +760,8 @@ describe("ObservationPage", () => {
         expect(screen.queryByText("Allow")).not.toBeInTheDocument();
     });
 
-    it("changes hold offers and remembers a writable calendar", async () => {
-        render(<ObservationPage />);
-        const offer = await screen.findByRole("switch", { name: "Offer to hold time" });
-        expect(offer).toBeChecked();
-        fireEvent.click(offer);
-        await waitFor(() => expect(mocks.setOfferHolds).toHaveBeenCalledWith(false));
-        const calendar = screen.getByRole("combobox", { name: "Holds go to" });
-        await waitFor(() => expect(calendar).not.toBeDisabled());
-        fireEvent.change(calendar, { target: { value: "home" } });
-        await waitFor(() => expect(mocks.setHoldCalendar).toHaveBeenCalledWith("home"));
-        await waitFor(() => expect(calendar).toHaveValue("home"));
-    });
-
-    it("offers a calendar choice when no eligible default is selected", async () => {
-        mocks.holdSettings.mockResolvedValue({ granted: true, offerHolds: true, calendarId: "", calendars: [{ id: "home", title: "Home", sourceId: "local", sourceTitle: "On My Mac", isDefault: false }] });
-        render(<ObservationPage />);
-        const calendar = await screen.findByRole("combobox", { name: "Holds go to" });
-        expect(calendar).toHaveTextContent("Choose a calendar");
-        expect(calendar).not.toHaveTextContent("No writable calendar");
-        fireEvent.change(calendar, { target: { value: "home" } });
-        await waitFor(() => expect(mocks.setHoldCalendar).toHaveBeenCalledWith("home"));
-    });
-
     it("turns web calendar reading off and on", async () => {
-        render(<ObservationPage />);
+        render(<ObservationPage anchor="sees-mail" />);
         const peek = await screen.findByRole("switch", { name: "Read web calendars when the computer is idle" });
         await waitFor(() => expect(peek).not.toBeDisabled());
         expect(peek).toBeChecked();
@@ -509,7 +773,7 @@ describe("ObservationPage", () => {
 
     it("keeps Watch my screen on and says so in copper with a working Try again when the change fails (ST9)", async () => {
         mocks.setPermission.mockRejectedValueOnce(new Error("denied"));
-        render(<ObservationPage />);
+        render(<ObservationPage anchor="sees-screen" />);
         const watch = screen.getByRole("switch", { name: "Watch my screen" });
         await waitFor(() => expect(watch).not.toBeDisabled());
 
@@ -530,7 +794,7 @@ describe("ObservationPage", () => {
     });
 
     it("switches calendar reading off through the permission toggle", async () => {
-        render(<ObservationPage />);
+        render(<ObservationPage anchor="sees-mail" />);
         const reading = await screen.findByRole("switch", { name: "Read my calendars" });
         await waitFor(() => expect(reading).not.toBeDisabled());
         expect(reading).toBeChecked();
@@ -542,7 +806,7 @@ describe("ObservationPage", () => {
     it("asks for calendar access inline when the Mac has not granted it", async () => {
         mocks.getPermissions.mockResolvedValue(macPermissions({ calendars: { granted: false } }));
         mocks.calendarOverview.mockResolvedValue(calendarOverview({ granted: false, authorization: "not_determined", sources: [], peekProviders: [] }));
-        render(<ObservationPage />);
+        render(<ObservationPage anchor="sees-mail" />);
 
         expect(
             await screen.findByText("Your computer has not given Isoform access to your calendars yet. Allow it below."),
@@ -556,7 +820,7 @@ describe("ObservationPage", () => {
     });
 
     it("shows the open reminders per list next to the calendars", async () => {
-        render(<ObservationPage />);
+        render(<ObservationPage anchor="sees-mail" />);
 
         const card = (await screen.findByText("Reminders Isoform can see")).closest(".settings-card") as HTMLElement;
         expect(await within(card).findByText("Work")).toBeInTheDocument();
@@ -575,7 +839,7 @@ describe("ObservationPage", () => {
     });
 
     it("switches reminders reading off through the permission toggle", async () => {
-        render(<ObservationPage />);
+        render(<ObservationPage anchor="sees-mail" />);
         const reading = await screen.findByRole("switch", { name: "Read my reminders" });
         await waitFor(() => expect(reading).not.toBeDisabled());
         expect(reading).toBeChecked();
@@ -590,7 +854,7 @@ describe("ObservationPage", () => {
         mocks.remindersOverview.mockResolvedValue(
             remindersOverview({ granted: false, authorization: "not_determined", openCount: 0, overdueCount: 0, lists: [] }),
         );
-        render(<ObservationPage />);
+        render(<ObservationPage anchor="sees-mail" />);
 
         const card = (await screen.findByText("Reminders Isoform can see")).closest(".settings-card") as HTMLElement;
         expect(
@@ -610,42 +874,15 @@ describe("ObservationPage", () => {
             items: [permission("screen_capture", { required: true, toggleable: true, enabled: true })],
         } as PlatformPermissions);
         mocks.remindersOverview.mockResolvedValue(remindersOverview({ supported: false, granted: false }));
-        render(<ObservationPage />);
+        render(<ObservationPage anchor="sees-mail" />);
 
         await waitFor(() => expect(mocks.remindersOverview).toHaveBeenCalled());
         await waitFor(() => expect(screen.queryByText("Reminders Isoform can see")).not.toBeInTheDocument());
     });
 
-    it("switches noting copies off and keeps it out of Watch my screen", async () => {
-        const base = macPermissions();
-        mocks.getPermissions.mockResolvedValue({
-            ...base,
-            items: [
-                ...base.items,
-                permission("clipboard", { toggleable: true, enabled: true, actionable: false, actionLabel: "" }),
-            ],
-        });
-        render(<ObservationPage />);
-
-        const clipboard = await screen.findByRole("switch", { name: "Note what I copy" });
-        await waitFor(() => expect(clipboard).not.toBeDisabled());
-        expect(clipboard).toBeChecked();
-        expect(screen.queryByRole("button", { name: "Allow" })).not.toBeInTheDocument();
-
-        fireEvent.click(clipboard);
-        await waitFor(() => expect(mocks.setPermission).toHaveBeenCalledWith("clipboard", false));
-        expect(mocks.setPermission).not.toHaveBeenCalledWith("screen_recording", expect.anything());
-
-        // Watch my screen never writes the clipboard key.
-        mocks.setPermission.mockClear();
-        fireEvent.click(screen.getByRole("switch", { name: "Watch my screen" }));
-        await waitFor(() => expect(mocks.setPermission).toHaveBeenCalledTimes(2));
-        expect(mocks.setPermission).not.toHaveBeenCalledWith("clipboard", expect.anything());
-    });
-
     it("shows the folders Isoform can see and the documents worked on today", async () => {
         mocks.getPermissions.mockResolvedValue(withFiles(macPermissions()));
-        render(<ObservationPage />);
+        render(<ObservationPage anchor="sees-screen" />);
 
         const card = (await screen.findByText("Recent files")).closest(".settings-card") as HTMLElement;
         expect(
@@ -671,7 +908,7 @@ describe("ObservationPage", () => {
 
     it("switches recent files off and keeps them out of Watch my screen", async () => {
         mocks.getPermissions.mockResolvedValue(withFiles(macPermissions()));
-        render(<ObservationPage />);
+        render(<ObservationPage anchor="sees-screen" />);
 
         const files = await screen.findByRole("switch", { name: "Note my recent files" });
         await waitFor(() => expect(files).not.toBeDisabled());
@@ -688,7 +925,7 @@ describe("ObservationPage", () => {
     it("hides the folders while recent files are off", async () => {
         mocks.getPermissions.mockResolvedValue(withFiles(macPermissions(), { enabled: false }));
         mocks.filesOverview.mockResolvedValue(filesOverview({ enabled: false }));
-        render(<ObservationPage />);
+        render(<ObservationPage anchor="sees-screen" />);
 
         const card = (await screen.findByText("Recent files")).closest(".settings-card") as HTMLElement;
         expect(await within(card).findByText("Recent files are off and Isoform notes none of them.")).toBeInTheDocument();
@@ -698,7 +935,7 @@ describe("ObservationPage", () => {
 
     it("adds and removes private folders", async () => {
         mocks.getPermissions.mockResolvedValue(withFiles(macPermissions()));
-        render(<ObservationPage />);
+        render(<ObservationPage anchor="sees-screen" />);
 
         const card = (await screen.findByText("Recent files")).closest(".settings-card") as HTMLElement;
         expect(await within(card).findByText("~/Documents/Taxes")).toBeInTheDocument();
@@ -713,7 +950,7 @@ describe("ObservationPage", () => {
     it("pauses recent files while observing is paused", async () => {
         mocks.isPaused.mockResolvedValue(true);
         mocks.getPermissions.mockResolvedValue(withFiles(macPermissions()));
-        render(<ObservationPage />);
+        render(<ObservationPage anchor="sees-screen" />);
 
         const files = await screen.findByRole("switch", { name: "Note my recent files" });
         await waitFor(() => expect(files).toBeDisabled());
@@ -723,15 +960,15 @@ describe("ObservationPage", () => {
     });
 
     it("hides the recent files card where the computer has no Spotlight", async () => {
-        render(<ObservationPage />);
+        render(<ObservationPage anchor="sees-screen" />);
         await waitFor(() => expect(mocks.getPermissions).toHaveBeenCalled());
-        await screen.findByText("Reminders Isoform can see");
+        await screen.findByText("Watch my screen");
         expect(screen.queryByText("Recent files")).not.toBeInTheDocument();
     });
 
     it("shows the mail Isoform sees and who is waiting on a reply", async () => {
         mocks.getPermissions.mockResolvedValue(withMail(macPermissions()));
-        render(<ObservationPage />);
+        render(<ObservationPage anchor="sees-mail" />);
 
         const card = (await screen.findByText("Mail Isoform can see")).closest(".settings-card") as HTMLElement;
         expect(
@@ -748,7 +985,7 @@ describe("ObservationPage", () => {
     it("says reading stopped after Mail was slow, and that Refresh tries again", async () => {
         mocks.getPermissions.mockResolvedValue(withMail(macPermissions()));
         mocks.mailOverview.mockResolvedValue(mailOverview({ stalled: true }));
-        render(<ObservationPage />);
+        render(<ObservationPage anchor="sees-mail" />);
 
         const card = (await screen.findByText("Mail Isoform can see")).closest(".settings-card") as HTMLElement;
         expect(
@@ -762,7 +999,7 @@ describe("ObservationPage", () => {
     it("says Mail is closed and never offers to open it", async () => {
         mocks.getPermissions.mockResolvedValue(withMail(macPermissions()));
         mocks.mailOverview.mockResolvedValue(mailOverview({ mailOpen: false }));
-        render(<ObservationPage />);
+        render(<ObservationPage anchor="sees-mail" />);
 
         const card = (await screen.findByText("Mail Isoform can see")).closest(".settings-card") as HTMLElement;
         expect(
@@ -776,7 +1013,7 @@ describe("ObservationPage", () => {
     it("asks for Mail access only from the Allow button and only while Mail is open", async () => {
         mocks.getPermissions.mockResolvedValue(withMail(macPermissions(), { granted: false }));
         mocks.mailOverview.mockResolvedValue(mailOverview({ granted: false, mailOpen: false, received: 0, waiting: 0 }));
-        const { unmount } = render(<ObservationPage />);
+        const { unmount } = render(<ObservationPage anchor="sees-mail" />);
 
         let card = (await screen.findByText("Mail Isoform can see")).closest(".settings-card") as HTMLElement;
         expect(
@@ -787,7 +1024,7 @@ describe("ObservationPage", () => {
         unmount();
 
         mocks.mailOverview.mockResolvedValue(mailOverview({ granted: false, mailOpen: true, received: 0, waiting: 0 }));
-        render(<ObservationPage />);
+        render(<ObservationPage anchor="sees-mail" />);
         card = (await screen.findByText("Mail Isoform can see")).closest(".settings-card") as HTMLElement;
         expect(
             await within(card).findByText("Your computer has not given Isoform access to Mail yet. Open Mail, then allow it below."),
@@ -799,7 +1036,7 @@ describe("ObservationPage", () => {
 
     it("switches mail reading off and keeps it out of Watch my screen", async () => {
         mocks.getPermissions.mockResolvedValue(withMail(macPermissions()));
-        render(<ObservationPage />);
+        render(<ObservationPage anchor="sees-mail" />);
 
         const reading = await screen.findByRole("switch", { name: "Read my mail headers" });
         await waitFor(() => expect(reading).not.toBeDisabled());
@@ -807,7 +1044,10 @@ describe("ObservationPage", () => {
         await waitFor(() => expect(mocks.setPermission).toHaveBeenCalledWith("automation_mail", false));
 
         mocks.setPermission.mockClear();
-        fireEvent.click(screen.getByRole("switch", { name: "Watch my screen" }));
+        fireEvent.click(screen.getByRole("button", { name: "What Isoform sees" }));
+        const screenSwitch = await screen.findByRole("switch", { name: "Screen" });
+        await waitFor(() => expect(screenSwitch).not.toBeDisabled());
+        fireEvent.click(screenSwitch);
         await waitFor(() => expect(mocks.setPermission).toHaveBeenCalledTimes(2));
         expect(mocks.setPermission).not.toHaveBeenCalledWith("automation_mail", expect.anything());
     });
@@ -815,7 +1055,7 @@ describe("ObservationPage", () => {
     it("pauses mail reading while observing is paused", async () => {
         mocks.isPaused.mockResolvedValue(true);
         mocks.getPermissions.mockResolvedValue(withMail(macPermissions()));
-        render(<ObservationPage />);
+        render(<ObservationPage anchor="sees-mail" />);
 
         const reading = await screen.findByRole("switch", { name: "Read my mail headers" });
         await waitFor(() => expect(reading).toBeDisabled());
@@ -827,7 +1067,7 @@ describe("ObservationPage", () => {
     it("asks for Full Disk Access only from Grant and opens System Settings", async () => {
         mocks.getPermissions.mockResolvedValue(withMessages(macPermissions(), { granted: false }));
         mocks.messagesOverview.mockResolvedValue(messagesOverview({ granted: false, asks: 0, commitments: 0 }));
-        render(<ObservationPage />);
+        render(<ObservationPage anchor="sees-messages" />);
 
         const card = (await screen.findByText("Messages Isoform can see")).closest(".settings-card") as HTMLElement;
         expect(await within(card).findByText(/Isoform needs Full Disk Access to read Messages/)).toBeInTheDocument();
@@ -843,7 +1083,7 @@ describe("ObservationPage", () => {
     it("leaves a person out, takes them back and forgets what was noted", async () => {
         mocks.getPermissions.mockResolvedValue(withMessages(macPermissions()));
         mocks.messagesOverview.mockResolvedValue(messagesOverview({ leftOut: [{ id: "p2", name: "Lee" }] }));
-        render(<ObservationPage />);
+        render(<ObservationPage anchor="sees-messages" />);
 
         const reading = await screen.findByRole("switch", { name: "Read my Messages" });
         const card = reading.closest(".settings-card") as HTMLElement;
@@ -854,11 +1094,26 @@ describe("ObservationPage", () => {
         fireEvent.click(within(card).getByRole("button", { name: "Forget" }));
         await waitFor(() => expect(mocks.forgetMessages).toHaveBeenCalled());
 
-        // The switch is its own; Watch my screen never turns it.
+        // The switch is its own; Screen never turns it.
         mocks.setPermission.mockClear();
-        fireEvent.click(screen.getByRole("switch", { name: "Watch my screen" }));
+        fireEvent.click(screen.getByRole("button", { name: "What Isoform sees" }));
+        const screenSwitch = await screen.findByRole("switch", { name: "Screen" });
+        await waitFor(() => expect(screenSwitch).not.toBeDisabled());
+        fireEvent.click(screenSwitch);
         await waitFor(() => expect(mocks.setPermission).toHaveBeenCalledTimes(2));
         expect(mocks.setPermission).not.toHaveBeenCalledWith("messages_history", expect.anything());
+    });
+
+    it("shows the Contacts row in Messages' details while Contacts is missing, opening Who you know (settings batch D3)", async () => {
+        const withContacts = withMessages(macPermissions());
+        withContacts.items.push(permission("contacts", { granted: false, actionable: true }));
+        mocks.getPermissions.mockResolvedValue(withContacts);
+        const onOpenPeople = vi.fn();
+        render(<ObservationPage anchor="sees-messages" onOpenPeople={onOpenPeople} />);
+        await screen.findByTestId("sees-details-messages");
+        fireEvent.click(await screen.findByRole("button", { name: "Choose in Who you know" }));
+        expect(onOpenPeople).toHaveBeenCalledTimes(1);
+        expect(screen.getByText("Recognize people from your Contacts")).toBeInTheDocument();
     });
 
     it("hides the mail card where the computer has no Mail", async () => {
@@ -867,30 +1122,15 @@ describe("ObservationPage", () => {
             items: [permission("screen_capture", { required: true, toggleable: true, enabled: true })],
         } as PlatformPermissions);
         mocks.mailOverview.mockResolvedValue(mailOverview({ supported: false, granted: false }));
-        render(<ObservationPage />);
+        render(<ObservationPage anchor="sees-mail" />);
 
         await waitFor(() => expect(mocks.mailOverview).toHaveBeenCalled());
         await waitFor(() => expect(screen.queryByText("Mail Isoform can see")).not.toBeInTheDocument());
     });
 
-    it("pauses noting copies while observing is paused", async () => {
-        mocks.isPaused.mockResolvedValue(true);
-        const base = macPermissions();
-        mocks.getPermissions.mockResolvedValue({
-            ...base,
-            items: [...base.items, permission("clipboard", { toggleable: true, enabled: true, actionable: false })],
-        });
-        render(<ObservationPage />);
-
-        const clipboard = await screen.findByRole("switch", { name: "Note what I copy" });
-        await waitFor(() => expect(clipboard).toBeDisabled());
-        const card = clipboard.closest(".settings-card") as HTMLElement;
-        expect(within(card).getByText("Observing is paused. Resume it to change this.")).toBeInTheDocument();
-    });
-
     it("shows Watch my screen as off when only one key was turned off earlier", async () => {
         mocks.getPermissions.mockResolvedValue(macPermissions({ accessibility: { enabled: false } }));
-        render(<ObservationPage />);
+        render(<ObservationPage anchor="sees-screen" />);
         const watch = screen.getByRole("switch", { name: "Watch my screen" });
         await waitFor(() => expect(watch).not.toBeDisabled());
         expect(watch).not.toBeChecked();
@@ -903,7 +1143,7 @@ describe("ObservationPage", () => {
 
     it("asks for missing screen access inline and disables the switch until granted", async () => {
         mocks.getPermissions.mockResolvedValue(macPermissions({ accessibility: { granted: false } }));
-        render(<ObservationPage />);
+        render(<ObservationPage anchor="sees-screen" />);
 
         expect(
             await screen.findByText("Your computer has not given Isoform access yet. Allow it below."),
@@ -917,7 +1157,7 @@ describe("ObservationPage", () => {
 
     it("disables Record meetings with a reason while listening is off", async () => {
         mocks.getListening.mockResolvedValue(false);
-        render(<ObservationPage />);
+        render(<ObservationPage anchor="sees-calls" />);
 
         const meetings = screen.getByRole("switch", { name: "Record meetings automatically" });
         await waitFor(() => expect(screen.getByText("Turn on Listen to use this.")).toBeInTheDocument());
@@ -933,16 +1173,16 @@ describe("ObservationPage", () => {
 
     it("shows microphone access inline only while listening needs it", async () => {
         mocks.getPermissions.mockResolvedValue(macPermissions({ microphone: { granted: false } }));
-        render(<ObservationPage />);
+        render(<ObservationPage anchor="sees-calls" />);
 
-        const listenCard = (await screen.findByText("Microphone")).closest(".settings-card") as HTMLElement;
+        const listenCard = (await screen.findByText("Used for hearing your voice and conversations.")).closest(".settings-card") as HTMLElement;
         expect(within(listenCard).getByText("Listen")).toBeInTheDocument();
         expect(within(listenCard).getByText("Used for hearing your voice and conversations.")).toBeInTheDocument();
     });
 
     it("switches the microphone source off without turning listening off", async () => {
         mocks.getPermissions.mockResolvedValue(macPermissions({ microphone: { toggleable: true, enabled: true } }));
-        render(<ObservationPage />);
+        render(<ObservationPage anchor="sees-calls" />);
 
         const mic = await screen.findByRole("switch", { name: "Use the microphone" });
         await waitFor(() => expect(mic).not.toBeDisabled());
@@ -962,8 +1202,7 @@ describe("ObservationPage", () => {
             screenLocked: false,
             microphonePaused: true,
         });
-        render(<ObservationPage />);
-        fireEvent.click(screen.getByRole("button", { name: /Advanced/ }));
+        render(<ObservationPage anchor="sees-calls" />);
 
         const row = (await screen.findByText("Turned off with Use the microphone. System audio can still be heard."))
             .closest(".settings-row") as HTMLElement;
@@ -973,8 +1212,7 @@ describe("ObservationPage", () => {
 
     it("shows no capture state when the read fails, says so in copper and reads again", async () => {
         mocks.audioStatus.mockRejectedValueOnce(new Error("bridge down"));
-        render(<ObservationPage />);
-        fireEvent.click(screen.getByRole("button", { name: /Advanced/ }));
+        render(<ObservationPage anchor="sees-calls" />);
 
         const line = await screen.findByText("Couldn't read what Isoform is capturing.");
         expect(line.closest("[data-settings-failure]")).toHaveClass("text-copper");
@@ -982,15 +1220,14 @@ describe("ObservationPage", () => {
 
         fireEvent.click(within(line.closest("[data-settings-failure]") as HTMLElement).getByRole("button", { name: "Try again" }));
         await waitFor(() => expect(screen.queryByText("Couldn't read what Isoform is capturing.")).not.toBeInTheDocument());
-        expect(screen.getByText("Screen")).toBeInTheDocument();
+        expect(screen.getByText("Microphone")).toBeInTheDocument();
     });
 
     it("shows a spinner on Refresh while capture status reads", async () => {
         let finish: (value: unknown) => void = () => {};
         mocks.audioStatus.mockReturnValueOnce(new Promise((resolve) => (finish = resolve)));
-        render(<ObservationPage />);
-        fireEvent.click(screen.getByRole("button", { name: /Advanced/ }));
-        expect(await screen.findByTestId("capture-reading")).toBeInTheDocument();
+        render(<ObservationPage anchor="sees-calls" />);
+                expect(await screen.findByTestId("capture-reading")).toBeInTheDocument();
         finish({ running: true, activeSources: ["microphone"], screenLocked: false });
         await waitFor(() => expect(screen.queryByTestId("capture-reading")).not.toBeInTheDocument());
     });
@@ -999,7 +1236,7 @@ describe("ObservationPage", () => {
         mocks.getPermissions.mockResolvedValue(
             macPermissions({ microphone: { toggleable: true, enabled: true, granted: false } }),
         );
-        render(<ObservationPage />);
+        render(<ObservationPage anchor="sees-calls" />);
         expect(await screen.findByText("Microphone")).toBeInTheDocument();
         expect(screen.queryByRole("switch", { name: "Use the microphone" })).not.toBeInTheDocument();
     });
@@ -1021,15 +1258,4 @@ describe("ObservationPage", () => {
         expect(mocks.captureCounts).toHaveBeenCalledTimes(1);
     });
 
-    it("jumps to Privacy for the per-app list", async () => {
-        const onOpenPage = vi.fn();
-        render(<ObservationPage onOpenPage={onOpenPage} />);
-        fireEvent.click(screen.getByRole("button", { name: /Advanced/ }));
-
-        const row = (await screen.findByText("Apps Isoform does not listen to")).closest(".settings-row") as HTMLElement;
-        fireEvent.click(within(row).getByRole("button", { name: "Open Privacy" }));
-
-        expect(onOpenPage).toHaveBeenCalledWith("security");
-        expect(mocks.emit).not.toHaveBeenCalled();
-    });
 });

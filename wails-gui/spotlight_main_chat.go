@@ -10,7 +10,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"yansu-agent/agent/tools"
+	"wails-gui/internal/persistence"
+	"wails-gui/storage"
 )
 
 // Quick chat answers in the one Chat thread (computer-chat v1.0.0 rules 10
@@ -21,40 +22,41 @@ import (
 // nothing, writes the rows as for every main-chat turn.
 
 // quickChatTurns marks main-chat tags whose current turn came from Quick
-// chat. The panel shows the turn's text but not Chat's cards, so such a turn
-// gets no hand-off card or sources line; the model points at Open in Chat
-// instead (computer-chat v1.0.0 rule 11 waits for the sheet over other apps).
+// chat. The panel shows the turn's text, its sources line (computer-chat
+// v1.2.0 rule 5) and its hand-off card (v1.0.0 rule 11), mirrored by
+// mirrorMainChatRowToSpotlight; the card's sheet opens in the panel.
 var quickChatTurns sync.Map
-
-// quickChatCardTools are the main-chat tools whose rows only Chat can show.
-var quickChatCardTools = map[string]bool{"HandOffWork": true, "CiteSources": true}
 
 func (a *App) quickChatTurnActive(tag string) bool {
 	_, ok := quickChatTurns.Load(tag)
 	return ok
 }
 
-// withoutQuickChatCards drops the card tools from a Quick chat turn.
-func withoutQuickChatCards(list []tools.Tool) []tools.Tool {
-	kept := list[:0:0]
-	for _, tool := range list {
-		if !quickChatCardTools[tool.Name()] {
-			kept = append(kept, tool)
-		}
-	}
-	return kept
-}
+// quickChatMirroredRows are the main-chat rows a Quick chat exchange shows in
+// the panel as they are written.
+var quickChatMirroredRows = map[string]bool{chatSourcesLineTool: true, chatHandoffCardTool: true}
 
-// injectQuickChatContext tells a Quick chat turn where its cards are.
-func (a *App) injectQuickChatContext(tag string) string {
-	if !a.quickChatTurnActive(tag) {
-		return ""
+// mirrorMainChatRowToSpotlight sends a row written into the main chat to the
+// Quick chat panel mirroring that exchange, so a sources line or a hand-off
+// card shows under the panel's answer as it does in Chat.
+func (a *App) mirrorMainChatRowToSpotlight(mainID string, row storage.StreamItemRow, sortOrder int) {
+	if a == nil || a.spotlightStream == nil || !quickChatMirroredRows[row.ToolName] {
+		return
 	}
-	return `<quick-chat>
-This message came from Quick chat, a small panel over another app. When the user asks for work, do not do it here and do not write it out: say in one sentence, in the user's language, that it is work for their agent and that they can hand it over from Open in Chat.
-</quick-chat>
-
-`
+	a.spotlightTagsMu.Lock()
+	state := a.spotlightTags[mainID]
+	a.spotlightTagsMu.Unlock()
+	if state == nil || !state.main {
+		return
+	}
+	state.mu.Lock()
+	from := state.fromSortOrder
+	state.mu.Unlock()
+	if from < 0 || sortOrder < from {
+		return
+	}
+	row.SortOrder = sortOrder
+	a.spotlightStream.Publish(mainID, spotlightStreamEvent{Kind: "item", Data: jsonEncodeOrEmpty(persistence.ToStreamItemData(row))})
 }
 
 var (

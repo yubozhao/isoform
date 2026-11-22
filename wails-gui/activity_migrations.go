@@ -387,6 +387,8 @@ var allActivityMigrations = []activityMigration{
 	{Name: "noticed_plain_invoice_followup", Fn: migrateNoticedPlainInvoiceFollowup},
 	{Name: "activity_agent_runs", Fn: migrateActivityAgentRuns},
 	{Name: "activity_agent_runs_follow_runs", Fn: migrateActivityAgentRunsFollowRuns},
+	{Name: "activity_snapshot_privacy_hold", Fn: migrateSnapshotPrivacyHold},
+	{Name: "snapshot_revision_owned_rows", Fn: migrateOwnedSnapshotRevisions},
 }
 
 // ──────────────────────────────────────────────
@@ -1791,6 +1793,12 @@ func (s *ActivityStore) bootstrapMigrationLog() error {
 			b, e2 := s.hasIndex("idx_activity_agent_runs_day")
 			return a && b, firstErr(e1, e2)
 		}},
+		{"snapshot_revision_owned_rows", func() (bool, error) {
+			var installed bool
+			err := s.db.QueryRow(`SELECT COUNT(*)=3 FROM sqlite_master WHERE type='trigger' AND tbl_name='activity_snapshots' AND name LIKE 'evidence_revision_activity_snapshots_%' AND sql LIKE '%WHEN %session_id IS NOT NULL%'`).Scan(&installed)
+			return installed, err
+		}},
+		{"activity_snapshot_privacy_hold", func() (bool, error) { return s.hasIndex("idx_snapshot_privacy_hold") }},
 		// The orphan cleanup runs in the same transaction as the trigger, so
 		// the trigger proves both.
 		{"activity_agent_runs_follow_runs", func() (bool, error) {

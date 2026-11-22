@@ -37,7 +37,7 @@ func (s *Store) SaveWorkspace(ctx context.Context, ws WorkspaceRow) error {
 
 // LoadWorkspaces returns all workspaces for a given project, ordered by sort_order then created_at.
 func (s *Store) LoadWorkspaces(ctx context.Context, projectID string) ([]WorkspaceRow, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.committedReader().QueryContext(ctx, `
 		SELECT id, project_id, label, is_default, worktree_path, worktree_branch, base_branch, active_session_id, sort_order, created_at, updated_at
 		FROM workspaces WHERE project_id = ? AND hidden = 0 ORDER BY is_default DESC, sort_order ASC, created_at ASC
 	`, projectID)
@@ -59,7 +59,7 @@ func (s *Store) LoadWorkspaces(ctx context.Context, projectID string) ([]Workspa
 
 // LoadWorkspacesByProject returns all workspaces for a project, including hidden ones.
 func (s *Store) LoadWorkspacesByProject(ctx context.Context, projectID string) ([]WorkspaceRow, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.committedReader().QueryContext(ctx, `
 		SELECT id, project_id, label, is_default, hidden, worktree_path, worktree_branch, base_branch, active_session_id, sort_order, created_at, updated_at
 		FROM workspaces WHERE project_id = ? ORDER BY is_default DESC, sort_order ASC, created_at ASC
 	`, projectID)
@@ -81,7 +81,7 @@ func (s *Store) LoadWorkspacesByProject(ctx context.Context, projectID string) (
 
 // LoadAllWorkspaces returns all workspaces across all projects, keyed by project ID.
 func (s *Store) LoadAllWorkspaces(ctx context.Context) (map[string][]WorkspaceRow, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.committedReader().QueryContext(ctx, `
 		SELECT id, project_id, label, is_default, worktree_path, worktree_branch, base_branch, active_session_id, sort_order, created_at, updated_at
 		FROM workspaces WHERE hidden = 0 ORDER BY is_default DESC, sort_order ASC, created_at ASC
 	`)
@@ -104,7 +104,7 @@ func (s *Store) LoadAllWorkspaces(ctx context.Context) (map[string][]WorkspaceRo
 // LoadWorkspace returns a single workspace by ID.
 func (s *Store) LoadWorkspace(ctx context.Context, workspaceID string) (*WorkspaceRow, error) {
 	var ws WorkspaceRow
-	err := s.db.QueryRowContext(ctx, `
+	err := s.committedReader().QueryRowContext(ctx, `
 		SELECT id, project_id, label, is_default, worktree_path, worktree_branch, base_branch, active_session_id, sort_order, created_at, updated_at
 		FROM workspaces WHERE id = ?
 	`, workspaceID).Scan(&ws.ID, &ws.ProjectID, &ws.Label, &ws.IsDefault, &ws.WorktreePath, &ws.WorktreeBranch, &ws.BaseBranch, &ws.ActiveSessionID, &ws.SortOrder, &ws.CreatedAt, &ws.UpdatedAt)
@@ -196,7 +196,7 @@ func (s *Store) UpdateWorkspaceSortOrders(ctx context.Context, projectID string,
 
 // LoadAllSessionsByWorkspace returns all sessions keyed by workspace ID.
 func (s *Store) LoadAllSessionsByWorkspace(ctx context.Context) (map[string][]SessionRow, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.committedReader().QueryContext(ctx, `
 		SELECT local_id, project_id, workspace_id, session_id, label, model, prd_enabled, thinking_level, plan_mode, thinking_enabled, pinned, pinned_at, automation_result, COALESCE(meeting_id, ''), COALESCE(kind, ''), COALESCE(parent_id, ''), created_at, updated_at
 		FROM sessions WHERE hidden = 0 ORDER BY pinned DESC, pinned_at ASC, updated_at DESC
 	`)

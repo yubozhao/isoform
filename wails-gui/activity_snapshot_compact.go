@@ -47,7 +47,7 @@ func snapshotCompactedSize(m snapshotMedia) int64 {
 // snapshotIsCompactable mirrors compactableSnapshotWhere for a row already
 // in hand.
 func snapshotIsCompactable(m snapshotMedia, coldBeforeMs int64) bool {
-	if m.Tier == snapshotTierMissing || m.RelPath == "" {
+	if m.PrivacyHeld || m.Tier == snapshotTierMissing || m.RelPath == "" {
 		return false
 	}
 	if m.Tier != "cold" && m.Timestamp >= coldBeforeMs {

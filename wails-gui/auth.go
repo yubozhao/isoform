@@ -182,8 +182,7 @@ type yansuConfig struct {
 	// AskBeforeRiskyCommands makes attended chats ask before risky Bash
 	// commands (Settings > Privacy). Off when unset, so the default is off.
 	AskBeforeRiskyCommands bool `json:"ask_before_risky_commands,omitempty"`
-	// AssistantHistoryOff is the Settings > Privacy opt-out for reading this
-	// computer's Claude Code and Codex history. Absent means on.
+	// Legacy global opt-out, consulted only by the Learn from it migration.
 	AssistantHistoryOff bool `json:"assistant_history_off,omitempty"`
 }
 

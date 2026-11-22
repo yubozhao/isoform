@@ -45,6 +45,21 @@ func isAppResearchJob(job *storage.CronJobRow) bool {
 	}
 }
 
+// isTopicSearchJob reports whether job is a topic or Daily News search:
+// what it sends is built from what the person has been looking at, so it
+// never runs under Closed Eyes (topicSearchMayLeave).
+func isTopicSearchJob(job *storage.CronJobRow) bool {
+	if job == nil || job.SurfaceKind != todayNewsSurfaceKind {
+		return false
+	}
+	switch job.Name {
+	case todayNewsJobName, topicFindsJobName:
+		return true
+	default:
+		return false
+	}
+}
+
 // appResearchAuthorityGrants returns the research grants for a job, or nil.
 // Research runs always route to the native loop (they deny external writes),
 // so a user whose assistant is Claude Code or Codex needs the grants too; a

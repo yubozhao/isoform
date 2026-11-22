@@ -155,6 +155,7 @@ type OCRFrameRow struct {
 
 // ActivitySnapshotRow represents a persisted JPEG screenshot captured on user events.
 type ActivitySnapshotRow struct {
+	PrivacyHeld bool   `json:"-"`
 	ID          int64  `json:"id"`
 	SessionID   string `json:"sessionId"`
 	Timestamp   int64  `json:"timestamp"`
@@ -1056,7 +1057,7 @@ func (s *ActivityStore) getSessionsByStatus(status string) ([]ActivitySessionRow
 			ocr_status, COALESCE(automation_status, ''), COALESCE(handoff_status, ''),
 			COALESCE(sop_status, ''), created_at
 		FROM activity_sessions
-		WHERE triage_status = ?
+		WHERE triage_status = ? AND `+sqlSessionHasNoPrivacyHold+`
 		ORDER BY start_time ASC`, status)
 	if err != nil {
 		return nil, fmt.Errorf("query sessions by status: %w", err)
@@ -1185,6 +1186,24 @@ func (s *ActivityStore) deleteSession(sessionID string, retainSummaries bool) er
 		return err
 	}
 	defer tx.Rollback()
+	if err := s.deleteActivitySessionTx(tx, sessionID, retainSummaries); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return tx.Commit()
+		}
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if s.readPrivacySessionRevisions == nil {
+		s.readPrivacySessionRevisions = make(map[string]uint64)
+	}
+	s.readPrivacySessionRevisions[sessionID] = s.readPrivacyRevision.Load() + 1
+	deleted = true
+	return nil
+}
+
+func (s *ActivityStore) deleteActivitySessionTx(tx *sql.Tx, sessionID string, retainSummaries bool) error {
 	if !retainSummaries {
 		// Explicit deletion must not later look like legacy retention. Keep a
 		// content-free denial even when a prior retention removed the raw row.
@@ -1199,9 +1218,6 @@ func (s *ActivityStore) deleteSession(sessionID string, retainSummaries bool) er
 	}
 	var startMs, endMs int64
 	if err := tx.QueryRow(`SELECT start_time, end_time FROM activity_sessions WHERE id = ?`, sessionID).Scan(&startMs, &endMs); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return tx.Commit()
-		}
 		return err
 	}
 	if retainSummaries {
@@ -1235,14 +1251,6 @@ func (s *ActivityStore) deleteSession(sessionID string, retainSummaries bool) er
 	if _, err := tx.Exec(`DELETE FROM activity_sessions WHERE id = ?`, sessionID); err != nil {
 		return err
 	}
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-	if s.readPrivacySessionRevisions == nil {
-		s.readPrivacySessionRevisions = make(map[string]uint64)
-	}
-	s.readPrivacySessionRevisions[sessionID] = s.readPrivacyRevision.Load() + 1
-	deleted = true
 	return nil
 }
 
@@ -1464,19 +1472,32 @@ func (s *ActivityStore) SaveSnapshots(tx *sql.Tx, snapshots []ActivitySnapshotRo
 		INSERT INTO activity_snapshots (session_id, timestamp, file_path, width, height,
 			size_bytes, trigger_kind, storage_tier, ax_text, browser_url,
 			content_type, app, parsed_json,
-			focus_rect_x, focus_rect_y, focus_rect_w, focus_rect_h)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+			focus_rect_x, focus_rect_y, focus_rect_w, focus_rect_h, privacy_held)
+		VALUES (NULLIF(?,''), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return fmt.Errorf("prepare snapshot insert: %w", err)
 	}
 	defer stmt.Close()
 
 	for i, snap := range snapshots {
+		if snap.PrivacyHeld && snap.SessionID != "" {
+			res, err := tx.Exec(`UPDATE activity_snapshots SET session_id=? WHERE file_path=? AND session_id IS NULL AND privacy_held=1`, snap.SessionID, snap.FilePath)
+			if err != nil {
+				return err
+			}
+			n, err := res.RowsAffected()
+			if err != nil {
+				return err
+			}
+			if n > 0 {
+				continue
+			}
+		}
 		if _, err := stmt.Exec(snap.SessionID, snap.Timestamp, snap.FilePath,
 			snap.Width, snap.Height, snap.SizeBytes, snap.Trigger, snap.StorageTier,
 			snap.AXText, snap.BrowserURL,
 			snap.ContentType, snap.App, snap.ParsedJSON,
-			snap.FocusRectX, snap.FocusRectY, snap.FocusRectW, snap.FocusRectH); err != nil {
+			snap.FocusRectX, snap.FocusRectY, snap.FocusRectW, snap.FocusRectH, snap.PrivacyHeld); err != nil {
 			return fmt.Errorf("insert snapshot %d: %w", i, err)
 		}
 	}
@@ -1503,7 +1524,7 @@ func (s *ActivityStore) GetSessionSnapshotsIncludingProtected(sessionID string) 
 			COALESCE(content_type, ''), COALESCE(app, ''), COALESCE(parsed_json, ''),
 			COALESCE(focus_rect_x, 0), COALESCE(focus_rect_y, 0),
 			COALESCE(focus_rect_w, 0), COALESCE(focus_rect_h, 0),
-			COALESCE(ocr_used_focus_rect, 0)
+			COALESCE(ocr_used_focus_rect, 0), privacy_held
 		FROM activity_snapshots
 		WHERE session_id = ?
 		ORDER BY timestamp`, sessionID)
@@ -1521,7 +1542,7 @@ func (s *ActivityStore) GetSessionSnapshotsIncludingProtected(sessionID string) 
 			&snap.AXText, &snap.BrowserURL,
 			&snap.ContentType, &snap.App, &snap.ParsedJSON,
 			&snap.FocusRectX, &snap.FocusRectY, &snap.FocusRectW, &snap.FocusRectH,
-			&ocrUsedFocusRect); err != nil {
+			&ocrUsedFocusRect, &snap.PrivacyHeld); err != nil {
 			return nil, fmt.Errorf("scan snapshot: %w", err)
 		}
 		snap.OCRUsedFocusRect = ocrUsedFocusRect != 0
@@ -1541,7 +1562,7 @@ func (s *ActivityStore) GetSnapshotsByTier(tier string) ([]ActivitySnapshotRow, 
 			COALESCE(focus_rect_w, 0), COALESCE(focus_rect_h, 0),
 			COALESCE(ocr_used_focus_rect, 0)
 		FROM activity_snapshots
-		WHERE storage_tier = ?
+		WHERE storage_tier = ? AND privacy_held=0
 		ORDER BY timestamp`, tier)
 	if err != nil {
 		return nil, fmt.Errorf("query snapshots by tier: %w", err)
@@ -1579,6 +1600,7 @@ func (s *ActivityStore) GetLatestSnapshot() (*ActivitySnapshotRow, error) {
 			COALESCE(focus_rect_w, 0), COALESCE(focus_rect_h, 0),
 			COALESCE(ocr_used_focus_rect, 0)
 		FROM activity_snapshots
+ WHERE privacy_held=0
 		ORDER BY timestamp DESC
 		LIMIT 1`)
 	var snap ActivitySnapshotRow
@@ -2020,10 +2042,18 @@ func (s *ActivityStore) MarkSnapshotOCRUsedFocusRect(snapshotID int64) error {
 
 // SaveOCRFrame persists a single OCR frame result. FTS5 is synced via triggers.
 func (s *ActivityStore) SaveOCRFrame(frame OCRFrameRow) error {
+	return s.saveOCRFrame(frame, false)
+}
+
+// A snapshot can expire while the OCR engine is reading its pixels. Require
+// its owner in the insert statement so late OCR cannot recreate deleted text.
+func (s *ActivityStore) saveOCRFrame(frame OCRFrameRow, requireSnapshot bool) error {
 	_, err := s.db.Exec(`
-		INSERT INTO activity_ocr_frames (session_id, segment_id, frame_time, text, confidence, boxes_json)
-		VALUES (?, ?, ?, ?, ?, ?)`,
-		frame.SessionID, frame.SegmentID, frame.FrameTime, frame.Text, frame.Confidence, frame.BoxesJSON)
+		WITH snapshot AS (SELECT privacy_held FROM activity_snapshots WHERE session_id=? AND id=?),
+ frame(held) AS (SELECT COALESCE((SELECT privacy_held FROM snapshot),0))
+        INSERT INTO activity_ocr_frames (session_id, segment_id, frame_time, text, confidence, boxes_json, privacy_held_text)
+        SELECT ?, ?, ?, CASE WHEN held THEN '' ELSE ? END, ?, CASE WHEN held THEN '' ELSE ? END, CASE WHEN held THEN ? END FROM frame WHERE NOT ? OR EXISTS(SELECT 1 FROM snapshot)`,
+		frame.SessionID, frame.SegmentID, frame.SessionID, frame.SegmentID, frame.FrameTime, frame.Text, frame.Confidence, frame.BoxesJSON, frame.Text, requireSnapshot)
 	return err
 }
 

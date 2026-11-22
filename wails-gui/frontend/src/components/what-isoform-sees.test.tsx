@@ -51,13 +51,13 @@ it.each([
         "Only when you say so",
         "Isoform doesn't send, delete or accept anything until you say so.",
         "Sends only when you click Send.",
-    ], ["never leave", "this phone", "until you tap", "tap Send", "Only with your tap", "Isoform on your computer"], "Change these in Settings › Privacy"],
+    ], ["never leave", "this phone", "until you tap", "tap Send", "Only with your tap", "Isoform on your computer"], "Change these in Settings › What Isoform sees"],
     ["zh-CN", [
         "音频存储在你的电脑上。",
         "以及你输入的文字",
         "简报、卡片和草稿，发到你的手机，端到端加密。",
-    ], ["永远不会离开", "这部手机", "你点之前"], "在 设置 › 隐私 里修改"],
-])("uses the computer's words in %s and opens Settings › Privacy from the foot", async (language, present, absent, foot) => {
+    ], ["永远不会离开", "这部手机", "你点之前"], "在 设置 › Isoform 看到的 里修改"],
+])("uses the computer's words in %s and opens Settings › What Isoform sees from the foot", async (language, present, absent, foot) => {
     await i18n.changeLanguage(language);
     mocks.get.mockResolvedValue({ assistant: "claude_code", phonePaired: true, sources: [
         { job: "mail", on: true }, { job: "calendar", on: true }, { job: "calls", on: true },
@@ -71,7 +71,7 @@ it.each([
     for (const text of absent) expect(dialog.textContent).not.toContain(text);
     fireEvent.click(within(dialog).getByRole("button", { name: foot }));
     expect(onOpenChange).toHaveBeenCalledWith(false);
-    expect(mocks.emit).toHaveBeenCalledWith("settings:open", "security");
+    expect(mocks.emit).toHaveBeenCalledWith("settings:open", "activity");
 });
 
 it("names the phone only while one is paired", async () => {

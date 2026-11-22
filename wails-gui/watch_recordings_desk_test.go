@@ -26,7 +26,9 @@ func watchDeskFixture(t *testing.T) (*App, *mobileBridge, *mobileRecordingStore,
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { activity.Close() })
-	app := &App{activity: &activityMonitorState{store: activity}}
+	relays := watchContextTestRelays(t)
+	app := relays.app
+	app.activity = &activityMonitorState{store: activity}
 	bridge := &mobileBridge{stateDir: t.TempDir(), app: app}
 	app.mobileBridge = bridge
 	bridge.mu.Lock()
@@ -41,7 +43,8 @@ func watchDeskFixture(t *testing.T) (*App, *mobileBridge, *mobileRecordingStore,
 		HeartRate: &MobileRecordingHeartRate{Avg: 104, Min: 88, Max: 131, Samples: 12},
 		Location:  &MobileRecordingLocation{Latitude: 37.7599, Longitude: -122.4148, Place: "Mission District"},
 	}
-	if _, _, err := receiveMobileRecordingPart(context.Background(), store, uploads, recordingTestHub, mobileTestDeviceID, req); err != nil {
+	relays.primary = uploads
+	if _, _, err := relays.receivePart(context.Background(), store, recordingTestHub, mobileTestDeviceID, req); err != nil {
 		t.Fatal(err)
 	}
 	events := []activitymon.ActivityEvent{
@@ -142,8 +145,8 @@ func TestDeletingAWatchRecordingRemovesAudioContextAndTranscript(t *testing.T) {
 		t.Fatalf("a resent part brought the audio back: %v", err)
 	}
 	// A transcription that finishes late cannot bring it back.
-	if store.setState(id, mobileRecordingTranscribed, "rec-"+id, 8, "") {
-		t.Fatal("a deleted recording was moved to transcribed")
+	if err := store.setState(id, mobileRecordingTranscribed, "rec-"+id, 8, ""); err != errWatchRecordingNotFound {
+		t.Fatalf("late completion of deleted recording: got %v, want recording not found", err)
 	}
 	if len(store.pending()) != 0 {
 		t.Fatal("a deleted recording is pending")

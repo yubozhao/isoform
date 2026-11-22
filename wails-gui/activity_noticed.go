@@ -39,11 +39,9 @@ const (
 )
 
 var (
-	errNoticedNotFound    = errors.New("this suggestion is no longer there")
 	errNoticedRoutineName = errors.New("a routine needs a name")
 	errNoticedRoutineStep = errors.New("a routine needs at least one step")
 	errNoticedRoutineWhen = errors.New("pick when the routine runs, or none")
-	errNoticedSchedules   = errors.New("schedules are not available right now")
 )
 
 // NoticedRoutineDraft is what Make a routine opens with, and what Save takes
@@ -67,13 +65,6 @@ type NoticedSuggestion struct {
 	Text          string               `json:"text"`
 	Why           string               `json:"why"`
 	Routine       *NoticedRoutineDraft `json:"routine,omitempty"`
-}
-
-// NoticedRoutineSaved says where a saved routine went: "schedule" (Upcoming)
-// or "knowhow" (Knowledge), with the new entry's id.
-type NoticedRoutineSaved struct {
-	Home string `json:"home"`
-	ID   string `json:"id"`
 }
 
 // noticedRaw is one item as the model wrote it.
@@ -694,48 +685,6 @@ func (p *noticedPublications) changed(date, fp string) bool {
 	return seen && prior != fp
 }
 
-func (a *App) noticedByID(dateStr, id string) (NoticedSuggestion, error) {
-	items, _, err := a.activity.store.noticedStored(dateStr, a.currentUILanguage())
-	if err != nil {
-		return NoticedSuggestion{}, err
-	}
-	for _, item := range items {
-		if item.ID == id {
-			return item, nil
-		}
-	}
-	return NoticedSuggestion{}, errNoticedNotFound
-}
-
-// DismissNoticed is Not now: the suggestion, and the same words on any day,
-// are not suggested again.
-func (a *App) DismissNoticed(dateStr, id string) error {
-	// The person's own change shows at once.
-	defer a.touchDerivedViews(derivedDayNoticed)
-	if a.activity == nil || a.activity.store == nil {
-		return errNoticedNotFound
-	}
-	item, err := a.noticedByID(dateStr, id)
-	if err != nil {
-		return err
-	}
-	return a.activity.store.setNoticedDismissed(noticedDismissKeys(item), true)
-}
-
-// UndoDismissNoticed takes Not now back.
-func (a *App) UndoDismissNoticed(dateStr, id string) error {
-	// The person's own change shows at once.
-	defer a.touchDerivedViews(derivedDayNoticed)
-	if a.activity == nil || a.activity.store == nil {
-		return errNoticedNotFound
-	}
-	item, err := a.noticedByID(dateStr, id)
-	if err != nil {
-		return err
-	}
-	return a.activity.store.setNoticedDismissed(noticedDismissKeys(item), false)
-}
-
 func (s *ActivityStore) setNoticedDismissed(keys []string, on bool) error {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -840,75 +789,10 @@ func noticedRoutineKnowHow(draft NoticedRoutineDraft, dateStr string, now time.T
 	}, b.String())
 }
 
-// SaveNoticedRoutine saves the user's routine draft. With a time it becomes
-// a Schedule on Upcoming; without one, a Know-how entry. Nothing is saved or
-// run before this call. The suggestion is then not shown again.
-func (a *App) SaveNoticedRoutine(dateStr, id string, draft NoticedRoutineDraft) (NoticedRoutineSaved, error) {
-	// The person's own change shows at once.
-	defer a.touchDerivedViews(derivedDayNoticed)
-	if a.activity == nil || a.activity.store == nil {
-		return NoticedRoutineSaved{}, errNoticedNotFound
-	}
-	item, err := a.noticedByID(dateStr, id)
-	if err != nil {
-		return NoticedRoutineSaved{}, err
-	}
-	clean := noticedCleanRoutine(&draft, "")
-	if clean.Name == "" {
-		return NoticedRoutineSaved{}, errNoticedRoutineName
-	}
-	if len(clean.Steps) == 0 {
-		return NoticedRoutineSaved{}, errNoticedRoutineStep
-	}
-	expr, ok := noticedCronExpr(draft.When)
-	if !ok {
-		return NoticedRoutineSaved{}, errNoticedRoutineWhen
-	}
-	var saved NoticedRoutineSaved
-	if expr != "" {
-		saved, err = a.saveNoticedSchedule(*clean, expr, dateStr)
-	} else {
-		saved, err = a.saveNoticedKnowHow(*clean, dateStr, time.Now())
-	}
-	if err != nil {
-		return NoticedRoutineSaved{}, err
-	}
-	if err := a.activity.store.setNoticedDismissed(noticedDismissKeys(item), true); err != nil {
-		log.Printf("[activity-noticed] marking a saved routine as handled: %v", err)
-	}
-	return saved, nil
-}
-
-func (a *App) saveNoticedSchedule(draft NoticedRoutineDraft, expr, dateStr string) (NoticedRoutineSaved, error) {
-	if a.cronScheduler == nil {
-		return NoticedRoutineSaved{}, errNoticedSchedules
-	}
-	schedule, err := json.Marshal(scheduleCron{Expr: expr, TZ: time.Local.String()})
-	if err != nil {
-		return NoticedRoutineSaved{}, err
-	}
-	target, err := json.Marshal(cronTargetConfig{Prompt: noticedRoutinePrompt(draft), Model: a.chatTaskModel()})
-	if err != nil {
-		return NoticedRoutineSaved{}, err
-	}
-	state, err := a.CreateCronJob(CronJobInput{
-		Name:           draft.Name,
-		Description:    "Saved from Isoform noticed (" + dateStr + ")",
-		ScheduleKind:   "cron",
-		ScheduleConfig: schedule,
-		TargetKind:     "agent",
-		TargetConfig:   target,
-	})
-	if err != nil {
-		return NoticedRoutineSaved{}, err
-	}
-	return NoticedRoutineSaved{Home: "schedule", ID: state.ID}, nil
-}
-
-func (a *App) saveNoticedKnowHow(draft NoticedRoutineDraft, dateStr string, now time.Time) (NoticedRoutineSaved, error) {
+func (a *App) saveNoticedKnowHow(draft NoticedRoutineDraft, dateStr string, now time.Time) (string, error) {
 	dir, err := knowledgeDir()
 	if err != nil {
-		return NoticedRoutineSaved{}, err
+		return "", err
 	}
 	sum := sha256.Sum256([]byte(dateStr + "\x00" + draft.Name + "\x00" + now.Format(time.RFC3339Nano)))
 	id := "routine-" + hex.EncodeToString(sum[:6])
@@ -917,19 +801,19 @@ func (a *App) saveNoticedKnowHow(draft NoticedRoutineDraft, dateStr string, now 
 	path := filepath.Join(dir, id+".md")
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
-		return NoticedRoutineSaved{}, err
+		return "", err
 	}
 	if _, err := file.WriteString(noticedRoutineKnowHow(draft, dateStr, now, a.currentUILanguage())); err != nil {
 		file.Close()
 		_ = os.Remove(path)
-		return NoticedRoutineSaved{}, err
+		return "", err
 	}
 	if err := file.Close(); err != nil {
-		return NoticedRoutineSaved{}, err
+		return "", err
 	}
 	a.markMemoryDirty("knowledge-save")
 	if a.ctx != nil {
 		a.emitBrowserEvent("insight:saved", map[string]string{"kind": "knowledge", "id": id, "title": draft.Name, "source": "edit"})
 	}
-	return NoticedRoutineSaved{Home: "knowhow", ID: id}, nil
+	return id, nil
 }

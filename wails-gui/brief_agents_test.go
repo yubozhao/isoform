@@ -13,7 +13,7 @@ import (
 // brief, overnight ones marked; a hand-off with no word for two hours; and
 // nothing at all on a day with no hand-offs.
 func TestBriefAgentNewsSaysWhatCameBackAndWhatHasNoWord(t *testing.T) {
-	app, _ := newAgentJoinTestApp(t)
+	app := newAgentJoinTestApp(t)
 	start := time.Now()
 	if !app.briefAgentNews(start.Add(-time.Hour), time.Time{}).Empty() {
 		t.Fatal("news on a day with no hand-offs")

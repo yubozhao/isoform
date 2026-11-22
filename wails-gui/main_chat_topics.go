@@ -76,6 +76,7 @@ type MainChatTopicPage struct {
 
 type topicTurnContextKey struct{}
 type topicTurnBinding struct {
+	correctionRef        *TodayChatContextRef
 	userItemID, metadata string
 	history              topicChatHistoryCache
 	pausedAt             atomic.Int64

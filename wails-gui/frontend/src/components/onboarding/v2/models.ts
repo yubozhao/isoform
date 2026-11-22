@@ -57,6 +57,21 @@ export function rowBytes(row: ModelRowSpec, chosen: Record<string, ModelEntry>) 
 }
 
 /** A model name without its parameter count ("Qwen3-ASR 0.6B" → "Qwen3-ASR"). */
+/** The speech jobs: they follow the microphone (setup-answers v1.0.0 answer 1). */
+export const SPEECH_JOBS: ModelJob[] = ["live", "speakerPack", "afterCall", "voice"];
+/** The privacy and memory jobs: they download in idle time, microphone on or
+ *  off (computer conformance answers v1.2.0 S11). */
+export const QUIET_JOBS: ModelJob[] = ["privacy", "memory"];
+
+/** Every job's model id, with after-call "none" kept when it was turned off.
+ *  Setup's models line and What Isoform sees' Calls and meetings row plan with it. */
+export function wireChoices(choices: ModelChoices, language: string) {
+    const out: Partial<Record<ModelJob, string>> = {};
+    for (const [job, entry] of Object.entries(chosenModels(choices, language))) out[job as ModelJob] = entry.id;
+    if (choices.jobs.find((job) => job.job === "afterCall")?.chosenId === "none") out.afterCall = "none";
+    return out;
+}
+
 export function shortModelName(entry: ModelEntry | undefined) {
     return (entry?.displayName ?? "").replace(/\s+\d+(\.\d+)?B$/, "");
 }

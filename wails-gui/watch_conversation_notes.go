@@ -261,6 +261,8 @@ func (a *App) writeWatchConversationCommitments(c WatchConversation, title, body
 // enough, is over, and has none that fit its words. It makes at most
 // watchConversationNotesPerRun calls, and none with the switch off.
 func (a *App) noteWatchConversations(ctx context.Context, store *mobileRecordingStore) {
+	watchCutMu.RLock()
+	defer watchCutMu.RUnlock()
 	if a == nil || store == nil || !a.watchNotesOn() || a.IsClosedEyesModeEnabled() {
 		return
 	}

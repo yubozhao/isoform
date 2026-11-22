@@ -204,7 +204,23 @@ func todayChatRefWithinBounds(ref TodayChatContextRef) bool {
 	return true
 }
 
+// loadTodayChatContextItem is the item a Today chat attaches. A brief
+// source's group ("In this brief") is for the page only: it is left out, so
+// the item, and the proof digest made from it, never depend on it.
 func (a *App) loadTodayChatContextItem(ctx context.Context, ref TodayChatContextRef) (todayChatItem, todayChatSources, error) {
+	item, sources, err := a.loadTodayChatContextItemGrouped(ctx, ref)
+	if len(item.Refs) > 0 {
+		refs := make([]MobileBriefRef, len(item.Refs))
+		for i, r := range item.Refs {
+			r.Group = ""
+			refs[i] = r
+		}
+		item.Refs = refs
+	}
+	return item, sources, err
+}
+
+func (a *App) loadTodayChatContextItemGrouped(ctx context.Context, ref TodayChatContextRef) (todayChatItem, todayChatSources, error) {
 	if a == nil || !todayChatRefWithinBounds(ref) {
 		return todayChatItem{}, todayChatSources{}, errTodayChatItemUnavailable
 	}

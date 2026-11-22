@@ -159,6 +159,7 @@ func (a *App) appendMainChatItem(ctx context.Context, mainID string, item storag
 		_ = a.tagMainChatRowTopics(ctx, item.ID, mainChatRowTopicRefs(item))
 	}
 	a.mainChatRowsChanged(mainID)
+	a.mirrorMainChatRowToSpotlight(mainID, item, sortOrder)
 	a.emitBrowserEvent(mainChatItemsAppendedEvent, map[string]any{
 		"sessionId": mainID,
 		"itemId":    item.ID,

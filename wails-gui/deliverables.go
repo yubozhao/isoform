@@ -256,6 +256,8 @@ func detectContentType(filename string) string {
 }
 
 // apiPostMultipart sends a multipart/form-data POST request with text fields and file attachments.
+//
+//isoform:destination yansu_backend
 func apiPostMultipart(baseURL, token, path string, fields map[string]string, files []deliverableFile, result any) error {
 	if noYansuAccount() {
 		return errNoYansuAccount

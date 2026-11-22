@@ -73,13 +73,14 @@ type App struct {
 	// (activity_hourly_batch.go).
 	activityBatch activityBatchClock
 
-	toolDownloads    toolDownloadPlans
-	launch           *launchStartup
-	setupModelsOnce  sync.Once
-	setupModels      *models.Manager
-	setupModelsErr   error
-	setupAgents      agentProbeCache
-	setupPermissions permissionSequence
+	toolDownloads           toolDownloadPlans
+	launch                  *launchStartup
+	setupModelsOnce         sync.Once
+	setupModels             *models.Manager
+	setupModelsErr          error
+	onModelDownloadComplete func(context.Context, models.Entry)
+	setupAgents             agentProbeCache
+	setupPermissions        permissionSequence
 
 	// Fixture observers measure source collection and evidence reads; nil in production.
 	todayChatCollectionObserver func()
@@ -176,6 +177,7 @@ type App struct {
 	handoffStore             *handoff.Store               // first-class file store for handoffs (~/.yansu-agent/handoff)
 	handoffActionMu          sync.Mutex                   // serializes handoff start and stop transactions
 	handoffRuns              map[string]*handoffRunState  // guarded by handoffActionMu
+	memoryConfigMu           sync.Mutex                   // serializes memory settings changes
 	knowHow                  knowHowState
 	assistantHistory         assistantHistoryState
 	workPermissions          mainChatWorkPermissions
@@ -219,6 +221,8 @@ type App struct {
 	voiceMemoryMu            sync.Mutex
 	voiceMemoryGeneration    uint64            // guarded by voiceMemoryMu; fences explicit enrollment across Forget
 	authManager              *AuthManager      // centralized auth fallback (see auth_manager.go)
+	settingsDefaultsHeldOff  atomic.Bool       // A startup read failed. All three switches stay off until relaunch.
+	legacySettingsDefaults   atomic.Bool       // Missing choices keep their old values while migration needs a retry.
 	telemetry                *PostHogTelemetry // PostHog-backed native.Telemetry; safe to use even when init failed (no-op fallback)
 
 	// captureSpans follows what was in front and who held the microphone at
@@ -280,6 +284,9 @@ type App struct {
 	taskChoiceMu         sync.Mutex
 	desktopOfferStartMu  sync.Mutex
 	desktopStartedOffers map[string]HandoffAcceptResult
+	watchListeningMu     sync.Mutex // serializes 24.14 span updates from both surfaces
+	watchHeartRate       watchContextChoice
+	watchPlace           watchContextChoice
 	mobileBridgeMu       sync.Mutex // serializes mobile enable, pairing, and shutdown
 	mobileBridgeStopping bool
 	mobilePoweringOff    atomic.Bool
@@ -290,7 +297,9 @@ type App struct {
 	mobileBriefSvc       mobileBriefSource // daily brief producer for paired phones; set from mobileBriefServiceFactory
 	// briefExclusionsPrint is the last stated-exclusion set read (noteMobileBriefExclusions).
 	briefExclusionsPrint atomic.Pointer[string]
-	topicsOnce           sync.Once         // makes topics on first use (topics_service.go)
+	topicsOnce           sync.Once       // makes topics on first use (topics_service.go)
+	topicFindsCtx        context.Context // owned by startup and shutdown; background source reads require it
+	cancelTopicFinds     context.CancelFunc
 	topics               *topicsService    // what the user has been looking at, and the daily finds on it
 	interestModelOnce    sync.Once         // makes the interest model on first use (interests_service.go)
 	interestModel        *interestsService // what the user is into, named by a model a few times a day
@@ -369,6 +378,8 @@ type App struct {
 	// Work on it: prepared tasks, the agent ranking and the counts.
 	workOnItOnce sync.Once
 	workOnItS    *workOnItState
+	// yourAgentsReadHook replaces the Your agents settings read in tests.
+	yourAgentsReadHook func(key string) (string, error)
 
 	// taskLinks serves one-time task links (task_link_service.go).
 	taskLinks taskLinkState
@@ -639,6 +650,9 @@ func NewApp() *App {
 	}
 	// Persisted observation policy is unknown until mandatory storage opens.
 	app.closedEyes.policyPending.Store(true)
+	app.onModelDownloadComplete = func(ctx context.Context, entry models.Entry) {
+		app.modelDownloadCompleted(ctx, entry, app.initInstalledVoiceInput, app.retryWaitingSpeech)
+	}
 	app.topicSource = &registryTopicSource{app: app}
 	app.magpie = newMagpieSidecar(defaultMagpieStateDir())
 	app.magpie.onHealthy = app.onMagpieHealthy
@@ -647,11 +661,8 @@ func NewApp() *App {
 		app.emitBrowserEvent("terminal:exit", terminalID)
 	})
 	app.authManager = NewAuthManager(app)
-	// The stored "Share diagnostic data" choice is read before the client
-	// exists, so an off setting holds from the first event.
-	loadTelemetryTierFromDisk()
-	app.telemetry = NewPostHogTelemetry()
-	recordLaunchStage("telemetry_ready")
+	// Storage startup resolves consent before activating this client.
+	app.telemetry = newDormantPostHogTelemetry()
 
 	// Initialize SSH connection manager. The status callback emits Wails
 	// events so the frontend can display real-time connection state.
@@ -667,6 +678,7 @@ func NewApp() *App {
 }
 
 func (a *App) startup(ctx context.Context) {
+	a.topicFindsCtx, a.cancelTopicFinds = context.WithCancel(ctx)
 	a.ctx = ctx
 	// The window was created at the setup size when setup is needed (main.go);
 	// this applies the setup styling once the app runs.
@@ -682,7 +694,6 @@ func (a *App) startup(ctx context.Context) {
 	if ctx.Value("events") != nil {
 		runtime.EventsOn(ctx, "pages:first-paint", func(...interface{}) { a.pageFirstReadsPainted() })
 	}
-	a.telemetry.Capture("app.open", nil)
 	a.beginStorageStartup(ctx)
 }
 
@@ -692,8 +703,9 @@ func (a *App) startupServices(ctx context.Context) {
 
 	a.deferLaunchTask("storage_repair", func() { repairStartupStorage(a.store) })
 	a.deferLaunchTask("unanswered_turns", func() { a.markUnansweredTurns(ctx) })
-	a.deferLaunchTask("task_links", a.startTaskLinksIfEnabled)
+	a.deferLaunchTask("task_links", a.startTaskLinksAtLaunch)
 	a.deferLaunchTask("work_on_it", a.startWorkOnIt)
+	a.deferLaunchTask("assistant_calls", a.startAssistantCallRecord)
 	a.deferLaunchTask("front", a.startFrontIfEnabled)
 	a.deferLaunchTask("ocr_prewarm", ocr.PrewarmHelper)
 	a.deferLaunchTask("assistant_history", a.scheduleAssistantHistory)
@@ -1028,7 +1040,11 @@ func (a *App) startupServices(ctx context.Context) {
 			return
 		}
 		memCfgDir := home
-		memCfg := loadMemoryStoreConfig(memCfgDir)
+		memCfg, err := loadMemoryStoreConfig(memCfgDir)
+		if err != nil {
+			log.Printf("[memory] config read failed: %v", err)
+			return
+		}
 		ms, msErr := NewMemoryStore(memCfgDir, memCfg, a.emitDownloadProgress)
 		if msErr != nil {
 			log.Printf("[memory] store init failed: %v", msErr)
@@ -1123,6 +1139,10 @@ func (a *App) startupServices(ctx context.Context) {
 		if enabled {
 			a.startBackgroundListeningIfReady()
 		}
+		// Relay registration may have tried the watch backlog before prewarm.
+		if whisperReady {
+			go a.retryWaitingSpeech(ctx)
+		}
 	})
 
 	// Bring up the cron scheduler before waiting for model initialization. It only depends on
@@ -1158,9 +1178,19 @@ func (a *App) startupServices(ctx context.Context) {
 	// to run synchronously on the user's chat send path).
 	a.warmupActivityContext()
 
-	// Wire up memory store now that both are initialized.
-	if memoryStore != nil {
+	// Settings can install a newer store while deferred startup is running.
+	a.memoryConfigMu.Lock()
+	a.mu.Lock()
+	activeStore := a.memoryStore
+	if activeStore == nil {
 		a.memoryStore = memoryStore
+		activeStore = memoryStore
+	}
+	a.mu.Unlock()
+	if memoryStore != nil && activeStore != memoryStore {
+		memoryStore.Close()
+	}
+	if memoryStore != nil && activeStore == memoryStore {
 		memoryStore.SetOnUpdated(func() {
 			if a.ctx != nil {
 				a.emitBrowserEvent("memory:updated", map[string]string{"reason": "index"})
@@ -1172,6 +1202,9 @@ func (a *App) startupServices(ctx context.Context) {
 		// chat message doesn't pay the ~15s cold-start tax. Runs
 		// async so it never blocks app startup.
 		a.deferLaunchTask("embedding_prewarm", func() {
+			if memoryStore.cfg.effectiveFindingProvider() != "local" {
+				return
+			}
 			start := time.Now()
 			if _, err := memoryStore.Search(context.Background(), "warmup", 1); err != nil {
 				log.Printf("[memory] warmup search errored (non-fatal): %v", err)
@@ -1179,13 +1212,12 @@ func (a *App) startupServices(ctx context.Context) {
 				log.Printf("[memory] ONNX embedding warmup done in %v", time.Since(start))
 			}
 		})
-
-		// Share the embedding provider with the activity store for semantic OCR search.
-		if a.activity != nil && a.activity.store != nil && memoryStore.embedder != nil {
-			a.activity.store.SetEmbedder(memoryStore.embedder)
-			go a.activity.store.RunEmbeddingWorker(a.ctx, a.activityEmbeddingGate(a.activity.store))
-		}
 	}
+	if activeStore != nil && a.activity != nil && a.activity.store != nil {
+		a.activity.store.SetEmbedder(activeStore.onDeviceEmbedder())
+		go a.activity.store.RunEmbeddingWorker(a.ctx, a.activityEmbeddingGate(a.activity.store))
+	}
+	a.memoryConfigMu.Unlock()
 
 	// Start the generative memory pipeline (triage → generate → save).
 	// Complements the MemoryStore: this generates memory files, MemoryStore indexes them.
@@ -1353,7 +1385,10 @@ func (a *App) startupServices(ctx context.Context) {
 	a.startHoldWorker(ctx)
 	a.startCalendarPeek(ctx)
 	a.startRemindersSync(ctx)
-	a.startClipboardObserver(ctx)
+	// Copy is no longer a source (computer conformance answers v1.0.0 T2:
+	// a clipboard holds passwords and codes, and what matters is on screen),
+	// so the clipboard observer is not started and What Isoform sees has no
+	// switch for it.
 	a.startBrowserHistoryReader(ctx)
 	// Playbooks: notices a site opened at the same time most days and offers
 	// to take it on (playbook_routine.go).
@@ -1433,6 +1468,9 @@ func (a *App) handleSingletonMessages() {
 
 func (a *App) shutdown(ctx context.Context) {
 	a.handoffShuttingDown.Store(true)
+	if a.cancelTopicFinds != nil {
+		a.cancelTopicFinds()
+	}
 	// A quit leaves no restart gap in Activity (computer-trouble rule 2).
 	noteTroubleQuit(time.Now())
 	a.shutdownTaskLinks()
@@ -1635,6 +1673,7 @@ func (a *App) shutdown(ctx context.Context) {
 
 	if a.topics != nil {
 		a.topics.stopRegistryWorker()
+		a.topics.waitFindsRefresh()
 		if a.topics.privacyWithdrawalUnsubscribe != nil {
 			a.topics.privacyWithdrawalUnsubscribe()
 			a.topics.privacyWithdrawalUnsubscribe = nil

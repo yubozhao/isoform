@@ -168,6 +168,11 @@ func (a *App) authorSOP(ctx context.Context, spec sopAuthorSpec) (sop.Entry, err
 }
 
 func (a *App) executeSOPAuthorTask(ctx context.Context, runner agent.AgentRunner, spec sopAuthorSpec, draftDir string, seedSOPs sopSeedSources) (string, error) {
+	ctx, given, opened := withLearningScope(ctx, "about")
+	if opened {
+		defer a.finishAssistantCall(given)
+	}
+	given.add("activity", spec.SourceID, 1)
 	if !a.sopSourceAllowsModelRead(spec) || !a.sopSeedSourcesAllowRead(seedSOPs) {
 		return "", fmt.Errorf("SOP source is unavailable for model use")
 	}

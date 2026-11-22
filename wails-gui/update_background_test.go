@@ -207,11 +207,51 @@ func TestAboutBuildNeverReportsStagingForRelease(t *testing.T) {
 }
 
 func TestAboutAppMenuNavigation(t *testing.T) {
-	for action, want := range []string{"about", "about", ""} {
-		opened, checked := "unopened", false
-		dispatchAppMenuAction(action, func(topic string) { opened = topic }, func() { checked = true })
-		if opened != want || checked != (action == 1) {
-			t.Fatalf("menu action %d opened %q checked %v", action, opened, checked)
+	cases := map[int]string{appMenuAbout: "about", appMenuCheck: "about", appMenuSettings: "", appMenuShortcuts: "keybindings", appMenuIsoformHelp: "about"}
+	for action := appMenuAbout; action <= appMenuFeedback; action++ {
+		opened, checked, restarted, mailed := "unopened", false, false, false
+		dispatchAppMenuAction(action, appMenuActions{
+			open:     func(topic string) { opened = topic },
+			check:    func() { checked = true },
+			restart:  func() { restarted = true },
+			feedback: func() { mailed = true },
+		})
+		want, opens := cases[action]
+		if !opens {
+			want = "unopened"
+		}
+		if opened != want || checked != (action == appMenuCheck) || restarted != (action == appMenuRestart) || mailed != (action == appMenuFeedback) {
+			t.Fatalf("menu action %d opened %q checked %v restarted %v mailed %v", action, opened, checked, restarted, mailed)
+		}
+	}
+}
+
+// Design S3: a downloaded update shows Restart to Update in the app menu.
+// A5: the Help menu's Send Feedback… opens the same draft as Settings › About.
+func TestAppMenuRestartAndFeedback(t *testing.T) {
+	app := &App{updater: &updater{}}
+	if app.appMenuUpdateReady() {
+		t.Fatal("no update downloaded, but the menu would show Restart to Update")
+	}
+	app.updater.status = UpdateStatus{Status: "update-downloaded", Version: "1.2.3"}
+	if !app.appMenuUpdateReady() {
+		t.Fatal("a downloaded update must show Restart to Update")
+	}
+	got := appMenuFeedbackURL("en", "1.2.3")
+	want := "mailto:bo@isoform.ai?subject=Isoform%20feedback&body=Isoform%20version%3A%201.2.3%0A%0AWhat%20happened%2C%20or%20what%20would%20you%20like%20to%20improve%3F%0A%0A"
+	if got != want {
+		t.Fatalf("feedback url = %q, want %q", got, want)
+	}
+	for _, language := range []string{"en", "zh-CN"} {
+		raw, err := os.ReadFile(filepath.Join("frontend", "src", "i18n", "locales", language, "settings.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		w := appMenuWords(language)
+		for _, text := range []string{w.FeedbackSubject, strings.ReplaceAll(w.FeedbackBody, "\n", `\n`)} {
+			if !strings.Contains(string(raw), text) {
+				t.Fatalf("feedback words %q missing in %s settings.json", text, language)
+			}
 		}
 	}
 }

@@ -137,6 +137,9 @@ func (a *App) GetWatchLane() (WatchLane, error) {
 	}
 	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	// A recording that began before midnight may run into today.
-	speech := a.watchConversationSpeechOf(recordings, dayStart.Add(-2*time.Hour))
+	speech, err := a.watchConversationSpeechOf(recordings, dayStart.Add(-2*time.Hour))
+	if err != nil {
+		return WatchLane{}, err
+	}
 	return buildWatchLane(recordings, speech, watchLanePauses(a), now), nil
 }

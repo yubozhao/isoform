@@ -178,102 +178,10 @@ func (w *ActivityOCRWorker) processSession(ctx context.Context, session Activity
 			default:
 			}
 
-			// Read the persisted JPEG, not an in-memory pre-mask buffer. The
-			// capture path only writes this file after PII masking succeeds, or
-			// after the frame is proven clean. This keeps background OCR aligned
-			// with what Activity displays.
-			fullPath := filepath.Join(store.SnapshotsDir(), snap.FilePath)
-			jpegData, err := os.ReadFile(fullPath)
-			if err != nil {
-				if !os.IsNotExist(err) {
-					log.Printf("[ocr] failed to read snapshot %s: %v", snap.FilePath, err)
-				}
-				continue
-			}
-
-			// Crop to the focused-window rect captured alongside the JPEG so
-			// OCR sees only the window the user was working in. Other apps,
-			// background notifications, and adjacent on-screen content stay
-			// out of the triage prompt. If no rect was recorded (legacy
-			// snapshot, multi-display fallback, non-darwin) the helper
-			// returns the original bytes and we OCR the full frame.
-			ocrInput := jpegData
-			usedFocusRect := false
-			var ocrCropRect image.Rectangle
-			if cropped, cropRect, cropErr := cropForOCR(
-				snap, jpegData, snapshotQuality,
-			); cropErr != nil {
-				log.Printf("[ocr] focus-rect crop failed for snapshot %s: %v (falling back to full frame)", snap.FilePath, cropErr)
-			} else if !cropRect.Empty() {
-				ocrInput = cropped
-				ocrCropRect = cropRect
-				usedFocusRect = true
-			}
-
-			prio := ocr.PriorityLow
-			callID := nextOCRBreadcrumbID()
-			ocrStart := time.Now()
-			log.Printf("[ocr] breadcrumb start call_id=%d source=background-snapshot priority=%s session=%s snapshot=%d file=%s bytes=%d input_bytes=%d",
-				callID, ocrPriorityLabel(prio), session.ID, snap.ID, filepath.Base(snap.FilePath), len(jpegData), len(ocrInput))
-
-			result, observations, err := recognizeBackgroundOCRText(w.engine, ocrInput, langs, prio)
-			if err != nil {
-				log.Printf("[ocr] breadcrumb failed call_id=%d source=background-snapshot duration_ms=%d err=%v",
-					callID, time.Since(ocrStart).Milliseconds(), err)
-				log.Printf("[ocr] recognize failed for snapshot %s: %v", snap.FilePath, err)
-				continue
-			}
-			log.Printf("[ocr] breadcrumb done call_id=%d source=background-snapshot duration_ms=%d text_len=%d confidence=%.3f",
-				callID, time.Since(ocrStart).Milliseconds(), len(result.Text), result.Confidence)
-
-			text := ocr.NormalizeFullwidth(removeCJKSpaces(result.Text))
-			if len(text) < ocrMinTextLen {
-				continue
-			}
-
-			// Persist the boxes the engine already computed, mapped from the
-			// focus-crop space back to full-frame normalized coordinates, so
-			// the tag-highlight path never has to re-OCR this frame. A header
-			// dims failure only degrades this frame to the on-demand path.
-			boxesJSON := ""
-			if usedFocusRect {
-				if imgW, imgH, dimErr := fullImageDimensions(jpegData); dimErr == nil {
-					boxesJSON = marshalOCRBoxes(observationsToFullFrameBoxes(observations, ocrCropRect, imgW, imgH))
-				} else {
-					log.Printf("[ocr] skip box persist for snapshot %s: read dims: %v", snap.FilePath, dimErr)
-				}
-			} else {
-				boxesJSON = marshalOCRBoxes(observationsToFullFrameBoxes(observations, image.Rectangle{}, 0, 0))
-			}
-
-			// Snapshot-based OCR path: we OCR'd a JPEG snapshot directly,
-			// so the row's SegmentID column actually stores activity_snapshots.id
-			// (NOT activity_segments.id). FrameTime is a session-relative offset
-			// in seconds. See the OCRFrameRow doc comment for the full contract
-			// — consumers must handle both interpretations.
-			frame := OCRFrameRow{
-				SessionID:  session.ID,
-				SegmentID:  snap.ID,
-				FrameTime:  float64(snap.Timestamp-session.StartTime) / 1000.0,
-				Text:       text,
-				Confidence: result.Confidence,
-				BoxesJSON:  boxesJSON,
-			}
-			if err := store.SaveOCRFrame(frame); err != nil {
-				log.Printf("[ocr] failed to save frame for session %s: %v", session.ID, err)
+			if !w.indexSnapshot(session, snap, langs) {
 				continue
 			}
 			frameCount++
-
-			// Record that this snapshot's persisted focus rect WAS the
-			// actual OCR scope. The audit UI keys the dashed rect overlay
-			// on this flag so it never claims "OCR scoped to focused
-			// window" for snapshots where the cropper rejected the rect.
-			if usedFocusRect {
-				if err := store.MarkSnapshotOCRUsedFocusRect(snap.ID); err != nil {
-					log.Printf("[ocr] failed to mark ocr_used_focus_rect for snapshot %d: %v", snap.ID, err)
-				}
-			}
 
 			if i+1 < len(selected) && !sleepWithContext(ctx, ocrBackgroundFramePause) {
 				return
@@ -402,6 +310,113 @@ func (w *ActivityOCRWorker) processSession(ctx context.Context, session Activity
 			}
 		}()
 	}
+}
+
+// Serialize a local OCR read and its write-back with replacement of held pixels.
+func (w *ActivityOCRWorker) indexSnapshot(session ActivitySessionRow, snap ActivitySnapshotRow, langs []string) bool {
+	am := w.app.activity
+	am.privacyImageMu.RLock()
+	defer am.privacyImageMu.RUnlock()
+	store := am.store
+	jpegData, err := os.ReadFile(filepath.Join(store.SnapshotsDir(), snap.FilePath))
+	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Printf("[ocr] read snapshot: %v", err)
+		}
+		return false
+	}
+	frame, usedFocusRect, err := recognizeSnapshotOCR(w.engine, snap, jpegData, langs, session.StartTime)
+	if err != nil || frame.Text == "" {
+		return false
+	}
+	if err := store.saveOCRFrame(frame, true); err != nil {
+		log.Printf("[ocr] failed to save frame for session %s: %v", session.ID, err)
+		return false
+	}
+
+	// Record that this snapshot's persisted focus rect WAS the
+	// actual OCR scope. The audit UI keys the dashed rect overlay
+	// on this flag so it never claims "OCR scoped to focused
+	// window" for snapshots where the cropper rejected the rect.
+	if usedFocusRect {
+		if err := store.MarkSnapshotOCRUsedFocusRect(snap.ID); err != nil {
+			log.Printf("[ocr] failed to mark ocr_used_focus_rect for snapshot %d: %v", snap.ID, err)
+		}
+	}
+
+	return true
+}
+
+func recognizeSnapshotOCR(engine ocr.Engine, snap ActivitySnapshotRow, jpegData []byte, langs []string, startTime int64) (OCRFrameRow, bool, error) {
+	// Crop to the focused-window rect captured alongside the JPEG so
+	// OCR sees only the window the user was working in. Other apps,
+	// background notifications, and adjacent on-screen content stay
+	// out of the triage prompt. If no rect was recorded (legacy
+	// snapshot, multi-display fallback, non-darwin) the helper
+	// returns the original bytes and we OCR the full frame.
+	ocrInput := jpegData
+	usedFocusRect := false
+	var ocrCropRect image.Rectangle
+	if cropped, cropRect, cropErr := cropForOCR(
+		snap, jpegData, snapshotQuality,
+	); cropErr != nil {
+		log.Printf("[ocr] focus-rect crop failed for snapshot %s: %v (falling back to full frame)", snap.FilePath, cropErr)
+	} else if !cropRect.Empty() {
+		ocrInput = cropped
+		ocrCropRect = cropRect
+		usedFocusRect = true
+	}
+
+	prio := ocr.PriorityLow
+	callID := nextOCRBreadcrumbID()
+	ocrStart := time.Now()
+	log.Printf("[ocr] breadcrumb start call_id=%d source=background-snapshot priority=%s session=%s snapshot=%d file=%s bytes=%d input_bytes=%d",
+		callID, ocrPriorityLabel(prio), snap.SessionID, snap.ID, filepath.Base(snap.FilePath), len(jpegData), len(ocrInput))
+
+	result, observations, err := recognizeBackgroundOCRText(engine, ocrInput, langs, prio)
+	if err != nil {
+		log.Printf("[ocr] breadcrumb failed call_id=%d source=background-snapshot duration_ms=%d err=%v",
+			callID, time.Since(ocrStart).Milliseconds(), err)
+		log.Printf("[ocr] recognize failed for snapshot %s: %v", snap.FilePath, err)
+		return OCRFrameRow{}, false, err
+	}
+	log.Printf("[ocr] breadcrumb done call_id=%d source=background-snapshot duration_ms=%d text_len=%d confidence=%.3f",
+		callID, time.Since(ocrStart).Milliseconds(), len(result.Text), result.Confidence)
+
+	text := ocr.NormalizeFullwidth(removeCJKSpaces(result.Text))
+	if len(text) < ocrMinTextLen {
+		text = ""
+	}
+
+	// Persist the boxes the engine already computed, mapped from the
+	// focus-crop space back to full-frame normalized coordinates, so
+	// the tag-highlight path never has to re-OCR this frame. A header
+	// dims failure only degrades this frame to the on-demand path.
+	boxesJSON := ""
+	if usedFocusRect {
+		if imgW, imgH, dimErr := fullImageDimensions(jpegData); dimErr == nil {
+			boxesJSON = marshalOCRBoxes(observationsToFullFrameBoxes(observations, ocrCropRect, imgW, imgH))
+		} else {
+			log.Printf("[ocr] skip box persist for snapshot %s: read dims: %v", snap.FilePath, dimErr)
+		}
+	} else {
+		boxesJSON = marshalOCRBoxes(observationsToFullFrameBoxes(observations, image.Rectangle{}, 0, 0))
+	}
+
+	// Snapshot-based OCR path: we OCR'd a JPEG snapshot directly,
+	// so the row's SegmentID column actually stores activity_snapshots.id
+	// (NOT activity_segments.id). FrameTime is a session-relative offset
+	// in seconds. See the OCRFrameRow doc comment for the full contract
+	// — consumers must handle both interpretations.
+	frame := OCRFrameRow{
+		SessionID:  snap.SessionID,
+		SegmentID:  snap.ID,
+		FrameTime:  float64(snap.Timestamp-startTime) / 1000.0,
+		Text:       text,
+		Confidence: result.Confidence,
+		BoxesJSON:  boxesJSON,
+	}
+	return frame, usedFocusRect, nil
 }
 
 // recognizeBackgroundOCRText runs box-mode OCR and joins the per-line text.

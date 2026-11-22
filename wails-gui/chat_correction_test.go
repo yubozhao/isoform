@@ -85,6 +85,10 @@ func TestCorrectIsoformSavesTheCorrectionWithUndo(t *testing.T) {
 	if err != nil || undo == nil || undo.ToolName != chatCorrectionUndoTool || !strings.Contains(undo.ToolInput, "Who you know › Lena, Priya") || mainChatRowClass(*undo, time.Now()) != MainChatRowConversation {
 		t.Fatalf("undo reply = %+v %v", undo, err)
 	}
+	var reply map[string]string
+	if err := json.Unmarshal([]byte(undo.ToolInput), &reply); err != nil || len(reply) != 2 || reply["correctionId"] != lineID {
+		t.Fatalf("legacy undo reply = %v %v", reply, err)
+	}
 	if _, ok := answersStanding(rig.app.answersLedger().entries())["correction:"+lineID]; ok {
 		t.Fatal("Undo left the correction standing in the answers ledger")
 	}

@@ -53,7 +53,7 @@ func TestAssistantHistoryPassTwoRealModel(t *testing.T) {
 		t.Fatal("real home unavailable for CLI sign-in")
 	}
 	roots, _, now := historyFixture(t)
-	scan := scanAssistantHistory(roots, now)
+	scan := fixtureHistoryScan(t, roots, now)
 	if len(scan.Projects) != 1 {
 		t.Fatalf("expected one synthetic project, got %d", len(scan.Projects))
 	}

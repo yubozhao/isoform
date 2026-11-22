@@ -119,6 +119,11 @@ func (a *App) generateTimelineRunSummary(ctx context.Context, run ActivityTimeli
 	if job == nil {
 		return nil, err
 	}
+	ctx, given, opened := withLearningScope(ctx, "sense")
+	if opened {
+		defer a.finishAssistantCall(given)
+	}
+	given.addSessions(job.group.SessionIDs)
 
 	ctx, cancel := context.WithTimeout(ctx, timelineGroupSummaryTimeout)
 	defer cancel()

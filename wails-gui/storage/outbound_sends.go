@@ -78,7 +78,7 @@ func sameOutboundSendSnapshot(left, right OutboundSendRow) bool {
 }
 
 func (s *Store) LoadOutboundSend(ctx context.Context, momentID, revision string) (*OutboundSendRow, error) {
-	row, err := scanOutboundSend(s.db.QueryRowContext(ctx, `SELECT `+outboundSendColumns+` FROM outbound_sends_v1 WHERE moment_id = ? AND revision = ?`, momentID, revision))
+	row, err := scanOutboundSend(s.committedReader().QueryRowContext(ctx, `SELECT `+outboundSendColumns+` FROM outbound_sends_v1 WHERE moment_id = ? AND revision = ?`, momentID, revision))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -177,7 +177,7 @@ func (s *Store) MarkOutboundSendFinalized(ctx context.Context, momentID, revisio
 }
 
 func (s *Store) ListOutboundSendsWaiting(ctx context.Context) ([]OutboundSendRow, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+outboundSendColumns+` FROM outbound_sends_v1 WHERE state IN (?, ?) AND followup_at > 0 ORDER BY followup_at, moment_id, revision`, OutboundSendAccepted, OutboundSendFinalized)
+	rows, err := s.committedReader().QueryContext(ctx, `SELECT `+outboundSendColumns+` FROM outbound_sends_v1 WHERE state IN (?, ?) AND followup_at > 0 ORDER BY followup_at, moment_id, revision`, OutboundSendAccepted, OutboundSendFinalized)
 	if err != nil {
 		return nil, err
 	}
@@ -196,7 +196,7 @@ func (s *Store) ListOutboundSendsWaiting(ctx context.Context) ([]OutboundSendRow
 // ListOutboundSendsSentSince lists the sends Mail or Slack accepted at or after
 // since (unix ms), newest first: the phone's Done rows for sent replies.
 func (s *Store) ListOutboundSendsSentSince(ctx context.Context, since int64) ([]OutboundSendRow, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+outboundSendColumns+` FROM outbound_sends_v1 WHERE state IN (?, ?) AND sent_at >= ? ORDER BY sent_at DESC, moment_id, revision`, OutboundSendAccepted, OutboundSendFinalized, since)
+	rows, err := s.committedReader().QueryContext(ctx, `SELECT `+outboundSendColumns+` FROM outbound_sends_v1 WHERE state IN (?, ?) AND sent_at >= ? ORDER BY sent_at DESC, moment_id, revision`, OutboundSendAccepted, OutboundSendFinalized, since)
 	if err != nil {
 		return nil, err
 	}
@@ -310,7 +310,7 @@ func (s *Store) ClaimSingleOutboundSend(ctx context.Context, row OutboundSendRow
 // LoadSingleOutboundSend finds an attempt that prevents another send of the
 // same draft. Failed attempts are excluded because they may be retried.
 func (s *Store) LoadSingleOutboundSend(ctx context.Context, momentID string) (*OutboundSendRow, error) {
-	row, err := scanOutboundSend(s.db.QueryRowContext(ctx, `SELECT `+outboundSendColumns+` FROM outbound_sends_v1 WHERE moment_id = ? AND state <> ? ORDER BY created_at DESC LIMIT 1`, momentID, OutboundSendFailed))
+	row, err := scanOutboundSend(s.committedReader().QueryRowContext(ctx, `SELECT `+outboundSendColumns+` FROM outbound_sends_v1 WHERE moment_id = ? AND state <> ? ORDER BY created_at DESC LIMIT 1`, momentID, OutboundSendFailed))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}

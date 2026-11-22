@@ -284,30 +284,6 @@ describe('tts player', () => {
         await firstPlayback;
     });
 
-    it('auto-speaks identical replies when they have different message ids', async () => {
-        let resolveFirst!: (audio: string) => void;
-        const first = new Promise<string>((resolve) => {
-            resolveFirst = resolve;
-        });
-        bindings.getAutoSpeakEnabled.mockResolvedValue(true);
-        bindings.splitSpeechText.mockResolvedValue(['same']);
-        bindings.synthesizeSpeech
-            .mockReturnValueOnce(first)
-            .mockResolvedValue('');
-
-        const { maybeAutoSpeak } = await import('./tts-player');
-        const firstPlayback = maybeAutoSpeak('message-1', 'same reply');
-        await vi.waitFor(() => {
-            expect(bindings.synthesizeSpeech).toHaveBeenCalledTimes(1);
-        });
-
-        await maybeAutoSpeak('message-2', 'same reply');
-        expect(bindings.synthesizeSpeech).toHaveBeenCalledTimes(2);
-
-        resolveFirst('');
-        await firstPlayback;
-    });
-
     // Documents the hazard speakOnce avoids: a text/id-keyed call repeated
     // while active is a deliberate stop (needed for the manual button), which
     // is why auto-speak paths use speakOnce instead.

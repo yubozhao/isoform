@@ -894,6 +894,11 @@ func (c *ActivityTriager) shouldEvaluateGroupReason(group sessionGroup) string {
 
 // triageGroup runs AI triage on a session group and generates memory/knowledge if worthy.
 func (c *ActivityTriager) triageGroup(ctx context.Context, group sessionGroup) {
+	// Every call this stretch makes counts in one See them entry.
+	ctx, dayScope, opened := withDayScope(ctx, group)
+	if opened && c.app != nil {
+		defer c.app.finishAssistantCall(dayScope)
+	}
 	// Recheck historical sources before changing their status or dispatching
 	// observers. An empty summary is not a privacy gate for those earlier reads.
 	if !c.triageGroupAllowsModelRead(group) {
@@ -1313,6 +1318,15 @@ func classifyKnowledgeResponse(knowledge *knowledgeGenerationResponse) (action s
 // happened instead of leaving the row stuck at "dispatched". runID == 0 means
 // no row was inserted (e.g. semaphore-skipped path) and writebacks are no-ops.
 func (c *ActivityTriager) generateAndSaveKnowledge(ctx context.Context, runID int64, group sessionGroup, summary string, profile SessionContentProfile) {
+	// See them: what this learns about you is its own group (design T10),
+	// apart from the stretch that read the day.
+	ctx, given, opened := withLearningScope(ctx, learningGroupAbout)
+	if opened && c.app != nil {
+		defer c.app.finishAssistantCall(given)
+	}
+	for _, s := range group.Sessions {
+		given.add(activitySessionSourceKind(s), s.ID, 1)
+	}
 	session := group.Sessions[0]
 
 	if profile.Dominant == ContentModeAmbient {
@@ -1334,6 +1348,9 @@ func (c *ActivityTriager) generateAndSaveKnowledge(ctx context.Context, runID in
 	// All steps are best-effort — telemetry must never block or panic the
 	// knowledge pipeline.
 	updateOutcome := func(status, reason string) {
+		if status == "created" || status == "updated" {
+			given.madeClaims(1)
+		}
 		if status == "error" {
 			reason = activityLogFieldMetadata("error", reason)
 		}
@@ -1769,6 +1786,15 @@ func (c *ActivityTriager) updateActivityMemory(ctx context.Context, updateID str
 // happened instead of leaving the row stuck at "dispatched". runID == 0 means
 // no row was inserted (e.g. semaphore-skipped path) and writebacks are no-ops.
 func (c *ActivityTriager) generateAndSaveMemory(ctx context.Context, runID int64, group sessionGroup, summary string, profile SessionContentProfile) {
+	// See them: what this learns about you is its own group (design T10),
+	// apart from the stretch that read the day.
+	ctx, given, opened := withLearningScope(ctx, learningGroupAbout)
+	if opened && c.app != nil {
+		defer c.app.finishAssistantCall(given)
+	}
+	for _, s := range group.Sessions {
+		given.add(activitySessionSourceKind(s), s.ID, 1)
+	}
 	session := group.Sessions[0]
 
 	// updateOutcome writes back the real memory generation outcome to
@@ -1778,6 +1804,9 @@ func (c *ActivityTriager) generateAndSaveMemory(ctx context.Context, runID int64
 	// All steps are best-effort — telemetry must never block or panic the
 	// memory pipeline.
 	updateOutcome := func(status, reason string) {
+		if status == "created" || status == "updated" {
+			given.madeClaims(1)
+		}
 		if status == "error" {
 			reason = activityLogFieldMetadata("error", reason)
 		}

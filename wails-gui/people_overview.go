@@ -799,6 +799,19 @@ func (a *App) getPersonDetail(id string, cache *peopleReadGateCache) (PersonDeta
 		return PersonDetail{}, err
 	}
 	detail := PersonDetail{ID: p.ID, Name: p.DisplayName, Relationship: p.Relationship, Notes: p.Notes, ResearchSummary: research.Summary, Loops: []PersonLoop{}, Together: []PersonTogether{}, SharedTopics: []PersonTopic{}, SeenIn: []string{}}
+	allowed, err := a.peopleProfileRead(ctx, p, cache)
+	if err != nil {
+		return PersonDetail{}, err
+	}
+	if allowed {
+		notes, err := a.personCorrectionNotes(ctx, p.ID)
+		if err != nil {
+			return PersonDetail{}, err
+		}
+		if notes != "" {
+			detail.Notes = strings.TrimSpace(detail.Notes + "\n" + notes)
+		}
+	}
 	rows := []PrincipalWithStatsDTO{{Principal: principalToDTO(p)}}
 	stages.mark("base")
 	loops, err := a.peopleLoops(ctx, rows, time.Now(), cache)

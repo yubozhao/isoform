@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChevronDown, ChevronRight, Download, Languages, Moon, MoreHorizontal, Plus, RefreshCw, Target } from 'lucide-react';
-import { SearchIcon } from '@/assets/icons/SearchIcon';
+import { ChevronDown, ChevronRight, Languages, Moon, MoreHorizontal, Plus, RefreshCw, Target } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -15,7 +14,6 @@ import {
 import { cn } from '@/lib/utils';
 import { useInsideYou } from '@/components/you/you-page';
 import {
-    SearchMemory,
     SyncMemoryIndex,
     TranslateMemoryEntryToCurrentLanguage,
 } from '../../wailsjs/go/main/App';
@@ -24,6 +22,7 @@ import {
     ReassignMemoryAttribution,
     RefreshDerivedView,
     type AboutYouBelief,
+    type AboutYouPortrait,
     type AboutYouView,
     type GoalItemView,
     type MemoryForgetPreview,
@@ -39,13 +38,16 @@ import { MemoryHistoryDialog } from '@/components/memory-history-dialog';
 import { MemoryNewDialog } from '@/components/memory-new-dialog';
 import { MemoryTranslateAllDialog } from '@/components/memory-translate-dialog';
 import { RejectAttributionDialog } from '@/components/memory-reject-dialog';
-import { MemoryRow, memoryText, memoryLabel, learnedWhen } from '@/components/memory-row';
+import { memoryLabel, learnedWhen } from '@/components/memory-row';
 import { MemoryDetail } from '@/components/memory-detail';
-import { AboutYouPortraitCard, type PortraitEvidence } from '@/components/about-you/portrait';
-import { NewThisWeek, answeredStatus, useBeliefReview, type ReviewItem, type ReviewResult } from '@/components/about-you/new-this-week';
+import { ClaimLine, NewThisWeek, useBeliefReview, type ReviewItem } from '@/components/about-you/new-this-week';
+import { InOneLine } from '@/components/about-you/in-one-line';
+import { ConfirmedSection, NotRightSection, type ClaimRow } from '@/components/about-you/claim-sections';
+import { WhySheet } from '@/components/why/WhySheet';
 import { GoalStory, useGoalsBoard } from '@/components/goals/GoalsPage';
 import { GoalsGroup, useGoalsCopy } from '@/components/goals/GoalsGroup';
-import { beliefInSecondPerson, MEMORY_KINDS, humanMemoryText, memoryApps, memoryKind, memoryPoints, type MemoryKind, visibleMemoryEntries } from '@/lib/memory-content';
+import { useFeatureSwitches } from '@/hooks/useFeatureSwitches';
+import { beliefInSecondPerson, humanMemoryText, memoryApps, memoryPoints, visibleMemoryEntries } from '@/lib/memory-content';
 import { beliefSummary } from '@/lib/about-you';
 import { historyFound, historyName, useFirstDay } from '@/hooks/useFirstDay';
 import { MEMORY_AREAS, memoryArea, sentMessageEvidence, type MemoryArea } from '@/lib/communication';
@@ -86,45 +88,16 @@ type BeliefGroup = MemoryArea | typeof AGENTS_GROUP;
 const AGENT_PRACTICE_TOP_CAP = 1;
 /** The Goals group's key in the collapsed set, beside the belief areas. */
 const GOALS_GROUP = 'goals';
+/** Claims a group of The rest shows before "Show n more": thousands never mount at once. */
+const REST_PAGE = 20;
 
 /**
  * Most accurate "updated" timestamp (ms) for a memory entry.
  * Prefers frontmatter `Updated` over file mtime, since reindex/touch
  * operations can reset mtime and misstate when a belief was learned.
  */
-/** The list chip changes with the answer, before the next read (answer feedback section 7). */
-function withAnswer(belief: AboutYouBelief | undefined, result: ReviewResult | undefined): AboutYouBelief | undefined {
-    if (!belief || !result) return belief;
-    const status = answeredStatus(result, belief.status);
-    return status === belief.status ? belief : { ...belief, status };
-}
-
 function bestTime(entry: main.MemoryEntry): number {
     return entry.updatedAt && entry.updatedAt > 0 ? entry.updatedAt : entry.modTime;
-}
-
-function highlightMatches(text: string, query: string): ReactNode {
-    const needle = query.trim().toLowerCase();
-    if (!needle) return text;
-    const lower = text.toLowerCase();
-    const out: ReactNode[] = [];
-    let cursor = 0;
-    let key = 0;
-    for (let pos = lower.indexOf(needle); pos !== -1; pos = lower.indexOf(needle, cursor)) {
-        if (pos > cursor) out.push(text.slice(cursor, pos));
-        out.push(
-            <mark
-                key={key++}
-                className="rounded-sm bg-surface-active px-0.5 font-medium text-ink"
-            >
-                {text.slice(pos, pos + needle.length)}
-            </mark>,
-        );
-        cursor = pos + needle.length;
-    }
-    if (cursor === 0) return text;
-    if (cursor < text.length) out.push(text.slice(cursor));
-    return out;
 }
 
 function formatFileSize(bytes: number): string {
@@ -160,7 +133,6 @@ export function MemoryPage({
     const [about, setAbout] = useState<AboutYouView | null>(() => pageQueryCache.peek<AboutYouView>('GetAboutYou') ?? null);
     const [aboutFailed, setAboutFailed] = useState(false);
     const rootRef = useRef<HTMLDivElement>(null);
-    const searchRef = useRef<HTMLInputElement>(null);
     // Reads apply in order, so a slow early response never replaces a newer one.
     const entriesRead = useRef(0);
     const aboutRead = useRef(0);
@@ -169,10 +141,10 @@ export function MemoryPage({
     const seeded = useRef(pageQueryCache.peek('GetMemoryEntries') !== undefined);
     const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId ?? null);
     const [editRequest, setEditRequest] = useState(0);
-    const [keyword, setKeyword] = useState('');
-    const [searchResults, setSearchResults] = useState<main.MemorySearchResult[] | null>(null);
-    const [, setSearching] = useState(false);
-    const [kindFilter, setKindFilter] = useState<MemoryKind | 'all'>('all');
+    const [portrait, setPortrait] = useState<AboutYouPortrait | null>(() => pageQueryCache.peek<AboutYouPortrait>('GetAboutYouPortrait') ?? null);
+    const [whyFor, setWhyFor] = useState<string | null>(null);
+    const [restShown, setRestShown] = useState<Record<string, number>>({});
+    const [importsOpen, setImportsOpen] = useState<Set<string>>(() => new Set());
     const [syncing, setSyncing] = useState(false);
     const [forgetTarget, setForgetTarget] = useState<{ id: string; title: string; copyIds?: string[]; copyTexts?: string[]; rejectionReason?: string } | null>(null);
     const [rejectTarget, setRejectTarget] = useState<{ id: string; title: string } | null>(null);
@@ -201,6 +173,7 @@ export function MemoryPage({
     // Goals share the detail beside the list with beliefs: the board owns the
     // open goal, and the page keeps the two from being open at once.
     const goals = useGoalsBoard({ openGoalId, openGoalSignal, onOpenGoalHandled, inPlaceFailures: true });
+    const features = useFeatureSwitches();
     const { setOpenId: setGoalOpenId } = goals;
     const goalOpenId = goals.openId;
     const goalOpened = goals.opened ?? null;
@@ -239,9 +212,10 @@ export function MemoryPage({
         // Y12: the portrait paints with the page, so the first read waits for
         // it too; a failed portrait read still opens the page and says so.
         Promise.all([GetMemoryEntries() as Promise<main.MemoryEntry[]>, GetAboutYouPortrait().catch(() => null)])
-            .then(([result]) => {
+            .then(([result, portraitRead]) => {
                 if (read !== entriesRead.current) return;
                 setEntries(visibleMemoryEntries(result ?? []));
+                if (portraitRead) setPortrait(portraitRead);
                 setEntriesState('ready');
             })
             .catch(() => {
@@ -291,9 +265,9 @@ export function MemoryPage({
         setAbout(null);
         setAboutFailed(false);
         setStatus(null);
+        setPortrait(null);
+        setWhyFor(null);
         setSelectedId(null);
-        setKeyword('');
-        setSearchResults(null);
         setReviewOrder([]);
         reviewSnapshots.current.clear();
         setForgetTarget(null);
@@ -319,55 +293,12 @@ export function MemoryPage({
         if (seeded.current) markPageContent('about-you');
     }, []);
 
-    // Text hits remain available immediately, even offline or before indexing.
-    // Indexed matches supplement the same grouped rows, never filename rows.
-    useEffect(() => {
-        let cancelled = false;
-        setSearchResults(null);
-        setSearching(false);
-        if (!keyword.trim()) return;
-        const timer = setTimeout(() => {
-            setSearching(true);
-            SearchMemory(keyword.trim(), 20)
-                .then((results) => { if (!cancelled) setSearchResults(results ?? []); })
-                .catch(() => { if (!cancelled) setSearchResults([]); })
-                .finally(() => { if (!cancelled) setSearching(false); });
-        }, 300);
-        return () => {
-            cancelled = true;
-            clearTimeout(timer);
-        };
-    }, [keyword, entries]);
-
     const beliefsById = useMemo(
         () => new Map((about?.beliefs ?? []).map((belief) => [belief.id, belief] as [string, AboutYouBelief])),
         [about],
     );
-    // The beliefs behind a portrait phrase, in the words the groups show.
-    const describePortraitBelief = useCallback((id: string): PortraitEvidence | undefined => {
-        const entry = entries.find((row) => row.id === id);
-        if (!entry) return undefined;
-        const belief = beliefsById.get(id);
-        return {
-            id,
-            text: beliefInSecondPerson(humanMemoryText(memoryPoints(entry.content)[0]?.text ?? '')) || memoryLabel(entry, t),
-            status: belief?.status ?? 'inferred',
-            confidence: belief?.confidence ?? 0,
-            sessionCount: belief?.sessionCount ?? 0,
-            dayCount: belief?.dayCount ?? 0,
-            apps: memoryApps(entry.apps ?? []),
-        };
-    }, [beliefsById, entries, t]);
-
-    const filteredEntries = useMemo(() => {
-        const query = keyword.trim().toLowerCase();
-        const matchedIds = new Set((searchResults ?? []).map((result) => result.path.replace(/\.md$/, '')));
-        return entries.filter((entry) => {
-            if (kindFilter !== 'all' && memoryKind(entry) !== kindFilter) return false;
-            return !query || memoryText(entry).toLowerCase().includes(query)
-                || memoryLabel(entry, t).toLowerCase().includes(query) || matchedIds.has(entry.id);
-        });
-    }, [entries, keyword, searchResults, kindFilter, t]);
+    // About you has no search box (design answer A7): ⌘K's Claims group finds any claim.
+    const filteredEntries = entries;
 
     // One card per idea (W40, Y33): saved copies whose titles match share a
     // card. Actions reach every copy, so the groups span all entries.
@@ -480,12 +411,12 @@ export function MemoryPage({
     // New beliefs keep their place once shown, so a card can report what
     // happened after its belief leaves "New this week".
     useEffect(() => {
-        const ids = about?.newThisWeek ?? [];
+        const ids = [...(about?.newThisWeek ?? []), ...(about?.importMore ?? []).filter((more) => importsOpen.has(more.label)).flatMap((more) => more.ids)];
         setReviewOrder((prev) => {
             const added = ids.filter((id) => !prev.includes(id));
             return added.length ? [...prev, ...added] : prev;
         });
-    }, [about]);
+    }, [about, importsOpen]);
     // The first days (first-day handoff §5): the three most confident beliefs
     // from the Claude Code or Codex history come first, with their source.
     const firstDay = useFirstDay();
@@ -532,7 +463,8 @@ export function MemoryPage({
         return items;
     }, [beliefsById, checkFirstIds, entries, i18n.language, review.results, t]);
     const reviewItems = useMemo(() => {
-        const current = new Set((about?.newThisWeek ?? []).filter((id) => !checkFirstSnapshots.current.has(id)));
+        const opened = (about?.importMore ?? []).filter((more) => importsOpen.has(more.label)).flatMap((more) => more.ids);
+        const current = new Set([...(about?.newThisWeek ?? []), ...opened].filter((id) => !checkFirstSnapshots.current.has(id)));
         const list = new Intl.ListFormat(i18n.language, { style: 'long', type: 'conjunction' });
         const items: ReviewItem[] = [];
         const savedAt = new Map<string, number>();
@@ -546,7 +478,9 @@ export function MemoryPage({
                     : learnedWhen(t, belief?.firstLearnedAt || bestTime(entry));
                 const apps = memoryApps(entry.apps ?? []);
                 const communication = memoryArea(belief?.area ?? entry.area) === 'communication';
-                const seenWhere = apps.length ? t('aboutYou.review.where', { seen, apps: list.format(apps) }) : seen;
+                const seenWhere = belief?.importedFrom
+                    ? t('aboutYou.importedFrom', { label: belief.importedFrom })
+                    : apps.length ? t('aboutYou.review.where', { seen, apps: list.format(apps) }) : seen;
                 const evidence = sentMessageEvidence(t, belief, entry.apps ?? [], i18n.language);
                 const item: ReviewItem = {
                     id,
@@ -580,7 +514,66 @@ export function MemoryPage({
             const copyIds = copyIdsOf(head.id);
             return { ...head, copyIds, copies: copyIds.length };
         });
-    }, [about, beliefsById, copyIdsOf, entries, i18n.language, ideaGroupOf, review.results, reviewOrder, t, checkFirstItems]);
+    }, [about, beliefsById, copyIdsOf, entries, i18n.language, ideaGroupOf, importsOpen, review.results, reviewOrder, t, checkFirstItems]);
+
+    // Every idea is one claim line (computer-you v1.0.0 rule 3), in one
+    // section: To check above, then Confirmed (with how), the rest by area,
+    // and Not right. A line answered here stays where it was, with its
+    // answer and Undo, until the person leaves the page.
+    const inToCheck = useMemo(() => new Set([...checkFirstItems, ...reviewItems].flatMap((item) => item.copyIds ?? [item.id])), [checkFirstItems, reviewItems]);
+    const claimText = useCallback((entry: main.MemoryEntry) => ideaTitle(entry), [ideaTitle]);
+    const workWithMeIds = useMemo(() => new Set((portrait?.workWithMe ?? []).filter((line) => line.confirmed).flatMap((line) => line.memoryIds ?? [])), [portrait]);
+    const claims = useMemo(() => {
+        const confirmed: ClaimRow[] = [];
+        const notRight: ClaimRow[] = [];
+        const rest = new Map<BeliefGroup, ReviewItem[]>();
+        for (const [group, rows] of groupedEntries) {
+            for (const { head, copies } of rows) {
+                if (inToCheck.has(head.id)) continue;
+                const belief = beliefsById.get(head.id);
+                const answeredHere = !!review.results[head.id];
+                if (!answeredHere && belief?.status === 'confirmed') {
+                    if (!workWithMeIds.has(head.id)) confirmed.push({ id: head.id, text: claimText(head), where: belief.importedFrom ? t('aboutYou.importedFrom', { label: belief.importedFrom }) : undefined, belief });
+                    continue;
+                }
+                if (!answeredHere && belief?.status === 'not_quite') {
+                    notRight.push({ id: head.id, text: claimText(head), belief });
+                    continue;
+                }
+                const seen = belief && belief.sessionCount > 0 ? t('aboutYou.review.seen', { count: belief.sessionCount }) : learnedWhen(t, belief?.firstLearnedAt || bestTime(head));
+                const copyIds = copyIdsOf(head.id);
+                const list = rest.get(group) ?? [];
+                list.push({
+                    id: head.id,
+                    text: claimText(head),
+                    where: belief?.importedFrom ? t('aboutYou.importedFrom', { label: belief.importedFrom }) : seen,
+                    copyIds,
+                    copies: Math.max(copies, copyIds.length),
+                    communication: group === 'communication',
+                    portraitCandidate: belief?.portraitCandidate,
+                    status: belief?.status ?? 'inferred',
+                });
+                rest.set(group, list);
+            }
+        }
+        confirmed.sort((a, b) => (b.belief?.confirmedHowAt || b.belief?.confirmedAt || 0) - (a.belief?.confirmedHowAt || a.belief?.confirmedAt || 0));
+        notRight.sort((a, b) => (b.belief?.notQuiteAt ?? 0) - (a.belief?.notQuiteAt ?? 0));
+        return { confirmed, notRight, rest };
+    }, [beliefsById, claimText, copyIdsOf, groupedEntries, inToCheck, review.results, t, workWithMeIds]);
+    const workWithMe = useMemo(() => (portrait?.workWithMe ?? [])
+        .filter((line) => line.confirmed)
+        .map((line, index): ClaimRow => {
+            const id = line.memoryIds?.[0] ?? `work-with-me-${index}`;
+            return { id, text: line.text, belief: beliefsById.get(id) };
+        }), [beliefsById, portrait]);
+    // All judged (computer-activity v1.1.0 rule 5): the judged ideas, not every belief.
+    const judgedIdeaCount = useMemo(
+        () => ideaGroups.filter((group) => group.copies.some((entry) => {
+            const status = beliefsById.get(entry.id)?.status;
+            return status === 'confirmed' || status === 'not_quite';
+        })).length,
+        [beliefsById, ideaGroups],
+    );
 
     const handleForgot = useCallback(
         (preview: MemoryForgetPreview) => {
@@ -612,22 +605,6 @@ export function MemoryPage({
         setSelectedId(null);
         setGoalOpenId(goal.id);
     }, [setGoalOpenId]);
-
-    const handleEdit = useCallback((entry: main.MemoryEntry) => {
-        setSelectedId(entry.id);
-        setGoalOpenId(null);
-        setEditRequest((request) => request + 1);
-    }, [setGoalOpenId]);
-
-    // Not quite from a portrait phrase asks the decided question in the detail.
-    const handleNotQuite = useCallback((id: string) => {
-        if (!entries.some((row) => row.id === id)) return;
-        setEditRequest(0);
-        setTranslateFailed(false);
-        setSelectedId(id);
-        setGoalOpenId(null);
-        review.ask(id);
-    }, [entries, review, setGoalOpenId]);
 
     const handleSync = useCallback(() => {
         setSyncing(true);
@@ -661,10 +638,6 @@ export function MemoryPage({
     const handleEscape = useCallback(() => {
         const focused = document.activeElement;
         if (focused instanceof HTMLTextAreaElement && rootRef.current?.contains(focused)) return true;
-        if (keyword && focused === searchRef.current) {
-            setKeyword('');
-            return true;
-        }
         if (selectedId) {
             setSelectedId(null);
             return true;
@@ -673,12 +646,8 @@ export function MemoryPage({
             setGoalOpenId(null);
             return true;
         }
-        if (keyword) {
-            setKeyword('');
-            return true;
-        }
         return false;
-    }, [keyword, selectedId, goalOpenId, setGoalOpenId]);
+    }, [selectedId, goalOpenId, setGoalOpenId]);
 
     useEffect(() => {
         if (!escapeRef) return;
@@ -730,10 +699,6 @@ export function MemoryPage({
                 <DropdownMenuItem onSelect={() => setNewDialogOpen(true)}>
                     <Plus />
                     {t('header.newFile')}
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => setImportDialogOpen(true)}>
-                    <Download />
-                    {t('header.importFromAi')}
                 </DropdownMenuItem>
                 {goals.page && !hasGoals && (
                     <DropdownMenuItem data-testid="menu-add-goal" onSelect={() => setAddingGoal(true)}>
@@ -792,43 +757,22 @@ export function MemoryPage({
     } else {
         beliefs = (
             <section aria-label={t('aboutYou.beliefs')} className="flex flex-col gap-5">
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">
-                    <div className="relative min-w-[200px] max-w-sm flex-1">
-                        <SearchIcon className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" />
-                        <input
-                            ref={searchRef}
-                            type="text"
-                            placeholder={t('searchPlaceholder') as string}
-                            aria-label={t('searchPlaceholder') as string}
-                            className="w-full rounded-lg border border-border bg-panel py-1.5 pl-8 pr-3 text-[13px] text-ink placeholder:text-muted focus:border-border-focus focus:outline-none"
-                            value={keyword}
-                            onChange={(e) => setKeyword(e.target.value)}
-                        />
-                    </div>
-                    <label className="flex items-center gap-2 text-[13px] text-muted">
-                        {t('sidebar.filterKind')}
-                        <select
-                            className="rounded-lg border border-border bg-panel px-2 py-1.5 text-[13px] text-ink focus:border-border-focus focus:outline-none"
-                            value={kindFilter}
-                            onChange={(event) => setKindFilter(event.target.value as MemoryKind | 'all')}
-                        >
-                            <option value="all">{t('sidebar.allKinds')}</option>
-                            {MEMORY_KINDS.map((kind) => (
-                                <option key={kind} value={kind}>{t(`kinds.${kind}`)}</option>
-                            ))}
-                        </select>
-                    </label>
-                </div>
-                {filteredEntries.length === 0 ? (
-                    <p className="m-0 py-6 text-center text-[13px] text-muted">{keyword.trim() ? t('sidebar.nothingMatches', { query: keyword.trim() }) : t('sidebar.noFilesMatch')}</p>
-                ) : (
-                    // Groups stack at full width; each group's beliefs flow into
-                    // as many columns as the width allows.
+                <>
+                    <ConfirmedSection
+                        rows={claims.confirmed}
+                        workWithMe={{ title: t('aboutYou.portrait.workWithMe.title'), rows: workWithMe }}
+                        onWhy={setWhyFor}
+                        onOpen={handleSelect}
+                    />
+                    {/* The rest (computer-you v1.0.0 rule 4): unjudged claims by
+                        area, each a claim line; a group mounts REST_PAGE at a time. */}
                     <div data-testid="belief-groups" className="flex flex-col gap-7">
-                        {Array.from(groupedEntries.entries()).map(([group, rows]) => {
+                        {Array.from(claims.rest.entries()).map(([group, rows]) => {
                             const agentsGroup = group === AGENTS_GROUP;
-                            const collapsed = !keyword.trim() && (agentsGroup ? !collapsedGroups.has(AGENTS_OPEN_KEY) : collapsedGroups.has(group));
+                            const collapsed = (agentsGroup ? !collapsedGroups.has(AGENTS_OPEN_KEY) : collapsedGroups.has(group));
                             const label = t(`aboutYou.areas.${group}`);
+                            const limit = restShown[group] ?? REST_PAGE;
+                            const more = rows.length - limit;
                             return (
                                 <Collapsible key={group} asChild open={!collapsed} onOpenChange={() => toggleGroup(agentsGroup ? AGENTS_OPEN_KEY : group)}>
                                 <section className="flex min-w-0 flex-col gap-1.5">
@@ -847,32 +791,48 @@ export function MemoryPage({
                                     {agentsGroup && (
                                         <p className="m-0 pb-1 text-[12.5px] text-muted">{t('aboutYou.agentsNote')}</p>
                                     )}
-                                    <CollapsibleContent data-testid="belief-group-rows" className="grid gap-x-6 gap-y-1.5 [grid-template-columns:repeat(auto-fill,minmax(min(100%,340px),1fr))]">
-                                    {rows.map(({ head: entry, copies }) => (
-                                        <MemoryRow
-                                            key={entry.id}
-                                            entry={entry}
-                                            copies={copies}
-                                            belief={withAnswer(beliefsById.get(entry.id), review.results[entry.id])}
-                                            showKind
-                                            selected={selectedId === entry.id}
-                                            onSelect={() => handleSelect(entry.id)}
-                                            onEdit={() => handleEdit(entry)}
-                                            onForget={() => forgetEntry(entry)}
-                                            onReject={() => rejectEntry(entry)}
-                                            highlight={(text) => highlightMatches(text, keyword)}
-                                        />
-                                    ))}
+                                    <CollapsibleContent data-testid="belief-group-rows" className="-mx-3 flex flex-col gap-0.5">
+                                        {rows.slice(0, limit).map((item) => (
+                                            <ClaimLine key={item.id} item={item} review={review} onWhy={setWhyFor} onOpen={handleSelect} />
+                                        ))}
+                                        {more > 0 && (
+                                            <Button size="sm" variant="link" className="mx-3 h-auto self-start px-0" onClick={() => setRestShown((prev) => ({ ...prev, [group]: limit + REST_PAGE }))}>
+                                                {t('aboutYou.showMore', { count: Math.min(more, REST_PAGE) })}
+                                            </Button>
+                                        )}
                                     </CollapsibleContent>
                                 </section>
                                 </Collapsible>
                             );
                         })}
                     </div>
-                )}
+                    <NotRightSection rows={claims.notRight} onUndone={loadAll} />
+                </>
             </section>
         );
     }
+
+    const importLink = (
+        <button
+            type="button"
+            data-testid="about-you-import"
+            onClick={() => setImportDialogOpen(true)}
+            className="self-start cursor-pointer rounded-sm border-0 bg-transparent p-0 text-[13px] text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
+        >
+            {t('you.import')}
+        </button>
+    );
+    const importMore = (about?.importMore ?? []).filter((more) => !importsOpen.has(more.label) && more.ids.length > 0);
+    const toCheckFooter = (
+        <div className="flex flex-col gap-1.5">
+            {importMore.map((more) => (
+                <Button key={more.label} size="sm" variant="link" className="h-auto self-start px-0" onClick={() => setImportsOpen((prev) => new Set(prev).add(more.label))}>
+                    {t('aboutYou.importMore', { count: more.ids.length, label: more.label })}
+                </Button>
+            ))}
+            {importLink}
+        </div>
+    );
 
     return (
         <div ref={rootRef} className="flex h-full min-h-0 bg-background text-ink">
@@ -910,28 +870,32 @@ export function MemoryPage({
                         </p>
                     )}
 
+                    {/* Nothing to check yet: the import link sits under the header line. */}
+                    {entriesState === 'ready' && reviewItems.length === 0 && <div className="-mt-4">{importLink}</div>}
+
+                    {/* In one line (redesign-you v1.0.0 rule 3): the portrait as one claim. */}
+                    {entriesState === 'ready' && entries.length > 0 && <InOneLine onWhy={setWhyFor} />}
+
                     <NewThisWeek
                         items={checkFirstItems}
                         review={review}
                         headingId="about-you-check-first"
                         title={t('aboutYou.firstDay.checkFirst')}
                         hint={firstDay.history ? t('aboutYou.firstDay.checkFirstHint', { history: historyName(firstDay.history.assistants, tCommon) }) : undefined}
+                        onWhy={setWhyFor}
+                        onOpen={handleSelect}
                     />
 
                     {/* New claims first, so this week's learning is checked while
                         it's fresh (computer-you v1.0.0 rule 4). */}
-                    <NewThisWeek items={reviewItems} review={review} />
+                    {reviewItems.length > 0 && <NewThisWeek items={reviewItems} review={review} onWhy={setWhyFor} onOpen={handleSelect} footer={toCheckFooter} />}
                     {/* Every claim judged (computer-activity v1.1.0, 15f): say so
                         once, with the count, then Confirmed below. */}
                     {entriesState === 'ready' && entries.length > 0 && reviewItems.length === 0 && checkFirstItems.length === 0 && (
                         <section data-testid="you-nothing-new" className="flex flex-col gap-1">
                             <h2 className="m-0 text-lg font-semibold text-ink">{t('you.nothingNew')}</h2>
-                            <p className="m-0 text-sm text-muted">{t('you.allJudged', { count: ideaCount || entries.length })}</p>
+                            <p className="m-0 text-sm text-muted">{t('you.allJudged', { count: judgedIdeaCount })}</p>
                         </section>
-                    )}
-
-                    {entriesState === 'ready' && entries.length > 0 && (
-                        <AboutYouPortraitCard describe={describePortraitBelief} onShowBelief={handleSelect} onNotQuiteBelief={handleNotQuite} />
                     )}
 
                     {aboutFailed && !about && entriesState === 'ready' && entries.length > 0 && (
@@ -941,7 +905,7 @@ export function MemoryPage({
                         </div>
                     )}
 
-                    <GoalsGroup
+                    {features.playbooks && <GoalsGroup
                         board={goals}
                         now={goalNow}
                         open={!collapsedGroups.has(GOALS_GROUP)}
@@ -951,7 +915,7 @@ export function MemoryPage({
                         onOpenGoal={openGoal}
                         selectedId={goalOpenId}
                         groupRef={goalsRef}
-                    />
+                    />}
 
                     {beliefs}
 
@@ -1078,6 +1042,21 @@ export function MemoryPage({
                 onBusyChange={setTranslateAllBusy}
                 onDone={loadAll}
             />
+
+            {whyFor && (
+                <WhySheet
+                    kind="claim"
+                    id={whyFor}
+                    open
+                    onOpenChange={(open) => { if (!open) setWhyFor(null); }}
+                    onOpenMoment={openActivitySession ? (moment) => {
+                        if (!moment.activitySessionId) return;
+                        setWhyFor(null);
+                        openActivitySession(moment.activitySessionId);
+                    } : undefined}
+                    onChanged={loadAbout}
+                />
+            )}
 
             <AIMemoryImportDialog
                 open={importDialogOpen}

@@ -10,6 +10,8 @@ import {
     SETTINGS_PAGES,
     SETTINGS_PAGE_IDS,
     SETTINGS_SECTIONS,
+    opensKeysSheet,
+    opensYouPage,
     pagesInSection,
     readSettingsOpenEvent,
     resolveSettingsTopic,
@@ -50,6 +52,10 @@ const OLD_TOPIC_IDS = [
     "mcp",
     "use-yansu-anywhere",
     "iphone",
+    "overview",
+    "profile",
+    "text-messages",
+    "phone-calls",
     "app-access",
     "google",
     "slackbot",
@@ -91,6 +97,9 @@ const DESTINATIONS = new Set<string>([...SETTINGS_PAGE_IDS, ...DEV_TOOLS_TOPIC_I
 // Emoji and pictographic symbols are not allowed in UI copy (CLAUDE.md rule 9).
 const PICTOGRAPHIC = /\p{Extended_Pictographic}/u;
 
+/** Subtitles design wrote as two sentences. */
+const TWO_SENTENCE_SUBTITLES = new Set(["pages.activity.subtitle"]);
+
 describe("settings registry", () => {
     it("resolves every old topic id to a registered page", () => {
         for (const id of OLD_TOPIC_IDS) {
@@ -104,11 +113,32 @@ describe("settings registry", () => {
 
     it("maps legacy ids to the page that now holds their content", () => {
         const expected: Record<string, string> = {
-            appearance: "appearance",
-            language: "general",
-            account: "general",
+            // Settings batch D1 (answers v1.0.0 T2): General, Profile and
+            // Appearance went into About; Read aloud and the text messages
+            // channel into Briefs and notifications; Overview and phone calls
+            // into What Isoform sees; Plugins, Skills and Tool servers into
+            // Your agents. Plugins, Tool servers and Chat apps stay until the
+            // switches only they hold have homes.
+            general: "about",
+            profile: "about",
+            appearance: "about",
+            language: "about",
+            account: "about",
             support: "about",
             subscription: "ai-provider",
+            skills: "ai-provider",
+            // Settings batch D2: Privacy and Storage went into Your data (keep
+            // times, the cap), About (diagnostic data, models) and What
+            // Isoform sees (app lists, agents' history, permissions).
+            security: "your-data",
+            storage: "your-data",
+            // Settings batch D3: App.tsx opens You › About you for `memory`
+            // (opensYouPage); in Settings it falls back to What Isoform sees.
+            memory: "activity",
+            overview: "activity",
+            "phone-calls": "activity",
+            "text-messages": "notifications",
+            "read-aloud": "notifications",
         };
         for (const [id, page] of Object.entries(expected)) {
             expect(resolveSettingsTopic(id)).toEqual({ page });
@@ -118,9 +148,39 @@ describe("settings registry", () => {
         for (const id of ["app-access", "cursor-overlay", "google", "slackbot", "notion", "github", "linear", "feishu-agent"]) {
             expect(resolveSettingsTopic(id)).toEqual({ page: "activity" });
         }
-        // Keyboard shortcuts and Read aloud now sit under General > Advanced.
-        expect(resolveSettingsTopic("keybindings")).toEqual({ page: "general", revealAdvanced: true });
-        expect(resolveSettingsTopic("read-aloud")).toEqual({ page: "general", revealAdvanced: true });
+        // Keyboard shortcuts is the Cmd+/ sheet: App.tsx opens it before
+        // Settings resolves anything, so here the old id only falls back to
+        // About.
+        expect(opensKeysSheet("keybindings")).toBe(true);
+        expect(opensKeysSheet("general")).toBe(false);
+        expect(opensKeysSheet(undefined)).toBe(false);
+        expect(resolveSettingsTopic("keybindings")).toEqual({ page: "about" });
+    });
+
+    it("keeps no page of its own for the sections settings batch D1 removed", () => {
+        for (const id of ["overview", "general", "profile", "appearance", "skills"]) {
+            expect(SETTINGS_PAGE_IDS as readonly string[], id).not.toContain(id);
+            expect(LEGACY_SETTINGS_TOPIC_IDS as readonly string[], id).toContain(id);
+            expect(SETTINGS_PAGE_IDS as readonly string[], id).toContain(resolveSettingsTopic(id).page);
+        }
+        expect(SETTINGS_SECTIONS.map((section) => section.id)).not.toContain("app");
+    });
+
+    it("keeps no Learning and memory page or Personal AI heading (settings batch D3)", () => {
+        expect(SETTINGS_PAGE_IDS as readonly string[]).not.toContain("memory");
+        expect(LEGACY_SETTINGS_TOPIC_IDS as readonly string[]).toContain("memory");
+        expect(SETTINGS_SECTIONS.map((section) => section.id)).not.toContain("personal-ai");
+        expect(opensYouPage("memory")).toBe(true);
+        expect(opensYouPage("activity")).toBe(false);
+        expect(opensYouPage(undefined)).toBe(false);
+    });
+
+    it("keeps no page of its own for Privacy and Storage (settings batch D2)", () => {
+        for (const id of ["security", "storage"]) {
+            expect(SETTINGS_PAGE_IDS as readonly string[], id).not.toContain(id);
+            expect(LEGACY_SETTINGS_TOPIC_IDS as readonly string[], id).toContain(id);
+            expect(resolveSettingsTopic(id)).toEqual({ page: "your-data" });
+        }
     });
 
     it("lets a deep link ask for Advanced and an anchor", () => {
@@ -128,10 +188,10 @@ describe("settings registry", () => {
             page: "ai-provider",
             revealAdvanced: true,
         });
-        expect(resolveSettingsTopic("memory", { advanced: true, anchor: "search-index" })).toEqual({
-            page: "memory",
+        expect(resolveSettingsTopic("iphone", { advanced: true, anchor: "server-address" })).toEqual({
+            page: "iphone",
             revealAdvanced: true,
-            anchor: "search-index",
+            anchor: "server-address",
         });
         expect(resolveSettingsTopic("slack", { advanced: true })).toEqual({
             page: "chat-apps",
@@ -168,6 +228,19 @@ describe("settings registry", () => {
         }
     });
 
+    it("keeps Plugins, Tool servers and Chat apps while they hold the only switch for a send", () => {
+        // Plugins holds topic-finds and memory-dream (on by default, both send
+        // to the assistant); Tool servers holds the MCP servers Chat calls;
+        // Chat apps holds the bots Chat answers through.
+        for (const id of ["plugins", "mcp", "chat-apps"]) {
+            expect(SETTINGS_PAGE_IDS as readonly string[]).toContain(id);
+        }
+    });
+
+    it("opens Your watch from its own id (settings batch W)", () => {
+        expect(resolveSettingsTopic("your-watch")).toEqual({ page: "your-watch" });
+    });
+
     it("keeps page ids and Developer tools ids pointing at themselves", () => {
         for (const id of SETTINGS_PAGE_IDS) {
             expect(resolveSettingsTopic(id)).toEqual({ page: id });
@@ -202,12 +275,13 @@ describe("settings registry", () => {
 
     it("lays out the sidebar in the agreed order", () => {
         expect(SETTINGS_SECTIONS.map((section) => [section.id, pagesInSection(section.id).map((p) => p.id)])).toEqual([
-            // computer-settings v1.0.0 rule 1: What Isoform sees, Closed Eyes, Your data,
-            // Your agents, Your phone, Briefs and notifications.
-            ["basics", ["activity", "closed-eyes", "your-data", "ai-provider", "your-agent", "iphone", "notifications"]],
-            ["personal-ai", ["memory", "security", "storage"]],
-            ["app", ["overview", "general", "profile", "appearance"]],
-            ["extensions", ["plugins", "skills", "mcp", "chat-apps", "use-yansu-anywhere"]],
+            // answers v1.0.0 G1: What Isoform sees, Closed Eyes, Your data,
+            // (Your AI,) Your agents, Agent of You, Your phone, Your watch
+            // (batch W), Briefs and notifications, About. Your AI comes in
+            // another batch; Plugins, Tool servers, Chat apps and Other AI
+            // apps go later.
+            ["basics", ["activity", "closed-eyes", "your-data", "ai-provider", "your-agent", "iphone", "your-watch", "notifications"]],
+            ["extensions", ["plugins", "mcp", "chat-apps", "use-yansu-anywhere"]],
             ["help", ["about"]],
         ]);
         const extensions = SETTINGS_SECTIONS.find((section) => section.id === "extensions");
@@ -218,14 +292,8 @@ describe("settings registry", () => {
         expect(DEFAULT_SETTINGS_PAGE).toBe("activity");
     });
 
-    it.each(LOCALES)("gives Overview a page title of its own beside its sidebar label in %s", (_name, locale) => {
-        const overview = SETTINGS_PAGES.find((entry) => entry.id === "overview")!;
-        expect(overview.titleKey).toBe("pages.overview.title");
-        const title = lookup(locale, overview.titleKey!);
-        expect(typeof title).toBe("string");
-        expect(title).not.toBe(lookup(locale, overview.labelKey));
-        // Overview and Agent of You read differently from their sidebar rows (v2.0.0 copies Overview's pattern).
-        expect(SETTINGS_PAGES.filter((entry) => entry.titleKey).map((entry) => entry.id)).toEqual(["your-agent", "overview"]);
+    it("gives only Agent of You a page title of its own", () => {
+        expect(SETTINGS_PAGES.filter((entry) => entry.titleKey).map((entry) => entry.id)).toEqual(["your-agent"]);
     });
 
     it.each(LOCALES)("has a label, one-sentence subtitle and keywords for every page in %s", (_name, locale) => {
@@ -237,10 +305,17 @@ describe("settings registry", () => {
                 expect(PICTOGRAPHIC.test(value as string), key).toBe(false);
             }
             const subtitle = lookup(locale, entry.subtitleKey) as string;
-            // One sentence: a single terminal full stop and no sentence break inside.
             expect(subtitle, entry.subtitleKey).toMatch(/[.。]$/);
-            expect(subtitle.slice(0, -1), entry.subtitleKey).not.toMatch(/[.。] /);
-            expect(subtitle.slice(0, -1), entry.subtitleKey).not.toMatch(/。/);
+            // What Isoform sees' lead is design's two sentences (computer-settings
+            // v1.0.0 sees.sub: "Every source, on one page. Off means nothing from
+            // it is kept."), so it alone may have one sentence break.
+            if (TWO_SENTENCE_SUBTITLES.has(entry.subtitleKey)) {
+                expect(subtitle.slice(0, -1).split(/[.。] ?/).length, entry.subtitleKey).toBe(2);
+            } else {
+                // One sentence: a single terminal full stop and no sentence break inside.
+                expect(subtitle.slice(0, -1), entry.subtitleKey).not.toMatch(/[.。] /);
+                expect(subtitle.slice(0, -1), entry.subtitleKey).not.toMatch(/。/);
+            }
             expect(splitSettingsKeywords(lookup(locale, entry.keywordsKey) as string).length).toBeGreaterThan(2);
         }
     });
@@ -275,7 +350,7 @@ describe("settings registry", () => {
 
     it("finds pages by label, subtitle and keywords", () => {
         const translate = (key: string) => lookup(enSettings as Locale, key) as string;
-        expect(searchSettingsPages("theme", translate).map((p) => p.id)).toEqual(["general", "appearance"]);
+        expect(searchSettingsPages("theme", translate).map((p) => p.id)).toEqual(["about"]);
         expect(searchSettingsPages("texture", translate).map((p) => p.id)).toEqual([]);
         expect(searchSettingsPages("MCP", translate).map((p) => p.id)).toContain("mcp");
         expect(searchSettingsPages("subscription", translate).map((p) => p.id)).toContain("ai-provider");
@@ -284,7 +359,7 @@ describe("settings registry", () => {
 
         const translateZh = (key: string) => lookup(zhSettings as Locale, key) as string;
         expect(searchSettingsPages("纹理", translateZh).map((p) => p.id)).toEqual([]);
-        expect(searchSettingsPages("主题", translateZh).map((p) => p.id)).toEqual(["general", "appearance"]);
+        expect(searchSettingsPages("主题", translateZh).map((p) => p.id)).toEqual(["about"]);
     });
 
     it("tells a match on the page name from a match on its details", () => {
@@ -300,41 +375,39 @@ describe("settings registry", () => {
         const phone = searchSettingsPages("Phone", translate).map((p) => p.id);
         expect(phone[0]).toBe("iphone");
         expect(phone).toContain("notifications");
-        expect(searchSettingsPages("privacy", translate)[0].id).toBe("security");
+        expect(searchSettingsPages("privacy", translate).map((p) => p.id)).toContain("your-data");
     });
 
     // Each page's keywords name what it keeps under Advanced, so the jargon
     // that lives only there still finds the page (in both languages).
     it.each([
-        ["en", "Search index", "memory"],
-        ["en", "embeddings", "memory"],
-        ["en", "Prediction confidence", "memory"],
-        ["en", "Keyboard shortcuts", "general"],
-        ["en", "tool steps", "general"],
+        ["en", "open at login", "about"],
+        ["en", "your name", "about"],
+        ["en", "read aloud", "notifications"],
+        ["en", "quiet hours", "notifications"],
         ["en", "Where notifications go", "notifications"],
         ["en", "sandbox", "ai-provider"],
         ["en", "Who handles what", "ai-provider"],
         ["en", "magpie", "ai-provider"],
         ["en", "Server address", "iphone"],
         ["en", "relay", "iphone"],
-        ["en", "Storage limit", "storage"],
-        ["en", "free up space", "storage"],
-        ["en", "models", "storage"],
-        ["en", "permissions", "security"],
+        ["en", "Storage limit", "your-data"],
+        ["en", "keep recordings", "your-data"],
+        ["en", "models", "about"],
+        ["en", "diagnostic data", "about"],
+        ["en", "permissions", "activity"],
         ["en", "Capture status", "activity"],
         ["en", "environment variables", "mcp"],
-        ["en", "Where skills are stored", "skills"],
         ["en", "release notes", "about"],
-        ["en", "worth a look", "overview"],
-        ["en", "Pause for 1 hour", "overview"],
-        ["zh-CN", "搜索索引", "memory"],
         ["zh-CN", "任务分工", "ai-provider"],
         ["zh-CN", "服务器地址", "iphone"],
         ["zh-CN", "提醒发到哪里", "notifications"],
-        ["zh-CN", "存储上限", "storage"],
-        ["zh-CN", "模型", "storage"],
+        ["zh-CN", "存储上限", "your-data"],
+        ["zh-CN", "模型", "about"],
+        ["zh-CN", "诊断数据", "about"],
         ["zh-CN", "环境变量", "mcp"],
-        ["zh-CN", "值得一看", "overview"],
+        ["zh-CN", "登录时打开", "about"],
+        ["zh-CN", "朗读", "notifications"],
     ])("finds %s '%s' on %s", (lang, query, page) => {
         const locale = (lang === "en" ? enSettings : zhSettings) as Locale;
         const translate = (key: string) => lookup(locale, key) as string;

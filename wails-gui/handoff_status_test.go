@@ -28,7 +28,7 @@ func statusOf(t *testing.T, app *App, id string) HandoffStatus {
 // "opened" and never working; a connected agent goes sent, has it, working
 // only with its own progress line, back; two hours of nothing is no word.
 func TestHandoffStatusSaysOnlyWhatIsoformKnows(t *testing.T) {
-	app, _ := newAgentJoinTestApp(t)
+	app := newAgentJoinTestApp(t)
 	now := time.Now()
 	app.workOnIt().now = func() time.Time { return now }
 	s := app.workOnIt()
@@ -94,7 +94,7 @@ func TestHandoffStatusSaysOnlyWhatIsoformKnows(t *testing.T) {
 // TestTakeItBack: the agent's token can't read the hand-off any more, the
 // record says not done, and it can't be taken back twice.
 func TestTakeItBack(t *testing.T) {
-	app, _ := newAgentJoinTestApp(t)
+	app := newAgentJoinTestApp(t)
 	token, base := joinTestAgent(t, app, "Ana's Helper")
 	joined := app.GetConnectedAgents()[0]
 	prepared, _ := app.PrepareWorkOnIt(briefInput())
@@ -166,7 +166,7 @@ func TestTakeBackStopsATaskHere(t *testing.T) {
 // TestPhoneHandoffStatus: the phone reads the same states, and Ask again and
 // Take it back are receipted, refused twice, and routed by their template.
 func TestPhoneHandoffStatus(t *testing.T) {
-	app, _ := newAgentJoinTestApp(t)
+	app := newAgentJoinTestApp(t)
 	joinTestAgent(t, app, "Ana's Helper")
 	joined := app.GetConnectedAgents()[0]
 	prepared, _ := app.PrepareWorkOnIt(briefInput())

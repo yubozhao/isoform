@@ -147,7 +147,7 @@ func insertDevice(ctx context.Context, q querier, hubID string, d Device, now ti
 	if duplicates != 0 {
 		return ErrConflict
 	}
-	_, err = q.ExecContext(ctx, "INSERT INTO devices(id,hub_id,bearer_hash,scopes,created_at,expires_at,last_seen_at) VALUES(?,?,?,?,?,?,0)", d.ID, hubID, d.BearerHash, scopes, millis(now), millis(d.ExpiresAt))
+	_, err = q.ExecContext(ctx, "INSERT INTO devices(id,hub_id,bearer_hash,scopes,created_at,expires_at,last_seen_at,paired) VALUES(?,?,?,?,?,?,0,1)", d.ID, hubID, d.BearerHash, scopes, millis(now), millis(d.ExpiresAt))
 	return err
 }
 
@@ -166,9 +166,13 @@ func deviceInHub(ctx context.Context, q querier, hubID, deviceID string) error {
 
 // GrantDevice records a device the hub already paired elsewhere, so the same
 // phone can use this relay too (PROTOCOL.md section 6, grant). A device of the
-// same hub is updated in place: its bearer, scopes and expiry are replaced. A
-// device ID of another hub, or a bearer digest held by another device, is a
-// conflict.
+// same hub that a grant created is updated in place: its bearer, scopes and
+// expiry are replaced. A device paired on this relay is never changed by a
+// grant: a grant with its own bearer is a no-op, and one with another bearer is
+// ErrPairedHere (on 2026-11-16 a hub that sent its direct-path grants to its
+// pinned relay replaced a paired phone's bearer there, and the phone was
+// refused until it paired again). A device ID of another hub, or a bearer
+// digest held by another device, is a conflict.
 func (s *Store) GrantDevice(ctx context.Context, hubID string, d Device, now time.Time) error {
 	scopes, err := scopesJSON(d.Scopes)
 	if err != nil {
@@ -179,8 +183,9 @@ func (s *Store) GrantDevice(ctx context.Context, hubID string, d Device, now tim
 		return err
 	}
 	defer tx.Rollback()
-	var owner string
-	switch err = tx.QueryRowContext(ctx, "SELECT hub_id FROM devices WHERE id=?", d.ID).Scan(&owner); {
+	var owner, held string
+	var paired int
+	switch err = tx.QueryRowContext(ctx, "SELECT hub_id,bearer_hash,paired FROM devices WHERE id=?", d.ID).Scan(&owner, &held, &paired); {
 	case errors.Is(err, sql.ErrNoRows):
 		owner = ""
 	case err != nil:
@@ -188,6 +193,12 @@ func (s *Store) GrantDevice(ctx context.Context, hubID string, d Device, now tim
 	}
 	if owner != "" && owner != hubID {
 		return ErrConflict
+	}
+	if owner != "" && paired != 0 {
+		if sameDigest(held, d.BearerHash) {
+			return nil
+		}
+		return ErrPairedHere
 	}
 	var others int
 	if err = tx.QueryRowContext(ctx, "SELECT count(*) FROM devices WHERE bearer_hash=? AND id<>?", d.BearerHash, d.ID).Scan(&others); err != nil {

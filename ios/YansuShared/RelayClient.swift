@@ -23,6 +23,72 @@ enum FirstLoadTrace {
 //
 // Status codes are mapped one-to-one here; each caller decides what a code means for its flow
 // (for example 403 on a claim is an invalid code, while 403 on a request is a foreign device).
+/// How an upload body goes to a relay (PROTOCOL.md 24.1b). On 2026-11-21 the tunnel in front of
+/// the relay refused about one piece in forty: its firewall reads the first 8 KB of a body, and
+/// sealed audio is random bytes that now and then look like an attack to it. The same piece was
+/// refused every time, so its part never arrived. As base64 text a body is letters, digits,
+/// "+", "/" and "=", which no such rule matches. A relay says in its health answer that it
+/// takes text; one that does not gets the bytes as before.
+enum RelayUploadBody {
+    static let bytes = "application/octet-stream"
+    static let text = "text/plain"
+    private static let key = "relay.uploadsAsText"
+    private static let lock = NSLock()
+    /// Kept across starts: an upload handed over right after a start in the background goes the
+    /// way the relay last said, before its health is asked again.
+    nonisolated(unsafe) static var defaults: UserDefaults = .standard
+
+    /// What the relay at this address said in its health answer.
+    static func remember(_ origin: URL, takesText: Bool) {
+        lock.withLock {
+            var known = Set(defaults.stringArray(forKey: key) ?? [])
+            let changed = takesText ? known.insert(origin.absoluteString).inserted : known.remove(origin.absoluteString) != nil
+            if changed { defaults.set(known.sorted(), forKey: key) }
+        }
+    }
+
+    static func asText(_ origin: URL) -> Bool {
+        lock.withLock { (defaults.stringArray(forKey: key) ?? []).contains(origin.absoluteString) }
+    }
+
+    /// The body as it is sent to this relay, and its content type.
+    static func sent(_ body: Data, to origin: URL) -> (body: Data, type: String) {
+        asText(origin) ? (body.base64EncodedData(), text) : (body, bytes)
+    }
+
+    /// A relay that answers 415 to text does not take it (an older relay took this one's
+    /// place): the next try goes as bytes.
+    static func refused(_ origin: URL, status: Int) {
+        if status == 415 { remember(origin, takesText: false) }
+    }
+
+    /// The same for an upload the system sent, which is known by its address alone.
+    static func refused(at address: URL?, status: Int) {
+        guard status == 415, let address = address?.absoluteString else { return }
+        lock.withLock {
+            let known = defaults.stringArray(forKey: key) ?? []
+            let left = known.filter { !address.hasPrefix($0) }
+            if left.count != known.count { defaults.set(left, forKey: key) }
+        }
+    }
+}
+
+/// A 403 for an upload that the relay did not write: its answers are `{"ok":false,...}`, and
+/// this one is not. Something between the phone and the relay (a tunnel's edge) refused the
+/// request. It says nothing about the phone or the part, and the same request goes through a
+/// moment later. On 2026-11-21 one such answer ended a pass as "part-relay-403".
+struct RelayEdgeForbidden: Error, Equatable {
+    /// Whether a 403 with this body is the relay's own.
+    static func isTheRelays(_ body: Data) -> Bool {
+        struct Shape: Decodable { let ok: Bool }
+        return (try? JSONDecoder().decode(Shape.self, from: body))?.ok == false
+    }
+
+    static func check(_ http: HTTPURLResponse, _ body: Data) throws {
+        if http.statusCode == 403, !isTheRelays(body) { throw RelayEdgeForbidden() }
+    }
+}
+
 enum RelayClientError: LocalizedError, Equatable {
     case badRequest(message: String)              // 400
     case unauthorized                             // 401
@@ -323,11 +389,132 @@ final class RelayClient: PairingTransport, @unchecked Sendable {
         request.httpMethod = Method.PUT.rawValue
         request.setValue("Bearer \(credentials.bearer)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
-        request.httpBody = sealed
+        let sent = RelayUploadBody.sent(sealed, to: credentials.origin)
+        request.setValue(sent.type, forHTTPHeaderField: "Content-Type")
+        request.httpBody = sent.body
         request.timeoutInterval = 120
         let (data, http) = try await send(request)
+        RelayUploadBody.refused(credentials.origin, status: http.statusCode)
+        try RelayEdgeForbidden.check(http, data)
         try check(http: http, data: data)
+    }
+
+    // MARK: An upload sent in pieces (PROTOCOL.md section 24.1a)
+
+    /// How much of an upload the relay holds.
+    struct UploadProgress: Decodable, Equatable, Sendable {
+        let held: Int
+        let total: Int
+        let complete: Bool
+        /// Set for an upload whose pieces arrive in any order: the piece size, and one character
+        /// per piece, "1" for a piece the relay holds.
+        var size: Int?
+        var have: String?
+    }
+
+    /// How a relay takes an upload in pieces.
+    enum UploadPieceSupport: Equatable, Sendable {
+        /// An older relay, or one that did not answer: the whole body in one request.
+        case none
+        /// One piece after the other.
+        case inOrder
+        /// Any piece at any time, which uploads handed to the system need.
+        case anyOrder
+    }
+
+    private struct HealthAnswer: Decodable {
+        let uploadPieces: Bool?
+        let uploadPiecesAnyOrder: Bool?
+        let uploadsAsText: Bool?
+    }
+
+    /// How the relay at this address takes uploads in pieces.
+    func uploadPieceSupport(_ origin: URL) async -> UploadPieceSupport {
+        guard let url = try? Self.endpoint(origin, ["v1", "health"]) else { return .none }
+        var request = URLRequest(url: url)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        // The direct path's door is on this phone: when it works it answers at once, so a part
+        // is not kept waiting long before it takes the other path.
+        let onThisPhone = ["127.0.0.1", "localhost", "::1"].contains(origin.host?.lowercased() ?? "")
+        request.timeoutInterval = onThisPhone ? 4 : 10
+        guard let (data, http) = try? await send(request),
+              let answer = try? decode(HealthAnswer.self, from: data, http: http) else { return .none }
+        // Only an answer changes how bodies go: no answer leaves what the relay said before.
+        RelayUploadBody.remember(origin, takesText: answer.uploadsAsText == true)
+        if answer.uploadPiecesAnyOrder == true { return .anyOrder }
+        return answer.uploadPieces == true ? .inOrder : .none
+    }
+
+    /// What the relay holds of this phone's upload; nil when it knows none under this id.
+    func uploadProgress(_ credentials: RelayCredentials, id: String) async throws -> UploadProgress? {
+        try await uploadProgress(credentials, id: id, timeout: 15)
+    }
+
+    /// The same with the caller's own patience: an answer that comes late through a busy link
+    /// is still an answer.
+    func uploadProgress(_ credentials: RelayCredentials, id: String, timeout: TimeInterval) async throws -> UploadProgress? {
+        do {
+            let request = try authorized(credentials, method: .GET, segments: ["v1", "uploads", id, "pieces"], timeout: timeout)
+            let (data, http) = try await send(request)
+            try RelayEdgeForbidden.check(http, data)
+            return try decode(UploadProgress.self, from: data, http: http)
+        } catch RelayClientError.notFound {
+            return nil
+        }
+    }
+
+    /// Sends bytes `offset ..< offset + piece.count` of an upload of `total` bytes. The answer is
+    /// what the relay holds afterwards. When the piece does not start where the relay's copy
+    /// ends (409 with the held size) that is the answer too, and the caller goes on from there.
+    /// With `size` the upload is cut into pieces of that many bytes and this one may be any of them.
+    func putUploadPiece(_ credentials: RelayCredentials, id: String, offset: Int, total: Int,
+                        size: Int? = nil, piece: Data) async throws -> UploadProgress {
+        var request = URLRequest(url: try Self.uploadPieceURL(credentials.origin, id: id, offset: offset, total: total, size: size))
+        request.httpMethod = Method.PUT.rawValue
+        request.setValue("Bearer \(credentials.bearer)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        let sent = RelayUploadBody.sent(piece, to: credentials.origin)
+        request.setValue(sent.type, forHTTPHeaderField: "Content-Type")
+        request.httpBody = sent.body
+        request.timeoutInterval = 30
+        let (data, http) = try await send(request)
+        RelayUploadBody.refused(credentials.origin, status: http.statusCode)
+        if http.statusCode == 409,
+           let held = (try? JSONDecoder().decode(Envelope<UploadProgress>.self, from: data))?.data {
+            return held
+        }
+        try RelayEdgeForbidden.check(http, data)
+        return try decode(UploadProgress.self, from: data, http: http)
+    }
+
+    // MARK: What the relay holds of this phone's uploads (PROTOCOL.md section 24.1c)
+
+    /// One upload the relay holds for this phone, whole or still arriving.
+    struct UploadOnRelay: Decodable, Equatable, Sendable {
+        let id: String
+        let held: Int
+        let total: Int
+        let complete: Bool
+    }
+
+    private struct UploadList: Decodable {
+        let uploads: [UploadOnRelay]
+    }
+
+    /// This phone's uploads on the relay. Nil when the relay has no such route, or did not
+    /// answer in time: the phone then goes on as it did without the list.
+    func uploadsOnRelay(_ credentials: RelayCredentials) async -> [UploadOnRelay]? {
+        guard let request = try? authorized(credentials, method: .GET, segments: ["v1", "uploads"], timeout: 6),
+              let (data, http) = try? await send(request),
+              let list = try? decode(UploadList.self, from: data, http: http) else { return nil }
+        return list.uploads
+    }
+
+    /// Where one piece goes; the background uploads build the same address.
+    static func uploadPieceURL(_ origin: URL, id: String, offset: Int, total: Int, size: Int?) throws -> URL {
+        var query = [URLQueryItem(name: "offset", value: String(offset)), URLQueryItem(name: "total", value: String(total))]
+        if let size { query.append(URLQueryItem(name: "size", value: String(size))) }
+        return try endpoint(origin, ["v1", "uploads", id, "pieces"], query: query)
     }
 
     private func call<T: Decodable>(_ method: Method, _ credentials: RelayCredentials, _ segments: [String],

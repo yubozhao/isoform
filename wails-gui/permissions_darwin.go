@@ -480,19 +480,6 @@ func getPlatformPermissions() PlatformPermissions {
 		Enabled:     true,
 	})
 
-	// No macOS permission sits behind the clipboard: the item is only the
-	// switch, on by default. Granted stays true and there is nothing to ask.
-	items = append(items, PermissionItem{
-		Key:         clipboardPermissionKey,
-		Label:       "Clipboard",
-		Description: "Notes what you copy: the kind, the app and, where macOS allows it, a short preview with personal details, codes, recovery phrases and passwords removed. Nothing is noted from password managers, copies apps mark as passwords, private browser windows or the apps you protect; from Safari, whose private windows are not marked, only the kind.",
-		Granted:     true,
-		Required:    false,
-		Actionable:  false,
-		Toggleable:  true,
-		Enabled:     true,
-	})
-
 	// Toggleable like the reminders: the switch pauses reading without
 	// revoking access. macOS answers only while Mail runs, so Granted keeps
 	// the last answer when Mail is closed.

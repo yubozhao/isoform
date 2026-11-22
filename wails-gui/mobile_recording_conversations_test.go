@@ -140,11 +140,11 @@ func TestNotesForLongTalksIsThePersonsSetting(t *testing.T) {
 	app.store = state
 
 	t.Setenv(featureSwitchesEnv, "")
-	if got := app.watchNotesSetting(); got.On || got.Chosen || app.watchNotesOn() {
+	if got, err := app.readWatchSetting(watchNotesSettingKey); err != nil || got.On || got.Chosen || app.watchNotesOn() {
 		t.Fatalf("with no choice and no switch: %+v", got)
 	}
 	t.Setenv(featureSwitchesEnv, string(featureWatchNotes))
-	if got := app.watchNotesSetting(); !got.On || got.Chosen {
+	if got, err := app.readWatchSetting(watchNotesSettingKey); err != nil || !got.On || got.Chosen {
 		t.Fatalf("with no choice the build switch decides: %+v", got)
 	}
 
@@ -157,14 +157,14 @@ func TestNotesForLongTalksIsThePersonsSetting(t *testing.T) {
 	if got := watchDeskCall(bridge, http.MethodPost, "/settings/watch-notes", `{"on":false}`, mobileScopeChatWrite); got.Code != http.StatusOK {
 		t.Fatalf("set: %d %s", got.Code, got.Body.String())
 	}
-	if got := app.watchNotesSetting(); got.On || !got.Chosen {
+	if got, err := app.readWatchSetting(watchNotesSettingKey); err != nil || got.On || !got.Chosen {
 		t.Fatalf("the person's off must win over the build switch: %+v", got)
 	}
 	t.Setenv(featureSwitchesEnv, "")
 	if got := watchDeskCall(bridge, http.MethodPost, "/settings/watch-notes", `{"on":true}`, mobileScopeChatWrite); got.Code != http.StatusOK {
 		t.Fatalf("set on: %d", got.Code)
 	}
-	if got := app.watchNotesSetting(); !got.On || !got.Chosen {
+	if got, err := app.readWatchSetting(watchNotesSettingKey); err != nil || !got.On || !got.Chosen {
 		t.Fatalf("the person's on must win with the build switch off: %+v", got)
 	}
 	read := watchDeskCall(bridge, http.MethodGet, "/settings/watch-notes", "", mobileScopeChatWrite)

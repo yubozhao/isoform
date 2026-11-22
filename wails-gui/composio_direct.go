@@ -49,12 +49,15 @@ type directComposioClient struct{ app *App }
 
 // ── HTTP plumbing ──
 
+//isoform:destination composio
 var composioDirectHTTP = &http.Client{Timeout: 30 * time.Second}
 
 // probeComposioAPIKey does a minimal reachability check with a candidate key
 // (used by SaveComposioApiKey before persisting). Rejects only on a definitive
 // auth rejection (401/403) or a server outage (5xx); any other reachable
 // response means the key was accepted by Composio.
+//
+//isoform:destination composio
 func probeComposioAPIKey(apiKey string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -85,6 +88,8 @@ func composioPath(p string) string {
 
 // do issues an x-api-key authenticated JSON request to Composio. body may be nil;
 // out may be nil.
+//
+//isoform:destination composio
 func (c *directComposioClient) do(ctx context.Context, method, p string, body, out any) error {
 	apiKey := strings.TrimSpace(loadComposioByok().APIKey)
 	if apiKey == "" {

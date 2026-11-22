@@ -92,6 +92,8 @@ type Manager struct {
 	batch          map[string]bool
 	free           func(string) (int64, error)
 	emit           func([]Download)
+	onComplete     func(context.Context, Entry)
+	completions    sync.WaitGroup
 	lastEmit       time.Time
 	pending        *time.Timer
 	ctx            context.Context
@@ -142,6 +144,13 @@ func New(folder, legacy string, entries []Entry, free func(string) (int64, error
 	return m, nil
 }
 
+// SetDownloadComplete registers a handler for a newly persisted successful job.
+func (m *Manager) SetDownloadComplete(handler func(context.Context, Entry)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.onComplete = handler
+}
+
 // Stop cancels immediately. A caller can join the returned channel within its
 // shared shutdown budget without delaying critical persistence on disk IO.
 func (m *Manager) Stop() <-chan struct{} {
@@ -164,6 +173,7 @@ func (m *Manager) Close() {
 	for _, ch := range done {
 		<-ch
 	}
+	m.completions.Wait()
 }
 func (m *Manager) statePath() string { return filepath.Join(m.folder, ".setup-models.json") }
 func (m *Manager) entry(id string) (Entry, bool) {

@@ -24,6 +24,8 @@ func (m workProfileBackgroundModel) Generate(ctx context.Context, prompt string)
 		return "", errors.New("background model unavailable")
 	}
 	var result strings.Builder
+	ctx, given := withPassScope(ctx, passProfile)
+	defer finishPassScope(given)
 	_, err := m.runner.ExecuteTask(ctx, &agent.TaskInput{
 		Priority:          agent.PriorityBackground,
 		AutoApproveTools:  true,

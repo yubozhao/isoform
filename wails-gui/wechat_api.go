@@ -39,6 +39,7 @@ type wechatAPIClient struct {
 // task timeout, so a stuck download fails fast without dragging the thread lock.
 const wechatMediaDownloadTimeout = 60 * time.Second
 
+//isoform:destination chat_bridges
 func newWeChatAPIClient(baseURL, botToken string) *wechatAPIClient {
 	if baseURL == "" {
 		baseURL = wechatDefaultBaseURL
@@ -94,6 +95,7 @@ func randomWechatUIN() string {
 	return base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%d", n)))
 }
 
+//isoform:destination chat_bridges
 func (c *wechatAPIClient) doRequest(method, path string, body any) ([]byte, error) {
 	var reader io.Reader
 	if body != nil {
@@ -251,6 +253,8 @@ func (c *wechatAPIClient) GetUploadURL(req *wechatGetUploadURLRequest) (*wechatG
 // hostile getuploadurl response (or tampered BaseURL) could turn this into an
 // SSRF-style POST primitive. mediaClient.CheckRedirect re-applies the same
 // check on every 30x hop.
+//
+//isoform:destination chat_bridges
 func (c *wechatAPIClient) UploadToCDN(uploadURL string, encryptedData []byte) (string, error) {
 	parsed, err := url.Parse(uploadURL)
 	if err != nil {
@@ -324,12 +328,14 @@ type wechatLoginClient struct {
 	client *http.Client
 }
 
+//isoform:destination chat_bridges
 func newWeChatLoginClient() *wechatLoginClient {
 	return &wechatLoginClient{
 		client: &http.Client{Timeout: 15 * time.Second},
 	}
 }
 
+//isoform:destination chat_bridges
 func (c *wechatLoginClient) doGet(rawURL string, extraHeaders map[string]string) ([]byte, error) {
 	req, err := http.NewRequest("GET", rawURL, nil)
 	if err != nil {

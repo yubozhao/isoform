@@ -9,6 +9,13 @@ import type { WorkAnswerError } from "@/hooks/useWorkList";
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
 
+/** A hand-off taken back from its agent (phone-agent v1.2.1 rules 4-5); the
+ *  computer sends it on the item as `takenBack`. */
+type TakenBack = { agentId?: string; agentName: string; at: string; undoUntil?: string };
+function takenBackOf(item: WorkItem): TakenBack | null {
+    return (item as WorkItem & { takenBack?: TakenBack }).takenBack ?? null;
+}
+
 /** Items the person answers now: open ones, and results back from an agent. */
 export function workToJudge(list: WorkList | null): WorkItem[] {
     return (list?.items ?? []).filter((item) => item.state === "open" || item.state === "back").sort((a, b) => a.order - b.order);
@@ -67,7 +74,18 @@ export const NO_WORD_MS = 2 * 60 * 60_000;
 /** How long the one-line Undo stays after an answer (rule 13). */
 export const UNDO_LINE_MS = 5_000;
 
-export function TodayYourWork({ list, active, onAnswer, onUndo, onHandOff, noAgents = false, onConnectAgent, onOpenRef, title, now = new Date() }: {
+export function TodayYourWork({ list, active, onAnswer, onUndo, onHandOff, noAgents = false, onConnectAgent, agentsFailed = false, onRetryAgents, onOpenRef, title, keys = true, focusRequest = null, now = new Date() }: {
+    /** Open this item, asked for from elsewhere (Quick chat's Open): an open
+     *  one becomes the open item with focus; any other is brought into view.
+     *  A new nonce asks again. */
+    focusRequest?: { itemId: string; nonce: number } | null;
+    /** The agents couldn't be read: the Your agents card says so, with Try
+     *  again, instead of leaving itself out. */
+    agentsFailed?: boolean;
+    onRetryAgents?: () => void;
+    /** The keys line under the list. Today draws it as its own strip at the
+     *  window's foot instead (computer-window v1.0.0 rule 8). */
+    keys?: boolean;
     /** The heading in place of "Your work" (a topic's "Next"). */
     title?: string;
     /** Opens what a source-line part names: a topic, a brief (computer-find v1.0.0 rule 1). */
@@ -118,7 +136,7 @@ export function TodayYourWork({ list, active, onAnswer, onUndo, onHandOff, noAge
         if (failed) { setError(failed); return; }
         setNoFor(null);
         setEditFor(null);
-        showUndoLine(item.id);
+        if (input.action !== "ask_again") showUndoLine(item.id);
         // The answered item leaves the open list; the next one takes its place.
         if (item.id === open?.id) {
             const next = judge[index + 1] ?? judge[index - 1] ?? null;
@@ -135,7 +153,13 @@ export function TodayYourWork({ list, active, onAnswer, onUndo, onHandOff, noAge
         undoTimer.current = setTimeout(() => setUndoLine(null), UNDO_LINE_MS);
     };
     useEffect(() => () => { if (undoTimer.current) clearTimeout(undoTimer.current); }, []);
-    const lineItem = undoLine ? (list?.items ?? []).find((item) => item.id === undoLine && item.answer) ?? null : null;
+    const lineItem = undoLine ? (list?.items ?? []).find((item) => item.id === undoLine && (item.answer || takenBackOf(item))) ?? null : null;
+    // Undo on a hand-off says what it can't undo (rule 13).
+    const lineText = (item: WorkItem) => {
+        const taken = !item.answer ? takenBackOf(item) : null;
+        if (taken) return tr("ctoday.takenBack", { agent: taken.agentName || tr("agent.yourAgent") });
+        return item.answer?.line || item.work.title;
+    };
     const undo = async (item: WorkItem) => {
         setUndoLine(null);
         setError(null);
@@ -157,7 +181,9 @@ export function TodayYourWork({ list, active, onAnswer, onUndo, onHandOff, noAge
             setDraft(item.work.text ?? item.work.title);
             return;
         }
-        if (action === "no" && item.reasons.length > 0) { setNoFor(item.id); return; }
+        // A No, or a Not useful on a result, asks for a reason when the item
+        // has reasons (computer-today v1.1.0 rule 5).
+        if ((action === "no" || action === "not_useful") && item.reasons.length > 0) { setNoFor(item.id); return; }
         if (action === "yes" && handsOff(item)) { if (onHandOff) onHandOff(item); return; }
         void submit(item, { action });
     };
@@ -200,9 +226,18 @@ export function TodayYourWork({ list, active, onAnswer, onUndo, onHandOff, noAge
         if (!action) return;
         event.preventDefault();
         // Reasons and Edit show on the open item: a row they need becomes it.
-        if (item.id !== open?.id && (action === "edit-open" || (action === "no" && item.reasons.length > 0))) openRow(item.id);
+        if (item.id !== open?.id && (action === "edit-open" || ((action === "no" || action === "not_useful") && item.reasons.length > 0))) openRow(item.id);
         act(item, action);
     };
+    // An item asked for from elsewhere opens here (Quick chat's Open).
+    useEffect(() => {
+        if (!focusRequest) return;
+        if (judge.some((item) => item.id === focusRequest.itemId)) { openRow(focusRequest.itemId); return; }
+        const row = Array.from(sectionRef.current?.querySelectorAll<HTMLElement>("[data-item-id]") ?? []).find((element) => element.dataset.itemId === focusRequest.itemId);
+        row?.scrollIntoView?.({ block: "nearest" });
+        row?.focus();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [focusRequest?.nonce, focusRequest?.itemId, !!list]);
     // Enter on a row makes it the open item and puts focus on it.
     const openRow = (id: string) => {
         setFocusId(id); setNoFor(null); setEditFor(null);
@@ -226,11 +261,16 @@ export function TodayYourWork({ list, active, onAnswer, onUndo, onHandOff, noAge
             <header className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
                 <h2 id="today-your-work-title" className="text-[15px] font-semibold text-ink">{title ?? tr("work.title")}</h2>
                 <span className="text-[12.5px] text-muted" data-testid="your-work-counts">
-                    {list.backFromAgents > 0 ? tr("ctoday.workSub", { n: list.toAnswer, m: list.backFromAgents }) : tr("work.toAnswer", { count: list.toAnswer })}
+                    {list.backFromAgents > 0 ? tr("ctoday.workSub", { n: list.toAnswer, m: list.backFromAgents })
+                        : judge.length > 0 && judge.every((item) => item.source === "day_one") ? tr("ctoday.dayOne", { count: list.toAnswer })
+                        : tr("work.toAnswer", { count: list.toAnswer })}
                 </span>
             </header>
-            {/* Below 1,100 px of Today's own width the columns stack, open item first. */}
-            <div className="grid grid-cols-1 items-start gap-5 @min-[1100px]:grid-cols-[minmax(0,1fr)_260px]">
+            {/* Two columns when Today's content is 880 wide or more: Your work
+                480 to 640, the right column 320 to 372, 24 between
+                (computer-window v1.0.0 rule 5). Below, one column in rank
+                order (rule 6). */}
+            <div className="grid grid-cols-1 items-start gap-6 @min-[880px]:grid-cols-[minmax(480px,640px)_minmax(320px,372px)]" data-testid="your-work-columns">
                 {open ? (
                     <div
                         ref={boxRef}
@@ -291,14 +331,19 @@ export function TodayYourWork({ list, active, onAnswer, onUndo, onHandOff, noAge
                                 {open.work.text && <p className="whitespace-pre-wrap text-[13.5px] leading-[1.55] text-ink">{open.work.text}</p>}
                             </div>
                         )}
+                        {!back && takenBackOf(open) && (
+                            <p className="rounded-lg bg-surface-active px-3 py-2 text-[12.5px] text-muted" data-testid="your-work-taken-back">
+                                {tr("ctoday.takenBackItem", { agent: takenBackOf(open)!.agentName || tr("agent.yourAgent"), time: workWhen(takenBackOf(open)!.at, now, language, tr) })}
+                            </p>
+                        )}
                         {back && <p className="text-[13px] font-medium text-ink">{tr("ctoday.useful")}</p>}
                         {open.yes.line && !back && <p className="text-[12.5px] text-muted" data-testid="your-work-yes-line">{open.yes.line}{yesWhen ? ` · ${yesWhen}` : ""}</p>}
                         {noFor === open.id ? (
                             <div className="flex flex-wrap items-center gap-1.5" data-testid="your-work-reasons">
                                 {open.reasons.map((reason) => (
-                                    <Button key={reason} size="sm" variant="outline" disabled={busy} onClick={() => void submit(open, { action: "no", reason })}>{tr(`work.reason.${reason}`)}</Button>
+                                    <Button key={reason} size="sm" variant="outline" disabled={busy} onClick={() => void submit(open, { action: back ? "not_useful" : "no", reason })}>{tr(`work.reason.${reason}`)}</Button>
                                 ))}
-                                <Button size="sm" variant="quiet" disabled={busy} onClick={() => void submit(open, { action: "no" })}>{tr("work.skip")}</Button>
+                                <Button size="sm" variant="quiet" disabled={busy} onClick={() => void submit(open, { action: back ? "not_useful" : "no" })}>{tr("work.skip")}</Button>
                             </div>
                         ) : editFor !== open.id && (
                             <div className="flex flex-wrap items-center gap-2" data-testid="your-work-actions">
@@ -343,10 +388,16 @@ export function TodayYourWork({ list, active, onAnswer, onUndo, onHandOff, noAge
                             {withAgents.map((item) => {
                                 const since = Date.parse(item.agent?.since ?? "");
                                 const quiet = Number.isFinite(since) && now.getTime() - since >= NO_WORD_MS;
+                                // No word after two hours: amber, with Ask again
+                                // and Take it back (computer-today v1.1.0 rule 12).
                                 return quiet ? (
-                                    <p key={item.id} data-work-item data-item-id={item.id} tabIndex={0} role="article" className="rounded-lg px-2 py-1 text-[13px] text-copper" data-testid="your-work-no-word">
-                                        {item.work.title} · {tr("ctoday.noWord", { agent: item.agent?.name ?? tr("agent.yourAgent"), time: workWhen(item.agent!.since, now, language, tr) })}
-                                    </p>
+                                    <div key={item.id} data-work-item data-item-id={item.id} tabIndex={0} role="article" className="flex flex-col gap-1 rounded-lg px-2 py-1" data-testid="your-work-no-word">
+                                        <p className="text-[13px] text-warning">{item.work.title} · {tr("ctoday.noWord", { agent: item.agent?.name ?? tr("agent.yourAgent"), time: workWhen(item.agent!.since, now, language, tr) })}</p>
+                                        <span className="flex gap-3">
+                                            <button type="button" className="text-[12px] font-medium text-accent" disabled={busy} onClick={() => void submit(item, { action: "ask_again" })} data-testid="your-work-ask-again">{tr("ctoday.askAgain")}</button>
+                                            <button type="button" className="text-[12px] font-medium text-accent" disabled={busy} onClick={() => void submit(item, { action: "take_back" })} data-testid="your-work-take-back">{tr("ctoday.takeBack")}</button>
+                                        </span>
+                                    </div>
                                 ) : (
                                     <p key={item.id} data-work-item data-item-id={item.id} tabIndex={0} role="article" className="rounded-lg px-2 py-1 text-[13px] text-ink">
                                         {[item.work.title, item.agent?.name, item.agent?.since ? tr("work.since", { time: workWhen(item.agent.since, now, language, tr) }) : ""].filter(Boolean).join(" · ")}
@@ -368,6 +419,13 @@ export function TodayYourWork({ list, active, onAnswer, onUndo, onHandOff, noAge
                             ))}
                         </WorkGroup>
                     )}
+                    {agentsFailed && !noAgents && (
+                        <div role="alert" className="flex flex-col gap-1 rounded-xl border border-border bg-panel px-3 py-2.5" data-testid="your-work-agents-failed">
+                            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted">{tr("ctoday.yourAgents")}</h3>
+                            <p className="text-[12.5px] leading-snug text-copper">{tr("ctoday.agentsFailed")}</p>
+                            {onRetryAgents && <button type="button" className="self-start text-[12.5px] font-medium text-accent" onClick={onRetryAgents}>{tr("ctoday.tryAgain")}</button>}
+                        </div>
+                    )}
                     {noAgents && (
                         <div className="flex flex-col gap-1 rounded-xl border border-border bg-panel px-3 py-2.5" data-testid="your-work-no-agents">
                             <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted">{tr("ctoday.yourAgents")}</h3>
@@ -379,20 +437,33 @@ export function TodayYourWork({ list, active, onAnswer, onUndo, onHandOff, noAge
             </div>
             {lineItem && (
                 <div role="status" className="flex items-center justify-between gap-3 rounded-lg border border-border bg-panel px-3 py-2 text-[13px] text-ink shadow-card" data-testid="your-work-undo-line">
-                    <span className="min-w-0 truncate">{lineItem.answer!.line || lineItem.work.title}</span>
+                    <span className="min-w-0 truncate">{lineText(lineItem)}</span>
                     <button type="button" className="shrink-0 font-medium text-accent" onClick={() => void undo(lineItem)}>{tr("work.undo")} <kbd className="ml-1 text-[11px] opacity-60">⌘Z</kbd></button>
                 </div>
             )}
-            <footer className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-[12px] text-muted" data-testid="your-work-keys">
+            {keys && <TodayKeysLine />}
+        </section>
+    );
+}
+
+/** The keys for Your work: ↑↓ move, Y N M answer, E edit, ⌘Z undo, and
+ *  ⌥Space Quick chat at the right (computer-today v1.0.0 rule 4). */
+export function TodayKeysLine() {
+    const { t } = useTranslation("today");
+    const tr: Translate = (key, options) => t(key as never, options as never) as unknown as string;
+    return (
+        <div className="@container" data-testid="your-work-keys">
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-[12px] text-muted">
                 <span className="flex flex-wrap items-center gap-x-1.5">
                     <kbd className="rounded border border-border px-1">↑</kbd><kbd className="rounded border border-border px-1">↓</kbd>
                     <kbd className="rounded border border-border px-1">Y</kbd><kbd className="rounded border border-border px-1">N</kbd><kbd className="rounded border border-border px-1">M</kbd>
                     <kbd className="rounded border border-border px-1">E</kbd><kbd className="rounded border border-border px-1">⌘Z</kbd>
                     <span className="ml-1">{tr("ctoday.keys")}</span>
                 </span>
-                <span><kbd className="rounded border border-border px-1">⌥Space</kbd> {tr("work.quickChat")}</span>
-            </footer>
-        </section>
+                {/* Below 880 the strip drops Quick chat's hint; ⌥Space still works (rule 8). */}
+                <span className="hidden @min-[880px]:inline" data-testid="your-work-keys-quick-chat"><kbd className="rounded border border-border px-1">⌥Space</kbd> {tr("work.quickChat")}</span>
+            </div>
+        </div>
     );
 }
 

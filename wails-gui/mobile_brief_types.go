@@ -204,6 +204,11 @@ type MobileBriefRef struct {
 	SourceID   string `json:"sourceId"`
 	Label      string `json:"label"`
 	ObservedAt string `json:"observedAt"`
+	// Group is the kind of source "In this brief" lists it under (computer-
+	// brief v1.0.0 rule 6, conformance answers B2): calendar, mail,
+	// messages, reminders, calls, watch, agents or screen; empty for a
+	// source of none of them (brief_sources.go).
+	Group string `json:"group,omitempty"`
 	// WebSource keeps capture identity after browser history is pruned. It is
 	// provenance for the read gate, never permission to share the derived text.
 	WebSource *MobileBriefWebSource `json:"webSource,omitempty"`

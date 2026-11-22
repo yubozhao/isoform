@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"slices"
 	"sync"
 	"time"
 
@@ -126,7 +127,7 @@ func (m *Manager) Serve(conn *websocket.Conn, hubID string) {
 		outbox:  make(chan []byte, outboxDepth),
 		replace: make(chan struct{}, 1),
 		done:    make(chan struct{}),
-		seqs:    map[string]uint64{},
+		sent:    map[string][]uint64{},
 		claims:  map[string]bool{},
 		texts:   map[string]bool{},
 	}
@@ -202,8 +203,14 @@ type session struct {
 	away      bool   // guarded by Manager.mu
 	awayCause string // guarded by Manager.mu
 
-	mu     sync.Mutex
-	seqs   map[string]uint64
+	mu sync.Mutex
+	// sent holds, per device, the request numbers handed over on this connection
+	// and not yet acknowledged, in the order they were handed over. It is a
+	// list, not a highest number: requests a phone sends together reach the
+	// relay in any order, and one that arrives after a later-numbered one must
+	// still be handed over. The hub serves a device's requests in the order it
+	// was handed them, so an acknowledgement of one covers those before it.
+	sent   map[string][]uint64
 	claims map[string]bool
 	// texts are the text replies sent on this connection and not yet acked.
 	texts map[string]bool
@@ -343,8 +350,8 @@ func (s *session) drain() {
 	s.drainLocked()
 }
 
-// drainLocked sends each device's unsent requests in sequence order, then the
-// hub's unanswered claims. Frames already sent on this connection are skipped.
+// drainLocked sends each device's queued requests that this connection has not
+// handed over yet, lowest number first, then the hub's unanswered claims.
 func (s *session) drainLocked() {
 	ctx, cancel := context.WithTimeout(context.Background(), storeTimeout)
 	defer cancel()
@@ -354,15 +361,18 @@ func (s *session) drainLocked() {
 		return
 	}
 	for _, d := range devices {
-		entries, err := s.m.Store.UnsentRequests(ctx, d.ID, s.seqs[d.ID], now, store.MaxQueued)
+		entries, err := s.m.Store.UnsentRequests(ctx, d.ID, 0, now, store.MaxQueued)
 		if err != nil {
 			return
 		}
 		for _, e := range entries {
+			if slices.Contains(s.sent[d.ID], e.Seq) {
+				continue
+			}
 			if !s.enqueue(marshal(envelopeFrameOut{T: "in", Env: e.Body})) {
 				return
 			}
-			s.seqs[d.ID] = e.Seq
+			s.sent[d.ID] = append(s.sent[d.ID], e.Seq)
 		}
 	}
 	// Receipts have no queue cap, so a long offline stretch can leave more

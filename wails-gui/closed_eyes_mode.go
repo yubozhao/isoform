@@ -210,6 +210,7 @@ func (a *App) setObservationPause(enabled bool, deadline time.Time, expectedGene
 			a.closedEyes.resumeListening = true
 		}
 		a.closedEyes.enabled.Publish(true, deadline)
+		a.invalidateAssistantHistoryScan()
 		if a.closedEyes.resumeListening {
 			a.stopBackgroundListeningForClosedEyes()
 		}
@@ -242,6 +243,11 @@ func (a *App) setObservationPause(enabled bool, deadline time.Time, expectedGene
 		a.resumeBackgroundListeningForClosedEyes()
 	}
 	a.transcribeCallsKeptAtPause()
+	a.startAssistantHistoryScan(true)
+	// A model may have arrived while the retained backlog was paused.
+	if a.ctx != nil {
+		go a.retryWaitingSpeech(a.ctx)
+	}
 	log.Printf("[closed-eyes] disabled (resumed_activity=%t resumed_background_listening=%t)",
 		resumeActivity, resumeBackgroundListening)
 	return false, nil

@@ -49,8 +49,10 @@ func isWeChatObservation(o Observation) bool {
 
 // Recheck persisted provenance after queueing and again before using a crop or
 // cached vision result. Protection can change while earlier frames are read.
+// It also holds the WeChat pictures switch and waits for the privacy model
+// (activity_vision_switch.go).
 func (c *ActivityTriager) visionSessionAllowsModelRead(sessionID string) bool {
-	if c == nil || c.app == nil || c.app.IsClosedEyesModeEnabled() {
+	if c == nil || c.app == nil || c.app.IsClosedEyesModeEnabled() || !c.app.visionPicturesAllowed() {
 		return false
 	}
 	store := c.activityStore()
@@ -293,7 +295,7 @@ func representativeWeChatSnapshot(o *Observation, snaps []ActivitySnapshotRow) (
 // (cropping would otherwise hand the VLM the whole screen — other apps included —
 // and misidentify the window) or on any decode failure.
 func cropFocusedWindowArea(sn ActivitySnapshotRow, snapshotsDir string, sidebarFraction float64) *agent.ImageAttachment {
-	if strings.TrimSpace(sn.FilePath) == "" {
+	if sn.PrivacyHeld || strings.TrimSpace(sn.FilePath) == "" {
 		return nil
 	}
 	// No focus rect → can't isolate the window; skip rather than feed the full
@@ -406,6 +408,8 @@ func (c *ActivityTriager) describeWeChatScreenshot(ctx context.Context, img *age
 	}
 	ctx, cancel := context.WithTimeout(ctx, wechatVisionTimeout)
 	defer cancel()
+	// A WeChat window goes as a picture: See them counts it.
+	assistantCallScopeFrom(ctx).add("wechat", "", 1)
 
 	var out strings.Builder
 	_, err := runner.ExecuteTask(ctx, &agent.TaskInput{

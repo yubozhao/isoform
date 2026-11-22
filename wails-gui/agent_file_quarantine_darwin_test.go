@@ -13,7 +13,7 @@ import (
 // TestAgentFilesAreQuarantined: each file an agent posts carries the
 // quarantine flag, so macOS asks before running it from Finder.
 func TestAgentFilesAreQuarantined(t *testing.T) {
-	app, _ := newAgentJoinTestApp(t)
+	app := newAgentJoinTestApp(t)
 	names := app.keepAgentFiles(agentinbox.Item{ID: "h1", SourceKind: "brief_item", SourceID: "b1"}, []agentinbox.File{{Name: "run.terminal", Text: "x"}})
 	if len(names) != 1 {
 		t.Fatalf("kept %v", names)

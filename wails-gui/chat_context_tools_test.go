@@ -54,7 +54,7 @@ func TestComposeExternalChatContextTierAndNativeControl(t *testing.T) {
 
 // SendPrompt supplies both tiers only for supported, user-started main chat.
 // Its real TaskInput then runs through the same NewToolServer used by Claude.
-func TestStreamExternalChatComposedPromptAndToolServerSameTurn(t *testing.T) {
+func TestStreamExternalChatComposedPromptAndToolServerSameTurnChatNativeReads(t *testing.T) {
 	app := newMCPReadTestApp(t)
 	app.memoryStore = setupFixtureStore(t)
 	seedHandoffBoundaryContext(t, app)
@@ -79,6 +79,24 @@ func TestStreamExternalChatComposedPromptAndToolServerSameTurn(t *testing.T) {
 	external, history := input.ExternalPromptFunc()
 	if !strings.Contains(external, chatContextToolHint) || strings.Contains(external, handoffPrivatePeople) || strings.Contains(external, "<memory-cli>") {
 		t.Fatal("bad composed external prompt")
+	}
+	nativePrompt, _ := input.PromptFunc()
+	if !strings.Contains(nativePrompt, chatNativeReadHint) || !strings.Contains(external, chatNativeReadHint) {
+		t.Fatal("main-chat read hint missing")
+	}
+	nativeNames := map[string]bool{}
+	for _, tool := range input.ExtraTools {
+		nativeNames[tool.Name()] = true
+	}
+	for _, name := range chatNativeReadNames {
+		if !nativeNames[name] {
+			t.Fatalf("native main chat missing %s", name)
+		}
+	}
+	for _, tool := range input.ExternalExtraTools {
+		if nativeNames[tool.Name()] {
+			t.Fatalf("duplicate external tool %s", tool.Name())
+		}
 	}
 	task := *input
 	task.Prompt, task.History, task.PromptFunc = external, history, nil
@@ -447,7 +465,7 @@ func TestStreamExternalChatContextWiringKeepsUnsupportedCases(t *testing.T) {
 			if (input.ExternalPromptFunc != nil) != wantExternal {
 				t.Fatalf("external composer present=%v, want %v", input.ExternalPromptFunc != nil, wantExternal)
 			}
-			if wantExternal && len(input.ExternalExtraTools) != len(chatContextToolNames) {
+			if wantExternal && len(input.ExternalExtraTools) != len(externalContextToolNames) {
 				t.Fatal("external tier lost its readers")
 			}
 			if !wantExternal && len(input.ExternalExtraTools) != 0 {

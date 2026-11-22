@@ -207,3 +207,42 @@ func TestAgentRunMarkLeavesWithItsRun(t *testing.T) {
 		t.Fatalf("agent mark rows left = %d, %v", left, err)
 	}
 }
+
+// TestAgentRunBackfillKeepsProtectedRunsOut: an agent run in a protected
+// session (a private app, a private window) never becomes an agent row in
+// Activity, even through the one-time backfill: its events don't load
+// (GetSessionsByIDs leaves protected sessions out), so it isn't marked.
+func TestAgentRunBackfillKeepsProtectedRunsOut(t *testing.T) {
+	app := newThreadTestApp(t)
+	store := app.activity.store
+	today, _ := threadTestDay(t)
+	day := today.AddDate(0, 0, -1)
+	open := seedThreadMoment(t, app, threadFixtureMoment{id: "open", title: "Hourly PR check in the hub", app: "Claude", bundle: "com.anthropic.claudefordesktop", start: at(day, 10, 0), end: at(day, 10, 20)})
+	private := seedThreadMoment(t, app, threadFixtureMoment{id: "private", title: "Private session", app: "Claude", bundle: "com.anthropic.claudefordesktop", start: at(day, 11, 0), end: at(day, 11, 20)})
+	if _, err := store.db.Exec(`UPDATE activity_sessions SET triage_status = 'protected' WHERE id = ?`, "session-"+private.ID); err != nil {
+		t.Fatal(err)
+	}
+	marked, err := app.backfillAgentTimelineRuns(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if marked != 1 {
+		t.Fatalf("backfill marked %d runs, want only the open one", marked)
+	}
+	var ids []string
+	rows, err := store.db.Query(`SELECT run_id FROM activity_agent_runs`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, id)
+	}
+	if len(ids) != 1 || ids[0] != "run-"+open.ID {
+		t.Fatalf("agent marks = %v, want only run-%s", ids, open.ID)
+	}
+}

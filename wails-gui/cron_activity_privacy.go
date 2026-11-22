@@ -1,14 +1,31 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"strings"
+	"time"
 )
+
+func activityDayBounds(date string) (int64, int64, error) {
+	t, err := time.ParseInLocation("2006-01-02", date, time.Local)
+	if err != nil {
+		return 0, 0, err
+	}
+	return t.UnixMilli(), t.AddDate(0, 0, 1).UnixMilli(), nil
+}
 
 // activitySessionsForExternalRead applies the model privacy gate before
 // pagination. A protected row must not become a result or displace a safe row.
 func (a *App) activitySessionsForExternalRead(limit, offset int, startMs, endMs int64, keyword string) ([]ActivitySessionSummary, error) {
+	return a.externalActivityList(context.Background(), limit, offset, startMs, endMs, keyword, nil)
+}
+
+type activityReadFilter func(ActivitySessionRow) (bool, error)
+
+func (a *App) externalActivityList(ctx context.Context, limit, offset int, startMs, endMs int64, keyword string, allowed activityReadFilter) ([]ActivitySessionSummary, error) {
 	result := []ActivitySessionSummary{}
 	if a == nil || a.activity == nil || a.activity.store == nil || a.IsClosedEyesModeEnabled() {
 		return result, nil
@@ -21,7 +38,14 @@ func (a *App) activitySessionsForExternalRead(limit, offset int, startMs, endMs 
 			return nil, err
 		}
 		for _, row := range rows {
-			if !a.activitySessionAllowsModelRead(store, row) {
+			ok, err := a.activitySessionAllowsModelReadResultContext(ctx, store, row)
+			if err == nil && ok && allowed != nil {
+				ok, err = allowed(row)
+			}
+			if err != nil {
+				return nil, err
+			}
+			if !ok {
 				continue
 			}
 			visible++
@@ -39,7 +63,7 @@ func (a *App) activitySessionsForExternalRead(limit, offset int, startMs, endMs 
 	}
 }
 
-func (a *App) activitySessionForExternalRead(id string) (*ActivitySessionDetail, error) {
+func (a *App) activitySessionForExternalRead(id string, filter activityReadFilter) (*ActivitySessionDetail, error) {
 	if a == nil || a.activity == nil || a.activity.store == nil || a.IsClosedEyesModeEnabled() {
 		return nil, sql.ErrNoRows
 	}
@@ -48,7 +72,14 @@ func (a *App) activitySessionForExternalRead(id string) (*ActivitySessionDetail,
 	if err != nil {
 		return nil, err
 	}
-	if !a.activitySessionAllowsModelRead(store, *session) {
+	ok, err := a.activitySessionAllowsModelReadResult(store, *session)
+	if err == nil && ok && filter != nil {
+		ok, err = filter(*session)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
 		return nil, sql.ErrNoRows
 	}
 	events, err := store.GetSessionEvents(id)
@@ -143,4 +174,45 @@ func activitySessionExternalSummary(session ActivitySessionRow) ActivitySessionS
 		EventCount: session.EventCount, SnapshotCount: session.SnapshotCount,
 		TriageStatus: session.TriageStatus, OCRStatus: session.OCRStatus,
 	}
+}
+
+func (a *App) externalActivitySearch(ctx context.Context, query string, limit int, allowed activityReadFilter) ([]ActivitySemanticResult, error) {
+	if a.IsClosedEyesModeEnabled() {
+		return nil, nil
+	}
+	if a.activity == nil || a.activity.store == nil {
+		return nil, errors.New("activity unavailable")
+	}
+	store := a.activity.store
+	store.mu.RLock()
+	embedder := store.embedder
+	store.mu.RUnlock()
+	if embedder == nil {
+		return nil, errors.New("activity search unavailable")
+	}
+	hits, err := store.searchEmbeddedSessions(ctx, query, activitySemanticTopK, embedder, func(text string) string { return truncateText(redactActivityModelText(text), 200) })
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ActivitySemanticResult, 0, len(hits))
+	for _, hit := range hits {
+		row, err := store.GetSessionByID(hit.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		ok, err := a.activitySessionAllowsModelReadResultContext(ctx, store, *row)
+		if err == nil && ok && allowed != nil {
+			ok, err = allowed(*row)
+		}
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			out = append(out, hit)
+			if len(out) == limit {
+				break
+			}
+		}
+	}
+	return out, ctx.Err()
 }

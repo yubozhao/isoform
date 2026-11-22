@@ -10,13 +10,39 @@ enum WatchConnection: Equatable, Sendable {
     case unknown
     case noWatch
     case appMissing
+    /// The watch has had Isoform, and the system now says it is not installed. Right after this
+    /// app is updated the watch gets its own copy later, and until then the system reports it
+    /// as missing (2026-11-21: twice after an update the page said "Isoform isn't on it yet"
+    /// and hid everything else). What is known is only that the watch does not answer now.
+    case appAway
     case ready(reachable: Bool)
+
+    /// Kept across launches: the watch has had Isoform at some time.
+    static let hadAppKey = "watch.hadApp"
+
+    /// What the system's three answers mean, with what this phone remembers.
+    static func from(paired: Bool, installed: Bool, reachable: Bool, hadApp: Bool) -> WatchConnection {
+        guard paired else { return .noWatch }
+        if installed { return .ready(reachable: reachable) }
+        return hadApp ? .appAway : .appMissing
+    }
 
     /// A watch is paired, with or without the app: the Watch page is worth showing.
     var hasWatch: Bool {
         switch self {
-        case .appMissing, .ready: return true
+        case .appMissing, .appAway, .ready: return true
         case .unknown, .noWatch: return false
+        }
+    }
+
+    /// Whether the Watch tab shows. A phone that has had a watch keeps the tab while the system
+    /// has not said yet (at launch, or when it never reports); only a plain "no watch is paired"
+    /// takes it away.
+    static func showsTab(_ connection: WatchConnection, seenBefore: Bool) -> Bool {
+        switch connection {
+        case .appMissing, .appAway, .ready: return true
+        case .noWatch: return false
+        case .unknown: return seenBefore
         }
     }
 }
@@ -110,9 +136,38 @@ final class WatchRecordingsModel: ObservableObject {
     @Published private(set) var recordings: [PhoneRecording] = []
     @Published private(set) var outcome: WatchRecordingForwarder.Outcome = .drained
     @Published private(set) var onWatch: [WatchRecordingSummary] = []
-    @Published var connection: WatchConnection = .unknown
+    @Published var connection: WatchConnection = .unknown {
+        didSet {
+            guard connection.hasWatch, !watchSeenBefore else { return }
+            watchSeenBefore = true
+            defaults.set(true, forKey: Self.watchSeenKey)
+        }
+    }
+    /// This phone has had a watch paired at some time; kept across launches.
+    @Published private(set) var watchSeenBefore: Bool
+    static let watchSeenKey = "watch.seenBefore"
+    private let defaults: UserDefaults
+    /// The Watch tab and the Settings row that opens it show.
+    var showsWatchTab: Bool { WatchConnection.showsTab(connection, seenBefore: watchSeenBefore) }
     /// What the watch last said it is doing; nil until it has said.
-    @Published var watchStatus: WatchLiveStatus?
+    @Published var watchStatus: WatchLiveStatus? {
+        didSet {
+            // When the watch's state changed, as this phone saw it: "Since 7:49 PM yesterday."
+            guard watchStatus != oldValue else { return }
+            statusSince = Date()
+            defaults.set(watchStatus?.rawValue, forKey: Self.statusKey)
+            defaults.set(statusSince, forKey: Self.statusSinceKey)
+        }
+    }
+    /// Since when the watch has been in its state; nil when this phone never saw it change.
+    @Published private(set) var statusSince: Date?
+    static let statusKey = "watch.status"
+    static let statusSinceKey = "watch.statusSince"
+    /// Why hours waited while the app was not running, when iOS said so; gone once every hour is across.
+    @Published private(set) var waitCause: WatchWaitCause?
+    static let waitCauseKey = "watch.waitCause"
+    /// Since when parts have been on their way without anything in the way.
+    @Published private(set) var sendingSince: Date?
     @Published private(set) var lastChecked: Date?
     @Published var syncing = false
     /// Deleted here a moment ago: hidden even if the watch still lists it.
@@ -125,7 +180,16 @@ final class WatchRecordingsModel: ObservableObject {
         return environment["YANSU_UITEST_SETTINGS_STATE"] != nil && environment["YANSU_UITEST_WATCH_RECORDINGS"] == "1"
     }
 
-    init() {
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        watchSeenBefore = defaults.bool(forKey: Self.watchSeenKey)
+        if let raw = defaults.object(forKey: Self.waitCauseKey) as? Int { waitCause = WatchWaitCause(rawValue: raw) }
+        // The state the watch was last seen in, and since when; a later report with the same
+        // state keeps the time.
+        if let raw = defaults.string(forKey: Self.statusKey), let status = WatchLiveStatus(rawValue: raw) {
+            watchStatus = status
+            statusSince = defaults.object(forKey: Self.statusSinceKey) as? Date
+        }
         guard Self.isSeeded else { return }
         let now = Date()
         func id(_ n: Int) -> String { String(format: "00000000-0000-4000-8000-%012d", n) }
@@ -164,7 +228,29 @@ final class WatchRecordingsModel: ObservableObject {
 
     func show(_ recordings: [PhoneRecording], outcome: WatchRecordingForwarder.Outcome?) {
         self.recordings = recordings
-        if let outcome { self.outcome = outcome }
+        if let outcome {
+            self.outcome = outcome
+            if outcome == .sending {
+                if sendingSince == nil { sendingSince = Date() }
+            } else {
+                sendingSince = nil
+            }
+        }
+        // The cause does not linger once every hour is on the computer (phone-watch v1.2.0 rule 3).
+        if waitCause != nil, !rows.contains(where: { $0.stage == .onPhone || $0.stage == .sending || $0.stage == .failedToSend }) {
+            noteWaitCause(nil)
+        }
+    }
+
+    /// iOS said why uploads handed to it were stopped; nil forgets it.
+    func noteWaitCause(_ cause: WatchWaitCause?) {
+        guard cause != waitCause else { return }
+        waitCause = cause
+        if let cause {
+            defaults.set(cause.rawValue, forKey: Self.waitCauseKey)
+        } else {
+            defaults.removeObject(forKey: Self.waitCauseKey)
+        }
     }
 
     func showOnWatch(_ summaries: [WatchRecordingSummary]) { onWatch = summaries }
@@ -220,7 +306,7 @@ enum WatchRecordingsCopy {
     static func waiting(_ outcome: WatchRecordingForwarder.Outcome, anyOnPhone: Bool) -> String? {
         guard anyOnPhone else { return nil }
         switch outcome {
-        case .drained: return nil
+        case .drained, .sending: return nil
         case .waiting:
             return String(localized: "Recordings go to your computer when it is awake and observing.",
                           comment: "Shown above the watch recordings list while some wait on the phone")
@@ -242,10 +328,11 @@ enum WatchRecordingsCopy {
         let onPhone = rows.filter { $0.stage == .onPhone || $0.stage == .sending || $0.stage == .failedToSend }.count
         var parts: [String] = []
         if onWatch > 0 {
-            parts.append(String(localized: "\(onWatch) on your watch", comment: "Count of watch recordings still on the watch"))
+            // Rows always say "hours": no bare numbers (phone-watch v1.1.0 rule 14).
+            parts.append(onWatch == 1 ? String(localized: "1 hour on your watch") : String(localized: "\(onWatch) hours on your watch"))
         }
         if onPhone > 0 {
-            parts.append(String(localized: "\(onPhone) on this phone", comment: "Count of watch recordings waiting on the phone"))
+            parts.append(onPhone == 1 ? String(localized: "1 hour on this phone") : String(localized: "\(onPhone) hours on this phone"))
         }
         if parts.isEmpty {
             return rows.isEmpty
@@ -262,6 +349,9 @@ enum WatchRecordingsCopy {
         case .appMissing:
             return String(localized: "Isoform isn't on your watch yet. Open the Watch app on this phone and install Isoform under Available Apps.",
                           comment: "Watch page: the watch app is not installed")
+        case .appAway:
+            return String(localized: "Isoform on your watch isn't answering right now. After an update it comes back by itself.",
+                          comment: "Watch page: the watch had the app and the system now says it is not installed")
         case .ready(let reachable):
             return reachable
                 ? String(localized: "Your watch is connected.", comment: "Watch page: the watch is reachable now")
@@ -383,12 +473,15 @@ struct WatchRecordingsView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .yansuScreen()
-        .navigationTitle(String(localized: "Watch", comment: "Title of the phone's page for the watch and its recordings"))
+        .navigationTitle(String(localized: "Hours by place", comment: "Opens the list of the watch's hours grouped by where they are"))
         .navigationBarTitleDisplayMode(.inline)
         .refreshable { await model.sync() }
         .onAppear { WatchLink.shared.drain() }
     }
 
+    /// The list's head: where the hours are in one line. Sync now and "Checked" went
+    /// (phone-watch v1.1.0 rule 13): pulling down checks at once, and Try again is on the card
+    /// of the Watch page when something is stuck.
     private func syncCard(_ rows: [WatchRecordingRow]) -> some View {
         YansuCard {
             VStack(alignment: .leading, spacing: 10) {
@@ -399,33 +492,11 @@ struct WatchRecordingsView: View {
                 if let line = WatchRecordingsCopy.connection(model.connection) {
                     Text(line).font(.footnote).foregroundStyle(YansuTheme.secondary)
                 }
-                if let line = WatchRecordingsCopy.waiting(model.outcome, anyOnPhone: rows.contains { $0.stage == .onPhone }) {
-                    Text(line)
-                        .font(.footnote)
-                        .foregroundStyle(YansuTheme.secondary)
-                        .accessibilityIdentifier("watchRecordings.waiting")
-                }
-                HStack {
-                    Button {
-                        Task { await model.sync() }
-                    } label: {
-                        Text(model.syncing
-                             ? String(localized: "Syncing…", comment: "The Sync now button while a sync runs")
-                             : String(localized: "Sync now", comment: "Sends waiting watch recordings on now"))
-                            .font(.body.weight(.semibold))
-                            .foregroundStyle(model.syncing ? YansuTheme.tertiary : YansuTheme.accent)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(model.syncing)
-                    .accessibilityIdentifier("watchRecordings.sync")
-                    Spacer()
-                    if let checked = model.lastChecked {
-                        Text("Checked \(checked, format: .dateTime.hour().minute())",
-                             comment: "When the phone last tried to send watch recordings")
-                            .font(.footnote)
-                            .foregroundStyle(YansuTheme.tertiary)
-                    }
-                }
+                Text("This phone keeps the audio only until your computer has it.",
+                     comment: "At the head of the watch's hours by place")
+                    .font(.footnote)
+                    .foregroundStyle(YansuTheme.secondary)
+                    .accessibilityIdentifier("watchRecordings.kept")
             }
         }
     }
@@ -745,44 +816,89 @@ struct WatchRecordingDetailView: View {
     }
 }
 
-/// The watch line on Today: only when hours have waited for the computer half an hour or one
-/// could not be sent (phone-watch v1.0.0 rule 5). It opens the Watch tab.
-struct WatchTodayLine: View {
-    @ObservedObject var model: WatchRecordingsModel
-    let open: () -> Void
+/// What Today's watch line says, and whether it is amber.
+struct WatchTodayLineText: Equatable, Sendable {
+    let text: String
+    let amber: Bool
 
-    var body: some View {
-        if model.connection.hasWatch, let line = WatchTabCopy.waitingLine(model.rows) {
-            Button(action: open) {
-                HStack(spacing: 6) {
-                    Text(line).font(.footnote.weight(.medium)).multilineTextAlignment(.leading)
-                    Spacer(minLength: 4)
-                    Image(systemName: "chevron.right").font(.caption2.weight(.semibold))
-                }
-                .foregroundStyle(YansuTheme.warning)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(YansuTheme.warningWash, in: RoundedRectangle(cornerRadius: YansuTheme.cornerRadius, style: .continuous))
-                .padding(.horizontal, YansuTheme.gutter)
-                .padding(.bottom, 6)
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("today.watchLine")
+    /// One line, always there when a watch is paired (phone-watch v1.1.0 rule 18; phone-duo
+    /// v1.0.0 rule 12; phone-watch v1.2.0 rule 7). Closed Eyes comes first, then what stops
+    /// listening, then hours that could not be sent or cannot go. Hours that are going are plain.
+    /// With no watch paired the line shows only during Closed Eyes.
+    static func of(hasWatch: Bool, now state: WatchNow.Kind, closedEyesUntil: Date?, since: Date?,
+                   rows: [WatchRecordingRow], outcome: WatchRecordingForwarder.Outcome,
+                   now: Date = Date(), calendar: Calendar = .current, locale: Locale = .current) -> WatchTodayLineText? {
+        if state == .closedEyes {
+            let lead = closedEyesUntil.map { String(localized: "Closed Eyes until \(WatchTabCopy.clock($0, locale: locale, timeZone: calendar.timeZone))") }
+                ?? String(localized: "Closed Eyes until you end it")
+            return .init(text: lead + " · " + String(localized: "nothing is seen or heard"), amber: true)
         }
+        guard hasWatch else { return nil }
+        if state == .notListening || state == .offToday {
+            let lead = String(localized: "Your watch isn't listening")
+            let when = since.map { " · " + String(localized: "since \(WatchTabCopy.sinceText($0, now: now, calendar: calendar, locale: locale))") } ?? ""
+            // The wearer's own stop for the day is said plainly; a stop they did not make is amber.
+            return .init(text: lead + when, amber: state == .notListening)
+        }
+        let failed = rows.filter { $0.stage == .failedToSend || $0.stage == .failedOnComputer }.count
+        if failed > 0 {
+            return .init(text: failed == 1 ? String(localized: "1 hour from your watch couldn't be sent")
+                         : String(localized: "\(failed) hours from your watch couldn't be sent"), amber: true)
+        }
+        let onPhone = rows.filter { $0.stage == .onPhone || $0.stage == .sending }.count
+        if onPhone > 0 {
+            if WatchItemState.cannotGo(rows, outcome: outcome, now: now) {
+                return .init(text: onPhone == 1 ? String(localized: "1 hour from your watch is waiting on this phone")
+                             : String(localized: "\(onPhone) hours from your watch are waiting on this phone"), amber: true)
+            }
+            return .init(text: onPhone == 1 ? String(localized: "1 hour from your watch is going to your computer")
+                         : String(localized: "\(onPhone) hours from your watch are going to your computer"), amber: false)
+        }
+        if state == .listening || state == .notNear {
+            return .init(text: String(localized: "Your watch is listening") + " · " + String(localized: "every hour is on your computer"),
+                         amber: false)
+        }
+        // A watch that has not said what it is doing: nothing is known, so nothing is said.
+        return nil
     }
 }
 
-/// The mark at the top of Today: it opens the Watch tab, and blinks while the watch listens.
-/// Shown only when this phone has a watch paired.
-struct WatchTodayMark: View {
+/// The watch line on Today: under the date, scrolling with the page, never pinned. It opens the
+/// Watch tab.
+struct WatchTodayLine: View {
     @ObservedObject var model: WatchRecordingsModel
     let open: () -> Void
+    /// When Closed Eyes ends by itself; read from the computer's pause when the watch's state changes.
+    @State private var closedEyesUntil: Date?
+
+    private var line: WatchTodayLineText? {
+        let state = WatchTabCopy.now(connection: model.connection, status: model.watchStatus, pauseUntil: closedEyesUntil,
+                                     lastHeard: nil).kind
+        return WatchTodayLineText.of(hasWatch: model.connection.hasWatch, now: state, closedEyesUntil: closedEyesUntil,
+                                     since: model.statusSince, rows: model.rows, outcome: model.outcome)
+    }
 
     var body: some View {
-        if model.connection.hasWatch {
-            IsoformMarkButton(working: model.watchStatus == .recording, action: open)
-                .accessibilityLabel(Text("Watch", comment: "Title of the Watch tab"))
-                .accessibilityIdentifier("today.watchMark")
+        Group { lineButton }
+            .task(id: model.watchStatus) { closedEyesUntil = await WatchLink.shared.pauseUntil() }
+    }
+
+    @ViewBuilder private var lineButton: some View {
+        if let line {
+            Button(action: open) {
+                HStack(spacing: 6) {
+                    Text(line.text).font(.footnote.weight(.medium)).multilineTextAlignment(.leading)
+                    Spacer(minLength: 4)
+                    Image(systemName: "chevron.right").font(.caption2.weight(.semibold))
+                }
+                .foregroundStyle(line.amber ? YansuTheme.warning : YansuTheme.secondary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(line.amber ? YansuTheme.warningWash : YansuTheme.surface,
+                            in: RoundedRectangle(cornerRadius: YansuTheme.cornerRadius, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("today.watchLine")
         }
     }
 }

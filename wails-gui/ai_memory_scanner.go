@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 )
 
 // AIMemorySourceID identifies a known AI application whose memory files can be imported.
@@ -120,21 +119,14 @@ func (a *App) ImportAIMemories(fileIDs []string) AIMemoryImportResult {
 			continue
 		}
 
-		// Generate a unique filename: "imported-<source>-<sanitized-name>-<timestamp>.md"
-		baseName := strings.TrimSuffix(filepath.Base(f.RelPath), filepath.Ext(f.RelPath))
-		safeName := sanitizeFilename(baseName)
-		destName := fmt.Sprintf("imported-%s-%s-%d.md", sourcePrefix, safeName, time.Now().UnixMilli())
-
-		// Prepend a provenance header so the user knows where it came from.
-		header := fmt.Sprintf("# Imported from %s\n\n> Source: `%s`\n\n---\n\n", sourceDisplayName(AIMemorySourceID(sourcePrefix)), f.Path)
-		content := header + string(data)
-
-		if err := a.writeImportedMemoryFile(destDir, strings.TrimSuffix(destName, ".md"), content); err != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("write %s: %v", destName, err))
+		// Every line arrives as a claim to judge (design answer T2).
+		written, errs := a.writeImportedClaims(destDir, sourceDisplayName(AIMemorySourceID(sourcePrefix)), string(data))
+		result.Errors = append(result.Errors, errs...)
+		if written == 0 {
 			continue
 		}
 
-		result.Imported++
+		result.Imported += written
 		importedIDs = append(importedIDs, id)
 	}
 
@@ -201,8 +193,8 @@ func scanClaudeCode(home string) *AIMemorySource {
 
 // ── ChatGPT prompt-based import ──────────────────────────────────────
 
-// ImportAIMemoryText saves pasted text (e.g. from ChatGPT memory export) as a
-// Yansu memory file. The `source` parameter is a display label like "ChatGPT".
+// ImportAIMemoryText saves pasted text (e.g. from ChatGPT memory export) as
+// one memory entry per claim line. The `source` parameter is a display label like "ChatGPT".
 func (a *App) ImportAIMemoryText(source string, text string) (AIMemoryImportResult, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
@@ -214,18 +206,13 @@ func (a *App) ImportAIMemoryText(source string, text string) (AIMemoryImportResu
 		return AIMemoryImportResult{}, err
 	}
 
-	safeName := sanitizeFilename(source)
-	destName := fmt.Sprintf("imported-%s-memories-%d.md", safeName, time.Now().UnixMilli())
-
-	header := fmt.Sprintf("# Imported from %s\n\n---\n\n", source)
-	if err := a.writeImportedMemoryFile(destDir, strings.TrimSuffix(destName, ".md"), header+text); err != nil {
-		return AIMemoryImportResult{
-			Errors: []string{fmt.Sprintf("write %s: %v", destName, err)},
-		}, nil
+	// Every line arrives as a claim to judge (design answer T2).
+	written, errs := a.writeImportedClaims(destDir, source, text)
+	if written == 0 {
+		return AIMemoryImportResult{Errors: errs}, nil
 	}
-
 	a.markMemoryDirty("text-import")
-	return AIMemoryImportResult{Imported: 1}, nil
+	return AIMemoryImportResult{Imported: written, Errors: errs}, nil
 }
 
 // ── Import tracking ──────────────────────────────────────────────────

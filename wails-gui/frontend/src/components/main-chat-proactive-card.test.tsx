@@ -2206,9 +2206,9 @@ describe('chat walk-through v1.0.2 cards', () => {
         expect(appSource).not.toMatch(/MainChatScopeControl|scopeControl=/);
     });
 
-    it('#8 names the switch Hide updates / Show updates in both languages', () => {
-        expect([en.mainChat.view.hideUpdates, en.mainChat.view.showUpdates]).toEqual(['Hide updates', 'Show updates']);
-        expect([zh.mainChat.view.hideUpdates, zh.mainChat.view.showUpdates]).toEqual(['隐藏更新', '显示更新']);
+    it('#8 the Hide updates switch is gone: Chat is one thread (computer-chat v1.0.0 rule 2)', () => {
+        expect(en.mainChat.view).not.toHaveProperty('hideUpdates');
+        expect(zh.mainChat.view).not.toHaveProperty('showUpdates');
         expect(JSON.stringify(en)).not.toMatch(/folded update/i);
     });
 });

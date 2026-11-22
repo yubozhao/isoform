@@ -72,7 +72,8 @@ func TestBrainDumpProjectChoiceStartsHandoff(t *testing.T) {
 		t.Fatal(err)
 	}
 	rig := newHandoffTestRig(t)
-	project := HistoryProject{ID: "project", Name: "Project", Path: t.TempDir(), LastAt: time.Now().UnixMilli()}
+	saveHistoryChoices(t, "codex")
+	project := HistoryProject{Assistants: []string{"codex"}, ID: "project", Name: "Project", Path: t.TempDir(), LastAt: time.Now().UnixMilli()}
 	rig.app.assistantHistory.loaded = true
 	rig.app.assistantHistory.cache = assistantHistoryCache{Projects: []HistoryProject{project}}
 	item := BrainDumpItem{ID: "work", Title: "Fix tests", Who: "codex"}
@@ -120,7 +121,8 @@ func TestBrainDumpKnownProjectStartsOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	rig := newHandoffTestRig(t)
-	project := HistoryProject{ID: "project", Name: "Project", Path: t.TempDir(), LastAt: time.Now().UnixMilli()}
+	saveHistoryChoices(t, "codex")
+	project := HistoryProject{Assistants: []string{"codex"}, ID: "project", Name: "Project", Path: t.TempDir(), LastAt: time.Now().UnixMilli()}
 	rig.app.assistantHistory.loaded = true
 	rig.app.assistantHistory.cache = assistantHistoryCache{Projects: []HistoryProject{project}}
 	bridge, err := newMobileBridge(rig.app, t.TempDir())

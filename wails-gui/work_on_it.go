@@ -219,7 +219,11 @@ func (a *App) PrepareWorkOnIt(in workonit.Input) (WorkOnItPrepared, error) {
 	if err != nil {
 		return WorkOnItPrepared{}, err
 	}
-	return WorkOnItPrepared{TaskID: task.ID, Text: text, Kind: kind, Agents: preferYourAgent(agents, a.yourAgentChoice(kind))}, nil
+	chosen, err := a.yourAgentChoice(kind)
+	if err != nil {
+		return WorkOnItPrepared{}, err
+	}
+	return WorkOnItPrepared{TaskID: task.ID, Text: text, Kind: kind, Agents: preferYourAgent(agents, chosen)}, nil
 }
 
 // GetWorkOnItAgents is the ranked menu, the top one the default.
@@ -331,6 +335,12 @@ func (a *App) SendWorkOnIt(taskID, agentID, method string) (WorkOnItSent, error)
 	}
 	if !ok && method == workonit.MethodConnected {
 		allowed = true // a joined agent outside the catalog
+	}
+	if !allowed && method == workonit.MethodConnected {
+		// The menu reads an unread setting as "not ready"; the Yes says why.
+		if _, err := a.connectedHandoffReadyErr(agent.ID); err != nil {
+			return WorkOnItSent{}, err
+		}
 	}
 	if !allowed {
 		return WorkOnItSent{}, errWorkOnItNoMethod

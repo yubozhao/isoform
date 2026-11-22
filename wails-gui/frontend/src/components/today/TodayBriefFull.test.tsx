@@ -44,6 +44,51 @@ describe("TodayBriefFull", () => {
         expect(screen.getByTestId("brief-full-past")).toHaveTextContent("Every brief stays on this computer; the phone keeps 30 days.");
     });
 
+    it("lists In this brief by kind above Past briefs, each opening its Why", async () => {
+        const withSources = { ...brief, evidence: [
+            { ref: "e1", sourceKind: "activity", sourceId: "a1", label: "Worked on the import", observedAt: "2026-11-15T15:00:00-08:00", group: "screen" },
+            { ref: "e2", sourceKind: "calendar", sourceId: "c1", label: "Halcyon review", observedAt: "2026-11-15T09:00:00-08:00", group: "calendar" },
+            { ref: "e3", sourceKind: "purpose", sourceId: "p1", label: "Ship the import", observedAt: "2026-11-15T09:00:00-08:00" },
+            { ref: "e4", sourceKind: "activity_session", sourceId: "s1", label: "A moment you marked on your watch", observedAt: "2026-11-15T12:00:00-08:00", group: "watch" },
+            { ref: "e5", sourceKind: "meeting_transcript", sourceId: "m1", label: "Call with Lena", observedAt: "2026-11-15T11:00:00-08:00", group: "calls" },
+            { ref: "e6", sourceKind: "meeting", sourceId: "m2", label: "Standup", observedAt: "2026-11-15T10:00:00-08:00", group: "calls" },
+        ] } as unknown as MobileBriefDocument;
+        render(<TodayBriefFull brief={withSources} view={view} active onOpenBrief={vi.fn()} onBack={vi.fn()} />);
+        await act(async () => {});
+        const column = screen.getByTestId("brief-full-past");
+        const sources = screen.getByTestId("brief-full-sources");
+        expect(column.firstElementChild).toBe(sources);
+        expect(sources).toHaveTextContent("In this brief");
+        expect(sources).toHaveTextContent("Each opens its Why.");
+        expect(screen.getAllByTestId("brief-source-kind").map((row) => row.getAttribute("data-kind"))).toEqual(["calendar", "calls", "watch", "screen"]);
+        expect(screen.getByRole("button", { name: /Calls and meetings/ })).toHaveTextContent("2");
+        expect(sources).not.toHaveTextContent("Ship the import");
+        expect(screen.queryByTestId("brief-source-why")).toBeNull();
+        const calendar = screen.getByRole("button", { name: /Calendar/ });
+        fireEvent.click(calendar);
+        expect(calendar).toHaveAttribute("aria-expanded", "true");
+        expect(screen.getByTestId("brief-source-why")).toHaveTextContent("Sun · Calendar · Halcyon review");
+    });
+
+    it("shows no In this brief when the brief has no sources of the eight kinds", async () => {
+        render(<TodayBriefFull brief={brief} view={view} active onOpenBrief={vi.fn()} onBack={vi.fn()} />);
+        await act(async () => {});
+        expect(screen.queryByTestId("brief-full-sources")).toBeNull();
+    });
+
+    it("puts an agent's result under the Your agents paragraph, answered from there (brief-agents rules 5 and 6)", async () => {
+        const withAgents = { ...brief, narrative: [...(brief.narrative ?? []), { text: "Your agents: Codex finished the test plan." }] } as MobileBriefDocument;
+        const result = { id: "result:wo_plan", kind: "result", row: "result", state: "back", source: "agent", ref: { briefId: "2026-11-15-evening", paragraph: "2", handoffId: "wo_plan" }, first: [], noticed: "The test plan is ready: 14 cases.", work: { title: "The test plan", text: "The test plan is ready: 14 cases." }, yes: { does: "open", line: "Was it useful?" }, reasons: ["wrong_facts", "missed_point", "myself"], createdAt: "", order: 0 } as unknown as WorkItem;
+        const onAnswer = vi.fn().mockResolvedValue(null);
+        render(<TodayBriefFull brief={withAgents} view={view} active items={[result]} onAnswer={onAnswer} onOpenBrief={vi.fn()} onBack={vi.fn()} />);
+        await act(async () => {});
+        const paragraph = screen.getByText("Your agents: Codex finished the test plan.").parentElement!;
+        expect(paragraph).toContainElement(screen.getByTestId("brief-full-item"));
+        expect(screen.getByTestId("brief-full-item")).toHaveTextContent("The test plan");
+        fireEvent.click(screen.getByRole("button", { name: "Useful" }));
+        expect(onAnswer).toHaveBeenCalledWith(result.id, { action: "useful" });
+    });
+
     it("plays with Space, moves 15 seconds with the arrows, and goes back with Escape", async () => {
         const onBack = vi.fn();
         render(<TodayBriefFull brief={brief} view={view} active onOpenBrief={vi.fn()} onBack={onBack} />);
@@ -93,5 +138,75 @@ describe("TodayBriefFull", () => {
         fireEvent.change(screen.getByTestId("not-right-words"), { target: { value: "It's at eleven." } });
         await act(async () => { fireEvent.click(screen.getByTestId("not-right-send")); });
         expect(onNotRight).toHaveBeenCalledWith(sentenceWorkId("2026-11-15-evening", 1), { action: "no", reason: "already_done", after: "It's at eleven." });
+    });
+});
+
+describe("TodayBriefFull items answered with the keys (computer-brief v1.0.0 rule 4)", () => {
+    const second = { ...offer, id: "brief:2026-11-15-evening:offer:o2", work: { title: "Prep for Halcyon" }, ref: { briefId: "2026-11-15-evening", paragraph: "0" } } as unknown as WorkItem;
+    const result = { ...offer, id: "brief:2026-11-15-evening:result:r1", state: "back", work: { title: "Test plan" } } as unknown as WorkItem;
+    beforeEach(async () => {
+        await i18n.changeLanguage("en");
+        mocks.list.mockResolvedValue([]);
+    });
+    afterEach(cleanup);
+
+    it("answers the focused item with Y, N and M, and moves between items with the arrows", async () => {
+        const onAnswer = vi.fn().mockResolvedValue(null);
+        render(<TodayBriefFull brief={brief} view={view} active items={[offer, second]} onAnswer={onAnswer} onOpenBrief={vi.fn()} onBack={vi.fn()} />);
+        await act(async () => {});
+        const [first, next] = screen.getAllByTestId("brief-full-item");
+        expect(first).toHaveTextContent("Prep for Halcyon");
+        first.focus();
+        fireEvent.keyDown(first, { key: "ArrowDown" });
+        expect(document.activeElement).toBe(next);
+        await act(async () => { fireEvent.keyDown(next, { key: "n" }); });
+        expect(onAnswer).toHaveBeenLastCalledWith(offer.id, { action: "no" });
+        await act(async () => { fireEvent.keyDown(next, { key: "m" }); });
+        expect(onAnswer).toHaveBeenLastCalledWith(offer.id, { action: "not_mine" });
+        fireEvent.keyDown(next, { key: "ArrowUp" });
+        await act(async () => { fireEvent.keyDown(first, { key: "y" }); });
+        expect(onAnswer).toHaveBeenLastCalledWith(second.id, { action: "yes" });
+        expect(screen.getAllByRole("button", { name: "Yes" })[0]).toHaveAttribute("aria-keyshortcuts", "Y");
+    });
+
+    it("judges a result with Useful (Y) and Not useful (N), with no Not mine", async () => {
+        const onAnswer = vi.fn().mockResolvedValue(null);
+        render(<TodayBriefFull brief={brief} view={view} active items={[result]} onAnswer={onAnswer} onOpenBrief={vi.fn()} onBack={vi.fn()} />);
+        await act(async () => {});
+        const row = screen.getByTestId("brief-full-item");
+        await act(async () => { fireEvent.keyDown(row, { key: "y" }); });
+        expect(onAnswer).toHaveBeenLastCalledWith(result.id, { action: "useful" });
+        await act(async () => { fireEvent.keyDown(row, { key: "m" }); });
+        expect(onAnswer).toHaveBeenCalledTimes(1);
+        expect(screen.queryByRole("button", { name: "Not mine" })).not.toBeInTheDocument();
+    });
+
+    it("opens the hand-off sheet on a Yes to agent work", async () => {
+        const onAnswer = vi.fn().mockResolvedValue(null);
+        const onHandOff = vi.fn();
+        const agent = { ...offer, yes: { does: "agent", line: "" } } as unknown as WorkItem;
+        render(<TodayBriefFull brief={brief} view={view} active items={[agent]} onAnswer={onAnswer} onHandOff={onHandOff} onOpenBrief={vi.fn()} onBack={vi.fn()} />);
+        await act(async () => {});
+        fireEvent.keyDown(screen.getByTestId("brief-full-item"), { key: "y" });
+        expect(onHandOff).toHaveBeenCalledWith(agent);
+        expect(onAnswer).not.toHaveBeenCalled();
+    });
+
+    it("folds an answered item to one line with Undo while it can be undone", async () => {
+        const onUndo = vi.fn().mockResolvedValue(null);
+        const answered = { ...offer, state: "answered", answer: { action: "yes", at: "", surface: "computer", line: "Reply to Lena · in your Mail drafts", undoUntil: new Date(Date.now() + 60_000).toISOString() } } as unknown as WorkItem;
+        render(<TodayBriefFull brief={brief} view={view} active items={[answered]} onUndo={onUndo} onOpenBrief={vi.fn()} onBack={vi.fn()} />);
+        await act(async () => {});
+        expect(screen.getByTestId("brief-full-item")).toHaveTextContent("Reply to Lena · in your Mail drafts");
+        await act(async () => { fireEvent.click(screen.getByTestId("brief-full-item-undo")); });
+        expect(onUndo).toHaveBeenCalledWith(offer.id);
+    });
+
+    it("never answers while typing in a field inside the page", async () => {
+        const onAnswer = vi.fn().mockResolvedValue(null);
+        render(<TodayBriefFull brief={brief} view={view} active items={[offer]} onAnswer={onAnswer} onOpenBrief={vi.fn()} onBack={vi.fn()} />);
+        await act(async () => {});
+        fireEvent.keyDown(screen.getByRole("button", { name: "Yes" }), { key: "n" });
+        expect(onAnswer).not.toHaveBeenCalled();
     });
 });

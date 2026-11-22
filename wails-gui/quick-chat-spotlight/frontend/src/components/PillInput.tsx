@@ -14,6 +14,8 @@ interface Props {
     onSubmit: (prompt: string, withScreen: boolean) => void;
     /** Bumps every time the panel surfaces so the textarea re-focuses (Wails only). */
     showNonce?: number;
+    /** Hears what is typed, for ready work first; nothing is sent. */
+    onTextChange?: (text: string) => void;
 }
 
 // True only in the macOS native NSPanel helper (the spotlight WKScriptMessage
@@ -53,6 +55,7 @@ export function PillInput({
     detection,
     onSubmit,
     showNonce,
+    onTextChange,
 }: Props) {
     const { t } = useTranslation("chat");
     // What's on screen is offered as a chip and goes with the question only
@@ -63,6 +66,9 @@ export function PillInput({
     const withScreen = screenChip && Boolean(detection?.bundleID);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const [text, setText] = useState("");
+    const onTextChangeRef = useRef(onTextChange);
+    onTextChangeRef.current = onTextChange;
+    useEffect(() => { onTextChangeRef.current?.(text); }, [text]);
 
     const voice = useVoiceInput({
         onTranscriptUpdate: (transcript) => setText(transcript),

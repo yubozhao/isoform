@@ -1,7 +1,6 @@
 import { useSyncExternalStore } from 'react';
 
 import {
-    GetAutoSpeakEnabled,
     GetAutoSpeakNotificationsEnabled,
     PrewarmTts,
     SplitSpeechText,
@@ -303,22 +302,6 @@ export function useTtsStatus(id: string): TtsStatus {
     return snap.activeId === id ? snap.status : 'idle';
 }
 
-/**
- * Read a completed assistant reply aloud automatically, but only when the
- * "auto-read" setting is on. Called once per finished run. Failures are
- * swallowed — auto-speak is a convenience, never a critical path.
- */
-export async function maybeAutoSpeak(id: string, text: string): Promise<void> {
-    try {
-        const enabled = await GetAutoSpeakEnabled();
-        if (enabled) {
-            await toggleSpeak(id, text);
-        }
-    } catch {
-        // ignore — auto-speak is best-effort
-    }
-}
-
 // Monotonic counter giving each automatic announcement a unique playback id.
 let autoSpeakSeq = 0;
 
@@ -339,7 +322,7 @@ export async function speakOnce(text: string): Promise<void> {
 
 /**
  * Read a notification's title aloud, but only when the "read notifications
- * aloud" category is on. Best-effort, like maybeAutoSpeak. Uses speakOnce so
+ * aloud" category is on. Best-effort. Uses speakOnce so
  * two notifications with identical titles don't toggle each other off.
  */
 export async function maybeSpeakNotification(text: string): Promise<void> {

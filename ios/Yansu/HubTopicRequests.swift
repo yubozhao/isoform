@@ -29,7 +29,7 @@ extension HubRequestError {
 
 extension HubChannel: TopicHubAPI {
     func supportsTopics() async throws -> Bool {
-        try await status().topics == true
+        try await abilities().topics == true
     }
 
     func topics() async throws -> MobileTopicList {

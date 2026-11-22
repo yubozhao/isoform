@@ -72,4 +72,18 @@ describe('ActivityWatchLane', () => {
         expect(watchLaneHourKind(hour(0, { talkSeconds: 30, pausedSeconds: 30 }))).toBe('quiet');
         expect(watchLaneHourKind(hour(0, { talkSeconds: 61, pausedSeconds: 3000 }))).toBe('talk');
     });
+
+    // A failed read is an error with Try again, never a missing lane.
+    it('says when the hours cannot be read, and Try again reads them again', async () => {
+        mocks.lane.mockRejectedValueOnce(new Error('database is locked')).mockResolvedValue({
+            dayStart: day.getTime(),
+            hours: [hour(at(9), { recordedSeconds: 1200, talkSeconds: 600 })],
+        });
+        render(<ActivityWatchLane />);
+        expect(await screen.findByText("The watch's hours couldn't be read.")).toBeTruthy();
+        expect(screen.queryByText('Your watch today')).toBeNull();
+        screen.getByRole('button', { name: /Try again/ }).click();
+        expect(await screen.findByText('Your watch today')).toBeTruthy();
+        expect(mocks.lane).toHaveBeenCalledTimes(2);
+    });
 });

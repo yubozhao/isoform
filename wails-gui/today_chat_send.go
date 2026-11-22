@@ -121,6 +121,9 @@ func (a *App) sendPromptWithTodayContext(prompt string, workDir string, model st
 		}, ref, result.Related, isPanelAskOrigin(origin))
 		if err == nil {
 			admitted = true
+			if binding := topicTurnFromContext(turnCtx); binding != nil {
+				binding.correctionRef = &ref
+			}
 			if origin == promptOriginPanelAsk || origin == promptOriginMac {
 				setTodayTurnSource(turnCtx, ref.TelemetryAction)
 			}

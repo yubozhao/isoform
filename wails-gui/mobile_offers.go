@@ -835,7 +835,7 @@ func (a *App) findMoreOffers(ctx context.Context) (mobileOfferList, error) {
 	if svc.topicFindsCooldownUntil().IsZero() && svc.store.load().Finds.RanOn != svc.now().In(time.Local).Format("2006-01-02") {
 		before := svc.store.load().Finds
 		status, err := a.startTopicFinds("manual")
-		if err != nil || status == "starting" || status == "unavailable" {
+		if err != nil || status == "starting" || status == "unavailable" || status == "paused" {
 			return mobileOfferList{}, errOfferFindMoreNotStarted
 		}
 		if status == "started" || status == "running" {

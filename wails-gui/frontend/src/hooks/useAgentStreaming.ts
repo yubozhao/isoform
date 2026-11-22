@@ -6,7 +6,6 @@ import {
     GrowStreamItemContent,
 } from "@/lib/wails-shim-app";
 import { loadStreamItemsPageWithOpenAnswerDelivery } from "@/lib/open-answer-delivery";
-import { maybeAutoSpeak } from "../lib/tts-player";
 import type {
     AgentStatus,
     AgentEvent,
@@ -1277,20 +1276,6 @@ export function useAgentStreaming({
             // Keyed by the stream item id so auto-play and the manual speaker
             // button share controls for this message without conflating two
             // different replies that happen to have identical content.
-            // Gated to the active chat session: background automation (cron)
-            // runs emit done events through this same channel under hidden
-            // sessions and must not be spoken.
-            if (
-                evt.type === "done" &&
-                assistantItemToFlush?.content &&
-                !assistantItemToFlush.stale &&
-                tag === activeSessionLocalIdRef.current
-            ) {
-                maybeAutoSpeak(
-                    assistantItemToFlush.id,
-                    assistantItemToFlush.content,
-                );
-            }
             if (
                 evt.type === "done" &&
                 assistantItemToFlush?.content &&

@@ -13,7 +13,7 @@ type CalendarTimingRow struct {
 // ListNativeCalendarTiming excludes web observations and linked meeting
 // sessions: establishing their privacy would require reading activity content.
 func (s *Store) ListNativeCalendarTiming(ctx context.Context, from, to int64) ([]CalendarTimingRow, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.committedReader().QueryContext(ctx, `
 		SELECT start_at, end_at, provider FROM calendar_events
 		WHERE end_at > ? AND start_at < ? AND end_at > start_at
 		  AND source = 'eventkit' AND session_id = '' AND deleted_at = 0
@@ -38,7 +38,7 @@ func (s *Store) ListNativeCalendarTiming(ctx context.Context, from, to int64) ([
 // ListMobileBriefOpenTimes reads explicit notification opens from the Mac and
 // phone. Delivery, polling, other notices and background presence are not opens.
 func (s *Store) ListMobileBriefOpenTimes(ctx context.Context, from, to int64) ([]int64, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.committedReader().QueryContext(ctx, `
 		SELECT DISTINCT r.at FROM engagement_receipts r
 		JOIN engagement_moments m ON m.id = r.moment_id
 		WHERE m.kind = 'brief_ready' AND r.state = 'opened'

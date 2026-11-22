@@ -104,6 +104,8 @@ type ActivityEvent struct {
 
 	// Speech fields (background audio transcription)
 	SpeechText string `json:"speechText,omitempty"`
+	// SpeechEndAt is the wall-clock ASR segment end in milliseconds, when known.
+	SpeechEndAt int64 `json:"speechEndAt,omitempty"`
 	// SpeechSource identifies the audio source that produced this
 	// transcription — "microphone" = the local user's voice, "system_audio"
 	// = remote speakers picked up from the Mac's output (e.g. Zoom / Teams

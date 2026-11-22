@@ -213,6 +213,8 @@ func (a *App) SetSetupWelcomeVisible(visible bool) {
 	}()
 }
 func (a *App) RefreshAgentProbe() { a.initAgentProbe(); a.setupAgents.refresh(true) }
+
+//isoform:destination local
 func probeSetupAgent(ctx context.Context, id string) (row SetupAgent) {
 	row = SetupAgent{ID: id}
 	defer func() {

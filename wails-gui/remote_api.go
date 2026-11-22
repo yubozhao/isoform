@@ -74,9 +74,13 @@ func isAuthRejected(err error) bool {
 }
 
 // yansuHTTPClient is the shared HTTP client for all Yansu API calls.
+//
+//isoform:destination yansu_backend
 var yansuHTTPClient = &http.Client{Timeout: 30 * time.Second}
 
 // apiGet performs an authenticated GET request and decodes the JSON response into target.
+//
+//isoform:destination yansu_backend
 func apiGet(baseURL, token, path string, target any) error {
 	if noYansuAccount() {
 		return errNoYansuAccount
@@ -133,6 +137,8 @@ func apiGetList[T any](baseURL, token, path string) ([]T, error) {
 }
 
 // apiPost sends an authenticated JSON POST and optionally decodes the response into target (may be nil).
+//
+//isoform:destination yansu_backend
 func apiPost(baseURL, token, path string, body, target any) error {
 	if noYansuAccount() {
 		return errNoYansuAccount
@@ -169,6 +175,8 @@ func apiPost(baseURL, token, path string, body, target any) error {
 }
 
 // apiDelete sends an authenticated DELETE request.
+//
+//isoform:destination yansu_backend
 func apiDelete(baseURL, token, path string) error {
 	if noYansuAccount() {
 		return errNoYansuAccount

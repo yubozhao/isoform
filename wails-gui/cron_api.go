@@ -606,9 +606,8 @@ func (s *cronAPIServer) handleActivitySessions(w http.ResponseWriter, r *http.Re
 	}
 	// Convenience: --date YYYY-MM-DD sets start/end to that day.
 	if dateStr := q.Get("date"); dateStr != "" {
-		if t, err := time.ParseInLocation("2006-01-02", dateStr, time.Local); err == nil {
-			startMs = t.UnixMilli()
-			endMs = t.AddDate(0, 0, 1).UnixMilli()
+		if start, end, err := activityDayBounds(dateStr); err == nil {
+			startMs, endMs = start, end
 		}
 	}
 
@@ -638,7 +637,7 @@ func (s *cronAPIServer) handleActivitySessionByID(w http.ResponseWriter, r *http
 		return
 	}
 
-	detail, err := s.app.activitySessionForExternalRead(id)
+	detail, err := s.app.activitySessionForExternalRead(id, nil)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
@@ -684,17 +683,21 @@ func (s *cronAPIServer) handleActivitySummary(w http.ResponseWriter, r *http.Req
 	}
 
 	// Return a compact journal response: narrative + essential context.
-	type journalResponse struct {
-		Date      string         `json:"date"`
-		Journal   string         `json:"journal"`
-		Status    string         `json:"status"` // "done", "none", "error"
-		IsPartial bool           `json:"isPartial"`
-		ActiveMs  int64          `json:"activeMs"`
-		Sessions  int            `json:"sessions"`
-		TopApps   []AppUsageStat `json:"topApps,omitempty"`
-	}
+	writeJSON(w, http.StatusOK, externalJournal(data))
+}
 
-	resp := journalResponse{
+type journalResponse struct {
+	Date      string         `json:"date"`
+	Journal   string         `json:"journal"`
+	Status    string         `json:"status"` // "done", "none", "error"
+	IsPartial bool           `json:"isPartial"`
+	ActiveMs  int64          `json:"activeMs"`
+	Sessions  int            `json:"sessions"`
+	TopApps   []AppUsageStat `json:"topApps,omitempty"`
+}
+
+func externalJournal(data *DailySummaryData) journalResponse {
+	return journalResponse{
 		Date:      data.Date,
 		Journal:   redactActivityModelText(data.AISummary),
 		Status:    data.AISummaryStatus,
@@ -703,7 +706,6 @@ func (s *cronAPIServer) handleActivitySummary(w http.ResponseWriter, r *http.Req
 		Sessions:  data.SessionCount,
 		TopApps:   data.AppBreakdown,
 	}
-	writeJSON(w, http.StatusOK, resp)
 }
 
 // handleActivitySearch handles GET /activity/search?q=<query>&limit=<n>
@@ -726,7 +728,7 @@ func (s *cronAPIServer) handleActivitySearch(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	results, err := s.app.SemanticSearchActivitySessions(query, limit)
+	results, err := s.app.externalActivitySearch(r.Context(), query, limit, nil)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -784,10 +786,23 @@ func (s *cronAPIServer) handleMemoryList(w http.ResponseWriter, r *http.Request)
 	}
 
 	useEpoch := s.app.contextUseEpoch()
-	entries, err := s.app.memoryEntriesForExternalRead()
+	out, err := s.app.externalMemoryList(dimension, limit, nil)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	writeJSON(w, http.StatusOK, out)
+	var usedEntries []contextUseEntry
+	for _, entry := range out {
+		usedEntries = append(usedEntries, contextUseEntry{"memory", entry.ID, useEpoch})
+	}
+	s.app.recordContextEntries(usedEntries, "assistant_tool", "")
+}
+
+func (a *App) externalMemoryList(dimension string, limit int, allowed memoryEntryReadFilter) ([]memoryEntrySummary, error) {
+	entries, err := a.filteredExternalMemories(allowed)
+	if err != nil {
+		return nil, err
 	}
 
 	out := make([]memoryEntrySummary, 0, len(entries))
@@ -800,12 +815,7 @@ func (s *cronAPIServer) handleMemoryList(w http.ResponseWriter, r *http.Request)
 			break
 		}
 	}
-	writeJSON(w, http.StatusOK, out)
-	var usedEntries []contextUseEntry
-	for _, entry := range out {
-		usedEntries = append(usedEntries, contextUseEntry{"memory", entry.ID, useEpoch})
-	}
-	s.app.recordContextEntries(usedEntries, "assistant_tool", "")
+	return out, nil
 }
 
 // handleMemorySearch handles GET /memory/search?q=<query>&limit=<n>&dimension=<d>

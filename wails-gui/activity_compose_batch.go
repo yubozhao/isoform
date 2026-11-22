@@ -140,6 +140,13 @@ func (c *ActivityTriager) composeOutcome(store *ActivityStore, run ActivityTimel
 // order. A batch of one, a permanently rejected batch prompt and runs the
 // reply leaves out go through the one-run path, so no run is lost.
 func (c *ActivityTriager) composeBatch(ctx context.Context, store *ActivityStore, items []composerItem, now func() int64) (progressed, ok bool) {
+	ctx, given, opened := withLearningScope(ctx, "work")
+	if opened && c.app != nil {
+		defer c.app.finishAssistantCall(given)
+	}
+	for _, item := range items {
+		given.addSessions(item.run.SessionIDs)
+	}
 	single := func(list []composerItem) bool {
 		for _, item := range list {
 			changed, err := c.composeRun(ctx, item.run, now())

@@ -32,6 +32,12 @@ interface MainChatReportsOptions {
     setPeopleOpen: (open: boolean) => void;
     /** Opens the Activity page's "What you worked on" for an activity thread. */
     openThread: (id: string) => void;
+    /** Opens the Activity page on one session (a chat source's screen time or call). */
+    openActivitySession: (id: string) => void;
+    /** Opens the Activity page on the watch's conversations. */
+    openWatch: () => void;
+    /** Opens one watch conversation in Activity › Watch, on its day (YYYY-MM-DD). */
+    openActivityConversation?: (day: string, conversationId: string) => void;
 }
 
 /** App's native report-event subscription and navigation adapter. Keep the
@@ -118,6 +124,9 @@ export function useMainChatReports(options: MainChatReportsOptions) {
                 app.setPeopleOpen(true);
             },
             openThread: app.openThread,
+            openActivitySession: app.openActivitySession,
+            openWatch: app.openWatch,
+            openActivityConversation: app.openActivityConversation,
             openExternalURL: OpenExternalURL,
         }).catch(() => { if (onError) onError(); else reportChatPlaceFailure({ key: 'failure.openIt' }); });
     }, [t]);

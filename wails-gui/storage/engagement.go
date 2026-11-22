@@ -469,7 +469,7 @@ func (s *Store) RecordEngagementChatSent(ctx context.Context, momentID string, a
 
 // ListEngagementReceipts returns a moment's receipts in time order.
 func (s *Store) ListEngagementReceipts(ctx context.Context, momentID string) ([]EngagementReceiptRow, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.committedReader().QueryContext(ctx, `
 		SELECT id, moment_id, channel, state, action, at FROM engagement_receipts
 		WHERE moment_id = ? ORDER BY at, id
 	`, momentID)
@@ -577,7 +577,7 @@ func (s *Store) engagementStatsBetween(ctx context.Context, since, until int64) 
 
 // ListEngagementPrefs returns every stored preference.
 func (s *Store) ListEngagementPrefs(ctx context.Context) ([]EngagementPrefRow, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.committedReader().QueryContext(ctx, `
 		SELECT kind, weight, enabled, muted_until, updated_at FROM engagement_prefs ORDER BY kind
 	`)
 	if err != nil {

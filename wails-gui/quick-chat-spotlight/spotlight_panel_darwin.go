@@ -125,10 +125,15 @@ static NSRect spotlightFrame(CGFloat w, CGFloat h, BOOL followMouse) {
     return NSMakeRect(x, y, w, h);
 }
 
+static const CGFloat kReadyExtraHeight = 60;
+
 static void resizeSpotlight(NSString *mode) {
     if (_panel == nil) return;
     CGFloat w = _pillW, h = _pillH;
     if ([mode isEqualToString:@"conversation"]) { w = _convW; h = _convH; }
+    // Ready work first grows the pill window up by its row; keep in step
+    // with main.go readyExtraHeight.
+    else if ([mode isEqualToString:@"ready"]) { h = _pillH + kReadyExtraHeight; }
     // followMouse=NO: stay on the current screen so a wandering mouse
     // doesn't relocate the conversation mid-typing.
     [_panel setFrame:spotlightFrame(w, h, NO) display:YES];

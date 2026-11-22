@@ -9,8 +9,13 @@ import {
 } from "./lib/wails-app-stub";
 import { PillInput } from "./components/PillInput";
 import { ConversationPanel } from "./components/ConversationPanel";
-import { fetchAppearance, submitPrompt, newSpotlightRequestId } from "./api/yansu";
-import type { DetectionContext } from "./api/types";
+import { ReadyRow } from "./components/ReadyRow";
+import { fetchAppearance, fetchReady, openReady, submitPrompt, newSpotlightRequestId } from "./api/yansu";
+import type { DetectionContext, ReadyItem } from "./api/types";
+import { HideWindow } from "./lib/wails-app-stub";
+
+/** How long typing rests before ready work is looked up. */
+export const READY_DEBOUNCE_MS = 250;
 
 type View = "pill" | "conversation";
 
@@ -44,6 +49,13 @@ export function App() {
     const firstRequestPendingRef = useRef(false);
     const conversationVersionRef = useRef(0);
     const [showNonce, setShowNonce] = useState(0);
+    // Ready work first (computer-chat v1.1.0 rule 7): what's typed is matched
+    // against made work on this computer; nothing is sent to a model.
+    const [typed, setTyped] = useState("");
+    const [ready, setReady] = useState<ReadyItem | null>(null);
+    const [readyFailed, setReadyFailed] = useState<"read" | "open" | null>(null);
+    const [readyBusy, setReadyBusy] = useState(false);
+    const [readyAttempt, setReadyAttempt] = useState(0);
     const appearanceRequestRef = useRef(0);
     const appearancePendingRef = useRef<Promise<void> | null>(null);
 
@@ -177,6 +189,57 @@ export function App() {
         return off;
     }, [syncAppearance]);
 
+    useEffect(() => {
+        const text = typed.trim();
+        if (view !== "pill" || text.length < 2) {
+            setReady(null);
+            setReadyFailed(null);
+            return;
+        }
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => {
+            fetchReady(text, ctrl.signal).then((item) => {
+                setReady(item);
+                setReadyFailed(null);
+            }).catch(() => {
+                if (ctrl.signal.aborted) return;
+                setReady(null);
+                setReadyFailed("read");
+            });
+        }, READY_DEBOUNCE_MS);
+        return () => {
+            clearTimeout(timer);
+            ctrl.abort();
+        };
+    }, [typed, view, readyAttempt]);
+
+    // The window grows up by the row while it shows; the pill stays put.
+    const readyShown = view === "pill" && (ready !== null || readyFailed !== null);
+    const readyShownRef = useRef(false);
+    useEffect(() => {
+        if (view !== "pill" || readyShownRef.current === readyShown) return;
+        readyShownRef.current = readyShown;
+        ResizeMode(readyShown ? "ready" : "pill").catch(() => { /* standalone dev fallback */ });
+    }, [readyShown, view]);
+
+    const openReadyItem = async (inChat: boolean) => {
+        if (!ready || readyBusy) return;
+        setReadyBusy(true);
+        try {
+            await openReady(ready.id, typed, inChat);
+            setReadyFailed(null);
+            try {
+                await HideWindow();
+            } catch {
+                /* ignore */
+            }
+        } catch {
+            setReadyFailed("open");
+        } finally {
+            setReadyBusy(false);
+        }
+    };
+
     // withScreen: the screen chip was still there when the person sent it
     // (computer-chat v1.0.0 rule 8). A retry keeps the first send's choice.
     const firstWithScreenRef = useRef(true);
@@ -211,6 +274,7 @@ export function App() {
         setFirstSendPending(true);
         setFirstSendFailed(false);
         setSubmittedPrompt(trimmed);
+        readyShownRef.current = false;
         setView("conversation");
         try {
             // Conv (long-lived chat) shouldn't auto-hide on focus
@@ -273,6 +337,18 @@ export function App() {
 
     return (
         <div className="stage" data-view={view}>
+            {readyShown && (
+                <div className="stage__ready">
+                    <ReadyRow
+                        item={ready}
+                        failed={readyFailed}
+                        busy={readyBusy}
+                        onOpen={() => void openReadyItem(false)}
+                        onOpenInChat={() => void openReadyItem(true)}
+                        onRetry={() => { setReadyFailed(null); setReadyAttempt((n) => n + 1); }}
+                    />
+                </div>
+            )}
             <div
                 className="stage__layer stage__layer--pill"
                 aria-hidden={view !== "pill"}
@@ -281,6 +357,7 @@ export function App() {
                     detection={detection}
                     onSubmit={(prompt, withScreen) => void handleSubmit(prompt, false, withScreen)}
                     showNonce={showNonce}
+                    onTextChange={setTyped}
                 />
             </div>
             <div
@@ -365,6 +442,16 @@ const stageStyles = `
 .stage__layer--conversation {
     height: 650px;
     z-index: 1;
+}
+/* Ready work first sits just above the pill (the window grows up by
+   READY_EXTRA_HEIGHT in main.go while it shows). */
+.stage__ready {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 96px;
+    height: 52px;
+    z-index: 3;
 }
 .stage[data-view="pill"] .stage__layer--pill,
 .stage[data-view="conversation"] .stage__layer--conversation {

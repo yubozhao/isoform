@@ -82,6 +82,11 @@ type GoalStoryView struct {
 
 // ListGoals is the Goals page.
 func (a *App) ListGoals() (perfValue GoalsPageView, perfErr error) {
+	// Playbooks, SOPs and goals are off unless their switch is on
+	// (feature_switches.go).
+	if !featureOn(featurePlaybooks) {
+		return GoalsPageView{Tracking: []GoalItemView{}, Done: []GoalItemView{}, Held: []GoalItemView{}}, nil
+	}
 	defer logPageBinding("ListGoals", time.Now(), &perfValue)
 	details, err := a.userPurposeDetails()
 	if err != nil {
@@ -96,6 +101,11 @@ func (a *App) ListGoals() (perfValue GoalsPageView, perfErr error) {
 // GetGoal is one goal's story. Goals the page does not list answer
 // goal_invalid.
 func (a *App) GetGoal(goalID string) (perfValue GoalStoryView, perfErr error) {
+	// Playbooks, SOPs and goals are off unless their switch is on
+	// (feature_switches.go).
+	if !featureOn(featurePlaybooks) {
+		return GoalStoryView{}, errFeatureOff(featurePlaybooks)
+	}
 	defer logPageBinding("GetGoal", time.Now(), &perfValue)
 	if !mobileValidID(goalID) {
 		return GoalStoryView{}, errGoalMoveInvalid

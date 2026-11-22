@@ -10,7 +10,6 @@ import (
 	"wails-gui/storage"
 
 	"yansu-agent/agent"
-	"yansu-agent/agent/tools"
 )
 
 func spotlightMainRig(t *testing.T) (*App, string, *upcomingCaptureRunner) {
@@ -55,15 +54,17 @@ func TestQuickChatAsksInTheMainChatThread(t *testing.T) {
 		if !strings.Contains(prompt, "<draft-tool>") {
 			t.Fatal("the Quick chat turn is not a main-chat turn")
 		}
-		// The panel can't show Chat's cards: the turn gets none, and the
-		// model points at Open in Chat.
-		if !strings.Contains(prompt, "<quick-chat>") {
-			t.Fatal("the Quick chat turn was not told where its cards are")
+		// The panel shows Chat's cards: the turn keeps them, and nothing
+		// sends work to Open in Chat any more (computer-chat v1.0.0 rule 11).
+		if strings.Contains(prompt, "<quick-chat>") {
+			t.Fatal("the Quick chat turn still points work at Open in Chat")
 		}
+		names := map[string]bool{}
 		for _, tool := range input.ExtraTools {
-			if quickChatCardTools[tool.Name()] {
-				t.Fatalf("a Quick chat turn got %s", tool.Name())
-			}
+			names[tool.Name()] = true
+		}
+		if !names["HandOffWork"] || !names["CiteSources"] {
+			t.Fatalf("a Quick chat turn lost its cards: %v", names)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("the runner was not called")
@@ -118,32 +119,6 @@ func TestQuickChatAsksInTheMainChatThread(t *testing.T) {
 	if app.quickChatTurnActive(tag) {
 		t.Fatal("the Quick chat mark outlived its turn, so a later Chat turn would lose its cards")
 	}
-	if got := app.injectQuickChatContext(tag); got != "" {
-		t.Fatal("a Chat turn after Quick chat was told it came from Quick chat")
-	}
-}
-
-func TestQuickChatTurnsGetNoCardTools(t *testing.T) {
-	list := []tools.Tool{namedTool("HandOffWork"), namedTool("DraftMessage"), namedTool("CiteSources"), namedTool("CorrectIsoform")}
-	got := withoutQuickChatCards(list)
-	if len(got) != 2 || got[0].Name() != "DraftMessage" || got[1].Name() != "CorrectIsoform" {
-		t.Fatalf("kept %v", got)
-	}
-	if len(list) != 4 {
-		t.Fatal("the turn's own tool list was changed")
-	}
-}
-
-type namedTool string
-
-func (n namedTool) Name() string               { return string(n) }
-func (n namedTool) Description() string        { return "" }
-func (n namedTool) JSONSchema() map[string]any { return nil }
-func (n namedTool) NeedsPermission(map[string]any) (bool, tools.PermissionPrompt) {
-	return false, tools.PermissionPrompt{}
-}
-func (n namedTool) Execute(context.Context, tools.ToolCall) (tools.ToolResult, error) {
-	return tools.ToolResult{}, nil
 }
 
 func TestQuickChatWaitsWhileChatIsAnswering(t *testing.T) {

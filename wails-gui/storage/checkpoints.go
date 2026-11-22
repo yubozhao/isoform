@@ -8,7 +8,7 @@ import (
 // GetMaxSortOrder returns the highest sort_order for a session's stream items.
 func (s *Store) GetMaxSortOrder(ctx context.Context, sessionLocalID string) (int, error) {
 	var maxOrder int
-	err := s.db.QueryRowContext(ctx,
+	err := s.committedReader().QueryRowContext(ctx,
 		"SELECT COALESCE(MAX(sort_order), -1) FROM stream_items WHERE session_local_id = ?",
 		sessionLocalID).Scan(&maxOrder)
 	return maxOrder, err
@@ -26,7 +26,7 @@ func (s *Store) SaveCheckpointFile(ctx context.Context, row CheckpointFileRow) e
 // LoadCheckpointFilesFrom returns all checkpoint files with sort_order >= fromSortOrder.
 // Results are ordered by sort_order ASC so the earliest backups come first.
 func (s *Store) LoadCheckpointFilesFrom(ctx context.Context, sessionLocalID string, fromSortOrder int) ([]CheckpointFileRow, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.committedReader().QueryContext(ctx, `
 		SELECT id, session_local_id, sort_order, file_path, backup_path, existed, created_at
 		FROM checkpoint_files
 		WHERE session_local_id = ? AND sort_order >= ?
@@ -90,7 +90,7 @@ func (s *Store) DeleteCheckpointFilesForSession(ctx context.Context, sessionLoca
 
 // LoadCheckpointSessionIDs returns distinct session_local_ids that have checkpoint_files.
 func (s *Store) LoadCheckpointSessionIDs(ctx context.Context) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx, "SELECT DISTINCT session_local_id FROM checkpoint_files")
+	rows, err := s.committedReader().QueryContext(ctx, "SELECT DISTINCT session_local_id FROM checkpoint_files")
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +138,7 @@ func (s *Store) SaveGitSnapshot(ctx context.Context, row GitSnapshotRow) error {
 
 // LoadGitSnapshotAt returns the git snapshot for a specific session and sort_order.
 func (s *Store) LoadGitSnapshotAt(ctx context.Context, sessionLocalID string, sortOrder int) (*GitSnapshotRow, error) {
-	row, err := scanGitSnapshot(s.db.QueryRowContext(ctx,
+	row, err := scanGitSnapshot(s.committedReader().QueryRowContext(ctx,
 		`SELECT `+gitSnapshotCols+` FROM git_snapshots WHERE session_local_id = ? AND sort_order = ?`,
 		sessionLocalID, sortOrder))
 	return row, err
@@ -147,7 +147,7 @@ func (s *Store) LoadGitSnapshotAt(ctx context.Context, sessionLocalID string, so
 // LoadGitSnapshotAtOrBefore returns the closest git snapshot at or before the
 // given sort_order.
 func (s *Store) LoadGitSnapshotAtOrBefore(ctx context.Context, sessionLocalID string, sortOrder int) (*GitSnapshotRow, error) {
-	row, err := scanGitSnapshot(s.db.QueryRowContext(ctx,
+	row, err := scanGitSnapshot(s.committedReader().QueryRowContext(ctx,
 		`SELECT `+gitSnapshotCols+` FROM git_snapshots
 		 WHERE session_local_id = ? AND sort_order <= ?
 		 ORDER BY sort_order DESC LIMIT 1`,
@@ -157,7 +157,7 @@ func (s *Store) LoadGitSnapshotAtOrBefore(ctx context.Context, sessionLocalID st
 
 // ListGitSnapshots returns all git snapshots for a session, ordered by sort_order.
 func (s *Store) ListGitSnapshots(ctx context.Context, sessionLocalID string) ([]GitSnapshotRow, error) {
-	rows, err := s.db.QueryContext(ctx,
+	rows, err := s.committedReader().QueryContext(ctx,
 		`SELECT `+gitSnapshotCols+` FROM git_snapshots WHERE session_local_id = ? ORDER BY sort_order ASC`,
 		sessionLocalID)
 	if err != nil {
@@ -179,7 +179,7 @@ func (s *Store) ListGitSnapshots(ctx context.Context, sessionLocalID string) ([]
 // CountCheckpointFiles returns the number of checkpoint file records for a session.
 func (s *Store) CountCheckpointFiles(ctx context.Context, sessionLocalID string) (int, error) {
 	var count int
-	err := s.db.QueryRowContext(ctx,
+	err := s.committedReader().QueryRowContext(ctx,
 		"SELECT COUNT(*) FROM checkpoint_files WHERE session_local_id = ?",
 		sessionLocalID).Scan(&count)
 	return count, err
@@ -188,7 +188,7 @@ func (s *Store) CountCheckpointFiles(ctx context.Context, sessionLocalID string)
 // CountStreamItems returns the count of stream items at or after a sort_order.
 func (s *Store) CountStreamItems(ctx context.Context, sessionLocalID string, fromSortOrder int) (int, error) {
 	var count int
-	err := s.db.QueryRowContext(ctx,
+	err := s.committedReader().QueryRowContext(ctx,
 		"SELECT COUNT(*) FROM stream_items WHERE session_local_id = ? AND sort_order >= ?",
 		sessionLocalID, fromSortOrder).Scan(&count)
 	if err == sql.ErrNoRows {
@@ -207,7 +207,7 @@ func (s *Store) DeleteGitSnapshotsFrom(ctx context.Context, sessionLocalID strin
 
 // LoadGitSnapshotSHAs returns all stash_sha values for a session (for ref cleanup).
 func (s *Store) LoadGitSnapshotSHAs(ctx context.Context, sessionLocalID string, fromSortOrder int) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx,
+	rows, err := s.committedReader().QueryContext(ctx,
 		`SELECT stash_sha FROM git_snapshots WHERE session_local_id = ? AND sort_order >= ? AND stash_sha != ''`,
 		sessionLocalID, fromSortOrder)
 	if err != nil {

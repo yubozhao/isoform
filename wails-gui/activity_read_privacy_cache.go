@@ -29,6 +29,7 @@ type activityPrivacyPeopleSessionFact struct {
 
 type activityPrivacySnapshotInput struct {
 	app, browserURL, parsed string
+	held                    bool
 }
 
 type activityPrivacyProvenanceInputs struct {
@@ -247,14 +248,14 @@ func (s *ActivityStore) batchActivityPrivacyProvenanceInputsWithQueryer(ctx cont
 		if err := rows.Close(); err != nil {
 			return nil, err
 		}
-		rows, err = q.QueryContext(ctx, `SELECT session_id, COALESCE(app, ''), COALESCE(browser_url, ''), COALESCE(parsed_json, '') FROM activity_snapshots WHERE session_id IN (`+placeholders+`) ORDER BY session_id, id`, args...)
+		rows, err = q.QueryContext(ctx, `SELECT session_id, COALESCE(app, ''), COALESCE(browser_url, ''), COALESCE(parsed_json, ''), privacy_held FROM activity_snapshots WHERE session_id IN (`+placeholders+`) ORDER BY session_id, id`, args...)
 		if err != nil {
 			return nil, err
 		}
 		for rows.Next() {
 			var id string
 			var input activityPrivacySnapshotInput
-			if err := rows.Scan(&id, &input.app, &input.browserURL, &input.parsed); err != nil {
+			if err := rows.Scan(&id, &input.app, &input.browserURL, &input.parsed, &input.held); err != nil {
 				rows.Close()
 				return nil, err
 			}

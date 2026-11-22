@@ -2,7 +2,6 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "@/i18n";
 import { SettingsAdvanced, advancedStorageKey, settingsAnchor } from "@/components/settings/settings-advanced";
-import type { useKeybindings } from "@/hooks/useKeybindings";
 import { SettingsPage } from "./settings-page";
 
 // How deep links and the sidebar search open a page's Advanced section. The
@@ -12,13 +11,6 @@ const pages = vi.hoisted(() => ({
     marker: (name: string) => () => <div data-testid="page">{name}</div>,
 }));
 
-vi.mock("@/components/settings/pages/general-page", () => ({
-    GeneralPage: () => (
-        <SettingsAdvanced pageId="general">
-            <p>Keyboard shortcuts</p>
-        </SettingsAdvanced>
-    ),
-}));
 vi.mock("@/components/settings/pages/assistant-page", () => ({
     AssistantPage: () => (
         <SettingsAdvanced pageId="ai-provider">
@@ -27,25 +19,18 @@ vi.mock("@/components/settings/pages/assistant-page", () => ({
     ),
     AIProviderSettingsCard: () => null,
 }));
-vi.mock("@/components/settings/pages/learning-memory-page", () => ({
-    LearningMemoryPage: () => (
-        <SettingsAdvanced pageId="memory">
-            <div {...settingsAnchor("search-index")}>Search index</div>
-        </SettingsAdvanced>
-    ),
-}));
 vi.mock("@/components/settings/pages/iphone-page", () => ({
     IPhonePage: () => (
         <SettingsAdvanced pageId="iphone">
-            <p>Server address</p>
+            <div {...settingsAnchor("server-address")}>Server address</div>
         </SettingsAdvanced>
     ),
 }));
 vi.mock("@/components/settings/pages/notifications-page", () => ({ NotificationsPage: pages.marker("notifications") }));
-vi.mock("@/components/settings/pages/observation-page", () => ({ ObservationPage: pages.marker("observation") }));
+vi.mock("@/components/settings/pages/observation-page", () => ({
+    ObservationPage: ({ anchor }: { anchor?: string }) => <div data-testid="page">{`observation ${anchor ?? ""}`.trim()}</div>,
+}));
 vi.mock("@/components/settings/pages/closed-eyes-page", () => ({ ClosedEyesPage: pages.marker("closed-eyes") }));
-vi.mock("@/components/settings/pages/privacy-page", () => ({ PrivacyPage: pages.marker("privacy") }));
-vi.mock("@/components/settings/pages/skills-page", () => ({ SkillsPage: pages.marker("skills") }));
 vi.mock("@/components/settings/pages/tool-servers-page", () => ({ ToolServersPage: pages.marker("tool-servers") }));
 vi.mock("@/components/settings/pages/plugins-page", () => ({ PluginsPage: pages.marker("plugins") }));
 vi.mock("@/components/settings/pages/chat-apps-page", () => ({
@@ -80,12 +65,7 @@ function props(extra: Partial<Props> = {}): Props {
     return {
         onClose: vi.fn(),
         onReplayOnboarding: vi.fn(),
-        vimMode: false,
-        onVimModeChange: vi.fn(),
-        keybindings: {} as ReturnType<typeof useKeybindings>,
-        onOpenMemory: vi.fn(),
         onOpenPeople: vi.fn(),
-        onOpenProfile: vi.fn(),
         ...extra,
     };
 }
@@ -143,8 +123,8 @@ describe("SettingsPage Advanced deep links", () => {
 
     it("navigates again when the same page is asked for after moving away", () => {
         const { rerender } = render(<SettingsPage {...props()} initialTopic="iphone" initialOptions={{}} />);
-        fireEvent.click(screen.getByRole("button", { name: "Privacy" }));
-        expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Privacy");
+        fireEvent.click(screen.getByRole("button", { name: "About" }));
+        expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("About");
 
         rerender(<SettingsPage {...props()} initialTopic="iphone" initialOptions={{}} />);
         expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Your phone");
@@ -166,10 +146,12 @@ describe("SettingsPage Advanced deep links", () => {
         expect(screen.getByText("Server address")).toBeInTheDocument();
     });
 
-    it("opens the old Keyboard shortcuts link on General with Advanced expanded", () => {
+    it("opens About as it is for the old Keyboard shortcuts link", () => {
+        // App.tsx sends `keybindings` to the Cmd+/ sheet (opensKeysSheet);
+        // if it ever reaches Settings, About opens as it is.
         render(<SettingsPage {...props()} initialTopic="keybindings" />);
-        expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("General");
-        expect(screen.getByText("Keyboard shortcuts")).toBeInTheDocument();
+        expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("About");
+        expect(screen.getByTestId("page")).toHaveTextContent("help-about");
     });
 
     it("scrolls to a named anchor inside Advanced", () => {
@@ -178,18 +160,25 @@ describe("SettingsPage Advanced deep links", () => {
             render(
                 <SettingsPage
                     {...props()}
-                    initialTopic="memory"
-                    initialOptions={{ advanced: true, anchor: "search-index" }}
+                    initialTopic="iphone"
+                    initialOptions={{ advanced: true, anchor: "server-address" }}
                 />,
             );
             act(() => {
                 vi.advanceTimersByTime(100);
             });
-            expect(screen.getByText("Search index")).toBeInTheDocument();
-            expect(scrolled).toEqual(["search-index"]);
+            expect(screen.getByText("Server address")).toBeInTheDocument();
+            expect(scrolled).toEqual(["server-address"]);
         } finally {
             vi.useRealTimers();
         }
+    });
+
+    it("hands What Isoform sees its anchor, so the link opens that source's details", () => {
+        const { rerender } = render(<SettingsPage {...props()} initialTopic="activity" initialOptions={{ anchor: "sees-calls" }} />);
+        expect(screen.getByTestId("page")).toHaveTextContent("observation sees-calls");
+        rerender(<SettingsPage {...props()} initialTopic="activity" initialOptions={{ anchor: "sees-messages" }} />);
+        expect(screen.getByTestId("page")).toHaveTextContent("observation sees-messages");
     });
 
     it("leaves Advanced and the scroll alone for a plain link", () => {

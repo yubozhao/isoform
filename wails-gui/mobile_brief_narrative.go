@@ -81,6 +81,8 @@ func composeMobileBriefNarrativeWithLeadAt(ctx context.Context, a *App, brief Mo
 	}
 	prompt := buildMobileBriefNarrativePrompt(brief, picks, a.mobileBriefProfileFor(brief), cards, languageName, week)
 	paragraphs, words, weekLead, weekLeadFacts, check := writeMobileBriefNarrativeWithWeek(ctx, brief, picks, prompt, languageName, week, func(ask string) (string, error) {
+		// This call runs on its own context: count it for the brief here.
+		assistantCallScopeFrom(ctx).called()
 		return a.runEphemeralClaudeModel(ask, a.chatTaskModel(), mobileBriefNarrativeTimeout)
 	}, func(paragraphs []MobileBriefPara) error {
 		if err := mobileBriefRejectHoldOffer(paragraphs); err != nil {

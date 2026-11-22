@@ -3,6 +3,7 @@
 package remoteaccess
 
 import (
+	"os"
 	"os/exec"
 	"time"
 )
@@ -15,3 +16,6 @@ func terminateProcessGroup(cmd *exec.Cmd, done <-chan struct{}, _ time.Duration)
 		<-done
 	}
 }
+
+func startListener(cmd *exec.Cmd) (*os.File, error) { return nil, cmd.Start() }
+func lockListenerState(string) (*os.File, error)    { return nil, nil }

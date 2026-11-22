@@ -58,7 +58,7 @@ protocol NoticesReadAPI: Sendable {
 }
 
 extension HubChannel: NoticesReadAPI {
-    func noticesReadAvailable() async throws -> Bool { try await status().noticesRead == true }
+    func noticesReadAvailable() async throws -> Bool { try await abilities().noticesRead == true }
 
     func noticesRead(since: String?) async throws -> NoticeReadList {
         try await perform(.noticesRead(since: since)).payload(NoticeReadList.self)

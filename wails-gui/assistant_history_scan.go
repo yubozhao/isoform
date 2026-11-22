@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -84,12 +85,36 @@ type assistantHistoryScan struct {
 }
 
 // scanAssistantHistory runs pass 1 for the given folders at the given time.
-func scanAssistantHistory(roots assistantHistoryRoots, now time.Time) assistantHistoryScan {
-	cutoff := now.Add(-assistantHistoryWindow)
+func (a *App) scanAssistantHistory(ctx context.Context, roots assistantHistoryRoots, now time.Time, only string) (assistantHistoryScan, error) {
 	var found []assistantHistorySession
-	found = append(found, scanClaudeHistorySessions(roots.Claude, cutoff)...)
-	found = append(found, scanCodexHistorySessions(roots.Codex, cutoff)...)
+	for _, name := range historySources {
+		if only != "" && only != name {
+			continue
+		}
+		sessions, err := a.historySessionsFor(ctx, roots, name, now.Add(-assistantHistoryWindow))
+		if err != nil {
+			return assistantHistoryScan{}, err
+		}
+		found = append(found, sessions...)
+	}
+	return groupHistorySessions(roots, now, found), nil
+}
 
+func (a *App) historySessionsFor(ctx context.Context, roots assistantHistoryRoots, source string, cutoff time.Time) ([]assistantHistorySession, error) {
+	var found []assistantHistorySession
+	active := func() bool { return ctx.Err() == nil && !a.IsClosedEyesModeEnabled() }
+	err := a.withHistorySource(ctx, source, func() {
+		switch source {
+		case "claude":
+			found = scanClaudeHistorySessions(roots.Claude, cutoff, active)
+		case "codex":
+			found = scanCodexHistorySessions(roots.Codex, cutoff, active)
+		}
+	})
+	return found, err
+}
+
+func groupHistorySessions(roots assistantHistoryRoots, now time.Time, found []assistantHistorySession) assistantHistoryScan {
 	resolver := &assistantHistoryRootResolver{home: roots.Home, cache: map[string]string{}}
 	projects := map[string]*HistoryProject{}
 	sessions := map[string][]assistantHistorySession{}
@@ -154,23 +179,28 @@ func scanAssistantHistory(roots assistantHistoryRoots, now time.Time) assistantH
 		})
 		out.Projects = append(out.Projects, *project)
 	}
-	sort.SliceStable(out.Projects, func(i, j int) bool {
-		if out.Projects[i].Sessions14d != out.Projects[j].Sessions14d {
-			return out.Projects[i].Sessions14d > out.Projects[j].Sessions14d
-		}
-		if out.Projects[i].LastAt != out.Projects[j].LastAt {
-			return out.Projects[i].LastAt > out.Projects[j].LastAt
-		}
-		return out.Projects[i].ID < out.Projects[j].ID
-	})
+	out.Projects = rankHistoryProjects(out.Projects)
 	for id := range sessions {
 		list := sessions[id]
 		sort.SliceStable(list, func(i, j int) bool { return list[i].At.After(list[j].At) })
 	}
-	if len(out.Projects) > assistantHistoryMaxProject {
-		out.Projects = out.Projects[:assistantHistoryMaxProject]
-	}
 	return out
+}
+
+func rankHistoryProjects(projects []HistoryProject) []HistoryProject {
+	sort.SliceStable(projects, func(i, j int) bool {
+		if projects[i].Sessions14d != projects[j].Sessions14d {
+			return projects[i].Sessions14d > projects[j].Sessions14d
+		}
+		if projects[i].LastAt != projects[j].LastAt {
+			return projects[i].LastAt > projects[j].LastAt
+		}
+		return projects[i].ID < projects[j].ID
+	})
+	if len(projects) > assistantHistoryMaxProject {
+		projects = projects[:assistantHistoryMaxProject]
+	}
+	return projects
 }
 
 // assistantHistoryOrder keeps the assistants in the order the contract lists.
@@ -191,24 +221,35 @@ func assistantHistoryProjectID(path string) string {
 	return hex.EncodeToString(sum[:])[:16]
 }
 
+// File seams let privacy tests observe actual session opens and directory walks.
+var historyOpenSession = os.Open
+var historyReadDir = os.ReadDir
+var historyWalkDir = filepath.WalkDir
+
 // scanClaudeHistorySessions reads ~/.claude/projects/<encoded>/<uuid>.jsonl.
 // Subagent transcripts sit one level deeper and are not separate sessions.
-func scanClaudeHistorySessions(dir string, cutoff time.Time) []assistantHistorySession {
+func scanClaudeHistorySessions(dir string, cutoff time.Time, active func() bool) []assistantHistorySession {
 	var out []assistantHistorySession
-	projectDirs, err := os.ReadDir(dir)
+	projectDirs, err := historyReadDir(dir)
 	if err != nil {
 		return nil
 	}
 	for _, projectDir := range projectDirs {
+		if !active() {
+			return nil
+		}
 		if !projectDir.IsDir() {
 			continue
 		}
-		files, err := os.ReadDir(filepath.Join(dir, projectDir.Name()))
+		files, err := historyReadDir(filepath.Join(dir, projectDir.Name()))
 		if err != nil {
 			continue
 		}
 		for _, file := range files {
-			if file.IsDir() || !strings.HasSuffix(file.Name(), ".jsonl") {
+			if !active() {
+				return nil
+			}
+			if file.Type()&os.ModeSymlink != 0 || file.IsDir() || !strings.HasSuffix(file.Name(), ".jsonl") {
 				continue
 			}
 			path := filepath.Join(dir, projectDir.Name(), file.Name())
@@ -217,7 +258,7 @@ func scanClaudeHistorySessions(dir string, cutoff time.Time) []assistantHistoryS
 				continue
 			}
 			cwd := readClaudeHistoryCWD(path)
-			if cwd == "" {
+			if cwd == "" || !active() {
 				continue
 			}
 			out = append(out, assistantHistorySession{Assistant: "claude", Path: path, CWD: cwd, At: info.ModTime(), Agent: readAssistantHistorySessionAgent("claude", path)})
@@ -227,13 +268,16 @@ func scanClaudeHistorySessions(dir string, cutoff time.Time) []assistantHistoryS
 }
 
 // scanCodexHistorySessions reads ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl.
-func scanCodexHistorySessions(dir string, cutoff time.Time) []assistantHistorySession {
+func scanCodexHistorySessions(dir string, cutoff time.Time, active func() bool) []assistantHistorySession {
 	var out []assistantHistorySession
-	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+	_ = historyWalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if !active() {
+			return filepath.SkipAll
+		}
 		if err != nil {
 			return nil
 		}
-		if d.IsDir() || !strings.HasPrefix(d.Name(), "rollout-") || !strings.HasSuffix(d.Name(), ".jsonl") {
+		if d.Type()&os.ModeSymlink != 0 || d.IsDir() || !strings.HasPrefix(d.Name(), "rollout-") || !strings.HasSuffix(d.Name(), ".jsonl") {
 			return nil
 		}
 		info, err := d.Info()
@@ -241,7 +285,7 @@ func scanCodexHistorySessions(dir string, cutoff time.Time) []assistantHistorySe
 			return nil
 		}
 		cwd := readCodexHistoryCWD(path)
-		if cwd != "" {
+		if cwd != "" && active() {
 			out = append(out, assistantHistorySession{Assistant: "codex", Path: path, CWD: cwd, At: info.ModTime(), Agent: readAssistantHistorySessionAgent("codex", path)})
 		}
 		return nil
@@ -285,7 +329,7 @@ func readCodexHistoryCWD(path string) string {
 // readHistoryHead scans at most assistantHistoryHeadLines lines and returns
 // the first non-empty value the parser finds.
 func readHistoryHead(path string, parse func([]byte) string) string {
-	file, err := os.Open(path)
+	file, err := historyOpenSession(path)
 	if err != nil {
 		return ""
 	}
@@ -419,7 +463,7 @@ const assistantHistoryTailBytes = 256 << 10
 // readAssistantHistoryTurns returns the user and assistant text at the end of
 // a session file, in order, with secret-looking lines already dropped.
 func readAssistantHistoryTurns(session assistantHistorySession) []assistantHistoryTurn {
-	file, err := os.Open(session.Path)
+	file, err := historyOpenSession(session.Path)
 	if err != nil {
 		return nil
 	}

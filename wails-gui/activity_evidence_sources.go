@@ -40,16 +40,20 @@ func migrateActivityEvidenceSourceRevisions(tx *sql.Tx) error {
 			case "UPDATE":
 				clause += " OF " + source.columns
 				previousSession = `INSERT INTO activity_evidence_source_revisions(session_id,revision)
-					SELECT OLD.session_id,1 WHERE OLD.session_id != NEW.session_id
+					SELECT OLD.session_id,1 WHERE OLD.session_id IS NOT NULL AND OLD.session_id IS NOT NEW.session_id
 					ON CONFLICT(session_id) DO UPDATE SET revision=revision+1;`
 			case "DELETE":
 				row = "OLD"
 			}
+			guard := row + ".session_id IS NOT NULL"
+			if operation == "UPDATE" {
+				guard += " OR OLD.session_id IS NOT NULL"
+			}
 			statement := fmt.Sprintf(`CREATE TRIGGER IF NOT EXISTS evidence_revision_%s_%s
-				AFTER %s ON %s BEGIN
-				INSERT INTO activity_evidence_source_revisions(session_id,revision) VALUES(%s.session_id,1)
+				AFTER %s ON %s WHEN %s BEGIN
+				INSERT INTO activity_evidence_source_revisions(session_id,revision) SELECT %s.session_id,1 WHERE %s.session_id IS NOT NULL
 				ON CONFLICT(session_id) DO UPDATE SET revision=revision+1;
-				%s END`, source.table, operation, clause, source.table, row, previousSession)
+				%s END`, source.table, operation, clause, source.table, guard, row, row, previousSession)
 			if _, err := tx.Exec(statement); err != nil {
 				return err
 			}
@@ -73,4 +77,16 @@ func (s *ActivityStore) timelineRunEvidenceFingerprint(run ActivityTimelineRunRo
 		fmt.Fprintf(hash, "\x00%s:%d:%t", sessionID, revision, s.isSessionProtected(sessionID))
 	}
 	return fmt.Sprintf("%x", hash.Sum(nil)), nil
+}
+
+// Upgrade existing activity databases as well as new installs. The original
+// triggers wrote a new NULL primary key for each unowned staging operation.
+func migrateOwnedSnapshotRevisions(tx *sql.Tx) error {
+	if _, err := tx.Exec(`DROP TRIGGER IF EXISTS evidence_revision_activity_snapshots_INSERT;
+        DROP TRIGGER IF EXISTS evidence_revision_activity_snapshots_UPDATE;
+        DROP TRIGGER IF EXISTS evidence_revision_activity_snapshots_DELETE;
+        DELETE FROM activity_evidence_source_revisions WHERE session_id IS NULL`); err != nil {
+		return err
+	}
+	return migrateActivityEvidenceSourceRevisions(tx)
 }

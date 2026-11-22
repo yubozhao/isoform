@@ -1291,7 +1291,8 @@ private actor SeesUITestHub: SeesHubAPI {
         MobileSees(sources: [
             .init(job: "mail", on: false), .init(job: "calendar", on: true), .init(job: "calls", on: true),
             .init(job: "screen", on: true), .init(job: "assistant", on: true), .init(job: "contacts", on: true)
-        ], assistant: "claude_code")
+        ], assistant: "claude_code",
+           agentOfYouReviewOff: ProcessInfo.processInfo.environment["YANSU_UITEST_SEES_REVIEW_OFF"] == "1" ? true : nil)
     }
 
     func showOnComputer(job: String) async throws {}

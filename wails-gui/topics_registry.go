@@ -138,6 +138,7 @@ type topicProjectBuild struct {
 }
 
 type topicRegistryData struct {
+	activityExclusions activityTopicExclusions
 	deferredActivities map[string]bool
 	deferredGoals      map[string]bool
 	truncated          bool
@@ -211,7 +212,7 @@ func buildTopicRegistry(in topicRegistryData) topicRegistryResult {
 	for _, row := range in.activities {
 		observation := newTopicActivityObservation(row, in.selfName)
 		activities[row.ID] = observation
-		if len(observation.Keys) == 0 {
+		if len(observation.Keys) == 0 || in.activityExclusions.rejectsAttachment(observation, builds) {
 			continue
 		}
 		var target int
@@ -253,6 +254,7 @@ func buildTopicRegistry(in topicRegistryData) topicRegistryResult {
 		}
 	}
 
+	in.activityExclusions.apply(builds)
 	mappedInterests := map[string]bool{}
 	followingProjects := topicFollowingProjectIDs(builds, in.following)
 	for _, build := range builds {
@@ -1255,6 +1257,10 @@ func (s *topicsService) collectRegistryViewsLocked(ctx context.Context, refresh 
 		return outcome
 	}
 	in.existing, in.withheld = s.app.readableTopicProjects(ctx, in.existing, in.activities, in.goals, now, in.deferredActivities, in.deferredGoals)
+	in.activityExclusions, err = s.activityExclusions(ctx)
+	if err != nil {
+		return fail("activity_exclusions", err)
+	}
 	result := buildTopicRegistry(in)
 	log.Printf("[topics] today level=info stage=full full_read_count=%d projects=%d following=%d", len(result.views), len(result.projects), len(following.Topics))
 	if ctx.Err() != nil {

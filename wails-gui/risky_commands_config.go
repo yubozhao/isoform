@@ -16,7 +16,7 @@ func askBeforeRiskyCommands() bool {
 	return loadConfig().AskBeforeRiskyCommands
 }
 
-// GetAskBeforeRiskyCommands is the Wails binding the Privacy settings card
+// GetAskBeforeRiskyCommands is the Wails binding the risky-commands settings card
 // reads on mount.
 func (a *App) GetAskBeforeRiskyCommands() (perfValue bool, perfErr error) {
 	defer logPageBinding("GetAskBeforeRiskyCommands", time.Now(), &perfValue)

@@ -201,6 +201,36 @@ func TestDisplayLocaleReadIsBoundedAndDoesNotCacheFailure(t *testing.T) {
 	if err := store.SetUIState(t.Context(), uiLanguageStateKey, "zh-CN"); err != nil {
 		t.Fatal(err)
 	}
+	// UI-state reads run on the read pool, so a held writer no longer slows
+	// them: the locale reads at once.
+	{
+		revision, err := store.ReadRevision(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		release, err := store.LockReadRevision(t.Context(), revision)
+		if err != nil {
+			t.Fatal(err)
+		}
+		done := make(chan string, 1)
+		go func() { done <- app.modelDisplayLanguage() }()
+		select {
+		case language := <-done:
+			if language != "zh-CN" {
+				t.Fatalf("locale with the writer held: %q", language)
+			}
+		case <-time.After(300 * time.Millisecond):
+			release()
+			<-done
+			t.Fatal("display locale read waited for the writer")
+		}
+		release()
+	}
+	// A read that can't answer in time (the rollback switch puts it back on
+	// the held writer) falls back and is not cached.
+	prevOnWriter := storage.UIStateOnWriter
+	storage.UIStateOnWriter = true
+	defer func() { storage.UIStateOnWriter = prevOnWriter }()
 	revision, err := store.ReadRevision(t.Context())
 	if err != nil {
 		t.Fatal(err)
@@ -223,6 +253,7 @@ func TestDisplayLocaleReadIsBoundedAndDoesNotCacheFailure(t *testing.T) {
 		t.Fatal("display locale read exceeded its budget")
 	}
 	release()
+	storage.UIStateOnWriter = prevOnWriter
 	if language := app.modelDisplayLanguage(); language != "zh-CN" {
 		t.Fatalf("failed locale read was cached: %q", language)
 	}

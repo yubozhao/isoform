@@ -210,11 +210,16 @@ func (a *App) broadcastUpdateStatus(s UpdateStatus) {
 		// Reset peak when leaving the downloading state (e.g. error, downloaded, idle).
 		a.updater.peakPercent = 0
 	}
+	wasReady := a.updater.status.Status == "update-downloaded"
 	a.updater.status = s
 	a.updater.mu.Unlock()
 
 	if a.ctx != nil {
 		wailsRuntime.EventsEmit(a.ctx, "update:status", s)
+		// The app menu's Restart to Update follows a downloaded update (design S3).
+		if wasReady != (s.Status == "update-downloaded") {
+			a.refreshAppMenu()
+		}
 	}
 }
 
@@ -376,6 +381,8 @@ func (a *App) downloadUpdate(background bool) error {
 
 // downloadAttempt performs a single download attempt, resuming from any
 // partial file already on disk via HTTP Range.
+//
+//isoform:destination metadata
 func (a *App) downloadAttempt(client *http.Client, url, stagingPath string, attempt int) error {
 	a.updater.mu.Lock()
 	expected := a.updater.expectedChecksum
@@ -668,6 +675,8 @@ func (a *App) fetchLatestRelease() UpdateInfo {
 }
 
 // fetchFromR2 queries version.json (the name is retained for channel compatibility).
+//
+//isoform:destination metadata
 func (a *App) fetchFromR2() UpdateInfo {
 	client := &http.Client{Timeout: 10 * time.Second}
 
@@ -750,6 +759,8 @@ func (a *App) setExpectedUpdateChecksum(checksum string) {
 }
 
 // fetchFromGitHub queries the GitHub API for the latest release.
+//
+//isoform:destination metadata
 func (a *App) fetchFromGitHub() UpdateInfo {
 	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", desktopReleasesRepo)
 	client := &http.Client{Timeout: 10 * time.Second}

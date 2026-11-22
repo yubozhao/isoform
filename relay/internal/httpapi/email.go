@@ -61,7 +61,7 @@ func (h *Handler) emailHub(w http.ResponseWriter, r *http.Request) (string, bool
 		reply(w, http.StatusServiceUnavailable, map[string]string{"code": "not_configured"}, "Email is not configured on this relay")
 		return "", false
 	}
-	return h.authHub(w, r, "email:hub:", emailHubRequestsPerMinute)
+	return h.authHub(w, r, "email_hub", emailHubRequestsPerMinute)
 }
 
 // emailContext bounds an email route, which may wait on the provider.
@@ -82,13 +82,13 @@ func (h *Handler) emailSubscription(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		status, err := h.Email.Status(ctx, hubID)
 		if err != nil {
-			emailFailure(w, err)
+			h.emailFailure(w, r, err)
 			return
 		}
 		reply(w, http.StatusOK, viewEmailStatus(status), "")
 	case http.MethodDelete:
 		if err := h.Email.Unsubscribe(ctx, hubID); err != nil {
-			emailFailure(w, err)
+			h.emailFailure(w, r, err)
 			return
 		}
 		reply(w, http.StatusOK, viewEmailStatus(email.Status{State: "none", DailyCap: h.Email.Config.DailyCap}), "")
@@ -110,14 +110,13 @@ func (h *Handler) emailSubscription(w http.ResponseWriter, r *http.Request) {
 			smsRefuse(w, http.StatusConflict, "offline", "The hub is not connected")
 			return
 		}
-		if allowed, retry := h.limits.Allow("email:verify:addr:"+addressBlock(clientIP(r)), emailVerificationsPerAddress, emailVerificationWindow, h.Now()); !allowed {
-			setRetryAfter(w, retry)
+		if !h.allow(w, r, "email_verify_address", addressBlock(clientIP(r)), emailVerificationsPerAddress, emailVerificationWindow, h.Now()) {
 			smsRefuse(w, http.StatusTooManyRequests, "too_many", "Too many verification emails")
 			return
 		}
 		status, err := h.Email.StartVerification(ctx, hubID, body.Address, body.Lang)
 		if err != nil {
-			emailFailure(w, err)
+			h.emailFailure(w, r, err)
 			return
 		}
 		reply(w, http.StatusOK, viewEmailStatus(status), "")
@@ -142,7 +141,7 @@ func (h *Handler) emailConfirm(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	status, err := h.Email.Confirm(ctx, hubID, body.Code)
 	if err != nil {
-		emailFailure(w, err)
+		h.emailFailure(w, r, err)
 		return
 	}
 	reply(w, http.StatusOK, viewEmailStatus(status), "")
@@ -163,14 +162,14 @@ func (h *Handler) emailSend(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	status, err := h.Email.Send(ctx, hubID, body.Subject, body.Body)
 	if err != nil {
-		emailFailure(w, err)
+		h.emailFailure(w, r, err)
 		return
 	}
 	reply(w, http.StatusOK, viewEmailStatus(status), "")
 }
 
 // emailFailure maps a service error to its status and code.
-func emailFailure(w http.ResponseWriter, err error) {
+func (h *Handler) emailFailure(w http.ResponseWriter, r *http.Request, err error) {
 	var retry *email.RetryError
 	if errors.As(err, &retry) {
 		setRetryAfter(w, retry.Wait)
@@ -189,8 +188,10 @@ func emailFailure(w http.ResponseWriter, err error) {
 	case errors.Is(err, email.ErrCodeSpent):
 		smsRefuse(w, http.StatusGone, "code_spent", err.Error())
 	case errors.Is(err, email.ErrQuota):
+		h.logLimitError(w, r, err)
 		smsRefuse(w, http.StatusTooManyRequests, "quota", err.Error())
 	case errors.Is(err, email.ErrTooMany):
+		h.logLimitError(w, r, err)
 		smsRefuse(w, http.StatusTooManyRequests, "too_many", err.Error())
 	case errors.Is(err, email.ErrBusy):
 		smsRefuse(w, http.StatusServiceUnavailable, "busy", err.Error())

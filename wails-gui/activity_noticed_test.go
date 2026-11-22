@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -170,6 +169,14 @@ func TestNoticedReadsOnlyNamedMomentsAndRechecksChanges(t *testing.T) {
 	}
 }
 
+func seedNoticedDismissal(t *testing.T, app *App, item NoticedSuggestion) {
+	t.Helper()
+	if err := app.activity.store.setNoticedDismissed(noticedDismissKeys(item), true); err != nil {
+		t.Fatal(err)
+	}
+	app.touchDerivedViews(derivedDayNoticed)
+}
+
 func TestNoticedNeverRepeatsNotNowOrAnOpenFollowUpAndDropsADeletedMoment(t *testing.T) {
 	app := newMobileBriefPurposeTestApp(t)
 	saveNoticedMoment(t, app, "m-lamp", "Comparing Halcyon Arc desk lamps for Priya", "Safari", `[{"type":"person","name":"Priya"}]`, noticedTestAt(10, 0))
@@ -184,9 +191,7 @@ func TestNoticedNeverRepeatsNotNowOrAnOpenFollowUpAndDropsADeletedMoment(t *test
 	}
 
 	// Not now hides it, and the same words on another moment too.
-	if err := app.DismissNoticed(noticedTestDay, got[1].ID); err != nil {
-		t.Fatal(err)
-	}
+	seedNoticedDismissal(t, app, got[1])
 	got, _ = app.GetDayNoticed(noticedTestDay)
 	if len(got) != 1 || got[0].MomentID != "m-lamp" {
 		t.Fatalf("after Not now: %+v", got)
@@ -230,61 +235,19 @@ func TestNoticedNeverRepeatsNotNowOrAnOpenFollowUpAndDropsADeletedMoment(t *test
 	}
 }
 
-func TestNoticedRoutineSavesAsKnowHowWithoutATimeAndAsAScheduleWithOne(t *testing.T) {
+func TestNoticedKnowHowFile(t *testing.T) {
 	app := newMobileBriefPurposeTestApp(t)
-	saveNoticedMoment(t, app, "m-sheet", "Filling the expense sheet", "Numbers", "", noticedTestAt(12, 0))
-	saveNoticedWithSummary(t, app, []noticedRaw{noticedRoutineRaw("m-sheet", "Open the expense sheet", "Add this week's receipts")})
-	got, _ := app.GetDayNoticed(noticedTestDay)
-	if len(got) != 1 {
-		t.Fatalf("setup: %+v", got)
-	}
-	draft := *got[0].Routine
-
-	// Validation happens before anything is written.
-	if _, err := app.SaveNoticedRoutine(noticedTestDay, got[0].ID, NoticedRoutineDraft{Name: " ", Steps: draft.Steps}); err != errNoticedRoutineName {
-		t.Fatalf("empty name = %v", err)
-	}
-	if _, err := app.SaveNoticedRoutine(noticedTestDay, got[0].ID, NoticedRoutineDraft{Name: "X", Steps: []string{" "}}); err != errNoticedRoutineStep {
-		t.Fatalf("no steps = %v", err)
-	}
-	if _, err := app.SaveNoticedRoutine(noticedTestDay, got[0].ID, NoticedRoutineDraft{Name: "X", When: "sometimes", Steps: draft.Steps}); err != errNoticedRoutineWhen {
-		t.Fatalf("bad when = %v", err)
-	}
-	if _, err := app.SaveNoticedRoutine(noticedTestDay, got[0].ID, draft); err != errNoticedSchedules {
-		t.Fatalf("a timed routine without the scheduler = %v", err)
-	}
-
-	// With a time: a Schedule whose prompt is the user's steps and limits.
-	app.cronScheduler = NewCronScheduler(app.store, func(string, any) {}, func(string, string) {}, nil)
-	draft.Name = "Friday expenses"
-	saved, err := app.SaveNoticedRoutine(noticedTestDay, got[0].ID, draft)
-	if err != nil || saved.Home != "schedule" || saved.ID == "" {
-		t.Fatalf("schedule = %+v %v", saved, err)
-	}
-	job, err := app.store.LoadCronJob(context.Background(), saved.ID)
-	if err != nil || job == nil || job.Name != "Friday expenses" || job.ScheduleKind != "cron" || !strings.Contains(job.ScheduleConfig, `"0 16 * * 5"`) ||
-		!strings.Contains(job.TargetConfig, "Add this week's receipts") || !strings.Contains(job.TargetConfig, "Submit anything") {
-		t.Fatalf("job = %+v %v", job, err)
-	}
-	if after, _ := app.GetDayNoticed(noticedTestDay); len(after) != 0 {
-		t.Fatalf("a saved routine is suggested again: %+v", after)
-	}
-
-	// Without a time: a Know-how entry.
-	if err := app.activity.store.setNoticedDismissed(noticedDismissKeys(got[0]), false); err != nil {
-		t.Fatal(err)
-	}
-	draft.When = ""
-	saved, err = app.SaveNoticedRoutine(noticedTestDay, got[0].ID, draft)
-	if err != nil || saved.Home != "knowhow" {
-		t.Fatalf("know-how = %+v %v", saved, err)
-	}
-	dir, _ := knowledgeDir()
-	raw, err := os.ReadFile(filepath.Join(dir, saved.ID+".md"))
+	draft := NoticedRoutineDraft{Name: "Friday expenses", Steps: []string{"Open the expense sheet"}, Wont: []string{"Submit anything"}}
+	id, err := app.saveNoticedKnowHow(draft, noticedTestDay, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	entry := parseKnowledgeFile(saved.ID+".md", string(raw))
+	dir, _ := knowledgeDir()
+	raw, err := os.ReadFile(filepath.Join(dir, id+".md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := parseKnowledgeFile(id+".md", string(raw))
 	if entry.Title != "Friday expenses" || !strings.Contains(entry.Content, "1. Open the expense sheet") || !strings.Contains(entry.Content, "Submit anything") {
 		t.Fatalf("know-how entry = %+v", entry)
 	}

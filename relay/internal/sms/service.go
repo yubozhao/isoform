@@ -230,10 +230,10 @@ func (s *Service) StartVerification(ctx context.Context, hubID, rawNumber, lang 
 	}
 	// The limits come before the opt-out check, so probing which numbers
 	// opted out costs as much as sending codes.
-	if err := s.take(ctx, "code:hub:"+hubID, codesPerHub, codesPerHubWindow, ErrTooMany); err != nil {
+	if err := s.take(ctx, "code:hub:"+hubID, codesPerHub, codesPerHubWindow, limit.Full("sms_codes_hub", codesPerHub, ErrTooMany)); err != nil {
 		return Status{}, err
 	}
-	if err := s.take(ctx, "code:number:"+numberHash, codesPerNumber, codesPerNumberWindow, ErrTooMany); err != nil {
+	if err := s.take(ctx, "code:number:"+numberHash, codesPerNumber, codesPerNumberWindow, limit.Full("sms_codes_number", codesPerNumber, ErrTooMany)); err != nil {
 		return Status{}, err
 	}
 	if err := s.take(ctx, "codes", s.Config.CodesPerHour, capWindow, ErrBusy); err != nil {
@@ -277,7 +277,7 @@ func (s *Service) StartVerification(ctx context.Context, hubID, rawNumber, lang 
 // number the hub's active subscription and takes it from any other hub.
 func (s *Service) Confirm(ctx context.Context, hubID, code string) (Status, error) {
 	if err := s.allow("sms:confirm:"+hubID, confirmsPerHub, confirmsWindow); err != nil {
-		return Status{}, err
+		return Status{}, limit.Full("sms_confirms", confirmsPerHub, err)
 	}
 	matches := func(numberHash, codeHash string) bool {
 		return hmac.Equal([]byte(codeHash), []byte(s.Vault.HashCode(hubID, numberHash, code)))
@@ -292,7 +292,7 @@ func (s *Service) Confirm(ctx context.Context, hubID, code string) (Status, erro
 	case errors.Is(err, store.ErrAttempts), errors.Is(err, store.ErrExpired):
 		return Status{}, ErrCodeSpent
 	case errors.Is(err, store.ErrLocked):
-		return Status{}, &RetryError{Err: ErrTooMany, Wait: s.lockWait(ctx, hubID)}
+		return Status{}, &RetryError{Err: limit.Full("sms_wrong_codes", WrongCodesPerNumber, ErrTooMany), Wait: s.lockWait(ctx, hubID)}
 	case errors.Is(err, store.ErrOptedOut):
 		return Status{}, ErrOptedOut
 	default:
@@ -341,7 +341,11 @@ func (s *Service) Send(ctx context.Context, hubID, body string) (Status, error) 
 	case errors.Is(err, store.ErrNotFound):
 		return Status{}, ErrNotActive
 	case errors.Is(err, store.ErrQuota):
-		return Status{}, &RetryError{Err: ErrQuota, Wait: quotaWait(usage, s.Config, s.Now())}
+		refusal := &limit.Refusal{Name: "sms_daily", Count: int64(usage.DayCount), Cap: int64(s.Config.DailyCap), Err: ErrQuota}
+		if usage.MonthCount >= s.Config.MonthlyCap {
+			refusal = &limit.Refusal{Name: "sms_monthly", Count: int64(usage.MonthCount), Cap: int64(s.Config.MonthlyCap), Err: ErrQuota}
+		}
+		return Status{}, &RetryError{Err: refusal, Wait: quotaWait(usage, s.Config, s.Now())}
 	default:
 		return Status{}, err
 	}

@@ -103,6 +103,8 @@ func discordInviteURL(appID string) string {
 
 // discordValidate opens a short-lived session to confirm the token and read the
 // bot's identity + application id (used for the invite URL).
+//
+//isoform:destination chat_bridges
 func discordValidate(botToken string) (*discordgo.Session, *discordgo.User, string, error) {
 	dg, err := discordgo.New("Bot " + strings.TrimSpace(botToken))
 	if err != nil {
@@ -139,6 +141,7 @@ type discordLocalReceiver struct {
 	hinted map[string]bool
 }
 
+//isoform:destination chat_bridges
 func newDiscordLocalReceiver(app *App, creds discordLocalCredentials) (*discordLocalReceiver, error) {
 	dg, err := discordgo.New("Bot " + creds.BotToken)
 	if err != nil {

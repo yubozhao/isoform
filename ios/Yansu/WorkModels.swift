@@ -44,6 +44,12 @@ struct WorkItem: Codable, Equatable, Hashable, Identifiable, Sendable {
 
     var createdDate: Date? { RelayTime.parse(createdAt) }
     var isOpen: Bool { state == "open" || state == "back" }
+    /// A brief's offer whose moment has passed: prep for a meeting that has begun. The phone's copy of the list can be
+    /// older than the meeting, so the phone stops offering it at `expiresAt` itself.
+    func hasEnded(now: Date) -> Bool {
+        guard source == "brief", state == "open", let ends = expiresAt.flatMap(RelayTime.parse) else { return false }
+        return ends <= now
+    }
     /// "For your 10:00 with Lena · tomorrow · from the brief". Parts with no text are times the phone words for the
     /// reader's day and clock (`key` `when` or `clock`, with `at`).
     var firstLine: String { firstLine(now: Date()) }
@@ -303,7 +309,7 @@ enum YourWork {
     }
 
     static func groups(_ items: [WorkItem], now: Date, calendar: Calendar = .current) -> Groups {
-        let open = Array(ordered(items.filter(\.isOpen)).prefix(dailyLimit))
+        let open = Array(ordered(items.filter { $0.isOpen && !$0.hasEnded(now: now) }).prefix(dailyLimit))
         let withAgent = items.filter { $0.state == "with_agent" }
             .sorted { ($0.agent?.sinceDate ?? .distantPast) > ($1.agent?.sinceDate ?? .distantPast) }
         let done = items.filter { item in

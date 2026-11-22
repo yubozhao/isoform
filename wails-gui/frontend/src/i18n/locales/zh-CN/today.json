@@ -141,7 +141,8 @@
         "activityWeek": "{{date}}所在的那一周我做了什么？请按主题总结，包括人物、项目和决定。",
         "summary": "帮我回顾 {{date}} 的活动小结。",
         "deadline": "帮我规划「{{title}}」在截止前的下一步。",
-        "askFind": "讲讲「{{title}}」与我正在做的事有什么关系。"
+        "askFind": "讲讲「{{title}}」与我正在做的事有什么关系。",
+        "askTopic": "{{topic}} 有什么新进展？"
     },
     "contextNote": {
         "withBrief": "Isoform 没能读取这一项的详情，改为附上今天的简报。",
@@ -828,6 +829,14 @@
         "undoFailed": "没能撤销。"
     },
     "ctoday": {
+        "timesFailed": "无法读取简报时间。",
+        "agentsFailed": "无法读取你的代理。",
+        "askAgain": "再问一次",
+        "takeBack": "收回",
+        "takenBack": "已收回。{{agent}} 不能再打开它；它已经做出的东西仍留在 {{agent}} 那里。",
+        "takenBackItem": "{{time}} 从 {{agent}} 收回。交给别人，或者先留着。",
+        "dayOne_one": "{{count}} 项待回答 · 第一天",
+        "dayOne_other": "{{count}} 项待回答 · 第一天",
         "firstTitle": "你的第一份简报",
         "firstAt": "在 {{time}}",
         "firstBody": "你的第一份简报会在 {{time}} 送到，用这台电脑上今天的内容做成。在那之前，这里是 Isoform 已经能做的事。",
@@ -875,7 +884,9 @@
         "workSub": "{{n}} 件待回答 · {{m}} 件从你的代理回来",
         "withAgents": "在你的代理那里",
         "move": "第 {{i}} / {{n}} 件 · ↑↓ 切换",
-        "keys": "切换 · 回答 · 编辑 · 撤销"
+        "keys": "切换 · 回答 · 编辑 · 撤销",
+        "fromWatch_one": "来自你的手表：{{count}} 段对话",
+        "fromWatch_other": "来自你的手表：{{count}} 段对话"
     },
     "work": {
         "title": "你的工作",
@@ -913,6 +924,7 @@
             "result": "结果"
         },
         "reason": {
+            "missed_point": "没抓住重点",
             "already_done": "已经做了",
             "not_now": "现在不",
             "not_useful": "没用",
@@ -977,7 +989,21 @@
             "wrong_person": "人不对",
             "already_done": "已经做了",
             "not_mine": "不是我的"
-        }
+        },
+        "inBrief": "这份简报的来源",
+        "eachWhy": "每项都可打开它的原因。",
+        "whyEmpty": "这个来源没有可显示的内容。",
+        "kind": {
+            "calendar": "日历",
+            "mail": "邮件",
+            "messages": "信息",
+            "reminders": "提醒事项",
+            "calls": "通话和会议",
+            "watch": "你的手表",
+            "agents": "你的智能体",
+            "screen": "屏幕"
+        },
+        "sourceLine": "{{day}} · {{kind}} · {{label}}"
     },
     "topic": {
         "kindProject": "项目",

@@ -39,6 +39,7 @@ type agentServerClient struct {
 	http *http.Client
 }
 
+//isoform:destination agent_of_you
 func newAgentServerClient(base string) (*agentServerClient, error) {
 	base = strings.TrimRight(strings.TrimSpace(base), "/")
 	if base == "" {
@@ -69,6 +70,7 @@ func (c *agentServerClient) do(ctx context.Context, method, path string, payload
 	return json.RawMessage(body), nil
 }
 
+//isoform:destination agent_of_you
 func (c *agentServerClient) request(ctx context.Context, method, path string, payload any, hub, token string, limit int64) ([]byte, error) {
 	var reader io.Reader
 	if payload != nil {

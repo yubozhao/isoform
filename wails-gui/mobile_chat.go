@@ -1526,7 +1526,7 @@ func (bridge *mobileBridge) serveChatMessage(w http.ResponseWriter, r *http.Requ
 		bridge.app.notePhoneTurnSender(device)
 		ref, attached := TodayChatContextRef{}, false
 		if input.About != nil && len(input.OfferReferences) == 0 && bridge.app.isMainChatSession(bridge.ctx, row.ID) {
-			// An item that is gone or hidden is dropped: the words still go.
+			// Keep the person's words when the attached item is no longer readable.
 			ref, attached = bridge.app.mobileChatAboutRef(bridge.ctx, input.About)
 		}
 		if attached {

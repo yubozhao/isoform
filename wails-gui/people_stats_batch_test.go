@@ -500,28 +500,33 @@ func (c peopleBatchFailureConn) QueryContext(ctx context.Context, query string, 
 	return c.Conn.(driver.QueryerContext).QueryContext(ctx, query, args)
 }
 
-func withPeopleBatchFailure(t *testing.T, a *App, database, needle string) (func(), *atomic.Bool) {
+func withPeopleBatchFailure(t *testing.T, a *App, database, needle string) *atomic.Bool {
 	t.Helper()
-	original := peopleProfileStorageDB(a.store)
-	replace := func(db *sql.DB) { setPeopleProfileStorageDB(a.store, db) }
-	if database == "activity" {
-		original = a.activity.store.db
-		replace = func(db *sql.DB) { a.activity.store.db = db }
-	}
-	var path string
-	var sequence int
-	var name string
-	if err := original.QueryRow(`PRAGMA database_list`).Scan(&sequence, &name, &path); err != nil {
-		t.Fatal(err)
-	}
 	failed := &atomic.Bool{}
-	db := sql.OpenDB(peopleBatchFailureConnector{driver: original.Driver(), path: path, needle: needle, failed: failed})
-	db.SetMaxOpenConns(1)
-	replace(db)
-	return func() {
-		replace(original)
-		_ = db.Close()
-	}, failed
+	instrument := func(original *sql.DB, replace func(*sql.DB)) {
+		db := sql.OpenDB(peopleBatchFailureConnector{
+			driver: original.Driver(), path: peopleProfileDBPath(t, original), needle: needle, failed: failed,
+		})
+		db.SetMaxOpenConns(original.Stats().MaxOpenConnections)
+		replace(db)
+		t.Cleanup(func() {
+			replace(original)
+			_ = db.Close()
+		})
+	}
+	if database == "activity" {
+		store := a.activity.store
+		if store.reader() != store.db {
+			instrument(store.readDB, func(db *sql.DB) { store.readDB = db })
+			instrument(store.db, func(db *sql.DB) { store.db, store.readWriter = db, db })
+		} else {
+			instrument(store.db, func(db *sql.DB) { store.db = db })
+		}
+	} else {
+		instrument(peopleProfileStorageDB(a.store), func(db *sql.DB) { setPeopleProfileStorageDB(a.store, db) })
+		instrument(peopleProfileStorageReadDB(a.store), func(db *sql.DB) { setPeopleProfileStorageReadDB(a.store, db) })
+	}
+	return failed
 }
 
 func TestListPrincipalsWithStatsBatchFailureFallsBack(t *testing.T) {
@@ -537,8 +542,7 @@ func TestListPrincipalsWithStatsBatchFailureFallsBack(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a := newPeopleStatsBatchFixture(t)
-			restore, failed := withPeopleBatchFailure(t, a, tc.database, tc.needle)
-			defer restore()
+			failed := withPeopleBatchFailure(t, a, tc.database, tc.needle)
 			got, err := a.listPrincipalsWithStats(newPeopleReadGateCache())
 			if err != nil {
 				t.Fatal(err)

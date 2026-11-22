@@ -44,6 +44,7 @@ func (a *App) downloadWithRetries(client *http.Client, url, path string) error {
 	return lastErr
 }
 
+//isoform:destination metadata
 func newUpdateDownloadClient() *http.Client {
 	transport := &http.Transport{
 		TLSHandshakeTimeout:   15 * time.Second,

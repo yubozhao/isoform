@@ -97,6 +97,8 @@ func (pr *progressReader) Read(p []byte) (int, error) {
 }
 
 // downloadFile downloads a URL to a local file with a temp file for atomicity.
+//
+//isoform:destination metadata
 func downloadFile(url, dest, displayName string, onProgress downloadProgressFn) error {
 	client := &http.Client{Timeout: modelDownloadTimeout}
 	resp, err := client.Get(url)

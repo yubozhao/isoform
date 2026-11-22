@@ -7,6 +7,7 @@ package main
 // back), Couldn't start, Taken back. Never an estimate.
 
 import (
+	"cmp"
 	"errors"
 	"log"
 	"net/http"
@@ -75,7 +76,7 @@ func (a *App) GetHandoffStatuses() ([]HandoffStatus, error) {
 }
 
 func (a *App) handoffStatus(h workonit.Handoff, record workonit.Record, results map[string]TaskLinkResult, now time.Time) HandoffStatus {
-	status := HandoffStatus{ID: h.ID, AgentID: h.AgentID, AgentName: a.handoffAgentName(h.AgentID, h.AgentName), Title: handoffFirstLine(h.Text), SentAt: h.SentAt, State: handoffSent}
+	status := HandoffStatus{ID: h.ID, AgentID: h.AgentID, AgentName: a.handoffAgentName(h.AgentID, h.AgentName), Title: cmp.Or(h.Title, handoffFirstLine(h.Text)), SentAt: h.SentAt, State: handoffSent}
 	if h.TakenBackAt != 0 {
 		status.State, status.Since = handoffTakenBack, h.TakenBackAt
 		return status

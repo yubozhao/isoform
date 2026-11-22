@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -120,9 +121,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) push(w http.ResponseWriter, r *http.Request) {
 	peer := httpapi.ClientIP(r)
-	if allowed, retry := h.limits.Allow("ip:"+peer, 120, time.Minute, h.now()); !allowed {
-		setRetryAfter(w, retry)
-		http.Error(w, "rate limited", http.StatusTooManyRequests)
+	if !h.allow(w, r, "push_address", peer, 120, time.Minute) {
 		return
 	}
 	body, ok := readRequestBody(w, r)
@@ -202,16 +201,12 @@ func (h *Handler) push(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	hubKeyID := hex.EncodeToString(hubRaw)
-	if allowed, retry := h.limits.Allow("hub:"+hubKeyID, 600, time.Hour, h.now()); !allowed {
-		setRetryAfter(w, retry)
-		http.Error(w, "rate limited", http.StatusTooManyRequests)
+	if !h.allow(w, r, "push_hub", hubKeyID, 600, time.Hour) {
 		return
 	}
 	digest := sha256.Sum256([]byte(token))
 	tokenKey := hex.EncodeToString(digest[:])
-	if allowed, retry := h.limits.Allow("token:"+tokenKey, 30, time.Hour, h.now()); !allowed {
-		setRetryAfter(w, retry)
-		http.Error(w, "rate limited", http.StatusTooManyRequests)
+	if !h.allow(w, r, "push_token", tokenKey, 30, time.Hour) {
 		return
 	}
 
@@ -226,14 +221,12 @@ func (h *Handler) push(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	outcome, sendErr := h.Sender.Send(r.Context(), claim)
-	h.writeOutcome(w, outcome, sendErr)
+	h.writeOutcome(w, r, outcome, sendErr)
 }
 
 func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
 	peer := httpapi.ClientIP(r)
-	if allowed, retry := h.limits.Allow("register-ip:"+peer, 10, time.Minute, h.now()); !allowed {
-		setRetryAfter(w, retry)
-		http.Error(w, "rate limited", http.StatusTooManyRequests)
+	if !h.allow(w, r, "register_address", peer, 10, time.Minute) {
 		return
 	}
 	body, ok := readRequestBody(w, r)
@@ -262,9 +255,7 @@ func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
 	}
 	tokenDigest := sha256.Sum256([]byte(token))
 	tokenKey := hex.EncodeToString(tokenDigest[:])
-	if allowed, retry := h.limits.Allow("register-token:"+tokenKey, 5, time.Hour, h.now()); !allowed {
-		setRetryAfter(w, retry)
-		http.Error(w, "rate limited", http.StatusTooManyRequests)
+	if !h.allow(w, r, "register_token", tokenKey, 5, time.Hour) {
 		return
 	}
 	expires := h.now().Add(180 * 24 * time.Hour).UTC().Truncate(time.Second)
@@ -274,15 +265,16 @@ func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	outcome, sendErr := h.Sender.SendGrant(r.Context(), token, input.Environment, input.HubID, input.HubPub, grant, expires)
-	h.writeOutcome(w, outcome, sendErr)
+	h.writeOutcome(w, r, outcome, sendErr)
 }
 
-func (h *Handler) writeOutcome(w http.ResponseWriter, outcome push.Outcome, sendErr error) {
+func (h *Handler) writeOutcome(w http.ResponseWriter, r *http.Request, outcome push.Outcome, sendErr error) {
 	if apnspush.IsConfigurationError(sendErr) {
 		http.Error(w, "provider configuration unavailable", http.StatusServiceUnavailable)
 		return
 	}
 	if delay, ok := apnspush.ProviderCooldown(sendErr); ok {
+		log.Printf("status=429 limit=provider_cooldown route=%s", r.URL.Path)
 		setRetryAfter(w, delay)
 		http.Error(w, "provider cooldown", http.StatusTooManyRequests)
 		return
@@ -295,6 +287,17 @@ func (h *Handler) writeOutcome(w http.ResponseWriter, outcome push.Outcome, send
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(response{Outcome: outcome})
+}
+
+// push and register are dispatched only for their exact, fixed paths.
+func (h *Handler) allow(w http.ResponseWriter, r *http.Request, name, subject string, cap int, period time.Duration) bool {
+	ok, retry := h.limits.Allow(name+":"+subject, cap, period, h.now())
+	if !ok {
+		log.Print(limit.Line(r.URL.Path, name, int64(cap), int64(cap)))
+		setRetryAfter(w, retry)
+		http.Error(w, "rate limited", http.StatusTooManyRequests)
+	}
+	return ok
 }
 
 func readRequestBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {

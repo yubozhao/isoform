@@ -34,6 +34,18 @@ beforeEach(async () => {
 afterEach(() => vi.useRealTimers());
 
 describe("Connect an agent", () => {
+    it("names no agent that can't connect, and no Settings section the design dropped (agents-join v1.1.0, settings v1.1.0 rule 1)", async () => {
+        const zh = (await import("@/i18n/locales/zh-CN/app.json")).default;
+        for (const sheet of [en.agents.connectSheet, zh.agents.connectSheet]) {
+            expect(sheet.anyOtherHelp).not.toMatch(/Muse/);
+            expect(sheet.localOnly).not.toMatch(/Other AI apps|其他 AI 应用/);
+        }
+        mocks.start.mockResolvedValue({ message, link: "http://127.0.0.1/j/code", expiresAt: 0, local: true, mcpAddress: "http://127.0.0.1/mcp?join=key" });
+        render(<ConnectAgentDialog open onOpenChange={() => undefined} agents={agents} onConnected={() => undefined} />);
+        expect(await screen.findByText(en.agents.connectSheet.localOnly)).toBeInTheDocument();
+        expect(screen.getByText(en.agents.connectSheet.anyOtherHelp)).toBeInTheDocument();
+    });
+
     it("shows the agents found here and the one message, and copies it", async () => {
         render(<ConnectAgentDialog open onOpenChange={() => undefined} agents={agents} onConnected={() => undefined} />);
         expect(await screen.findByText(message)).toBeInTheDocument();
@@ -97,11 +109,14 @@ describe("Connect an agent", () => {
         expect(screen.queryByText("https://abc.agents.isoform.ai/mcp?join=key")).not.toBeInTheDocument();
     });
 
-    it("says why when agents can't connect, and closes an open link on close", async () => {
-        mocks.start.mockRejectedValueOnce(new Error("task links are off"));
+    it("shows a plain retry line when a link can't be made, and closes an open link on close", async () => {
+        mocks.start.mockRejectedValueOnce(new Error("task link listener: address already in use"));
         const onOpenChange = vi.fn();
         const { rerender } = render(<ConnectAgentDialog open onOpenChange={onOpenChange} agents={agents} onConnected={() => undefined} />);
-        expect(await screen.findByText(en.agents.connectSheet.off)).toBeInTheDocument();
+        expect(await screen.findByText(en.agents.actionFailed)).toBeInTheDocument();
+        // Agents G2: no switch and not Closed Eyes stop joining, so the old sentence never shows.
+        expect(screen.queryByText(/task links/i)).not.toBeInTheDocument();
+        expect(document.querySelector("[data-connect-off]")).toBeNull();
         fireEvent.click(screen.getByRole("button", { name: en.agents.retry }));
         expect(await screen.findByText(message)).toBeInTheDocument();
         fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });

@@ -1,17 +1,14 @@
-import { act, renderHook } from "@testing-library/react";
+import { renderHook } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import appSource from "../App.tsx?raw";
 import { useReadingWidth } from "./use-reading-width";
 
 describe("Reading width and window chrome", () => {
-    it("updates every mounted reader and retains the existing preference", () => {
+    it("ignores a reading width saved before its switch went (answers v1.0.0 T2)", () => {
         localStorage.setItem("yansu.chat-wide-mode", "false");
-        const first = renderHook(useReadingWidth);
-        const second = renderHook(useReadingWidth);
-        expect(first.result.current[0]).toBe(false);
-        act(() => second.result.current[1](true));
-        expect(first.result.current[0]).toBe(true);
-        expect(localStorage.getItem("yansu.chat-wide-mode")).toBe("true");
+        const { result } = renderHook(useReadingWidth);
+        expect(result.current[0]).toBe(true);
+        localStorage.removeItem("yansu.chat-wide-mode");
     });
     it("removes the update popup, its automatic hydration and top-right reading-width action", () => {
         expect(appSource).not.toContain('title="About & Updates"');

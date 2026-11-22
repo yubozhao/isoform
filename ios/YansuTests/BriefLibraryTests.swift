@@ -577,7 +577,8 @@ final class BriefLibraryTests: XCTestCase {
         // A file moved in from outside (the legacy migration) shows after a reload.
         let other = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: other) }
-        try BriefCache(directory: other).save(full("moved", asOf: "2026-10-19T08:00:00Z"))
+        // On the test's clock: the real one prunes this 2026-10-19 brief once it is 30 days old (from 2026-11-18).
+        try BriefCache(directory: other, now: { fixed }).save(full("moved", asOf: "2026-10-19T08:00:00Z"))
         BriefCacheMigration.moveLegacyFiles(from: other, to: folder)
         h.cache.reload()
         XCTAssertEqual(Set(h.cache.all().map(\.brief.identifier)), ["b", "moved"])

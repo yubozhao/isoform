@@ -1,7 +1,10 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 )
@@ -58,12 +61,43 @@ func mobileSeesFrom(perms PlatformPermissions, provider string) mobileSeesView {
 	return view
 }
 
-func (bridge *mobileBridge) serveSees(w http.ResponseWriter) {
+func (bridge *mobileBridge) serveSees(w http.ResponseWriter, r *http.Request) {
 	if bridge.app == nil {
 		mobileJSON(w, http.StatusServiceUnavailable, nil, errMobileStoreUnavailable.Error())
 		return
 	}
-	mobileJSON(w, http.StatusOK, bridge.app.GetWhatIsoformSees(), "")
+	view := struct {
+		MobileSeesView
+		AgentOfYouReviewOff bool `json:"agentOfYouReviewOff,omitempty"`
+	}{MobileSeesView: bridge.app.GetWhatIsoformSees()}
+	if env, err := bridge.app.agentOwnerEnv(); err == nil {
+		view.AgentOfYouReviewOff = mobileOwnerReviewOff(r.Context(), env)
+	}
+	mobileJSON(w, http.StatusOK, view, "")
+}
+
+func mobileOwnerReviewOff(ctx context.Context, env agentOwnerEnv) bool {
+	// A privacy read must not create an owner identity.
+	data, err := os.ReadFile(env.reservation.stateFile)
+	var state yourAgentStateFile
+	if err != nil || json.Unmarshal(data, &state) != nil || state.Hub == "" || state.Token == "" {
+		return false
+	}
+	status, err := env.client.do(ctx, http.MethodGet, "/v1/owner", nil, state.Hub, state.Token)
+	return err == nil && mobileOwnerStatusReviewOff(status)
+}
+
+func mobileOwnerStatusReviewOff(status json.RawMessage) bool {
+	var owner struct {
+		State    string `json:"state"`
+		Settings struct {
+			ReviewResults *bool `json:"reviewResults"`
+		} `json:"settings"`
+	}
+	if json.Unmarshal(status, &owner) != nil {
+		return false
+	}
+	return (owner.State == "on" || owner.State == "paused") && owner.Settings.ReviewResults != nil && !*owner.Settings.ReviewResults
 }
 
 // GetWhatIsoformSees uses the same job projection on the desktop and phone.

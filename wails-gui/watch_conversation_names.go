@@ -244,6 +244,8 @@ func cleanWatchConversationName(raw string) (string, bool) {
 // enough, is over, and has none that fits its words; and drops the names that
 // fit nothing any more. It makes at most watchConversationNamesPerRun calls.
 func (a *App) nameWatchConversations(ctx context.Context, store *mobileRecordingStore) {
+	watchCutMu.RLock()
+	defer watchCutMu.RUnlock()
 	if a == nil || store == nil || a.IsClosedEyesModeEnabled() {
 		return
 	}
@@ -252,7 +254,12 @@ func (a *App) nameWatchConversations(ctx context.Context, store *mobileRecording
 		return
 	}
 	now := time.Now()
-	convs := buildWatchConversations(a.watchConversationSpeechOf(recordings, now.AddDate(0, 0, -watchConversationDays)), watchConversationSilence)
+	var skipped watchSpeechSkips
+	speech, err := a.watchDisplaySpeech(recordings, now.AddDate(0, 0, -watchConversationDays), &skipped)
+	if err != nil || skipped.events+skipped.invalidRecordings > 0 {
+		return
+	}
+	convs := buildWatchConversations(speech, watchConversationSilence)
 
 	watchConversationNamesMu.Lock()
 	defer watchConversationNamesMu.Unlock()
@@ -278,6 +285,7 @@ func (a *App) nameWatchConversations(ctx context.Context, store *mobileRecording
 			break
 		}
 		calls++
+		a.recordWatchConversationCall(c)
 		raw, err := watchConversationNamer(a, buildWatchConversationNamePrompt(c))
 		if err != nil {
 			log.Printf("[recordings] a conversation was not named: %v", err)

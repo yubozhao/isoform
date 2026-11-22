@@ -20,3 +20,12 @@ repos:
     hooks:
       - id: black
         language_version: python3
+
+  # Conformance checklists keep no hand-merged Counts (they conflicted on every merge).
+  - repo: local
+    hooks:
+      - id: conformance-no-stored-counts
+        name: conformance checklists store no counts
+        entry: python3 scripts/conformance/counts.py --check
+        language: system
+        files: ^docs/conformance/.*\.md$

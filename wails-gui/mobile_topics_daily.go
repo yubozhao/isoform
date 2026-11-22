@@ -29,7 +29,7 @@ func (a *App) dailyTopicsForPhone(ctx context.Context) (mobileTopicsDailyView, e
 		return mobileTopicsDailyView{Topics: []DailyTopicView{}}, err
 	}
 	out := mobileTopicsDailyView{Enabled: view.Enabled, Day: view.Day, BuiltAt: view.BuiltAt, Topics: []DailyTopicView{}}
-	if !view.Enabled {
+	if len(view.Topics) == 0 {
 		return out, nil
 	}
 	store, err := a.topicsDailyStore()

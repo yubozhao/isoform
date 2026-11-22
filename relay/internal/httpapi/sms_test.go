@@ -419,7 +419,14 @@ func TestSMSQuotaAndIsolationBetweenHubs(t *testing.T) {
 		resp := r.hubCall(http.MethodPost, "/v1/hub/sms/send", hubID, credential, map[string]string{"body": fmt.Sprintf("Isoform: %d", i)})
 		r.expectStatus(resp, http.StatusOK, "send under the cap")
 	}
-	resp := r.hubCall(http.MethodPost, "/v1/hub/sms/send", hubID, credential, map[string]string{"body": "Isoform: over"})
+	var resp response
+	send := func() int {
+		resp = r.hubCall(http.MethodPost, "/v1/hub/sms/send", hubID, credential, map[string]string{"body": "Isoform: over"})
+		return resp.Status
+	}
+	expectLimitLog(t, "sms_daily", "/v1/hub/sms/send", sms.DefaultDailyCap, sms.DefaultDailyCap, send)
+	r.texts.Config.MonthlyCap = 1
+	expectLimitLog(t, "sms_monthly", "/v1/hub/sms/send", sms.DefaultDailyCap, 1, send)
 	r.expectStatus(resp, http.StatusTooManyRequests, "send over the cap")
 	if smsData(t, resp).Code != "quota" || resp.Header.Get("Retry-After") == "" {
 		t.Fatalf("quota refusal %s %v", resp.Raw, resp.Header)

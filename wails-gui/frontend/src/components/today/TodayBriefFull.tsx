@@ -13,7 +13,9 @@ import { onPagePrivacyWithdrawal } from "@/lib/page-privacy-withdrawal";
 import { briefKind } from "@/lib/brief-title";
 import { clockTime } from "@/lib/brief-time";
 import type { WorkAnswerError } from "@/hooks/useWorkList";
+import { briefSourcesByKind } from "@/lib/brief-sources";
 import { BriefAudioPlayer } from "./BriefAudioPlayer";
+import { BriefSourceWhy } from "./BriefSourceWhy";
 import { spaceIsFree } from "./TodayBriefBand";
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
@@ -54,10 +56,14 @@ function clock(seconds: number): string {
  * The brief in full on the computer (computer-brief v1.0.0, 19a): in Today's
  * column with ‹ Today, the player (Space plays, ← and → move 15 seconds, the
  * speed), every paragraph with Reply about this and Not right, the brief's
- * own Your work items under the paragraph that mentions them, and Past
- * briefs on the right. Drawn from what this computer made.
+ * own Your work items under the paragraph that mentions them, and on the
+ * right In this brief (its sources by kind, each opening its Why) above
+ * Past briefs. Drawn from what this computer made.
  */
-export function TodayBriefFull({ brief, view, active, items = [], onAnswer, onReply, onNotRight, onOpenBrief, onBack }: {
+export function TodayBriefFull({ brief, view, active, items = [], onAnswer, onUndo, onHandOff, onReply, onNotRight, onOpenBrief, onBack }: {
+    onUndo?: (id: string) => Promise<WorkAnswerError | null>;
+    /** A Yes on agent work opens the hand-off sheet (SH4). */
+    onHandOff?: (item: WorkItem) => void;
     brief: MobileBriefDocument;
     view: TodayBriefView;
     active: boolean;
@@ -78,6 +84,7 @@ export function TodayBriefFull({ brief, view, active, items = [], onAnswer, onRe
     const day = Number.isNaN(madeAt.getTime()) ? "" : madeAt.toLocaleDateString(language, { weekday: "long", month: "long", day: "numeric" });
     const audio = displayed.audio && (!displayed.audio.status || displayed.audio.status === "ok") && displayed.audio.bytes > 0 && briefHasWords(displayed) ? displayed.audio : null;
     const paragraphs = (displayed.narrative ?? []).map((paragraph) => paragraph.text?.trim() ?? "");
+    const sources = briefSourcesByKind(displayed);
     // Read-along follows the voice until the person scrolls away; Play
     // follows again.
     const [follow, setFollow] = useState(true);
@@ -165,7 +172,7 @@ export function TodayBriefFull({ brief, view, active, items = [], onAnswer, onRe
                                         {text.slice(reading.to)}
                                     </> : text}
                                 </p>
-                                {itemsFor(index).map((item) => <CompactItem key={item.id} item={item} onAnswer={onAnswer} tr={tr} />)}
+                                {itemsFor(index).map((item) => <CompactItem key={item.id} item={item} onAnswer={onAnswer} onUndo={onUndo} onHandOff={onHandOff} tr={tr} />)}
                                 <div className="flex gap-3 text-[12.5px] opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100" data-testid="brief-full-actions">
                                     {onReply && <button type="button" className="font-medium text-accent" onClick={() => onReply(index, text)}>{tr("cbrief.reply")}</button>}
                                     {onNotRight && <button type="button" className="font-medium text-muted hover:text-ink" onClick={() => setNotRight(index)} data-testid="brief-full-not-right">{tr("cbrief.notRight")}</button>}
@@ -175,6 +182,13 @@ export function TodayBriefFull({ brief, view, active, items = [], onAnswer, onRe
                     </div>
                 </div>
                 <aside className="flex flex-col gap-2" data-testid="brief-full-past">
+                    {sources.length > 0 && (
+                        <section className="mb-3 flex flex-col gap-1" data-testid="brief-full-sources" aria-label={tr("cbrief.inBrief")}>
+                            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted">{tr("cbrief.inBrief")}</h3>
+                            {sources.map((group) => <BriefSourceWhy key={group.kind} group={group} />)}
+                            <p className="px-2.5 text-[11.5px] text-muted">{tr("cbrief.eachWhy")}</p>
+                        </section>
+                    )}
                     <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted">{tr("ctoday.pastBriefs")}</h3>
                     <PastBriefsWithState currentBriefId={brief.briefId} onOpen={onOpenBrief} tr={tr} />
                     <p className="px-2.5 text-[11.5px] text-muted">{tr("cbrief.pastFoot")}</p>
@@ -238,29 +252,92 @@ function PastBriefsWithState({ currentBriefId, onOpen, tr }: { currentBriefId: s
     );
 }
 
-/** A brief's item where the brief mentions it: one line and its answers;
- *  an answered one is one line (computer-brief v1.0.0 rule 4). */
-function CompactItem({ item, onAnswer, tr }: { item: WorkItem; onAnswer?: (id: string, input: WorkAnswerInput) => Promise<WorkAnswerError | null>; tr: Translate }) {
-    const [busy, setBusy] = useState(false);
-    const answer = (action: string) => {
-        if (!onAnswer || busy) return;
-        setBusy(true);
-        void onAnswer(item.id, { action }).finally(() => setBusy(false));
-    };
-    if (item.state !== "open" && item.state !== "back") {
-        return <p className="rounded-lg bg-surface-active px-3 py-1.5 text-[12.5px] text-muted" data-testid="brief-full-item">{item.answer?.line || item.work.title}</p>;
+/** The answer a key means on a brief's item (computer-brief v1.0.0 rule 4):
+ *  Y, N and M; Useful and Not useful (Y, N) for a result back. */
+export function compactKeyAction(item: WorkItem, key: string): "yes" | "no" | "not_mine" | "useful" | "not_useful" | null {
+    const back = item.state === "back";
+    switch (key) {
+    case "y": return back ? "useful" : "yes";
+    case "n": return back ? "not_useful" : "no";
+    case "m": return back ? null : "not_mine";
+    default: return null;
     }
+}
+
+/** A brief's item where the brief mentions it (computer-brief v1.0.0 rule
+ *  4): one line and its answers with their keys; ↑ ↓ move between the
+ *  brief's items; an answered one is one line with Undo. A Yes on agent work
+ *  opens the hand-off sheet, as in Your work. */
+function CompactItem({ item, onAnswer, onUndo, onHandOff, tr, now = new Date() }: {
+    item: WorkItem;
+    onAnswer?: (id: string, input: WorkAnswerInput) => Promise<WorkAnswerError | null>;
+    onUndo?: (id: string) => Promise<WorkAnswerError | null>;
+    onHandOff?: (item: WorkItem) => void;
+    tr: Translate;
+    now?: Date;
+}) {
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<WorkAnswerError | null>(null);
     const back = item.state === "back";
     const agentWork = !back && item.yes.does === "agent";
+    const answer = (action: string) => {
+        if (busy) return;
+        if (action === "yes" && agentWork) { onHandOff?.(item); return; }
+        if (!onAnswer) return;
+        setBusy(true);
+        setError(null);
+        void measureToday("W01", "do", "done", () => onAnswer(item.id, { action })).then((failed) => setError(failed ?? null)).finally(() => setBusy(false));
+    };
+    const undo = () => {
+        if (!onUndo || busy) return;
+        setBusy(true);
+        setError(null);
+        void measureToday("W02", "do", "done", () => onUndo(item.id)).then((failed) => setError(failed ?? null)).finally(() => setBusy(false));
+    };
+    const onKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
+        if (event.target !== event.currentTarget || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || event.nativeEvent.isComposing) return;
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            const all = Array.from(event.currentTarget.closest("[data-testid='brief-full-text']")?.querySelectorAll<HTMLElement>("[data-brief-item]") ?? []);
+            const next = all[all.indexOf(event.currentTarget) + (event.key === "ArrowDown" ? 1 : -1)];
+            if (next) { event.preventDefault(); next.focus(); }
+            return;
+        }
+        if (item.state !== "open" && item.state !== "back") return;
+        const action = compactKeyAction(item, event.key.toLowerCase());
+        if (!action || (action === "yes" && agentWork && !onHandOff)) return;
+        event.preventDefault();
+        answer(action);
+    };
+    const shared = { "data-brief-item": "", "data-item-id": item.id, tabIndex: 0, role: "article", onKeyDown } as const;
+    if (item.state !== "open" && item.state !== "back") {
+        const until = Date.parse(item.answer?.undoUntil ?? "");
+        const undoable = !!onUndo && Number.isFinite(until) && until > now.getTime();
+        return (
+            <div {...shared} aria-label={item.answer?.line || item.work.title} className="flex items-center justify-between gap-2 rounded-lg bg-surface-active px-3 py-1.5 outline-none focus-visible:ring-2 focus-visible:ring-border-focus" data-testid="brief-full-item">
+                <span className="min-w-0 text-[12.5px] text-muted">{item.answer?.line || item.work.title}</span>
+                {undoable && <button type="button" className="shrink-0 text-[12px] font-medium text-accent" disabled={busy} onClick={undo} data-testid="brief-full-item-undo">{tr("work.undo")}</button>}
+                {error && <span role="alert" className="text-[12px] text-copper">{tr(`work.error.${error}`)}</span>}
+            </div>
+        );
+    }
     return (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border px-3 py-2" data-testid="brief-full-item">
+        <div {...shared} aria-label={item.work.title} aria-keyshortcuts={back ? "Y N" : "Y N M"} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-border-focus" data-testid="brief-full-item">
             <span className="min-w-0 text-[13px] font-medium text-ink">{item.work.title}</span>
             <span className="flex gap-1.5">
-                {!agentWork && <Button size="sm" disabled={busy} onClick={() => answer(back ? "useful" : "yes")}>{tr(back ? "work.useful" : "work.yes")}</Button>}
-                <Button size="sm" variant="outline" disabled={busy} onClick={() => answer(back ? "not_useful" : "no")}>{tr(back ? "work.notUseful" : "work.no")}</Button>
-                {!back && <Button size="sm" variant="outline" disabled={busy} onClick={() => answer("not_mine")}>{tr("work.notMine")}</Button>}
+                {(!agentWork || onHandOff) && <KeyButton label={tr(back ? "work.useful" : "work.yes")} keyName="Y" primary disabled={busy} onClick={() => answer(back ? "useful" : "yes")} />}
+                <KeyButton label={tr(back ? "work.notUseful" : "work.no")} keyName="N" disabled={busy} onClick={() => answer(back ? "not_useful" : "no")} />
+                {!back && <KeyButton label={tr("work.notMine")} keyName="M" disabled={busy} onClick={() => answer("not_mine")} />}
             </span>
+            {error && <p role="alert" className="w-full text-[12px] text-copper">{tr(`work.error.${error}`)}</p>}
         </div>
+    );
+}
+
+function KeyButton({ label, keyName, primary = false, disabled, onClick }: { label: string; keyName: string; primary?: boolean; disabled?: boolean; onClick: () => void }) {
+    return (
+        <Button size="sm" variant={primary ? "default" : "outline"} disabled={disabled} aria-keyshortcuts={keyName} onClick={onClick}>
+            {label}<kbd aria-hidden className="ml-1.5 text-[11px] opacity-60">{keyName}</kbd>
+        </Button>
     );
 }
 

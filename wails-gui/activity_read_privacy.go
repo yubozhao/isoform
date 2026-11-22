@@ -298,13 +298,13 @@ func (s *ActivityStore) decodeActivitySessionProvenanceContext(ctx context.Conte
 		return activitySourceProvenance{}, closeErr
 	}
 	var snapshots []activityPrivacySnapshotInput
-	rows, err = tx.QueryContext(ctx, `SELECT COALESCE(app, ''), COALESCE(browser_url, ''), COALESCE(parsed_json, '') FROM activity_snapshots WHERE session_id = ? ORDER BY id`, session.ID)
+	rows, err = tx.QueryContext(ctx, `SELECT COALESCE(app, ''), COALESCE(browser_url, ''), COALESCE(parsed_json, ''), privacy_held FROM activity_snapshots WHERE session_id = ? ORDER BY id`, session.ID)
 	if err != nil {
 		return activitySourceProvenance{}, err
 	}
 	for rows.Next() {
 		var input activityPrivacySnapshotInput
-		if err := rows.Scan(&input.app, &input.browserURL, &input.parsed); err != nil {
+		if err := rows.Scan(&input.app, &input.browserURL, &input.parsed, &input.held); err != nil {
 			rows.Close()
 			return activitySourceProvenance{}, err
 		}
@@ -349,6 +349,10 @@ func (s *ActivityStore) decodeActivitySessionProvenanceInputs(session ActivitySe
 	snapshots := make([]activitySnapshotPrivacyIdentity, 0)
 	source.MCPSnapshots = &snapshots
 	for _, input := range snapshotInputs {
+		if input.held {
+			source.Private = true
+			source.MCPVerified = false
+		}
 		identity, identityErr := readActivitySnapshotPrivacyIdentity(input.app, input.browserURL, input.parsed)
 		if identityErr != nil {
 			source.MCPVerified = false

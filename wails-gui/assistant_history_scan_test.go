@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -90,7 +91,7 @@ func TestScanAssistantHistoryPassOne(t *testing.T) {
 	writeHistoryFile(t, filepath.Join(codexSessions, "2026", "10", "27", "rollout-2026-10-27-a.jsonl"), ago(1.5), codexMetaLine(t, toolWorktree))
 	writeHistoryFile(t, filepath.Join(codexSessions, "2026", "10", "25", "rollout-2026-10-25-b.jsonl"), ago(9), codexMetaLine(t, loose))
 
-	scan := scanAssistantHistory(assistantHistoryRoots{Home: home, Claude: claudeProjects, Codex: codexSessions}, now)
+	scan := fixtureHistoryScan(t, assistantHistoryRoots{Home: home, Claude: claudeProjects, Codex: codexSessions}, now)
 
 	if got := strings.Join(scan.Assistants, ","); got != "claude,codex" {
 		t.Fatalf("assistants = %q", got)
@@ -144,7 +145,7 @@ func TestScanAssistantHistoryCapsTheProjectList(t *testing.T) {
 		dir := filepath.Join(home, "work", string(rune('a'+i)))
 		writeHistoryFile(t, filepath.Join(claudeProjects, "p", string(rune('a'+i))+".jsonl"), now.Add(-time.Duration(i+1)*time.Hour), claudeLine(t, dir, "user", "x"))
 	}
-	scan := scanAssistantHistory(assistantHistoryRoots{Home: home, Claude: claudeProjects, Codex: filepath.Join(home, "none")}, now)
+	scan := fixtureHistoryScan(t, assistantHistoryRoots{Home: home, Claude: claudeProjects, Codex: filepath.Join(home, "none")}, now)
 	if len(scan.Projects) != assistantHistoryMaxProject {
 		t.Fatalf("projects = %d, want %d", len(scan.Projects), assistantHistoryMaxProject)
 	}
@@ -164,4 +165,21 @@ func TestAssistantHistoryRootsHonorConfigDirs(t *testing.T) {
 	if roots.Claude != filepath.Join(home, "claude-alt", "projects") || roots.Codex != filepath.Join(home, "codex-alt", "sessions") {
 		t.Fatalf("roots: %+v", roots)
 	}
+}
+
+func fixtureHistoryScan(t *testing.T, roots assistantHistoryRoots, now time.Time) assistantHistoryScan {
+	t.Helper()
+	t.Setenv(agentHomeEnv, filepath.Join(roots.Home, "agent-data"))
+	settings := learnFromItSettings{Migrated: true, Choices: map[string]learnFromItChoice{}}
+	for id := range historySources {
+		settings.Choices[id] = learnFromItChoice{true, now.UnixMilli(), "person"}
+	}
+	if err := saveLearnFromIt(settings); err != nil {
+		t.Fatal(err)
+	}
+	scan, err := (&App{}).scanAssistantHistory(context.Background(), roots, now, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return scan
 }

@@ -1,10 +1,5 @@
 package main
 
-import (
-	"context"
-	"net/http"
-)
-
 // "Notes for long talks" as the person's own setting (PROTOCOL.md 24.12).
 //
 // Notes and follow-ups from watch conversations over five minutes began
@@ -25,78 +20,11 @@ type MobileWatchNotesSetting struct {
 	Chosen bool `json:"chosen"`
 }
 
-// watchNotesSetting reads the setting. A store that cannot be read falls back
-// to the build switch.
-func (a *App) watchNotesSetting() MobileWatchNotesSetting {
-	if a != nil && a.store != nil {
-		switch value, _ := a.store.GetUIState(context.Background(), watchNotesSettingKey); value {
-		case "on":
-			return MobileWatchNotesSetting{On: true, Chosen: true}
-		case "off":
-			return MobileWatchNotesSetting{On: false, Chosen: true}
-		}
+// Only start background note generation when its setting can be read.
+func (a *App) watchNotesOn() bool {
+	setting, err := a.readWatchSetting(watchNotesSettingKey)
+	if err != nil {
+		return false
 	}
-	return MobileWatchNotesSetting{On: featureOn(featureWatchNotes)}
-}
-
-// watchNotesOn says whether notes are written for long watch conversations.
-func (a *App) watchNotesOn() bool { return a.watchNotesSetting().On }
-
-// setWatchNotes stores the person's choice.
-func (a *App) setWatchNotes(on bool) error {
-	if a == nil || a.store == nil {
-		return errMobileStoreUnavailable
-	}
-	value := "off"
-	if on {
-		value = "on"
-	}
-	return a.store.SetUIState(context.Background(), watchNotesSettingKey, value)
-}
-
-// serveWatchNotes answers GET /settings/watch-notes.
-func (bridge *mobileBridge) serveWatchNotes(w http.ResponseWriter) {
-	if bridge.app == nil {
-		mobileJSON(w, http.StatusServiceUnavailable, nil, errMobileStoreUnavailable.Error())
-		return
-	}
-	mobileJSON(w, http.StatusOK, bridge.app.watchNotesSetting(), "")
-}
-
-// serveWatchNotesSet answers POST /settings/watch-notes with {"on": bool}.
-func (bridge *mobileBridge) serveWatchNotesSet(w http.ResponseWriter, r *http.Request) {
-	var input struct {
-		On *bool `json:"on"`
-	}
-	if !mobileDecode(w, r, &input) {
-		return
-	}
-	if input.On == nil {
-		mobileJSON(w, http.StatusBadRequest, nil, "on is required")
-		return
-	}
-	if bridge.app == nil {
-		mobileJSON(w, http.StatusServiceUnavailable, nil, errMobileStoreUnavailable.Error())
-		return
-	}
-	if err := bridge.app.setWatchNotes(*input.On); err != nil {
-		mobileJSON(w, http.StatusInternalServerError, nil, "the setting could not be saved")
-		return
-	}
-	mobileJSON(w, http.StatusOK, bridge.app.watchNotesSetting(), "")
-}
-
-// "Notes for long talks" (24.12): its routes, and the setting in the status.
-func init() {
-	mobileRegisterRoute("GET /settings/watch-notes", []string{mobileScopeChatWrite}, func(bridge *mobileBridge, w http.ResponseWriter, _ *http.Request, _ mobileDeviceRecord) {
-		bridge.serveWatchNotes(w)
-	})
-	mobileRegisterRoute("POST /settings/watch-notes", []string{mobileScopeChatWrite}, func(bridge *mobileBridge, w http.ResponseWriter, r *http.Request, _ mobileDeviceRecord) {
-		bridge.serveWatchNotesSet(w, r)
-	})
-	mobileRegisterStatus(func(bridge *mobileBridge, status map[string]any) {
-		if bridge.app != nil {
-			status["watchNotes"] = bridge.app.watchNotesSetting()
-		}
-	})
+	return setting.On
 }

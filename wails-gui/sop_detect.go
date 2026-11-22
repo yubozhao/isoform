@@ -121,6 +121,11 @@ type sopDedupGateResponse struct {
 // error lets authoring proceed (the author-side updateExisting fallback still
 // guards the install).
 func (a *App) applySOPDedupGate(ctx context.Context, runner agent.AgentRunner, spec sopAuthorSpec) (sopAuthorSpec, string) {
+	ctx, given, opened := withLearningScope(ctx, "about")
+	if opened {
+		defer a.finishAssistantCall(given)
+	}
+	given.add("activity", spec.SourceID, 1)
 	if !a.sopSourceAllowsModelRead(spec) {
 		return spec, "Source is unavailable for model use"
 	}

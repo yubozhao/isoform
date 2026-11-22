@@ -109,6 +109,8 @@ func removeSlackLocalCredentials() {
 }
 
 // slackAuthTest validates a bot+app token pair and returns workspace/bot info.
+//
+//isoform:destination chat_bridges
 func slackAuthTest(botToken, appToken string) (*slack.AuthTestResponse, error) {
 	api := slack.New(botToken, slack.OptionAppLevelToken(appToken))
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -137,6 +139,7 @@ type slackLocalReceiver struct {
 	hinted map[string]bool
 }
 
+//isoform:destination chat_bridges
 func newSlackLocalReceiver(app *App, creds slackLocalCredentials) *slackLocalReceiver {
 	api := slack.New(creds.BotToken, slack.OptionAppLevelToken(creds.AppToken))
 	return &slackLocalReceiver{

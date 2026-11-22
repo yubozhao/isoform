@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "@/i18n";
 import type { WorkItem, WorkList } from "@/lib/wails-shim-app";
-import { TodayYourWork, workWhen } from "./TodayYourWork";
+import { TodayKeysLine, TodayYourWork, workWhen } from "./TodayYourWork";
 
 vi.mock("@/lib/wails-shim-app", () => ({ RecordTodayAction: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("@/lib/today-telemetry", () => ({ measureToday: (_id: string, _kind: string, _outcome: string, run: () => unknown) => run() }));
@@ -85,7 +85,7 @@ describe("TodayYourWork", () => {
     });
 
     it("judges a result back with Useful and Not useful", async () => {
-        const { onAnswer } = setup([item("r", 0, { state: "back", kind: "result", row: "result" })]);
+        const { onAnswer } = setup([item("r", 0, { state: "back", kind: "result", row: "result", reasons: [] })]);
         expect(screen.getByText("Useful")).toBeInTheDocument();
         expect(screen.queryByText("Not mine")).toBeNull();
         await key("n");
@@ -221,5 +221,109 @@ describe("TodayYourWork", () => {
     it("words times in the reader's day", () => {
         const tr = (k: string, o?: Record<string, unknown>) => i18n.t(`today:${k}`, o as never) as unknown as string;
         expect(workWhen(new Date(2026, 10, 16, 10).toISOString(), NOW, "en", tr)).toMatch(/^tomorrow 10:00/);
+    });
+});
+
+describe("Your work's layout (computer-window v1.0.0 rules 5 and 8)", () => {
+    afterEach(cleanup);
+    it("goes two columns at 880 of content: 480-640 and 320-372, 24 between", () => {
+        render(<TodayYourWork list={list([item("a", 0), item("b", 1)])} active onAnswer={vi.fn()} onUndo={vi.fn()} now={NOW} />);
+        expect(screen.getByTestId("your-work-columns")).toHaveClass("gap-6", "@min-[880px]:grid-cols-[minmax(480px,640px)_minmax(320px,372px)]");
+    });
+    it("leaves its keys line to Today's strip when asked, and the strip drops Quick chat below 880", () => {
+        const { rerender } = render(<TodayYourWork keys={false} list={list([item("a", 0)])} active onAnswer={vi.fn()} onUndo={vi.fn()} now={NOW} />);
+        expect(screen.queryByTestId("your-work-keys")).not.toBeInTheDocument();
+        rerender(<TodayKeysLine />);
+        expect(screen.getByTestId("your-work-keys-quick-chat")).toHaveClass("hidden", "@min-[880px]:inline");
+    });
+});
+
+describe("Your work's states (computer-today v1.1.0 rules 3, 5, 12, 13)", () => {
+    beforeEach(async () => { await i18n.changeLanguage("en"); });
+    afterEach(cleanup);
+    const quiet = (id: string) => item(id, 5, { state: "with_agent", agent: { name: "Codex", since: new Date(NOW.getTime() - 3 * 60 * 60_000).toISOString() } });
+
+    it("offers Ask again and Take it back, in amber, after two hours with no word", async () => {
+        const { onAnswer } = setup([item("a", 0), quiet("q")]);
+        const row = screen.getByTestId("your-work-no-word");
+        expect(row.querySelector("p")).toHaveClass("text-warning");
+        await act(async () => { fireEvent.click(screen.getByTestId("your-work-ask-again")); });
+        expect(onAnswer).toHaveBeenLastCalledWith("q", { action: "ask_again" });
+        expect(screen.queryByTestId("your-work-undo-line")).not.toBeInTheDocument();
+        await act(async () => { fireEvent.click(screen.getByTestId("your-work-take-back")); });
+        expect(onAnswer).toHaveBeenLastCalledWith("q", { action: "take_back" });
+    });
+
+    it("says what Take it back can't undo, and shows the taken-back work as offered again", async () => {
+        const taken = { ...item("q", 0), takenBack: { agentName: "Codex", at: new Date(NOW.getTime() - 60_000).toISOString(), undoUntil: new Date(NOW.getTime() + 60_000).toISOString() } } as unknown as WorkItem;
+        const { onAnswer, rerender } = setup([quiet("q")]);
+        await act(async () => { fireEvent.click(screen.getByTestId("your-work-take-back")); });
+        expect(onAnswer).toHaveBeenCalledWith("q", { action: "take_back" });
+        rerender([taken]);
+        expect(screen.getByTestId("your-work-undo-line")).toHaveTextContent("Taken back. Codex can't open it any more; anything it already made stays with Codex.");
+        expect(screen.getByTestId("your-work-taken-back")).toHaveTextContent(/^Taken back from Codex at .+\. Hand it to someone else, or keep it for later\.$/);
+    });
+
+    it("asks a reason for Not useful on a result, when the result has reasons, and nothing is required", async () => {
+        const result = item("r", 0, { state: "back", kind: "result", row: "result", reasons: ["wrong_facts", "missed_point", "myself"], agent: { name: "Codex" } });
+        const { onAnswer } = setup([result]);
+        fireEvent.keyDown(screen.getByTestId("your-work-open"), { key: "n" });
+        const reasons = screen.getByTestId("your-work-reasons");
+        expect(reasons).toHaveTextContent("Missed the point");
+        await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Missed the point" })); });
+        expect(onAnswer).toHaveBeenCalledWith("r", { action: "not_useful", reason: "missed_point" });
+    });
+
+    it("judges a result with no reasons in one key", async () => {
+        const result = item("r", 0, { state: "back", kind: "result", row: "result", reasons: [], agent: { name: "Codex" } });
+        const { onAnswer } = setup([result]);
+        await act(async () => { fireEvent.keyDown(screen.getByTestId("your-work-open"), { key: "n" }); });
+        expect(onAnswer).toHaveBeenCalledWith("r", { action: "not_useful" });
+    });
+
+    it("counts day one's work as day one", () => {
+        setup([item("d1", 0, { source: "day_one" }), item("d2", 1, { source: "day_one" })]);
+        expect(screen.getByTestId("your-work-counts")).toHaveTextContent("2 to answer · day one");
+    });
+
+    it("links Connect an agent › when none is connected", () => {
+        const onConnectAgent = vi.fn();
+        render(<TodayYourWork list={list([item("a", 0)])} active noAgents onConnectAgent={onConnectAgent} onAnswer={vi.fn()} onUndo={vi.fn()} now={NOW} />);
+        fireEvent.click(screen.getByRole("button", { name: "Connect an agent ›" }));
+        expect(onConnectAgent).toHaveBeenCalled();
+    });
+});
+
+
+it("says the agents couldn't be read in the Your agents card, with Try again, instead of leaving it out", () => {
+    const onRetryAgents = vi.fn();
+    render(<TodayYourWork list={list([item("a", 0)])} active agentsFailed onRetryAgents={onRetryAgents} onAnswer={vi.fn()} onUndo={vi.fn()} now={NOW} />);
+    const card = screen.getByTestId("your-work-agents-failed");
+    expect(card).toHaveAttribute("role", "alert");
+    expect(card).toHaveTextContent("Couldn't read your agents.");
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(onRetryAgents).toHaveBeenCalled();
+    cleanup();
+});
+
+describe("opening an item asked for from elsewhere (Quick chat's Open)", () => {
+    beforeEach(async () => { await i18n.changeLanguage("en"); });
+    afterEach(cleanup);
+    it("makes an open item the open item with focus, and asks again on a new nonce", async () => {
+        const items = [item("a", 0), item("b", 1), item("c", 2)];
+        const { rerender } = render(<TodayYourWork list={list(items)} active onAnswer={vi.fn()} onUndo={vi.fn()} now={NOW} focusRequest={{ itemId: "c", nonce: 1 }} />);
+        await act(async () => { await new Promise((resolve) => requestAnimationFrame(() => resolve(null))); });
+        const open = screen.getByTestId("your-work-open");
+        expect(open).toHaveAttribute("data-item-id", "c");
+        expect(document.activeElement).toBe(open);
+        rerender(<TodayYourWork list={list(items)} active onAnswer={vi.fn()} onUndo={vi.fn()} now={NOW} focusRequest={{ itemId: "a", nonce: 2 }} />);
+        expect(screen.getByTestId("your-work-open")).toHaveAttribute("data-item-id", "a");
+    });
+    it("brings an answered item into view in Done today", async () => {
+        const done = item("d", 1, { state: "answered", answer: { action: "yes", at: NOW.toISOString(), surface: "computer", line: "Work d · in your Mail drafts" } });
+        render(<TodayYourWork list={list([item("a", 0), done])} active onAnswer={vi.fn()} onUndo={vi.fn()} now={NOW} focusRequest={{ itemId: "d", nonce: 1 }} />);
+        await act(async () => {});
+        expect(document.activeElement).toHaveAttribute("data-item-id", "d");
+        expect(screen.getByTestId("your-work-open")).toHaveAttribute("data-item-id", "a");
     });
 });

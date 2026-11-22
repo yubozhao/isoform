@@ -54,6 +54,11 @@ func (hb *hostBridge) spotlightRoutes() []hostBridgeRoute {
 		// a stale flag doesn't dismiss/re-show race on the next keystroke.
 		post("/api/spotlight/disarm-dismiss-on-key", hb.handleSpotlightDisarmDismiss),
 		post("/api/spotlight/expand", hb.handleSpotlightExpand),
+		// Ready work first (quick_chat_ready.go).
+		post("/api/spotlight/ready", hb.handleSpotlightReady),
+		post("/api/spotlight/ready/open", hb.handleSpotlightReadyOpen),
+		// The hand-off card and its sheet in the panel (quick_chat_handoff.go).
+		post("/api/spotlight/work-on-it", hb.handleSpotlightWorkOnIt),
 		get("/api/spotlight/theme", hb.handleSpotlightTheme),
 		post("/api/spotlight/permission", hb.handleSpotlightPermission),
 		post("/api/spotlight/cancel", hb.handleSpotlightCancel),

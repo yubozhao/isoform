@@ -141,6 +141,11 @@ func (a *App) GetSOPAuthorStatus() SOPAuthorStatus {
 
 // ListSOPs returns every SOP, newest first. Wails binding.
 func (a *App) ListSOPs() (perfValue []sop.Entry, perfErr error) {
+	// Playbooks, SOPs and goals are off unless their switch is on
+	// (feature_switches.go).
+	if !featureOn(featurePlaybooks) {
+		return []sop.Entry{}, nil
+	}
 	defer logPageBinding("ListSOPs", time.Now(), &perfValue)
 	if a.sopStore == nil {
 		return nil, nil
@@ -151,6 +156,11 @@ func (a *App) ListSOPs() (perfValue []sop.Entry, perfErr error) {
 // SaveSOP persists a user edit to an SOP. The first edit promotes a draft to
 // confirmed. Wails binding.
 func (a *App) SaveSOP(id, title, description, trigger, body string) (sop.Entry, error) {
+	// Playbooks, SOPs and goals are off unless their switch is on
+	// (feature_switches.go).
+	if !featureOn(featurePlaybooks) {
+		return sop.Entry{}, errFeatureOff(featurePlaybooks)
+	}
 	if a.sopStore == nil {
 		return sop.Entry{}, fmt.Errorf("sop store not ready")
 	}
@@ -193,6 +203,11 @@ func (a *App) DeleteSOP(id string) error {
 // chat send path so the run has streaming, cancel, and follow-up behavior.
 // Running does not change the SOP's status — SOPs are reusable. Wails binding.
 func (a *App) RunSOP(id string) (SOPRunResult, error) {
+	// Playbooks, SOPs and goals are off unless their switch is on
+	// (feature_switches.go).
+	if !featureOn(featurePlaybooks) {
+		return SOPRunResult{}, errFeatureOff(featurePlaybooks)
+	}
 	if a.sopStore == nil {
 		return SOPRunResult{}, fmt.Errorf("sop store not ready")
 	}
@@ -270,6 +285,11 @@ func (a *App) createSOPExecutionSession(e sop.Entry) (string, error) {
 // GetSOPScript returns the content of one helper script inside an SOP bundle
 // (rel as reported by Entry.Scripts, e.g. "scripts/fetch.sh"). Wails binding.
 func (a *App) GetSOPScript(id, rel string) (string, error) {
+	// Playbooks, SOPs and goals are off unless their switch is on
+	// (feature_switches.go).
+	if !featureOn(featurePlaybooks) {
+		return "", errFeatureOff(featurePlaybooks)
+	}
 	if a.sopStore == nil {
 		return "", fmt.Errorf("sop store not ready")
 	}
@@ -282,6 +302,11 @@ func (a *App) GetSOPScript(id, rel string) (string, error) {
 // sop:updated. Returns an error immediately when the author is busy so the UI
 // can toast instead of silently dropping the request. Wails binding.
 func (a *App) GenerateSOPFromRange(startMs, endMs int64) error {
+	// Playbooks, SOPs and goals are off unless their switch is on
+	// (feature_switches.go).
+	if !featureOn(featurePlaybooks) {
+		return errFeatureOff(featurePlaybooks)
+	}
 	if a.sopStore == nil {
 		return fmt.Errorf("sop store not ready")
 	}

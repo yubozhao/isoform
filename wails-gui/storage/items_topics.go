@@ -131,7 +131,7 @@ func (s *Store) BindStreamItemTopicRun(ctx context.Context, sessionID, userItemI
 // merges events before reversing for the renderer. At/id form an exclusive,
 // stable cursor even when several rows share a millisecond.
 func (s *Store) LoadTopicStreamItems(ctx context.Context, sessionID, topicID string, at int64, id string, limit int) ([]StreamItemRow, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT i.id, i.session_local_id, i.kind, i.content, i.tool_name, i.tool_input, i.tool_use_id, i.run_id, i.session_id, i.sort_order, t.created_at, i.images, i.automation_context, i.files
+	rows, err := s.committedReader().QueryContext(ctx, `SELECT i.id, i.session_local_id, i.kind, i.content, i.tool_name, i.tool_input, i.tool_use_id, i.run_id, i.session_id, i.sort_order, t.created_at, i.images, i.automation_context, i.files
         FROM stream_item_topics AS t JOIN stream_items AS i ON i.id = t.stream_item_id AND i.session_local_id = t.session_id
         WHERE t.session_id = ? AND t.topic_id = ? AND (t.created_at < ? OR (t.created_at = ? AND 'message:' || i.id < ?))
         ORDER BY t.created_at DESC, i.id DESC LIMIT ?`, sessionID, topicID, at, at, id, limit)

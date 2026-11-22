@@ -96,6 +96,8 @@ type imessageService struct {
 	resolve   func(ctx context.Context, handle string) (imessagePerson, bool)
 	leftOut   func(ctx context.Context) (map[string]bool, error)
 	extract   func(ctx context.Context, prompt string) (string, error)
+	// noteCall keeps the See them entry for a conversation sent to extract.
+	noteCall  func(chatKey string, from, to time.Time)
 	language  func() string
 	retention func() time.Duration
 	onSynced  func(imessageSyncResult)
@@ -134,6 +136,7 @@ func newIMessageService(a *App) *imessageService {
 		},
 		leftOut:  func(ctx context.Context) (map[string]bool, error) { return peopleLeftOutSet(ctx, a.store) },
 		extract:  a.runThreadOutcomePrompt,
+		noteCall: a.recordMessagesCall,
 		language: a.currentUILanguageName,
 		retention: func() time.Duration {
 			keep := storage.MessageAskRetention
@@ -446,6 +449,9 @@ func (s *imessageService) Sync(ctx context.Context, reason string) (imessageSync
 			}
 		}
 		callCtx, done := context.WithTimeout(ctx, imessageCallTimeout)
+		if s.noteCall != nil && len(kept) > 0 {
+			s.noteCall(imessageChatKey(chat), kept[0].At, kept[len(kept)-1].At)
+		}
 		raw, err := s.extract(callCtx, buildIMessageAskPrompt(lines, s.language()))
 		done()
 		if err != nil {

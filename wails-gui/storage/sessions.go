@@ -25,7 +25,7 @@ func (s *Store) SaveSession(ctx context.Context, sess SessionRow) error {
 
 // LoadSessions returns all sessions for a given project.
 func (s *Store) LoadSessions(ctx context.Context, projectID string) ([]SessionRow, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.committedReader().QueryContext(ctx, `
 		SELECT local_id, project_id, workspace_id, session_id, label, model, prd_enabled, thinking_level, plan_mode, thinking_enabled, pinned, pinned_at, automation_result, COALESCE(meeting_id, ''), COALESCE(kind, ''), COALESCE(parent_id, ''), created_at, updated_at
 		FROM sessions WHERE project_id = ? AND hidden = 0 ORDER BY pinned DESC, pinned_at ASC, updated_at DESC
 	`, projectID)
@@ -48,7 +48,7 @@ func (s *Store) LoadSessions(ctx context.Context, projectID string) ([]SessionRo
 // LoadSession returns a single session by local_id.
 func (s *Store) LoadSession(ctx context.Context, localID string) (*SessionRow, error) {
 	var sess SessionRow
-	err := s.db.QueryRowContext(ctx, `
+	err := s.committedReader().QueryRowContext(ctx, `
 		SELECT local_id, project_id, workspace_id, session_id, label, model, prd_enabled, thinking_level, plan_mode, thinking_enabled, pinned, pinned_at, automation_result, COALESCE(meeting_id, ''), COALESCE(kind, ''), COALESCE(parent_id, ''), created_at, updated_at
 		FROM sessions WHERE local_id = ?
 	`, localID).Scan(&sess.LocalID, &sess.ProjectID, &sess.WorkspaceID, &sess.SessionID, &sess.Label, &sess.Model, &sess.PrdEnabled, &sess.ThinkingLevel, &sess.PlanMode, &sess.ThinkingEnabled, &sess.Pinned, &sess.PinnedAt, &sess.AutomationResult, &sess.MeetingID, &sess.Kind, &sess.ParentID, &sess.CreatedAt, &sess.UpdatedAt)
@@ -71,7 +71,7 @@ func (s *Store) SessionHidden(ctx context.Context, localID string) (bool, error)
 func (s *Store) LoadMainSession(ctx context.Context) (*SessionRow, error) {
 	var sess SessionRow
 	var hidden bool
-	err := s.db.QueryRowContext(ctx, `
+	err := s.committedReader().QueryRowContext(ctx, `
 		SELECT local_id, project_id, workspace_id, session_id, label, model, prd_enabled, thinking_level, plan_mode, thinking_enabled, pinned, pinned_at, automation_result, hidden, COALESCE(meeting_id, ''), COALESCE(kind, ''), COALESCE(parent_id, ''), created_at, updated_at
 		FROM sessions WHERE kind = ? ORDER BY created_at ASC, local_id ASC LIMIT 1
 	`, SessionKindMain).Scan(&sess.LocalID, &sess.ProjectID, &sess.WorkspaceID, &sess.SessionID, &sess.Label, &sess.Model, &sess.PrdEnabled, &sess.ThinkingLevel, &sess.PlanMode, &sess.ThinkingEnabled, &sess.Pinned, &sess.PinnedAt, &sess.AutomationResult, &hidden, &sess.MeetingID, &sess.Kind, &sess.ParentID, &sess.CreatedAt, &sess.UpdatedAt)
@@ -85,7 +85,7 @@ func (s *Store) LoadMainSession(ctx context.Context) (*SessionRow, error) {
 // LoadSessionsByParent returns the visible side chats split off from parentID,
 // newest first.
 func (s *Store) LoadSessionsByParent(ctx context.Context, parentID string) ([]SessionRow, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.committedReader().QueryContext(ctx, `
 		SELECT local_id, project_id, workspace_id, session_id, label, model, prd_enabled, thinking_level, plan_mode, thinking_enabled, pinned, pinned_at, automation_result, COALESCE(meeting_id, ''), COALESCE(kind, ''), COALESCE(parent_id, ''), created_at, updated_at
 		FROM sessions WHERE parent_id = ? AND hidden = 0 ORDER BY updated_at DESC, local_id ASC
 	`, parentID)
@@ -118,7 +118,7 @@ func (s *Store) SessionExists(ctx context.Context, localID string) (bool, error)
 // LoadAllSessions returns all sessions across all projects, keyed by project ID.
 // This avoids N+1 queries when loading multiple projects.
 func (s *Store) LoadAllSessions(ctx context.Context) (map[string][]SessionRow, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.committedReader().QueryContext(ctx, `
 		SELECT local_id, project_id, workspace_id, session_id, label, model, prd_enabled, thinking_level, plan_mode, thinking_enabled, pinned, pinned_at, automation_result, COALESCE(meeting_id, ''), COALESCE(kind, ''), COALESCE(parent_id, ''), created_at, updated_at
 		FROM sessions WHERE hidden = 0 ORDER BY pinned DESC, pinned_at ASC, updated_at DESC
 	`)

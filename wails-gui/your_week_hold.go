@@ -10,7 +10,7 @@ import (
 )
 
 func (a *App) yourWeekCalendarHold(ctx context.Context, day, now time.Time, subject string) *TodayDayShapeHold {
-	if a == nil || a.store == nil {
+	if a == nil || a.store == nil || !featureOn(featureCalendarHolds) {
 		return nil
 	}
 	policy, err := a.mcpReadPrivacy(ctx)

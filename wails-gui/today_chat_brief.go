@@ -139,6 +139,8 @@ func (a *App) todayChatBriefSnapshot(ctx context.Context, ref TodayChatContextRe
 	}{brief.BriefID, key, brief.AsOf, brief.Narrative, brief.Offers, append([]MobileBriefRef{}, narratable...), brief.WeeklyRecap}
 	for i := range payload.Evidence {
 		payload.Evidence[i].Label = mobileBriefText(payload.Evidence[i].Label, 120)
+		// "In this brief"'s grouping is for the page, not the model.
+		payload.Evidence[i].Group = ""
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil || len(raw) > todayChatBriefTokens-1024 {

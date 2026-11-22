@@ -118,7 +118,7 @@ function Fixture() {
             <Sidebar
                 projects={[]} activeProjectId={null} collapsed={false} width={232}
                 onToggleCollapse={noop} onOpenSearch={noop} onOpenSettings={noop}
-                waitingCount={firstDay ? 0 : 2} chatUnread={!firstDay}
+                waitingCount={firstDay ? 0 : 2}
                 onOpenActivity={noop} onOpenKnowledge={noop} onOpenMemory={noop} onOpenPeople={noop}
                 onOpenToday={noop} onOpenTasks={noop} tasksOpen={mode === 'tasks'} appMode={mode}
                 onOpenMainChat={noop} onSwitchSession={noop} onCloseSession={noop} onTogglePin={noop}

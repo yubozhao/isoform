@@ -254,7 +254,7 @@ export function OnboardingScreen({
                         <OnThisMac initiallyOpen={still === "on-this-mac"} onNavigate={(job) => {
                             onSkip();
                             window.setTimeout(() => {
-                                if (job === "contacts") EventsEmit("settings:open", "security", { advanced: true, anchor: "contacts" });
+                                if (job === "contacts") EventsEmit("settings:open", "activity", { anchor: "sees-messages" });
                                 else EventsEmit("settings:open", "activity", { anchor: `sees-${job}` });
                             }, 0);
                         }} />

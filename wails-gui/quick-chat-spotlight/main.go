@@ -59,6 +59,10 @@ const (
 	// conversationWidth must match pillWidth.
 	conversationWidth  = 768
 	conversationHeight = 650
+	// readyExtraHeight is how far the window grows up while ready work
+	// shows above the pill (App.tsx .stage__ready: 52px row, 8px gap).
+	// spotlight_panel_darwin.go's kReadyExtraHeight must match.
+	readyExtraHeight = 60
 )
 
 // spotlightBottomFraction is the screen-height fraction where the
@@ -158,6 +162,8 @@ func (a *app) serveIPC(ctx context.Context) {
 // watchYansuHost prevents orphaned Spotlight helpers from surviving a
 // crashed or force-stopped Yansu process. The supervisor normally sends
 // /quit, but that signal cannot run after an abrupt parent exit on macOS.
+//
+//isoform:destination local
 func (a *app) watchYansuHost(ctx context.Context) {
 	if a.cfg.yansuHostPort == 0 {
 		return
@@ -275,6 +281,8 @@ func (a *app) handleQuit(w http.ResponseWriter, r *http.Request) {
 // newDisarmDismissRequest builds the POST that tells Isoform to disarm its
 // dismiss-on-key flag. The host bridge wants the helper's token and a JSON
 // body on every POST.
+//
+//isoform:destination local
 func newDisarmDismissRequest(yansuPort int, token string) (*http.Request, error) {
 	req, err := http.NewRequest(http.MethodPost,
 		fmt.Sprintf("http://127.0.0.1:%d/api/spotlight/disarm-dismiss-on-key", yansuPort),

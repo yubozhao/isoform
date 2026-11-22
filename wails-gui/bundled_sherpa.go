@@ -65,10 +65,14 @@ const (
 // total < 0 means the server didn't advertise Content-Length.
 type sherpaDownloadProgress func(asset string, downloaded, total int64, bytesPerSec float64)
 
-// ensureSherpaAssets checks installed model files; setup owns downloads.
-// Returns nil if all files are present after the call. If progress is non-nil,
-// it is invoked roughly twice per second per asset.
+// ensureSherpaAssets is the voice setup entry point. This build delegates
+// downloads to the setup model manager.
 func ensureSherpaAssets(ctx context.Context, paths sherpaPaths, progress sherpaDownloadProgress) error {
+	return requireInstalledSherpaAssets(paths)
+}
+
+// requireInstalledSherpaAssets verifies the local recognizer and VAD pack.
+func requireInstalledSherpaAssets(paths sherpaPaths) error {
 	for _, path := range []string{paths.senseVoice, paths.tokens, paths.silero, paths.speakerEmbd, paths.segmentation} {
 		if path != "" && !fileExistsAndNonEmpty(path) {
 			return models.ErrNotReady
@@ -110,6 +114,8 @@ var sherpaDownloadIdleTimeout = 90 * time.Second
 // server can tell the file is still the one the partial came from (If-Range
 // with the ETag or Last-Modified kept beside it) and the whole is checked
 // against its SHA-256; otherwise the download starts over.
+//
+//isoform:destination metadata
 func downloadSherpaAsset(ctx context.Context, name, url, dest, expectedSHA256 string, progress sherpaDownloadProgress) error {
 	dlCtx, cancel := context.WithCancel(ctx)
 	defer cancel()

@@ -1820,3 +1820,28 @@ it.each([
     expect(screen.getByText(expected)).toBeInTheDocument();
     expect(screen.getByText("A written brief.")).toBeInTheDocument();
 });
+
+describe("the band leads alone (computer-today v1.0.0 rules 2 and 10)", () => {
+    const written = () => ({ ...brief(), narrativeStatus: "ok", narrative: [{ text: "The memo is due Tuesday. Lena moved the call.", refs: [] }] }) as MobileBriefDocument;
+
+    it("draws no full card under the band, and Your work follows it", () => {
+        renderSection({ view: view({ brief: written() }), band: true, afterBand: <div data-testid="work-slot" /> }, { folded: true });
+        expect(screen.getByTestId("today-brief-band")).toBeInTheDocument();
+        expect(screen.getByTestId("work-slot")).toBeInTheDocument();
+        expect(screen.queryByTestId("brief-card")).not.toBeInTheDocument();
+        expect(screen.getAllByText(/The memo is due Tuesday\./)).toHaveLength(1);
+    });
+
+    it("keeps Friday's Your week under the band (redesign-today rule 15)", () => {
+        const doc = { ...written(), yourWeek: { start: "2026-10-19", end: "2026-10-23", lead: "Your week went well.", open: [] } } as unknown as MobileBriefDocument;
+        renderSection({ view: view({ brief: doc }), band: true }, { folded: true });
+        expect(screen.getByTestId("your-week-section")).toBeInTheDocument();
+        expect(screen.queryByTestId("brief-card")).not.toBeInTheDocument();
+    });
+
+    it("shows no pending card above the band while the next brief is made; the band says it", () => {
+        renderSection({ view: view({ brief: written(), building: true, pendingSlot: "evening" }), band: true }, { folded: true });
+        expect(screen.getByTestId("brief-band-making")).toBeInTheDocument();
+        expect(screen.queryByTestId("brief-pending")).not.toBeInTheDocument();
+    });
+});

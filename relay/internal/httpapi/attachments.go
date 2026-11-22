@@ -1,7 +1,9 @@
 package httpapi
 
 import (
+	"encoding/base64"
 	"errors"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -59,13 +61,11 @@ func (h *Handler) hubAttachmentRoute(w http.ResponseWriter, r *http.Request) {
 		reply(w, http.StatusInternalServerError, nil, "Unable to authenticate hub")
 		return
 	}
-	if allowed, retry := h.limits.Allow("attachments:hub:"+hubID, attachmentUploadsPerHub, attachmentUploadWindow, now); !allowed {
-		setRetryAfter(w, retry)
+	if !h.allow(w, r, "attachment_hub", hubID, attachmentUploadsPerHub, attachmentUploadWindow, now) {
 		reply(w, http.StatusTooManyRequests, nil, "Too many uploads")
 		return
 	}
-	if allowed, retry := h.limits.Allow("attachments:addr:"+clientIP(r), attachmentUploadsPerAddress, attachmentUploadWindow, now); !allowed {
-		setRetryAfter(w, retry)
+	if !h.allow(w, r, "attachment_address", clientIP(r), attachmentUploadsPerAddress, attachmentUploadWindow, now) {
 		reply(w, http.StatusTooManyRequests, nil, "Too many uploads")
 		return
 	}
@@ -78,18 +78,28 @@ func (h *Handler) hubAttachmentRoute(w http.ResponseWriter, r *http.Request) {
 		reply(w, http.StatusForbidden, nil, "No paired device can read briefs")
 		return
 	}
-	if media := r.Header.Get("Content-Type"); media != "application/octet-stream" {
-		reply(w, http.StatusUnsupportedMediaType, nil, "Content-Type must be application/octet-stream")
+	// As bytes, or as base64 text: a tunnel in front of the relay may refuse sealed
+	// bytes by what they happen to be (PROTOCOL.md 24.1b, 17.2).
+	asText, ok := uploadBodyAsText(r)
+	if !ok {
+		reply(w, http.StatusUnsupportedMediaType, nil, "Content-Type must be application/octet-stream or text/plain")
 		return
 	}
-	if r.ContentLength > store.MaxAttachmentBytes {
+	if r.ContentLength > onTheWire(store.MaxAttachmentBytes, asText) {
 		reply(w, http.StatusRequestEntityTooLarge, nil, "Attachment exceeds 16 MiB")
 		return
 	}
 	// The body streams to disk; one byte over the limit ends the read.
-	body := http.MaxBytesReader(w, r.Body, store.MaxAttachmentBytes+1)
+	var body io.Reader = http.MaxBytesReader(w, r.Body, onTheWire(store.MaxAttachmentBytes+1, asText))
+	if asText {
+		body = base64.NewDecoder(base64.StdEncoding, body)
+	}
+	var notText base64.CorruptInputError
 	switch err = h.Store.PutAttachment(ctx, hubID, id, body, now); {
 	case err == nil:
+	case errors.As(err, &notText):
+		reply(w, http.StatusBadRequest, nil, "The attachment is not base64 text")
+		return
 	case errors.Is(err, store.ErrTooLarge):
 		reply(w, http.StatusRequestEntityTooLarge, nil, "Attachment is empty or exceeds 16 MiB")
 		return

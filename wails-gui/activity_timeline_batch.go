@@ -80,6 +80,13 @@ func (a *App) summarizeTimelineJobs(ctx context.Context, jobs []timelineSummaryJ
 		}
 		return
 	}
+	ctx, given, opened := withLearningScope(ctx, "sense")
+	if opened {
+		defer a.finishAssistantCall(given)
+	}
+	for _, job := range jobs {
+		given.addSessions(job.group.SessionIDs)
+	}
 	ctx, cancel := context.WithTimeout(ctx, timelineGroupSummaryTimeout)
 	defer cancel()
 	model := a.lightTaskModel()

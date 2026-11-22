@@ -331,6 +331,7 @@ func (a *App) fetchMcpRegistry(ctx context.Context) (mcpRegistryCache, error) {
 	return cache, nil
 }
 
+//isoform:destination metadata
 func fetchMcpRegistryBody(ctx context.Context, source string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, source, nil)
 	if err != nil {

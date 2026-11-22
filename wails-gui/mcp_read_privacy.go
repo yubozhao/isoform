@@ -122,6 +122,10 @@ func (a *App) mcpReadPrivacy(ctx context.Context) (*mcpReadPrivacy, error) {
 }
 
 func (p *mcpReadPrivacy) appAllowed(values ...string) bool {
+	return p.chatAppsAllowed("", values...)
+}
+
+func (p *mcpReadPrivacy) chatAppsAllowed(meeting string, values ...string) bool {
 	for _, value := range values {
 		value = strings.TrimSpace(value)
 		if value == "" {
@@ -129,7 +133,7 @@ func (p *mcpReadPrivacy) appAllowed(values ...string) bool {
 		}
 		// Reuse the same messaging/mail exclusion as topic and brief sources.
 		// Pairing or a generated memory is not an explicit sharing grant.
-		if topicPeopleApp(value, value) {
+		if topicPeopleApp(value, value) && !chatMeetingIdentity(meeting, value) {
 			return false
 		}
 		if activitySourceAppIsSensitive(value, value) {
@@ -198,7 +202,7 @@ func (p *mcpReadPrivacy) snapshotIdentityAllowed(identity activitySnapshotPrivac
 }
 
 func (p *mcpReadPrivacy) sessionSnapshotsAllowed(id string) (bool, error) {
-	rows, err := p.app.activity.store.db.QueryContext(p.ctx, `SELECT COALESCE(app,''), COALESCE(browser_url,''), COALESCE(parsed_json,'')
+	rows, err := p.app.activity.store.db.QueryContext(p.ctx, `SELECT COALESCE(app,''), COALESCE(browser_url,''), COALESCE(parsed_json,''), privacy_held
 		FROM activity_snapshots WHERE session_id=? LIMIT 10001`, id)
 	if err != nil {
 		return false, err
@@ -213,10 +217,11 @@ func (p *mcpReadPrivacy) sessionSnapshotsAllowed(id string) (bool, error) {
 		p.eventChecks++
 		count++
 		var app, browserURL, parsed string
-		if err := rows.Scan(&app, &browserURL, &parsed); err != nil {
+		var held bool
+		if err := rows.Scan(&app, &browserURL, &parsed, &held); err != nil {
 			return false, err
 		}
-		if !p.snapshotAllowed(app, browserURL, parsed) {
+		if held || !p.snapshotAllowed(app, browserURL, parsed) {
 			return false, nil
 		}
 	}

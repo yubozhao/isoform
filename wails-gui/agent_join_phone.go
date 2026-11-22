@@ -253,7 +253,7 @@ func (bridge *mobileBridge) serveAgentJoinStart(w http.ResponseWriter, r *http.R
 	bridge.runReceipted(w, device, key, r.Method+" "+r.URL.Path, func(w http.ResponseWriter) {
 		start, joinID, err := bridge.app.startPhoneAgentJoin(device.DeviceID, reconnect)
 		switch {
-		case errors.Is(err, errTaskLinksOff), errors.Is(err, errTaskLinksClosedEyes), errors.Is(err, errWorkOnItClosedEyes):
+		case errors.Is(err, errTaskLinksClosedEyes), errors.Is(err, errWorkOnItClosedEyes):
 			mobileJSON(w, http.StatusConflict, map[string]string{"code": "not_taking_work"}, "your computer isn't taking agent work right now")
 		case errors.Is(err, errAgentJoinNoOrigin):
 			mobileJSON(w, http.StatusConflict, map[string]string{"code": "no_address"}, err.Error())
@@ -304,7 +304,7 @@ func (bridge *mobileBridge) serveAgentJoinAnswer(w http.ResponseWriter, r *http.
 			mobileJSON(w, http.StatusGone, view, err.Error())
 		case errors.Is(err, errPhoneJoinNotAsked):
 			mobileJSON(w, http.StatusConflict, view, err.Error())
-		case errors.Is(err, errTaskLinksOff), errors.Is(err, errTaskLinksClosedEyes), errors.Is(err, errWorkOnItClosedEyes):
+		case errors.Is(err, errTaskLinksClosedEyes), errors.Is(err, errWorkOnItClosedEyes):
 			mobileJSON(w, http.StatusConflict, map[string]string{"code": "not_taking_work"}, "your computer isn't taking agent work right now")
 		default:
 			log.Printf("[agents] phone join answer failed: %v", err)

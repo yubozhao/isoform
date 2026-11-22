@@ -1,7 +1,7 @@
 // QA fixture for docs/first-day-qa/: real first-day pages over synthetic
 // reads, no app or live store. A fresh install on day 0 with a calendar and
 // Claude Code history. URL params: page=today|today-narrow|today-bare|chat|
-// about-you|know-how|people|activity|privacy, theme=paper|onedark, lang.
+// about-you|know-how|people|activity|your-data (privacy, the old name, opens it too), theme=paper|onedark, lang.
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import '@/index.css';
@@ -12,7 +12,7 @@ import { MemoryPage } from '@/components/memory-page';
 import { KnowledgePage } from '@/components/knowledge-page';
 import { PeoplePage } from '@/components/people-page';
 import { ActivityPage, type ActivitySectionId } from '@/components/activity-page';
-import { PrivacyPage } from '@/components/settings/pages/privacy-page';
+import { YourDataPage } from '@/components/settings/pages/your-data-page';
 import { Composer } from '@/components/composer';
 import { MainChatPageColumn, MainChatStreamBody } from '@/components/main-chat/main-chat-stream-body';
 import { useMainChatView } from '@/hooks/useMainChatView';
@@ -181,7 +181,8 @@ function Page() {
         case 'know-how': return <KnowledgePage active onRunPlaybook={async () => {}} />;
         case 'people': return <PeoplePage active />;
         case 'activity': return <Activity />;
-        case 'privacy': return <div className="settings-page mx-auto w-full max-w-[720px] overflow-y-auto p-8"><PrivacyPage /></div>;
+        case 'privacy':
+        case 'your-data': return <div className="settings-page mx-auto w-full max-w-[720px] overflow-y-auto p-8"><YourDataPage /></div>;
         default: return <TodayPage handlers={handlers} wideMode />;
     }
 }

@@ -19,6 +19,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/wails-shim-app", () => ({
     GetAIProviderConfig: mocks.getConfig,
+    GetFindingProvider: vi.fn(async () => ({ choice: "local", hasOpenAIKey: false, localModelDownloaded: true, localModelBytes: 0 })),
+    SetFindingProvider: vi.fn(),
+    ListPlugins: vi.fn(async () => []),
+    SetBuiltinOn: vi.fn(),
     ListAIProviderPresets: mocks.listPresets,
     SaveAIProviderConfig: mocks.saveConfig,
     SetCachedAIProviderModels: vi.fn(),
@@ -28,6 +32,8 @@ vi.mock("@/lib/wails-shim-app", () => ({
     GetMCPReadConnections: mocks.getMCPConnections,
     ConnectMCPReadAssistant: vi.fn(),
     RevokeMCPReadAssistant: vi.fn(),
+    GetModelAccountsStatus: vi.fn(async () => ({ mode: "advanced", accountOrder: [] })),
+    GetYourAgents: vi.fn(async () => ({ choices: { code: "", else: "" }, agents: [] })),
 }));
 
 vi.mock("../../../../wailsjs/runtime/runtime", () => ({
@@ -188,13 +194,16 @@ describe("AssistantPage", () => {
         expect(screen.getByTestId("model-accounts")).toBeInTheDocument();
         // Your agents leads the page (computer-settings v1.0.0 rule 5).
         expect(screen.getByTestId("your-agents").compareDocumentPosition(screen.getByTestId("model-accounts")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        // Until the Settings registry's Your AI entry lands, the model
+        // accounts sit under their own "Your AI" heading (conformance answers G1).
+        expect(screen.getByRole("heading", { name: "Your AI" }).compareDocumentPosition(screen.getByTestId("model-accounts")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
         // Isoform's own text stays internal: no prompt editors in Settings.
         expect(screen.queryByText("How Isoform works with you")).not.toBeInTheDocument();
         expect(screen.queryByRole("textbox", { name: /talk to you/i })).not.toBeInTheDocument();
         expect(screen.getByTestId("model-accounts").querySelector(".settings-card")).toBeNull();
         expect(container.querySelectorAll(".settings-card")).toHaveLength(0);
-        // S052: Connect moved to Other AI apps; one line points there.
-        expect(screen.getByText("Connect Isoform to Claude Code or Codex in Settings › Other AI apps.")).toBeInTheDocument();
+        // No pointer to Other AI apps: the design's Settings has no such section (computer-settings v1.1.0 rule 1).
+        expect(screen.queryByText(/Other AI apps/)).not.toBeInTheDocument();
         expect(screen.queryByRole("heading", { name: /Claude Code/ })).not.toBeInTheDocument();
     });
 

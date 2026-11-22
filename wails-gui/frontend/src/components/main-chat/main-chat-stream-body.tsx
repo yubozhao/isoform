@@ -7,8 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { FirstDayChatStarters } from './first-day-starters';
 import { StreamBody } from '@/components/stream-body';
 import type { MainChatView } from '@/hooks/useMainChatView';
-import { MainChatFilterRow } from './main-chat-filter-row';
-import { MainChatTopicView } from './main-chat-topic-view';
+import { MainChatHeader } from './main-chat-header';
 import type { MainChatStreamView } from './main-chat-view-context';
 import { MainChatItemPanel } from '@/components/main-chat-item-panel';
 import { useMainChatItemPanel } from '@/hooks/useMainChatItemPanel';
@@ -44,10 +43,10 @@ export function MainChatPageColumn({ enabled, children, onOpenTarget }: { enable
 }
 
 /**
- * The chat's stream. For the main chat (RC 2 D1) it adds the filter row
- * above the scroll area, the summary line, day dividers and folds, and shows
- * the waiting cards or a topic's rows when a filter is on. Any other chat is
- * the plain StreamBody.
+ * The chat's stream. For the main chat it adds Chat's header (title and
+ * what it's for) above the scroll area, the summary line, day dividers and
+ * folds. Chat is one thread: no filter or topic view (computer-chat v1.0.0
+ * rule 2). Any other chat is the plain StreamBody.
  */
 export function MainChatStreamBody({ mainChat, onPrepare, ...props }: StreamBodyProps & {
     /** The main chat's view; absent for every other chat. */
@@ -71,21 +70,10 @@ export function MainChatStreamBody({ mainChat, onPrepare, ...props }: StreamBody
         chipsSend: Boolean(onPrepare),
         firstReadStarter: firstReadId ? { itemId: firstReadId, items: props.items } : undefined,
     } : undefined, [enabled, today, hideRoutine, topicNames, chips, onPrepare, firstReadId, props.items]);
-    // Search opened a message (RC 2 D3): a filter would hide it, so the
-    // view goes back to Everything, where the stream scrolls to it.
-    const focusSignal = props.focusItem?.signal;
-    const filterKind = view?.filter.kind;
-    const setFilter = view?.setFilter;
-    useEffect(() => {
-        if (focusSignal && filterKind && filterKind !== 'all') setFilter?.({ kind: 'all' });
-        // Only a new request moves the view; choosing a filter later must not.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [focusSignal]);
-
     // Chat opens on the person's conversation (chatThreadUpdates): when the
     // newest page holds only Isoform's updates, which Chat does not show, the
     // older pages load until a conversation row arrives or none are left.
-    const quiet = enabled && !chatThreadUpdates.shown && filterKind === 'all';
+    const quiet = enabled && !chatThreadUpdates.shown;
     const conversationLoaded = Boolean(props.items?.some(isConversationRow));
     const { hasMore, loadingMore, onLoadMore } = props;
     useEffect(() => {
@@ -94,35 +82,12 @@ export function MainChatStreamBody({ mainChat, onPrepare, ...props }: StreamBody
 
     if (!view || !streamView) return <StreamBody {...props} />;
 
-    const overview = view.overview;
-    const filters = (
-        <MainChatFilterRow
-            filter={view.filter}
-            onFilter={view.setFilter}
-            topics={view.workTopics}
-            hideRoutine={view.hideRoutine}
-            routineCount={overview ? overview.routine : null}
-            hideBusy={view.hideBusy}
-            hideFailed={view.hideFailed}
-            onToggleHide={(hide) => void view.setHideRoutine(hide)}
-        />
-    );
-    const showEverything = () => view.setFilter({ kind: 'all' });
-    if (view.filter.kind === 'topic') {
-        return (
-            <div className="flex min-h-0 flex-1 flex-col">
-                {filters}
-                <MainChatTopicView view={view} onShowEverything={showEverything} wideMode={props.wideMode} />
-            </div>
-        );
-    }
-
     // The first day: Isoform's starters under the messages (handoff §4).
     const starters = enabled && !firstReadId ? <FirstDayChatStarters items={props.items} onPrepare={onPrepare} /> : null;
     return (
         <StreamBody
             {...props}
-            toolbar={filters}
+            toolbar={<MainChatHeader />}
             mainChatView={streamView}
             fillViewport={quiet}
             footer={props.footer || starters ? <>{props.footer}{starters}</> : undefined}

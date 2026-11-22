@@ -13,6 +13,7 @@ func TestSemanticVisionRechecksSessionPrivacy(t *testing.T) {
 	for _, protection := range []string{"protected", "sensitive-app", "private-window", "paused-capture", "closed-eyes"} {
 		t.Run(protection, func(t *testing.T) {
 			app := newPrivacyReadTestApp(t)
+			withVisionPrivacyModel(t, true)
 			store := app.activity.store
 			priorApps := pii.GetUserSensitiveApps()
 			t.Cleanup(func() { pii.SetUserSensitiveApps(priorApps) })

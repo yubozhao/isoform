@@ -142,6 +142,19 @@ final class YourWorkTests: XCTestCase {
         XCTAssertEqual(groups.withAgent.map(\.id), ["agent"])
     }
 
+    /// Bo's Duo at 3 PM still offered prep for a 2 PM meeting: the phone's copy of the list is older than the meeting.
+    func testABriefPrepOfferLeavesOnceItsMeetingBegins() {
+        let now = Date()
+        var prep = item("prep", origin: "brief", kind: "offered", now: now)
+        prep.expiresAt = RelayTime.format(now.addingTimeInterval(-60 * 60))
+        var later = item("later", origin: "brief", kind: "offered", now: now)
+        later.expiresAt = RelayTime.format(now.addingTimeInterval(60 * 60))
+        let plain = item("plan", origin: "brief", kind: "offered", now: now)
+        let groups = YourWork.groups([prep, later, plain], now: now)
+        XCTAssertEqual(Set(groups.open.map(\.id)), ["later", "plan"])
+        XCTAssertEqual(groups.toAnswer, 2)
+    }
+
     func testUndoShowsUntilTomorrowsBuild() {
         let now = Date()
         let open = WorkAnswer(action: "yes", at: RelayTime.format(now), line: "x", undoUntil: RelayTime.format(now.addingTimeInterval(60)))

@@ -75,10 +75,17 @@ var unsafeModelName = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
 // pending while titles are embedded in the background, and returns nil when the
 // memory store has no embedder.
 func (a *App) IdeaMeaningGroups(titles []string, threshold float64) (*IdeaMeaningResult, error) {
-	if a == nil || a.memoryStore == nil || a.memoryStore.embedder == nil || len(titles) == 0 || len(titles) > ideaMeaningMaxTitles || threshold < 0.5 || threshold > 0.95 {
+	if a == nil || len(titles) == 0 || len(titles) > ideaMeaningMaxTitles || threshold < 0.5 || threshold > 0.95 {
 		return nil, nil
 	}
-	return ideaMeanings.lookup(a.memoryStore.embedder, titles, threshold, func() {
+	a.mu.Lock()
+	store := a.memoryStore
+	a.mu.Unlock()
+	embedder := store.onDeviceEmbedder()
+	if embedder == nil {
+		return nil, nil
+	}
+	return ideaMeanings.lookup(embedder, titles, threshold, func() {
 		a.emitBrowserEvent(ideaMeaningsReadyEvent)
 	}), nil
 }

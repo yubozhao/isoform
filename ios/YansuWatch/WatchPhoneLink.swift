@@ -14,8 +14,46 @@ final class WatchPhoneLink: NSObject, WCSessionDelegate, @unchecked Sendable {
     /// The phone says listening was turned off at this time (nil: it was not).
     var onListenOff: ((Date) -> Void)?
 
+    /// The two switches as the watch and the phone last agreed on them.
+    private var toldChoices = WatchContextChoices(heartRate: WatchContextSettings.heartRate, place: WatchContextSettings.location)
+    private var settingsObserver: NSObjectProtocol?
+
     init(library: WatchRecordingLibrary) {
         self.library = library
+        super.init()
+        // A switch the wearer changes on the watch is carried to the computer by the phone, so
+        // the three show one choice (PROTOCOL.md 24.15).
+        settingsObserver = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil,
+                                                                  queue: .main) { [weak self] _ in self?.tellChangedChoices() }
+    }
+
+    deinit {
+        if let settingsObserver { NotificationCenter.default.removeObserver(settingsObserver) }
+    }
+
+    private func tellChangedChoices() {
+        let now = WatchContextChoices(heartRate: WatchContextSettings.heartRate, place: WatchContextSettings.location)
+        guard now != toldChoices else { return }
+        let changed = WatchContextChoices(heartRate: now.heartRate != toldChoices.heartRate ? now.heartRate : nil,
+                                          place: now.place != toldChoices.place ? now.place : nil)
+        toldChoices = now
+        let session = WCSession.default
+        guard session.activationState == .activated else { return }
+        session.transferUserInfo(changed.userInfo)
+    }
+
+    /// The choice made on the computer or the phone. Turning one on here only sets the switch:
+    /// nothing is sampled until the wearer has allowed it on the watch.
+    private func apply(choices: WatchContextChoices) {
+        if let heartRate = choices.heartRate, heartRate != WatchContextSettings.heartRate {
+            toldChoices.heartRate = heartRate
+            WatchContextSettings.heartRate = heartRate
+        }
+        if let place = choices.place, place != WatchContextSettings.location {
+            toldChoices.place = place
+            WatchContextSettings.location = place
+            if !place { WatchPlaceNames.forget() }
+        }
     }
 
     func activate() {
@@ -107,5 +145,6 @@ final class WatchPhoneLink: NSObject, WCSessionDelegate, @unchecked Sendable {
         library.apply(names: WatchRecordingWire.names(fromContext: context), known: Set(states.keys))
         onPause?(WatchRecordingWire.pause(fromContext: context))
         if let since = WatchRecordingWire.listenOff(fromContext: context) { onListenOff?(since) }
+        if let choices = WatchRecordingWire.choices(fromContext: context) { apply(choices: choices) }
     }
 }

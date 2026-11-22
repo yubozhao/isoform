@@ -255,6 +255,8 @@ func (a *App) applyWatchSpeakerNames(convs []WatchConversation, names map[string
 // the open guess, "no" to it, or "edit" with a name they typed. An empty name
 // with "edit" takes a given name away.
 func (a *App) answerWatchSpeaker(store *mobileRecordingStore, deviceID, conversationID, speaker, answer, name string) error {
+	watchCutMu.RLock()
+	defer watchCutMu.RUnlock()
 	if store == nil {
 		return errMobileStoreUnavailable
 	}

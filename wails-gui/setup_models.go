@@ -1,9 +1,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	"wails-gui/models"
 )
@@ -27,12 +30,76 @@ func (a *App) setupModelManager() (*models.Manager, error) {
 			n, err := freeDiskBytes(path)
 			return int64(n), err
 		}, func(progress []models.Download) { a.emitBrowserEvent("models:downloads", progress) })
+		if a.setupModelsErr == nil {
+			a.setupModels.SetDownloadComplete(a.onModelDownloadComplete)
+		}
 		if a.setupModelsErr == nil && !a.setupModels.HasSavedChoices() && loadConfig().AfterCallSpeechModelOff {
 			a.setupModelsErr = a.setupModels.SetAfterCallEnabled(false)
 		}
 	})
 	return a.setupModels, a.setupModelsErr
 }
+
+func (a *App) modelDownloadCompleted(ctx context.Context, entry models.Entry, initialize func() error, retry func(context.Context)) {
+	switch entry.Job {
+	case "privacy":
+		am := a.activity
+		if am == nil || ctx.Err() != nil || a.shouldDiscardPIIOutput(am) {
+			return
+		}
+		if ready, _ := am.piiDetectorState(); ready {
+			go a.releasePrivacyHolds(am)
+			return
+		}
+		am.piiDetectorMu.Lock()
+		am.piiInitRetryAfter = time.Time{}
+		am.piiArrivalPending = am.piiInitInFlight
+		am.piiDetectorMu.Unlock()
+		a.startPIIDetectorAsync(am)
+		return
+	case "live", "afterCall", "speakerPack": // Silero VAD ships with the speaker pack.
+	default:
+		return
+	}
+	if ctx.Err() != nil {
+		return
+	}
+	if err := initialize(); err != nil {
+		log.Printf("[speech-model-arrival] %s: %v", entry.ID, err)
+		return
+	}
+	// The manager joins initialization at shutdown. Recovery belongs to the
+	// app and may still be decoding a long call when the manager closes.
+	if appCtx := a.ctx; appCtx != nil {
+		go retry(appCtx)
+	}
+}
+
+func (a *App) retryWaitingSpeech(ctx context.Context) {
+	if ctx.Err() != nil || a.IsClosedEyesModeEnabled() || a.speechTranscriber() == nil {
+		return
+	}
+	a.recoverUntranscribedMeetingsWithContext(ctx)
+	if ctx.Err() != nil {
+		return
+	}
+	bridge := a.mobileBridgeForUse()
+	if bridge == nil || !bridge.trackBackground() {
+		return
+	}
+	defer bridge.background.Done()
+	bridge.mu.Lock()
+	store := bridge.recordingStoreLocked()
+	bridge.mu.Unlock()
+	if store != nil {
+		workerCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		stop := context.AfterFunc(bridge.ctx, cancel)
+		defer stop()
+		a.retryMobileRecordings(workerCtx, store, false)
+	}
+}
+
 func (a *App) GetModelChoices() (models.Choices, error) {
 	m, err := a.setupModelManager()
 	if err != nil {

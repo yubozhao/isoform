@@ -203,6 +203,10 @@ func unattendedDeliveryTarget(target *DeliveryTarget, job *storage.CronJobRow) *
 // and does NOT increment consecutive_errors / trigger auto-disable.
 var errAgentNotReady = fmt.Errorf("agent not ready")
 
+// errTopicSearchPaused holds a topic or Daily News search under Closed Eyes.
+// It wraps errAgentNotReady so the scheduler records the run as skipped.
+var errTopicSearchPaused = fmt.Errorf("%w: observing is paused", errAgentNotReady)
+
 // cronTargetConfig is the parsed target_config for agent jobs.
 type cronTargetConfig struct {
 	SessionTag string `json:"session_tag"`
@@ -258,6 +262,12 @@ func (a *App) executeAgentJob(ctx context.Context, job *storage.CronJobRow) (res
 		}()
 	}
 	researchJob := isAppResearchJob(job)
+	if isTopicSearchJob(job) && !a.topicSearchMayLeave() {
+		// A topic or Daily News search queued before Closed Eyes doesn't go
+		// after it.
+		log.Printf("[cron] %s held: observing is paused", job.Name)
+		return &cronExecResult{}, errTopicSearchPaused
+	}
 	if job.SurfaceKind == openAnswerSurfaceKind {
 		if !researchJob {
 			log.Printf("[open-answer] refusing unrecognized open-answer job: job=%s name=%q", job.ID, job.Name)
@@ -407,6 +417,9 @@ func (a *App) executeAgentJob(ctx context.Context, job *storage.CronJobRow) (res
 
 	runCtx := withAppResearchGrants(ctx, appResearchAuthorityGrants(job))
 	takeCronToolFailures(tag) // nothing left over from an earlier run
+	if isTopicSearchJob(job) && !a.topicSearchMayLeave() {
+		return &cronExecResult{}, errTopicSearchPaused
+	}
 	summary, sortStart, writtenFiles, err := a.executePromptSync(
 		runCtx,
 		tag,

@@ -37,10 +37,12 @@ func codexThreadIndexPath(sessionsDir string) string {
 	return matches[len(matches)-1]
 }
 
+var historyThreadIndexPath = codexThreadIndexPath
+
 // readCodexThreadSpans reads the index. Any error (no index, a changed
 // schema) returns nothing, and those records stay as they are.
 func readCodexThreadSpans(roots assistantHistoryRoots) []codexThreadSpan {
-	path := codexThreadIndexPath(roots.Codex)
+	path := historyThreadIndexPath(roots.Codex)
 	if path == "" {
 		return nil
 	}

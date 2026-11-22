@@ -1924,8 +1924,7 @@ code,
 .portrait { font: var(--text-portrait); letter-spacing: 0; }
 
 /* Selected tabs identify the current Isoform destination in every surface. */
-[role="tab"][aria-selected="true"],
-[data-main-chat-filter][aria-pressed="true"] {
+[role="tab"][aria-selected="true"] {
     color: var(--color-accent);
     background-color: var(--color-panel);
 }

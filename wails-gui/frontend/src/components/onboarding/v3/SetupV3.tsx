@@ -9,7 +9,7 @@ import { IntroScreen } from "./IntroScreen";
 import { SeesStep } from "./SeesStep";
 import { AgentsStep } from "./LaterSteps";
 import { TodayStep } from "./TodayStep";
-import { RightStep } from "./RightStep";
+import { RightStep, type RightNothing } from "./RightStep";
 import { PhoneStep } from "./PhoneStep";
 import {
     resumeStageV3,
@@ -43,6 +43,9 @@ export function SetupV3({ onFinish, onSkip }: { onFinish: () => void; onSkip: ()
     const { t } = useTranslation("onboarding");
     const [stage, setStage] = useState<SetupV3Stage>({ kind: "intro", screen: 1 });
     const [done, setDone] = useState<Set<SetupV3Step>>(new Set());
+    // Step 2 with no claims (setup-answers answer 6): the rail says why, and
+    // Is this right? arrives on Today instead.
+    const [rightNothing, setRightNothing] = useState<RightNothing | null>(null);
     const [restored, setRestored] = useState(false);
 
     // The saved stage is read before anything is written, so an early write
@@ -150,7 +153,14 @@ export function SetupV3({ onFinish, onSkip }: { onFinish: () => void; onSkip: ()
                                 <span className="sv3-rail-mark">
                                     {done.has(s) ? <Check size={12} aria-label={t("setup.allowed")} /> : i + 1}
                                 </span>
-                                {t(STEP_NAMES[s])}
+                                <span className="sv3-rail-name">
+                                    {t(STEP_NAMES[s])}
+                                    {s === "right" && rightNothing && (
+                                        <span className="sv3-rail-note" data-testid="setup-v3-rail-right-note">
+                                            {t(rightNothing === "needs" ? "setup.checkNeeds" : "setup.checkLater")}
+                                        </span>
+                                    )}
+                                </span>
                             </li>
                         ))}
                     </ol>
@@ -160,7 +170,12 @@ export function SetupV3({ onFinish, onSkip }: { onFinish: () => void; onSkip: ()
                     {step === "sees" ? (
                         <SeesStep />
                     ) : step === "right" ? (
-                        <RightStep />
+                        <RightStep
+                            onNothing={(why) => {
+                                setRightNothing(why);
+                                nextStep("right", false);
+                            }}
+                        />
                     ) : step === "today" ? (
                         <TodayStep />
                     ) : step === "agents" ? (

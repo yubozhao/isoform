@@ -1,6 +1,7 @@
 package main
 
 import (
+	"reflect"
 	"testing"
 	"time"
 
@@ -17,12 +18,13 @@ func TestActivityFeedClosedEyesIsAGapClippedToTheDay(t *testing.T) {
 		{Start: 900, End: 0},   // still on
 		{Start: 10, End: 40},   // before the window
 	}, 100, 1000, 950)
-	want := []ActivityFeedRow{{Kind: "closed", StartMs: 100, EndMs: 150}, {Kind: "closed", StartMs: 300, EndMs: 400}, {Kind: "closed", StartMs: 900, EndMs: 950}}
+	closed := ActivityFeedBasis{Setting: basisClosedEyes}
+	want := []ActivityFeedRow{{Kind: "closed", StartMs: 100, EndMs: 150, Basis: closed}, {Kind: "closed", StartMs: 300, EndMs: 400, Basis: closed}, {Kind: "closed", StartMs: 900, EndMs: 950, Basis: closed}}
 	if len(rows) != len(want) {
 		t.Fatalf("rows = %+v", rows)
 	}
 	for i := range want {
-		if rows[i] != want[i] {
+		if !reflect.DeepEqual(rows[i], want[i]) {
 			t.Fatalf("row %d = %+v, want %+v", i, rows[i], want[i])
 		}
 	}
@@ -39,16 +41,20 @@ func TestActivityFeedIsNewestFirst(t *testing.T) {
 func TestActivityFeedWatchRowsKeepTheirWindowAndSkipDeleted(t *testing.T) {
 	day := time.Date(2026, 11, 15, 0, 0, 0, 0, time.UTC)
 	start, end := day.UnixMilli(), day.Add(24*time.Hour).UnixMilli()
-	rows := activityFeedWatchRows([]WatchRecording{
-		{ID: "in", Source: "watch", StartedAt: day.Add(9 * time.Hour).Format(time.RFC3339), DurationSeconds: 60, Words: 12},
-		{ID: "phone", Source: "phone", StartedAt: day.Add(10 * time.Hour).Format(time.RFC3339)},
-		{ID: "gone", State: mobileRecordingDeleted, StartedAt: day.Add(11 * time.Hour).Format(time.RFC3339)},
-		{ID: "yesterday", StartedAt: day.Add(-time.Hour).Format(time.RFC3339)},
-	}, start, end)
+	hour := func(id, source, state string, at time.Duration, seconds float64, words int) mobileRecording {
+		return mobileRecording{ID: id, Source: source, State: state, Words: words,
+			Received: []mobileRecordingPart{{StartedAt: day.Add(at).Format(time.RFC3339), DurationSeconds: seconds}}}
+	}
+	rows := activityFeedWatchRows([]mobileRecording{
+		hour("in", "watch", mobileRecordingTranscribed, 9*time.Hour, 60, 12),
+		hour("phone", "phone", mobileRecordingReceived, 10*time.Hour, 0, 0),
+		hour("gone", "watch", mobileRecordingDeleted, 11*time.Hour, 0, 0),
+		hour("yesterday", "watch", mobileRecordingTranscribed, -time.Hour, 0, 0),
+	}, nil, start, end)
 	if len(rows) != 2 || rows[0].ID != "in" || rows[1].ID != "phone" {
 		t.Fatalf("rows = %+v", rows)
 	}
-	if rows[0].Device != "watch" || rows[1].Device != "phone" || rows[0].EndMs-rows[0].StartMs != 60000 || rows[0].Words != 12 {
+	if rows[0].Device != "watch" || rows[1].Device != "phone" || rows[0].EndMs-rows[0].StartMs != 60000 || rows[0].Words != 12 || rows[0].Conversation {
 		t.Fatalf("watch row = %+v", rows[0])
 	}
 }
@@ -86,6 +92,15 @@ func TestActivityFeedShowsAgentsAndForgetsOnlyTheirCapture(t *testing.T) {
 	}
 	if agentRow == nil || agentRow.App != "Claude" {
 		t.Fatalf("agent row missing or without its app: %+v", rows)
+	}
+	// Seen on the screen: the Screen consent, named per agent, never Learn from it.
+	if agentRow.Basis != (ActivityFeedBasis{Setting: basisScreen, Agent: "Claude"}) {
+		t.Fatalf("agent row basis = %+v", agentRow.Basis)
+	}
+	for _, row := range rows {
+		if row.Basis.Setting == "" {
+			t.Fatalf("a %s row reached the page with no consent record", row.Kind)
+		}
 	}
 	if !sawMine {
 		t.Fatalf("the person's moment is missing: %+v", rows)
@@ -162,15 +177,15 @@ func TestActivityFeedTroubleIsAGapWithItsCause(t *testing.T) {
 		{StartMs: 10, EndMs: 40, Cause: "signed_out"},
 	}, 100, 1000, 950)
 	want := []ActivityFeedRow{
-		{Kind: "trouble", StartMs: 100, EndMs: 150, Cause: "screen"},
-		{Kind: "trouble", StartMs: 300, EndMs: 400, Cause: "restarted"},
-		{Kind: "trouble", StartMs: 900, EndMs: 950, Cause: "offline", Ongoing: true},
+		{Kind: "trouble", StartMs: 100, EndMs: 150, Cause: "screen", Basis: ActivityFeedBasis{Setting: basisScreen}},
+		{Kind: "trouble", StartMs: 300, EndMs: 400, Cause: "restarted", Basis: ActivityFeedBasis{Setting: basisScreen}},
+		{Kind: "trouble", StartMs: 900, EndMs: 950, Cause: "offline", Ongoing: true, Basis: ActivityFeedBasis{Setting: basisAssistant}},
 	}
 	if len(rows) != len(want) {
 		t.Fatalf("rows = %+v", rows)
 	}
 	for i := range want {
-		if rows[i] != want[i] {
+		if !reflect.DeepEqual(rows[i], want[i]) {
 			t.Fatalf("row %d = %+v, want %+v", i, rows[i], want[i])
 		}
 	}

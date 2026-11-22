@@ -111,7 +111,7 @@ func (s *Store) SearchChats(ctx context.Context, words []string) ([]SearchChatRo
 // includes the item even with a page limit of one and sparse sort orders.
 func (s *Store) FindVisibleStreamItemCursor(ctx context.Context, sessionID, itemID string) (int, error) {
 	var cursor int
-	err := s.db.QueryRowContext(ctx, `SELECT i.sort_order+1 FROM stream_items i JOIN sessions s ON s.local_id=i.session_local_id
+	err := s.committedReader().QueryRowContext(ctx, `SELECT i.sort_order+1 FROM stream_items i JOIN sessions s ON s.local_id=i.session_local_id
         JOIN projects p ON p.id=s.project_id JOIN workspaces w ON w.id=s.workspace_id WHERE `+searchVisibleChat+` AND s.local_id=? AND i.id=?`, sessionID, itemID).Scan(&cursor)
 	return cursor, err
 }

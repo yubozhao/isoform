@@ -1,4 +1,14 @@
 import { AboutUpdates } from "./about-updates";
+import { ModelsPanel } from "@/components/onboarding/models-panel";
+import {
+    AboutModels,
+    AppearanceSettings,
+    DiagnosticDataCard,
+    LanguageSettings,
+    RiskyCommandsCard,
+    StartAtLoginSettings,
+    YourNameSettings,
+} from "./about-settings";
 import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Loader2, Copy, Mail } from "lucide-react";
@@ -61,7 +71,7 @@ function GetHelp() {
 
     return (
         <SettingsCard
-            title={t("support.title")}
+            title={t("about.helpTitle")}
             description={t("support.description")}
         >
             <SettingsRow
@@ -151,18 +161,33 @@ export interface HelpAboutPageProps {
 }
 
 /**
- * About (page id "about"): version and updates, getting help, and
- * running setup again. The old "support" page id resolves here. Developer
- * tools have no switch here: Cmd+Shift+Option+D turns them on and off
- * (useDevToolsUnlock).
+ * About (page id "about"), in computer-conformance-answers v1.0.0 T2's order:
+ * Your name, Open at login, Language, Appearance, Version and updates, Help
+ * and Send feedback; the models on this computer (answers v1.2.0 S11) sit
+ * after the updates, and Share diagnostic data under Help (settings batch D2,
+ * from Privacy, until Your data's Usage counts row ships). Running setup again stays under Help's Advanced. The old
+ * "support", "general", "profile", "appearance" and "language" ids resolve
+ * here. Developer tools have no switch here: Cmd+Shift+Option+D turns them on
+ * and off (useDevToolsUnlock).
  */
 export function HelpAboutPage({ onReplayOnboarding }: HelpAboutPageProps) {
     const { t } = useTranslation("settings");
     return (
         <>
+            <YourNameSettings />
+            <StartAtLoginSettings />
+            <LanguageSettings />
+            <AppearanceSettings />
             <AboutUpdates />
+            <AboutModels />
             <GetHelp />
+            <DiagnosticDataCard />
             <SettingsAdvanced pageId="about" hint={t("about.advancedHint")}>
+                {/* Each model by job, its downloads, sources and mirror: from
+                    Settings › Storage (settings batch D2), under the models
+                    line it details. */}
+                <ModelsPanel settings />
+                <RiskyCommandsCard />
                 <SettingsCard>
                     <SettingsRow
                         title={t("onboarding.title")}
@@ -179,6 +204,12 @@ export function HelpAboutPage({ onReplayOnboarding }: HelpAboutPageProps) {
                     />
                 </SettingsCard>
                 <SupportReportDetails />
+                <SettingsCard
+                    title={t("privacy.diagnostics.detailsTitle")}
+                    description={t("privacy.diagnostics.detailsDescription")}
+                >
+                    {null}
+                </SettingsCard>
             </SettingsAdvanced>
         </>
     );

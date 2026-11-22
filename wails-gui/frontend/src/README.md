@@ -107,7 +107,7 @@ No external state library (no Redux, Jotai, Zustand). All state lives in custom 
 | `useCronJobs()` | Cron job automation state management |
 | `useSidebarGroups()` | Sidebar group CRUD — create, rename, delete, reorder, and collapse groups |
 | `useConnectedPlatforms()` | Connected platform status (Slack, Discord, Telegram, Feishu, WeChat) |
-| `useShowToolSteps()` | Toggles tool input/result details in chat independently of debug mode |
+| `useShowToolSteps()` | Whether chat shows raw tool input/result: always off since its Settings switch went (a saved value is ignored) |
 | `useDevToolsUnlock(defaultEnabled)` | On/off switch for Settings > Developer tools (Cmd+Shift+Option+D); on by default in staging and dev builds |
 | `useHandoffNotification()` | Handoff proposal notifications with AFK digest queue |
 
@@ -216,6 +216,7 @@ Stream items are grouped before rendering (`lib/stream-helpers.ts`):
 | `add-project-dialog.tsx` | Entry point for local, URL, and Yansu project types |
 | `settings-page.tsx` | Settings dialog shell (sidebar, page header, deep links) plus the Developer tools pages; user-facing pages live in `components/settings/` (see `settings/settings-registry.ts`) |
 | `keybindings-settings.tsx` | Keybinding recorder with conflict detection |
+| `keys-sheet.tsx` | Keyboard shortcuts sheet, opened with Cmd+/ |
 | `processing-block.tsx` | In-progress tool execution display |
 | `thinking-card.tsx` | Extended thinking (Claude / Codex) display |
 | `plan-review-card.tsx` | Plan mode approval interface |
@@ -236,7 +237,6 @@ Stream items are grouped before rendering (`lib/stream-helpers.ts`):
 | `tasks/TasksPage.tsx` | Tasks board, including scheduled work and handoff readers |
 | `AutomationDetailPane.tsx` | Inline automation detail with run logs, edit, and continue-in-chat |
 | `mcp-hub-settings.tsx` | MCP server hub — install, discover, enable/disable, restart, view logs, and uninstall MCP servers |
-| `skill-hub-settings.tsx` | Skill hub — install skills from ClawHub, GitHub, or local directories |
 | `confirm-dialog.tsx` | Generic reusable confirmation modal |
 | `automation-indicator.tsx` | Cron job automation status badge shown in the sidebar |
 | `entry-content.tsx` | Markdown renderer for memory/knowledge entries with keyword highlighting |
@@ -244,9 +244,8 @@ Stream items are grouped before rendering (`lib/stream-helpers.ts`):
 | `add-to-group-menu.tsx` | Context menu for assigning a project to a sidebar group |
 | `first-chat-welcome.tsx` | Welcome callout shown on the first message in a new session |
 | `new-chat-welcome.tsx` | Welcome message shown at the start of each new chat session |
-| `observing-status.tsx` | Live indicator for workspace observing status with pulse animation |
-| `search-dialog.tsx` | Search and commands (Cmd+K and the sidebar's Search): finds the words across topics, chats, Activity, people, goals, know-how and About you (`SearchEverything`), plus chats, Upcoming, one-time work, projects, Library pages, Settings pages and actions |
-| `activity-summary.tsx` | The digest card (Chat about this day/week, Copy, Regenerate) shared by the Activity page's Day and Week views |
+| `search-dialog.tsx` | Find (Cmd+K): Ready, Conversations, People, Claims, Your answers (`FindAnything` and Your work), Go to with the page keys, then topics, chats and Settings pages; no commands |
+| `activity-summary.tsx` | `copyTextToClipboard`, the clipboard helper the old day digest card shared (About you's portrait uses it) |
 | `ai-memory-import-dialog.tsx` | Dialog for importing AI memory from external sources |
 | `compaction-banner.tsx` | Banner displayed between message list and composer surfacing auto-compaction state |
 | `contacts/contact-editor.tsx` / `contacts/principal-picker.tsx` | People/contact management UI |

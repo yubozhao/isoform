@@ -456,7 +456,7 @@ func TestQueuePendingPIISnapshotBounds(t *testing.T) {
 			},
 			bundleID: "com.example.App",
 		})
-		if !ok {
+		if ok != (i < pendingPIIQueueMaxFrames) {
 			t.Fatalf("queuePendingPIISnapshot(%d) returned false", i)
 		}
 	}
@@ -467,13 +467,13 @@ func TestQueuePendingPIISnapshotBounds(t *testing.T) {
 	if got := am.pendingPIIBytes; got != int64(pendingPIIQueueMaxFrames) {
 		t.Fatalf("pendingPIIBytes = %d, want %d", got, pendingPIIQueueMaxFrames)
 	}
-	if got := am.pendingPIISnapshots[0].jpegData[0]; got != 1 {
-		t.Fatalf("oldest pending frame was not dropped, first byte = %d", got)
+	if got := am.pendingPIISnapshots[0].jpegData[0]; got != 0 {
+		t.Fatalf("oldest pending frame was evicted, first byte = %d", got)
 	}
-	if got := am.lastCaptureTime; got != int64(pendingPIIQueueMaxFrames+1) {
+	if got := am.lastCaptureTime; got != int64(pendingPIIQueueMaxFrames) {
 		t.Fatalf("lastCaptureTime = %d, want latest queued timestamp", got)
 	}
-	if got := am.lastSavedTime; got != int64(pendingPIIQueueMaxFrames+1) {
+	if got := am.lastSavedTime; got != int64(pendingPIIQueueMaxFrames) {
 		t.Fatalf("lastSavedTime = %d, want latest queued timestamp for pacing", got)
 	}
 }
@@ -502,7 +502,7 @@ func TestDeferExtractSessionUntilPIIReadyWhileInitInFlight(t *testing.T) {
 		piiInitInFlight: true,
 	}
 
-	if !app.deferExtractSessionUntilPIIReady(am, "idle_transition") {
+	if !app.deferLocalFlushWhilePIIStarting(am, "idle_transition") {
 		t.Fatal("expected extraction to defer while GLiNER init is in flight")
 	}
 	if got := am.pendingPIIExtractTrigger; got != "idle_transition" {
@@ -518,7 +518,7 @@ func TestDeferExtractSessionUntilPIIReadySkipsShutdown(t *testing.T) {
 		piiInitInFlight: true,
 	}
 
-	if app.deferExtractSessionUntilPIIReady(am, "shutdown_in_meeting") {
+	if app.deferLocalFlushWhilePIIStarting(am, "shutdown_in_meeting") {
 		t.Fatal("shutdown flush should not defer behind PII readiness")
 	}
 	if got := am.pendingPIIExtractTrigger; got != "" {

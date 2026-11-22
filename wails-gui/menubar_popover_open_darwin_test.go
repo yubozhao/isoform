@@ -120,13 +120,13 @@ func runMenuBarPopoverHarness(t *testing.T, binary, htmlPath, modelPath, mode, e
 	return string(output)
 }
 
-// The first second after launch: "Starting…" with no brief row and no
-// Waiting on you section or See all line (no placeholders, shell-review B5;
-// no count, evening walk B7); never "Loading…" or a claim such as "Nothing is
-// waiting on you".
+// The first second after launch: only what Isoform knows, the watch's part
+// (design S8, never "Starting…"), with no brief row and no Next section (no
+// placeholders, shell-review B5); never "Loading…" or a claim such as
+// "Nothing is waiting on you".
 func TestMenuBarLoadingPlaceholderMakesNoClaims(t *testing.T) {
 	view := menuBarPreloadView("en")
-	if view.Status != "starting" || view.State != "Starting…" || !view.Loading || len(view.Menu) == 0 {
+	if view.Status != "starting" || strings.Contains(view.State, "Starting") || view.State != menuBarStateLine(view.Words, "") || !view.Loading || len(view.Menu) == 0 {
 		t.Fatalf("preload %+v", view)
 	}
 	html := renderMenuBarHTML(view)
@@ -139,7 +139,7 @@ func TestMenuBarLoadingPlaceholderMakesNoClaims(t *testing.T) {
 		"row.hidden = !!model.loading;",
 		"el('wsec').hidden = pending || failed;",
 		"el('done').hidden = !none;",
-		"hb.disabled = status === 'starting';",
+		"hb.disabled = !!model.loading;",
 	} {
 		if !strings.Contains(html, guard) {
 			t.Fatalf("popover no longer guards the first second: %s", guard)

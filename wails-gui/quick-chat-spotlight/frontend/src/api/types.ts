@@ -72,7 +72,18 @@ export type StreamEvent =
     | { kind: "deliverable_proposed"; data: DeliverableProposal }
     | { kind: "error"; data: { message?: string } }
     | { kind: "done"; data: Record<string, never> }
-    | { kind: "permission_cleared"; data: { eventId: string } };
+    | { kind: "permission_cleared"; data: { eventId: string } }
+    /** A row the main chat wrote for this exchange (its sources line). */
+    | { kind: "item"; data: import("@/types").StreamItemData };
+
+/** Work Isoform already made that the typed words name (quick_chat_ready.go). */
+export interface ReadyItem {
+    id: string;
+    title: string;
+    madeAt: string;
+    forText?: string;
+    forAt?: string;
+}
 
 export interface DeliverableProposal {
     deliverableID: string;

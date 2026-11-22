@@ -53,3 +53,23 @@ func TestMobileSeesShowPostsOneNoticeOnTheMac(t *testing.T) {
 		t.Fatalf("privacy without brief:read answered %d", code)
 	}
 }
+
+func TestMobilePrivacyOwnerReviewOff(t *testing.T) {
+	for _, tc := range []struct {
+		name, status string
+		want         bool
+	}{
+		{"review on", `{"state":"on","settings":{"reviewResults":true}}`, false},
+		{"review off", `{"state":"on","settings":{"reviewResults":false}}`, true},
+		{"paused after setup", `{"state":"paused","settings":{"reviewResults":false}}`, true},
+		{"not joined", `{"state":"not_joined","settings":{"reviewResults":false}}`, false},
+		{"incomplete setup", `{"state":"setting_up","settings":{"reviewResults":false}}`, false},
+		{"unknown review setting", `{"state":"on","settings":{}}`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := mobileOwnerStatusReviewOff([]byte(tc.status)); got != tc.want {
+				t.Fatalf("review off = %t, want %t", got, tc.want)
+			}
+		})
+	}
+}

@@ -574,6 +574,8 @@ func claudeResearchArgs(prompt string) []string {
 
 // runClaudeResearch runs one research prompt on Claude Code and returns its
 // final answer with the record of what its searches returned.
+//
+//isoform:destination assistant_search
 var runClaudeResearch = func(ctx context.Context, prompt string) (string, researchMeta, error) {
 	ctx, cancel := context.WithTimeout(ctx, researchCLITimeout)
 	defer cancel()
@@ -821,6 +823,10 @@ func toolResultText(raw json.RawMessage) string {
 func (a *App) runResearchJob(ctx context.Context, job *storage.CronJobRow, via string) (summary string, handled bool, err error) {
 	if !isAppResearchJob(job) || via != researchViaClaudeCode {
 		return "", false, nil
+	}
+	if isTopicSearchJob(job) && !a.topicSearchMayLeave() {
+		// Asked again just before the words leave.
+		return "", true, errTopicSearchPaused
 	}
 	state := jobRowToState(job)
 	prompt, ok := a.appResearchPrompt(&state, via)

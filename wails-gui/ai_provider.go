@@ -21,6 +21,8 @@ import (
 // underlying connection pool is reused instead of allocating a fresh client
 // (and transport) per call. The 30s timeout is a hard cap on top of each
 // request's context (unifying the former per-call 20s/30s clients).
+//
+//isoform:destination metadata
 var aiProviderHTTPClient = &http.Client{Timeout: 30 * time.Second}
 
 // byoaEntitled reports whether the user may use a bring-your-own provider.
@@ -362,6 +364,8 @@ func (a *App) ListAIProviderModels(cfg AIProviderConfig) ([]string, error) {
 // OpenRouter, Ollama, ...) return a single {"data":[{"id"}]} page; Anthropic
 // paginates with has_more / last_id, so we follow up to a bounded number of
 // pages to avoid truncating the list.
+//
+//isoform:destination metadata
 func fetchProviderModels(ctx context.Context, provider string, cfg AIProviderConfig) ([]string, error) {
 	base := strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/")
 	key := strings.TrimSpace(cfg.APIKey)
@@ -467,6 +471,8 @@ func mergeModelList(primary []string, extra string) []string {
 }
 
 // probeAnthropicProvider issues a 1-token /v1/messages call.
+//
+//isoform:destination metadata
 func probeAnthropicProvider(ctx context.Context, cfg AIProviderConfig) error {
 	base := strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/")
 	if base == "" {
@@ -494,6 +500,8 @@ func probeAnthropicProvider(ctx context.Context, cfg AIProviderConfig) error {
 // never sends it on this path either — so the connection test must not gate on
 // a parameter the real agent won't send. The probe only needs to confirm the
 // endpoint + key + model produce a valid completion.
+//
+//isoform:destination metadata
 func probeOpenAIProvider(ctx context.Context, cfg AIProviderConfig) error {
 	base := strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/")
 	if base == "" {

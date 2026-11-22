@@ -1677,6 +1677,7 @@ func Run(ctx context.Context, cfg *LoopConfig) (runErr error) {
 			}
 
 			toolStart := time.Now()
+			tu.publishToModel = true
 			blk, outcome, err := executeToolUse(ctx, cfg, tu)
 			toolElapsedMs := time.Since(toolStart).Milliseconds()
 			if err != nil {
@@ -2091,10 +2092,11 @@ type turnResult struct {
 }
 
 type toolUseReq struct {
-	ID     string
-	Name   string
-	Input  string // raw partial_json accumulated from deltas
-	Caller *ToolCaller
+	publishToModel bool
+	ID             string
+	Name           string
+	Input          string // raw partial_json accumulated from deltas
+	Caller         *ToolCaller
 }
 
 func runOneTurn(ctx context.Context, cfg *LoopConfig, req *Request) (*turnResult, error) {
@@ -2576,6 +2578,17 @@ func executeToolUse(ctx context.Context, cfg *LoopConfig, tu toolUseReq) (Conten
 	if err != nil {
 		cfg.Emit(LoopEvent{Type: "tool_result", ToolName: tu.Name, ToolUseID: tu.ID, Content: err.Error(), Failed: true})
 		return errorResult(tu.ID, err.Error()), toolOutcomeRegistryError, nil
+	}
+
+	// MCP checks the same source fence in its transport. For direct model
+	// reads, finish the check before publishing either success event or text.
+	if reader, ok := cfg.Registry.Get(tu.Name).(tools.SourceReadTool); tu.publishToModel && ok && !result.IsError {
+		release, err := reader.LockResultPublication(ctx, call)
+		if err != nil {
+			result = tools.ToolResult{IsError: true, Content: "Isoform source context changed before publication. Retry with a new call ID."}
+		} else {
+			release()
+		}
 	}
 
 	// Emit tool_result event; the payload shape in the event is a

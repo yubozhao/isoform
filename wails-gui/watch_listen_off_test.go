@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"path/filepath"
@@ -26,7 +27,7 @@ func listenOffFixture(t *testing.T) (*App, *mobileBridge) {
 // the wearer starts listening on the watch.
 func TestThePhoneCanOnlyTurnWatchListeningOff(t *testing.T) {
 	app, bridge := listenOffFixture(t)
-	if got := app.watchListening(); got.Off {
+	if got, err := app.watchListening(); err != nil || got.Off {
 		t.Fatalf("off before anyone asked: %+v", got)
 	}
 	if got := watchDeskCall(bridge, http.MethodPost, "/watch/listening", `{"off":true}`, mobileScopeBriefRead); got.Code != http.StatusForbidden {
@@ -53,7 +54,7 @@ func TestThePhoneCanOnlyTurnWatchListeningOff(t *testing.T) {
 	if got := watchDeskCall(bridge, http.MethodPost, "/watch/listening", `{"off":false}`, mobileScopeChatWrite); got.Code != http.StatusBadRequest {
 		t.Fatalf("on without the watch's own start: %d", got.Code)
 	}
-	if !app.watchListening().Off {
+	if got, err := app.watchListening(); err != nil || !got.Off {
 		t.Fatal("a refused on ended the off")
 	}
 	// The wearer started on the watch: the off ends then.
@@ -62,7 +63,7 @@ func TestThePhoneCanOnlyTurnWatchListeningOff(t *testing.T) {
 	if got := watchDeskCall(bridge, http.MethodPost, "/watch/listening", string(body), mobileScopeChatWrite); got.Code != http.StatusOK {
 		t.Fatalf("on from the watch: %d %s", got.Code, got.Body.String())
 	}
-	if app.watchListening().Off {
+	if got, err := app.watchListening(); err != nil || got.Off {
 		t.Fatal("still off after the wearer started on the watch")
 	}
 	spans, _ = app.watchListenOffSpans()
@@ -129,5 +130,29 @@ func TestWatchAudioAfterTheOffIsDropped(t *testing.T) {
 	}
 	if cover := mobileRecordingPauseCover(now.Add(-time.Hour).UnixMilli(), now.Add(-30*time.Minute).UnixMilli(), watch); cover != mobileRecordingPauseNone {
 		t.Fatalf("cover of audio before the off: %v", cover)
+	}
+}
+
+// Settings' Your watch row reads the phone's setting, turns it off as the
+// phone does, and fails rather than guessing when the setting can't be read.
+func TestSettingsWatchListeningRow(t *testing.T) {
+	app, _ := listenOffFixture(t)
+	// The fixture holds a recording from the watch.
+	view, err := app.GetWatchListening()
+	if err != nil || view.Off || !view.HasWatch {
+		t.Fatalf("fresh: %+v %v", view, err)
+	}
+	view, err = app.TurnOffWatchListening()
+	if err != nil || !view.Off || view.Since == "" {
+		t.Fatalf("turned off: %+v %v", view, err)
+	}
+	if phone, err := app.watchListening(); err != nil || !phone.Off || phone.Since != view.Since {
+		t.Fatalf("phone listening state after desktop off: %+v %v", phone, err)
+	}
+	if err := app.store.SetUIState(context.Background(), watchListenOffKey, "{not json"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.GetWatchListening(); err == nil {
+		t.Fatal("an unreadable setting read as a state")
 	}
 }

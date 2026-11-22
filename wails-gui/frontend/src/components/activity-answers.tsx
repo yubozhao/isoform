@@ -8,6 +8,7 @@ import {
     ForgetAnswer,
     GetAnswers,
     GetJudgmentStats,
+    UndoWork,
     type AnswerView,
     type JudgmentCounts,
     type JudgmentStats,
@@ -41,6 +42,19 @@ export function sourceRates(stats: JudgmentStats | null): { source: string; yes:
     return ANSWER_SOURCES.filter((source) => (sums.get(source)?.answered ?? 0) > 0).map((source) => ({ source, ...sums.get(source)! }));
 }
 
+const REASONS = ['already_done', 'not_now', 'not_useful', 'myself', 'not_needed', 'wrong_facts', 'not_how_id_say', 'was_true_once', 'only_sometimes', 'not_at_all'] as const;
+
+/** What shows under an answer: the edited words, else the reason in words
+ *  (the ledger keeps the reason's code), else the person's own note. */
+export function answerUnder(t: TFunction<'activity'>, answer: AnswerView): string {
+    if (answer.edited?.after) return answer.edited.after;
+    const reason = answer.reason?.trim();
+    if (reason) {
+        return (REASONS as readonly string[]).includes(reason) ? t(`ans.reason.${reason as (typeof REASONS)[number]}`) : reason;
+    }
+    return answer.note ?? '';
+}
+
 function sourceLabel(t: TFunction<'activity'>, source: string): string {
     switch (source) {
         case 'prep':
@@ -72,6 +86,8 @@ export function ActivityAnswers() {
     const [failed, setFailed] = useState(false);
     const [forgetting, setForgetting] = useState<AnswerView | null>(null);
     const [forgetFailed, setForgetFailed] = useState(false);
+    const [undoFailed, setUndoFailed] = useState(false);
+    const [undoing, setUndoing] = useState<string | null>(null);
 
     const load = useCallback((before = '') => {
         GetAnswers(PAGE, before)
@@ -123,6 +139,20 @@ export function ActivityAnswers() {
             .catch(() => setForgetFailed(true));
     };
 
+    // Undo on today's answers, until the next brief (redesign-activity v1.0.0
+    // rule 10): the same take-back as Today's Undo, so the item returns there.
+    const undo = (answer: AnswerView) => {
+        setUndoing(answer.id);
+        setUndoFailed(false);
+        UndoWork(answer.item)
+            .then(() => load())
+            .catch(() => {
+                setUndoFailed(true);
+                load();
+            })
+            .finally(() => setUndoing(null));
+    };
+
     return (
         <div className="flex-1 overflow-y-auto" data-testid="activity-answers">
             <div className="mx-auto flex max-w-2xl flex-col gap-6 px-6 py-6">
@@ -132,6 +162,7 @@ export function ActivityAnswers() {
                 </header>
                 {failed && <ActivityInlineNotice notice={{ tone: 'error', text: t('ans.loadFailed'), onAction: () => load() }} />}
                 {forgetFailed && <ActivityInlineNotice notice={{ tone: 'error', text: t('ans.forgetFailed') }} />}
+                {undoFailed && <ActivityInlineNotice notice={{ tone: 'error', text: t('ans.undoFailed') }} />}
                 <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4" data-testid="answers-today">
                     {numbers.map(({ key, value, label }) => (
                         <div key={key} data-answer-number={key} className="rounded-xl border border-border bg-panel px-4 py-3">
@@ -167,7 +198,7 @@ export function ActivityAnswers() {
                     {answers !== null && answers.length === 0 && !failed && <p className="px-1 text-[12.5px] text-muted">{t('ans.empty')}</p>}
                     <ol className="flex flex-col">
                         {(answers ?? []).map((answer) => {
-                            const under = answer.edited?.after || answer.reason || answer.note;
+                            const under = answerUnder(t, answer);
                             const accent = answer.action === 'yes' || answer.action === 'edit';
                             return (
                                 <li key={answer.id} data-answer-row className="group flex items-start gap-3 rounded-md px-3 py-2 hover:bg-surface-hover">
@@ -183,6 +214,17 @@ export function ActivityAnswers() {
                                             {answer.undone ? ` · ${t('ans.undone')}` : ''}
                                         </p>
                                     </div>
+                                    {answer.canUndo && (
+                                        <button
+                                            type="button"
+                                            disabled={undoing === answer.id}
+                                            onClick={() => undo(answer)}
+                                            aria-label={t('ans.undoRow', { title: answer.title || t('ans.untitled') })}
+                                            className="shrink-0 rounded-md px-2 py-1 text-[12px] text-muted hover:bg-surface-active hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus disabled:opacity-50"
+                                        >
+                                            {t('ans.undo')}
+                                        </button>
+                                    )}
                                     <button
                                         type="button"
                                         onClick={() => setForgetting(answer)}

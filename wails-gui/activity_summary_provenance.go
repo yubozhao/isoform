@@ -330,13 +330,18 @@ type activitySummaryReadSnapshot struct {
 }
 
 func (s *ActivityStore) cachedActivitySummarySnapshot(date, kind, language string) (activitySummaryReadSnapshot, bool) {
+	snapshot, err := s.readActivitySummarySnapshot(date, kind, language)
+	return snapshot, err == nil
+}
+
+func (s *ActivityStore) readActivitySummarySnapshot(date, kind, language string) (activitySummaryReadSnapshot, error) {
 	var snapshot activitySummaryReadSnapshot
 	var partial int
 	err := s.reader().QueryRow(`SELECT summary,moments_json,is_partial,created_at,language,source_provenance
         FROM activity_summaries WHERE date=? AND type=?
         ORDER BY language=? DESC,language='' DESC,created_at DESC LIMIT 1`, date, kind, normalizeSummaryLanguage(language)).Scan(&snapshot.Summary, &snapshot.Moments, &partial, &snapshot.CreatedAt, &snapshot.Language, &snapshot.Provenance)
 	snapshot.IsPartial = partial == 1
-	return snapshot, err == nil
+	return snapshot, err
 }
 
 func (a *App) activitySummarySnapshotAllowsRead(date, kind string, snapshot activitySummaryReadSnapshot) bool {

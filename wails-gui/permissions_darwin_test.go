@@ -34,7 +34,7 @@ func TestGetPlatformPermissions_HasRequiredItems(t *testing.T) {
 			if item.Required {
 				t.Fatalf("item %q should be optional", item.Key)
 			}
-		case "clipboard", "files":
+		case "files":
 			// A switch with no macOS permission behind it: never asked for.
 			if item.Required || !item.Granted || !item.Toggleable || item.Actionable {
 				t.Fatalf("%s item %+v", item.Key, item)

@@ -160,7 +160,6 @@ func TestFrontServesTaskLinksOverTLSForItsHostnameOnly(t *testing.T) {
 		return func(*tls.ClientHelloInfo) (*tls.Certificate, error) { certCalls.Add(1); return cert, nil }
 	}
 	a.taskLinks.dir = t.TempDir()
-	a.taskLinks.enabled = on.Load
 	t.Cleanup(a.stopFront)
 	t.Cleanup(a.shutdownTaskLinks)
 

@@ -70,7 +70,7 @@ extension HubChannel: FeedHubAPI {
         guard Identifiers.isSafePathID(briefID), Identifiers.isSafePathID(itemID) else {
             throw HubRequestError.invalidIdentifier
         }
-        if action == .notRelevant, try await status().briefRelevanceFeedback != true {
+        if action == .notRelevant, try await abilities().briefRelevanceFeedback != true {
             throw HubRequestError.rejected(status: 404, message: "")
         }
         return try await post("/briefs/\(briefID)/items/\(itemID)/feedback",

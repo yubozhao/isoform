@@ -241,7 +241,8 @@ routes require `Authorization: Bearer <deviceBearer>`; unknown, expired or revok
 | `DELETE /v1/devices/me` | bearer | | unpairs: deletes the device, its envelopes, briefs and push token; tells the hub `device_unpaired` |
 
 Rate limits (fixed windows): 10 claim attempts per 10 minutes per pairing id and per client
-IP; 60 requests per minute per device; one `POST /v1/requests` with `path=/brief/refresh`
+IP; 600 requests per minute per device, with the upload routes (`/v1/uploads/...`) counted apart
+at 1200 per minute per device; one `POST /v1/requests` with `path=/brief/refresh`
 per 10 minutes per device (429 with `Retry-After`).
 
 Retention: at most 200 queued envelopes per (hub, device, direction) for request and response
@@ -299,9 +300,17 @@ Hub to relay:
 | `out` | `env`; for a moment push also `notify`, `push:"moment"`, `noticeId`, `kind`, `ct`, `category`, `collapse`, `level` | an `h2d` envelope of kind `res` or `event`; stored and delivered to the device poll; the notice fields queue one sealed push per enabled token (14.3, 14.4) |
 | `brief` | `env`, `asOf`, `notify`, optional `deliverAt` | an `h2d` envelope of kind `brief`; stored as a brief; `notify:true` queues one push per enabled token; a `deliverAt` (RFC 3339 UTC, at most 24 hours after relay time) holds the brief from every read and makes its push due then, for a brief made ahead of its slot |
 | `revoke` | `deviceId` | deletes the device and everything stored for it |
-| `grant` | `deviceId`, `bearerHash`, `scopes`, `expiresAt` | records a device this hub paired through another relay (its direct-path relay, section 21.4), or replaces that device's bearer, scopes and expiry; a device ID of another hub or a bearer digest held by another device is refused |
-| `ack` | `dev`, `upTo` | the hub consumed `d2h` envelopes of device `dev` up to `upTo` (relay deletes them); a frame without `dev` is refused |
+| `grant` | `deviceId`, `bearerHash`, `scopes`, `expiresAt` | records a device this hub paired through another relay (its direct-path relay, section 21.4), or replaces that device's bearer, scopes and expiry; a device ID of another hub or a bearer digest held by another device is refused, and so is any other bearer for a device paired on this relay (its own bearer is a no-op): only the phone pairing again replaces that bearer |
+| `ack` | `dev`, `upTo` | the hub consumed `d2h` envelopes of device `dev` up to `upTo`; the relay deletes that envelope and those it handed over before it on this connection, never one handed over later or still waiting. A frame without `dev` is refused |
 | `sms_ack` | `id` | the hub took a text reply (18.5); the relay deletes it |
+
+**Requests reach the hub in any order (2026-11-20).** A device numbers a request and then sends
+it, so requests sent together reach the relay in any order. The relay hands every queued `d2h`
+envelope to the hub that it has not handed over on this connection, lowest number first, whatever
+numbers went before. The hub's replay window (section 4) accepts each number once. Until
+2026-11-20 the relay handed over only numbers above the highest it had sent, and an `ack` deleted
+every lower number: a request that arrived after a later-numbered one was answered `202` and
+never reached the hub.
 
 Relay to hub:
 
@@ -344,7 +353,7 @@ Relay behaviours the hub must expect (decided in the relay implementation):
 - The hub credential is trust-on-first-use: the first connection presenting a hub id fixes
   its digest. Digests are SHA-256 of the exact 43-character base64url text (hub credential,
   device bearer, claim token).
-- The relay enforces 60 requests per device per minute; the 10-minute `/brief/refresh`
+- The relay enforces 600 requests per device per minute; the 10-minute `/brief/refresh`
   cooldown is enforced by the hub (the path is inside the ciphertext).
 - The janitor deletes expired pairings, request envelopes older than 24 hours, briefs beyond
   the latest 7, exhausted pushes older than 24 hours, and devices whose bearer expired
@@ -663,7 +672,24 @@ create or send a calendar event.
 - `sourceKind` is one of `history`, `initiative`, `watching`, `purpose`, `meeting`, `memory`,
   `knowledge`, `deliverable`, `schedule_run`, `principal`, `self_update`, `learning`, `summary`,
   `web`, `file`, `calendar`, `calendar_day`, `find`, `news`, `activity`, `activity_run`,
-  `activity_session`, `activity_outcome`, `engagement_moment`, `chat_message`, `meeting_attendance`.
+  `activity_session`, `activity_outcome`, `engagement_moment`, `chat_message`, `meeting_attendance`, `agent_handoff`.
+- `agent_handoff` (brief-agents v1.0.0, 2026-11-21) is a hand-off the "Your agents:" paragraph names:
+  `sourceId` is the hand-off id (`ref.handoffId` in Your work, 27.2) and `label` its title as said, or
+  "a hand-off" when the title fails the brief's privacy checks. The paragraph is composed on the computer
+  from fixed words, never by the writer, so it is part of `narrative` (and its audio and marks) with no new
+  field: "Your agents:", results first (overnight ones lead a morning brief), then hand-offs with no word
+  for two hours and where to act. It sits before the closing question, or last. Your work's results it
+  names, at most two and within the brief's five items, carry `ref.briefId` and `ref.paragraph` of that
+  paragraph, so the brief in full shows them under it.
+- Each evidence ref may carry `group` (additive, 2026-11-21; computer-brief v1.0.0 rule 6 as changed by
+  the 2026-11-21 conformance answers B2), the kind "In this brief" lists it under, in this order:
+  `calendar` (calendar, calendar_day), `mail` (mail, mail_thread, brief_waiting_reply), `messages`
+  (message_ask), `reminders` (reminder), `calls` (meeting, meeting_attendance, meeting_transcript),
+  `watch` (an activity_session a kept watch recording made), `agents` (handoff, history, deliverable,
+  thread_outcome, schedule, schedule_run, agent_handoff), `screen` (activity, its other activity kinds,
+  an activity_session no watch recording made, session, summary, file, web). Other kinds have no `group`.
+  Set when the brief is made; a brief made before has none. The band's "From your watch: {n}
+  conversation" counts the distinct `sourceId`s of `watch` refs.
 - `dayShape` may be `null` on older documents. Arrays, when present, are never
   `null`; use `[]`. The phone brief reads (`GET /brief/latest` and
   `GET /briefs/{briefId}`) add these live calendar-strip fields to the existing
@@ -1015,7 +1041,7 @@ once before the first snapshot:
 
 ## 9. Push
 
-A push is an APNs alert with the title `Yansu`. The relay chooses its body from a
+A push is an APNs alert with the title `Isoform`. The relay chooses its body from a
 short fixed list, and the body names no person, count or content. Two kinds exist:
 
 For gateway-backed push registration and the encrypted grant delivery flow, see
@@ -1451,7 +1477,7 @@ extends section 6 with these fields:
 
 | Field | Value |
 | --- | --- |
-| `aps.alert.title` | `Yansu` |
+| `aps.alert.title` | `Isoform` |
 | `aps.alert.body` | the fallback text below for `yansu.kind` |
 | `aps.sound` | `default` for `active` and `time-sensitive` only; absent for `passive` |
 | `aps.mutable-content` | `1` |
@@ -2151,7 +2177,11 @@ Topics are the projects the person works on (`kind` `project`) and the subjects
 they follow (`kind` `subject`). The computer builds them once a day into a saved
 copy and applies the person's own choices (Closed Eyes, removed topics, "not
 mine", excluded apps) when it builds and again when it answers this route.
-`enabled` is false, with no topics, while the feature is off on the computer.
+`enabled` is false while the feature is off on the computer, and `topics` then
+holds only today's proposals already offered and not yet answered (`state`
+`proposed`), so they can still be answered; off makes no new ones (2026-11-21,
+computer-settings v1.3.0 rule 5). A reader that looks only at `enabled` needs
+no change.
 At most 12 topics. Names are bounded to 160 UTF-8 bytes, `why`, `latest`,
 `next` and a proposal's `why` and `result` to 400, a proposal's `title` to 200.
 A proposal's task instructions never leave the computer.
@@ -2176,8 +2206,9 @@ mine" are kept as feedback, and a "not mine" topic leaves the next copy.
 Proposals from your topics switch (phone-settings v1.0.0): the same one setting as the computer's,
 so either device turns it on or off for both. `GET /topics-daily`'s `enabled` is its state. Turning
 it on builds today's copy in the background, so the answer may have no topics yet; they come with
-the next read. Turning it off takes the topics' proposals out of Your work (`GET /work`) at once;
-answers already given stay in the ledger (26.2). Setting the state it already has changes nothing.
+the next read. Turning
+it off stops new proposals; the ones already offered stay in Your work (`GET /work`) until
+answered, and answers already given stay in the ledger (26.2). Setting the state it already has changes nothing.
 
 ### 15.10 Chat narrows to your own day (B10)
 
@@ -2403,6 +2434,12 @@ body  = ChaCha20-Poly1305(key, nonce, plaintext, aad)                 (ciphertex
   over 16 MiB, or alone over the hub's byte quota; `415` wrong content type; `429` with
   `Retry-After` over 12 uploads an hour per hub or 30 per client address; `507` when the relay's
   attachment storage is full. A repeat upload under the same id replaces the body.
+- The same body may be sent as `Content-Type: text/plain`, standard base64 with padding of the
+  sealed bytes, for the reason given in 24.1b; the relay stores the decoded bytes and every limit
+  is on those. `400` for text that is not base64. A relay that takes this says
+  `"attachmentsAsText": true` in `GET /v1/health`. The computer sends bytes, and sends the same
+  attachment once more as text when the answer is a `403` that is not the relay's (no JSON with
+  `ok`).
 - Download errors: `401` without a valid bearer; `403` without `brief:read`; `404` as above;
   `405` other methods; `429` under the device rate limit. Range requests are honoured.
 - Retention and quotas: an attachment expires 14 days after upload; a hub keeps at most 28 and at
@@ -3222,10 +3259,11 @@ for each declared deliverable and, when the closing message's first sentence fit
 #### 20.7e What Isoform sees and presence (Phone Threads v1.0.0)
 
 - A Mac that serves these sets `"sees": true` in `GET /status`. A phone shows the Chat mark's page and the Settings row only when it is set; older Macs answer 404 and the phone says it couldn't reach the computer.
-- `GET /privacy` (`brief:read`) answers `{sources: [{job, on}], assistant}`.
+- `GET /privacy` (`brief:read`) answers `{sources: [{job, on}], assistant, agentOfYouReviewOff?}`.
   - `job` is `mail`, `calendar` (Calendar or Reminders), `calls` (the microphone), `screen`, `assistant` and `contacts`, in that order. `assistant` is listed only when the person's own AI runs tasks.
   - `on` is true only when the Mac's switch is on and macOS granted what it needs.
   - `assistant` is `claude_code`, `codex`, or omitted for Isoform's built-in model. The phone words every row from its own catalog; the Mac sends only codes.
+  - `agentOfYouReviewOff` is `true` while Agent of You acts without the person's review; the phone then adds the one exception to "Only with your tap" (phone-duo v1.1.0). Omitted otherwise, and by older computers.
 - `POST /privacy/show` `{idempotencyKey, job}` (`brief:read`) shows a notice on the computer: "Turn on {source} for Isoform". Clicking it opens Settings › Observation. Nothing changes on the phone's word; the switch and the macOS prompt stay on the computer. It replays per device and key; an unknown `job` answers 400.
 - **Presence** is an h2d event on `chat:read`: `{"event": "presence", "text": {"en", "zh-CN"} | null, "at"}`.
   - The Mac publishes it when work starts ("Writing the reply to {name}…", "Reading your Claude Code history…"), again every 4 seconds while the work lasts, and with `text` null when it ends.
@@ -3643,6 +3681,8 @@ it, the relay holds ciphertext until the computer takes it, and the key travels 
 request. The computer transcribes it locally; audio is never sent to a model or kept on the relay.
 `GET /status` advertises `recordings: true` when the computer serves these routes; a phone keeps
 recordings on the phone, and says so, while the flag is absent.
+`recordingRelay: true` means the computer fetches each part from the relay named in
+`upload.relay` (24.2). The phone omits `upload.relay` unless the computer advertises this flag.
 
 ### 24.1 Sealing and upload (phone to relay)
 
@@ -3666,14 +3706,106 @@ body  = ChaCha20-Poly1305(key, nonce, plaintext, aad)                     (ciphe
 
 - Upload errors: `401` without a valid bearer; `403` without `chat:write`; `404` malformed id;
   `405` other methods; `409` the id belongs to another device; `413` empty or over 16 MiB; `415`
-  wrong content type; `429` with `Retry-After` over 60 uploads an hour per device, the device
-  request limit, or a full device quota; `507` when the relay's upload storage is full. A repeat
+  wrong content type; `429` with `Retry-After` over 600 uploads an hour per device, the upload
+  routes' request limit, or a full device quota; `507` when the relay's upload storage is full. A repeat
   under the same id from the same device replaces the body.
-- Quotas: a device keeps at most 48 waiting uploads and 192 MiB. A full quota refuses the new
+- Quotas: a device keeps at most 512 waiting uploads and 192 MiB; the bytes are the bound that
+  matters, the count only keeps a flood of tiny uploads out (48 until 2026-11-22). A full quota refuses the new
   upload and never evicts a waiting one, because the computer has not received it yet; the phone
   keeps the recording and tries again later. The whole relay keeps at most 2 GiB. An upload
   expires 48 hours after it was stored, longer than the 24-hour request TTL (section 23), so a
   request replayed late still finds its body. Unpairing the device removes its uploads.
+
+#### 24.1a An upload sent in pieces
+
+A connection that cuts long requests never delivers a 3 MB body in one request. A phone may send
+the same sealed bytes as consecutive pieces instead; a cut then costs the piece in flight. A relay
+that takes pieces says `"uploadPieces": true` in `GET /v1/health`; with a relay that does not, the
+phone uses the whole-body `PUT` above.
+
+| Method and path | Auth | Scope | Body / result |
+| --- | --- | --- | --- |
+| `PUT /v1/uploads/{uploadId}/pieces?offset=N&total=T` | device bearer | `chat:write` | body `application/octet-stream`, 1 byte to 1 MiB: bytes `N` to `N+len-1` of an upload of `T` bytes → `200 {"id","held","total","complete":false}`, or `201` with `"complete":true` for the piece that reaches `T` |
+| `GET /v1/uploads/{uploadId}/pieces` | device bearer | `chat:write` | `200 {"id","held","total","complete"}`; 404 when unknown, expired or another device's |
+
+- `offset` 0 starts the upload. Every later piece must start at `held`. A piece that starts
+  anywhere else, including a repeat of a piece whose answer was lost, gets `409` with
+  `data.held`, and the phone continues from there. `409` without `data` means the id belongs to
+  another device or to a finished upload of another size.
+- The hub sees nothing until the last piece is in: `GET /v1/hub/uploads/{uploadId}` answers 404
+  for an upload still arriving. The finished upload is an ordinary one (same expiry, fetch and
+  delete). A repeat of the last piece, or any piece of a finished upload of the same `total`,
+  answers `201` with `"complete":true`.
+- The first piece reserves `total` against the device's 512 uploads and 192 MiB and against the
+  relay's 2 GiB, with the same `429` and `507` as a whole upload, so a started upload has room
+  to finish. An upload still arriving expires 48 hours after its first piece. A whole-body `PUT`
+  under the same id replaces it.
+- Other errors: `400` without `offset` and `total`, or a piece that did not arrive whole; `413`
+  an empty piece, one over 1 MiB, one that runs past `total`, or `total` over 16 MiB; `415` wrong
+  content type; `429` with `Retry-After` over 16000 pieces an hour per device. Only the first
+  piece counts against the 600 uploads an hour. Pieces never count against the 600 requests a
+  minute the device's other routes share.
+- The relay checks nothing about the bytes. The hub's checks are unchanged: the sealed bytes
+  must open with the key from `POST /recordings` and match its SHA-256.
+
+**Pieces in any order.** A phone whose app is closed hands every piece to the system at once;
+the system sends them when and in the order it likes and retries each by itself. With
+`&size=S` on the `PUT` the upload is cut into pieces of `S` bytes (1 byte to 1 MiB, at most 1024
+pieces; the last may be shorter) and the relay takes a piece at any place. A relay that does this
+says `"uploadPiecesAnyOrder": true` in `GET /v1/health`.
+
+- `offset` must be a multiple of `S` and the body `S` bytes long, or end at `total`; anything
+  else is `413`. Whichever piece arrives first starts the upload and reserves `total`.
+- Answers and `GET .../pieces` then also carry `"size": S` and `"have"`, one character per
+  piece, `1` for a piece the relay holds; `held` is the bytes held, not a position. A piece the
+  relay already holds is answered `200` and not written again. The piece that fills the last
+  gap answers `201` with `"complete":true`.
+- `409` with `data.size` and `data.have`: the upload is cut with another `S`. The phone sends
+  with the relay's size.
+- An upload begun without `size` continues with it: the whole pieces already held count, a
+  partly held one is sent again. Once an upload has a size, a `PUT` without `size` is taken by
+  the same rules.
+
+#### 24.1b An upload body sent as text (additive, 2026-11-21)
+
+A tunnel or proxy in front of a relay may read the start of each request body and refuse what
+looks like an attack to it, with a `403` of its own. Sealed bytes are random, so now and then a
+body matches, and the same body matches every time: on 2026-11-21 about one piece in forty was
+refused this way and its part never arrived. A phone may send the same bytes as base64 text
+instead. A relay that takes this says `"uploadsAsText": true` in `GET /v1/health`; with a relay
+that does not, the phone sends bytes as before.
+
+- `PUT /v1/uploads/{uploadId}` and `PUT /v1/uploads/{uploadId}/pieces` with
+  `Content-Type: text/plain` carry standard base64 with padding (RFC 4648 section 4) of the bytes
+  the same request would carry as `application/octet-stream`. The relay stores the decoded bytes.
+- `offset`, `total` and `size` count the bytes, never the text. Every limit is on the bytes: a
+  piece is 1 byte to 1 MiB, an upload at most 16 MiB.
+- One upload may mix the two: a piece is stored the same whichever way it arrived.
+- `400` for text that is not base64; `415` for any other content type. All other answers are
+  those of 24.1 and 24.1a.
+
+#### 24.1c What the relay holds of a phone's uploads (additive, 2026-11-22)
+
+A phone with many parts waiting must finish the uploads it has begun before it begins more: a
+begun upload keeps its place on the relay for 48 hours, and a relay whose places are taken
+refuses every new upload (`429`). The phone marks a part before its first byte leaves, so it
+cannot tell from its own records which parts the relay holds. On 2026-11-22 uploads half sent
+the evening before held every place, the phone began with other parts, and each was refused.
+
+| Method and path | Auth | Scope | Result |
+| --- | --- | --- | --- |
+| `GET /v1/uploads` | device bearer | `chat:write` | `200 {"uploads":[{"id","held","total","complete"}]}` |
+
+- The list is the device's own uploads that have not expired: the whole ones its hub has not
+  fetched (`complete: true`, `held` equal to `total`), then the ones still arriving, each oldest
+  first. Another device's uploads are never in it. An empty list is `[]`.
+- Asking changes nothing on the relay. The request counts against the upload routes' own
+  request limit.
+- A relay that has this route says `"uploadList": true` in `GET /v1/health`. With a relay that
+  does not, the phone goes on as before.
+- A phone sends the pieces a listed upload still misses before it starts a new upload, and when
+  the relay answers `429` to a new upload it goes on with the listed ones: their pieces need no
+  new place.
 
 ### 24.2 `POST /recordings` (hub route, scope `chat:write`)
 
@@ -3692,6 +3824,10 @@ One request per part, sent after its upload succeeded:
   when the last part and every part before it are stored. `startedAt` and `durationSeconds`
   describe this part. `source` is `watch`
   or `phone`. `title` (at most 200 bytes) and `device` are optional. No location is sent.
+- Optional `upload.relay` names the relay holding this part. Use `pinned` for the configured relay
+  or `direct` for the computer's own relay reached through iroh. If omitted, the computer uses
+  its usual relay first and tries its direct relay only if the pinned relay answers 404. It deletes
+  the upload from the relay that supplied it only after verifying and storing the part.
 - The computer fetches the upload, opens it with the key, nonce and the AAD built from its hub id,
   the requesting device's id and the upload id, checks `bytes` and `sha256`, stores the part
   under `mobile/recordings/<recordingId>/` (files 0600, folders 0700), deletes the upload from the
@@ -3727,12 +3863,76 @@ One request per part, sent after its upload succeeded:
   its own that starts at that part and is transcribed, listed and deleted like any other. The
   phone keeps sending the recording id and part numbers it knows; the answer names that id.
   Deleting the recording deletes its continuations, and a part of a deleted recording is never
-  stored. Whenever the computer refuses a part for good (`400` after it fetched the upload), it
-  also removes the upload from the relay, so refused copies never fill the phone's quota there.
+  stored. If the computer refuses a part (`400` after fetching it), the upload stays on the relay.
   A relay that answers the computer's fetch with anything but `200` or `404` gives `503`: the
   phone tries again later and does not count a refusal.
   The computer deletes a recording's audio 14 days after it was transcribed; the transcript and
   the recording's row stay.
+
+### 24.2a A part told ahead of its upload (additive, 2026-11-19)
+
+A phone hands a part to its system and the upload goes on while the app sleeps. Nobody is awake
+when it arrives, so a phone that tells the computer only after the upload needs one more wake per
+part. On 2026-11-19 four whole parts waited on the relay for five hours that way.
+
+- The computer advertises `"recordingAhead": true` in `GET /status`. A phone sends what follows
+  only to a computer that does; a computer that advertises it also takes `upload.relay`,
+  `context` and `marks`.
+- The phone sends the request of 24.2 with `"ahead": true` when it hands the part over, before
+  the upload is on the relay. It names the relay in `upload.relay`.
+- If the computer already holds the part, or the upload is on the relay, the request is handled
+  as in 24.2 and answered `202` with the recording view.
+- If the upload is not on the relay, the computer keeps the request (in
+  `mobile/recordings/expected.json`, mode 0600) and answers `202` with
+  `{"id":"<recordingId>","state":"expected"}`. **`expected` never means the computer has the
+  part.** The phone keeps the part and its audio.
+- The computer asks the relay for each expected part every 30 seconds. When the upload is there
+  it verifies and stores the part exactly as in 24.2 and only then deletes the relay's copy.
+- A kept request is dropped, and the relay's copy left alone, when: its device is no longer
+  paired; it is 72 hours old (a relay keeps an upload 48 hours); the upload fails its check (the
+  phone still has the part and sends it under a new upload id). At most 256 are kept.
+- While observing is paused the answer is `409 observation_paused` as in 24.2, nothing is kept,
+  and expected parts are not fetched until observing resumes.
+- The phone removes a part only on an answer whose state is not `expected`, to either form of
+  the request. On its next wake it asks about a part it told ahead before it uploads anything
+  of it again: the relay's copy is gone once the computer has the part.
+- **Both ways keep working.** A phone that never sends `ahead` gets 24.2 unchanged, `404
+  upload_missing` included. A phone that knows `ahead` and a computer that does not advertise
+  it use 24.2 unchanged.
+
+### 24.2b What the phone's passes came to (additive, 2026-11-20)
+
+On 2026-11-20 a phone woke four times, its uploads reached the relay, and no part request reached
+the computer. Nothing said whether the phone's pass ran or where it stopped.
+
+- The computer advertises `"recordingPasses": true` in `GET /status`. A phone sends what follows
+  only to a computer that does.
+- The phone keeps a record of its last 20 passes: written when a pass starts and again when it
+  ends, so a pass that is cut off or hangs still shows. A wake that finds a pass still running
+  starts none and adds one to that record's `skipped`.
+- `POST /recordings/passes` (hub route, scope `chat:write`) with `{"passes":[record]}`, 1 to 20
+  records the computer has not been told of. A record is
+  `{"startedAt":"<RFC 3339>","seconds":<number, absent while the pass runs>,"pending":n,"whole":n,
+  "notDue":n,"began":n,"beganWhole":n,"beganHanded":n,"beganNo":n,"told":n,"toldFailed":n,
+  "posted":n,"taken":n,"inFlight":n,"refused":n,"outcome":"<word>","stoppedBy":"<word>",
+  "skipped":n,"replacedStale":<1, absent otherwise>}`. A word is at most 64 letters, digits and dashes. Unknown fields are refused.
+- A computer that advertises `"recordingPassRestarts": true` also takes `"restarted":n` in a
+  record: the parts the phone's system had held for minutes without an end and the pass started
+  afresh (absent when none). A phone leaves the field out for a computer that does not advertise it.
+- A computer that advertises `"recordingInWakeSend": true` allows the phone to send the pieces of
+  a part itself while it is awake in the background (24.1a, the same piece requests), and takes
+  `"sentInWake":n` in a record: the parts sent that way until the relay held them whole (absent
+  when none). It is the computer's rollback switch: for a computer that does not advertise it the
+  phone hands every piece to its system as before and leaves the field out.
+- **A record holds counts, a duration and short words. Nothing of a recording is in it:** no id,
+  no name, no time of a recording, no text.
+- The computer answers `200` with `{"received":n}` and writes one line per record to its log. It
+  stores nothing else. `400` when a record is not valid; nothing is written then.
+- A pass that had not ended is told again when it ends.
+- A running pass that has done nothing for 180 seconds (longer than the longest wait for one
+  answer) no longer holds back the next wake: that wake starts a pass of its own, whose record has
+  `"replacedStale":1`. The replaced pass ends what it waits for and changes nothing else. A part
+  both of them send is one part to the computer (its idempotency key).
 
 ### 24.3 `GET /recordings?ids=<uuid,uuid>` (hub route, scope `chat:write`)
 
@@ -4020,7 +4220,8 @@ send `context` to a computer that does not: the request decoder refuses unknown 
 - The context travels only inside this sealed request. The relay never sees it.
 - A context the computer cannot use (impossible values, a place that is not a name) is dropped
   without refusing the part.
-- The computer stores the context with the part and deletes it whenever it deletes the part's
+- The computer keeps each field only while its own switch allows it (24.15). It stores the
+  permitted context with the part and deletes it whenever it deletes the part's
   audio: when the transcript is deleted or retired, and at the 14-day audio removal.
 - Nothing is sampled while the watch is not recording. While observing is paused the computer
   refuses the part (24.2), and the context with it.
@@ -4075,6 +4276,36 @@ the setting, and a phone shows no switch then).
   after now). Without `startedAt` it is `400`: the phone cannot turn listening on by itself.
 
 A recording made on the phone is not affected.
+
+### 24.15 Heart rate and Place, the person's settings (2026-11-21)
+
+The computer and phone share one choice for each field. Both start off. Protocol v1 adds
+these fields to `GET /status`:
+
+```json
+"watchHeartRate": {"on": false, "chosen": false},
+"watchPlace": {"on": false, "chosen": false}
+```
+
+- `GET /settings/watch-heart-rate` and `GET /settings/watch-place` (scope `chat:write`)
+  answer the corresponding setting. `POST` to the same route with `{"on": true}` or
+  `{"on": false}` saves the choice and answers it. Either choice makes `chosen` true.
+- When a field is absent on an older computer, the phone keeps its own switch as today.
+  A failed settings read returns an error on the settings route and omits the field from
+  status. A phone that already knows the computer supports the setting can retry the read.
+- While `chosen` is false, the computer keeps the fields it receives according to the watch’s own switches.
+  From the moment the person explicitly chooses off, the computer discards that field from incoming parts,
+  including advance announcements (24.2a) and parts from older watches that still send it.
+  The computer accepts the part, its audio, its marks and the other permitted field as usual.
+  Turning either switch off leaves earlier context with its words until the usual deletion
+  or audio expiry (24.4). Turning one on lets the watch ask for its permission when next raised.
+- `watchPairing: true` in status means a phone may report whether it has a paired watch
+  with Isoform installed. `POST /watch/pairing` (scope `chat:write`) takes `{"paired": true}`
+  or `{"paired": false}` and answers the report. Send it once the phone knows and whenever it
+  changes. An older phone need never report. Its pairing state stays unknown on the computer,
+  which can still show when it last received watch audio through that phone.
+- Listening uses the same off and time as 24.14 on both surfaces. Only the wearer's start
+  on the watch can end that off.
 
 ## 26. Your work: one list for the phone and the computer (phone redesign B2, 2026-11-15)
 
@@ -4300,6 +4531,11 @@ day after setup only:
 - An item with an agent (`with_agent`) or back from one names its hand-off in `ref.handoffId`, the id
   `GET /agents/handoffs/status` uses (27.2). Work sent to a connected agent comes back as `back` once
   the agent posts its result: `work.text` is its summary.
+- Every `back` item (computer-today v1.1.0 rules 4 and 5, 2026-11-21) has `noticed` set to the one
+  sentence of what it made, the summary's first sentence ("{title} is ready." with no summary), and
+  `reasons` `["wrong_facts","missed_point","myself"]`: Not useful may take one of them
+  (`{"action":"not_useful","reason":"missed_point"}`); any other reason, or a reason on Useful, is `400`.
+  A local task's result carries `files` too when its agent posted them.
 - A result carries the files the agent made: `files: [{"id","name","where","readable","bytes"?}]`. The
   phone says `{where}, on your computer`. `readable` is true for text (Markdown, plain text, CSV, JSON,
   YAML, a log or a diff) of 256 KB or less: Read it. Anything else is Open on your computer. A file

@@ -41,7 +41,11 @@ func (a *App) GetMessagesOverview() (MessagesOverview, error) {
 	}
 	ctx := context.Background()
 	view.Granted = view.Supported && messagesHistoryAccess()
-	view.Enabled = a.isPermissionEnabled(messagesPermissionKey)
+	enabled, err := a.messagesSwitchRead(ctx)
+	if err != nil {
+		return view, err
+	}
+	view.Enabled = enabled
 	last, lastErr, _ := a.imessage.status()
 	view.LastError = lastErr
 	if !last.IsZero() {
@@ -87,6 +91,10 @@ func (a *App) ForgetMessages() error {
 	} else if _, err := a.store.DeleteAllMessageAsks(context.Background()); err != nil {
 		return err
 	}
+	// What the assistant was given from Messages goes with it (See them).
+	if _, err := a.store.ForgetAssistantCallsForKind(context.Background(), "messages"); err != nil {
+		return err
+	}
 	a.emitBrowserEvent(imessageSyncedEvent)
 	return nil
 }
@@ -96,7 +104,11 @@ func (a *App) SyncMessagesNow() error {
 	if a == nil || a.imessage == nil {
 		return errors.New("Messages is not available on this computer")
 	}
-	if !a.isPermissionEnabled(messagesPermissionKey) {
+	enabled, err := a.messagesSwitchRead(context.Background())
+	if err != nil {
+		return err
+	}
+	if !enabled {
 		return errors.New("messages reading is switched off")
 	}
 	if a.IsClosedEyesModeEnabled() {
@@ -108,6 +120,6 @@ func (a *App) SyncMessagesNow() error {
 	if a.imessage.access() != imessage.StateAllowed {
 		return errors.New("Isoform does not have Full Disk Access")
 	}
-	_, err := a.imessage.Sync(context.Background(), "refresh")
+	_, err = a.imessage.Sync(context.Background(), "refresh")
 	return err
 }

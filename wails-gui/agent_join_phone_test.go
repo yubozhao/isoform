@@ -14,7 +14,7 @@ import (
 // (phone-agent v1.2.0 rule 9); when the agent answers, that phone alone is
 // told once, within the link's ten minutes (rule 11); its Yes connects it.
 func TestPhoneMakesTheJoinChecksTheCodeAndIsToldOnce(t *testing.T) {
-	app, _ := newAgentJoinTestApp(t)
+	app := newAgentJoinTestApp(t)
 	bridge, relay := mobileTestHub(t)
 	app.mobileBridge = bridge
 	bridge.app = app
@@ -87,7 +87,7 @@ func TestPhoneMakesTheJoinChecksTheCodeAndIsToldOnce(t *testing.T) {
 // disconnected; Connect again is a new join that names it, and joining again
 // clears it (phone-agent v1.2.0 §6).
 func TestDisconnectedAgentsStayForConnectAgain(t *testing.T) {
-	app, _ := newAgentJoinTestApp(t)
+	app := newAgentJoinTestApp(t)
 	joinTestAgent(t, app, "Claude Code")
 	joinTestAgent(t, app, "Ana's Helper")
 	ids := map[string]string{}

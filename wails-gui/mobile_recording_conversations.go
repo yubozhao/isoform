@@ -188,7 +188,11 @@ func (a *App) mobileConversationsFor(store *mobileRecordingStore, deviceID strin
 		out.Conversations = append(out.Conversations, mobileConversationView(c, byID))
 	}
 	pauses := watchLanePauses(a)
-	lane := buildWatchLane(own, a.watchConversationSpeechOf(own, dayStart.Add(-2*time.Hour)), pauses, now)
+	speech, err := a.watchConversationSpeechOf(own, dayStart.Add(-2*time.Hour))
+	if err != nil {
+		return out, nil, nil, err
+	}
+	lane := buildWatchLane(own, speech, pauses, now)
 	for _, hour := range lane.Hours {
 		out.Hours = append(out.Hours, MobileConversationHour{Start: mobileTimestamp(time.UnixMilli(hour.Start)),
 			RecordedSeconds: hour.RecordedSeconds, TalkSeconds: hour.TalkSeconds, PausedSeconds: hour.PausedSeconds, Current: hour.Current})

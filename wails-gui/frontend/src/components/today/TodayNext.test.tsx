@@ -3,9 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import i18n from '@/i18n';
 import { TodayBriefSection } from './TodayBriefSection';
 import { TodayStatus } from './TodayStatus';
-import { TodayTopicsGrid } from './TodayTopicsGrid';
 import { todayNextBrief, dayShapeFixture } from './today-next.fixture';
-import type { TodayTopic } from './topics';
 
 vi.mock('@/hooks/useFirstBriefSeen', () => ({ useFirstBriefSeen: () => ({ current: null }) }));
 const handlers = { onStartChat: vi.fn(), onOpenTopic: vi.fn(), onOpenBriefConversation: vi.fn(async () => true), onRunNow: vi.fn(), onOpenMemory: vi.fn(), onOpenAutomations: vi.fn(), onOpenActivity: vi.fn(), onOpenPeople: vi.fn() };
@@ -91,13 +89,6 @@ it('joins date and statuses on one meta line, with Make it now only in the card'
     expect(screen.getByTestId('today-status')).toHaveClass('flex-wrap');
     expect(screen.getByTestId('today-status')).toHaveTextContent("Your morning brief didn't come at 7:00 AM.");
     expect(screen.queryByRole('button', { name: 'Make it now' })).not.toBeInTheDocument();
-});
-
-it('puts waiting topics first and preserves brief order within each group', () => {
-    // Today review v1.1.7 requires each visible topic to have a sourced line.
-    const topic = (id: string, status: string) => ({ id, name: id[0].toUpperCase() + id.slice(1), kind: 'work', status, latest: { text: 'Work moved', at: '2026-10-20T12:00:00Z' } }) as TodayTopic;
-    render(<TodayTopicsGrid topics={[topic('maya', 'following'), topic('priya', 'waiting'), topic('halcyon', 'following')]} briefTopicIds={['halcyon', 'priya', 'maya']} status="ready" selectedId={null} onPick={vi.fn()} onRetry={vi.fn()} onEdit={vi.fn()} />);
-    expect(screen.getAllByTestId('today-topic-card').map((c) => c.textContent)).toEqual([expect.stringContaining('Priya'), expect.stringContaining('Halcyon'), expect.stringContaining('Maya')]);
 });
 
 it.each(['Hold the memo at 3:45 PM?', '要为备忘录预留时间吗？'])('hides an untagged stored hold question: %s', (text) => {

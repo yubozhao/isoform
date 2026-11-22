@@ -68,6 +68,8 @@ type File struct {
 // Result is an agent's answer to one hand-off.
 type Result struct {
 	tasklink.Result
+	// Text is the explicit MCP result argument. Attachments contribute names only.
+	Text  string `json:"-"`
 	Files []File `json:"files,omitempty"`
 }
 
@@ -75,7 +77,7 @@ type Result struct {
 type Hooks struct {
 	// Authenticate names the joined agent a request comes from.
 	Authenticate func(r *http.Request) (agentID string, ok bool)
-	// Allowed runs on every request: task links on, Closed Eyes off.
+	// Allowed runs on every request: Closed Eyes off.
 	Allowed func() error
 	// Changed is told when items change (to save them).
 	Changed func()

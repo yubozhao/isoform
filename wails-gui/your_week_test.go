@@ -682,19 +682,6 @@ func TestYourWeekDropsWithdrawnActivityMinutes(t *testing.T) {
 	assertReduced("desktop delivery", delivered.YourWeek)
 	phone, _ := app.mobileBriefPhoneProjection(brief)
 	assertReduced("phone delivery", phone.YourWeek)
-	service, ok := app.ensureMobileBriefService().(*mobileBriefService)
-	if !ok || service.store == nil {
-		t.Fatal("mobile brief store unavailable")
-	}
-	if err := service.store.save(brief, now); err != nil {
-		t.Fatal(err)
-	}
-	entry, err := app.GetYourWeekForDate("2026-10-20")
-	if err != nil {
-		t.Fatal(err)
-	}
-	assertReduced("Activity date lookup", entry.Week)
-
 	if err := app.SetClosedEyesModeEnabled(true); err != nil {
 		t.Fatal(err)
 	}
@@ -920,27 +907,6 @@ func TestYourWeekFrozenWindowReappliesLiveTopicPrivacy(t *testing.T) {
 	}
 	if week == nil || len(topics) != 1 || topics[0] != "Borealis" {
 		t.Fatalf("withdrawn topic remained in the frozen week: %+v", week)
-	}
-}
-
-func TestGetYourWeekForDateFindsFrozenWeekAfterWorkdayChange(t *testing.T) {
-	app, brief, now := yourWeekFrozenWindowFixture(t,
-		[]time.Weekday{time.Monday, time.Tuesday, time.Wednesday, time.Thursday},
-		"2026-10-19", intPointer(5), 3,
-		[]yourWeekSnapshotRef{{ID: "t-halcyon", Minutes: 6 * 60}})
-	service, ok := app.ensureMobileBriefService().(*mobileBriefService)
-	if !ok || service.store == nil {
-		t.Fatal("mobile brief store unavailable")
-	}
-	if err := service.store.save(brief, now); err != nil {
-		t.Fatal(err)
-	}
-	entry, err := app.GetYourWeekForDate("2026-10-20")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if entry.Week == nil || entry.Week.Start != "2026-10-19" || entry.Week.End != "2026-10-23" {
-		t.Fatalf("Activity did not resolve the frozen week: %+v", entry)
 	}
 }
 

@@ -9,8 +9,6 @@
         "yesterday": "Yesterday"
     },
     "viewMode": {
-        "day": "Day",
-        "week": "Week",
         "timeline": "Screen timeline"
     },
     "sections": {
@@ -19,42 +17,25 @@
     "dayNav": {
         "previous": "Previous day",
         "next": "Next day",
-        "pickDate": "Pick a date"
+        "pickDate": "Pick a date",
+        "today": "Today",
+        "yesterday": "Yesterday"
     },
     "day": {
         "yourDay": "Your day",
-        "activeLineWithApps": "{{duration}} active · most of it in {{apps}}",
-        "activeLineNoApps": "{{duration}} active",
-        "appsJoin": "{{first}} and {{second}}",
-        "details": "Details",
-        "byHour": "Activity by hour",
-        "topApps": "Top applications",
-        "noHourly": "No hourly activity yet.",
-        "noApps": "No app breakdown yet.",
-        "hourTooltip": "{{hour}} · {{minutes}}m",
-        "hourAm": "{{hour}} AM",
-        "hourPm": "{{hour}} PM",
-        "midnight": "12 AM",
-        "noon": "12 PM",
         "workedOn": "What you worked on",
         "isoformRan": "Isoform ran {{name}}",
         "unknownSchedule": "a schedule",
         "openResult": "Show",
-        "learned": "What it learned",
-        "learnedKnowHow": "How you do things",
-        "learnedAboutYou": "About you",
-        "untitled": "Untitled",
-        "noContent": "No content.",
         "noMatches": "Nothing matches \"{{query}}\" on this day.",
-        "empty": "Nothing recorded for this day.",
         "sectionEmpty": "Nothing here for this day.",
         "workedOnSoon": "What you worked on shows up after about 30 minutes.",
         "people": "People: {{names}}",
         "links": "Links: {{names}}",
         "deleteFromHistory": "Delete from history",
-        "learnedShowMore": "Show more",
         "deleteMomentFailed": "Couldn't delete this from history.",
-        "isoformUpdatedTopics": "Isoform updated your topics"
+        "isoformUpdatedTopics": "Isoform updated your topics",
+        "agentRunsFailed": "Your agents' runs on the screen could not be loaded."
     },
     "rowActions": {
         "addFollowUp": "Add follow-up",
@@ -94,48 +75,7 @@
         "choicesFailed": "Couldn't load reminder times."
     },
     "noticed": {
-        "followUpFailedInline": "Couldn't add the follow-up. Try again",
-        "title": "Isoform noticed",
-        "from": "From {{time}} · {{title}}",
-        "addFollowUp": "Add follow-up",
-        "makeRoutine": "Make a routine",
-        "notNow": "Not now",
-        "notNowToast": "Isoform won't suggest this again.",
-        "notNowFailed": "Couldn't hide this suggestion. Try again.",
-        "routine": {
-            "editDescription": "Edit the saved schedule. Changes take effect when you save.",
-            "whenManual": "No time (manual only)",
-            "title": "Make a routine",
-            "description": "Isoform drafted this from the steps it saw. Nothing is saved or run until you press Save.",
-            "name": "Name",
-            "when": "When it runs",
-            "whenNone": "No set time (save to Knowledge)",
-            "whenDaily": "Every day",
-            "whenWeekdays": "Every weekday",
-            "whenWeekly": "Every week",
-            "day": "Day",
-            "time": "Time",
-            "steps": "Steps (one per line)",
-            "will": "What it will do (one per line)",
-            "wont": "What it won't do (one per line)",
-            "save": "Save",
-            "cancel": "Cancel",
-            "savedSchedule": "Scheduled. It runs on the schedule you picked, and you'll find it in Tasks.",
-            "savedKnowhow": "Saved to Knowledge.",
-            "failed": "Couldn't save the routine. Try again.",
-            "needsName": "Give the routine a name.",
-            "needsSteps": "Add at least one step."
-        },
-        "weekday": {
-            "mon": "Monday",
-            "tue": "Tuesday",
-            "wed": "Wednesday",
-            "thu": "Thursday",
-            "fri": "Friday",
-            "sat": "Saturday",
-            "sun": "Sunday"
-        },
-        "notNowFailedLine": "Couldn't hide this suggestion."
+        "makeRoutine": "Make a routine"
     },
     "threads": {
         "span": "{{start}} to {{end}}",
@@ -367,58 +307,6 @@
         "snapshotDistanceHint": "Screen capture briefly failed around this moment, so the closest available snapshot is shown instead. This usually happens on hardware-accelerated apps (WebView2, Direct3D).",
         "ocrFailed": "Couldn't read the text on this screen."
     },
-    "summary": {
-        "noWeeklyActivity": "No activity recorded this week",
-        "weekOf": "Week of {{start}} – {{end}}",
-        "labels": {
-            "today": "Today",
-            "yesterday": "Yesterday"
-        },
-        "meta": {
-            "active": "{{value}} active",
-            "perDay": "{{value}} / day"
-        },
-        "generating": "Generating...",
-        "card": {
-            "regenerating": "Regenerating {{label}}...",
-            "regenerate": "Regenerate {{label}}",
-            "generate": "Generate {{label}}",
-            "digest": "digest",
-            "weeklyDigest": "weekly digest",
-            "chatAboutDay": "Chat about this day",
-            "chatAboutWeek": "Chat about this week",
-            "copy": "Copy",
-            "copied": "Copied",
-            "todayUnfolding": "Your day is still unfolding. Generate a digest anytime, or check back when the day wraps up.",
-            "noneDay": "No digest yet for this day.",
-            "unavailableDay": "Digest unavailable.",
-            "unavailableWeek": "Weekly digest unavailable.",
-            "freshnessTodayPartial": "Generated at {{time}}. Later activity may not be included.",
-            "freshnessPastPartial": "Generated before the day finished. Final digest will refresh automatically.",
-            "refresh": "Refresh",
-            "refreshing": "Refreshing...",
-            "languageHint": "Generated in {{lang}}",
-            "regenerateInCurrent": "Regenerate in {{lang}}",
-            "writingDay": "Writing your day...",
-            "writingWeek": "Writing your week...",
-            "writingNewer": "Writing a newer version…",
-            "writtenAt": "Written at {{time}}. Later work may not be in it.",
-            "writeAgain": "Write it again",
-            "writeFailed": "Couldn't write your day. Try again.",
-            "dayNotWritten": "This day isn't written yet.",
-            "weekNotWritten": "Your week isn't written yet.",
-            "writeIt": "Write it",
-            "loadFailed": "Couldn't load your day.",
-            "tryAgain": "Try again"
-        },
-        "languageName": {
-            "en": "English",
-            "zh-CN": "Chinese"
-        }
-    },
-    "yourWeek": {
-        "title": "Your week"
-    },
     "session": {
         "frames": "{{count}} frames",
         "peopleHeading": "People ({{count}})",
@@ -603,12 +491,6 @@
         "tryAgain": "Try again",
         "openInChat": "Open in Chat"
     },
-    "week": {
-        "yourWeekFailed": "Couldn't load Your week.",
-        "loadFailed": "Couldn't load this week.",
-        "recapFailed": "Couldn't write the weekly recap.",
-        "noActivity": "—"
-    },
     "timeline": {
         "sessionsFailed": "Couldn't load your sessions."
     },
@@ -629,13 +511,6 @@
             "hourPaused_other": "{{hour}}: paused for {{count}} min",
             "hourQuiet": "{{hour}}: quiet"
         },
-        "conversations": "Conversations",
-        "hours": "Hours",
-        "conversationRange": "{{start}} to {{end}}",
-        "conversationWords_one": "{{count}} word",
-        "conversationWords_other": "{{count}} words",
-        "conversationAcross_one": "in {{count}} hour",
-        "conversationAcross_other": "across {{count}} hours",
         "empty": "Recordings from your watch show here once your phone has sent them.",
         "loadFailed": "The recordings could not be loaded.",
         "untimed": "Recording",
@@ -664,11 +539,14 @@
         "transcriptEmpty": "Nothing to show. The words are private, or observing is paused.",
         "voiceNotEnrolled": "Add your voice in Settings so Isoform can tell which words are yours.",
         "openTimeline": "Show in Screen timeline",
-        "delete": "Delete everywhere",
-        "deleteTitle": "Delete everywhere?",
-        "deleteBody": "The recording and what Isoform learned only from it go from your watch, your phone and your computer.",
-        "deleteConfirm": "Delete",
-        "deleteFailed": "Didn't delete. Try again."
+        "back": "Back to your watch",
+        "rowsFailed": "Your watch's conversations could not be loaded.",
+        "pageFailed": "This conversation could not be loaded.",
+        "pageGone": "This conversation is no longer kept.",
+        "notes": "Notes",
+        "noTalk": "Nothing was said in this hour.",
+        "conversationAt": "{{start}} to {{end}}",
+        "laneFailed": "The watch's hours couldn't be read."
     },
     "act": {
         "sub": "What Isoform saw today, by time and source. Forget anything; what was made from it goes too.",
@@ -705,7 +583,17 @@
             "signedOut": "Your assistant was signed out",
             "offline": "There was no internet"
         },
-        "tabAnswers": "Your answers"
+        "tabAnswers": "Your answers",
+        "readBecause": "read because Learn from it is on for {{agent}}",
+        "agentOnScreen": "{{agent}} working on its own · not counted as your work",
+        "agentOnScreenUnnamed": "An agent working on its own · not counted as your work",
+        "forgetShared": "Forget \"{{name}}\"? It shares its hours with \"{{other}}\", which goes too.",
+        "notThisTopic": "Not this topic",
+        "openPage": "Open the page",
+        "openFile": "Open {{label}}",
+        "openCall": "Open the recording",
+        "conversationGone": "That conversation is no longer kept.",
+        "remindMe": "Remind me…"
     },
     "feed": {
         "label": "Timeline",
@@ -726,24 +614,43 @@
         "watchWords_other": "{{count}} words heard",
         "watchNoWords": "Nothing was said",
         "agentTitle": "Worked for {{length}}",
-        "agentLine": "Your agent's work, not counted as yours.",
         "goes": {
             "topic": "its place in {{topic}}",
             "goal": "the goal {{goal}}",
             "goalUntitled": "a goal made from it",
             "screen": "the screen from {{start}} to {{end}}",
             "moment": "the screen of {{moment}}, which shares it",
-            "notes": "the notes made from it"
+            "notes": "the notes made from it",
+            "followupUntitled": "a follow-up made from it",
+            "claimUntitled": "something Isoform thinks about you",
+            "claim": "\"{{claim}}\"",
+            "conversation": "the conversation {{name}}, in the same hours",
+            "conversationAt": "the conversation from {{start}} to {{end}}, in the same hours"
         },
         "where": {
             "topics": "Your topics",
             "goals": "Goals",
             "screen": "Screen",
             "activity": "Activity",
-            "watch": "Watch"
+            "watch": "Watch",
+            "work": "Your work",
+            "aboutYou": "You · About you"
         },
         "untitledHandoff": "A hand-off",
-        "forgetRow": "Forget: {{title}}"
+        "forgetRow": "Forget: {{title}}",
+        "spokeYou": "You",
+        "otherVoices_one": "{{count}} other",
+        "otherVoices_other": "{{count}} others",
+        "marks_one": "{{count}} mark",
+        "marks_other": "{{count}} marks",
+        "note": "note",
+        "openRow": "Open: {{title}}",
+        "forgetNoLonger": "That's no longer kept, so nothing was forgotten. The list is up to date now.",
+        "moreRow": "More for {{title}}",
+        "detailsFailed": "The rows' topics could not be loaded.",
+        "notThisTopicFailed": "Didn't take it out of the topic.",
+        "openWhereFailed": "Couldn't open it.",
+        "remindersFailed": "Your reminders could not be read."
     },
     "ans": {
         "title": "Your answers",
@@ -760,6 +667,8 @@
             "yes": "Yes",
             "no": "No",
             "not_mine": "Not mine",
+            "not_this_topic": "Not this topic",
+            "not_this": "Not this",
             "edit": "Edit",
             "useful": "Useful",
             "not_useful": "Not useful"
@@ -790,6 +699,21 @@
             "chat": "Chat",
             "other": "Other"
         },
-        "forgetRow": "Forget: {{title}}"
+        "forgetRow": "Forget: {{title}}",
+        "undo": "Undo",
+        "undoRow": "Undo: {{title}}",
+        "undoFailed": "Didn't undo it. It can be undone until the next brief.",
+        "reason": {
+            "already_done": "Already done",
+            "not_now": "Not now",
+            "not_useful": "Not useful",
+            "myself": "I'll do it myself",
+            "not_needed": "Not needed",
+            "wrong_facts": "Wrong facts",
+            "not_how_id_say": "Not how I'd say it",
+            "was_true_once": "Was true once",
+            "only_sometimes": "Only sometimes",
+            "not_at_all": "Not at all"
+        }
     }
 }

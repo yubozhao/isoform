@@ -3,9 +3,10 @@
 // while Developer tools are on: by default in staging and dev builds, and
 // Cmd/Ctrl+Shift+Option+D turns them on or off in any build.
 //
-// Nothing a user needs lives here. Run setup again is on Help and about,
-// Import memories and Preview chat context are on Learning and memory, and
-// Show tool steps in chat is on General.
+// Nothing a user needs lives here. Run setup again is on About and Import
+// memories on You › About you. Memory and search holds the chat context and
+// daily topics previews and the search index, from Learning and memory's
+// Advanced (settings batch D3).
 //
 // Ids must not collide with user-facing Settings page ids
 // (settings-registry.ts): the notification test page is "notification-tests"
@@ -17,7 +18,7 @@ export const DEV_TOOLS_GROUPS = [
     },
     {
         id: "learning",
-        topics: ["triage", "purpose-map"],
+        topics: ["triage", "purpose-map", "memory-debug"],
     },
     {
         id: "testing",

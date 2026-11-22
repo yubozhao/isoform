@@ -57,12 +57,13 @@ const cronJobs: CronJobsProp = {
 
 /** Harness holding the section state the way App does: the page is
  *  controlled, and the pick is remembered outside it. */
-function Harness({ initialSection = 'yourDay' as ActivitySectionId, initialDate = null as string | null, initialFocus = null as MobileBriefActivityTarget | null }) {
+function Harness({ initialSection = 'yourDay' as ActivitySectionId, initialDate = null as string | null, initialFocus = null as MobileBriefActivityTarget | null, initialConversationId = null as string | null }) {
     const [section, setSection] = useState<ActivitySectionId>(initialSection);
     const [focus, setFocus] = useState(initialFocus);
     return (
         <ActivityPage
             initialDate={initialDate}
+            initialConversationId={initialConversationId}
             noticedFocus={focus}
             onNoticedFocusConsumed={() => setFocus(null)}
             cronJobs={cronJobs}
@@ -123,22 +124,87 @@ describe('ActivityPage section panel', () => {
         expect(onSelect).toHaveBeenCalledWith(label);
     });
 
-    it('shows one section at a time, and the section rows pick it', async () => {
+    it('shows one section at a time, and the tabs pick it', async () => {
         await act(async () => {
             render(<Harness initialSection="yourDay" />);
         });
-        // Your day shows; the other day sections do not.
-        expect(screen.getByRole('heading', { name: enActivity.day.yourDay })).toBeInTheDocument();
+        // Your day is the feed; What you worked on is the Screen tab's.
+        expect(screen.getByTestId('activity-feed')).toBeInTheDocument();
         expect(screen.queryByRole('heading', { name: enActivity.day.workedOn })).toBeNull();
 
-        // Clicking "What you worked on" swaps the section.
         fireEvent.click(document.querySelector('[data-activity-section="workedOn"]') as HTMLElement);
         await waitFor(() => {
-            expect(screen.queryByRole('heading', { name: enActivity.day.yourDay })).toBeNull();
+            expect(screen.queryByTestId('activity-feed')).toBeNull();
             expect(screen.getByRole('heading', { name: enActivity.day.workedOn })).toBeInTheDocument();
         });
-        // The section row shows the current pick.
-        expect((document.querySelector('[data-activity-section="workedOn"]') as HTMLElement).getAttribute('aria-current')).toBe('page');
+        expect(document.querySelector('[data-activity-section="workedOn"]')).toHaveAttribute('aria-selected', 'true');
+        expect(document.querySelector('[data-activity-section="yourDay"]')).toHaveAttribute('aria-selected', 'false');
+    });
+
+    // computer-activity v1.0.0 rule 1: the title with its sub-line under it.
+    it('heads the page with Activity and its sub-line, and no section panel', async () => {
+        await act(async () => {
+            render(<Harness initialSection="yourDay" />);
+        });
+        expect(screen.getByRole('heading', { level: 1, name: enActivity.title })).toBeInTheDocument();
+        expect(screen.getByText(enActivity.act.sub)).toBeInTheDocument();
+        // The tabs replace the left section nav.
+        expect(screen.queryByRole('navigation', { name: enActivity.sections.label })).toBeNull();
+        expect(screen.getByRole('tablist', { name: enActivity.sections.label })).toBeInTheDocument();
+    });
+
+    it('moves between the five tabs with the arrow keys, wrapping at the ends', async () => {
+        await act(async () => {
+            render(<Harness initialSection="yourDay" />);
+        });
+        const tab = (id: string) => document.querySelector(`[data-activity-section="${id}"]`) as HTMLElement;
+        expect(tab('yourDay')).toHaveAttribute('tabindex', '0');
+        expect(tab('workedOn')).toHaveAttribute('tabindex', '-1');
+        fireEvent.keyDown(tab('yourDay'), { key: 'ArrowRight' });
+        await waitFor(() => expect(tab('workedOn')).toHaveAttribute('aria-selected', 'true'));
+        expect(document.activeElement).toBe(tab('workedOn'));
+        fireEvent.keyDown(tab('workedOn'), { key: 'ArrowLeft' });
+        await waitFor(() => expect(tab('yourDay')).toHaveAttribute('aria-selected', 'true'));
+        fireEvent.keyDown(tab('yourDay'), { key: 'ArrowLeft' });
+        await waitFor(() => expect(tab('answers')).toHaveAttribute('aria-selected', 'true'));
+        expect(document.activeElement).toBe(tab('answers'));
+    });
+
+    // computer-conformance-answers A4: one day at a time, previous and next beside the date.
+    it('steps the day with previous and next on Your day and has no Day/Week switch', async () => {
+        await act(async () => {
+            render(<Harness initialDate="2026-10-15" />);
+        });
+        const picker = screen.getByTitle(enActivity.dayNav.pickDate);
+        expect(picker).toHaveTextContent('Oct 15');
+        fireEvent.click(screen.getByRole('button', { name: enActivity.dayNav.previous }));
+        await waitFor(() => expect(screen.getByTitle(enActivity.dayNav.pickDate)).toHaveTextContent('Oct 14'));
+        expect(binding('GetActivityFeed')).toHaveBeenLastCalledWith(new Date(2026, 9, 14).getTime(), new Date(2026, 9, 15).getTime());
+        fireEvent.click(screen.getByRole('button', { name: enActivity.dayNav.next }));
+        await waitFor(() => expect(screen.getByTitle(enActivity.dayNav.pickDate)).toHaveTextContent('Oct 15'));
+        expect(screen.queryByRole('button', { name: 'Week' })).toBeNull();
+        expect(screen.queryByText('Week')).toBeNull();
+        expect(binding('GetWeeklySummary')).not.toHaveBeenCalled();
+    });
+
+    it('cannot step past today', async () => {
+        await act(async () => {
+            render(<Harness />);
+        });
+        expect(screen.getByTitle(enActivity.dayNav.pickDate)).toHaveTextContent(enActivity.dayNav.today);
+        expect(screen.getByRole('button', { name: enActivity.dayNav.next })).toBeDisabled();
+        fireEvent.click(screen.getByRole('button', { name: enActivity.dayNav.previous }));
+        await waitFor(() => expect(screen.getByTitle(enActivity.dayNav.pickDate)).toHaveTextContent(enActivity.dayNav.yesterday));
+    });
+
+    it.each([
+        ['yourDay', true], ['workedOn', true], ['agents', true], ['watch', false], ['answers', false], ['timeline', false],
+    ] as const)('shows the date on %s: %s', async (section, shown) => {
+        await act(async () => {
+            render(<Harness initialSection={section} />);
+        });
+        if (shown) expect(screen.getByTestId('activity-day-nav')).toBeInTheDocument();
+        else expect(screen.queryByTestId('activity-day-nav')).toBeNull();
     });
 
     // computer-activity v1.0.0 rule 2: the tabs are Your day, Screen, Watch
@@ -153,18 +219,23 @@ describe('ActivityPage section panel', () => {
         expect(document.querySelector('[data-activity-section="learned"]')).toBeNull();
     });
 
-    it('shows the agents tab as the timeline of agent rows only', async () => {
+    // computer-conformance-answers v1.1.0 P1: screen-seen agent runs are
+    // Screen rows; the Agents tab lists hand-offs only.
+    it('shows the agents tab as hand-offs only, not screen-seen agent runs or screen rows', async () => {
         const at = new Date().setHours(9, 0, 0, 0);
         binding('GetActivityFeed').mockResolvedValue([
+            { id: 'h-1', kind: 'handoff', startMs: at + 60_000, endMs: at + 120_000, title: 'Write the test plan', app: 'Claude Code' },
             { id: 'run-1', kind: 'agent', startMs: at, endMs: at + 600_000, activeMs: 600_000, app: 'Codex' },
             { id: 'm-1', kind: 'screen', startMs: at - 60_000, endMs: at, title: 'Pricing page copy', app: 'Safari' },
         ]);
         await act(async () => {
             render(<Harness initialSection="agents" />);
         });
-        expect(await screen.findByText('Your agents · Codex')).toBeInTheDocument();
+        expect(await screen.findByText('Write the test plan')).toBeInTheDocument();
+        expect(screen.queryByText('Your agents · Codex')).toBeNull();
+        expect(screen.queryByText('Worked for 10m')).toBeNull();
         expect(screen.queryByText('Pricing page copy')).toBeNull();
-        expect(document.querySelector('[data-activity-section="agents"]')).toHaveAttribute('aria-current', 'page');
+        expect(document.querySelector('[data-activity-section="agents"]')).toHaveAttribute('aria-selected', 'true');
         binding('GetActivityFeed').mockResolvedValue([]);
     });
 
@@ -172,6 +243,10 @@ describe('ActivityPage section panel', () => {
         binding('GetWatchRecordings').mockResolvedValue([{
             id: 'r1', source: 'watch', state: 'transcribed', startedAt: new Date().toISOString(), durationSeconds: 75,
             words: 3, ownerVoice: '', sessionId: 'rec-r1', hasAudio: false, parts: [],
+        }]);
+        binding('GetActivityWatchRows').mockResolvedValue([{
+            id: 'dev:1', kind: 'watch', startMs: Date.now() - 60_000, endMs: Date.now(), title: 'Pricing with Sam',
+            conversation: true, speakers: ['you'], device: 'watch', basis: { setting: 'watch' },
         }]);
         await act(async () => {
             render(<Harness initialSection="yourDay" />);
@@ -182,10 +257,11 @@ describe('ActivityPage section panel', () => {
             return found as HTMLElement;
         });
         fireEvent.click(door);
-        await waitFor(() => expect(screen.getByText('1:15 · ' + enActivity.watch.state.transcribed)).toBeInTheDocument());
-        expect(door.getAttribute('aria-current')).toBe('page');
-        expect(screen.queryByRole('heading', { name: enActivity.day.yourDay })).toBeNull();
+        await waitFor(() => expect(screen.getByText('Pricing with Sam')).toBeInTheDocument());
+        expect(door).toHaveAttribute('aria-selected', 'true');
+        expect(screen.queryByTestId('activity-feed')).toBeNull();
         binding('GetWatchRecordings').mockResolvedValue([]);
+        binding('GetActivityWatchRows').mockResolvedValue([]);
     });
 
     it('says in place when a frame screen text cannot be read, with Try again', async () => {
@@ -228,7 +304,7 @@ describe('ActivityPage section panel', () => {
         fireEvent.click(document.querySelector('[data-activity-section="workedOn"]') as HTMLElement);
         fireEvent.click(await screen.findByTestId('activity-open-timeline'));
         await waitFor(() => {
-            expect(document.querySelector('[data-activity-section="workedOn"]')).toHaveAttribute('aria-current', 'page');
+            expect(document.querySelector('[data-activity-section="workedOn"]')).toHaveAttribute('aria-selected', 'true');
             expect(binding('GetActivitySessions')).toHaveBeenCalled();
             expect(binding('GetActivityTimelineGroups')).toHaveBeenCalled();
         });
@@ -359,71 +435,32 @@ describe('ActivityPage section panel', () => {
         expect(screen.queryByTitle(enActivity.dayNav.pickDate)).toBeNull();
     });
 
-    it.each(['follow_up', 'routine'] as const)('opens the focused %s editor inside Your day without saving', async (action) => {
-        const focus = { date: '2026-10-15', suggestionId: 'suggestion-1', action };
-        binding('GetDayNoticed').mockResolvedValue([{
-            id: focus.suggestionId, kind: action, text: 'Follow up on the review', why: 'A decision is waiting.',
-            momentId: 'moment-1', momentTitle: 'Reviewing the plan', momentStartMs: new Date(2026, 9, 15, 10).getTime(),
-            routine: { name: 'Weekly review', when: 'weekly fri 16:00', steps: ['Read the plan'], will: ['Prepare notes'], wont: ['Send anything'] },
-        }]);
-        render(<Harness initialDate={focus.date} initialFocus={focus} />);
-        expect(await screen.findByRole('heading', { name: enActivity.noticed.title })).toBeInTheDocument();
-        expect(binding('GetDayNoticed')).toHaveBeenCalledWith(focus.date);
-        if (action === 'follow_up') {
-            expect(await screen.findByRole('textbox', { name: 'Follow-up' })).toHaveValue('Follow up on the review');
-        } else {
-            const dialog = await screen.findByRole('dialog');
-            fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    // Isoform noticed left Activity (A4): Today's suggestion link opens Your
+    // day on its date and is consumed, and nothing on the day reads it.
+    it('opens an old suggestion link on Your day for its date and consumes it', async () => {
+        const focus = { date: '2026-10-15', suggestionId: 'suggestion-1', action: 'follow_up' as const };
+        const consumed = vi.fn();
+        function FocusHarness() {
+            const [section, setSection] = useState<ActivitySectionId>('workedOn');
+            return (
+                <ActivityPage
+                    initialDate={focus.date}
+                    noticedFocus={focus}
+                    onNoticedFocusConsumed={consumed}
+                    cronJobs={cronJobs}
+                    section={section}
+                    onSectionChange={setSection}
+                />
+            );
         }
-        expect(binding('AddActivityFollowUp')).not.toHaveBeenCalled();
-        expect(binding('SaveNoticedRoutine')).not.toHaveBeenCalled();
-        expect(binding('GetActivitySessions')).not.toHaveBeenCalled();
-        fireEvent.click(document.querySelector('[data-activity-section="workedOn"]') as HTMLElement);
-        fireEvent.click(document.querySelector('[data-activity-section="yourDay"]') as HTMLElement);
-        expect(await screen.findByRole('heading', { name: enActivity.noticed.title })).toBeInTheDocument();
-        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-        expect(screen.queryByRole('textbox', { name: 'Follow-up' })).not.toBeInTheDocument();
-    });
-
-    it.each([false, true])('reveals a suggestion source even before moments and threads load (threaded: %s)', async (threaded) => {
-        const startMs = new Date(2026, 9, 15, 10).getTime();
-        const moment = {
-            id: 'moment-1', status: 'settled', title: 'Reviewing the plan', description: 'The review details.',
-            startMs, endMs: startMs + 60_000, activeMs: 60_000, category: 'build', categoryColor: '',
-            entities: [], apps: [], thumbnails: [], runCount: 1, inProgress: false,
-        };
-        let finishMoments!: (rows: unknown[]) => void;
-        let finishThreads!: (rows: unknown) => void;
-        binding('GetActivitiesInRange').mockReturnValue(new Promise((resolve) => { finishMoments = resolve; }));
-        binding('GetDayThreads').mockReturnValue(new Promise((resolve) => { finishThreads = resolve; }));
-        const groups = { grouped: threaded, threads: threaded ? [{
-            id: 'thread-1', title: 'Planning', kind: 'project', userTitled: false,
-            startMs, endMs: startMs + 60_000, timeSpentMs: 60_000, activityIds: ['moment-1', 'moment-2'],
-        }] : [] };
-        binding('GetDayNoticed').mockResolvedValue([{
-            id: 'suggestion-1', kind: 'follow_up', text: 'Follow up on the review', why: '',
-            momentId: moment.id, momentTitle: moment.title, momentStartMs: startMs,
-        }]);
-        render(<Harness initialDate="2026-10-15" />);
-        const source = await screen.findByRole('button', { name: /From .*Reviewing the plan/ });
-        fireEvent.click(source);
-        expect(document.querySelector('[data-activity-section="workedOn"]')).toHaveAttribute('aria-current', 'page');
         await act(async () => {
-            finishMoments(threaded ? [moment, { ...moment, id: 'moment-2', title: 'Preparing notes' }] : [moment]);
+            render(<FocusHarness />);
         });
-        await act(async () => { finishThreads(groups); });
-        expect(await screen.findByRole('button', { name: 'Delete from history' })).toBeInTheDocument();
-        expect(document.querySelector('[data-activity-section="workedOn"]')).toHaveAttribute('aria-current', 'page');
-        expect(screen.queryByRole('heading', { name: enActivity.noticed.title })).not.toBeInTheDocument();
-        expect(binding('GetActivitySessions')).not.toHaveBeenCalled();
-        fireEvent.click(screen.getByText(moment.title).closest('button')!);
-        expect(screen.queryByRole('button', { name: 'Delete from history' })).not.toBeInTheDocument();
-        binding('GetActivitiesInRange').mockResolvedValue(threaded ? [{ ...moment }, { ...moment, id: 'moment-2', title: 'Preparing notes' }] : [{ ...moment }]);
-        binding('GetDayThreads').mockResolvedValue(groups);
-        await act(async () => {
-            fixture.listeners.get('activity:activities-updated')?.forEach((handler) => handler(undefined));
-        });
-        expect(screen.queryByRole('button', { name: 'Delete from history' })).not.toBeInTheDocument();
+        await waitFor(() => expect(consumed).toHaveBeenCalledWith(focus));
+        expect(document.querySelector('[data-activity-section="yourDay"]')).toHaveAttribute('aria-selected', 'true');
+        expect(screen.getByTitle(enActivity.dayNav.pickDate)).toHaveTextContent('Oct 15');
+        expect(screen.getByTestId('activity-feed')).toBeInTheDocument();
+        expect(binding('GetDayNoticed')).not.toHaveBeenCalled();
     });
 });
 
@@ -436,29 +473,30 @@ describe('Activity first view and session reuse', () => {
         await i18n.changeLanguage('en');
     });
 
-    it('keeps the selected section while the digest loads and shows no menu counts', async () => {
-        let finishSummary!: (value: unknown) => void;
-        let finishKnowledge!: (value: unknown) => void;
-        let finishMemory!: (value: unknown) => void;
-        binding('EnsureDailySummary').mockReturnValue(new Promise((resolve) => { finishSummary = resolve; }));
-        binding('GetKnowledgeEntries').mockReturnValue(new Promise((resolve) => { finishKnowledge = resolve; }));
-        binding('GetMemoryEntries').mockReturnValue(new Promise((resolve) => { finishMemory = resolve; }));
+    // computer-conformance-answers A4: Your day is the record only.
+    it('shows Your day as the feed alone: no summary card, Isoform noticed or learned, and no tab counts', async () => {
+        binding('EnsureDailySummary').mockResolvedValue({ aiSummary: 'Fixture digest', aiSummaryStatus: 'ready', totalActiveMs: 3_600_000, hourlyActive: [], appBreakdown: [{ appName: 'Safari', activeMs: 3_600_000 }] });
+        binding('GetDayNoticed').mockResolvedValue([{ id: 's', kind: 'follow_up', text: 'Fixture notice', why: '', momentId: 'm', momentTitle: 'M', momentStartMs: 0 }]);
         binding('GetActivitiesInRange').mockResolvedValue([{
             id: 'fast-row', title: 'Public fixture row', startMs: new Date(2026, 9, 15, 9).getTime(), endMs: new Date(2026, 9, 15, 10).getTime(),
             apps: [], entities: [], thumbnails: [], runCount: 0, activeMs: 60_000,
         }]);
+        const at = new Date(2026, 9, 15, 9).getTime();
+        binding('GetActivityFeed').mockResolvedValue([
+            { id: 'f-1', kind: 'screen', startMs: at, endMs: at + 60_000, title: 'Feed fixture row', app: 'Safari' },
+        ]);
         render(<Harness initialDate="2026-10-15" />);
-        expect(await screen.findByRole('heading', { name: enActivity.day.yourDay })).toBeInTheDocument();
+        expect(await screen.findByText('Feed fixture row')).toBeInTheDocument();
+        await act(async () => { await Promise.resolve(); });
+        expect(screen.queryByText('Fixture digest')).not.toBeInTheDocument();
+        expect(screen.queryByText('Fixture notice')).not.toBeInTheDocument();
         expect(screen.queryByText('Public fixture row')).not.toBeInTheDocument();
-        expect(document.querySelector('[data-activity-section="yourDay"]')).toHaveAttribute('aria-current', 'page');
+        expect(screen.queryByText(/1h/)).not.toBeInTheDocument();
+        expect(document.querySelector('[data-activity-section="yourDay"]')).toHaveAttribute('aria-selected', 'true');
         for (const row of document.querySelectorAll('[data-activity-section]')) expect(row.textContent).not.toMatch(/\d/);
-        expect(binding('GetKnowledgeEntries')).not.toHaveBeenCalled();
+        expect(binding('GetDayNoticed')).not.toHaveBeenCalled();
         expect(binding('GetWeeklySummary')).not.toHaveBeenCalled();
         expect(binding('GetActivityMonthStats')).not.toHaveBeenCalled();
-        await act(async () => finishSummary({ aiSummary: 'Fixture digest', hourlyActive: [], appBreakdown: [] }));
-        expect(await screen.findByText('Fixture digest')).toBeInTheDocument();
-        await act(async () => { finishKnowledge?.([]); finishMemory?.([]); });
-        expect(document.querySelector('[data-activity-section="yourDay"]')).toHaveAttribute('aria-current', 'page');
     });
 
     it('restores the selected day and its rows synchronously while revalidating', async () => {
@@ -488,45 +526,69 @@ describe('Activity first view and session reuse', () => {
     });
 });
 
-it('settles a failed digest and thread read so the existing summary and source controls remain usable', async () => {
+// Ground rule (hub, 2026-11-21): a failed read shows an error with Try
+// again, never an empty day.
+it('says in place when Your day cannot be read, with Try again, and never as an empty day', async () => {
     await i18n.changeLanguage('en');
     resetActivitySessionCache();
     fixture.listeners.clear();
     for (const mock of fixture.bindings.values()) mock.mockReset().mockResolvedValue([]);
-    binding('EnsureDailySummary').mockRejectedValue(new Error('temporary read failure'));
-    binding('GetDayThreads').mockRejectedValue(new Error('temporary read failure'));
-    binding('GetActivitiesInRange').mockResolvedValue([{
-        id: 'recoverable-row', title: 'Recoverable public row', startMs: new Date(2026, 9, 15, 9).getTime(), endMs: new Date(2026, 9, 15, 10).getTime(),
-        apps: [], entities: [], thumbnails: [], runCount: 0, activeMs: 60000,
-    }]);
-    binding('GetDayNoticed').mockResolvedValue([{
-        id: 'source', kind: 'follow_up', momentId: 'recoverable-row', momentTitle: 'Recoverable public row', momentStartMs: new Date(2026, 9, 15, 9).getTime(), text: 'Check the public row', why: '',
-    }]);
+    const at = new Date(2026, 9, 15, 9).getTime();
+    binding('GetActivityFeed')
+        .mockRejectedValueOnce(new Error('temporary read failure'))
+        .mockResolvedValue([{ id: 'f-1', kind: 'screen', startMs: at, endMs: at + 60_000, title: 'Recovered feed row', app: 'Safari' }]);
     render(<Harness initialDate="2026-10-15" />);
-    // AR63: a failed read is never an answer. Write it and "isn't written" wait
-    // for the automatic retry; the day then says it couldn't load, with a retry.
-    expect(await screen.findByText(enActivity.summary.card.loadFailed, {}, { timeout: 5000 })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: enActivity.summary.card.writeIt })).toBeNull();
-    expect(screen.queryByText(enActivity.summary.card.dayNotWritten)).toBeNull();
-    expect(screen.getByRole('button', { name: enActivity.summary.card.tryAgain })).toBeEnabled();
-    fireEvent.click(await screen.findByRole('button', { name: /From .*Recoverable public row/ }));
-    expect(await screen.findByRole('button', { name: 'Delete from history' })).toBeInTheDocument();
+    expect(await screen.findByText(enActivity.feed.loadFailed)).toBeInTheDocument();
+    expect(screen.queryByText(enActivity.feed.empty)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: enActivity.ask.tryAgain }));
+    expect(await screen.findByText('Recovered feed row')).toBeInTheDocument();
+    expect(screen.queryByText(enActivity.feed.loadFailed)).toBeNull();
 });
 
-// AR63 guard: a failed read followed by a successful retry shows the saved day,
-// and the placeholder never says the day is unwritten in between.
-it('holds the day through a failed read and shows the saved summary after its retry', async () => {
-    await i18n.changeLanguage('en');
-    resetActivitySessionCache();
-    fixture.listeners.clear();
-    for (const mock of fixture.bindings.values()) mock.mockReset().mockResolvedValue([]);
-    binding('EnsureDailySummary')
-        .mockRejectedValueOnce(new Error('temporary read failure'))
-        .mockResolvedValue({ aiSummary: 'Saved after the retry', aiSummaryStatus: 'ready', hourlyActive: [], appBreakdown: [] });
-    render(<Harness initialDate="2026-10-15" />);
-    expect(screen.queryByText(enActivity.summary.card.dayNotWritten)).toBeNull();
-    expect(screen.queryByRole('button', { name: enActivity.summary.card.writeIt })).toBeNull();
-    expect(await screen.findByText('Saved after the retry', {}, { timeout: 5000 })).toBeInTheDocument();
-    expect(screen.queryByText(enActivity.summary.card.loadFailed)).toBeNull();
-    expect(binding('EnsureDailySummary').mock.calls.length).toBeGreaterThanOrEqual(2);
+// B7: a watch conversation opens in place from Your day, and from a link
+// elsewhere (App's openActivityConversation, #1418).
+describe('ActivityPage watch conversations', () => {
+    const today = new Date();
+    const startMs = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 10, 0).getTime();
+    const row = { id: 'dev:1', kind: 'watch', startMs, endMs: startMs + 36 * 60_000, title: 'Pricing with Sam', conversation: true, speakers: ['you'], basis: { setting: 'watch' } };
+    const conversation = {
+        id: 'dev:1', name: 'Pricing with Sam', startAt: startMs, endAt: startMs + 36 * 60_000, recordingIds: [], words: 4,
+        speakers: ['you'], lines: [{ at: startMs, speaker: 'you', text: 'Friday works for me', marked: false }],
+        summary: '', decisions: [], followups: [], speakerNames: {},
+    };
+
+    beforeEach(async () => {
+        resetActivitySessionCache();
+        resetPageQueries();
+        await i18n.changeLanguage('en');
+        localStorage.clear();
+        fixture.listeners.clear();
+        for (const mock of fixture.bindings.values()) mock.mockReset().mockResolvedValue([]);
+        Element.prototype.scrollIntoView = vi.fn();
+        binding('GetActivityFeed').mockResolvedValue([row]);
+        binding('GetActivityWatchRows').mockResolvedValue([row]);
+        binding('GetWatchConversations').mockResolvedValue([conversation]);
+    });
+
+    it('opens a conversation from a Your day row on the Watch tab, with its page open', async () => {
+        await act(async () => { render(<Harness />); });
+        fireEvent.click(await screen.findByRole('button', { name: 'Open: Pricing with Sam' }));
+        const page = await screen.findByTestId('watch-row-page');
+        expect(page.getAttribute('data-conversation-id')).toBe('dev:1');
+        expect(await within(page).findByText('Friday works for me')).toBeInTheDocument();
+        expect(screen.getByRole('tab', { name: enActivity.act.tabWatch })).toHaveAttribute('aria-selected', 'true');
+    });
+
+    it('opens the conversation a link asked for, on its day', async () => {
+        const day = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        await act(async () => { render(<Harness initialSection="watch" initialDate={day} initialConversationId="dev:1" />); });
+        const page = await screen.findByTestId('watch-row-page');
+        expect(await within(page).findByText('Friday works for me')).toBeInTheDocument();
+    });
+
+    it('shows the Watch tab with a quiet line when the linked conversation is gone', async () => {
+        await act(async () => { render(<Harness initialSection="watch" initialConversationId="dev:forgotten" />); });
+        expect(await screen.findByTestId('watch-conversation-gone')).toHaveTextContent(enActivity.act.conversationGone);
+        expect(screen.queryByTestId('watch-row-page')).toBeNull();
+    });
 });

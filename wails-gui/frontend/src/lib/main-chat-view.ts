@@ -1,24 +1,6 @@
 import type { StreamItem } from '@/types';
 import { getMainChatProactive, getMainChatStatus, MAIN_CHAT_OBSERVATION_PAUSE_TOOL } from '@/lib/stream-helpers';
 
-/** What the main chat shows (RC 2 D1): everything, or the main chat filtered
- *  to one work topic. Waiting cards stay in the stream; Tasks › Needs you is
- *  the one list of them (chat-review-v1.0.1 K10). A filter only changes
- *  what is shown; the main chat stays one conversation. */
-export type MainChatFilter =
-    | { kind: 'all' }
-    | { kind: 'topic'; topicId: string };
-
-export const MAIN_CHAT_FILTER_ALL: MainChatFilter = { kind: 'all' };
-
-/** Reads a filter defensively: a retired kind such as the old Waiting filter,
- *  or anything unknown, opens as All. */
-export function normalizeMainChatFilter(raw: unknown): MainChatFilter {
-    const wire = (raw ?? {}) as { kind?: unknown; topicId?: unknown };
-    if (wire.kind === 'topic' && typeof wire.topicId === 'string' && wire.topicId) return { kind: 'topic', topicId: wire.topicId };
-    return MAIN_CHAT_FILTER_ALL;
-}
-
 /** Today's numbers for the main chat (GetMainChatOverview), read defensively:
  *  a missing field stays unavailable. */
 export interface MainChatOverview {

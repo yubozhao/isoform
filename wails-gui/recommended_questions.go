@@ -146,7 +146,9 @@ func (a *App) GetQuickChatSuggestionsForApp(bundleID string, lang string) ([]Rec
 	if !contextStillReadable() {
 		return defaultQuickChatQuestionsForApp(bundleID, normLang), nil
 	}
-	resp, err := a.runEphemeralHaiku(prompt, quickChatSuggestionModelBudget)
+	givenCtx, given := passScopeFresh(passQuestions)
+	resp, err := a.runEphemeralClaudeModelContext(givenCtx, prompt, a.lightTaskModel(), quickChatSuggestionModelBudget)
+	a.finishAssistantCall(given)
 	if !contextStillReadable() {
 		return defaultQuickChatQuestionsForApp(bundleID, normLang), nil
 	}
@@ -219,7 +221,9 @@ func (a *App) generateRecommendedQuestionsFromContext(lang, context string) []Re
 	}
 
 	prompt := redactActivityModelText(buildRecommendedQuestionsPrompt(context, lang))
-	resp, err := a.runEphemeralHaiku(prompt, 30*time.Second)
+	givenCtx, given := passScopeFresh(passQuestions)
+	resp, err := a.runEphemeralClaudeModelContext(givenCtx, prompt, a.lightTaskModel(), 30*time.Second)
+	a.finishAssistantCall(given)
 	if err != nil {
 		log.Printf("[recommended-questions] Haiku call failed: %v", err)
 		return nil

@@ -282,7 +282,7 @@ func TestAssistantHistoryPromptListsKnownBeliefs(t *testing.T) {
 	writeHistoryBelief(t, dir, "memory-history-a", "Runs the tests before every push", "isoform", "claude", base, base)
 	writeHistoryBelief(t, dir, "memory-history-b", "Keeps the staging database seeded", "halcyon", "claude", base, base)
 	app := &App{}
-	known := app.assistantHistoryKnownBeliefs(HistoryProject{ID: "p", Name: "isoform"})
+	known := app.assistantHistoryKnownBeliefs(HistoryProject{ID: "p", Name: "isoform"}, map[string]bool{"claude": true, "codex": true})
 	if len(known) != 1 || known[0] != "You run the tests before every push" {
 		t.Fatalf("known = %v", known)
 	}

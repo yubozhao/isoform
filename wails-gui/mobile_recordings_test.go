@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -43,27 +44,40 @@ func (m *mapUploads) deleteUpload(_ context.Context, id string) error {
 	return nil
 }
 
+func receiveMobileRecordingPart(ctx context.Context, store *mobileRecordingStore, fetcher mobileUploadFetcher, hubID, deviceID string, req MobileRecordingRequest) (MobileRecordingView, bool, error) {
+	relays := mobileRecordingRelays{primaryName: mobileRecordingRelayPinned, primary: fetcher}
+	return relays.receivePart(ctx, store, hubID, deviceID, req)
+}
+
 const recordingTestHub = "6f1c2c9e-3b1a-4c55-9f4e-2a7b8c9d0e1f"
 
 // sealedRecordingPart seals audio as the phone does and returns the request.
 func sealedRecordingPart(t *testing.T, uploads *mapUploads, deviceID, recordingID string, part int, last bool, audio []byte, started time.Time) MobileRecordingRequest {
 	t.Helper()
+	req, sealed := makeSealedRecordingPart(t, recordingTestHub, deviceID, recordingID, part, last, audio, started)
+	uploads.bodies[req.Upload.ID] = sealed
+	return req
+}
+
+func makeSealedRecordingPart(t *testing.T, hubID, deviceID, recordingID string, part int, last bool, audio []byte, started time.Time) (MobileRecordingRequest, []byte) {
+	t.Helper()
 	key, nonce := make([]byte, 32), make([]byte, 12)
 	_, _ = rand.Read(key)
 	_, _ = rand.Read(nonce)
 	uploadID := uuid.NewString()
-	sealed, err := sealMobileUpload(key, nonce, recordingTestHub, deviceID, uploadID, audio)
+	sealed, err := sealMobileUpload(key, nonce, hubID, deviceID, uploadID, audio)
 	if err != nil {
 		t.Fatal(err)
 	}
-	uploads.bodies[uploadID] = sealed
 	sum := sha256.Sum256(audio)
 	return MobileRecordingRequest{
 		IdempotencyKey: uuid.NewString(), RecordingID: recordingID, Part: part, Last: last,
-		Upload: MobileRecordingUpload{ID: uploadID, Key: base64.RawURLEncoding.EncodeToString(key), Nonce: base64.RawURLEncoding.EncodeToString(nonce)},
+		Upload: mobileRecordingPartUpload{MobileRecordingUpload: MobileRecordingUpload{
+			ID: uploadID, Key: base64.RawURLEncoding.EncodeToString(key), Nonce: base64.RawURLEncoding.EncodeToString(nonce),
+		}},
 		SHA256: hex.EncodeToString(sum[:]), Bytes: int64(len(audio)), Mime: "audio/mp4",
 		StartedAt: started.UTC().Format(time.RFC3339), DurationSeconds: 30, Source: "watch",
-	}
+	}, sealed
 }
 
 func TestMobileUploadSealIsBoundToHubDeviceAndID(t *testing.T) {
@@ -171,6 +185,7 @@ func TestValidateRecordingRequest(t *testing.T) {
 	bad := []func(*MobileRecordingRequest){
 		func(r *MobileRecordingRequest) { r.RecordingID = "x" },
 		func(r *MobileRecordingRequest) { r.Part = -1 },
+		func(r *MobileRecordingRequest) { r.Upload.Relay = "unknown" },
 		func(r *MobileRecordingRequest) { r.Part = mobileRecordingMaxParts },
 		func(r *MobileRecordingRequest) { r.Bytes = 0 },
 		func(r *MobileRecordingRequest) { r.DurationSeconds = 0 },
@@ -557,7 +572,9 @@ func TestRecordingContextIsCoarsenedAndBadValuesAreDropped(t *testing.T) {
 
 func TestRecordingContextReachesTheSessionAsWordsNeverCoordinates(t *testing.T) {
 	store := newMobileRecordingStore(t.TempDir())
+	relays := watchContextTestRelays(t)
 	uploads := &mapUploads{bodies: map[string][]byte{}}
+	relays.primary = uploads
 	recordingID := uuid.NewString()
 	started := time.Date(2026, 11, 14, 9, 0, 0, 0, time.UTC)
 	first := sealedRecordingPart(t, uploads, "dev-a", recordingID, 0, false, []byte("audio one"), started)
@@ -569,7 +586,7 @@ func TestRecordingContextReachesTheSessionAsWordsNeverCoordinates(t *testing.T) 
 	// The second part has a location without a name: nothing is said about where.
 	second.Context = &MobileRecordingPartContext{Location: &MobileRecordingLocation{Latitude: 37.80, Longitude: -122.27}}
 	for _, req := range []MobileRecordingRequest{first, second} {
-		if _, _, err := receiveMobileRecordingPart(context.Background(), store, uploads, recordingTestHub, "dev-a", req); err != nil {
+		if _, _, err := relays.receivePart(context.Background(), store, recordingTestHub, "dev-a", req); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -608,7 +625,9 @@ func TestRecordingContextReachesTheSessionAsWordsNeverCoordinates(t *testing.T) 
 
 func TestRecordingContextIsDeletedWithTheAudio(t *testing.T) {
 	store := newMobileRecordingStore(t.TempDir())
+	relays := watchContextTestRelays(t)
 	uploads := &mapUploads{bodies: map[string][]byte{}}
+	relays.primary = uploads
 	withdrawn, old := uuid.NewString(), uuid.NewString()
 	for _, id := range []string{withdrawn, old} {
 		req := sealedRecordingPart(t, uploads, "dev-a", id, 0, true, []byte("audio"), time.Now())
@@ -616,7 +635,7 @@ func TestRecordingContextIsDeletedWithTheAudio(t *testing.T) {
 			HeartRate: &MobileRecordingHeartRate{Avg: 88, Min: 70, Max: 99, Samples: 12},
 			Location:  &MobileRecordingLocation{Latitude: 48.86, Longitude: 2.35, Place: "Le Marais"},
 		}
-		if _, _, err := receiveMobileRecordingPart(context.Background(), store, uploads, recordingTestHub, "dev-a", req); err != nil {
+		if _, _, err := relays.receivePart(context.Background(), store, recordingTestHub, "dev-a", req); err != nil {
 			t.Fatal(err)
 		}
 		store.setState(id, mobileRecordingTranscribed, "rec-"+id, 3, "")
@@ -676,5 +695,117 @@ func TestStatusSaysWhenObservingIsPausedSoTheWatchCanStop(t *testing.T) {
 	raw, _ = json.Marshal(map[string]any{"observingPause": mobileObservingPauseView(true, 0, time.Time{})})
 	if !strings.Contains(string(raw), `"observingPause":{}`) {
 		t.Fatalf("status %s", raw)
+	}
+}
+
+func TestWatchIndexReadFailureKeepsSavedTranscript(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	app := &App{activity: &activityMonitorState{store: newLifecycleStore(t)}}
+	store := newMobileRecordingStore(t.TempDir())
+	id := receiveWaitingWatch(t, store)
+	oldDecode, oldSave := mobileRecordingTranscriber, mobileRecordingSaver
+	t.Cleanup(func() { mobileRecordingTranscriber, mobileRecordingSaver = oldDecode, oldSave })
+	mobileRecordingTranscriber = func(*App, string) ([]mobileRecordingSegment, error) {
+		return []mobileRecordingSegment{{Segment: asr.Segment{Text: "keep these words"}}}, nil
+	}
+	path := filepath.Join(store.dir, "index.json")
+	mobileRecordingSaver = func(a *App, session ActivitySessionRow, events []activitymon.ActivityEvent) error {
+		if err := oldSave(a, session, events); err != nil {
+			return err
+		}
+		// Force an actual read error between saving Activity and recording completion.
+		store.mu.Lock()
+		defer store.mu.Unlock()
+		if err := os.Rename(path, path+".saved"); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Mkdir(path, 0700); err != nil {
+			t.Fatal(err)
+		}
+		store.loaded = false
+		return nil
+	}
+	app.transcribeMobileRecordings(context.Background(), store)
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(path+".saved", path); err != nil {
+		t.Fatal(err)
+	}
+	events, err := app.activity.store.GetSessionEvents("rec-" + id)
+	if err != nil || len(events) != 1 || events[0].SpeechText != "keep these words" {
+		t.Fatalf("saved transcript: %v, %v", events, err)
+	}
+}
+
+func TestQuietWatchDecodeWithEligibleStart(t *testing.T) {
+	testFFmpeg(t)
+	t.Setenv("HOME", t.TempDir())
+	app := &App{}
+	store := newMobileRecordingStore(t.TempDir())
+	uploads := &mapUploads{bodies: map[string][]byte{}}
+	id := uuid.NewString()
+	req := sealedRecordingPart(t, uploads, "dev", id, 0, true, testWAV(1), time.Now().Add(-time.Minute))
+	req.Mime = "audio/wav"
+	req.DurationSeconds = 1
+	if _, _, err := receiveMobileRecordingPart(context.Background(), store, uploads, recordingTestHub, "dev", req); err != nil {
+		t.Fatal(err)
+	}
+	app.transcribeMobileRecordings(context.Background(), store)
+	rec, _ := store.get(id, "")
+	if rec.State != mobileRecordingFailed || rec.Error != mobileSpeechNotReady {
+		t.Fatalf("without recognizer: %+v", rec)
+	}
+	engine := &recordingFixtureEngine{}
+	app.whisper = &whisperState{server: engine}
+	app.retryMobileRecordings(context.Background(), store, false)
+	rec, _ = store.get(id, "")
+	if engine.calls != 1 || rec.State != mobileRecordingTranscribed || rec.SessionID != "" || rec.Words != 0 || rec.Error != "" {
+		t.Fatalf("silent decode: calls=%d row=%+v", engine.calls, rec)
+	}
+}
+
+// Repair the transient index fault as soon as it is reported. Continuing the
+// loop would immediately select the same on-disk transcribing row again.
+type repairWatchIndexLog struct{ repair func() }
+
+func (w repairWatchIndexLog) Write(b []byte) (int, error) {
+	if strings.Contains(string(b), "index read failed") {
+		w.repair()
+	}
+	return len(b), nil
+}
+func TestWatchWorkerStopsOnFailedStateIndexRead(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	store := newMobileRecordingStore(t.TempDir())
+	id := receiveWaitingWatch(t, store)
+	path := filepath.Join(store.dir, "index.json")
+	oldDecode, output := mobileRecordingTranscriber, log.Writer()
+	defer func() { mobileRecordingTranscriber = oldDecode; log.SetOutput(output) }()
+	calls, readErrors := 0, 0
+	log.SetOutput(repairWatchIndexLog{func() {
+		readErrors++
+		if err := os.Rename(path+".saved", path); err != nil {
+			t.Fatal(err)
+		}
+	}})
+	mobileRecordingTranscriber = func(*App, string) ([]mobileRecordingSegment, error) {
+		calls++
+		if calls > 1 {
+			t.Fatal("worker retried after a state update failed")
+		}
+		if err := os.Rename(path, path+".saved"); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("invalid JSON"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		store.loaded = false
+		return nil, errors.New(mobileSpeechNotReady)
+	}
+	(&App{}).transcribeMobileRecordings(context.Background(), store)
+	pending := store.pending()
+	if calls != 1 || readErrors != 1 || len(pending) != 1 || pending[0].ID != id {
+		t.Fatalf("calls=%d readErrors=%d pending=%v", calls, readErrors, pending)
 	}
 }

@@ -43,6 +43,8 @@ func (c Config) validate() error {
 
 // Serve speaks only MCP on stdout. The app may be closed during initialization;
 // tool calls report its availability and recheck credentials on every request.
+//
+//isoform:destination agents_mcp_read
 func Serve(ctx context.Context, cfg Config, stdin io.Reader, stdout io.Writer) error {
 	if err := cfg.validate(); err != nil {
 		return err
@@ -113,6 +115,7 @@ type bridge struct {
 	client *http.Client
 }
 
+//isoform:destination local
 func newBridge(cfg Config) *bridge {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = nil
@@ -135,6 +138,7 @@ func newBridge(cfg Config) *bridge {
 
 type socketPathContextKey struct{}
 
+//isoform:destination local
 func (b *bridge) call(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	endpoint, token, err := b.credentials()
 	if err != nil {

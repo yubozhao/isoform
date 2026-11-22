@@ -22,6 +22,8 @@ type Client struct {
 }
 
 // New creates a new API client
+//
+//isoform:destination yansu_backend
 func New(baseURL, token string) *Client {
 	httpClient := &http.Client{
 		Timeout: 30 * time.Second,
@@ -135,6 +137,8 @@ type ContextResponse struct {
 }
 
 // GetProject retrieves a project by org/product/project names
+//
+//isoform:destination yansu_backend
 func (c *Client) GetProject(ctx context.Context, org, product, project string) (*Project, error) {
 	url := fmt.Sprintf("%s/api/orgs/%s/products/%s/projects/%s", c.baseURL, org, product, project)
 
@@ -183,6 +187,8 @@ func (c *Client) GetProject(ctx context.Context, org, product, project string) (
 }
 
 // GetProjectCodeRepositories retrieves code repositories for a project
+//
+//isoform:destination yansu_backend
 func (c *Client) GetProjectCodeRepositories(ctx context.Context, org, product, project string) ([]*CodeRepository, error) {
 	url := fmt.Sprintf("%s/api/public/orgs/%s/products/%s/projects/%s/code-repositories",
 		c.baseURL, org, product, project)
@@ -219,6 +225,8 @@ type StageResponse struct {
 }
 
 // GetProjectContext retrieves the project context by fetching stages
+//
+//isoform:destination yansu_backend
 func (c *Client) GetProjectContext(ctx context.Context) (*ContextResponse, error) {
 	// Fetch all stages for the project
 	url := fmt.Sprintf("%s/api/orgs/%s/products/%s/projects/%s/stages",
@@ -260,6 +268,8 @@ func (c *Client) GetProjectContext(ctx context.Context) (*ContextResponse, error
 }
 
 // ListKnowledge retrieves all knowledge for the current product
+//
+//isoform:destination yansu_backend
 func (c *Client) ListKnowledge(ctx context.Context) ([]*KnowledgeResponse, error) {
 	// Use the hierarchical knowledge endpoint
 	url := fmt.Sprintf("%s/api/orgs/%s/products/%s/knowledge",
@@ -305,6 +315,8 @@ func (c *Client) ListKnowledge(ctx context.Context) ([]*KnowledgeResponse, error
 }
 
 // CreateKnowledge creates a new knowledge item
+//
+//isoform:destination yansu_backend
 func (c *Client) CreateKnowledge(ctx context.Context, req *CreateKnowledgeRequest) (*KnowledgeResponse, error) {
 	// Use hierarchical endpoint
 	url := fmt.Sprintf("%s/api/orgs/%s/products/%s/knowledge",
@@ -341,6 +353,8 @@ func (c *Client) CreateKnowledge(ctx context.Context, req *CreateKnowledgeReques
 }
 
 // UpdateKnowledge updates an existing knowledge item
+//
+//isoform:destination yansu_backend
 func (c *Client) UpdateKnowledge(ctx context.Context, uuid string, req *UpdateKnowledgeRequest) (*KnowledgeResponse, error) {
 	// Use flat knowledge endpoint
 	url := fmt.Sprintf("%s/api/knowledge/%s", c.baseURL, uuid)
@@ -376,6 +390,8 @@ func (c *Client) UpdateKnowledge(ctx context.Context, uuid string, req *UpdateKn
 }
 
 // DeleteKnowledge deletes a knowledge item
+//
+//isoform:destination yansu_backend
 func (c *Client) DeleteKnowledge(ctx context.Context, uuid string) error {
 	// Use flat knowledge endpoint
 	url := fmt.Sprintf("%s/api/knowledge/%s", c.baseURL, uuid)
@@ -430,6 +446,8 @@ type ExtractKnowledgeResponse struct {
 }
 
 // ExtractKnowledge uses AI to extract potential knowledge from code changes
+//
+//isoform:destination yansu_backend
 func (c *Client) ExtractKnowledge(ctx context.Context, req *ExtractKnowledgeRequest) (*ExtractKnowledgeResponse, error) {
 	url := fmt.Sprintf("%s/api/orgs/%s/products/%s/knowledge/extract",
 		c.baseURL, c.organization, c.product)
@@ -465,6 +483,8 @@ func (c *Client) ExtractKnowledge(ctx context.Context, req *ExtractKnowledgeRequ
 }
 
 // Verify verifies the token is valid by fetching the user profile
+//
+//isoform:destination yansu_backend
 func (c *Client) Verify(ctx context.Context) error {
 	url := fmt.Sprintf("%s/api/auth/profile", c.baseURL)
 
@@ -488,6 +508,8 @@ func (c *Client) Verify(ctx context.Context) error {
 }
 
 // GetProfile returns the current user's profile.
+//
+//isoform:destination yansu_backend
 func (c *Client) GetProfile(ctx context.Context) (*UserProfile, error) {
 	url := fmt.Sprintf("%s/api/auth/profile", c.baseURL)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -519,6 +541,8 @@ type SlackBinding struct {
 
 // GetMySlackBinding returns the most recent Slack binding for the authenticated user.
 // Used by the daemon at startup to auto-discover team_id and slack_user_id.
+//
+//isoform:destination yansu_backend
 func (c *Client) GetMySlackBinding(ctx context.Context) (*SlackBinding, error) {
 	url := fmt.Sprintf("%s/api/daemon/me/binding", c.baseURL)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -545,6 +569,8 @@ func (c *Client) GetMySlackBinding(ctx context.Context) (*SlackBinding, error) {
 }
 
 // ListOrganizations returns all organizations the current user belongs to.
+//
+//isoform:destination yansu_backend
 func (c *Client) ListOrganizations(ctx context.Context) ([]Organization, error) {
 	url := fmt.Sprintf("%s/api/orgs?page_size=100", c.baseURL)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -568,6 +594,8 @@ func (c *Client) ListOrganizations(ctx context.Context) ([]Organization, error) 
 }
 
 // ListProducts returns all products in the given organization.
+//
+//isoform:destination yansu_backend
 func (c *Client) ListProducts(ctx context.Context, org string) ([]Product, error) {
 	url := fmt.Sprintf("%s/api/orgs/%s/products?page_size=100", c.baseURL, org)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -591,6 +619,8 @@ func (c *Client) ListProducts(ctx context.Context, org string) ([]Product, error
 }
 
 // ListProjectsInProduct returns all projects in the given org/product.
+//
+//isoform:destination yansu_backend
 func (c *Client) ListProjectsInProduct(ctx context.Context, org, product string) ([]*Project, error) {
 	url := fmt.Sprintf("%s/api/orgs/%s/products/%s/projects", c.baseURL, org, product)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -693,6 +723,8 @@ type DaemonFetchContextResponse struct {
 }
 
 // DaemonFetchContext retrieves conversation context for a relay event.
+//
+//isoform:destination yansu_backend
 func (c *Client) DaemonFetchContext(ctx context.Context, relayID string) (*DaemonFetchContextResponse, error) {
 	url := fmt.Sprintf("%s/api/daemon/fetch-context", c.baseURL)
 	payload, _ := json.Marshal(map[string]string{"relay_id": relayID})
@@ -731,6 +763,8 @@ type DaemonConfirmResponse struct {
 }
 
 // DaemonVerifySlack initiates Slack user verification by sending a DM with a code.
+//
+//isoform:destination yansu_backend
 func (c *Client) DaemonVerifySlack(ctx context.Context, slackUserID string) (*DaemonVerifyResponse, error) {
 	url := fmt.Sprintf("%s/api/daemon/verify-slack", c.baseURL)
 	payload, _ := json.Marshal(map[string]string{"slack_user_id": slackUserID})
@@ -759,6 +793,8 @@ func (c *Client) DaemonVerifySlack(ctx context.Context, slackUserID string) (*Da
 }
 
 // DaemonConfirmSlack confirms a Slack verification code and creates the binding.
+//
+//isoform:destination yansu_backend
 func (c *Client) DaemonConfirmSlack(ctx context.Context, slackUserID, code string) (*DaemonConfirmResponse, error) {
 	url := fmt.Sprintf("%s/api/daemon/confirm-slack", c.baseURL)
 	payload, _ := json.Marshal(map[string]string{
@@ -985,6 +1021,8 @@ func (c *Client) projectURL() string {
 }
 
 // ListStages returns all stages for the configured project (summary mode).
+//
+//isoform:destination yansu_backend
 func (c *Client) ListStages(ctx context.Context) ([]StageSummaryResponse, error) {
 	url := c.projectURL() + "/stages?summary=true"
 
@@ -1017,6 +1055,8 @@ func (c *Client) ListStages(ctx context.Context) ([]StageSummaryResponse, error)
 }
 
 // GetStage returns full details for a single stage.
+//
+//isoform:destination yansu_backend
 func (c *Client) GetStage(ctx context.Context, stageName string) (*StageDetailResponse, error) {
 	url := fmt.Sprintf("%s/stages/%s", c.projectURL(), stageName)
 
@@ -1044,6 +1084,8 @@ func (c *Client) GetStage(ctx context.Context, stageName string) (*StageDetailRe
 }
 
 // RunStage triggers execution of a stage.
+//
+//isoform:destination yansu_backend
 func (c *Client) RunStage(ctx context.Context, stageName string) (*StageDetailResponse, error) {
 	url := fmt.Sprintf("%s/stages/%s/run", c.projectURL(), stageName)
 
@@ -1071,6 +1113,8 @@ func (c *Client) RunStage(ctx context.Context, stageName string) (*StageDetailRe
 }
 
 // ListFeedbacksByStage returns feedbacks for all versions of a stage.
+//
+//isoform:destination yansu_backend
 func (c *Client) ListFeedbacksByStage(ctx context.Context, stageName string) ([]FeedbackItem, int, error) {
 	url := fmt.Sprintf("%s/stages/%s/feedback", c.projectURL(), stageName)
 
@@ -1099,6 +1143,8 @@ func (c *Client) ListFeedbacksByStage(ctx context.Context, stageName string) ([]
 }
 
 // ListPendingReplyFeedbacks returns feedbacks awaiting the current user's reply.
+//
+//isoform:destination yansu_backend
 func (c *Client) ListPendingReplyFeedbacks(ctx context.Context) ([]PendingReplyFeedback, int, error) {
 	url := c.projectURL() + "/feedback/pending-reply"
 
@@ -1127,6 +1173,8 @@ func (c *Client) ListPendingReplyFeedbacks(ctx context.Context) ([]PendingReplyF
 }
 
 // ListFeedbackComments returns all comments for a given feedback UUID (flat API).
+//
+//isoform:destination yansu_backend
 func (c *Client) ListFeedbackComments(ctx context.Context, feedbackUUID string) ([]FeedbackCommentListItem, int, error) {
 	const pageSize = 200
 
@@ -1191,6 +1239,8 @@ func (c *Client) ListFeedbackComments(ctx context.Context, feedbackUUID string) 
 }
 
 // CreateFeedbackComment creates a comment on a feedback (flat API).
+//
+//isoform:destination yansu_backend
 func (c *Client) CreateFeedbackComment(ctx context.Context, feedbackUUID string, commentReq CreateFeedbackCommentRequest) (*FeedbackCommentItem, error) {
 	url := fmt.Sprintf("%s/api/feedback/%s/comments", c.baseURL, feedbackUUID)
 
@@ -1224,6 +1274,8 @@ func (c *Client) CreateFeedbackComment(ctx context.Context, feedbackUUID string,
 }
 
 // RetryFeedback retries AI processing for a feedback (flat API).
+//
+//isoform:destination yansu_backend
 func (c *Client) RetryFeedback(ctx context.Context, feedbackUUID string) error {
 	url := fmt.Sprintf("%s/api/feedback/%s/retry", c.baseURL, feedbackUUID)
 
@@ -1246,6 +1298,8 @@ func (c *Client) RetryFeedback(ctx context.Context, feedbackUUID string) error {
 }
 
 // GetFeedback returns a single feedback by UUID (flat API).
+//
+//isoform:destination yansu_backend
 func (c *Client) GetFeedback(ctx context.Context, feedbackUUID string) (*FeedbackItem, error) {
 	url := fmt.Sprintf("%s/api/feedback/%s", c.baseURL, feedbackUUID)
 
@@ -1273,6 +1327,8 @@ func (c *Client) GetFeedback(ctx context.Context, feedbackUUID string) (*Feedbac
 }
 
 // UpdateFeedback updates a feedback (flat API). Used for resolve/status changes.
+//
+//isoform:destination yansu_backend
 func (c *Client) UpdateFeedback(ctx context.Context, feedbackUUID string, status string) error {
 	url := fmt.Sprintf("%s/api/feedback/%s", c.baseURL, feedbackUUID)
 
@@ -1308,6 +1364,8 @@ type UpdateStageRequest struct {
 }
 
 // UpdateStage updates the content of a stage, creating a new minor version.
+//
+//isoform:destination yansu_backend
 func (c *Client) UpdateStage(ctx context.Context, stageName string, req UpdateStageRequest) (*StageDetailResponse, error) {
 	url := fmt.Sprintf("%s/stages/%s", c.projectURL(), stageName)
 
@@ -1341,6 +1399,8 @@ func (c *Client) UpdateStage(ctx context.Context, stageName string, req UpdateSt
 }
 
 // GetStageTasksSummary returns task execution summary for a stage.
+//
+//isoform:destination yansu_backend
 func (c *Client) GetStageTasksSummary(ctx context.Context, stageName string) (*ExecutorTaskSummary, error) {
 	url := fmt.Sprintf("%s/stages/%s/tasks/summary", c.projectURL(), stageName)
 
@@ -1368,6 +1428,8 @@ func (c *Client) GetStageTasksSummary(ctx context.Context, stageName string) (*E
 }
 
 // ListStageVersions returns version history for a stage.
+//
+//isoform:destination yansu_backend
 func (c *Client) ListStageVersions(ctx context.Context, stageName string) ([]StageVersionItem, int, error) {
 	url := fmt.Sprintf("%s/stages/%s/versions", c.projectURL(), stageName)
 
@@ -1448,6 +1510,8 @@ type ScenarioDetail struct {
 }
 
 // ListScenarios returns all scenarios for the configured project.
+//
+//isoform:destination yansu_backend
 func (c *Client) ListScenarios(ctx context.Context) ([]ScenarioItem, error) {
 	url := fmt.Sprintf("%s/scenarios", c.projectURL())
 
@@ -1477,6 +1541,8 @@ func (c *Client) ListScenarios(ctx context.Context) ([]ScenarioItem, error) {
 }
 
 // GetScenario returns full details for a single scenario by UUID.
+//
+//isoform:destination yansu_backend
 func (c *Client) GetScenario(ctx context.Context, uuid string) (*ScenarioDetail, error) {
 	url := fmt.Sprintf("%s/scenarios/%s", c.projectURL(), uuid)
 
@@ -1504,6 +1570,8 @@ func (c *Client) GetScenario(ctx context.Context, uuid string) (*ScenarioDetail,
 }
 
 // RequeueScenario re-queues a failed or passed scenario.
+//
+//isoform:destination yansu_backend
 func (c *Client) RequeueScenario(ctx context.Context, uuid string) (*ScenarioDetail, error) {
 	url := fmt.Sprintf("%s/scenarios/%s/requeue", c.projectURL(), uuid)
 
@@ -1531,6 +1599,8 @@ func (c *Client) RequeueScenario(ctx context.Context, uuid string) (*ScenarioDet
 }
 
 // CancelScenario cancels a queued or building scenario.
+//
+//isoform:destination yansu_backend
 func (c *Client) CancelScenario(ctx context.Context, uuid string) (*ScenarioDetail, error) {
 	url := fmt.Sprintf("%s/scenarios/%s/cancel", c.projectURL(), uuid)
 
@@ -1564,6 +1634,8 @@ type GenerateChecklistResponse struct {
 }
 
 // GenerateScenarioChecklist triggers async checklist generation for a passed scenario.
+//
+//isoform:destination yansu_backend
 func (c *Client) GenerateScenarioChecklist(ctx context.Context, uuid string) (*GenerateChecklistResponse, error) {
 	url := fmt.Sprintf("%s/scenarios/%s/checklist/generate", c.projectURL(), uuid)
 
@@ -1591,6 +1663,8 @@ func (c *Client) GenerateScenarioChecklist(ctx context.Context, uuid string) (*G
 }
 
 // UpdateScenarioChecklistItem sets the checked state of a checklist item.
+//
+//isoform:destination yansu_backend
 func (c *Client) UpdateScenarioChecklistItem(ctx context.Context, scenarioUUID, itemID string, checked bool) (*ScenarioDetail, error) {
 	url := fmt.Sprintf("%s/scenarios/%s/checklist/items/%s", c.projectURL(), scenarioUUID, itemID)
 
@@ -1624,6 +1698,8 @@ func (c *Client) UpdateScenarioChecklistItem(ctx context.Context, scenarioUUID, 
 }
 
 // RestoreStageVersion restores a stage to a previous version.
+//
+//isoform:destination yansu_backend
 func (c *Client) RestoreStageVersion(ctx context.Context, stageName string, versionNumber int) error {
 	url := fmt.Sprintf("%s/stages/%s/versions/restore", c.projectURL(), stageName)
 
@@ -1668,6 +1744,8 @@ type SlackFileDownloadResponse struct {
 }
 
 // DownloadSlackFile downloads a Slack file via the backend API.
+//
+//isoform:destination yansu_backend
 func (c *Client) DownloadSlackFile(ctx context.Context, teamID, fileID, url string) (*SlackFileDownloadResponse, error) {
 	apiURL := fmt.Sprintf("%s/api/slack/files/download", c.baseURL)
 
@@ -1719,6 +1797,8 @@ type APITokenResponse struct {
 }
 
 // CreateAPIToken creates a long-lived API token
+//
+//isoform:destination yansu_backend
 func (c *Client) CreateAPIToken(ctx context.Context, name string, expiresInDays int) (*APITokenResponse, error) {
 	url := fmt.Sprintf("%s/api/auth/api-tokens", c.baseURL)
 	body := map[string]interface{}{

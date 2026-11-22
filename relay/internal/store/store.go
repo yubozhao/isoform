@@ -19,6 +19,9 @@ var (
 	ErrNotFound = errors.New("not found")
 	// ErrConflict reports a state transition or duplicate that is not allowed.
 	ErrConflict = errors.New("conflicting state")
+	// ErrPairedHere reports a grant that would replace the bearer of a device
+	// paired on this relay. Only the phone pairing again replaces that bearer.
+	ErrPairedHere = errors.New("device was paired on this relay")
 	// ErrUnauthorized reports an unknown, expired or revoked credential.
 	ErrUnauthorized = errors.New("unauthorized")
 	// ErrForbidden reports a presented secret that does not match.
@@ -80,7 +83,8 @@ CREATE TABLE IF NOT EXISTS devices (
 	scopes TEXT NOT NULL,
 	created_at INTEGER NOT NULL,
 	expires_at INTEGER NOT NULL,
-	last_seen_at INTEGER NOT NULL DEFAULT 0
+	last_seen_at INTEGER NOT NULL DEFAULT 0,
+	paired INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS devices_hub ON devices(hub_id);
 CREATE TABLE IF NOT EXISTS envelopes (
@@ -190,6 +194,14 @@ func Open(path string) (*Store, error) {
 		_ = db.Close()
 		return nil, err
 	}
+	if _, err = db.Exec(uploadPiecesSchema); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if _, err = db.Exec(uploadPieceMarksSchema); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	if _, err = db.Exec(smsSchema); err != nil {
 		_ = db.Close()
 		return nil, err
@@ -231,11 +243,31 @@ var briefColumns = []struct{ name, definition string }{
 	{"deliver_at", "INTEGER NOT NULL DEFAULT 0"},
 }
 
+// deviceColumns were added to devices after the first releases. paired is 1
+// for a device created by a pairing approval on this relay and 0 for one a
+// grant created. A device stored before the column existed takes 0: nothing
+// says how it was made.
+var deviceColumns = []struct{ name, definition string }{
+	{"paired", "INTEGER NOT NULL DEFAULT 0"},
+}
+
 var pushDeviceColumns = []struct{ name, definition string }{
 	{"gateway_grant", "TEXT NOT NULL DEFAULT ''"},
 }
 
 func migrate(db *sql.DB) error {
+	for _, column := range deviceColumns {
+		present, err := hasColumn(db, "devices", column.name)
+		if err != nil {
+			return err
+		}
+		if present {
+			continue
+		}
+		if _, err = db.Exec("ALTER TABLE devices ADD COLUMN " + column.name + " " + column.definition); err != nil {
+			return err
+		}
+	}
 	for _, column := range goodbyeColumns {
 		present, err := hasColumn(db, "hub_goodbyes", column.name)
 		if err != nil {
