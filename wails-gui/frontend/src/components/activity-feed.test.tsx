@@ -30,6 +30,82 @@ describe('ActivityFeed', () => {
         fixture.bindings.clear();
         resetActivitySessionCache();
         resetPageQueries();
+        // The one-conversation cut refuses by default here, so the tests
+        // below exercise the whole-hours Forget it falls back to (A8 interim).
+        binding('GetWatchConversationForgetPreview').mockRejectedValue(new Error('recording does not keep exact speech boundaries'));
+    });
+
+    // computer-conformance-answers A8 and A10: Forget cuts one conversation
+    // out of its hours when it can; a claim from the same hour is named and
+    // goes; the hour's other conversation isn't listed, because it stays.
+    it('cuts one conversation out of its hours, naming a claim from the same hour', async () => {
+        binding('GetActivityFeed').mockResolvedValueOnce([
+            { id: 'dev:1', kind: 'watch', startMs: at(10), endMs: at(10, 36), title: 'Pricing with Sam', conversation: true, basis: { setting: 'watch' } },
+            { id: 'dev:2', kind: 'watch', startMs: at(10, 40), endMs: at(10, 55), title: 'Standup', conversation: true, basis: { setting: 'watch' } },
+        ]).mockResolvedValue([
+            { id: 'dev:2', kind: 'watch', startMs: at(10, 40), endMs: at(10, 55), title: 'Standup', conversation: true, basis: { setting: 'watch' } },
+        ]);
+        binding('GetWatchConversationForgetPreview').mockResolvedValue({
+            id: 'dev:1', name: 'Pricing with Sam', lineCount: 40, audio: [], hasNote: true,
+            followups: [{ id: 'f1', title: 'Reply to Sam' }],
+            claims: [{ id: 'c1', title: 'Sam owns pricing' }],
+            sameHourClaims: [{ id: 'c2', title: 'Bo prefers mornings' }],
+            claimsLosingSupport: [], stayingWithAgents: ['Claude'], count: 5,
+        });
+        binding('ForgetWatchConversation').mockResolvedValue(undefined);
+        await act(async () => {
+            render(<ActivityFeed date={day} />);
+        });
+        fireEvent.click(await screen.findByRole('button', { name: 'Forget: Pricing with Sam' }));
+        const dialog = await screen.findByRole('dialog');
+        expect(within(dialog).getByText('Forget "Pricing with Sam"?')).toBeInTheDocument();
+        expect(within(dialog).queryByText(/shares its hours/)).toBeNull();
+        const plan = within(dialog).getByTestId('forget-plan');
+        expect([...plan.querySelectorAll('ul:not([data-testid]) li')].map((li) => li.textContent)).toEqual([
+            'the notes made from it · Watch',
+            'Reply to Sam · Your work',
+            '"Sam owns pricing" · You · About you',
+            'A claim from the same hour: "Bo prefers mornings" · You · About you',
+        ]);
+        expect(within(plan).queryByText(/Standup/)).toBeNull();
+        expect(within(plan).getByTestId('forget-staying')).toHaveTextContent('Sent to Claude · stays with Claude');
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Forget all 5' }));
+        await waitFor(() => expect(binding('ForgetWatchConversation')).toHaveBeenCalledWith('dev:1'));
+        expect(binding('ForgetActivityFeedRow')).not.toHaveBeenCalled();
+        expect(binding('GetActivityForgetPreview')).not.toHaveBeenCalled();
+        await waitFor(() => expect(screen.queryByText('Pricing with Sam')).toBeNull());
+        expect(screen.getByText('Standup')).toBeInTheDocument();
+    });
+
+    it('falls back to the whole hours when the cut refuses, and confirms with that Forget', async () => {
+        binding('GetActivityFeed').mockResolvedValue([
+            { id: 'dev:1', kind: 'watch', startMs: at(10), endMs: at(10, 36), title: 'Pricing with Sam', conversation: true, basis: { setting: 'watch' } },
+        ]);
+        binding('GetActivityForgetPreview').mockResolvedValue({ kind: 'watch', id: 'dev:1', title: 'Pricing with Sam', goes: [{ kind: 'conversation', title: 'Standup' }, { kind: 'copies' }] });
+        binding('ForgetActivityFeedRow').mockResolvedValue(undefined);
+        await act(async () => {
+            render(<ActivityFeed date={day} />);
+        });
+        fireEvent.click(await screen.findByRole('button', { name: 'Forget: Pricing with Sam' }));
+        const dialog = await screen.findByRole('dialog');
+        expect(within(dialog).getByText('Forget "Pricing with Sam"? It shares its hours with "Standup", which goes too.')).toBeInTheDocument();
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Forget all 2' }));
+        await waitFor(() => expect(binding('ForgetActivityFeedRow')).toHaveBeenCalledWith('watch', 'dev:1'));
+        expect(binding('ForgetWatchConversation')).not.toHaveBeenCalled();
+    });
+
+    it('says a conversation is no longer kept when the cut says so, without falling back', async () => {
+        binding('GetActivityFeed').mockResolvedValue([
+            { id: 'dev:1', kind: 'watch', startMs: at(10), endMs: at(10, 36), title: 'Pricing with Sam', conversation: true, basis: { setting: 'watch' } },
+        ]);
+        binding('GetWatchConversationForgetPreview').mockRejectedValue('this conversation is no longer kept');
+        await act(async () => {
+            render(<ActivityFeed date={day} />);
+        });
+        fireEvent.click(await screen.findByRole('button', { name: 'Forget: Pricing with Sam' }));
+        expect(await screen.findByText(enActivity.feed.forgetNoLonger)).toBeInTheDocument();
+        expect(binding('GetActivityForgetPreview')).not.toHaveBeenCalled();
+        expect(screen.queryByRole('dialog')).toBeNull();
     });
 
     // computer-activity v1.0.0 rules 3, 7 and 8.

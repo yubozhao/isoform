@@ -593,7 +593,8 @@
         "openFile": "打开 {{label}}",
         "openCall": "打开录制",
         "conversationGone": "那段对话已不再保留。",
-        "remindMe": "提醒我…"
+        "remindMe": "提醒我…",
+        "sameHourClaim": "同一小时里的一条判断：“{{claim}}”"
     },
     "feed": {
         "label": "时间线",

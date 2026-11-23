@@ -14,6 +14,8 @@ const mocks = vi.hoisted(() => ({
     rows: vi.fn(),
     preview: vi.fn(),
     forget: vi.fn(),
+    cutPreview: vi.fn(),
+    cutForget: vi.fn(),
 }));
 
 vi.mock('@/lib/wails-shim-app', () => ({
@@ -25,6 +27,9 @@ vi.mock('@/lib/wails-shim-app', () => ({
     GetActivityWatchRows: mocks.rows,
     GetActivityForgetPreview: mocks.preview,
     ForgetActivityFeedRow: mocks.forget,
+    // The one-conversation cut refuses here, so Forget takes the hours (A8 interim).
+    GetWatchConversationForgetPreview: mocks.cutPreview,
+    ForgetWatchConversation: mocks.cutForget,
     GetActivityFeed: vi.fn().mockResolvedValue([]),
 }));
 
@@ -89,6 +94,7 @@ const quietRow: ActivityFeedRow = {
 
 describe('ActivityWatchRecordings', () => {
     beforeEach(() => {
+        mocks.cutPreview.mockRejectedValue(new Error('recording does not keep exact speech boundaries'));
         vi.clearAllMocks();
         setHostBridgeMediaToken('tok');
         mocks.list.mockResolvedValue([recording(), recording({ id: QUIET, source: 'phone', words: 0, sessionId: '', parts: [] })]);
