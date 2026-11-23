@@ -23,15 +23,18 @@ import { GetTodayTopics } from '@/lib/page-queries';
 import { pageQueryCache } from '@/lib/query-cache';
 import {
     ForgetActivityFeedRow,
+    ForgetWatchConversation,
     GetActivityFeed,
     GetActivitiesInRange,
     GetActivityForgetPreview,
+    GetWatchConversationForgetPreview,
     GetActivityRowDetails,
     NotThisTopic,
     OpenActivityRow,
     type ActivityFeedKind,
     type ActivityFeedRow,
     type ActivityForgetPreview,
+    type WatchConversationForgetPreview,
     type ActivityOpenTarget,
     type ActivityRowDetail,
     type ActivityView,
@@ -261,33 +264,85 @@ export function forgetPlan(t: TFunction<'activity'>, preview: ActivityForgetPrev
     };
 }
 
+/** Forget on a watch conversation cut out of its hours (computer-conformance
+ *  answers A8 and A10): only that conversation's words, audio stretch, note
+ *  and what was made from it go; a claim that could have come from either
+ *  conversation in the hour is named and goes too; the hour's other
+ *  conversations stay. */
+export function cutForgetPlan(t: TFunction<'activity'>, cut: WatchConversationForgetPreview, row: ActivityFeedRow, lang: string): ForgetPlan {
+    const what = cut.name || feedTitle(t, row);
+    const items: string[] = [];
+    if (cut.hasNote) items.push(t('act.forgetItem', { what: t('feed.goes.notes'), where: t('feed.where.watch') }));
+    for (const item of cut.followups ?? []) {
+        items.push(t('act.forgetItem', { what: item.title || t('feed.goes.followupUntitled'), where: t('feed.where.work') }));
+    }
+    for (const item of cut.claims ?? []) {
+        items.push(t('act.forgetItem', { what: item.title ? t('feed.goes.claim', { claim: item.title }) : t('feed.goes.claimUntitled'), where: t('feed.where.aboutYou') }));
+    }
+    for (const item of cut.sameHourClaims ?? []) {
+        items.push(t('act.forgetItem', { what: t('act.sameHourClaim', { claim: item.title || t('feed.goes.claimUntitled') }), where: t('feed.where.aboutYou') }));
+    }
+    const staying = (cut.stayingWithAgents ?? []).map((agent) => t('act.staysWith', { agent }));
+    const kind = t('act.forgetKind', { source: feedSource(t, row), time: clock(row.startMs, lang) });
+    return {
+        title: t('act.forgetTitle', { what }),
+        lead: items.length > 0 ? t('act.forgetLead', { what: kind }) : t('act.forgetLeadOnly', { what: kind }),
+        items,
+        staying,
+        // The backend counts what goes, the conversation itself included.
+        count: Math.max(cut.count, items.length + 1),
+    };
+}
+
+const GONE = 'no longer kept';
+
 /** Forget as Activity does it everywhere (15e): ask for the preview, show
  *  one confirmation, and on Forget remove the row at once, with no Undo. A
  *  failed read or a failed Forget says so; a row that changed under it says
  *  it is no longer kept, and the list is read again. */
 export function useActivityForget(onForgotten: (row: ActivityFeedRow) => void, reload: () => void) {
     const { t, i18n } = useTranslation('activity');
-    const [forgetting, setForgetting] = useState<{ row: ActivityFeedRow; preview: ActivityForgetPreview } | null>(null);
+    // A watch conversation is cut out of its hours when the cut can prove
+    // its boundaries (cut); otherwise Forget takes the hours and names every
+    // conversation that goes with it (preview, the A8 interim). The
+    // confirmation and the Forget always use the same one.
+    const [forgetting, setForgetting] = useState<{ row: ActivityFeedRow; preview?: ActivityForgetPreview; cut?: WatchConversationForgetPreview } | null>(null);
     const [failure, setFailure] = useState<'failed' | 'gone' | null>(null);
     const opener = useRef<HTMLElement | null>(null);
 
     const ask = useCallback((row: ActivityFeedRow, from?: HTMLElement | null) => {
         opener.current = from ?? null;
         setFailure(null);
-        GetActivityForgetPreview(row.kind, row.id)
+        const whole = () => GetActivityForgetPreview(row.kind, row.id)
             .then((preview) => setForgetting({ row, preview }))
             .catch((err: unknown) => {
-                if (String(err).includes('no longer kept')) {
+                if (String(err).includes(GONE)) {
                     setFailure('gone');
                     reload();
                 } else setFailure('failed');
+            });
+        if (row.kind !== 'watch' || !row.conversation) {
+            void whole();
+            return;
+        }
+        GetWatchConversationForgetPreview(row.id)
+            .then((cut) => setForgetting({ row, cut }))
+            .catch((err: unknown) => {
+                if (String(err).includes(GONE)) {
+                    setFailure('gone');
+                    reload();
+                    return;
+                }
+                // The cut can't prove this conversation's boundaries (an old
+                // recording, an earlier cut): take its hours, saying so.
+                void whole();
             });
     }, [reload]);
 
     const confirm = () => {
         if (!forgetting) return;
-        const { row } = forgetting;
-        ForgetActivityFeedRow(row.kind, row.id)
+        const { row, cut } = forgetting;
+        (cut ? ForgetWatchConversation(row.id) : ForgetActivityFeedRow(row.kind, row.id))
             .then(() => {
                 setForgetting(null);
                 onForgotten(row);
@@ -295,14 +350,18 @@ export function useActivityForget(onForgotten: (row: ActivityFeedRow) => void, r
             })
             .catch((err: unknown) => {
                 setForgetting(null);
-                if (String(err).includes('no longer kept')) {
+                if (String(err).includes(GONE)) {
                     setFailure('gone');
                     reload();
                 } else setFailure('failed');
             });
     };
 
-    const plan = forgetting ? forgetPlan(t, forgetting.preview, forgetting.row, i18n.language) : null;
+    const plan = forgetting
+        ? forgetting.cut
+            ? cutForgetPlan(t, forgetting.cut, forgetting.row, i18n.language)
+            : forgetting.preview ? forgetPlan(t, forgetting.preview, forgetting.row, i18n.language) : null
+        : null;
     const notice: ReactNode = failure ? (
         <ActivityInlineNotice notice={{ tone: 'error', text: failure === 'gone' ? t('feed.forgetNoLonger') : t('feed.forgetFailed') }} />
     ) : null;

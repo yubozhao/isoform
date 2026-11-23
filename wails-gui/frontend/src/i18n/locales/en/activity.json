@@ -593,7 +593,8 @@
         "openFile": "Open {{label}}",
         "openCall": "Open the recording",
         "conversationGone": "That conversation is no longer kept.",
-        "remindMe": "Remind me…"
+        "remindMe": "Remind me…",
+        "sameHourClaim": "A claim from the same hour: \"{{claim}}\""
     },
     "feed": {
         "label": "Timeline",
