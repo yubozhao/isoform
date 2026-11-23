@@ -15,6 +15,7 @@ import (
 
 	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
+	"wails-gui/internal/destinations"
 	"wails-gui/internal/platform/activitymon"
 	"yansu-agent/mcpread"
 )
@@ -62,6 +63,7 @@ func mcpReadIssueTestToken(t *testing.T, assistant string) string {
 }
 
 func TestMCPReadAuthenticationAndRevocation(t *testing.T) {
+	calls := observeDestinationCalls(t)
 	// Exercise the real token/socket boundary with assistant cleanup unavailable.
 	// No installed assistant CLI may run in this integration test.
 	t.Setenv("PATH", t.TempDir())
@@ -124,6 +126,8 @@ func TestMCPReadAuthenticationAndRevocation(t *testing.T) {
 	if got := request("claude-code", otherToken); got != 200 {
 		t.Fatalf("revoking Codex affected Claude: %d", got)
 	}
+	expectDestination(t, calls, destinations.AgentsMCPRead, "codex")
+	expectDestination(t, calls, destinations.AgentsMCPRead, "claude-code")
 	replacement := mcpReadIssueTestToken(t, "codex")
 	if replacement == token {
 		t.Fatal("reconnect reused revoked token")

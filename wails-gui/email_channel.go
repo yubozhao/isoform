@@ -17,6 +17,7 @@ import (
 	"time"
 	"unicode"
 
+	"wails-gui/internal/destinations"
 	"wails-gui/internal/engagement"
 	"wails-gui/storage"
 )
@@ -482,6 +483,9 @@ func (c *mobileRelayClient) emailCall(ctx context.Context, method, path string, 
 	req.Header.Set("X-Yansu-Hub", c.hubID)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
+	}
+	if path == "/v1/hub/email/send" {
+		req = destinations.CountRequest(req, destinations.Email)
 	}
 	resp, err := smsHTTPClient.Do(req)
 	if err != nil {

@@ -25,6 +25,8 @@ import (
 	"github.com/larksuite/oapi-sdk-go/v3/event/dispatcher"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	larkws "github.com/larksuite/oapi-sdk-go/v3/ws"
+
+	"wails-gui/internal/destinations"
 )
 
 const (
@@ -105,23 +107,19 @@ func saveFeishuLocalCredentials(creds *feishuLocalCredentials) error {
 }
 
 func loadFeishuLocalCredentials(brand string) *feishuLocalCredentials {
-	dir, err := feishuStateDir(brand)
-	if err != nil {
-		log.Printf("[feishu-local] state directory unavailable: %v", err)
-		return nil
-	}
-	data, err := os.ReadFile(filepath.Join(dir, "credentials.json"))
-	if err != nil {
-		return nil
-	}
-	var creds feishuLocalCredentials
-	if err := json.Unmarshal(data, &creds); err != nil {
-		return nil
+	creds, _ := readFeishuLocalCredentials(brand)
+	return creds
+}
+
+func readFeishuLocalCredentials(brand string) (*feishuLocalCredentials, error) {
+	creds, err := readLocalBotCredentials[feishuLocalCredentials](feishuStateDir(brand))
+	if err != nil || creds == nil {
+		return nil, err
 	}
 	if creds.AppID == "" || creds.AppSecret == "" {
-		return nil
+		return nil, nil
 	}
-	return &creds
+	return creds, nil
 }
 
 func removeFeishuLocalCredentials(brand string) {
@@ -896,6 +894,9 @@ func (p *feishuLocalPoster) doJSON(ctx context.Context, method, path, token stri
 	req.Header.Set("Content-Type", "application/json")
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	if method == http.MethodPost && strings.HasPrefix(path, "/open-apis/im/v1/messages") {
+		req = destinations.CountRequest(req, destinations.ChatBridges)
 	}
 	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
 	if err != nil {

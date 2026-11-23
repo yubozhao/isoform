@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"wails-gui/internal/destinations"
 )
 
 func TestAppleScriptStringEscapesLiterals(t *testing.T) {
@@ -97,6 +99,7 @@ func TestMessagesSenderFallsBackToSMSOnlyForOrdinaryFailures(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			calls := observeDestinationCalls(t)
 			var scripts []string
 			sender := messagesSender{run: func(_ context.Context, script string) error {
 				scripts = append(scripts, script)
@@ -106,6 +109,9 @@ func TestMessagesSenderFallsBackToSMSOnlyForOrdinaryFailures(t *testing.T) {
 				return tc.second
 			}}
 			err := sender.Send(context.Background(), testTextNumber, "Isoform needs a decision. Open Isoform.")
+			if err == nil {
+				expectDestination(t, calls, destinations.TextMessages, "")
+			}
 			if len(scripts) != tc.wantCalls {
 				t.Fatalf("osascript runs = %d, want %d", len(scripts), tc.wantCalls)
 			}

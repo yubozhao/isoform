@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"wails-gui/internal/destinations"
 )
 
 // composio_direct.go — direct Composio client (Path B). Talks to Composio's API
@@ -67,6 +69,7 @@ func probeComposioAPIKey(apiKey string) error {
 	}
 	req.Header.Set("x-api-key", strings.TrimSpace(apiKey))
 	req.Header.Set("Accept", "application/json")
+	req = destinations.CountRequest(req, destinations.Composio)
 	resp, err := composioDirectHTTP.Do(req)
 	if err != nil {
 		return err
@@ -110,6 +113,7 @@ func (c *directComposioClient) do(ctx context.Context, method, p string, body, o
 	req.Header.Set("x-api-key", apiKey)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
+	req = destinations.CountRequest(req, destinations.Composio)
 	resp, err := composioDirectHTTP.Do(req)
 	if err != nil {
 		return err

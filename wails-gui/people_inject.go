@@ -341,23 +341,46 @@ func (a *App) peopleHandlesForModel(ctx context.Context, store *storage.Store, p
 // personCorrectionNotes reads the current, active memory files so editing or
 // forgetting a note also changes what the profile shows.
 func (a *App) personCorrectionNotes(ctx context.Context, id string) (string, error) {
+	notes, err := a.personCorrectionNoteList(ctx, id)
+	return personChatNotesText(notes), err
+}
+
+// PersonChatNote is one correction the person made about someone in Chat.
+type PersonChatNote struct {
+	ID   string `json:"id"`
+	Text string `json:"text"`
+}
+
+func personChatNotesText(notes []PersonChatNote) string {
+	texts := make([]string, 0, len(notes))
+	for _, note := range notes {
+		texts = append(texts, note.Text)
+	}
+	return strings.Join(texts, "\n")
+}
+
+// personCorrectionNoteList is each active, readable correction linked to the
+// person, in memory order.
+func (a *App) personCorrectionNoteList(ctx context.Context, id string) ([]PersonChatNote, error) {
 	snapshot, err := a.memoryExternalSnapshot()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	allow, err := a.memoryReadFilterContext(ctx)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	var notes []string
+	notes := []PersonChatNote{}
 	for i, dep := range snapshot.readDependencies() {
 		if dep.correctionPerson != id {
 			continue
 		}
 		entry := snapshot.entries[i]
 		if entry.inUse && allow(entry.raw.ID, entry.raw.Content) {
-			notes = append(notes, strings.TrimSpace(stripMemoryFrontmatter(entry.raw.Content)))
+			if text := strings.TrimSpace(stripMemoryFrontmatter(entry.raw.Content)); text != "" {
+				notes = append(notes, PersonChatNote{ID: entry.raw.ID, Text: text})
+			}
 		}
 	}
-	return strings.Join(notes, "\n"), ctx.Err()
+	return notes, ctx.Err()
 }

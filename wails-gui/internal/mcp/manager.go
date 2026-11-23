@@ -17,6 +17,8 @@ import (
 	mcpclient "github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/client/transport"
 	"github.com/mark3labs/mcp-go/mcp"
+
+	"wails-gui/internal/destinations"
 )
 
 // HealthStatus is the manager's view of a server's reachability. It is
@@ -662,6 +664,7 @@ func (m *Manager) CallTool(ctx context.Context, id, name string, args map[string
 	req := mcp.CallToolRequest{}
 	req.Params.Name = name
 	req.Params.Arguments = args
+	destinations.Record(destinations.MCPServers)
 	res, err := mc.client.CallTool(ctx, req)
 	if err != nil {
 		m.recordCallError(id, err)

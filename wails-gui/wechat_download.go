@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"wails-gui/internal/destinations"
 )
 
 // wechatMaxDownloadBytes caps the ciphertext size we're willing to pull from the
@@ -74,6 +76,7 @@ func (c *wechatAPIClient) DownloadAndDecryptMedia(ctx context.Context, media *we
 		return nil, "", fmt.Errorf("build CDN download request: %w", err)
 	}
 
+	req = destinations.CountRequest(req, destinations.ChatBridges)
 	resp, err := c.mediaClient.Do(req)
 	if err != nil {
 		return nil, "", fmt.Errorf("CDN download: %w", err)

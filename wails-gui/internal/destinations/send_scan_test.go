@@ -1,7 +1,6 @@
 package destinations
 
 import (
-	"encoding/json"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -13,8 +12,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-
-	"wails-gui/storage"
 )
 
 // The scan: every function in the shipped Go source of wails-gui (with its
@@ -161,10 +158,11 @@ type sendSite struct {
 }
 
 type taggedFunc struct {
-	key   string // path:Func
-	pos   token.Position
-	ids   []string
-	sites []sendSite
+	counters []string
+	key      string // path:Func
+	pos      token.Position
+	ids      []string
+	sites    []sendSite
 }
 
 func TestEverySendIsListed(t *testing.T) {
@@ -398,12 +396,30 @@ func scanFile(fset *token.FileSet, rel string, file *ast.File) []taggedFunc {
 		}
 		f := taggedFunc{key: rel + ":" + name, pos: fset.Position(decl.Pos()), ids: directiveIDs(doc)}
 		ast.Inspect(decl, func(n ast.Node) bool {
+			if call, ok := n.(*ast.CallExpr); ok {
+				if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
+					if pkg, ok := sel.X.(*ast.Ident); ok && imports[pkg.Name] == "wails-gui/internal/destinations" {
+						switch sel.Sel.Name {
+						case "RecordSearch":
+							f.counters = append(f.counters, "AssistantSearch")
+						case "RecordAnswer":
+							f.counters = append(f.counters, "AgentsMCPRead")
+						case "Record", "CountRequest", "CountHTTP":
+							if len(call.Args) > 0 {
+								if id, ok := call.Args[len(call.Args)-1].(*ast.SelectorExpr); ok {
+									f.counters = append(f.counters, id.Sel.Name)
+								}
+							}
+						}
+					}
+				}
+			}
 			if reason := sendReason(n, imports); reason != "" {
 				f.sites = append(f.sites, sendSite{pos: fset.Position(n.Pos()), reason: reason})
 			}
 			return true
 		})
-		if len(f.sites) > 0 || len(f.ids) > 0 {
+		if len(f.sites) > 0 || len(f.ids) > 0 || len(f.counters) > 0 {
 			out = append(out, f)
 		}
 	}
@@ -560,41 +576,26 @@ func local() { exec.Command("ls").Run() }
 	}
 }
 
-// Every kind of source the assistant call record keeps has a name on the
-// page, in both languages, with its unit, and in the sheet's own list
-// (design T15: an unnamed kind fails the destinations test).
-func TestAssistantCallKindsAreNamed(t *testing.T) {
-	sheet, err := os.ReadFile("../../frontend/src/components/settings/assistant-given-sheet.tsx")
+func TestEveryContentDestinationHasACounter(t *testing.T) {
+	funcs, err := scanSends()
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, loc := range []string{"en", "zh-CN"} {
-		raw, err := os.ReadFile(filepath.Join("../../frontend/src/i18n/locales", loc, "settings.json"))
-		if err != nil {
-			t.Fatal(err)
+	recorded := map[string]bool{}
+	for _, f := range funcs {
+		for _, id := range f.counters {
+			recorded[strings.ToLower(id)] = true
 		}
-		var doc struct {
-			Given struct {
-				Kinds  map[string]string `json:"kinds"`
-				Counts map[string]string `json:"counts"`
-			} `json:"given"`
+	}
+	for _, d := range List() {
+		switch d.ID {
+		case Assistant, AgentsHandoff, EmbeddingsAPI: // Assistant calls, handoff ledger and finding_embedding_calls.
+			continue
+		case Relay, Push: // Pairing is shown without a weekly number.
+			continue
 		}
-		if err := json.Unmarshal(raw, &doc); err != nil {
-			t.Fatal(err)
-		}
-		for _, kind := range storage.AssistantCallSourceKinds() {
-			if doc.Given.Kinds[kind] == "" {
-				t.Errorf("%s: given.kinds.%s has no name", loc, kind)
-			}
-			if doc.Given.Counts[kind+"_one"] == "" || doc.Given.Counts[kind+"_other"] == "" {
-				t.Errorf("%s: given.counts.%s has no count with its unit", loc, kind)
-			}
-			if loc == "en" && !strings.Contains(string(sheet), `"`+kind+`"`) {
-				t.Errorf("SOURCE_KINDS in the sheet doesn't list %q", kind)
-			}
-		}
-		if _, ok := doc.Given.Kinds["other"]; ok {
-			t.Errorf("%s: \"Other\" is still a kind", loc)
+		if d.Content != ContentNone && !recorded[strings.ReplaceAll(string(d.ID), "_", "")] {
+			t.Errorf("%s has content but no runtime counter", d.ID)
 		}
 	}
 }

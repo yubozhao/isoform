@@ -251,21 +251,17 @@ func saveWeChatCredentials(creds *wechatCredentials) error {
 }
 
 func loadWeChatCredentials() *wechatCredentials {
-	dir, err := wechatStateDir()
-	if err != nil {
-		log.Printf("[wechat] state directory unavailable: %v", err)
-		return nil
-	}
-	data, err := os.ReadFile(filepath.Join(dir, "credentials.json"))
-	if err != nil {
-		return nil
-	}
-	var creds wechatCredentials
-	if err := json.Unmarshal(data, &creds); err != nil {
-		return nil
+	creds, _ := readWeChatCredentials()
+	return creds
+}
+
+func readWeChatCredentials() (*wechatCredentials, error) {
+	creds, err := readLocalBotCredentials[wechatCredentials](wechatStateDir())
+	if err != nil || creds == nil {
+		return nil, err
 	}
 	if creds.BotToken == "" {
-		return nil
+		return nil, nil
 	}
-	return &creds
+	return creds, nil
 }

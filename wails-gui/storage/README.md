@@ -30,7 +30,7 @@ Deleting a project cascades through its workspaces, sessions, and all associated
 
 | File | Responsibility |
 |---|---|
-| `storage.go` | `Store` struct, `New()`, schema migrations (v1–v77), orphan cleanup, `Vacuum()` |
+| `storage.go` | `Store` struct, `New()`, schema migrations (v1–v79), orphan cleanup, `Vacuum()` |
 | `types.go` | Plain-Go row structs for all tables |
 | `principals_import_migration.go` | Transactional v61 import provenance migration and legacy contact backfill |
 | `projects.go` | Project CRUD, sort-order management, atomic project+sessions save |
@@ -59,7 +59,7 @@ defer store.Close()
 
 `New` checks existing database headers and then uses a read-only connection to include any newer version committed in the WAL. A stored schema newer than the audited compatibility ceiling (**73**) returns a typed `*SchemaVersionError` before opening for writes or changing the journal mode. The header check avoids creating WAL sidecars just to reject an already-newer database. The app can present a localized error using its `StoredVersion` and `SupportedVersion` fields.
 
-The schema is currently **77**. The migration target and compatibility ceiling are both **77**. Earlier databases upgrade to 77 with the pre-migration snapshot policy below. Route history remains migration v60: it adds columns with defaults to `cron_runs` and the independent `agent_run_routes` table, and tolerates populated route objects from earlier assistant-first builds that used v58. Versions above 77 are refused before writes.
+The schema is currently **79**. The migration target and compatibility ceiling are both **79**. Earlier databases upgrade to 79 with the pre-migration snapshot policy below. Route history remains migration v60: it adds columns with defaults to `cron_runs` and the independent `agent_run_routes` table, and tolerates populated route objects from earlier assistant-first builds that used v58. Versions above 79 are refused before writes.
 
 Migration v62 adds `imported_contact_cards`, `contact_handle_provenance` and `principal_contact_links` and `principal_contact_link_updates`. Link receipts and merges commit together. Unlink restores the card and its handles, aliases and the original kind of the seen person; pre-link activity returns to its original person, while later observations and merges are preserved. A schema-61 binary needs the pre-migration snapshot when reverting.
 
@@ -83,7 +83,7 @@ The target now includes #140 (v63), merged here before C5 (v64); #143 follows at
 
 ### Schema migrations
 
-Migrations are idempotent. Schema additions tolerate existing columns, and the v74 name repair leaves unrelated names alone. v75 adds `message_asks` (`message_asks.go`): asks and commitments read from Messages, in Isoform's words, never message text. v76 adds `assistant_calls` and `assistant_call_sources` (`assistant_calls.go`): what each assistant call was for and the sources it was written from, by kind and opaque id, never text. v77 adds `assistant_calls.made`: how many claims to check an entry's work made. The current schema version is stamped in `PRAGMA user_version` (currently **77**).
+Migrations are idempotent. Schema additions tolerate existing columns, and the v74 name repair leaves unrelated names alone. v75 adds `message_asks` (`message_asks.go`): asks and commitments read from Messages, in Isoform's words, never message text. v76 adds `assistant_calls` and `assistant_call_sources` (`assistant_calls.go`): what each assistant call was for and the sources it was written from, by kind and opaque id, never text. v77 adds `assistant_calls.made`: how many claims to check an entry's work made. The current schema version is stamped in `PRAGMA user_version` (currently **79**).
 
 | Version | Changes |
 |---|---|
@@ -157,6 +157,8 @@ Migrations are idempotent. Schema additions tolerate existing columns, and the v
 | v70 | Open-answer Mail anchor/correspondent binding and named-time check state |
 | v71 | Allow ask state for non-counting open-answer prompts |
 | v72 | Persist open-answer posts held during quiet hours |
+| v78 | `destination_calls` aggregates outbound calls per second by destination, with a service or agent identifier where applicable. |
+| v79 | `destination_count_losses` stores the latest incomplete-count timestamp per destination. The `destination_count_run` marker identifies an unclean recorder shutdown. |
 
 | v62 | Local contact cache, handle provenance and reversible contact links |
 | v63 | Main-chat topic tags and run-proof triggers (#140, integration retains its migration) |

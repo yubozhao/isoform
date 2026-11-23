@@ -42,7 +42,7 @@ export function sourceRates(stats: JudgmentStats | null): { source: string; yes:
     return ANSWER_SOURCES.filter((source) => (sums.get(source)?.answered ?? 0) > 0).map((source) => ({ source, ...sums.get(source)! }));
 }
 
-const REASONS = ['already_done', 'not_now', 'not_useful', 'myself', 'not_needed', 'wrong_facts', 'not_how_id_say', 'was_true_once', 'only_sometimes', 'not_at_all'] as const;
+const REASONS = ['already_done', 'not_a_promise', 'not_now', 'not_useful', 'myself', 'not_needed', 'wrong_facts', 'not_how_id_say', 'was_true_once', 'only_sometimes', 'not_at_all'] as const;
 
 /** What shows under an answer: the edited words, else the reason in words
  *  (the ledger keeps the reason's code), else the person's own note. */
@@ -69,6 +69,8 @@ function sourceLabel(t: TFunction<'activity'>, source: string): string {
             return t('ans.source.about_you');
         case 'chat':
             return t('ans.source.chat');
+        case 'people':
+            return t('ans.source.people');
         default:
             return t('ans.source.other');
     }

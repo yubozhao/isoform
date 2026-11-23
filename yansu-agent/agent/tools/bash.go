@@ -40,6 +40,7 @@ type BgShellDoneFunc func(shellID string, exit int, status string, command strin
 // Each invocation spawns a fresh child process; we do not keep a
 // persistent shell session.
 type BashTool struct {
+	OnWebSearch func(service string)
 	// mu serializes Bash invocations within the same tool instance so
 	// two commands in one session don't stomp on each other.
 	mu sync.Mutex
@@ -360,6 +361,20 @@ func splitShellCommandSegments(command string) []string {
 	return strings.Split(replacer.Replace(command), "\n")
 }
 
+func (t *BashTool) recordWebSearch(command string) {
+	if t.OnWebSearch == nil {
+		return
+	}
+	resource, ok := opencliResource(command)
+	if !ok {
+		return
+	}
+	switch resource {
+	case "opencli:grok:ask/", "opencli:gemini:ask/", "opencli:doubao:ask/":
+		t.OnWebSearch(strings.Split(resource, ":")[1])
+	}
+}
+
 func (t *BashTool) runForeground(ctx context.Context, command, workDir string, timeout time.Duration, invocation bashInvocation) (ToolResult, error) {
 	cmdCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -377,6 +392,7 @@ func (t *BashTool) runForeground(ctx context.Context, command, workDir string, t
 		return ToolResult{}, fmt.Errorf("start: %w", err)
 	}
 
+	t.recordWebSearch(command)
 	waitErr := make(chan error, 1)
 	go func() { waitErr <- ec.Wait() }()
 
@@ -424,6 +440,7 @@ func (t *BashTool) runBackground(runCtx context.Context, command, workDir string
 		return ToolResult{}, fmt.Errorf("start: %w", err)
 	}
 
+	t.recordWebSearch(command)
 	entry := &bgShell{
 		cmd:       ec,
 		cancel:    cancel,

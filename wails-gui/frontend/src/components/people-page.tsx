@@ -37,6 +37,7 @@ import { ScrollArea } from './ui/scroll-area';
 import { useObservationPaused } from './today/useObservationPaused';
 import { MergeBanners, MergeReceiptLine, NotSameReceiptLine, personName, type MergeReceipt } from './people/people-merge-banner';
 import { PersonDetailPanel, type PersonActions } from './people/person-detail';
+import { OpenBetweenYou, isPromise, type PromiseEntry } from './people/open-between-you';
 import { CalendarPeopleSection } from './people-first-day';
 import { useFirstDay } from '@/hooks/useFirstDay';
 import {
@@ -373,6 +374,20 @@ export function PeoplePage({ escapeRef, initialSelection, devToolsUnlocked = fal
         };
     }, [overview, entries, byId]);
 
+    // Open between you leads the tab: every promise both ways, across people.
+    const promises = useMemo<PromiseEntry[]>(
+        () =>
+            groups.open.flatMap((card) =>
+                card.loops.filter(isPromise).map((loop) => ({ loop, personId: card.id, name: personName(byId.get(card.id), card.name || tr('unnamed')) })),
+            ),
+        [groups.open, byId, tr],
+    );
+    // An answer moved a promise in the Purpose map: read who you know again.
+    const promiseAnswered = useCallback(() => {
+        invalidatePeopleReads();
+        void reload();
+    }, [reload]);
+
     // Every sender Isoform could not match to a person: the page menu's
     // cleanup covers all of them.
     const anonymousCount = useMemo(() => entries.filter((e) => e.principal.kind === 'anonymous').length, [entries]);
@@ -554,6 +569,9 @@ export function PeoplePage({ escapeRef, initialSelection, devToolsUnlocked = fal
             ? headlineWords(tr, groups.open.filter((card) => card.loops.some(loopNeedsYou)).length, groups.open.length, paused)
             : tr('title');
     const shownCount = groups.open.length + groups.others.length;
+    // With something open, the headline's count is Open between you's own
+    // (redesign-you rule 16); paused, the headline says why it's hidden.
+    const openSection = load === 'ready' && !results && groups.open.length > 0;
     const subline = dayZero ? '' : calendarPeople.length > 0 ? tr('firstDay.more') : shownCount > 0 ? tr('overview.subline', { count: shownCount }) : '';
     const failureNotice =
         personFailure && personFailure.id === selectedID ? (
@@ -604,7 +622,7 @@ export function PeoplePage({ escapeRef, initialSelection, devToolsUnlocked = fal
                         </div>
                         {load === 'loading' ? (
                             <span aria-hidden className="mt-1 h-7 w-3/5 animate-pulse rounded-md bg-surface-active" />
-                        ) : (
+                        ) : openSection && !paused ? null : (
                             <HeadlineTag className="text-[26px] font-normal leading-[1.3] text-ink">
                                 {headline}
                             </HeadlineTag>
@@ -682,17 +700,14 @@ export function PeoplePage({ escapeRef, initialSelection, devToolsUnlocked = fal
                                 onReview={pickPerson}
                             />
 
-                            {groups.open.length > 0 && (
-                                <section aria-labelledby="people-open-h" className="flex flex-col gap-3">
-                                    <h2 id="people-open-h" className="text-[18px] font-semibold text-ink">
-                                        {tr('overview.openHeading')}
-                                    </h2>
+                            {openSection && (
+                                <OpenBetweenYou entries={promises} count={paused ? undefined : headline} onOpenPerson={pickPerson} onAnswered={promiseAnswered}>
                                     <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,260px),1fr))] gap-3">
                                         {groups.open.map((card) => (
                                             <OpenCard key={card.id} card={card} entry={byId.get(card.id)} selected={selectedID === card.id} landed={landedID === card.id} onSelect={pickPerson} />
                                         ))}
                                     </div>
-                                </section>
+                                </OpenBetweenYou>
                             )}
 
                             <CalendarPeopleSection people={calendarPeople} known={(id) => byId.has(id)} onSelect={pickPerson} />
@@ -769,6 +784,7 @@ export function PeoplePage({ escapeRef, initialSelection, devToolsUnlocked = fal
                                 reloadToken={reloadToken}
                                 actions={actions}
                                 notice={failureNotice}
+                                onAnswered={promiseAnswered}
                             />
                         ) : load === 'ready' && knownCount > 0 ? (
                             <div className="flex flex-col gap-2 pt-10 text-center">

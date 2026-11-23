@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+
+	"wails-gui/internal/destinations"
 )
 
 const (
@@ -120,6 +122,9 @@ func (c *wechatAPIClient) doRequest(method, path string, body any) ([]byte, erro
 	verbose := path != "/ilink/bot/getupdates"
 	if verbose {
 		log.Printf("[wechat-api] %s %s", method, path)
+	}
+	if path == "/ilink/bot/sendmessage" {
+		req = destinations.CountRequest(req, destinations.ChatBridges)
 	}
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -270,6 +275,7 @@ func (c *wechatAPIClient) UploadToCDN(uploadURL string, encryptedData []byte) (s
 	}
 	req.Header.Set("Content-Type", "application/octet-stream")
 
+	req = destinations.CountRequest(req, destinations.ChatBridges)
 	resp, err := c.mediaClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("CDN upload: %w", err)

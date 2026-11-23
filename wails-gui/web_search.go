@@ -11,6 +11,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"wails-gui/internal/destinations"
 )
 
 // urlHost returns a clean host (sans "www.") for display in the trajectory;
@@ -77,6 +79,7 @@ func tavilySearch(ctx context.Context, query string, maxResults int) (*tavilyRes
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{Timeout: 20 * time.Second}
+	req = destinations.CountRequest(req, destinations.Tavily)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err

@@ -17,6 +17,8 @@ import (
 
 	"github.com/google/uuid"
 	"yansu-agent/agent"
+
+	"wails-gui/internal/destinations"
 )
 
 // Telegram local integration: a user-built bot (token from @BotFather) talking
@@ -116,23 +118,19 @@ func saveTelegramLocalCredentials(creds *telegramLocalCredentials) error {
 }
 
 func loadTelegramLocalCredentials() *telegramLocalCredentials {
-	dir, err := telegramLocalStateDir()
-	if err != nil {
-		log.Printf("[telegram-local] state directory unavailable: %v", err)
-		return nil
-	}
-	data, err := os.ReadFile(filepath.Join(dir, "credentials.json"))
-	if err != nil {
-		return nil
-	}
-	var creds telegramLocalCredentials
-	if err := json.Unmarshal(data, &creds); err != nil {
-		return nil
+	creds, _ := readTelegramLocalCredentials()
+	return creds
+}
+
+func readTelegramLocalCredentials() (*telegramLocalCredentials, error) {
+	creds, err := readLocalBotCredentials[telegramLocalCredentials](telegramLocalStateDir())
+	if err != nil || creds == nil {
+		return nil, err
 	}
 	if strings.TrimSpace(creds.BotToken) == "" {
-		return nil
+		return nil, nil
 	}
-	return &creds
+	return creds, nil
 }
 
 func removeTelegramLocalCredentials() {
@@ -208,6 +206,9 @@ func (c *telegramBotClient) call(ctx context.Context, method string, body any, o
 	}
 	if reqBody != nil {
 		req.Header.Set("Content-Type", "application/json")
+	}
+	if method == "sendMessage" {
+		req = destinations.CountRequest(req, destinations.ChatBridges)
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {

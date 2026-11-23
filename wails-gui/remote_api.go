@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"wails-gui/internal/destinations"
 )
 
 // ── Remote project browsing (exposed to frontend via Wails) ──
@@ -93,6 +95,7 @@ func apiGet(baseURL, token, path string, target any) error {
 	req.Header.Set("User-Agent", "yansu-gui/1.0")
 	req.Header.Set("Accept", "application/json")
 
+	req = destinations.CountRequest(req, destinations.YansuBackend)
 	resp, err := yansuHTTPClient.Do(req)
 	if err != nil {
 		return err
@@ -155,6 +158,7 @@ func apiPost(baseURL, token, path string, body, target any) error {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "yansu-gui/1.0")
 
+	req = destinations.CountRequest(req, destinations.YansuBackend)
 	resp, err := yansuHTTPClient.Do(req)
 	if err != nil {
 		return err
@@ -188,6 +192,7 @@ func apiDelete(baseURL, token, path string) error {
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("User-Agent", "yansu-gui/1.0")
 
+	req = destinations.CountRequest(req, destinations.YansuBackend)
 	resp, err := yansuHTTPClient.Do(req)
 	if err != nil {
 		return err

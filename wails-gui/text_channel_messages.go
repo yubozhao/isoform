@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"wails-gui/internal/destinations"
 	"wails-gui/internal/platform/nativeprompt"
 )
 
@@ -92,6 +93,7 @@ func (s messagesSender) Send(ctx context.Context, to, body string) error {
 	}
 	err := run(ctx, messagesSendScript(messagesServiceIMessage, to, body))
 	if err == nil {
+		destinations.Record(destinations.TextMessages)
 		return nil
 	}
 	var failure messagesFailure
@@ -101,6 +103,7 @@ func (s messagesSender) Send(ctx context.Context, to, body string) error {
 	if smsErr := run(ctx, messagesSendScript(messagesServiceSMS, to, body)); smsErr != nil {
 		return fmt.Errorf("%w; the SMS service also failed: %w", err, smsErr)
 	}
+	destinations.Record(destinations.TextMessages)
 	return nil
 }
 

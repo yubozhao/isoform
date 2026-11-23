@@ -18,6 +18,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"yansu-agent/agent"
+
+	"wails-gui/internal/destinations"
 )
 
 // externalRootConversationKey is the synthetic thread discriminator for
@@ -921,6 +923,7 @@ func (d *daemonClient) downloadFeishuImageContent(ctx context.Context, appID, te
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+d.getToken())
 
+	req = destinations.CountRequest(req, destinations.ChatBridges)
 	resp, err := httpClientWithTimeout.Do(req)
 	if err != nil {
 		return nil, "", fmt.Errorf("http request: %w", err)
@@ -1049,6 +1052,7 @@ func (d *daemonClient) downloadSlackFileContent(ctx context.Context, fileID, fil
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+d.getToken())
 
+	req = destinations.CountRequest(req, destinations.ChatBridges)
 	resp, err := httpClientWithTimeout.Do(req)
 	if err != nil {
 		return nil, "", fmt.Errorf("http request: %w", err)
@@ -1121,6 +1125,7 @@ func (d *daemonClient) processDiscordFiles(ctx context.Context, files []struct {
 			log.Printf("[gui-daemon] Discord download request error for %s: %v", f.Name, err)
 			continue
 		}
+		req = destinations.CountRequest(req, destinations.ChatBridges)
 		resp, err := httpClientWithTimeout.Do(req)
 		if err != nil {
 			log.Printf("[gui-daemon] Discord download error for %s: %v", f.Name, err)
@@ -1239,6 +1244,7 @@ func (d *daemonClient) downloadTelegramFileContent(ctx context.Context, fileID, 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+d.getToken())
 
+	req = destinations.CountRequest(req, destinations.ChatBridges)
 	resp, err := httpClientWithTimeout.Do(req)
 	if err != nil {
 		return nil, "", fmt.Errorf("http request: %w", err)

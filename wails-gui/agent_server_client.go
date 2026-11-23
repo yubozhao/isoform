@@ -12,6 +12,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"wails-gui/internal/destinations"
 )
 
 const agentServerDefaultURL = "https://api.isoform.ai"
@@ -92,6 +94,7 @@ func (c *agentServerClient) request(ctx context.Context, method, path string, pa
 		req.Header.Set("X-Isoform-Hub", hub)
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
+	req = destinations.CountRequest(req, destinations.AgentOfYou)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return nil, errAgentServerOffline

@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"wails-gui/internal/destinations"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -25,6 +27,9 @@ type Store struct {
 	closeOnce    sync.Once
 	closeErr     error
 	operations   sync.WaitGroup
+
+	destinationRecorder *destinations.Recorder
+	destinationRunFile  string
 }
 
 // hasColumn reports whether a table contains the given column.
@@ -170,7 +175,7 @@ func newStoreWithSnapshotOptions(dbPath string, snapshots snapshotOptions) (*Sto
 		return nil, fmt.Errorf("enable foreign keys: %w", err)
 	}
 
-	s := &Store{db: db}
+	s := &Store{db: db, destinationRunFile: dbPath + ".counter-running"}
 	if err := s.migrate(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
@@ -227,6 +232,12 @@ func (s *Store) Closing() bool {
 // Close closes the underlying database connection.
 func (s *Store) Close() error {
 	s.closeOnce.Do(func() {
+		var recorderErr error
+		if s.destinationRecorder != nil {
+			if recorderErr = s.destinationRecorder.Close(); recorderErr != nil {
+				log.Print("[destinations] shutdown left recovery marker armed")
+			}
+		}
 		s.closeMu.Lock()
 		s.closing = true
 		s.closeMu.Unlock()
@@ -245,6 +256,9 @@ func (s *Store) Close() error {
 			if err := s.db.Close(); s.closeErr == nil {
 				s.closeErr = err
 			}
+		}
+		if recorderErr != nil {
+			s.closeErr = errors.Join(s.closeErr, recorderErr)
 		}
 	})
 	return s.closeErr
@@ -375,14 +389,15 @@ func (s *Store) ClearActiveSessionReferences(ctx context.Context, sessionLocalID
 }
 
 // schemaVersion is the latest migration this binary implements and may stamp.
-const schemaVersion = 77
+const schemaVersion = 79
 
 // supportedSchemaVersion is the audited compatibility ceiling. Keep the newer
 // stamp refusal in place when raising this ceiling alongside implemented
 // migrations. Contact provenance uses v61, contact links v62. RC 1 topics (#140)
 // v63, context uses v64, People merges v65, answer chips v66, outbound sends v67,
-// the assistant call record v76, what each entry made v77.
-const supportedSchemaVersion = 77
+// the assistant call record v76, what each entry made v77, weekly destination calls v78,
+// and destination count recovery v79.
+const supportedSchemaVersion = 79
 
 // SettingsDefaultsMarker is seeded only when the initial schema is created.
 const SettingsDefaultsMarker = "defaults_2026_11_21_migrated"
@@ -1636,6 +1651,16 @@ func (s *Store) migrate() error {
 	}
 
 	// Advance the version only after all required migrations succeed.
+	if version < 78 {
+		if err := s.migrateDestinationCalls(); err != nil {
+			return fmt.Errorf("migration v78 destination calls: %w", err)
+		}
+	}
+	if version < 79 {
+		if err := s.migrateDestinationLosses(version); err != nil {
+			return fmt.Errorf("migration v79 destination count recovery: %w", err)
+		}
+	}
 	if version < schemaVersion {
 		if _, err := s.db.Exec(fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {
 			return fmt.Errorf("set schema version: %w", err)

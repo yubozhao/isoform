@@ -19,6 +19,7 @@ import (
 
 	"yansu-agent/agent"
 
+	"wails-gui/internal/destinations"
 	"wails-gui/storage"
 )
 
@@ -605,6 +606,7 @@ var runClaudeResearch = func(ctx context.Context, prompt string) (string, resear
 		stdoutW.Close()
 		return "", researchMeta{}, err
 	}
+	destinations.RecordSearch(researchViaClaudeCode)
 	defer forgetResearchProcess(cmd)
 	waited := make(chan error, 1)
 	go func() {

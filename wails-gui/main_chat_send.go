@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"wails-gui/internal/destinations"
 	"wails-gui/internal/engagement"
 	"wails-gui/storage"
 
@@ -586,6 +587,7 @@ func (a *App) sendMainChatSlack(ctx context.Context, send storage.OutboundSendRo
 		}
 		destination = conversation.ID
 	}
+	ctx = destinations.CountHTTP(ctx, destinations.ChatBridges)
 	_, _, err := api.PostMessageContext(ctx, destination, slack.MsgOptionText(send.Text, false))
 	return classifySlackSendError(ctx, err)
 }
