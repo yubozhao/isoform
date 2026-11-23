@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -256,4 +257,60 @@ func TestStorageStartupShutdownCanFlushBeforeJoiningServices(t *testing.T) {
 	if got, err := published.GetUIState(t.Context(), "foreground-flush"); err != nil || got != "saved" {
 		t.Fatalf("foreground flush = %q, %v", got, err)
 	}
+}
+
+func TestStorageStartupCutDiscoveryOptional(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("YANSU_MOBILE_STATE_DIR", "")
+	t.Setenv(agentHomeEnv, "invalid-relative-path")
+	if _, err := mobileStateDirectory(); err == nil {
+		t.Fatal("fixture resolved a mobile directory")
+	}
+	store, err := openStartupStorageAt(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.Close()
+	home = t.TempDir()
+	t.Setenv(agentHomeEnv, home)
+	if dirs := startupCutDirectories(home); len(dirs) != 0 {
+		t.Fatal(dirs)
+	}
+	if err := recoverStartupWatchCut(home, nil); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(home)
+	if err != nil || len(entries) != 0 {
+		t.Fatal(entries, err)
+	}
+}
+func TestStorageStartupCutFailureCanRetry(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv(agentHomeEnv, home)
+	t.Setenv("YANSU_MOBILE_STATE_DIR", "")
+	// A real published marker with unreadable JSON must keep storage closed.
+	stage := filepath.Join(home, "mobile", "recordings", watchForgetJournal)
+	if err := os.MkdirAll(stage, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stage, "journal.json"), []byte("{"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	state := newStorageStartupState()
+	var opened *storage.Store
+	start := func() { state.start(openStartupStorage, func(s *storage.Store) { opened = s }, func() {}) }
+	start()
+	awaitStorageStartup(t, state.done)
+	if got := state.snapshot().Code; got != "cut_recovery_failed" || opened != nil {
+		t.Fatal(got)
+	}
+	if err := os.RemoveAll(stage); err != nil {
+		t.Fatal(err)
+	}
+	start()
+	awaitStorageStartup(t, state.done)
+	if state.snapshot().Code != "" || opened == nil {
+		t.Fatal(state.snapshot())
+	}
+	opened.Close()
 }

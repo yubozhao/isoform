@@ -57,6 +57,7 @@ func memoryDerivedSourceRefs(content string) []string {
 }
 
 type memoryForgetRecord struct {
+	versionOnlySuppression        bool
 	id, title, livePath           string
 	liveContent                   string
 	contents                      []string
@@ -172,10 +173,15 @@ func collectMemoryForgetRecordsScoped(dir, id string, historyVersionsOnly bool) 
 	if err != nil {
 		return nil, err
 	}
-	selected := map[string]bool{}
+	return selectMemoryForgetRecords(records, id, historyVersionsOnly, map[string]bool{id: true}, nil)
+}
+
+func selectMemoryForgetRecords(records map[string]*memoryForgetRecord, id string, historyVersionsOnly bool, selected, independent map[string]bool) ([]*memoryForgetRecord, error) {
+
 	var priorRoot *memoryForgetRecord
 	priorPaths := map[string]bool{}
 	if historyVersionsOnly {
+		delete(selected, id)
 		root := records[id]
 		if root == nil || root.livePath == "" || !isUserEditedMemory(root.liveContent) {
 			return nil, fmt.Errorf("history memory no longer has an independent current version")
@@ -210,8 +216,6 @@ func collectMemoryForgetRecordsScoped(dir, id string, historyVersionsOnly bool) 
 		for _, content := range priorRoot.contents {
 			selected[memoryForgetHistoricalSelector(id, content)] = true
 		}
-	} else {
-		selected[id] = true
 	}
 	for changed := true; changed; {
 		changed = false
@@ -248,7 +252,7 @@ func collectMemoryForgetRecordsScoped(dir, id string, historyVersionsOnly bool) 
 			if historyVersionsOnly && recordID == id {
 				continue
 			}
-			if selected[recordID] {
+			if selected[recordID] || independent[recordID] {
 				continue
 			}
 			// An independent explicit correction is a new provenance boundary.
@@ -287,7 +291,7 @@ func collectMemoryForgetRecordsScoped(dir, id string, historyVersionsOnly bool) 
 			result = append(result, record)
 			continue
 		}
-		if !isUserEditedMemory(record.liveContent) {
+		if independent[recordID] || !isUserEditedMemory(record.liveContent) {
 			continue
 		}
 		prior := memoryForgetPriorVersions(record, selected)

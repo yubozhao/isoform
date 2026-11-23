@@ -52,6 +52,8 @@ type mcMemoryGenerationResponse struct {
 	Title           string   `json:"title"`
 	MemoryPoints    []string `json:"memoryPoints"`
 	Dimension       string   `json:"dimension"` // user_insight | topic_highlight | deep_user_model | agentic_memory
+
+	WatchSpeechQuotes []string `json:"watchSpeechQuotes,omitempty"`
 }
 
 type memoryPointsRewriteResponse struct {

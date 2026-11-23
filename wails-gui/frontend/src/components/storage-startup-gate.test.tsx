@@ -10,6 +10,7 @@ import { StorageStartupGate } from "./storage-startup-gate";
 const mocks = vi.hoisted(() => ({
     status: vi.fn(),
     quit: vi.fn(),
+    on: vi.fn((_event: string, _cb: () => void) => () => {}),
     emit: vi.fn(),
     mounted: vi.fn(),
 }));
@@ -20,6 +21,7 @@ vi.mock("@/lib/wails-shim-app", () => ({
 
 vi.mock("../../wailsjs/runtime/runtime", () => ({
     Quit: mocks.quit,
+    EventsOn: mocks.on,
     EventsEmit: mocks.emit,
 }));
 
@@ -131,6 +133,17 @@ describe("StorageStartupGate", () => {
 
         expect(await screen.findByRole("alert")).toHaveTextContent(en.storageStartup.unavailableDescription);
         expect(mocks.mounted).not.toHaveBeenCalled();
+    });
+
+    it("shows cut recovery failure and resumes startup when retry succeeds", async () => {
+        mocks.status.mockResolvedValueOnce({ code: "cut_recovery_failed" }).mockResolvedValueOnce({ code: "" });
+        renderGate();
+        expect(await screen.findByRole("alert")).toHaveTextContent(en.storageStartup.recoveryFailed);
+        fireEvent.click(screen.getByRole("button", { name: en.storageStartup.retry }));
+        expect(mocks.emit).toHaveBeenCalledWith("storage:retry-cut");
+        const subscription = mocks.on.mock.calls.find(([event]) => event === "storage:retry-cut-started");
+        await act(async () => subscription![1]());
+        expect(screen.getByText("app-loaded")).toBeInTheDocument();
     });
 
     it("keeps the app blocked for other storage failures", async () => {

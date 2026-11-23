@@ -802,6 +802,12 @@
         "allJudged_one": "Isoform 对你的 {{count}} 条看法你都已判断过。随着它看到更多你的工作，新的会先显示在这里。",
         "allJudged_other": "Isoform 对你的 {{count}} 条看法你都已判断过。随着它看到更多你的工作，新的会先显示在这里。",
         "tooEarly": "Isoform 还没看到足够的内容来说说你。随着它看到你的工作，看法会出现在这里，通常需要一天左右。",
-        "import": "导入另一个 AI 对你的了解 ›"
+        "import": "导入另一个 AI 对你的了解 ›",
+        "learning": "从你的一天中学习：开 · 新内容来自发送给 {{assistant}} 的摘要",
+        "learningOff": "从你的一天中学习：关 · 不再学习新内容；已有内容保留",
+        "turnOff": "关闭",
+        "turnOn": "打开",
+        "learningReadFailed": "无法读取学习是否开启。",
+        "learningSaveFailed": "没有改成功。"
     }
 }

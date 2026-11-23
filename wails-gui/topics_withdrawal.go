@@ -111,13 +111,7 @@ func (a *App) beginTopicWithdrawal(w topicWithdrawal) (func(bool) error, error) 
 	svc.invalidateChatSources()
 	// Followed topics can still be display-only while chat derivation waits.
 	// Include their original evidence, not just completed chat snapshots.
-	followingWithdrawn := false
-	for _, interest := range a.interestsSvc().store.load().Interests {
-		for _, ref := range interest.Evidence {
-			kind := string(ref.Source)
-			followingWithdrawn = followingWithdrawn || w.matchesSource(kind, strings.TrimPrefix(ref.Key, kind+":"))
-		}
-	}
+	followingWithdrawn := a.followedTopicWithdrawn(w)
 	store := svc.store
 	store.publication.Lock()
 	store.mu.Lock()
@@ -288,4 +282,15 @@ func topicWithdrawalProjection(state topicsStateFile) string {
 		Projects []topicProject
 		Chat     []topicChatSnapshot
 	}{state.Projects, state.ChatTopics})
+}
+
+func (a *App) followedTopicWithdrawn(w topicWithdrawal) bool {
+	followingWithdrawn := false
+	for _, interest := range a.interestsSvc().store.load().Interests {
+		for _, ref := range interest.Evidence {
+			kind := string(ref.Source)
+			followingWithdrawn = followingWithdrawn || w.matchesSource(kind, strings.TrimPrefix(ref.Key, kind+":"))
+		}
+	}
+	return followingWithdrawn
 }

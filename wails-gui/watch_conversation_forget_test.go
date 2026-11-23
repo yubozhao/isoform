@@ -247,14 +247,19 @@ func TestWatchForgetAmbiguousClaim(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "pricing.md"), []byte(claim), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.app.GetWatchConversationForgetPreview(f.target.ID); err == nil {
-		t.Fatal("shared session attributed to one conversation")
+	preview, err := f.app.GetWatchConversationForgetPreview(f.target.ID)
+	want := []WatchConversationForgetItem{{"pricing", "Pricing owner"}}
+	if err != nil || !reflect.DeepEqual(preview.SameHourClaims, want) || len(preview.Claims) != 0 || preview.Count != 4 {
+		t.Fatalf("preview=%+v err=%v", preview, err)
 	}
-	if err := f.app.ForgetWatchConversation(f.target.ID); err == nil {
-		t.Fatal("forgot ambiguous source")
+	if err := f.app.ForgetWatchConversation(f.target.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.app.GetMemoryEntry("pricing"); !os.IsNotExist(err) {
+		t.Fatal(err)
 	}
 	cs, err := f.app.GetWatchConversations()
-	if err != nil || len(cs) != 2 {
+	if err != nil || !reflect.DeepEqual(cs, []WatchConversation{f.neighbor}) {
 		t.Fatal(cs, err)
 	}
 }

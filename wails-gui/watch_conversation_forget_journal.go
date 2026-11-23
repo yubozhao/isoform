@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,7 +10,9 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -18,21 +21,34 @@ import (
 // retain the old files until SQLite commits. Recovery uses a transaction receipt
 // instead of inferring commit from the presence or contents of an audio file.
 const watchForgetJournal = ".conversation-cut"
+const watchCutReceiptSchema = "CREATE TABLE IF NOT EXISTS watch_conversation_cut_receipts (token TEXT PRIMARY KEY)"
 
 type watchCutJournal struct {
-	Token string
-	Paths []string
+	Token                                 string
+	Paths                                 []string
+	Created                               []int
+	IndexPaths, IndexHashes, WithdrawnIDs []string
+	FileReceipt                           bool
+	CleanContextUses                      bool
+	Reindex                               []string
 }
 type watchCutFiles struct {
-	dir, stage string
+	dir, stage   string
+	notifyTopics bool
 	watchCutJournal
 }
 
 func (f *watchCutFiles) add(rel string, data []byte) error {
-	path := filepath.Join(f.dir, rel)
+	path, err := cutFilePath(f.dir, rel)
+	if err != nil {
+		return err
+	}
 	n := strconv.Itoa(len(f.Paths))
 	if err := os.Link(path, filepath.Join(f.stage, "old"+n)); err != nil {
-		return err
+		if !os.IsNotExist(err) || data == nil {
+			return err
+		}
+		f.Created = append(f.Created, len(f.Paths))
 	}
 	if data != nil {
 		if err := mobileRecordingWriteFile(filepath.Join(f.stage, "new"+n), data, 0600); err != nil {
@@ -53,8 +69,15 @@ func syncWatchCutDir(dir string) error {
 }
 func (f *watchCutFiles) install() error {
 	for i, rel := range f.Paths {
+		if rel == "@topics" {
+			continue
+		} // Topic withdrawal follows the receipt.
+
 		src := filepath.Join(f.stage, "new"+strconv.Itoa(i))
-		dest := filepath.Join(f.dir, rel)
+		dest, err := cutFilePath(f.dir, rel)
+		if err != nil {
+			return err
+		}
 		if _, err := os.Stat(src); errors.Is(err, os.ErrNotExist) {
 			if err := os.Remove(dest); err != nil {
 				return err
@@ -71,7 +94,8 @@ func (f *watchCutFiles) install() error {
 	return nil
 }
 
-func (s *mobileRecordingStore) recoverWatchCutLocked() error {
+func (s *mobileRecordingStore) recoverWatchCutLocked() error { return s.resolveWatchCut(false) }
+func (s *mobileRecordingStore) resolveWatchCut(memoryCompleted bool) error {
 	stage := filepath.Join(s.dir, watchForgetJournal)
 	// Probe the three possible crash states by name. A normal first load
 	// does not enumerate recordings, remove files, or open the receipt DB.
@@ -104,35 +128,46 @@ func (s *mobileRecordingStore) recoverWatchCutLocked() error {
 	if err := json.Unmarshal(data, &j); err != nil {
 		return err
 	}
-	if s.cutDB == nil {
-		return errors.New("conversation cut awaits activity storage")
-	}
 	var committed bool
-	if err := s.cutDB.QueryRow("SELECT EXISTS(SELECT 1 FROM watch_conversation_cut_receipts WHERE token=?)", j.Token).Scan(&committed); err != nil {
-		return err
+	if j.FileReceipt {
+		_, err := os.Stat(filepath.Join(stage, "committed"))
+		if err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		committed = err == nil
+	} else {
+		if s.cutDB == nil {
+			return errors.New("conversation cut awaits activity storage")
+		}
+		if err := s.cutDB.QueryRow("SELECT EXISTS(SELECT 1 FROM watch_conversation_cut_receipts WHERE token=?)", j.Token).Scan(&committed); err != nil {
+			return err
+		}
 	}
 	if !committed {
-		for i, rel := range j.Paths {
-			if !filepath.IsLocal(rel) {
-				return errors.New("invalid conversation recovery path")
-			}
-			old := filepath.Join(stage, "old"+strconv.Itoa(i))
-			// Keep the journal's backup through the rename so recovery itself
-			// can restart at any instruction.
-			link := filepath.Join(stage, "restore"+strconv.Itoa(i))
-			if err := os.Remove(link); err != nil && !os.IsNotExist(err) {
+		if err := restoreCutFiles(s.dir, stage, j); err != nil {
+			return err
+		}
+	} else {
+		if i := slices.Index(j.Paths, "@topics"); i >= 0 {
+			dest, err := cutFilePath(s.dir, "@topics")
+			if err != nil {
 				return err
 			}
-			if err := os.Link(old, link); err != nil {
+			if err := installCutLink(stage, "new"+strconv.Itoa(i), dest); err != nil {
 				return err
 			}
-			dest := filepath.Join(s.dir, rel)
-			if err := os.Rename(link, dest); err != nil {
+		}
+		if !memoryCompleted {
+			if err := s.finishCutMemory(j); err != nil {
 				return err
 			}
-			if err := syncWatchCutDir(filepath.Dir(dest)); err != nil {
-				return err
+		}
+		if len(j.WithdrawnIDs) > 0 || len(j.Reindex) > 0 {
+			keys := make([]briefWithdrawn, 0, len(j.WithdrawnIDs))
+			for _, id := range j.WithdrawnIDs {
+				keys = append(keys, briefWithdrawn{Kind: "memory", ID: id})
 			}
+			briefPrivacyChanged(keys...)
 		}
 	}
 	// Atomically retire the marker before unlinking backups.
@@ -148,6 +183,9 @@ func (s *mobileRecordingStore) recoverWatchCutLocked() error {
 	}
 	if err := os.RemoveAll(retired); err != nil {
 		return err
+	}
+	if j.FileReceipt {
+		return nil
 	}
 	_, err = s.cutDB.Exec("DELETE FROM watch_conversation_cut_receipts WHERE token=?", j.Token)
 	return err
@@ -324,6 +362,9 @@ func (a *App) ForgetWatchConversation(conversationID string) error {
 			publishPrivacyWithdrawal(privacyWithdrawalScope{Kind: privacyWithdrawalSession, ID: hour.recording.SessionID})
 		}
 	}
+	if p.claimScope != nil || len(p.supportChanges) > 0 {
+		a.publishForgottenMemory(p.withdrawnIDs, p.notifyTopics)
+	}
 	briefPrivacyChanged()
 	a.touchDerivedViews(derivedWorkList)
 	_, err = a.watchConversationsOf(store)
@@ -335,9 +376,7 @@ func (a *App) applyWatchForget(conversationID string) (*watchForgetPlan, error) 
 	if err != nil {
 		return nil, err
 	}
-	if len(p.preview.Claims) > 0 {
-		return nil, errors.New("claim withdrawal requires a coordinated memory transaction")
-	}
+
 	store := a.watchRecordingStore()
 	if expected, ok := store.forgetPreviews[conversationID]; ok && expected != p.signature {
 		return nil, errors.New("conversation changed; preview it again")
@@ -349,7 +388,7 @@ func (a *App) applyWatchForget(conversationID string) (*watchForgetPlan, error) 
 	return p, nil
 }
 
-// interrupted is used by the crash test to abandon an uncommitted journal.
+// The crash hook can interrupt immediately before or after the receipt.
 func (a *App) commitWatchCut(store *mobileRecordingStore, p *watchForgetPlan, interrupted func() bool) (result error) {
 	watchConversationNotesMu.Lock()
 	defer watchConversationNotesMu.Unlock()
@@ -359,13 +398,25 @@ func (a *App) commitWatchCut(store *mobileRecordingStore, p *watchForgetPlan, in
 	defer watchSpeakerNamesMu.Unlock()
 	memoryMutationMu.Lock()
 	defer memoryMutationMu.Unlock()
-	check := watchForgetPlan{hours: p.hours}
-	if err := check.readClaims(); err != nil {
+	var claimIDs []string
+	if p.claimScope != nil {
+		for _, r := range p.claimScope.records {
+			claimIDs = append(claimIDs, r.id)
+		}
+	}
+	for _, item := range p.preview.ClaimsLosingSupport {
+		claimIDs = append(claimIDs, item.ID)
+	}
+	slices.Sort(claimIDs)
+	for _, id := range slices.Compact(claimIDs) {
+		unlock := memoryFileLocks.Acquire(id)
+		defer unlock()
+	}
+	index, release, err := a.lockMemoryForgetIndex()
+	if err != nil {
 		return err
 	}
-	if len(check.preview.Claims) > 0 {
-		return errors.New("claim withdrawal requires a coordinated memory transaction")
-	}
+	defer release()
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	if err := store.loadLocked(); err != nil {
@@ -378,7 +429,8 @@ func (a *App) commitWatchCut(store *mobileRecordingStore, p *watchForgetPlan, in
 	defer activity.readPrivacyRevision.Add(1)
 	db := activity.db
 	store.cutDB = db
-	if _, err := db.Exec("CREATE TABLE IF NOT EXISTS watch_conversation_cut_receipts (token TEXT PRIMARY KEY)"); err != nil {
+	store.cutUses = a.store
+	if _, err := db.Exec(watchCutReceiptSchema); err != nil {
 		return err
 	}
 	staging := filepath.Join(store.dir, ".staging-conversation-cut")
@@ -431,6 +483,20 @@ func (a *App) commitWatchCut(store *mobileRecordingStore, p *watchForgetPlan, in
 		return err
 	}
 	defer tx.Rollback()
+	check := watchForgetPlan{hours: p.hours, speech: p.speech}
+	if err := check.readClaims(tx, index); err != nil {
+		return err
+	}
+	if check.claimSignature != p.claimSignature {
+		return errors.New("claim evidence changed; preview it again")
+	}
+	if p.claimScope != nil || len(p.supportChanges) > 0 {
+		release, err := a.stageWatchMemory(&f, p, tx, index)
+		if err != nil {
+			return err
+		}
+		defer release()
+	}
 	var recs []mobileRecording
 	for _, h := range p.hours {
 		recs = append(recs, h.recording)
@@ -482,9 +548,110 @@ func (a *App) commitWatchCut(store *mobileRecordingStore, p *watchForgetPlan, in
 			return err
 		}
 	}
-	if _, err := tx.Exec("INSERT INTO watch_conversation_cut_receipts VALUES (?)", f.Token); err != nil {
+	if err := a.commitForgetFiles(store, &f, tx, index, interrupted); err != nil {
 		return err
 	}
+	if activity.readPrivacySessionRevisions == nil {
+		activity.readPrivacySessionRevisions = map[string]uint64{}
+	}
+	for _, h := range p.hours {
+		activity.readPrivacySessionRevisions[h.recording.SessionID] = activity.readPrivacyRevision.Load() + 1
+	}
+	return nil
+}
+
+var errWatchCutInterrupted = errors.New("conversation cut interrupted")
+
+func restoreCutFiles(dir, stage string, j watchCutJournal) error {
+	for i, rel := range j.Paths {
+		dest, err := cutFilePath(dir, rel)
+		if err != nil {
+			return err
+		}
+		if slices.Contains(j.Created, i) {
+			if err := os.Remove(dest); err != nil && !os.IsNotExist(err) {
+				return err
+			}
+			if err := syncWatchCutDir(filepath.Dir(dest)); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := installCutLink(stage, "old"+strconv.Itoa(i), dest); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func cutFilePath(dir, rel string) (string, error) {
+	if !filepath.IsLocal(rel) {
+		return "", errors.New("invalid recovery path")
+	}
+	switch rel {
+	case "@portrait":
+		return portraitPath()
+	case "@topics":
+		root, err := topicsStateDir()
+		return filepath.Join(root, topicsStateFileName), err
+	}
+	if name, ok := strings.CutPrefix(rel, "@memory/"); ok {
+		if !filepath.IsLocal(name) {
+			return "", errors.New("invalid memory recovery path")
+		}
+		root, err := memoryDir()
+		return filepath.Join(root, name), err
+	}
+	return filepath.Join(dir, rel), nil
+}
+
+func (s *mobileRecordingStore) finishCutMemory(j watchCutJournal) error {
+	if len(j.IndexPaths) > 0 {
+		dir, err := memoryDir()
+		if err != nil {
+			return err
+		}
+		db, err := openCutDatabase(filepath.Join(filepath.Dir(dir), "memory.db"))
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+		tx, err := db.Begin()
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		if err := j.applyIndex(tx); err != nil {
+			return err
+		}
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+	}
+	if j.CleanContextUses {
+		if s.cutUses == nil {
+			return errors.New("conversation recovery awaits context use storage")
+		}
+		return s.cutUses.DeleteContextUses(context.Background(), "memory", j.WithdrawnIDs...)
+	}
+	return nil
+}
+
+func openCutDatabase(path string) (*sql.DB, error) {
+	uri := activityDatabaseURI(path)
+	uri.RawQuery = "mode=rw&_pragma=busy_timeout(5000)"
+	return sql.Open("sqlite", uri.String())
+}
+
+func (a *App) commitForgetFiles(store *mobileRecordingStore, f *watchCutFiles, tx *sql.Tx, index *sql.DB, interrupted func() bool) (result error) {
+	if tx != nil {
+		if _, err := tx.Exec("INSERT INTO watch_conversation_cut_receipts VALUES (?)", f.Token); err != nil {
+			return err
+		}
+	} else {
+		f.FileReceipt = true
+	}
+	staging := f.stage
 	marker, err := json.Marshal(f.watchCutJournal)
 	if err != nil {
 		return err
@@ -500,12 +667,15 @@ func (a *App) commitWatchCut(store *mobileRecordingStore, p *watchForgetPlan, in
 		return err
 	}
 	store.loaded = false
+	memoryCompleted := false
 	defer func() {
-		tx.Rollback()
+		if tx != nil {
+			tx.Rollback()
+		}
 		if interrupted != nil && errors.Is(result, errWatchCutInterrupted) {
 			return
 		}
-		result = errors.Join(result, store.recoverWatchCutLocked())
+		result = errors.Join(result, store.resolveWatchCut(memoryCompleted))
 	}()
 	if err := syncWatchCutDir(store.dir); err != nil {
 		return err
@@ -513,19 +683,47 @@ func (a *App) commitWatchCut(store *mobileRecordingStore, p *watchForgetPlan, in
 	if err := f.install(); err != nil {
 		return err
 	}
+	secondary, err := a.prepareMemoryDatabases(f, index)
+	if err != nil {
+		return err
+	}
+	defer secondary.rollback()
 	if interrupted != nil && interrupted() {
 		return errWatchCutInterrupted
 	}
-	if err := tx.Commit(); err != nil {
+	if tx != nil {
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+	} else {
+		if err := mobileRecordingWriteFile(filepath.Join(f.stage, "committed"), []byte("1"), 0600); err != nil {
+			return err
+		}
+		if err := syncWatchCutDir(f.stage); err != nil {
+			return err
+		}
+	}
+	if interrupted != nil && interrupted() {
+		return errWatchCutInterrupted
+	}
+	if err := secondary.commit(); err != nil {
 		return err
 	}
-	if activity.readPrivacySessionRevisions == nil {
-		activity.readPrivacySessionRevisions = map[string]uint64{}
-	}
-	for _, h := range p.hours {
-		activity.readPrivacySessionRevisions[h.recording.SessionID] = activity.readPrivacyRevision.Load() + 1
-	}
+	memoryCompleted = true
 	return nil
 }
 
-var errWatchCutInterrupted = errors.New("conversation cut interrupted")
+// Retain the journal copy until retirement so recovery itself can restart.
+func installCutLink(stage, source, dest string) error {
+	link := filepath.Join(stage, "install")
+	if err := os.Remove(link); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if err := os.Link(filepath.Join(stage, source), link); err != nil {
+		return err
+	}
+	if err := os.Rename(link, dest); err != nil {
+		return err
+	}
+	return syncWatchCutDir(filepath.Dir(dest))
+}

@@ -776,6 +776,17 @@ func (a *App) forgetAboutYouPortraitVersions(ids []string, records []*memoryForg
 	if err != nil || doc == nil {
 		return err
 	}
+	if !removePortraitVersions(doc, ids, records) {
+		return nil
+	}
+	if err := writePortrait(path, doc); err != nil {
+		return err
+	}
+	s.poke()
+	return nil
+}
+
+func removePortraitVersions(doc *portraitDocument, ids []string, records []*memoryForgetRecord) bool {
 	forgotten := map[string]bool{}
 	for _, id := range ids {
 		forgotten[id] = true
@@ -811,19 +822,12 @@ func (a *App) forgetAboutYouPortraitVersions(ids []string, records []*memoryForg
 		doc.Pending = nil
 	}
 	if len(live) == len(doc.Inputs) {
-		if pendingGone {
-			return writePortrait(path, doc)
-		}
-		return nil
+		return pendingGone
 	}
 	if shown, _ := doc.keepSupported(live, confirmedFromInputs(live)); shown {
 		doc.Removed = true
 	}
-	if err := writePortrait(path, doc); err != nil {
-		return err
-	}
-	s.poke()
-	return nil
+	return true
 }
 
 // readableEntries keeps the owner-only Closed Eyes exception local to this

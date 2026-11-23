@@ -25,6 +25,7 @@ import (
 	"wails-gui/internal/platform/activitymon"
 	"wails-gui/internal/platform/cmdutil"
 	"wails-gui/internal/privacy"
+	"wails-gui/storage"
 )
 
 // Recordings from the watch and the phone (PROTOCOL.md section 24). The phone
@@ -263,6 +264,7 @@ type mobileRecordingStore struct {
 	mu             sync.Mutex
 	recordings     map[string]*mobileRecording
 	loaded         bool
+	cutUses        *storage.Store
 	cutDB          *sql.DB
 	forgetPreviews map[string][32]byte // guarded by watchCutMu
 
@@ -1001,6 +1003,7 @@ func (bridge *mobileBridge) recordingStoreLocked() *mobileRecordingStore {
 	// The mobile bridge can be initialized before activity storage is ready.
 	if bridge.app != nil && bridge.app.activity != nil && bridge.app.activity.store != nil {
 		store.mu.Lock()
+		store.cutUses = bridge.app.store
 		store.cutDB = bridge.app.activity.store.db
 		store.mu.Unlock()
 	}

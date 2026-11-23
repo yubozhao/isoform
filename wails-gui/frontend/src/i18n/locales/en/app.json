@@ -11,6 +11,8 @@
         "rootFailed": "Could not load the repository folder. Close this dialog and try again."
     },
     "storageStartup": {
+        "recoveryFailed": "Isoform couldn’t finish recovering an interrupted Forget. Try again to finish opening your data.",
+        "retry": "Try again",
         "checking": "Checking local data…",
         "newerTitle": "Update Isoform to open your data",
         "newerDescription": "Your local database uses version {{storedVersion}}, but this build supports up to version {{supportedVersion}}. Isoform has stopped before opening it for writes. Quit this build and open a newer version of Isoform to continue.",

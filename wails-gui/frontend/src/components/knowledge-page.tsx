@@ -45,6 +45,7 @@ import { markPageContent } from '@/lib/page-switch-timing';
 import { pageQueryCache } from '@/lib/query-cache';
 import { cn } from '@/lib/utils';
 import { useInsideYou } from '@/components/you/you-page';
+import { YouLearningLine } from '@/components/you/you-learning-line';
 import { PlaybookReader } from '@/components/sops/PlaybookReader';
 import { PlaybookCards, type PlaybookRunState } from '@/components/playbooks/PlaybookCards';
 import { PlaybookPageActions } from '@/components/playbooks/PlaybookPageActions';
@@ -1223,6 +1224,8 @@ export function KnowledgePage({
                             <CardGrid cards={visible} copyCounts={copyCounts} selectedId={selected?.id ?? null} landedId={landedId} locale={locale} onSelect={handleSelect} />
                         )
                     )}
+
+                    {ready && <YouLearningLine feature="knowledge" />}
                 </div>
             </ScrollArea>
 

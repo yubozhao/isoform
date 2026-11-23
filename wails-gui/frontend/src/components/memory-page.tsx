@@ -32,6 +32,7 @@ import { pageQueryCache } from '@/lib/query-cache';
 import { markPageContent } from '@/lib/page-switch-timing';
 import type { main } from '../../wailsjs/go/models';
 import { AIMemoryImportDialog } from '@/components/ai-memory-import-dialog';
+import { YouLearningLine } from '@/components/you/you-learning-line';
 import { MemoryDreamDialog } from '@/components/memory-dream-dialog';
 import { MemoryForgetDialog } from '@/components/memory-forget-dialog';
 import { MemoryHistoryDialog } from '@/components/memory-history-dialog';
@@ -938,6 +939,8 @@ export function MemoryPage({
                             </CollapsibleContent>
                         </Collapsible>
                     )}
+
+                    {entriesState === 'ready' && <YouLearningLine feature="memory" />}
                 </main>
             </ScrollArea>
 

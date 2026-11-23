@@ -337,6 +337,11 @@ func userAuthoredMemoryMarkdown(id, content, previous string) string {
 	if doc, ok := parseOKFDocument(previous); ok {
 		if _, present := doc.Frontmatter["evidence_sessions"]; present || len(parseMemoryFrontmatter(previous).ActivitySessionIDs) > 0 && len(memoryEvidenceSessionIDs(previous)) == 0 {
 			meta["evidence_sessions"] = memoryEvidenceSessionIDs(previous)
+			for _, key := range []string{watchEvidenceKey, watchHourEvidenceKey} {
+				if refs := okfStringSlice(doc.Frontmatter, key); len(refs) > 0 {
+					meta[key] = refs
+				}
+			}
 		}
 	}
 	if fm.UpdatedAt > 0 {

@@ -19,6 +19,9 @@ func storageStartupStatus(err error) StorageStartupStatus {
 	if err == nil {
 		return StorageStartupStatus{}
 	}
+	if errors.Is(err, errStartupCutRecovery) {
+		return StorageStartupStatus{Code: "cut_recovery_failed"}
+	}
 	var versionErr *storage.SchemaVersionError
 	if errors.As(err, &versionErr) {
 		return StorageStartupStatus{
@@ -36,7 +39,7 @@ func storageStartupStatus(err error) StorageStartupStatus {
 type storageStartupState struct {
 	mu            sync.Mutex
 	lifecycle     sync.Mutex
-	once          sync.Once
+	started       bool
 	done          chan struct{}
 	servicesDone  chan struct{}
 	status        StorageStartupStatus
@@ -58,46 +61,56 @@ func (s *storageStartupState) snapshot() StorageStartupStatus {
 }
 
 func (s *storageStartupState) start(open func() (*storage.Store, error), publish func(*storage.Store), startServices func()) {
-	s.once.Do(func() {
-		go func() {
-			defer close(s.done)
-			store, err := open()
-			s.lifecycle.Lock()
-			s.mu.Lock()
-			stopped := s.stopped
-			s.mu.Unlock()
-			if stopped {
-				s.lifecycle.Unlock()
-				if store != nil {
-					_ = store.Close()
-				}
-				return
-			}
-			if err == nil {
-				publish(store)
-			}
-			s.mu.Lock()
-			s.status = storageStartupStatus(err)
-			s.mu.Unlock()
-			if err == nil {
-				s.servicesDone = make(chan struct{})
-				// Wails and mandatory storage are ready. Optional services below
-				// may download models for minutes; they must not hold the update
-				// acknowledgement hostage to network speed. Failed, pending or
-				// stopped storage startup must never acknowledge an update.
-				acknowledgeUpdateStartup()
-				// The same health signal clears a quit install's trial and its kept previous app.
-				if home, err := flavorDataDir(); err == nil {
-					ackQuitInstallTrial(home, Version, findAppBundle())
-				}
-			}
+	s.mu.Lock()
+	if s.stopped || s.started && s.status.Code != "cut_recovery_failed" {
+		s.mu.Unlock()
+		return
+	}
+	if s.started {
+		s.done = make(chan struct{})
+	}
+	done := s.done
+	s.started = true
+	s.status = StorageStartupStatus{Code: "checking"}
+	s.mu.Unlock()
+	go func() {
+		defer close(done)
+		store, err := open()
+		s.lifecycle.Lock()
+		s.mu.Lock()
+		stopped := s.stopped
+		s.mu.Unlock()
+		if stopped {
 			s.lifecycle.Unlock()
-			if err == nil {
-				defer close(s.servicesDone)
-				startServices()
+			if store != nil {
+				_ = store.Close()
 			}
-		}()
-	})
+			return
+		}
+		if err == nil {
+			publish(store)
+		}
+		s.mu.Lock()
+		s.status = storageStartupStatus(err)
+		s.mu.Unlock()
+		if err == nil {
+			s.servicesDone = make(chan struct{})
+			// Wails and mandatory storage are ready. Optional services below
+			// may download models for minutes; they must not hold the update
+			// acknowledgement hostage to network speed. Failed, pending or
+			// stopped storage startup must never acknowledge an update.
+			acknowledgeUpdateStartup()
+			// The same health signal clears a quit install's trial and its kept previous app.
+			if home, err := flavorDataDir(); err == nil {
+				ackQuitInstallTrial(home, Version, findAppBundle())
+			}
+		}
+		s.lifecycle.Unlock()
+		if err == nil {
+			defer close(s.servicesDone)
+			startServices()
+		}
+	}()
 }
 
 // stop fences late publication and returns the optional-service join. Callers

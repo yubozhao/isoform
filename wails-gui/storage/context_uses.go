@@ -202,59 +202,80 @@ func (s *Store) RecordCapturedContextUseBatch(uses []ContextUse) {
 
 // DeleteContextUses also discards queued rows under the writer's barrier.
 func (s *Store) DeleteContextUses(ctx context.Context, kind string, ids ...string) error {
-	if s == nil {
-		return nil
-	}
-	if !validContextKind(kind) {
-		return fmt.Errorf("invalid entry kind")
-	}
-	w := &s.contextUses
-	w.persistMu.Lock()
-	defer w.persistMu.Unlock()
-	w.mu.Lock()
-	removed := map[string]bool{}
-	if w.erased == nil {
-		w.erased = map[string]uint64{}
-	}
-	epoch := w.epoch.Add(1)
-	for _, id := range ids {
-		removed[id] = true
-		// Deterministic entry IDs can be reused. Only reads begun before this
-		// deletion are invalid; a new read can log the new entry's lifetime.
-		// Bound the process-local barrier; saturation disables logging.
-		if len(w.erased) < 4096 || w.erased[kind+":"+id] != 0 {
-			w.erased[kind+":"+id] = epoch
-		} else {
-			w.erasureLimit = true
-		}
-	}
-	kept := w.pending[:0]
-	for _, use := range w.pending {
-		if use.Kind != kind || !removed[use.ID] {
-			kept = append(kept, use)
-		}
-	}
-	w.pending = kept
-	w.mu.Unlock()
-	tx, err := s.db.BeginTx(ctx, nil)
+	finish, err := s.PrepareContextUseDeletion(ctx, kind, ids...)
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
-	for _, id := range ids {
-		result, err := tx.ExecContext(ctx, `DELETE FROM context_uses WHERE entry_kind=? AND entry_id=?`, kind, id)
-		if err != nil {
-			return err
-		}
-		changed, err := result.RowsAffected()
-		if err != nil {
-			return err
-		}
-		// SQLite total_changes includes successful statements even when a
-		// later statement or commit rolls the transaction back.
-		w.changes += changed
+	return finish(true)
+}
+
+// PrepareContextUseDeletion holds the writer barrier through the caller's
+// commit decision. Rollback leaves both queued and persisted uses intact.
+// Call the returned function exactly once.
+func (s *Store) PrepareContextUseDeletion(ctx context.Context, kind string, ids ...string) (func(bool) error, error) {
+	if s == nil {
+		return func(bool) error { return nil }, nil
 	}
-	return tx.Commit()
+	if !validContextKind(kind) {
+		return nil, fmt.Errorf("invalid entry kind")
+	}
+	w := &s.contextUses
+	w.persistMu.Lock()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		w.persistMu.Unlock()
+		return nil, err
+	}
+	var changes int64
+	for _, id := range ids {
+		result, err := tx.ExecContext(ctx, "DELETE FROM context_uses WHERE entry_kind=? AND entry_id=?", kind, id)
+		if err == nil {
+			var n int64
+			n, err = result.RowsAffected()
+			changes += n
+		}
+		if err != nil {
+			tx.Rollback()
+			w.persistMu.Unlock()
+			return nil, err
+		}
+	}
+	return func(commit bool) error {
+		defer w.persistMu.Unlock()
+		if !commit {
+			return tx.Rollback()
+		}
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+		w.changes += changes
+		w.mu.Lock()
+		removed := map[string]bool{}
+		if w.erased == nil {
+			w.erased = map[string]uint64{}
+		}
+		epoch := w.epoch.Add(1)
+		for _, id := range ids {
+			removed[id] = true
+			// Deterministic entry IDs can be reused. Only reads begun before this
+			// deletion are invalid; a new read can log the new entry's lifetime.
+			// Bound the process-local barrier; saturation disables logging.
+			if len(w.erased) < 4096 || w.erased[kind+":"+id] != 0 {
+				w.erased[kind+":"+id] = epoch
+			} else {
+				w.erasureLimit = true
+			}
+		}
+		kept := w.pending[:0]
+		for _, use := range w.pending {
+			if use.Kind != kind || !removed[use.ID] {
+				kept = append(kept, use)
+			}
+		}
+		w.pending = kept
+		w.mu.Unlock()
+		return nil
+	}, nil
 }
 
 func (s *Store) EntryUses(ctx context.Context, kind, id string) (EntryUses, error) {

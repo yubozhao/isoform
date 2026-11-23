@@ -25,6 +25,8 @@ const mocks = vi.hoisted(() => ({
     getSopAuthor: vi.fn(),
 }));
 
+// The tab's learning line has its own test (you-learning-line.test.tsx).
+vi.mock('@/components/you/you-learning-line', () => ({ YouLearningLine: () => null }));
 vi.mock('@/lib/wails-shim-app', () => ({
     IdeaMeaningGroups: () => Promise.resolve(null),
     ListKnowHow: mocks.listKnowHow,

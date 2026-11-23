@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -1744,8 +1745,13 @@ func (c *ActivityTriager) updateActivityMemory(ctx context.Context, updateID str
 		translated := c.app.normalizeGeneratedMarkdownToCurrentUILanguage("memory", b.String())
 		content = activityMemoryWithProvenance(updateID, translated, provenance, append(parseMemoryFrontmatter(existing).Apps, appNames...), append(memoryEvidenceSessionIDs(existing), sessionIDsFromGroup(group)...))
 	}
+
 	releaseMutation := acquireMemoryMutationRead()
 	defer releaseMutation()
+	content, err = c.linkWatchMemory(ctx, content, existing, group, memory.WatchSpeechQuotes)
+	if err != nil {
+		return "", err
+	}
 	unlock = memoryFileLocks.Acquire(updateID)
 	defer unlock()
 	if err := validateMemoryObservationUnchanged(dir, updateID, existingData, content); err != nil {
@@ -1842,6 +1848,9 @@ func (c *ActivityTriager) generateAndSaveMemory(ctx context.Context, runID int64
 	}
 	genCtx, cancelGen := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancelGen()
+	if slices.ContainsFunc(group.Sessions, func(s ActivitySessionRow) bool { return s.TriggerKind == mobileRecordingTrigger }) {
+		summary += "\nFor watch speech, include watchSpeechQuotes in the response, a JSON array of the exact complete utterances supporting the memory. Include every supporting utterance verbatim."
+	}
 	memory, err := c.runMemoryGeneration(genCtx, group.primaryID(), summary, profile)
 	if err != nil {
 		log.Printf("[triager] memory generation failed for group %s: %s", session.ID, activityPrivateLogField("error", err.Error()))
@@ -2010,6 +2019,7 @@ func (c *ActivityTriager) saveActivityMemoryContext(ctx context.Context, session
 	filePath := filepath.Join(dir, filename)
 	content := c.app.normalizeGeneratedMarkdownToCurrentUILanguage("memory", b.String())
 	content = activityMemoryWithProvenance(entryID, content, memoryGenerationProvenance(memory, memoryGenerationCurrentSource(memory, activityGroupMemoryProvenance(group))), appNames, sessionIDsFromGroup(group))
+
 	if err := c.app.prepareMemoryObservedWriteContext(ctx, dir, entryID, content); err != nil {
 		return "", err
 	}
@@ -2018,6 +2028,10 @@ func (c *ActivityTriager) saveActivityMemoryContext(ctx context.Context, session
 	// with clock skew / retries) would otherwise clobber each other.
 	releaseMutation := acquireMemoryMutationRead()
 	defer releaseMutation()
+	content, err = c.linkWatchMemory(ctx, content, "", group, memory.WatchSpeechQuotes)
+	if err != nil {
+		return "", err
+	}
 	unlock := memoryFileLocks.Acquire(entryID)
 	defer unlock()
 
