@@ -24,11 +24,10 @@ import {
 
 type SwitchKey = "notes" | "heartRate" | "place";
 
-/** Held: the watch session is checking whether the area is named through
- *  Apple's geocoder. If it is, Place sends the location to Apple, and its
- *  line ("Never the address") and a What leaves row change first. Off until
- *  that's confirmed. */
-export const SHOW_WATCH_PLACE = false;
+/** Place shows now that the phone and watch follow the computer's choice
+ *  and the phone lists Apple naming the area (PR 1466). Kept as a switch so a
+ *  later hold is one line. */
+export const SHOW_WATCH_PLACE = true;
 
 const SETTERS: Record<SwitchKey, (on: boolean) => Promise<WatchSettingsView>> = {
     notes: SetWatchNotes,
@@ -120,7 +119,7 @@ export function YourWatchPage({ showPlace = SHOW_WATCH_PLACE }: { showPlace?: bo
           : t("yourWatch.stateListening");
     const phoneTime = whenWords(quiet.since, language, clock as never);
 
-    const row = (key: SwitchKey, interim?: string) => {
+    const row = (key: SwitchKey, lines: string[] = []) => {
         const title = t(`yourWatch.${key}.title` as never) as string;
         const setting = view[key];
         return (
@@ -137,11 +136,16 @@ export function YourWatchPage({ showPlace = SHOW_WATCH_PLACE }: { showPlace?: bo
                         />
                     }
                 />
-                {interim && setting.on && (
-                    <p className="settings-row-desc -mt-1 pb-2" data-testid={`your-watch-interim-${key}`}>
-                        {interim}
-                    </p>
-                )}
+                {setting.on &&
+                    lines.map((line, index) => (
+                        <p
+                            key={index}
+                            className="settings-row-desc -mt-1 pb-2"
+                            data-testid={index === 0 ? `your-watch-interim-${key}` : `your-watch-apple-${key}`}
+                        >
+                            {line}
+                        </p>
+                    ))}
             </div>
         );
     };
@@ -165,8 +169,11 @@ export function YourWatchPage({ showPlace = SHOW_WATCH_PLACE }: { showPlace?: bo
             </SettingsCard>
             <SettingsCard>
                 {row("notes")}
-                {row("heartRate", t("yourWatch.heartRate.interim"))}
-                {showPlace && row("place", t("yourWatch.place.interim"))}
+                {/* While on (interim words for design): the watch asks the
+                    wearer to allow it the first time; Place names the area
+                    through Apple (PR 1466). */}
+                {row("heartRate", [t("yourWatch.allowOnWatch")])}
+                {showPlace && row("place", [t("yourWatch.allowOnWatch"), t("yourWatch.place.apple")])}
                 <SettingsFailureLine failure={changeFailure} />
             </SettingsCard>
         </>

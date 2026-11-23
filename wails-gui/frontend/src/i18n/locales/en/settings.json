@@ -4167,13 +4167,13 @@
         },
         "heartRate": {
             "title": "Heart rate",
-            "description": "Adds \"heart rate raised\" beside what was said. Never the numbers.",
-            "interim": "Your watch adds it when its own Heart rate switch is on too."
+            "description": "Adds \"heart rate raised\" beside what was said. Never the numbers."
         },
         "place": {
             "title": "Place",
             "description": "Adds the area, like \"Mission District\". Never the address.",
-            "interim": "Your watch adds it when its own Place switch is on too."
-        }
+            "apple": "Apple names the area from where you were, rounded to about a kilometre, once for each new place."
+        },
+        "allowOnWatch": "Your watch asks you to allow it the first time you open it there."
     }
 }

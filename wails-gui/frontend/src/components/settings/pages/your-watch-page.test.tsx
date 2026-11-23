@@ -70,16 +70,15 @@ describe("Settings › Your watch", () => {
         expect(screen.queryByRole("switch")).not.toBeInTheDocument();
     });
 
-    it("holds the Place row until the Apple geocoder check (it doesn't render)", async () => {
-        expect(SHOW_WATCH_PLACE).toBe(false);
+    it("shows Place, now that the phone and watch follow the computer (PR 1466)", async () => {
+        expect(SHOW_WATCH_PLACE).toBe(true);
         render(<YourWatchPage />);
-        expect(await screen.findByRole("switch", { name: "Heart rate" })).toBeInTheDocument();
-        expect(screen.queryByRole("switch", { name: "Place" })).not.toBeInTheDocument();
-        expect(screen.queryByText(en.yourWatch.place.description)).not.toBeInTheDocument();
+        expect(await screen.findByRole("switch", { name: "Place" })).toBeInTheDocument();
+        expect(screen.getByText(en.yourWatch.place.description)).toBeInTheDocument();
     });
 
-    it("shows the state line and the three switches with their words (Place with its hold lifted)", async () => {
-        render(<YourWatchPage showPlace />);
+    it("shows the state line and the three switches with their words ", async () => {
+        render(<YourWatchPage />);
         expect(await screen.findByTestId("your-watch-state")).toHaveTextContent(/^Listening · last heard /);
         for (const key of ["notes", "heartRate", "place"] as const) {
             expect(screen.getByRole("switch", { name: en.yourWatch[key].title })).toBeInTheDocument();
@@ -119,7 +118,7 @@ describe("Settings › Your watch", () => {
         mocks.notes.mockResolvedValue(settings({ notes: { on: false, chosen: true } }));
         mocks.heart.mockResolvedValue(settings({ heartRate: { on: true, chosen: true } }));
         mocks.place.mockResolvedValue(settings({ place: { on: true, chosen: true } }));
-        render(<YourWatchPage showPlace />);
+        render(<YourWatchPage />);
         fireEvent.click(await screen.findByRole("switch", { name: "Notes for long talks" }));
         await waitFor(() => expect(mocks.notes).toHaveBeenCalledWith(false));
         fireEvent.click(screen.getByRole("switch", { name: "Heart rate" }));
@@ -139,18 +138,35 @@ describe("Settings › Your watch", () => {
         await waitFor(() => expect(mocks.heart).toHaveBeenCalledTimes(2));
     });
 
-    it("shows the interim line under Heart rate and Place only while each is on", async () => {
+    it("shows the allow-on-the-watch line under Heart rate and Place only while each is on", async () => {
         mocks.settings.mockResolvedValue(settings({ heartRate: { on: true, chosen: true }, place: off }));
-        render(<YourWatchPage showPlace />);
-        expect(await screen.findByTestId("your-watch-interim-heartRate")).toHaveTextContent(en.yourWatch.heartRate.interim);
+        const first = render(<YourWatchPage />);
+        expect(await screen.findByTestId("your-watch-interim-heartRate")).toHaveTextContent(
+            "Your watch asks you to allow it the first time you open it there.",
+        );
         expect(screen.queryByTestId("your-watch-interim-place")).not.toBeInTheDocument();
+        expect(screen.queryByTestId("your-watch-apple-place")).not.toBeInTheDocument();
         expect(screen.queryByTestId("your-watch-interim-notes")).not.toBeInTheDocument();
+        first.unmount();
+        mocks.settings.mockResolvedValue(settings({ heartRate: off, place: { on: true, chosen: true } }));
+        render(<YourWatchPage />);
+        expect(await screen.findByTestId("your-watch-interim-place")).toHaveTextContent(en.yourWatch.allowOnWatch);
+        expect(screen.queryByTestId("your-watch-interim-heartRate")).not.toBeInTheDocument();
     });
 
-    it("shows Place's interim line while Place is on, with its hold lifted", async () => {
+    it("says under Place, while it's on, that Apple names the area from a rounded position", async () => {
         mocks.settings.mockResolvedValue(settings({ place: { on: true, chosen: true } }));
-        render(<YourWatchPage showPlace />);
-        expect(await screen.findByTestId("your-watch-interim-place")).toHaveTextContent(en.yourWatch.place.interim);
+        render(<YourWatchPage />);
+        expect(await screen.findByTestId("your-watch-apple-place")).toHaveTextContent(
+            "Apple names the area from where you were, rounded to about a kilometre, once for each new place.",
+        );
+        expect(screen.queryByTestId("your-watch-apple-heartRate")).not.toBeInTheDocument();
+    });
+
+    it("still hides Place behind its switch when the switch is off", async () => {
+        render(<YourWatchPage showPlace={false} />);
+        expect(await screen.findByRole("switch", { name: "Heart rate" })).toBeInTheDocument();
+        expect(screen.queryByRole("switch", { name: "Place" })).not.toBeInTheDocument();
     });
 
     it("keeps every string in both languages and none inline", () => {
