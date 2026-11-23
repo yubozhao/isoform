@@ -96,6 +96,7 @@ func (r *NativeAgentRunner) resolveModelForPriority(model, priority string) stri
 
 // NativeRunnerConfig configures the runner at construction.
 type NativeRunnerConfig struct {
+	OnWebSearch func(service string)
 	// BaseURL overrides the Anthropic API base (use sub2api's URL).
 	BaseURL string
 	// APIKey is the x-api-key header. Takes precedence over AuthToken
@@ -207,6 +208,7 @@ func NewNativeAgentRunner(cfg NativeRunnerConfig) *NativeAgentRunner {
 
 	locks := guard.NewFileLockManager(0)
 	bash := tools.NewBashTool()
+	bash.OnWebSearch = cfg.OnWebSearch
 
 	registry := tools.NewRegistry()
 	registry.Register(tools.NewReadTool())
@@ -217,7 +219,9 @@ func NewNativeAgentRunner(cfg NativeRunnerConfig) *NativeAgentRunner {
 	registry.Register(tools.NewKillShellTool(bash))
 	registry.Register(tools.NewGrepTool())
 	registry.Register(tools.NewGlobTool())
-	registry.Register(tools.NewWebFetchTool())
+	fetch := tools.NewWebFetchTool()
+	fetch.OnWebSearch = cfg.OnWebSearch
+	registry.Register(fetch)
 	registry.Register(tools.NewWebSearchTool())
 	registry.Register(tools.NewNotebookEditTool(locks))
 	// cua_driver is a thin proxy to the cua-driver daemon Yansu spawns

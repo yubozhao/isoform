@@ -23,6 +23,13 @@ type PersonLoop struct {
 	Since int64  `json:"since"`
 	Title string `json:"title"`
 	DueAt int64  `json:"dueAt"`
+	// Source is "purpose" for a promise kept in the Purpose map: only those
+	// are answered on Who you know (Still open?). EventID is the event the
+	// answer expects; Where and WhereAt say where the promise was heard.
+	Source  string `json:"source,omitempty"`
+	EventID string `json:"eventId,omitempty"`
+	Where   string `json:"where,omitempty"`
+	WhereAt int64  `json:"whereAt,omitempty"`
 }
 type PersonCard struct {
 	ID           string       `json:"id"`
@@ -81,6 +88,10 @@ type PersonDetail struct {
 	SharedTopics    []PersonTopic    `json:"sharedTopics"`
 	SeenIn          []string         `json:"seenIn"`
 	MessageCount    int              `json:"messageCount"`
+	// ChatNotes are the corrections the person made about them in Chat,
+	// shown read-only in Notes. They are never part of the directory row the
+	// editor saves; Chat's Undo removes them.
+	ChatNotes []PersonChatNote `json:"chatNotes"`
 }
 
 // peopleWorkTopic is one registry work topic with its person members as
@@ -588,7 +599,9 @@ func (a *App) peopleLoops(ctx context.Context, rows []PrincipalWithStatsDTO, now
 				if !names[row.Principal.ID][threadNorm(event.Counterparty)] {
 					continue
 				}
-				out[row.Principal.ID] = append(out[row.Principal.ID], PersonLoop{ID: detail.OpenLoop.ID, Kind: kind, Since: detail.OpenLoop.CreatedAt, Title: event.Title, DueAt: personDueAt(event.DueKind, event.DueValue)})
+				where, whereAt := personPromiseWhere(detail)
+				out[row.Principal.ID] = append(out[row.Principal.ID], PersonLoop{ID: detail.OpenLoop.ID, Kind: kind, Since: detail.OpenLoop.CreatedAt, Title: event.Title, DueAt: personDueAt(event.DueKind, event.DueValue),
+					Source: personLoopSourcePurpose, EventID: event.ID, Where: where, WhereAt: whereAt})
 			}
 		}
 	}
@@ -798,17 +811,18 @@ func (a *App) getPersonDetail(id string, cache *peopleReadGateCache) (PersonDeta
 	if err != nil {
 		return PersonDetail{}, err
 	}
-	detail := PersonDetail{ID: p.ID, Name: p.DisplayName, Relationship: p.Relationship, Notes: p.Notes, ResearchSummary: research.Summary, Loops: []PersonLoop{}, Together: []PersonTogether{}, SharedTopics: []PersonTopic{}, SeenIn: []string{}}
+	detail := PersonDetail{ID: p.ID, Name: p.DisplayName, Relationship: p.Relationship, Notes: p.Notes, ResearchSummary: research.Summary, Loops: []PersonLoop{}, Together: []PersonTogether{}, SharedTopics: []PersonTopic{}, SeenIn: []string{}, ChatNotes: []PersonChatNote{}}
 	allowed, err := a.peopleProfileRead(ctx, p, cache)
 	if err != nil {
 		return PersonDetail{}, err
 	}
 	if allowed {
-		notes, err := a.personCorrectionNotes(ctx, p.ID)
+		chatNotes, err := a.personCorrectionNoteList(ctx, p.ID)
 		if err != nil {
 			return PersonDetail{}, err
 		}
-		if notes != "" {
+		detail.ChatNotes = chatNotes
+		if notes := personChatNotesText(chatNotes); notes != "" {
 			detail.Notes = strings.TrimSpace(detail.Notes + "\n" + notes)
 		}
 	}

@@ -53,6 +53,10 @@ func (a *App) startStorageStartup(ctx context.Context, open func() (*storage.Sto
 		if err != nil {
 			return nil, err
 		}
+		if err := store.StartDestinationRecorder(); err != nil {
+			_ = store.Close()
+			return nil, err
+		}
 		a.restoreSettingsDefaults(ctx, store)
 		return store, nil
 	}, func(store *storage.Store) {

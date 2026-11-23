@@ -691,6 +691,7 @@
         "forgetBody": "Your answer to \"{{title}}\" is deleted from this computer. Isoform may ask about it again.",
         "forgetFailed": "Didn't forget it. Try again.",
         "source": {
+            "people": "Who you know",
             "prep": "For your meeting",
             "brief": "The brief",
             "topic": "Your topics",
@@ -704,6 +705,7 @@
         "undoRow": "Undo: {{title}}",
         "undoFailed": "Didn't undo it. It can be undone until the next brief.",
         "reason": {
+            "not_a_promise": "Not a promise",
             "already_done": "Already done",
             "not_now": "Not now",
             "not_useful": "Not useful",

@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"wails-gui/internal/destinations"
 )
 
 func TestQuittingEndsTheResearchProcessGroup(t *testing.T) {
@@ -44,6 +46,7 @@ func TestQuittingEndsTheResearchProcessGroup(t *testing.T) {
 }
 
 func TestAChildHoldingStdoutDoesNotHoldTheSearch(t *testing.T) {
+	calls := observeDestinationCalls(t)
 	script := filepath.Join(t.TempDir(), "claude")
 	body := "#!/bin/sh\n" +
 		`echo '{"type":"result","subtype":"success","result":"done"}'` + "\n" +
@@ -60,6 +63,7 @@ func TestAChildHoldingStdoutDoesNotHoldTheSearch(t *testing.T) {
 	if err != nil || final != "done" {
 		t.Fatalf("final %q err %v", final, err)
 	}
+	expectDestination(t, calls, destinations.AssistantSearch, "claude_code")
 	if took := time.Since(started); took > 10*time.Second {
 		t.Fatalf("the search waited %s on a child that kept stdout open", took)
 	}

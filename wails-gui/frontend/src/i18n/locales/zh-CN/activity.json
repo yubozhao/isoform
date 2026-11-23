@@ -691,6 +691,7 @@
         "forgetBody": "你对「{{title}}」的回答会从这台电脑上删除。Isoform 之后可能会再问一次。",
         "forgetFailed": "没有忘记成功，请再试一次。",
         "source": {
+            "people": "你认识的人",
             "prep": "为你的会议",
             "brief": "简报",
             "topic": "你的主题",
@@ -704,6 +705,7 @@
         "undoRow": "撤销：{{title}}",
         "undoFailed": "没有撤销成功。在下一份简报之前都可以撤销。",
         "reason": {
+            "not_a_promise": "不是承诺",
             "already_done": "已经做了",
             "not_now": "现在不",
             "not_useful": "没用",

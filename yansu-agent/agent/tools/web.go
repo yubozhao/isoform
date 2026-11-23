@@ -20,7 +20,7 @@ const webFetchMaxBytes = 2 * 1024 * 1024
 
 // WebFetchTool fetches a URL and returns the text content. Refuses
 // internal / private IPs to avoid being a SSRF helper.
-type WebFetchTool struct{}
+type WebFetchTool struct{ OnWebSearch func(service string) }
 
 // NewWebFetchTool returns a WebFetch tool.
 func NewWebFetchTool() *WebFetchTool { return &WebFetchTool{} }
@@ -83,6 +83,9 @@ func (t *WebFetchTool) Execute(ctx context.Context, call ToolCall) (ToolResult, 
 		return ToolResult{}, err
 	}
 	req.Header.Set("user-agent", "Yansu-Agent/1.0")
+	if t.OnWebSearch != nil {
+		t.OnWebSearch("")
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return ToolResult{}, fmt.Errorf("fetch: %w", err)

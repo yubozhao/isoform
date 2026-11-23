@@ -14,6 +14,8 @@ import (
 	"github.com/bwmarrin/discordgo"
 	"github.com/google/uuid"
 	"yansu-agent/agent"
+
+	"wails-gui/internal/destinations"
 )
 
 // Discord local integration: a user-built Discord bot (token from the Discord
@@ -63,23 +65,19 @@ func saveDiscordLocalCredentials(creds *discordLocalCredentials) error {
 }
 
 func loadDiscordLocalCredentials() *discordLocalCredentials {
-	dir, err := discordLocalStateDir()
-	if err != nil {
-		log.Printf("[discord-local] state directory unavailable: %v", err)
-		return nil
-	}
-	data, err := os.ReadFile(filepath.Join(dir, "credentials.json"))
-	if err != nil {
-		return nil
-	}
-	var creds discordLocalCredentials
-	if err := json.Unmarshal(data, &creds); err != nil {
-		return nil
+	creds, _ := readDiscordLocalCredentials()
+	return creds
+}
+
+func readDiscordLocalCredentials() (*discordLocalCredentials, error) {
+	creds, err := readLocalBotCredentials[discordLocalCredentials](discordLocalStateDir())
+	if err != nil || creds == nil {
+		return nil, err
 	}
 	if creds.BotToken == "" {
-		return nil
+		return nil, nil
 	}
-	return &creds
+	return creds, nil
 }
 
 func removeDiscordLocalCredentials() {
@@ -280,7 +278,8 @@ func (r *discordLocalReceiver) onMessage(m *discordgo.MessageCreate) {
 		log.Printf("[discord-local] reply authority denied: %v", err)
 		return
 	}
-	if _, err := r.session.ChannelMessageSendReply(m.ChannelID, truncateDiscordText(reply), m.Reference()); err != nil {
+	ctx = destinations.CountHTTP(ctx, destinations.ChatBridges)
+	if _, err := r.session.ChannelMessageSendReply(m.ChannelID, truncateDiscordText(reply), m.Reference(), discordgo.WithContext(ctx)); err != nil {
 		log.Printf("[discord-local] send reply failed: %v", err)
 	}
 }
@@ -339,7 +338,8 @@ func (r *discordLocalReceiver) senderAllowed(m *discordgo.MessageCreate, text st
 
 // notice posts a short notice to the channel a message came from.
 func (r *discordLocalReceiver) notice(channelID, text string) {
-	if _, err := r.session.ChannelMessageSend(channelID, text); err != nil {
+	ctx := destinations.CountHTTP(context.Background(), destinations.ChatBridges)
+	if _, err := r.session.ChannelMessageSend(channelID, text, discordgo.WithContext(ctx)); err != nil {
 		log.Printf("[discord-local] send notice failed: %v", err)
 	}
 }

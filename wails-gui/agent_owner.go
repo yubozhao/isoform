@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
+
+	"wails-gui/internal/destinations"
 )
 
 // AgentOwnerSnapshot has no data until the first server response is cached.
@@ -348,6 +350,7 @@ func agentOwnerStream(ctx context.Context, env agentOwnerEnv, identity, id, last
 	transport.ResponseHeaderTimeout = agentServerTimeout
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	req = destinations.CountRequest(req, destinations.AgentOfYou)
 	resp, err := client.Do(req)
 	if err != nil {
 		return lastID

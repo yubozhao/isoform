@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"wails-gui/internal/destinations"
 )
 
 const mcpReadClientHeader = "X-Isoform-MCP-Client"
@@ -228,5 +230,7 @@ func (hb *hostBridge) handleMCPRead(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "no-store")
-	_ = json.NewEncoder(w).Encode(browserAPIResponse{OK: true, Data: data})
+	if err := json.NewEncoder(w).Encode(browserAPIResponse{OK: true, Data: data}); err == nil {
+		destinations.RecordAnswer(r.Header.Get(mcpReadClientHeader))
+	}
 }

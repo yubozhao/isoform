@@ -17,6 +17,8 @@ import (
 	"github.com/slack-go/slack/slackevents"
 	"github.com/slack-go/slack/socketmode"
 	"yansu-agent/agent"
+
+	"wails-gui/internal/destinations"
 )
 
 // Slack local integration: a user-built Slack app in Socket Mode (bot token
@@ -80,23 +82,19 @@ func saveSlackLocalCredentials(creds *slackLocalCredentials) error {
 }
 
 func loadSlackLocalCredentials() *slackLocalCredentials {
-	dir, err := slackLocalStateDir()
-	if err != nil {
-		log.Printf("[slack-local] state directory unavailable: %v", err)
-		return nil
-	}
-	data, err := os.ReadFile(filepath.Join(dir, "credentials.json"))
-	if err != nil {
-		return nil
-	}
-	var creds slackLocalCredentials
-	if err := json.Unmarshal(data, &creds); err != nil {
-		return nil
+	creds, _ := readSlackLocalCredentials()
+	return creds
+}
+
+func readSlackLocalCredentials() (*slackLocalCredentials, error) {
+	creds, err := readLocalBotCredentials[slackLocalCredentials](slackLocalStateDir())
+	if err != nil || creds == nil {
+		return nil, err
 	}
 	if creds.BotToken == "" || creds.AppToken == "" {
-		return nil
+		return nil, nil
 	}
-	return &creds
+	return creds, nil
 }
 
 func removeSlackLocalCredentials() {
@@ -307,6 +305,7 @@ func (r *slackLocalReceiver) handleMessage(ctx context.Context, user, channel, t
 		log.Printf("[slack-local] reply authority denied: %v", err)
 		return
 	}
+	ctx = destinations.CountHTTP(ctx, destinations.ChatBridges)
 	if _, _, err := r.api.PostMessageContext(ctx, channel,
 		slack.MsgOptionText(reply, false),
 		slack.MsgOptionTS(rootTS),
@@ -379,6 +378,7 @@ func (r *slackLocalReceiver) senderAllowed(ctx context.Context, user, channel, t
 
 // notice posts a short notice to the conversation a message came from.
 func (r *slackLocalReceiver) notice(ctx context.Context, channel, text string) {
+	ctx = destinations.CountHTTP(ctx, destinations.ChatBridges)
 	if _, _, err := r.api.PostMessageContext(ctx, channel, slack.MsgOptionText(text, false)); err != nil {
 		log.Printf("[slack-local] send notice failed: %v", err)
 	}

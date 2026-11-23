@@ -594,7 +594,17 @@ export const GetFindingProvider = appBinding<[], FindingProviderView>("GetFindin
 export const SetFindingProvider = appBinding<[FindingProviderView["choice"], string, string], FindingProviderView>("SetFindingProvider");
 
 // Settings › Your data's numbers (your_data_summary.go).
+export interface YourDataLeaves {
+    webSearches?: { service: "claude_code" | "grok" | "gemini" | "doubao" | ""; thisWeek?: number; incomplete?: true };
+    email?: { on: boolean; addressMasked?: string; thisWeek?: number; incomplete?: true };
+    texts?: { on: boolean; namesOn: boolean; thisWeek?: number; incomplete?: true };
+    chatApps?: { apps: string[]; thisWeek?: number; incomplete?: true };
+    agentsAsk?: { thisWeek?: number; incomplete?: true; byAgent?: { agent: string; thisWeek?: number; incomplete?: true }[] };
+    usageCounts: { on: boolean };
+}
+
 export interface YourDataSummary {
+    leaves: YourDataLeaves;
     retentionDays: number;
     ignoredApps: number;
     findingLeaves?: { service: "openai" | "ollama"; address?: string; thisWeek?: number };
@@ -4862,6 +4872,11 @@ export type PersonLoop = {
     since: number;
     title: string;
     dueAt: number;
+    /** "purpose": a promise answered under Still open? on Who you know. */
+    source?: "purpose";
+    eventId?: string;
+    where?: "meeting" | "mail" | "conversation" | "chat" | "activity" | "you" | "";
+    whereAt?: number;
 };
 export type PersonCard = {
     id: string;
@@ -4901,6 +4916,8 @@ export type PersonDetail = {
     sharedTopics: { id: string; name: string }[];
     seenIn: string[];
     messageCount: number;
+    /** Corrections made about them in Chat: read-only, never saved by the editor. */
+    chatNotes?: { id: string; text: string }[];
 };
 export const ListPeopleOverview = appBinding<[], PeopleOverview>("ListPeopleOverview");
 export const MergePeople = appBinding<[string, string[]], MergeResult>("MergePeople");
@@ -4908,6 +4925,26 @@ export const UndoMerge = appBinding<[string], void>("UndoMerge");
 export const NotSamePeople = appBinding<[string[]], void>("NotSamePeople");
 export const UndoNotSamePeople = appBinding<[string[]], void>("UndoNotSamePeople");
 export const GetPersonDetail = appBinding<[string], PersonDetail>("GetPersonDetail");
+
+// Who you know's promises under Still open? (people_promises.go). Rejects
+// with "promise_changed", "promise_unavailable" or "promise_invalid".
+export type PersonPromiseAnswer = {
+    loopId: string;
+    expectedEventId?: string;
+    personId?: string;
+    answer: "yes" | "no" | "not_mine" | "edit";
+    reason?: "already_done" | "not_a_promise";
+    title?: string;
+    dueDate?: string;
+    setDue?: boolean;
+    key: string;
+};
+export type PersonPromiseResult = { loopId: string; eventId: string; title: string; open: boolean; followUpDrafted: boolean };
+export const AnswerPersonPromise = appBinding<[PersonPromiseAnswer], PersonPromiseResult>("AnswerPersonPromise");
+/** Conversations where you named a speaker as this person; nothing leaves the computer. */
+export type PersonVoice = { conversations: { id: string; startAt: number }[]; samples: number };
+export const GetPersonVoice = appBinding<[string], PersonVoice>("GetPersonVoice");
+export const ForgetPersonVoice = appBinding<[string], number>("ForgetPersonVoice");
 
 // Normalize every Anonymous principal's display name (strip trailing
 // timestamps / role badges / message bleed) and fold duplicates that

@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"wails-gui/internal/destinations"
 )
 
 // yourAgentTimeout bounds every call to the agents server.
@@ -226,6 +228,7 @@ func (c *yourAgentClient) do(ctx context.Context, method, path string, payload a
 	if bearer != "" {
 		req.Header.Set("Authorization", "Bearer "+bearer)
 	}
+	req = destinations.CountRequest(req, destinations.AgentOfYou)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return 0, nil, fmt.Errorf("%w: %v", errYourAgentOffline, err)

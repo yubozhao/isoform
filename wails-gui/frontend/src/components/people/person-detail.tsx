@@ -21,6 +21,8 @@ import { appLabel, dayWords, listWords, loopChip, loopLine, loopNeedsYou, readWi
 import { PeopleFailureLine, usePeopleDevTools } from './people-failure';
 import { PersonBriefBlock, PersonReplyDraft } from './person-brief';
 import { DetailFold, PersonDossier, PersonTechnicalDetails, RecentMessagesList, VoiceFingerprint } from './person-sections';
+import { PromiseLine, isPromise, sortPromises } from './open-between-you';
+import { PersonNext, PersonVoiceLine } from './person-voice';
 
 export interface PersonActions {
     onEdit: (p: PrincipalDTO) => void;
@@ -42,6 +44,7 @@ export function PersonDetailPanel({
     reloadToken = 0,
     actions,
     notice,
+    onAnswered,
 }: {
     personId: string;
     card?: PersonCard;
@@ -53,6 +56,8 @@ export function PersonDetailPanel({
     actions: PersonActions;
     /** A failed action on this person (delete, unlink), at the top. */
     notice?: ReactNode;
+    /** A promise here was answered: the page re-reads who you know. */
+    onAnswered?: () => void;
 }) {
     const { t, i18n } = useTranslation('people');
     const tr: Translate = (key, options) => t(key as never, options as never) as unknown as string;
@@ -194,6 +199,15 @@ export function PersonDetailPanel({
         !isSelf &&
         (detail.loops.length > 0 || detail.together.length > 0 || !!detail.researchSummary || detail.messageCount > 0 || (entry?.stats.totalMessages ?? 0) > 0);
     const summary = detail.researchSummary || (isSelf ? tr('detail.selfSummary') : '');
+    // Promises are answered under Still open?; other open loops (a reply you
+    // owe, a send waiting on them, back in touch) stay listed as before.
+    const promises = sortPromises(detail.loops.filter(isPromise).map((loop) => ({ loop, personId, name })));
+    const otherLoops = detail.loops.filter((loop) => !isPromise(loop));
+    const chatNotes = detail.chatNotes ?? [];
+    const promiseAnswered = () => {
+        reread();
+        onAnswered?.();
+    };
 
     return (
         <article aria-label={name} className="flex flex-col gap-5">
@@ -213,11 +227,24 @@ export function PersonDetailPanel({
                 </div>
             )}
 
-            {detail.loops.length > 0 && (
+            {!isSelf && <PersonNext personId={personId} />}
+
+            {promises.length > 0 && (
+                <section aria-labelledby={`person-promises-${personId}`} className="flex flex-col gap-1">
+                    <h3 id={`person-promises-${personId}`} className="m-0 text-[13px] font-semibold text-ink">{tr('who.open')}</h3>
+                    <div className="-mx-3 flex flex-col">
+                        {promises.map((entry) => (
+                            <PromiseLine key={entry.loop.id} entry={entry} onAnswered={promiseAnswered} />
+                        ))}
+                    </div>
+                </section>
+            )}
+
+            {otherLoops.length > 0 && (
                 <section className="flex flex-col gap-2">
-                    <h3 className="text-[13px] font-semibold text-ink">{tr('detail.openLoops')}</h3>
+                    {promises.length === 0 && <h3 className="text-[13px] font-semibold text-ink">{tr('detail.openLoops')}</h3>}
                     <ul className="flex flex-col gap-2">
-                        {detail.loops.map((loop) => (
+                        {otherLoops.map((loop) => (
                             <li key={`${loop.kind}:${loop.id}`} className="flex flex-col text-[14px] text-ink">
                                 <span className="flex items-start gap-2.5">
                                     <span aria-hidden className="mt-[7px] size-1.5 shrink-0 rounded-full bg-muted" />
@@ -273,12 +300,21 @@ export function PersonDetailPanel({
                 </section>
             )}
 
-            {principal?.notes && (
+            {(principal?.notes || chatNotes.length > 0) && (
                 <section className="flex flex-col gap-1.5">
                     <h3 className="text-[13px] font-semibold text-ink">{tr('notesHeading')}</h3>
-                    <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-ink">{principal.notes}</p>
+                    {principal?.notes && <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-ink">{principal.notes}</p>}
+                    {/* Corrections said in Chat: read-only here, never in the editor's save; Chat's Undo removes them. */}
+                    {chatNotes.map((note) => (
+                        <div key={note.id} data-chat-note className="flex flex-col gap-0.5">
+                            <span className="text-[12px] text-muted">{tr('who.chatNote')}</span>
+                            <p className="m-0 whitespace-pre-wrap text-[13px] leading-relaxed text-ink">{note.text}</p>
+                        </div>
+                    ))}
                 </section>
             )}
+
+            {!isSelf && <PersonVoiceLine personId={personId} name={name} />}
 
             <div className="flex flex-col">
                 {isSelf && principal && (

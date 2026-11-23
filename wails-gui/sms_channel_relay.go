@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"wails-gui/internal/destinations"
 )
 
 // smsResponseLimit bounds a relay answer on the text routes.
@@ -48,6 +50,9 @@ func (c *mobileRelayClient) smsCall(ctx context.Context, method, path string, bo
 	req.Header.Set("X-Yansu-Hub", c.hubID)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
+	}
+	if path == "/v1/hub/sms/send" {
+		req = destinations.CountRequest(req, destinations.TextRelay)
 	}
 	resp, err := smsHTTPClient.Do(req)
 	if err != nil {

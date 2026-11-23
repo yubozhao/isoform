@@ -18,6 +18,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"wails-gui/internal/destinations"
 	"wails-gui/models"
 
 	"wails-gui/internal/handoff"
@@ -1844,6 +1845,7 @@ func (a *App) buildAgentRunner() agent.AgentRunner {
 	externalAllowed := byoaAllowed
 
 	runnerCfg := agent.NativeRunnerConfig{
+		OnWebSearch: destinations.RecordSearch,
 		// Short alias for the default; the runner resolves it via
 		// ModelAliases below. Using the alias means env-var overrides
 		// (ANTHROPIC_DEFAULT_*_MODEL) and model bumps in

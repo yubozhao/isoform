@@ -15,6 +15,7 @@ import (
 // never sees, and what left this computer this week. Every number comes from
 // an existing store; nothing here reads personal content.
 type YourDataSummary struct {
+	Leaves        YourDataLeaves `json:"leaves"`
 	FindingLeaves *FindingLeaves `json:"findingLeaves,omitempty"`
 	// RetentionDays is how long recordings (screen and calls) are kept; 0
 	// means until you delete them.
@@ -74,8 +75,8 @@ type YourDataSummary struct {
 
 const yourDataWeek = 7 * 24 * time.Hour
 
-// GetYourDataSummary reads Settings › Your data's numbers. A source that
-// can't be read counts as zero rather than failing the page.
+// GetYourDataSummary reads Settings › Your data's numbers. Weekly destination
+// counts are optional when their store is unavailable.
 func (a *App) GetYourDataSummary() (perfValue YourDataSummary, perfErr error) {
 	defer logPageBinding("GetYourDataSummary", time.Now(), &perfValue)
 	out := YourDataSummary{RetentionDays: a.GetActivityRetentionDays(), IgnoredApps: len(pii.GetAllSensitiveApps()), HandoffsByAgent: map[string]int{}}
@@ -159,7 +160,8 @@ func (a *App) GetYourDataSummary() (perfValue YourDataSummary, perfErr error) {
 			out.FindingLeaves.countCalls(store.db)
 		}
 	}
-	return out, nil
+	out.Leaves, err = a.yourDataLeaves()
+	return out, err
 }
 
 // yourDataDirBytes is what the files under dir take; a missing folder is 0.
