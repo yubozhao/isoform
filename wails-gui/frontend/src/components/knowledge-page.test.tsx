@@ -45,6 +45,8 @@ const chat = vi.hoisted(() => ({
     waiting: false,
 }));
 vi.mock('@/hooks/useMainChatPanel', () => ({ useMainChatPanel: () => chat }));
+// The tab's learning line has its own test (you-learning-line.test.tsx).
+vi.mock('@/components/you/you-learning-line', () => ({ YouLearningLine: () => null }));
 
 vi.mock('@/lib/wails-shim-app', () => ({
     ListKnowHow: mocks.listKnowHow,

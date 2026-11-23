@@ -30,15 +30,18 @@ type WatchConversationForgetItem struct {
 	Title string `json:"title"`
 }
 type WatchConversationForgetPreview struct {
-	ID                string                        `json:"id"`
-	Name              string                        `json:"name"`
-	LineCount         int                           `json:"lineCount"`
-	Audio             []WatchConversationAudioCut   `json:"audio"`
-	HasNote           bool                          `json:"hasNote"`
-	Followups         []WatchConversationForgetItem `json:"followups"`
-	Claims            []WatchConversationForgetItem `json:"claims"`
-	StayingWithAgents []string                      `json:"stayingWithAgents"`
-	Count             int                           `json:"count"`
+	ID                  string                        `json:"id"`
+	Name                string                        `json:"name"`
+	LineCount           int                           `json:"lineCount"`
+	Audio               []WatchConversationAudioCut   `json:"audio"`
+	HasNote             bool                          `json:"hasNote"`
+	Followups           []WatchConversationForgetItem `json:"followups"`
+	SameHourClaims      []WatchConversationForgetItem `json:"sameHourClaims"`
+	Claims              []WatchConversationForgetItem `json:"claims"`
+	ClaimDerivatives    []MemoryForgetItem            `json:"claimDerivatives,omitempty"`
+	ClaimsLosingSupport []WatchConversationForgetItem `json:"claimsLosingSupport"`
+	StayingWithAgents   []string                      `json:"stayingWithAgents"`
+	Count               int                           `json:"count"`
 }
 
 type watchForgetHour struct {
@@ -49,11 +52,16 @@ type watchForgetHour struct {
 }
 
 type watchForgetPlan struct {
-	speech    []watchForgetSpeech
-	signature [32]byte
-	preview   WatchConversationForgetPreview
-	hours     []watchForgetHour
-	loops     []string
+	notifyTopics   bool
+	claimScope     *memoryForgetScope
+	claimSignature string
+	withdrawnIDs   []string
+	supportChanges []watchClaimChange
+	speech         []watchForgetSpeech
+	signature      [32]byte
+	preview        WatchConversationForgetPreview
+	hours          []watchForgetHour
+	loops          []string
 }
 
 type watchForgetSpeech struct {
@@ -223,7 +231,7 @@ func (a *App) watchForgetPlan(id string) (*watchForgetPlan, error) {
 		preview: WatchConversationForgetPreview{
 			ID: id, Name: target.Name, LineCount: len(target.Lines),
 			HasNote: note.Summary != "" || len(note.Decisions)+len(note.Followups) > 0,
-			Audio:   []WatchConversationAudioCut{}, Claims: []WatchConversationForgetItem{},
+			Audio:   []WatchConversationAudioCut{}, Claims: []WatchConversationForgetItem{}, SameHourClaims: []WatchConversationForgetItem{}, ClaimsLosingSupport: []WatchConversationForgetItem{},
 			Followups: []WatchConversationForgetItem{}, StayingWithAgents: []string{},
 		},
 	}
@@ -381,65 +389,34 @@ func (a *App) watchForgetPlan(id string) (*watchForgetPlan, error) {
 		}
 	}
 	sort.Strings(p.preview.StayingWithAgents)
-	if err := p.readClaims(); err != nil {
+	memoryMutationMu.RLock()
+	defer memoryMutationMu.RUnlock()
+	index, release, err := a.lockMemoryForgetIndex()
+	if err != nil {
 		return nil, err
 	}
-	p.preview.Count = 1 + len(p.preview.Followups) + len(p.preview.Claims)
+	defer release()
+	claimsTx, err := a.activity.store.reader().BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, err
+	}
+	defer claimsTx.Rollback()
+	if err := p.readClaims(claimsTx, index); err != nil {
+		return nil, err
+	}
+	if err := claimsTx.Commit(); err != nil {
+		return nil, err
+	}
+	p.preview.Count = 1 + len(p.preview.Followups) + len(p.preview.Claims) + len(p.preview.SameHourClaims) + len(p.preview.ClaimDerivatives)
 	if p.preview.HasNote {
 		p.preview.Count++
 	}
-	payload, err := json.Marshal([]any{p.preview, watchConversationHash(*target), note})
+	payload, err := json.Marshal([]any{p.preview, p.claimSignature, watchConversationHash(*target), note})
 	if err != nil {
 		return nil, err
 	}
 	p.signature = sha256.Sum256(payload)
 	return p, nil
-}
-
-func (p *watchForgetPlan) readClaims() error {
-	dir, err := memoryDir()
-	if err != nil {
-		return err
-	}
-	records, err := loadMemoryForgetRecords(dir)
-	if err != nil {
-		return err
-	}
-	for _, record := range records {
-		for _, content := range record.contents {
-			doc := parseMemoryEntryDocument(content)
-			if strings.HasPrefix(strings.TrimSpace(content), "---\n") && !doc.ok {
-				return fmt.Errorf("cannot read memory metadata for %s", record.id)
-			}
-			support := memoryEvidenceSessionIDsFromDocument(doc)
-			if len(support) == 0 {
-				for _, h := range p.hours {
-					if containsString(doc.frontmatter.ActivitySessionIDs, h.recording.SessionID) {
-						return errors.New("the memory has a session dependency without attributable evidence")
-					}
-				}
-			}
-			owned := 0
-			for _, h := range p.hours {
-				if containsString(support, h.recording.SessionID) {
-					if !h.whole {
-						return errors.New("a claim identifies the shared recording but not its conversation")
-					}
-					owned++
-				}
-			}
-			if owned == 0 {
-				continue
-			}
-			if owned != len(support) {
-				return errors.New("the claim has additional supporting sessions")
-			}
-			p.preview.Claims = append(p.preview.Claims, WatchConversationForgetItem{record.id, record.title})
-			break
-		}
-	}
-	sort.Slice(p.preview.Claims, func(i, j int) bool { return p.preview.Claims[i].ID < p.preview.Claims[j].ID })
-	return nil
 }
 
 func (a *App) GetWatchConversationForgetPreview(conversationID string) (WatchConversationForgetPreview, error) {

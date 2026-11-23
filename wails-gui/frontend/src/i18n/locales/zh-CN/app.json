@@ -11,6 +11,8 @@
         "rootFailed": "无法加载仓库文件夹。请关闭此对话框后重试。"
     },
     "storageStartup": {
+        "recoveryFailed": "Isoform 未能完成上次中断的遗忘操作。请重试以打开你的数据。",
+        "retry": "重试",
         "checking": "正在检查本地数据…",
         "newerTitle": "请更新 Isoform 以打开你的数据",
         "newerDescription": "你的本地数据库版本为 {{storedVersion}}，但此版本应用最高支持数据库版本 {{supportedVersion}}。Isoform 已停止启动，未以写入模式打开数据库。请退出此版本应用，并使用更新版本的 Isoform 继续。",

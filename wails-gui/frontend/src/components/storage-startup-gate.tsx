@@ -4,7 +4,7 @@ import {
     GetStorageStartupStatus,
     type StorageStartupStatus,
 } from "@/lib/wails-shim-app";
-import { EventsEmit, Quit } from "../../wailsjs/runtime/runtime";
+import { EventsEmit, EventsOn, Quit } from "../../wailsjs/runtime/runtime";
 import { Button } from "@/components/ui/button";
 import { afterPaint } from "@/lib/launch-perf";
 
@@ -27,9 +27,14 @@ export function StorageStartupGate({ children }: { children: ReactNode }) {
                 if (!cancelled) setStatus({ code: "storage_unavailable" });
             }
         };
+        const unsubscribe = EventsOn("storage:retry-cut-started", () => {
+            clearTimeout(timer);
+            void refresh();
+        });
         void refresh();
         return () => {
             cancelled = true;
+            unsubscribe();
             clearTimeout(timer);
         };
     }, []);
@@ -43,6 +48,7 @@ export function StorageStartupGate({ children }: { children: ReactNode }) {
 
     if (status?.code === "") return <>{children}</>;
 
+    const recoveryFailed = status?.code === "cut_recovery_failed";
     const newerSchema = status?.code === "schema_too_new";
     return (
         <main className="min-h-screen bg-background flex items-center justify-center p-6">
@@ -62,8 +68,13 @@ export function StorageStartupGate({ children }: { children: ReactNode }) {
                                     storedVersion: status.storedVersion,
                                     supportedVersion: status.supportedVersion,
                                 })
-                                : t("storageStartup.unavailableDescription")}
+                                : t(recoveryFailed ? "storageStartup.recoveryFailed" : "storageStartup.unavailableDescription")}
                         </p>
+                        {recoveryFailed && (
+                            <Button className="self-start" onClick={() => EventsEmit("storage:retry-cut")}>
+                                {t("storageStartup.retry")}
+                            </Button>
+                        )}
                         <Button className="self-start" onClick={() => Quit()}>
                             {t("storageStartup.quit")}
                         </Button>

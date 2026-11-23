@@ -376,11 +376,7 @@ func recordMemoryTombstone(dir, id string, contents []string, now time.Time, sem
 }
 
 func recordMemoryTombstoneScoped(dir, id string, contents []string, now time.Time, preserveRoot bool, semantics ...memoryForgetSemantics) error {
-	excludedID := id
-	if preserveRoot {
-		excludedID = ""
-	}
-	preserved, err := memoryPreservedRecordKeys(dir, excludedID, semantics)
+	tombstone, err := prepareMemoryTombstone(dir, id, contents, now, preserveRoot, semantics...)
 	if err != nil {
 		return err
 	}
@@ -395,40 +391,6 @@ func recordMemoryTombstoneScoped(dir, id string, contents []string, now time.Tim
 		if tombstone.ExpiresAt > now.UnixMilli() {
 			active = append(active, tombstone)
 		}
-	}
-	keySet := map[string]bool{}
-	for _, prepared := range semantics {
-		for _, selector := range prepared.RemovedVersions {
-			value, ok := strings.CutPrefix(selector, memoryForgetHistoricalPrefix)
-			separator := strings.LastIndexByte(value, ':')
-			if !ok || separator <= 0 || !memoryForgetVersionHash(value[separator+1:]) {
-				return fmt.Errorf("invalid erased memory version selector")
-			}
-			keySet[memoryForgetHash(selector)] = true
-			keySet[memoryHistoricalSourceKey(value[:separator])] = true
-		}
-	}
-	for _, content := range contents {
-		for _, key := range memoryForgetKeys(id, content) {
-			if preserveRoot && key == memoryForgetIDKey(id) {
-				continue
-			}
-			keySet[key] = true
-		}
-	}
-	keys := make([]string, 0, len(keySet))
-	for key := range keySet {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	tombstone := memoryTombstone{Version: memoryTombstoneVersion, Keys: keys, PreservedRecords: preserved, ExpiresAt: now.Add(memoryForgetRetentionDays * 24 * time.Hour).UnixMilli()}
-	if len(semantics) > 0 {
-		prepared := semantics[0]
-		if prepared.Version != memorySemanticVersion {
-			return errMemorySemanticUnverified
-		}
-		prepared.RemovedIDs = nil
-		tombstone.Semantics = &prepared
 	}
 	active = append(active, tombstone)
 	if err := persistMemoryTombstones(dir, active); err != nil {
@@ -590,4 +552,50 @@ func withMemoryObservationSourceID(content, existing, sourceID string) string {
 	// renderOKFDocument always produces valid frontmatter for the helper.
 	preserved, _ := preserveMemoryConfirmation(renderOKFDocument(doc.Frontmatter, doc.Body), existing)
 	return preserved
+}
+
+func prepareMemoryTombstone(dir, id string, contents []string, now time.Time, preserveRoot bool, semantics ...memoryForgetSemantics) (memoryTombstone, error) {
+	excludedID := id
+	if preserveRoot {
+		excludedID = ""
+	}
+	preserved, err := memoryPreservedRecordKeys(dir, excludedID, semantics)
+	if err != nil {
+		return memoryTombstone{}, err
+	}
+	keySet := map[string]bool{}
+	for _, prepared := range semantics {
+		for _, selector := range prepared.RemovedVersions {
+			value, ok := strings.CutPrefix(selector, memoryForgetHistoricalPrefix)
+			separator := strings.LastIndexByte(value, ':')
+			if !ok || separator <= 0 || !memoryForgetVersionHash(value[separator+1:]) {
+				return memoryTombstone{}, fmt.Errorf("invalid erased memory version selector")
+			}
+			keySet[memoryForgetHash(selector)] = true
+			keySet[memoryHistoricalSourceKey(value[:separator])] = true
+		}
+	}
+	for _, content := range contents {
+		for _, key := range memoryForgetKeys(id, content) {
+			if preserveRoot && key == memoryForgetIDKey(id) {
+				continue
+			}
+			keySet[key] = true
+		}
+	}
+	keys := make([]string, 0, len(keySet))
+	for key := range keySet {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	tombstone := memoryTombstone{Version: memoryTombstoneVersion, Keys: keys, PreservedRecords: preserved, ExpiresAt: now.Add(memoryForgetRetentionDays * 24 * time.Hour).UnixMilli()}
+	if len(semantics) > 0 {
+		prepared := semantics[0]
+		if prepared.Version != memorySemanticVersion {
+			return memoryTombstone{}, errMemorySemanticUnverified
+		}
+		prepared.RemovedIDs = nil
+		tombstone.Semantics = &prepared
+	}
+	return tombstone, nil
 }

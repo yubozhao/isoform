@@ -802,6 +802,12 @@
         "allJudged_one": "You've judged the {{count}} thing Isoform thinks about you. New ones show here first as it sees more of your work.",
         "allJudged_other": "You've judged all {{count}} things Isoform thinks about you. New ones show here first as it sees more of your work.",
         "tooEarly": "Isoform hasn't seen enough to say anything about you yet. Claims show here as it sees your work, usually after a day.",
-        "import": "Bring in what another AI knows about you ›"
+        "import": "Bring in what another AI knows about you ›",
+        "learning": "Learning from your day: on · new lines come from summaries sent to {{assistant}}",
+        "learningOff": "Learning from your day: off · nothing new is learned; what's here stays",
+        "turnOff": "Turn off",
+        "turnOn": "Turn on",
+        "learningReadFailed": "Couldn't read whether learning is on.",
+        "learningSaveFailed": "Didn't change it."
     }
 }

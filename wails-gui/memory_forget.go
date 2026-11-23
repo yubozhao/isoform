@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -9,8 +8,6 @@ import (
 	"path/filepath"
 	"sort"
 	"time"
-
-	"wails-gui/internal/privacy"
 )
 
 type MemoryForgetItem struct {
@@ -31,6 +28,7 @@ type MemoryForgetPreview struct {
 }
 
 type memoryForgetScope struct {
+	rootID          string
 	records         []*memoryForgetRecord
 	contents        []string
 	ids             []string
@@ -61,14 +59,13 @@ func (a *App) readMemoryForgetPreviewScoped(id string, historyVersionsOnly bool)
 	return a.memoryForgetPreviewScoped(id, tx, index, historyVersionsOnly)
 }
 
-// ForgetMemoryEntry fails closed: suppression is durable before anything is
-// removed. Storage spans Markdown and two SQLite databases, so failures are
-// returned for retry rather than claiming a cross-store atomic deletion.
-func (a *App) ForgetMemoryEntry(id, confirmationToken string) (resultErr error) {
-	var withdrawnIDs []string
+// ForgetMemoryEntry checks the byte-bound confirmation under the writer
+// barriers and uses the same prepared files and commit decision as a watch cut.
+func (a *App) ForgetMemoryEntry(id, confirmationToken string) error {
+	var committed *watchCutFiles
 	defer func() {
-		for _, withdrawnID := range withdrawnIDs {
-			publishPrivacyWithdrawal(privacy.Scope{Kind: privacy.Source, SourceKind: "memory", ID: withdrawnID})
+		if committed != nil {
+			a.publishForgottenMemory(committed.WithdrawnIDs, committed.notifyTopics)
 		}
 	}()
 	a.clearPageSnapshots()
@@ -86,6 +83,20 @@ func (a *App) ForgetMemoryEntry(id, confirmationToken string) (resultErr error) 
 		return err
 	}
 	defer release()
+	dir, err := memoryDir()
+	if err != nil {
+		return err
+	}
+	journal := &mobileRecordingStore{dir: dir, cutUses: a.store}
+	if a.activity != nil && a.activity.store != nil {
+		journal.cutDB = a.activity.store.db
+		if _, err := journal.cutDB.Exec(watchCutReceiptSchema); err != nil {
+			return err
+		}
+	}
+	if err := journal.recoverWatchCutLocked(); err != nil {
+		return err
+	}
 	tx, err := a.beginMemoryForgetDerivatives()
 	if err != nil {
 		return err
@@ -100,103 +111,28 @@ func (a *App) ForgetMemoryEntry(id, confirmationToken string) (resultErr error) 
 	if prepared.baseToken != preview.ConfirmationToken {
 		return fmt.Errorf("memory forget preview changed; review it again")
 	}
-	dir, err := memoryDir()
+	stage := filepath.Join(dir, ".staging-conversation-cut")
+	if err := os.Mkdir(stage, 0700); err != nil {
+		return err
+	}
+	defer os.RemoveAll(stage)
+	f := watchCutFiles{dir: dir, stage: stage, watchCutJournal: watchCutJournal{Token: fmt.Sprint(time.Now().UnixNano())}}
+	finish, err := a.prepareMemoryFiles(&f, scope, prepared.semantics, tx, index)
 	if err != nil {
 		return err
 	}
-	withdrawal, err := a.topicWithdrawalForSource("memory", scope.ids, tx, scope.contents...)
-	if err != nil {
+	defer finish()
+	if err := scope.commitDerivatives(tx); err != nil {
 		return err
 	}
-	finish, err := a.beginTopicWithdrawal(withdrawal)
-	if err != nil {
+	if err := a.commitForgetFiles(journal, &f, tx, index, nil); err != nil {
 		return err
 	}
-	suppressed := false
-	defer func() { resultErr = errors.Join(resultErr, finish(suppressed)) }()
-
-	if err := a.forgetAboutYouPortraitVersions(scope.removedIDs, scope.records); err != nil {
-		return fmt.Errorf("remove memory portrait: %w", err)
-	}
-	prepared.semantics.RemovedIDs = scope.removedIDs
-	prepared.semantics.RemovedVersions = scope.removedVersions
-	for _, record := range scope.records {
-		tombstoneID := record.id
-		if record.preserveLive {
-			tombstoneID = id
+	committed = &f
+	for _, id := range scope.removedIDs {
+		if err := os.RemoveAll(filepath.Join(dir, memoryHistoryDirName, id)); err != nil {
+			return err
 		}
-		preserveRoot := scope.preserveRoot && tombstoneID == id
-		if err := recordMemoryTombstoneScoped(dir, tombstoneID, record.contents, time.Now(), preserveRoot, prepared.semantics); err != nil {
-			return fmt.Errorf("save memory suppression: %w", err)
-		}
-		suppressed = true
-		withdrawnIDs = append([]string(nil), scope.removedIDs...)
-		if scope.preserveRoot {
-			withdrawnIDs = append(withdrawnIDs, id)
-		}
-	}
-	if a.store != nil {
-		if err := a.store.DeleteContextUses(context.Background(), "memory", withdrawnIDs...); err != nil {
-			return fmt.Errorf("remove memory uses: %w", err)
-		}
-	}
-	if tx != nil {
-		if err := deleteMemoryForgetDerivatives(tx, scope.ids[0], scope.ids[1:]...); err != nil {
-			return fmt.Errorf("remove derived memories: %w", err)
-		}
-	}
-	if index != nil {
-		if err := removeForgottenMemoryIndex(index, scope.paths[0], scope.contents, scope.paths[1:]...); err != nil {
-			return fmt.Errorf("remove memory embeddings: %w", err)
-		}
-	}
-	if tx != nil {
-		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("commit derived memory removal: %w", err)
-		}
-	}
-	if err := writeMemoryForgetRejections(dir, scope.rejections); err != nil {
-		return fmt.Errorf("remove saved attribution corrections: %w", err)
-	}
-	for _, record := range scope.records {
-		for _, path := range record.archivePaths {
-			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-				return fmt.Errorf("remove archived memory: %w", err)
-			}
-		}
-		if record.preserveLive {
-			for _, path := range record.historyPaths {
-				if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-					return fmt.Errorf("remove prior memory version: %w", err)
-				}
-			}
-		} else if err := os.RemoveAll(filepath.Join(dir, memoryHistoryDirName, record.id)); err != nil {
-			return fmt.Errorf("remove memory history: %w", err)
-		}
-		if record.livePath != "" && record.id != id {
-			if err := os.Remove(record.livePath); err != nil && !os.IsNotExist(err) {
-				return fmt.Errorf("remove memory file: %w", err)
-			}
-		}
-	}
-	// Keep the requested record available for a fresh preview until all of its
-	// descendants and saved copies have been removed successfully.
-	if !scope.preserveRoot {
-		if err := os.Remove(filepath.Join(dir, id+".md")); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("remove memory file: %w", err)
-		}
-	}
-
-	// Close the unlink window for reads that began after the initial erasure.
-	if a.store != nil {
-		if err := a.store.DeleteContextUses(context.Background(), "memory", withdrawnIDs...); err != nil {
-			return fmt.Errorf("remove memory uses: %w", err)
-		}
-	}
-
-	a.markMemoryDirty("forget")
-	if a.ctx != nil {
-		a.emitMemoryUpdated(true)
 	}
 	return nil
 }
@@ -281,7 +217,12 @@ func (a *App) memoryForgetPreviewScoped(id string, tx *sql.Tx, index *sql.DB, hi
 	if err != nil {
 		return preview, nil, err
 	}
-	scope := &memoryForgetScope{records: records, preserveRoot: historyVersionsOnly}
+	return memoryScopePreview(dir, preview, records, tx, index, historyVersionsOnly)
+}
+func memoryScopePreview(dir string, preview MemoryForgetPreview, records []*memoryForgetRecord, tx *sql.Tx, index *sql.DB, historyVersionsOnly bool) (MemoryForgetPreview, *memoryForgetScope, error) {
+	id := preview.MemoryID
+	var err error
+	scope := &memoryForgetScope{rootID: id, records: records, preserveRoot: historyVersionsOnly}
 	ids := map[string]bool{}
 	var archived []string
 	for _, record := range records {

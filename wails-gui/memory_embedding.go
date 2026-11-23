@@ -719,7 +719,13 @@ func removeForgottenMemoryIndex(db *sql.DB, path string, contents []string, addi
 		return err
 	}
 	defer tx.Rollback()
-	scope, args := forgottenMemoryIndexScope(path, additionalPaths)
+	if err := deleteForgottenMemoryIndex(tx, hashes, append([]string{path}, additionalPaths...)); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+func deleteForgottenMemoryIndex(tx *sql.Tx, hashes, paths []string) error {
+	scope, args := forgottenMemoryIndexScope(paths[0], paths[1:])
 	for _, hash := range hashes {
 		if _, err := tx.Exec("DELETE FROM memory_embedding_cache"+forgottenMemoryCacheScope(scope), append([]any{hash}, args...)...); err != nil {
 			return err
@@ -730,5 +736,5 @@ func removeForgottenMemoryIndex(db *sql.DB, path string, contents []string, addi
 			return err
 		}
 	}
-	return tx.Commit()
+	return nil
 }

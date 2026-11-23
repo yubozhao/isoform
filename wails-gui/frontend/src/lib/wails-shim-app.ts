@@ -5892,7 +5892,7 @@ export const GrowStreamItemContent = appBinding<[string, string, string], boolea
 );
 
 export interface StorageStartupStatus {
-    code: "" | "checking" | "schema_too_new" | "storage_unavailable";
+    code: "" | "checking" | "schema_too_new" | "storage_unavailable" | "cut_recovery_failed";
     storedVersion?: number;
     supportedVersion?: number;
 }
@@ -6481,6 +6481,7 @@ export const GetKnowledgeEntries = appBinding<[], main.KnowledgeEntry[]>("GetKno
 export const GetPlatformPermissions = appBinding<[], main.PlatformPermissions>("GetPlatformPermissions");
 export const GetBackgroundListening = appBinding<[], boolean>("GetBackgroundListening");
 export const LoadUIState = appBinding<[string], string>("LoadUIState");
+export const SaveUIState = appBinding<[string, string], void>("SaveUIState");
 export const GetCommunicationDraftExamples = appBinding<[string], CommunicationDraftExample[]>("GetCommunicationDraftExamples");
 export const GetMemoryEvidenceReadable = appBinding<[string], ReadableEvidence[]>("GetMemoryEvidenceReadable");
 // Why (why.go, redesign v1.0.0 rule 16): the moments a claim or a piece of
@@ -6870,6 +6871,9 @@ export interface WatchConversationForgetPreview {
     hasNote: boolean;
     followups: WatchConversationForgetItem[];
     claims: WatchConversationForgetItem[];
+    sameHourClaims: WatchConversationForgetItem[];
+    claimsLosingSupport: WatchConversationForgetItem[];
+    claimDerivatives?: MemoryForgetItem[];
     stayingWithAgents: string[];
     count: number;
 }

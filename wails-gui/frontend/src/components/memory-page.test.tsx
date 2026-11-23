@@ -49,6 +49,8 @@ const mocks = vi.hoisted(() => ({
     events: new Map<string, Set<(value: unknown) => void>>(),
 }));
 
+// The tab's learning line has its own test (you-learning-line.test.tsx).
+vi.mock('@/components/you/you-learning-line', () => ({ YouLearningLine: () => null }));
 vi.mock('@/lib/wails-shim-app', () => ({
     GetMemoryEntries: mocks.getEntries,
     GetMemoryStatus: mocks.getStatus,

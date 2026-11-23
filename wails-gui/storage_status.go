@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -22,26 +24,35 @@ func (a *App) GetStorageStartupStatus() StorageStartupStatus {
 }
 
 func (a *App) beginStorageStartup(ctx context.Context) {
-	a.startStorageStartup(ctx, openStartupStorage, func() {
-		// The menu bar's whole view, built once after the first screen.
-		a.preloadMenuBarView(ctx)
-		if !a.launch.wait(ctx, 2*time.Second) {
-			return
+	start := func() {
+		a.startStorageStartup(ctx, openStartupStorage, func() {
+			// The menu bar's whole view, built once after the first screen.
+			a.preloadMenuBarView(ctx)
+			if !a.launch.wait(ctx, 2*time.Second) {
+				return
+			}
+			recordLaunchStage("shell_env_start")
+			shellenv.ResolveStartupPATH()
+			syncLocalClaudeCodeEnvFromLoginShell()
+			recordLaunchStage("shell_env_ready")
+			if ctx.Err() != nil || a.launch.isStopped() {
+				return
+			}
+			if a.launch != nil {
+				a.launch.envReady.Store(true)
+			}
+			a.emitBrowserEvent("ai:config-changed")
+			a.launch.startWorker(ctx)
+			a.startupServices(ctx)
+		})
+	}
+	runtime.EventsOn(ctx, "storage:retry-cut", func(...interface{}) {
+		if a.GetStorageStartupStatus().Code == "cut_recovery_failed" {
+			start()
 		}
-		recordLaunchStage("shell_env_start")
-		shellenv.ResolveStartupPATH()
-		syncLocalClaudeCodeEnvFromLoginShell()
-		recordLaunchStage("shell_env_ready")
-		if ctx.Err() != nil || a.launch.isStopped() {
-			return
-		}
-		if a.launch != nil {
-			a.launch.envReady.Store(true)
-		}
-		a.emitBrowserEvent("ai:config-changed")
-		a.launch.startWorker(ctx)
-		a.startupServices(ctx)
+		runtime.EventsEmit(ctx, "storage:retry-cut-started")
 	})
+	start()
 }
 
 // Keep policy restoration in the publication lifecycle, before readiness and
@@ -99,10 +110,19 @@ func openStartupStorage() (*storage.Store, error) {
 		log.Printf("[persistence] data directory failed: %v", err)
 		return nil, err
 	}
+	return openStartupStorageAt(home)
+}
+
+func openStartupStorageAt(home string) (*storage.Store, error) {
 	store, err := storage.New(filepath.Join(home, "sessions.db"))
 	if err != nil {
 		log.Printf("[persistence] startup blocked: %v", err)
 		return nil, err
+	}
+	if err := recoverStartupWatchCut(home, store); err != nil {
+		store.Close()
+		log.Printf("[persistence] cut recovery failed: %v", err)
+		return nil, errors.Join(errStartupCutRecovery, err)
 	}
 	return store, nil
 }
@@ -142,4 +162,52 @@ func (a *App) beforeWindowClose(ctx context.Context, platform string) bool {
 		return true
 	}
 	return false
+}
+
+var errStartupCutRecovery = errors.New("could not recover interrupted forget")
+
+// Finish an interrupted cut before storage readiness admits memory readers or
+// starts the indexer. A normal startup never opens a second activity handle.
+func recoverStartupWatchCut(home string, sessions *storage.Store) error {
+	dirs := startupCutDirectories(home)
+	if len(dirs) == 0 {
+		log.Print("[persistence] no interrupted forget found")
+		return nil
+	}
+	db, err := openCutDatabase(filepath.Join(home, "activity.db"))
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	for _, dir := range dirs {
+		s := mobileRecordingStore{dir: dir, cutUses: sessions, cutDB: db}
+		if err := s.recoverWatchCutLocked(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func startupCutDirectories(home string) []string {
+	dirs := []string{filepath.Join(home, "memory")}
+	root, err := mobileStateDirectory()
+	if err != nil {
+		log.Print("[persistence] mobile directory unavailable; skipping watch journal probe")
+	} else {
+		dirs = append(dirs, filepath.Join(root, "recordings"))
+	}
+	var found []string
+	for _, dir := range dirs {
+		for _, name := range []string{watchForgetJournal, ".staging-conversation-cut", ".retired-conversation-cut"} {
+			_, err := os.Lstat(filepath.Join(dir, name))
+			if err == nil {
+				found = append(found, dir)
+				break
+			}
+			if !os.IsNotExist(err) {
+				log.Print("[persistence] could not locate optional cut marker")
+			}
+		}
+	}
+	return found
 }
