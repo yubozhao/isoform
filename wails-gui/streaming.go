@@ -625,7 +625,12 @@ func (a *App) executePromptOwned(prompt string, userPrompt string, workDir strin
 		a.finishChatPreparation(tag, cancel)
 		return err
 	}
-	input.ExtraTools = a.mainChatTurnTools(tag, origin, topicTurnFromContext(ctx))
+	binding := topicTurnFromContext(ctx)
+	if origin == promptOriginMac && candidateQuestion != "" {
+		binding.web = &chatWebTurn{typed: candidateQuestion, tag: tag, done: ctx.Done()}
+	}
+	web := binding.web
+	input.ExtraTools = a.mainChatTurnTools(tag, origin, binding)
 	input.BeforeDispatch = func(dispatchCtx context.Context) error {
 		if err := dispatchCtx.Err(); err != nil {
 			return err
@@ -732,6 +737,10 @@ func (a *App) executePromptOwned(prompt string, userPrompt string, workDir strin
 			textRows := recentChatConversationRows(rows, 30)
 			freezeTopicChatHistory(ctx, textRows)
 			history = formatConversationHistory(textRows)
+		}
+		if web != nil {
+			web.addContext(promptWithMemory)
+			web.addContext(history)
 		}
 		log.Printf("[prompt-func] total=%v prompt-bytes=%d history-bytes=%d", time.Since(pfStart), len(promptWithMemory), len(history))
 		return promptWithMemory, history
@@ -999,6 +1008,9 @@ func (a *App) executePromptOwned(prompt string, userPrompt string, workDir strin
 			switch event.Type {
 			case "assistant", "thinking", "tool_use", "tool_result", "permission_request":
 				answering.Store(true)
+			}
+			if web != nil && web.observeToolEvent(event) {
+				return nil
 			}
 			turnLog.note(event)
 			if err := checkListHandoffRoute(listBackend, event); err != nil {

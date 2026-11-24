@@ -389,15 +389,15 @@ func (s *Store) ClearActiveSessionReferences(ctx context.Context, sessionLocalID
 }
 
 // schemaVersion is the latest migration this binary implements and may stamp.
-const schemaVersion = 79
+const schemaVersion = 80
 
 // supportedSchemaVersion is the audited compatibility ceiling. Keep the newer
 // stamp refusal in place when raising this ceiling alongside implemented
 // migrations. Contact provenance uses v61, contact links v62. RC 1 topics (#140)
 // v63, context uses v64, People merges v65, answer chips v66, outbound sends v67,
 // the assistant call record v76, what each entry made v77, weekly destination calls v78,
-// and destination count recovery v79.
-const supportedSchemaVersion = 79
+// destination count recovery v79 and Chat search attribution v80.
+const supportedSchemaVersion = 80
 
 // SettingsDefaultsMarker is seeded only when the initial schema is created.
 const SettingsDefaultsMarker = "defaults_2026_11_21_migrated"
@@ -1659,6 +1659,11 @@ func (s *Store) migrate() error {
 	if version < 79 {
 		if err := s.migrateDestinationLosses(version); err != nil {
 			return fmt.Errorf("migration v79 destination count recovery: %w", err)
+		}
+	}
+	if version >= 78 && version < 80 {
+		if err := s.migrateChatSearchDetail(); err != nil {
+			return fmt.Errorf("migration v80 Chat web searches: %w", err)
 		}
 	}
 	if version < schemaVersion {

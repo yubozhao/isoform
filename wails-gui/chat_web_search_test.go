@@ -134,15 +134,16 @@ func TestChatWebSearchSaysPlainlyWhenItCannot(t *testing.T) {
 	})
 }
 
-func TestWebSearchContextIsForOtherChatsOnly(t *testing.T) {
+func TestWebSearchContextRequiresComputer(t *testing.T) {
 	rig := newUpcomingToolsRig(t)
 	main, err := rig.app.ensureMainChat(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The main chat answers about the person's own day, never from the web
-	// (computer-chat v1.0.0 rule 5, phone-chat v1.0.0 rule 13).
-	for _, origin := range []promptOrigin{promptOriginMac, promptOriginPhone, promptOriginPanelAsk, promptOriginPhoneAsk, promptOriginResume} {
+	if got := rig.app.injectWebSearchToolContext(main.LocalID, promptOriginMac); !strings.Contains(got, mainChatWebInstructions) {
+		t.Fatal("missing CCA14 C1 prompt")
+	}
+	for _, origin := range []promptOrigin{promptOriginPhone, promptOriginPanelAsk, promptOriginPhoneAsk, promptOriginResume} {
 		if got := rig.app.injectWebSearchToolContext(main.LocalID, origin); got != "" {
 			t.Fatalf("origin %q got the search context", origin)
 		}

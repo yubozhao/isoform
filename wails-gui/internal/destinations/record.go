@@ -207,9 +207,19 @@ func Record(id ID) {
 	}
 }
 
+// ChatSearchDetail labels Chat questions that needed the web in the existing search counter.
+const ChatSearchDetail = "chat:claude_code"
+
+func SearchService(detail string) string {
+	if detail == ChatSearchDetail {
+		return "claude_code"
+	}
+	return detail
+}
+
 func RecordSearch(service string) {
 	switch service {
-	case "", "claude_code", "grok", "gemini", "doubao":
+	case "", "claude_code", "grok", "gemini", "doubao", ChatSearchDetail:
 		enqueue(AssistantSearch, service)
 	}
 }

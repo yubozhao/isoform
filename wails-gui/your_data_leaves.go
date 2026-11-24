@@ -78,7 +78,7 @@ func (p leavesPaths) summary(rows []storage.DestinationCount, readErr error) You
 		counts[row.ID] += row.Calls
 		switch row.ID {
 		case destinations.AssistantSearch:
-			service = row.Detail
+			service = destinations.SearchService(row.Detail)
 		case destinations.AgentsMCPRead:
 			agents = append(agents, AgentLeaves{WeeklyLeaves{ThisWeek: &row.Calls}, row.Detail})
 		}

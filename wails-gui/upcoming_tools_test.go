@@ -471,7 +471,7 @@ func TestUpcomingToolsAreForTheMacOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// No SearchWeb in the main chat: it answers about the person's own day.
+	// CCA14 C1 adds SearchWeb separately with the admitted turn.
 	if got := rig.app.mainChatExtraTools(main.LocalID, promptOriginMac); len(got) != 7 || got[6].Name() != goalToolCreate {
 		t.Fatalf("the main chat on the Mac got %d tools, want the six Upcoming tools and GoalCreate", len(got))
 	}

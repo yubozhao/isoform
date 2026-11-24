@@ -21,18 +21,41 @@ func (s *Store) StartDestinationRecorder() error {
 	return err
 }
 
-func (s *Store) migrateDestinationCalls() error {
-	_, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS destination_calls (
+const destinationCallsSchema = `CREATE TABLE IF NOT EXISTS destination_calls (
 		destination TEXT NOT NULL, second INTEGER NOT NULL, detail TEXT NOT NULL,
 		calls INTEGER NOT NULL, latest INTEGER NOT NULL,
 		CHECK (
-			(destination='assistant_search' AND detail IN ('','claude_code','grok','gemini','doubao')) OR
+			(destination='assistant_search' AND detail IN ('','claude_code','grok','gemini','doubao','chat:claude_code')) OR
 			(destination='agents_mcp_read' AND detail IN ('claude-code','codex')) OR
 			(destination NOT IN ('assistant_search','agents_mcp_read') AND detail='')
 		),
 		PRIMARY KEY(second,destination,detail)
-	)`)
+	)`
+
+func (s *Store) migrateDestinationCalls() error {
+	_, err := s.db.Exec(destinationCallsSchema)
 	return err
+}
+
+// CCA14 C1 adds one fixed Chat detail to the search allowlist, preserving the weekly buckets.
+func (s *Store) migrateChatSearchDetail() error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec("ALTER TABLE destination_calls RENAME TO destination_calls_v79"); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(destinationCallsSchema); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`INSERT INTO destination_calls(destination,second,detail,calls,latest)
+		SELECT destination,second,detail,calls,latest FROM destination_calls_v79;
+		DROP TABLE destination_calls_v79`); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) migrateDestinationLosses(previous int) error {
@@ -121,8 +144,8 @@ func (s *Store) RecordDestination(ctx context.Context, call destinations.Call) e
 	// Keep only the provider ID once its last weekly bucket ages out.
 	if call.ID == destinations.AssistantSearch && call.At.Unix() >= cutoff {
 		_, err = tx.ExecContext(ctx, `INSERT INTO ui_state(key,value)
-			SELECT ?,detail FROM destination_calls WHERE destination=? ORDER BY latest DESC LIMIT 1
-			ON CONFLICT(key) DO UPDATE SET value=excluded.value`, LastSearchServiceKey, call.ID)
+			SELECT ?,CASE detail WHEN ? THEN 'claude_code' ELSE detail END FROM destination_calls WHERE destination=? ORDER BY latest DESC LIMIT 1
+			ON CONFLICT(key) DO UPDATE SET value=excluded.value`, LastSearchServiceKey, destinations.ChatSearchDetail, call.ID)
 		if err != nil {
 			return err
 		}

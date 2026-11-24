@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"wails-gui/storage"
 
 	"yansu-agent/agent/authority"
 	"yansu-agent/agent/tools"
@@ -1295,18 +1298,22 @@ func (a *App) postUpcomingReport(target upcomingTarget, status, schedule, text s
 // on the Mac; and none for a turn the user did not start (a background
 // script resuming the chat) or for any other chat, schedule or handoff run.
 func (a *App) mainChatExtraTools(tag string, origin promptOrigin) []tools.Tool {
-	if !a.isMainChatSession(context.Background(), tag) {
-		// Any other chat the person types in searches the web the same way;
-		// opencli is no longer the research path.
-		if origin == promptOriginMac {
+	if a == nil || a.store == nil {
+		return nil
+	}
+	session, err := a.store.LoadSession(context.Background(), tag)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if session == nil || session.Kind != storage.SessionKindMain {
+		if origin == promptOriginMac && !strings.HasPrefix(tag, "spotlight_") {
 			return a.chatWebSearchTools()
 		}
 		return nil
 	}
 	switch origin {
 	case promptOriginPhone:
-		// Chat answers about the person's own day: no web answers in the
-		// main chat (computer-chat v1.0.0 rule 5, phone-chat rule 13).
+		// Phone-chat rule 13 keeps this turn local.
 		return a.goalTools(tag)
 	case promptOriginResume, promptOriginPanelAsk, promptOriginPhoneAsk:
 		return nil
