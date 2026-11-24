@@ -29,6 +29,7 @@ import (
 
 	"wails-gui/internal/agentjoin"
 	"wails-gui/internal/privacy"
+	"wails-gui/internal/destinations"
 	"wails-gui/internal/tasklink"
 )
 
@@ -117,6 +118,7 @@ func (a *App) taskLinkStore() *tasklink.Store {
 		s.store = tasklink.NewStore(tasklink.Hooks{
 			Allowed:  a.taskLinkAllowed,
 			Taken:    a.taskLinkTaken,
+			Served:   a.taskLinkServed,
 			Resulted: a.taskLinkResulted,
 			Now:      s.clock,
 		})
@@ -189,6 +191,28 @@ func (a *App) taskLinkTaken(link tasklink.Link) {
 	a.workOnItTaskLinkTaken(link)
 	if hook := a.taskLinks.onTaken; hook != nil {
 		hook(link)
+	}
+}
+
+type addressRequestKey struct{}
+
+// withAddressRequest marks a request that came in through the agent address
+// (Isoform's front or the configured bridge), so what it is sent can be
+// counted as leaving through it.
+func withAddressRequest(r *http.Request) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), addressRequestKey{}, true))
+}
+
+func cameThroughAddress(r *http.Request) bool {
+	v, _ := r.Context().Value(addressRequestKey{}).(bool)
+	return v
+}
+
+// taskLinkServed counts a task's text sent over the agent address; a link
+// read on this computer isn't counted.
+func (a *App) taskLinkServed(r *http.Request, _ tasklink.Link) {
+	if cameThroughAddress(r) {
+		destinations.Record(destinations.AgentAddress)
 	}
 }
 
@@ -303,7 +327,7 @@ func (a *App) listenForTaskLinks(addressOnly bool) error {
 				http.NotFound(w, r)
 				return
 			}
-			mux.ServeHTTP(w, agentjoin.WithBridgeOrigin(r, base))
+			mux.ServeHTTP(w, agentjoin.WithBridgeOrigin(withAddressRequest(r), base))
 		})
 	}
 	server, err := serveAgentLoopback(taskLinkListenAddr(), handler)
