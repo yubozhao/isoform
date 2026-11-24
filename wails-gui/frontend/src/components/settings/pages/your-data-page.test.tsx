@@ -14,6 +14,16 @@ const mocks = vi.hoisted(() => ({
     forgetStatus: { state: "idle", steps: [] } as Record<string, unknown>,
     workProfile: { approvedVersion: 0 } as Record<string, unknown>,
     workProfileFails: false,
+    topicsEnabled: true as boolean,
+    setTopicFinds: vi.fn(async (enabled: boolean) => ({ enabled, interests: false, topics: [], removed: [] })),
+    servers: [] as Array<{ id: string; name: string; enabled: boolean }>,
+    setServer: vi.fn(async () => ({})),
+    disconnectSlack: vi.fn(async () => {}),
+    disconnectFeishu: vi.fn(async () => {}),
+    unbindDiscord: vi.fn(async () => {}),
+    tier: "off",
+    tierFails: false,
+    setTier: vi.fn(async () => {}),
 }));
 vi.mock("@/lib/work-profile", () => ({
     getWorkProfile: vi.fn(async () => {
@@ -31,6 +41,24 @@ vi.mock("@/lib/wails-shim-app", () => ({
     DeleteAnswers: mocks.deleteAnswers,
     StartForgetEverything: mocks.startForget,
     GetForgetEverything: vi.fn(async () => mocks.forgetStatus),
+    GetUserTopics: vi.fn(async () => ({ enabled: mocks.topicsEnabled, interests: false, topics: [], removed: [] })),
+    SetTopicFindsEnabled: mocks.setTopicFinds,
+    GetYourAgents: vi.fn(async () => ({ agents: [{ id: "claude-code", name: "Claude Code" }], choices: {} })),
+    GetModelAccountsStatus: vi.fn(async () => ({ mode: "claude-code", accountOrder: [] })),
+    GetAIProviderConfig: vi.fn(async () => ({ provider: "claude-code" })),
+    GetAssistantGiven: vi.fn(async () => ({ groups: [] })),
+    ListMcpServers: vi.fn(async () => mocks.servers),
+    SetMcpServerEnabled: mocks.setServer,
+    DisconnectSlack: mocks.disconnectSlack,
+    DisconnectTelegram: vi.fn(async () => {}),
+    DisconnectFeishu: mocks.disconnectFeishu,
+    DisconnectWeChat: vi.fn(async () => {}),
+    UnbindDiscordAccount: mocks.unbindDiscord,
+    GetTelemetryTier: vi.fn(async () => {
+        if (mocks.tierFails) throw new Error("no");
+        return mocks.tier;
+    }),
+    SetTelemetryTier: mocks.setTier,
 }));
 vi.mock("../../../../wailsjs/runtime/runtime", () => ({ EventsOn: vi.fn(() => () => {}) }));
 // The keep-times sheet is tested on its own (keep-times-sheet.test.tsx).
@@ -47,6 +75,11 @@ describe("Settings › Your data", () => {
         mocks.fail = false;
         mocks.workProfile = { approvedVersion: 0 };
         mocks.workProfileFails = false;
+        mocks.topicsEnabled = true;
+        mocks.servers = [];
+        mocks.tier = "off";
+        mocks.tierFails = false;
+        vi.clearAllMocks();
     });
 
     it("keeps the six sources of What Isoform sees in its order, with keep times, sizes and the whole", async () => {
@@ -216,4 +249,130 @@ describe("Settings › Your data", () => {
         expect(await screen.findByText("Waiting: Agent of You profile")).toBeTruthy();
         expect(screen.getByRole("button", { name: en.yourData.forgetRetry })).toBeTruthy();
     });
+
+    describe("What leaves this computer (batch F)", () => {
+        const withLeaves = (leaves: Record<string, unknown>, extra: Record<string, unknown> = {}) => {
+            mocks.summary = { ...mocks.summary, leaves: { usageCounts: { on: false }, ...leaves }, ...extra } as never;
+        };
+
+        it("names the assistant like Your AI, with this week's briefs and answers and See them (T7)", async () => {
+            withLeaves({}, { assistantBriefs: 3, assistantAnswers: 9 });
+            render(<YourDataPage />);
+            expect(await screen.findByText("Claude Code, which reads your day and writes your briefs and answers")).toBeInTheDocument();
+            expect(row("assistant")).toHaveTextContent("pictures of WeChat windows where the text can't be read · this week 3 briefs, 9 answers");
+            expect(within(row("assistant")).getByRole("button", { name: "See them ›" })).toBeInTheDocument();
+        });
+
+        it("shows a count it couldn't read as a failure with Try again, never 0", async () => {
+            withLeaves({ webSearches: { service: "grok", incomplete: true } });
+            render(<YourDataPage />);
+            await screen.findByText(/which reads your day/);
+            expect(row("assistant")).toHaveTextContent("Couldn't read this week's count.");
+            expect(within(row("assistant")).getByRole("button", { name: "Try again" })).toBeInTheDocument();
+            expect(row("assistant")).not.toHaveTextContent("this week 0");
+            expect(row("web")).toHaveTextContent("Couldn't read this week's count.");
+            expect(row("web")).not.toHaveTextContent("· this week");
+        });
+
+        it("says at least {n} for a count that may have dropped a call (item 13)", async () => {
+            withLeaves({ webSearches: { service: "claude_code", thisWeek: 4, incomplete: true }, agentsAsk: { thisWeek: 2, byAgent: [{ agent: "codex", thisWeek: 2 }] } });
+            render(<YourDataPage />);
+            expect(await screen.findByText("Web searches, through Claude Code's web search")).toBeInTheDocument();
+            expect(row("web")).toHaveTextContent("this week at least 4");
+            expect(row("agents")).toHaveTextContent("and what it got, each time · this week 2: Codex 2");
+        });
+
+        it("keeps the topic-finds switch on the Web searches row, and off stops them (S17)", async () => {
+            withLeaves({ webSearches: { service: "", thisWeek: 0 } });
+            render(<YourDataPage />);
+            const toggle = await within(await waitRow("web")).findByRole("switch", { name: "Find new things on your topics" });
+            expect(toggle).toBeChecked();
+            fireEvent.click(toggle);
+            await vi.waitFor(() => expect(mocks.setTopicFinds).toHaveBeenCalledWith(false));
+        });
+
+        it("shows each row only while its path is on or sent something", async () => {
+            withLeaves({});
+            render(<YourDataPage />);
+            await screen.findByText(/which reads your day/);
+            for (const key of ["web", "email", "texts", "chatApps", "toolServers", "finding"]) expect(row(key)).toBeNull();
+            cleanup();
+            withLeaves(
+                {
+                    email: { on: true, addressMasked: "b***@example.com", thisWeek: 1 },
+                    texts: { on: true, namesOn: false, thisWeek: 2 },
+                    chatApps: { apps: ["slack"], thisWeek: 5 },
+                },
+                { findingLeaves: { service: "ollama", address: "http://10.0.0.2:11434", thisWeek: 7 } },
+            );
+            mocks.servers = [{ id: "fs", name: "Files", enabled: true }, { id: "off", name: "Off one", enabled: false }];
+            render(<YourDataPage />);
+            expect(await screen.findByText("Email from Isoform")).toBeInTheDocument();
+            expect(row("email")).toHaveTextContent("A playbook's full result, to b***@example.com. Isoform's mail server can read it on the way · this week 1");
+            expect(row("texts")).toHaveTextContent("A fixed line, never names or what it's about");
+            expect(row("chatApps")).toHaveTextContent("Slack: your questions and Isoform's answers, which Slack can read · this week 5");
+            expect(row("finding")).toHaveTextContent("Ollama at http://10.0.0.2:11434, to make what Isoform keeps findable");
+            expect(row("finding")).toHaveTextContent("this week 7");
+            expect(await screen.findByText("Tool servers Chat uses: Files · what you ask in Chat, and what each sends back")).toBeInTheDocument();
+            expect(row("toolServers")).not.toHaveTextContent("Off one");
+        });
+
+        it("disconnects a chat app and a tool server through their own calls (S19)", async () => {
+            withLeaves({ chatApps: { apps: ["slack", "discord", "lark"], thisWeek: 1 } });
+            mocks.servers = [{ id: "fs", name: "Files", enabled: true }];
+            render(<YourDataPage />);
+            await screen.findByText(/Slack, Discord, Lark: your questions/);
+            const disconnect = async (name: string) => {
+                const rowEl = within(row("chatApps")).getByText(name).closest(".settings-row") as HTMLElement;
+                fireEvent.click(within(rowEl).getByRole("button", { name: "Disconnect" }));
+                fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Disconnect" }));
+            };
+            await disconnect("Slack");
+            await vi.waitFor(() => expect(mocks.disconnectSlack).toHaveBeenCalledOnce());
+            await disconnect("Discord");
+            await vi.waitFor(() => expect(mocks.unbindDiscord).toHaveBeenCalledOnce());
+            await disconnect("Lark");
+            await vi.waitFor(() => expect(mocks.disconnectFeishu).toHaveBeenCalledWith("lark"));
+            const server = (await within(await waitRow("toolServers")).findByText("Files")).closest(".settings-row") as HTMLElement;
+            fireEvent.click(within(server).getByRole("button", { name: "Disconnect" }));
+            fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Disconnect" }));
+            await vi.waitFor(() => expect(mocks.setServer).toHaveBeenCalledWith("fs", false));
+        });
+
+        it("has the one usage-counts switch, to PostHog, off until turned on (T6, T13)", async () => {
+            withLeaves({});
+            render(<YourDataPage />);
+            const name = "Usage counts · how often each part is used, with your app and system versions, never what's in it · to PostHog, which also sees your internet address";
+            const toggle = await screen.findByRole("switch", { name });
+            expect(screen.getAllByRole("switch", { name: /Usage counts/ })).toHaveLength(1);
+            await vi.waitFor(() => expect(toggle).not.toBeChecked());
+            fireEvent.click(toggle);
+            await vi.waitFor(() => expect(mocks.setTier).toHaveBeenCalledWith("detailed"));
+        });
+
+        it("says it couldn't read the usage-counts switch, never Off", async () => {
+            withLeaves({});
+            mocks.tierFails = true;
+            render(<YourDataPage />);
+            await vi.waitFor(() => expect(row("usage")).toHaveTextContent("Couldn't read whether this is on"));
+            expect(within(row("usage")).queryByRole("switch")).toBeNull();
+        });
+
+        it("does not show the unverified text-out line (item 11, held for design)", async () => {
+            withLeaves({});
+            render(<YourDataPage />);
+            await screen.findByText(/which reads your day/);
+            expect(screen.queryByText(/Names, email addresses and phone numbers stay in/)).toBeNull();
+            expect(screen.queryByText(/That's every place your data goes/)).toBeNull();
+        });
+    });
 });
+
+async function waitRow(key: string): Promise<HTMLElement> {
+    let el: HTMLElement | null = null;
+    await vi.waitFor(() => {
+        el = row(key);
+        if (!el) throw new Error(`no row ${key}`);
+    });
+    return el as unknown as HTMLElement;
+}

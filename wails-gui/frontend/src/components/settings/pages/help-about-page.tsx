@@ -3,7 +3,6 @@ import { ModelsPanel } from "@/components/onboarding/models-panel";
 import {
     AboutModels,
     AppearanceSettings,
-    DiagnosticDataCard,
     LanguageSettings,
     RiskyCommandsCard,
     StartAtLoginSettings,
@@ -181,7 +180,6 @@ export function HelpAboutPage({ onReplayOnboarding }: HelpAboutPageProps) {
             <AboutUpdates />
             <AboutModels />
             <GetHelp />
-            <DiagnosticDataCard />
             <SettingsAdvanced pageId="about" hint={t("about.advancedHint")}>
                 {/* Each model by job, its downloads, sources and mirror: from
                     Settings › Storage (settings batch D2), under the models

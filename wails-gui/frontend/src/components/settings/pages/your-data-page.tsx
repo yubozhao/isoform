@@ -6,6 +6,7 @@ import { formatBytes } from "@/components/settings/settings-format";
 import { VoiceMemoryCard } from "@/components/settings/voice-memory-card";
 import { ForgetEverythingCard } from "@/components/settings/forget-everything-card";
 import { KeepTimesSheet } from "@/components/settings/keep-times-sheet";
+import { WhatLeavesCard } from "@/components/settings/what-leaves-card";
 import { Button } from "@/components/ui/button";
 import type { SettingsPageId } from "@/components/settings/settings-registry";
 import { DeleteAnswers, ExportAnswers, GetYourDataSummary, type YourDataSummary } from "@/lib/wails-shim-app";
@@ -203,29 +204,34 @@ export function YourDataPage({ onOpenPage }: { onOpenPage?: OpenSettingsPage } =
                 </div>
             </SettingsCard>
             <VoiceMemoryCard />
-            <SettingsCard title={t("yourData.leaves")}>
-                <div data-your-data-row="agents">
-                    <SettingsRow title={t("yourData.agents")} description={agentsLine} />
-                </div>
-                <div data-your-data-row="devices">
-                    <SettingsRow
-                        title={t("yourData.devices")}
-                        description={summary && summary.pairedDevices === 0 ? t("yourData.devicesNone") : t("yourData.devicesSub")}
-                    />
-                </div>
-                <div data-your-data-row="notifications">
-                    <SettingsRow title={t("yourData.notifications")} description={t("yourData.notificationsSub")} />
-                </div>
-                {(aoyClaims !== null || aoyFailed) && (
-                    <div data-your-data-row="agentOfYou">
-                        <SettingsRow
-                            title={t("yourData.aoy")}
-                            description={aoyClaims !== null ? t("yourData.aoySub", { count: aoyClaims }) : undefined}
-                            failure={aoyFailed ? { text: t("yourData.aoyReadFailed"), retry: loadAoy } : undefined}
-                        />
-                    </div>
-                )}
-            </SettingsCard>
+            <WhatLeavesCard
+                summary={summary}
+                reload={reload}
+                agentsLine={agentsLine}
+                agentNames={(agent) => handoffAgentName(agent, t)}
+                extraRows={
+                    <>
+                        <div data-your-data-row="devices">
+                            <SettingsRow
+                                title={t("yourData.devices")}
+                                description={summary && summary.pairedDevices === 0 ? t("yourData.devicesNone") : t("yourData.devicesSub")}
+                            />
+                        </div>
+                        <div data-your-data-row="notifications">
+                            <SettingsRow title={t("yourData.notifications")} description={t("yourData.notificationsSub")} />
+                        </div>
+                        {(aoyClaims !== null || aoyFailed) && (
+                            <div data-your-data-row="agentOfYou">
+                                <SettingsRow
+                                    title={t("yourData.aoy")}
+                                    description={aoyClaims !== null ? t("yourData.aoySub", { count: aoyClaims }) : undefined}
+                                    failure={aoyFailed ? { text: t("yourData.aoyReadFailed"), retry: loadAoy } : undefined}
+                                />
+                            </div>
+                        )}
+                    </>
+                }
+            />
             <ForgetEverythingCard />
             <KeepTimesSheet
                 open={changing}
