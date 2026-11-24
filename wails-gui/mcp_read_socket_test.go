@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -74,5 +75,52 @@ func TestMCPReadPrivateSocketLifecycleAndTCPSeparation(t *testing.T) {
 	hb.Stop()
 	if _, err := os.Stat(endpoint); err != nil {
 		t.Fatalf("old shutdown removed new discovery: %v", err)
+	}
+}
+
+// Launches that ended without a clean shutdown leave read sockets behind; the
+// next launch removes the dead ones and keeps one something still answers on.
+func TestMCPReadPublishRemovesStaleSockets(t *testing.T) {
+	a := newMCPReadTestApp(t)
+	dir, err := ensureMCPReadDirectory()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var dead []string
+	for _, name := range []string{"read-deadaaaaaaaa.sock", "read-deadbbbbbbbb.sock"} {
+		path := filepath.Join(dir, name)
+		listener, err := net.Listen("unix", path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		listener.(*net.UnixListener).SetUnlinkOnClose(false)
+		listener.Close()
+		dead = append(dead, path)
+	}
+	live := filepath.Join(dir, "read-livecccccccc.sock")
+	liveListener, err := net.Listen("unix", live)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { liveListener.Close() })
+	plain := filepath.Join(dir, "read-notasocket.sock")
+	if err := os.WriteFile(plain, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	hb, err := startHostBridge(context.Background(), a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.bridge = hb
+	t.Cleanup(hb.Stop)
+	for _, path := range dead {
+		if _, err := os.Lstat(path); !os.IsNotExist(err) {
+			t.Fatalf("stale socket survived launch: %s %v", filepath.Base(path), err)
+		}
+	}
+	for _, path := range []string{live, plain, hb.mcpSocketPath} {
+		if _, err := os.Lstat(path); err != nil {
+			t.Fatalf("launch removed %s: %v", filepath.Base(path), err)
+		}
 	}
 }
