@@ -103,10 +103,14 @@ func TestStreamComposedExternalChatThroughControlledToolServer(t *testing.T) {
 					t.Fatalf("fallback routes=%v native requests=%d", routes, len(nativeBodies))
 				}
 				prompt := fmt.Sprint(nativeBodies[0]["messages"])
-				for _, want := range []string{"<memory-context>", "<memory-cli>", handoffPrivatePeople} {
+				for _, want := range []string{"<memory-context>", handoffPrivatePeople} {
 					if !strings.Contains(prompt, want) {
 						t.Errorf("native fallback lost %q", want)
 					}
+				}
+				// Chat runs no commands (S25): no CLI manual on either tier.
+				if strings.Contains(prompt, "<memory-cli>") {
+					t.Error("native fallback still carries the memory CLI")
 				}
 				if strings.Contains(prompt, chatContextToolHint) {
 					t.Fatal("native fallback received external tier")
@@ -121,7 +125,7 @@ func TestStreamComposedExternalChatThroughControlledToolServer(t *testing.T) {
 				if len(nativeBodies) != 0 {
 					t.Fatal("external success called the native model")
 				}
-				for _, want := range []string{"project memory marker", handoffPrivatePeople, "project activity marker", "memory list"} {
+				for _, want := range []string{"project memory marker", handoffPrivatePeople, "project activity marker", "MemoryList"} {
 					if !strings.Contains(reply.String(), want) {
 						t.Errorf("same-turn answer lost %q: %s", want, reply.String())
 					}

@@ -23,10 +23,7 @@ func TestSafetySettingReadsAndWritesRejectMalformedConfig(t *testing.T) {
 	if _, err := app.GetReadAssistantHistory(); err == nil {
 		t.Fatal("history read accepted malformed config")
 	}
-	if _, err := app.GetAskBeforeRiskyCommands(); err == nil {
-		t.Fatal("risky command read accepted malformed config")
-	}
-	if err := app.SetAskBeforeRiskyCommands(true); err == nil {
+	if err := updateConfig(func(c *yansuConfig) { c.AssistantHistoryOff = true }); err == nil {
 		t.Fatal("write accepted malformed config")
 	}
 	got, err := os.ReadFile(path)

@@ -549,14 +549,6 @@ export interface AfterCallSpeechModelView {
 export const GetAfterCallSpeechModel = appBinding<[], AfterCallSpeechModelView>("GetAfterCallSpeechModel");
 export const SetAfterCallSpeechModelEnabled = appBinding<[boolean], void>("SetAfterCallSpeechModelEnabled");
 export const RemoveAfterCallSpeechModel = appBinding<[], void>("RemoveAfterCallSpeechModel");
-// Settings > Privacy: ask before risky Bash commands in attended chats.
-// Mirrors risky_commands_config.go.
-export const GetAskBeforeRiskyCommands = appBinding<[], boolean>(
-    "GetAskBeforeRiskyCommands",
-);
-export const SetAskBeforeRiskyCommands = appBinding<[boolean], void>(
-    "SetAskBeforeRiskyCommands",
-);
 // Pause observing (closed-eyes mode), the same state as the menu bar's Pause
 // Observation. Go emits "closed-eyes:changed" with the new paused state from
 // every surface that changes it. Mirrors wails-gui/closed_eyes_mode.go.

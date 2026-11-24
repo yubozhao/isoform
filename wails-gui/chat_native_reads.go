@@ -17,6 +17,9 @@ import (
 	"wails-gui/internal/meetingdetect"
 )
 
+// chatNativeReadMaxLimit caps how many rows one list or search read asks for.
+const chatNativeReadMaxLimit = 100
+
 const chatNativeReadHint = "Use the native Isoform tools first: ActivityDay for a local date, ActivityList for recent sessions, ActivitySearch to find sessions, and ActivitySession for details or a meeting transcript. Use MemorySearch for recall, MemoryList to browse notes, and MemoryShow to read one. Cite the refs the tools print.\n\n"
 
 // A meeting permits its own calling app. Other messaging apps and webmail
@@ -165,13 +168,15 @@ func (a *App) readNativeChatSource(ctx context.Context, name string, input map[s
 	case "ActivitySearch":
 		limit = 10
 	case "MemoryList":
-		limit = 0
+		limit = chatNativeReadMaxLimit
 	}
 	if v, ok := input["limit"]; ok && (name == "ActivitySearch" || name == "ActivityList" || name == "MemoryList") {
 		limit, err = strconv.Atoi(fmt.Sprint(v))
 		if err != nil || limit < 1 {
 			return "", errors.New("invalid limit")
 		}
+		// The output is bounded; the read is bounded too.
+		limit = min(limit, chatNativeReadMaxLimit)
 	}
 	var out strings.Builder
 	epoch := a.contextUseEpoch()

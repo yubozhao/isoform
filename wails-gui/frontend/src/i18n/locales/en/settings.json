@@ -1599,11 +1599,6 @@
             "detailsTitle": "What diagnostic data includes",
             "detailsDescription": "When sharing is on, Isoform records app opens, active foreground time, the first brief viewed, chat turns sent (count only), playbook runs, phone pairings and a daily active ping. A random install ID links these events without an account, name or email. Events include app version, flavor, OS version, language and telemetry tier; activity also includes a random session ID and duration. Five minutes without input ends active time. Never sent: screen text, audio, file names, URLs, people, memory, chat text or tool inputs and outputs. When sharing is off, nothing is queued or sent."
         },
-        "riskyCommands": {
-            "title": "Ask before running risky commands",
-            "description": "When on, Isoform asks before running commands that change things outside the project, send data, or that it cannot check. When off, commands run without asking. Private keys, password stores and Isoform's own data stay blocked either way.",
-            "saveFailed": "Couldn't change this."
-        },
         "permissions": {
             "usedFor": "Used for {{purpose}}."
         },

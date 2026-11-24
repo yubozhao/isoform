@@ -18,12 +18,13 @@ func TestContextReviewRound1StandingRules(t *testing.T) {
 	app := newMCPReadTestApp(t)
 	app.slackDaemon = &daemonClient{connected: true}
 	prompt := app.composePrompt("Post this to Slack", "chat", "", skillHubDomainChat, "English", string(promptOriginMac), "external-chat")
-	for _, want := range []string{"You are Isoform", "RULES:", "NEVER show users code, config files, or dev setup steps", "NEVER present multiple options or give time estimates", "2-3 sentences max, then one question", "warm, personable, and conversational", "CONNECTED INTEGRATIONS (", "- Slack", "do NOT ask for webhook URLs", "automations", "skills", "web search", `IsoformHelp("isoform")`, "RUNTIME ENVIRONMENT"} {
+	for _, want := range []string{"You are Isoform", "RULES:", "NEVER show users code, config files, or dev setup steps", "NEVER present multiple options or give time estimates", "2-3 sentences max, then one question", "warm, personable, and conversational", "CONNECTED INTEGRATIONS (", "- Slack", "do NOT ask for webhook URLs", "runs no commands", "HandOffWork"} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("standing prompt lost %q", want)
 		}
 	}
-	for _, absent := range []string{"<memory-cli>", "<activity-cli>", "<cua-tool>", "cron add --name", "opencli list -f yaml"} {
+	// Chat runs no commands (computer-conformance-answers v1.4.0 S25, S19).
+	for _, absent := range []string{"<memory-cli>", "<activity-cli>", "<cua-tool>", "cron add --name", "opencli list", "RUNTIME ENVIRONMENT", "yansu CLI"} {
 		if strings.Contains(prompt, absent) {
 			t.Errorf("standing prompt contains manual %q", absent)
 		}
@@ -43,10 +44,14 @@ func TestContextReviewRound1OpenerRules(t *testing.T) {
 func TestContextReviewRound1MemoryGuidance(t *testing.T) {
 	_, c := newChatContextSourceFixture(t)
 	result := chatContextMCPCall(t, c, "IsoformHelp", map[string]any{"query": "memory"})
-	for _, want := range []string{"WHEN TO USE THE CLI:", "What do you remember about me?", "memory list --limit 20", "DO NOT:", `Claim "I don't have any memory of you"`, "read-only"} {
+	// The manual names Chat's own memory tools, never a CLI (S25).
+	for _, want := range []string{"MemorySearch", "MemoryList", "MemoryShow"} {
 		if !strings.Contains(result, want) {
 			t.Errorf("memory Help lost %q", want)
 		}
+	}
+	if strings.Contains(result, "yansu memory") || strings.Contains(result, "Bash") {
+		t.Error("memory Help still documents the CLI")
 	}
 	if strings.Contains(result, "AUTO-INJECT (already happening") {
 		t.Error("Help claims external auto-injection")
@@ -170,7 +175,7 @@ func TestContextReviewRound1ResultsAreTransient(t *testing.T) {
 		return nil
 	})
 	for _, tc := range []struct{ name, query, marker string }{
-		{"MemorySearch", "project", "project memory marker"}, {"PeopleLookup", "Project Person", "project relationship marker"}, {"RecentActivity", "", "project activity marker"}, {"IsoformHelp", "memory", "memory list"},
+		{"MemorySearch", "project", "project memory marker"}, {"PeopleLookup", "Project Person", "project relationship marker"}, {"RecentActivity", "", "project activity marker"}, {"IsoformHelp", "memory", "MemoryList"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			result := chatContextMCPCall(t, c, tc.name, map[string]any{"query": tc.query})

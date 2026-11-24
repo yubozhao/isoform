@@ -10,9 +10,7 @@ import {
     SelectItem,
 } from "@/components/ui/select";
 import {
-    GetAskBeforeRiskyCommands,
     GetStartAtLogin,
-    SetAskBeforeRiskyCommands,
     SetStartAtLogin,
 } from "../../../../wailsjs/go/main/App";
 import {
@@ -38,7 +36,6 @@ import {
     wireChoices,
 } from "@/components/onboarding/v2/models";
 import { SettingReadError } from "./setting-read-error";
-import { SettingsControlCard } from "./capture-shared";
 
 // The rows About holds (computer-conformance-answers v1.0.0 T2): Your name,
 // Open at login, Language, Appearance, then Version and updates and Help in
@@ -350,52 +347,5 @@ export function AboutModels() {
                 )}
             </div>
         </SettingsCard>
-    );
-}
-
-// ── Ask before risky commands ──
-//
-// Kept under About › Advanced (settings batch D2): design removed it because
-// "Chat runs no commands", but attended Chat still runs Bash and this still
-// gates it (streaming.go). Design and the Chat owner place it; until then its
-// behaviour and saved value are unchanged.
-// Asking before risky Bash commands in attended chats. Off by default: attended
-// runs execute Bash without asking, while hard blocks (private keys, password
-// stores, Isoform's own data) hold either way. Backed by
-// Get/SetAskBeforeRiskyCommands in risky_commands_config.go.
-export function RiskyCommandsCard() {
-    const { t } = useTranslation("settings");
-    const { failure: changeFailure, fail: failChange } = useSettingsFailure();
-    const [enabled, setEnabled] = useState<boolean | null>(null);
-    const [readFailed, setReadFailed] = useState(false);
-    const title = t("privacy.riskyCommands.title");
-
-    const read = () => {
-        setEnabled(null);
-        setReadFailed(false);
-        GetAskBeforeRiskyCommands().then((value) => {
-            if (typeof value !== "boolean") throw new Error("Invalid setting");
-            setEnabled(value);
-        }).catch(() => setReadFailed(true));
-    };
-    useEffect(() => { read(); }, []);
-
-    const handleChange = (next: boolean) => {
-        setEnabled(next);
-        SetAskBeforeRiskyCommands(next).catch(() => {
-            read();
-            failChange(t("privacy.riskyCommands.saveFailed"), () => void handleChange(next));
-        });
-    };
-
-    return (
-        <SettingsControlCard
-            title={title}
-            description={t("privacy.riskyCommands.description")}
-            control={readFailed || enabled === null ? null : <Switch aria-label={title} checked={enabled} onCheckedChange={handleChange} />}
-        >
-            {readFailed && <SettingsFailureLine failure={{ text: t("settingRead.failed"), retry: read }} />}
-            <SettingsFailureLine failure={changeFailure} />
-        </SettingsControlCard>
     );
 }
