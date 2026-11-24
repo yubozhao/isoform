@@ -264,7 +264,7 @@ func (a *App) startFront() error {
 		NextProtos:     []string{"h2", "http/1.1", acme.ALPNProto},
 	}
 	server := &http.Server{
-		Handler:           frontHostOnly(info.Hostname, a.agentMux()),
+		Handler:           frontHostOnly(info.Hostname, markAddressRequests(a.agentMux())),
 		TLSConfig:         tlsConfig,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
@@ -302,6 +302,14 @@ func (a *App) startFront() error {
 	s.mu.Unlock()
 	log.Printf("[front] serving %s", info.Hostname)
 	return nil
+}
+
+// markAddressRequests marks every request the front serves as one that came
+// in through the agent address.
+func markAddressRequests(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(w, withAddressRequest(r))
+	})
 }
 
 // frontHostOnly answers only requests for the computer's own hostname.

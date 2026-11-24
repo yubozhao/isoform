@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"wails-gui/internal/destinations"
 	"wails-gui/internal/privacy"
 	"wails-gui/internal/tasklink"
 )
@@ -219,5 +220,36 @@ func TestTaskLinkBaseURLMustBeAnHTTPSOrigin(t *testing.T) {
 		if _, err := a.taskLinkBaseURL(); err == nil {
 			t.Errorf("%q was accepted", bad)
 		}
+	}
+}
+
+// A task's text sent over the agent address counts in What leaves; the same
+// link read on this computer, a HEAD and a refused read don't.
+func TestTaskLinkServedOverAddressIsCounted(t *testing.T) {
+	calls := observeDestinationCalls(t)
+	a := newTaskLinkTestApp(t)
+	link, err := a.createTaskLink(tasklink.Link{ID: "task-1", AgentID: "claude", Text: taskLinkTestText})
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := taskLinkToken(t, link)
+	if rec := taskLinkGet(t, a, token); rec.Code != http.StatusOK {
+		t.Fatalf("local GET = %d", rec.Code)
+	}
+	front := markAddressRequests(a.agentMux())
+	head := httptest.NewRecorder()
+	front.ServeHTTP(head, httptest.NewRequest(http.MethodHead, tasklink.PathPrefix+token, nil))
+	missing := httptest.NewRecorder()
+	front.ServeHTTP(missing, httptest.NewRequest(http.MethodGet, tasklink.PathPrefix+"nope", nil))
+	got := httptest.NewRecorder()
+	front.ServeHTTP(got, httptest.NewRequest(http.MethodGet, tasklink.PathPrefix+token, nil))
+	if got.Code != http.StatusOK || !strings.Contains(got.Body.String(), taskLinkTestText) {
+		t.Fatalf("address GET = %d", got.Code)
+	}
+	expectDestination(t, calls, destinations.AgentAddress, "")
+	select {
+	case c := <-calls:
+		t.Fatalf("counted more than the one address read: %+v", c)
+	case <-time.After(200 * time.Millisecond):
 	}
 }

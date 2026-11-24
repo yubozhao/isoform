@@ -82,6 +82,9 @@ type Hooks struct {
 	Allowed func(link Link) error
 	// Taken is told the first real GET.
 	Taken func(link Link)
+	// Served is told each time the task's text is sent, with the request it
+	// answered (previews and HEAD send no text).
+	Served func(r *http.Request, link Link)
 	// Resulted is told the accepted result.
 	Resulted func(link Link, result Result)
 	// Now is the clock.
@@ -280,6 +283,9 @@ func (s *Store) serveGet(w http.ResponseWriter, r *http.Request, link *Link) {
 	s.mu.Unlock()
 	if first && s.hooks.Taken != nil {
 		s.hooks.Taken(snapshot)
+	}
+	if r.Method == http.MethodGet && s.hooks.Served != nil {
+		s.hooks.Served(r, snapshot)
 	}
 	if strings.Contains(r.Header.Get("Accept"), "application/json") {
 		w.Header().Set("Content-Type", "application/json")
