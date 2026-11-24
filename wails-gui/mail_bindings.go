@@ -38,7 +38,13 @@ func (a *App) GetMailOverview() (MailOverview, error) {
 		return view, errors.New("the store is not ready")
 	}
 	ctx := context.Background()
-	view.Enabled = a.isPermissionEnabled(mailPermissionKey)
+	// A switch that can't be read fails the read; the page shows it with Try
+	// again, never as on.
+	enabled, err := a.permissionSwitchRead(context.Background(), mailPermissionKey)
+	if err != nil {
+		return view, err
+	}
+	view.Enabled = enabled
 	view.Stalled = a.mailSync.stalled()
 	if last, lastErr, _ := a.mailSync.status(); !last.IsZero() {
 		view.LastReadAt = last.UTC().Format(time.RFC3339)

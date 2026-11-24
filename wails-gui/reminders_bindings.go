@@ -43,7 +43,13 @@ func (a *App) GetRemindersOverview() (RemindersOverview, error) {
 	if a == nil || a.store == nil {
 		return view, errors.New("the store is not ready")
 	}
-	view.Enabled = a.isPermissionEnabled(remindersPermissionKey)
+	// A switch that can't be read fails the read; the page shows it with Try
+	// again, never as on.
+	enabled, err := a.permissionSwitchRead(context.Background(), remindersPermissionKey)
+	if err != nil {
+		return view, err
+	}
+	view.Enabled = enabled
 	if last, lastErr := a.remindersSync.status(); !last.IsZero() {
 		view.LastSyncAt = last.UTC().Format(time.RFC3339)
 		view.LastError = lastErr

@@ -3290,7 +3290,7 @@
             },
             "memory-dream": {
                 "name": "Memory review",
-                "description": "Reviews and consolidates saved memories in the background."
+                "description": "Reviews and consolidates saved memories in the background; your AI reads them to do this."
             },
             "memory-dream-llm": {
                 "name": "AI memory review",

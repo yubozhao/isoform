@@ -64,7 +64,13 @@ func (a *App) GetCalendarOverview() (CalendarOverview, error) {
 	if a == nil || a.store == nil {
 		return view, errors.New("the store is not ready")
 	}
-	view.Enabled = a.isPermissionEnabled(calendarPermissionKey)
+	// A switch that can't be read fails the read; the page shows it with Try
+	// again, never as on.
+	enabled, err := a.permissionSwitchRead(context.Background(), calendarPermissionKey)
+	if err != nil {
+		return view, err
+	}
+	view.Enabled = enabled
 	view.PeekEnabled = a.calendarPeekEnabled()
 	if last, lastErr := a.calendarSync.status(); !last.IsZero() {
 		view.LastSyncAt = last.UTC().Format(time.RFC3339)

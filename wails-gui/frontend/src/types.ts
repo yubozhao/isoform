@@ -86,6 +86,8 @@ export interface PermissionItem {
     actionLabel: string;
     toggleable: boolean;
     enabled: boolean;
+    /** The switch's saved state couldn't be read; `enabled` means nothing. */
+    enabledUnknown?: boolean;
 }
 
 export interface PlatformPermissions {
