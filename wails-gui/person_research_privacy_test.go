@@ -11,19 +11,12 @@ import (
 	"yansu-agent/agent"
 )
 
-func TestPersonResearchRedactsEveryPromptAndSearchFallback(t *testing.T) {
+func TestPersonResearchRedactsSynthesisPrompt(t *testing.T) {
 	seed := researchSeed{Names: "Person " + activityPrivacySecret, Handles: "- Slack: " + activityPrivacySecret,
 		Recent: "Message " + activityPrivacySecret, Stats: activityPrivacySecret, Extra: activityPrivacySecret}
-	for name, prompt := range map[string]string{
-		"synthesis": personResearchPrompt(seed, "English", nil),
-		"web-synthesis": personResearchPrompt(seed, "English", &webResearch{Answer: activityPrivacySecret,
-			Findings: []webFinding{{N: 1, Content: activityPrivacySecret}}}),
-		"query-model":     personResearchSearchPrompt(seed),
-		"search-fallback": (&App{}).generateSearchQuery(t.Context(), seed),
-	} {
-		if strings.Contains(prompt, activityPrivacySecret) || !strings.Contains(prompt, "[REDACTED:api_key]") {
-			t.Errorf("%s leaks local data: %s", name, prompt)
-		}
+	prompt := personResearchPrompt(seed, "English")
+	if strings.Contains(prompt, activityPrivacySecret) || !strings.Contains(prompt, "[REDACTED:api_key]") {
+		t.Errorf("synthesis leaks local data: %s", prompt)
 	}
 }
 
@@ -71,25 +64,19 @@ func (r *modelPrivacyTaskRecorder) ExecuteTask(ctx context.Context, input *agent
 
 func TestPersonResearchModelCallsRedactAndUseBackgroundPriority(t *testing.T) {
 	isolateActivityPrivacyTest(t)
-	t.Setenv("TAVILY_API_KEY", "")
 	runner := &modelPrivacyTaskRecorder{memoryTranslationFakeRunner: memoryTranslationFakeRunner{
 		response: "Person " + activityPrivacySecret, ready: true,
 	}}
 	app := newBindingsTestApp(t)
 	app.runner = runner
-	seed := researchSeed{Names: "Person", Recent: activityPrivacySecret, Extra: activityPrivacySecret}
-	query := app.generateSearchQuery(t.Context(), seed)
-	if strings.Contains(query, activityPrivacySecret) {
-		t.Fatal("generated web query was not redacted")
-	}
 	p, err := app.store.CreatePrincipal(t.Context(), storage.PrincipalRow{Kind: storage.PrincipalKindContact, DisplayName: "Person"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	runner.response = "<summary>Known person</summary><dossier>A known person.</dossier>"
 	app.runPersonResearch(p, activityPrivacySecret)
-	if len(runner.inputs) != 2 {
-		t.Fatalf("model calls = %d, want query and synthesis", len(runner.inputs))
+	if len(runner.inputs) != 1 {
+		t.Fatalf("model calls = %d, want one synthesis", len(runner.inputs))
 	}
 	for _, input := range runner.inputs {
 		if strings.Contains(input.Prompt, activityPrivacySecret) || !strings.Contains(input.Prompt, "[REDACTED:api_key]") {

@@ -35,7 +35,6 @@ const (
 	Composio        ID = "composio"
 	MCPServers      ID = "mcp_servers"
 	EmbeddingsAPI   ID = "embeddings_api"
-	Tavily          ID = "tavily"
 	Telemetry       ID = "telemetry"
 	YansuBackend    ID = "yansu_backend"
 	Metadata        ID = "metadata"
@@ -112,9 +111,6 @@ var list = []Destination{
 	{EmbeddingsAPI, "OpenAI or the configured remote Ollama address",
 		"Memory text and search queries, for embeddings",
 		ContentYes, "only when the person selects that provider in Settings"},
-	{Tavily, "Tavily web search",
-		"A search about a person being researched",
-		ContentYes, "only when TAVILY_API_KEY is set; no build sets it"},
 	{Telemetry, "PostHog, Isoform's product analytics",
 		"Allowlisted product events, never content",
 		ContentNone, "only when the build carries a key and sharing isn't off"},

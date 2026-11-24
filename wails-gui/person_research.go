@@ -160,22 +160,18 @@ func (a *App) runPersonResearch(p storage.PrincipalRow, additionalContext string
 	seed := a.buildResearchSeed(ctx, p, additionalContext)
 	langInstruction := responseLanguageInstruction(a.currentUILanguageName())
 
-	log.Printf("[people] research starting for %s model=%s budget=%s web=%v", p.ID, personResearchModel, personResearchTimeout, tavilyAPIKey() != "")
+	log.Printf("[people] research starting for %s model=%s budget=%s", p.ID, personResearchModel, personResearchTimeout)
 
 	// Trajectory step 1: reviewing what Yansu already knows. Emitted from Go
 	// (the synthesis is a single LLM call, so there are no tool events to
 	// derive steps from) — gives the user something concrete to watch.
 	a.emitPersonResearchStep(p.ID, "thinking", "context", "")
 
-	// Ground the dossier in real web sources (Tavily, ~2-3s) when a key is
-	// configured — this is what gives the profile cited, externally-verified
-	// facts like Town's People. Falls back to local-only synthesis otherwise.
-	web := a.gatherWebFindings(ctx, p, seed)
 	if !a.researchSeedAllowsRead(ctx, seed) {
 		a.failPersonResearch(p.ID, "research sources changed")
 		return
 	}
-	prompt := personResearchPrompt(seed, langInstruction, web)
+	prompt := personResearchPrompt(seed, langInstruction)
 
 	var result strings.Builder
 	wroteWriteStep := false
@@ -222,10 +218,6 @@ func (a *App) runPersonResearch(p storage.PrincipalRow, additionalContext string
 		a.failPersonResearch(p.ID, "research produced no dossier content")
 		return
 	}
-	// Sources come from the actual Tavily results (not the model) so the [n]
-	// citations always resolve to real URLs — no fabricated links.
-	sources := webFindingsToSources(web)
-
 	store, err := a.requireStore()
 	if err != nil {
 		a.failPersonResearch(p.ID, err.Error())
@@ -236,7 +228,6 @@ func (a *App) runPersonResearch(p storage.PrincipalRow, additionalContext string
 		Status:      storage.PrincipalResearchStatusReady,
 		Summary:     summary,
 		Markdown:    markdown,
-		Sources:     sources,
 		Model:       personResearchModel,
 	}
 	if err := store.SavePrincipalResearch(context.Background(), row); err != nil {
@@ -244,7 +235,7 @@ func (a *App) runPersonResearch(p storage.PrincipalRow, additionalContext string
 		return
 	}
 	a.emitPersonResearch(p.ID, storage.PrincipalResearchStatusReady, "")
-	log.Printf("[people] research ready for %s (%d sources)", p.ID, len(sources))
+	log.Printf("[people] research ready for %s", p.ID)
 }
 
 func (a *App) failPersonResearch(principalID, reason string) {
@@ -445,181 +436,6 @@ func millisToDate(ms int64) string {
 	return time.UnixMilli(ms).Format("2006-01-02")
 }
 
-// ── Web grounding (Tavily) ──────────────────────────────────────────
-
-// webFinding is one numbered, citable web source.
-type webFinding struct {
-	N       int
-	Title   string
-	URL     string
-	Content string
-}
-
-// webResearch bundles the search answer + numbered findings fed to synthesis.
-type webResearch struct {
-	Query    string
-	Answer   string
-	Findings []webFinding
-}
-
-// gatherWebFindings runs a single fast web search for the person and returns
-// numbered, citable results — emitting trajectory steps as it goes. Returns
-// nil when no API key is configured or the search fails, so the caller falls
-// back to local-only synthesis.
-func (a *App) gatherWebFindings(ctx context.Context, p storage.PrincipalRow, seed researchSeed) *webResearch {
-	if tavilyAPIKey() == "" {
-		log.Printf("[people] research %s: web search off (no TAVILY_API_KEY) — local synthesis only", p.ID)
-		return nil
-	}
-	query := a.generateSearchQuery(ctx, seed)
-	if query == "" {
-		return nil
-	}
-
-	a.emitPersonResearchStep(p.ID, "searching", "search", query)
-	log.Printf("[people] research %s: web search bytes=%d", p.ID, len(query))
-
-	sctx, cancel := context.WithTimeout(ctx, 18*time.Second)
-	defer cancel()
-	if !a.researchSeedAllowsRead(ctx, seed) {
-		return nil
-	}
-	resp, err := tavilySearch(sctx, query, 6)
-	if err != nil {
-		log.Printf("[people] research %s: web search failed: %v", p.ID, err)
-		return nil
-	}
-
-	web := &webResearch{Query: query, Answer: strings.TrimSpace(resp.Answer)}
-	reads := 0
-	for _, r := range resp.Results {
-		u := strings.TrimSpace(r.URL)
-		if u == "" {
-			continue
-		}
-		web.Findings = append(web.Findings, webFinding{
-			N:       len(web.Findings) + 1,
-			Title:   strings.TrimSpace(r.Title),
-			URL:     u,
-			Content: truncateRunes(strings.TrimSpace(r.Content), 600),
-		})
-		if reads < 4 {
-			a.emitPersonResearchStep(p.ID, "reading", "read", urlHost(u))
-			reads++
-		}
-	}
-	log.Printf("[people] research %s: %d web findings", p.ID, len(web.Findings))
-	if len(web.Findings) == 0 {
-		return nil
-	}
-	return web
-}
-
-// generateSearchQuery uses a fast model to mine the local signals (name +
-// handles + message snippets) for the most DISTINGUISHING web-search query —
-// a bare nickname like "Bo" returns dictionary/Wikipedia noise, but pairing it
-// with a company/project/real name from the messages can pin the real person.
-// Falls back to the plain concatenation when the model is unavailable.
-func (a *App) generateSearchQuery(ctx context.Context, seed researchSeed) string {
-	seed = redactResearchSeed(seed)
-	if !a.researchSeedAllowsRead(ctx, seed) {
-		return ""
-	}
-	a.mu.Lock()
-	runner := a.runner
-	a.mu.Unlock()
-	fallback := buildSearchQuery(seed)
-	if runner == nil {
-		return fallback
-	}
-
-	prompt := personResearchSearchPrompt(seed)
-
-	qctx, cancel := context.WithTimeout(ctx, 12*time.Second)
-	defer cancel()
-	var out strings.Builder
-	_, err := runner.ExecuteTask(qctx, &agent.TaskInput{
-		Prompt:            prompt,
-		Priority:          agent.PriorityBackground,
-		Model:             "haiku",
-		Ephemeral:         true,
-		NoTools:           true,
-		NoSystem:          true,
-		SuppressTelemetry: true,
-	}, func(ev *agent.StreamEvent) error {
-		if ev.Type == "assistant" {
-			out.WriteString(ev.Content)
-		}
-		return nil
-	})
-	q := strings.TrimSpace(out.String())
-	if i := strings.IndexByte(q, '\n'); i >= 0 {
-		q = strings.TrimSpace(q[:i])
-	}
-	q = strings.Trim(q, "\"'`")
-	if err != nil || q == "" || len(q) > 200 {
-		return fallback
-	}
-	q, _ = pii.RedactText(q)
-	return q
-}
-
-func personResearchSearchPrompt(seed researchSeed) string {
-	seed = redactResearchSeed(seed)
-	return fmt.Sprintf(`Output the SINGLE best web-search query to find THIS specific real person online.
-
-Rules:
-- The query MUST start with the person's name/handle.
-- Append ONLY a real IDENTITY term if one is clearly present in the signals: a
-  company/employer name, the person's real full name, or a job title.
-- Do NOT add product names, project codenames, internal tool names, model names
-  (e.g. "deepseek", "yansu"), metrics, or generic tech jargon — those describe
-  the work, not the person, and pollute the search.
-- If no real identity term exists, output JUST the name. A clean name beats a
-  name + jargon.
-- Output ONLY the query text — no quotes, no explanation, one line.
-
-Name / aliases: %s
-Per-app accounts: %s
-Recent message snippets (for identity terms only — ignore project jargon):
-%s
-User-supplied context: %s`,
-		seed.Names, seed.Handles, seed.Recent, seed.Extra)
-
-}
-
-// buildSearchQuery combines the person's names with their strongest extra
-// signals (handles, user context) into one broad query.
-func buildSearchQuery(seed researchSeed) string {
-	seed = redactResearchSeed(seed)
-	parts := []string{strings.TrimSpace(seed.Names)}
-	// Pull handle values (e.g. "@yetone", "example") off the per-line list.
-	for _, line := range strings.Split(seed.Handles, "\n") {
-		if i := strings.Index(line, ":"); i >= 0 {
-			if v := strings.TrimSpace(line[i+1:]); v != "" {
-				parts = append(parts, v)
-			}
-		}
-	}
-	if e := strings.TrimSpace(seed.Extra); e != "" {
-		parts = append(parts, e)
-	}
-	return strings.TrimSpace(strings.Join(dedupeNonEmpty(parts), " "))
-}
-
-// webFindingsToSources converts the Tavily findings into the dossier's stored
-// sources so the inline [n] markers resolve to real URLs.
-func webFindingsToSources(web *webResearch) []storage.ResearchSource {
-	if web == nil {
-		return nil
-	}
-	sources := make([]storage.ResearchSource, 0, len(web.Findings))
-	for _, f := range web.Findings {
-		sources = append(sources, storage.ResearchSource{N: f.N, Title: f.Title, URL: f.URL})
-	}
-	return sources
-}
-
 // personResearchSections is the shared output spec — the Town-style section
 // set. Headings are written in the user's language (the model is told to), so
 // the dossier is a self-contained localized document; the frontend renders it
@@ -633,7 +449,7 @@ padding it. Do not invent content to fill a section.
 2. Who They Are — background, what they're known for, current focus.
 3. Your Relationship — the nature of the relationship to the user.
 4. Recent / Open Threads — the active topics/threads between the user and this
-   person, inferred from the recent message snippets (and web if relevant), with
+   person, inferred from the recent message snippets, with
    rough dates when known.
 5. Communication Style — BOTH directions: how the user communicates with them,
    and how they communicate with the user (tone, channel, length) — from the
@@ -642,8 +458,8 @@ padding it. Do not invent content to fill a section.
    stats (totals, first/last seen, per-app).
 7. Uncertainties — a short list of what is NOT verified or is low-confidence.
 8. Claims / Citations — a numbered list of the key factual claims; for each give
-   Confidence (high/medium/low), Source (web / message history / general
-   knowledge), and a ref (a [n] web source, or "message history" / "local").`
+   Confidence (high/medium/low), Source (message history / general
+   knowledge), and a ref ("message history" / "local").`
 
 // personResearchTail is the parser contract appended to every prompt.
 const personResearchTail = `Then append exactly these two delimited blocks (tags stay in English; only the
@@ -652,7 +468,7 @@ prose inside follows the language instruction):
 <summary>one sentence describing this person (<= 30 words)</summary>
 <dossier>the full Markdown profile from the sections above</dossier>`
 
-func personResearchPrompt(seed researchSeed, langInstruction string, web *webResearch) (prompt string) {
+func personResearchPrompt(seed researchSeed, langInstruction string) (prompt string) {
 	defer func() { prompt, _ = pii.RedactText(prompt) }()
 	seed = redactResearchSeed(seed)
 	notKnown := func(s string) string {
@@ -671,43 +487,6 @@ func personResearchPrompt(seed researchSeed, langInstruction string, web *webRes
 %s
 - User-supplied context: %s`,
 		notKnown(seed.Names), notKnown(seed.Handles), notKnown(seed.Stats), notKnown(seed.Recent), notKnown(seed.Extra))
-
-	// Web-grounded variant: real sources + [n] citations (Town-quality).
-	if web != nil && len(web.Findings) > 0 {
-		var fb strings.Builder
-		if web.Answer != "" {
-			fb.WriteString("Search summary: " + web.Answer + "\n\n")
-		}
-		for _, f := range web.Findings {
-			fb.WriteString(fmt.Sprintf("[%d] %s — %s\n%s\n\n", f.N, f.Title, f.URL, f.Content))
-		}
-
-		return fmt.Sprintf(`%s
-
-You are a people-research assistant. Write a thorough, sourced profile of the
-person below by combining the WEB FINDINGS with the local signals. Use the web
-findings for external facts (role, company, background, public handles); use the
-local signals for relationship, cadence, communication style, and open threads.
-
-%s
-
-## Web findings (your web sources — cite with [n])
-%s
-
-## Rules
-- Cite every web-sourced fact with the matching [n] marker (the numbers above).
-  Use ONLY those numbers; never invent sources or URLs.
-- For facts drawn from the user's own message history, attribute them to
-  "message history" in the Claims / Citations section (no [n], no URL).
-- If the findings clearly describe a DIFFERENT person than the local signals
-  suggest (common-name mismatch), say so and rely on local signals.
-- NEVER fabricate emails, phone numbers, or precise facts. Write "Unknown".
-
-%s
-
-%s`,
-			langInstruction, localSignals, fb.String(), personResearchSections, personResearchTail)
-	}
 
 	// Local-only variant: no web sources available, synthesize from knowledge.
 	return fmt.Sprintf(`%s

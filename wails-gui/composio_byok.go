@@ -59,26 +59,36 @@ func composioByokPath() (string, error) {
 }
 
 func loadComposioByok() composioByokState {
-	composioByokMu.Lock()
-	defer composioByokMu.Unlock()
-	return loadComposioByokLocked()
+	st, _ := readComposioByok()
+	return st
 }
 
-func loadComposioByokLocked() composioByokState {
-	var st composioByokState
+func readComposioByok() (composioByokState, error) {
+	composioByokMu.Lock()
+	defer composioByokMu.Unlock()
+	return readComposioByokLocked()
+}
+
+func readComposioByokLocked() (composioByokState, error) {
+	st := composioByokState{Connections: map[string]composioByokConnection{}}
 	path, err := composioByokPath()
 	if err != nil {
-		return st
+		return st, err
 	}
 	data, err := os.ReadFile(path)
-	if err != nil {
-		return st
+	if os.IsNotExist(err) {
+		return st, nil
 	}
-	_ = json.Unmarshal(data, &st)
+	if err != nil {
+		return st, err
+	}
+	if err := json.Unmarshal(data, &st); err != nil {
+		return composioByokState{}, err
+	}
 	if st.Connections == nil {
 		st.Connections = map[string]composioByokConnection{}
 	}
-	return st
+	return st, nil
 }
 
 func saveComposioByokLocked(st composioByokState) error {
@@ -107,7 +117,10 @@ func saveComposioByokLocked(st composioByokState) error {
 func mutateComposioByok(fn func(*composioByokState)) error {
 	composioByokMu.Lock()
 	defer composioByokMu.Unlock()
-	st := loadComposioByokLocked()
+	st, err := readComposioByokLocked()
+	if err != nil {
+		return err
+	}
 	fn(&st)
 	return saveComposioByokLocked(st)
 }

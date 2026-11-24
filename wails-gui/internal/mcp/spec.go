@@ -21,6 +21,9 @@ type Spec struct {
 	// component (the bridge derives "mcp__<ID>" from this).
 	ID string
 
+	// ManagedComposio identifies the app-managed Composio HTTP connection.
+	ManagedComposio bool
+
 	// Command is the absolute path or PATH-resolvable executable name
 	// for stdio transport. Required for stdio.
 	Command string
