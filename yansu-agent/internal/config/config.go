@@ -13,7 +13,6 @@ import (
 )
 
 const (
-	DefaultBaseURL       = "https://dashboard.yansu.ai"
 	ConfigDirName        = ".yansu-agent"
 	ConfigFileName       = "config.json"
 	TokenFileName        = "token"
@@ -112,11 +111,8 @@ func normalizeAndHydrateBaseURLs(cfg *Config) {
 	cfg.BaseURL = normalizeBaseURL(cfg.BaseURL)
 
 	if cfg.WebBaseURL == "" {
-		if cfg.BaseURL != "" {
-			cfg.WebBaseURL = cfg.BaseURL
-		} else {
-			cfg.WebBaseURL = DefaultBaseURL
-		}
+		cfg.WebBaseURL = cfg.BaseURL
+
 	}
 	if cfg.APIBaseURL == "" {
 		if local := deriveLocalAPIBaseURLFromWeb(cfg.WebBaseURL); local != "" {
@@ -268,7 +264,6 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{
-		BaseURL:      DefaultBaseURL,
 		SyncInterval: 5,
 		// WebBaseURL and APIBaseURL are intentionally left empty so that
 		// normalizeAndHydrateBaseURLs can derive them from the legacy BaseURL

@@ -18,7 +18,8 @@ func TestSandboxCommandAllowlist(t *testing.T) {
 		}
 	}
 	for _, args := range [][]string{
-		{"status"}, {"whoami"}, {"clone", "x"}, {"hook", "install"}, {"push"},
+		{"status"}, {"whoami"}, {"clone", "x"}, {"hook", "install"},
+		{"hook", "run"}, {"push"}, {"push", "--knowledge-only"}, {"login"},
 		{"knowledge", "list"}, {"daemon", "start"}, {"stage", "edit", "x"},
 		{"--version", "status"}, {"unknown"},
 		{"mcp", "install", "--source", "manual", "--id", "probe", "--command", "/bin/sh"},

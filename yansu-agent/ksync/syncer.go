@@ -2,8 +2,6 @@ package ksync
 
 import (
 	"context"
-	"fmt"
-	"net/url"
 
 	"yansu-agent/internal/client"
 	"yansu-agent/internal/config"
@@ -23,79 +21,25 @@ type KSyncer struct {
 // NewKSyncer creates a syncer for a project directory with explicit credentials.
 func NewKSyncer(baseURL, token, org, product, projectName, projectRoot string) *KSyncer {
 	somethingDir := config.GetSomethingDir(projectRoot)
-	apiClient := client.New(baseURL, token)
-	apiClient.SetProject(org, product, projectName)
-	syncer := internalsync.NewSyncer(projectRoot, somethingDir, apiClient)
 	return &KSyncer{
-		syncer:       syncer,
+		syncer:       internalsync.NewSyncer(projectRoot, somethingDir, nil),
 		somethingDir: somethingDir,
 	}
 }
 
-// NewKSyncerFromProject creates a syncer by auto-loading config from
-// ~/.yansu-agent/ and .something/project.json in the given project root.
+// NewKSyncerFromProject reports retirement before loading any saved credentials.
 func NewKSyncerFromProject(projectRoot string) (*KSyncer, error) {
-	somethingDir := config.GetSomethingDir(projectRoot)
-
-	projectCfg, err := config.LoadProject(somethingDir)
-	if err != nil {
-		return nil, fmt.Errorf("load project config: %w", err)
-	}
-
-	globalCfg, err := config.Load()
-	if err != nil {
-		return nil, fmt.Errorf("load global config: %w", err)
-	}
-
-	// Determine base URL: prefer project-specific YansuURL, fall back to global config
-	baseURL := globalCfg.BaseURL
-	if projectCfg.YansuURL != "" {
-		if parsedURL, err := url.Parse(projectCfg.YansuURL); err == nil && parsedURL.Host != "" {
-			baseURL = fmt.Sprintf("%s://%s", parsedURL.Scheme, parsedURL.Host)
-		}
-	}
-
-	token := globalCfg.Token
-
-	apiClient := client.New(baseURL, token)
-	apiClient.SetProject(projectCfg.Organization, projectCfg.Product, projectCfg.Name)
-	if projectCfg.ProductUUID != "" {
-		apiClient.SetProductUUID(projectCfg.ProductUUID)
-	}
-
-	syncer := internalsync.NewSyncer(projectRoot, somethingDir, apiClient)
-	return &KSyncer{
-		syncer:       syncer,
-		somethingDir: somethingDir,
-	}, nil
+	return nil, client.ErrRetired
 }
 
 // Pull pulls remote knowledge changes to local.
 func (k *KSyncer) Pull(ctx context.Context) (*PullResult, error) {
-	r, err := k.syncer.Pull(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return &PullResult{
-		Created: r.Created,
-		Updated: r.Updated,
-		Deleted: r.Deleted,
-		Errors:  r.Errors,
-	}, nil
+	return nil, client.ErrRetired
 }
 
 // Push pushes local new-knowledge to cloud.
 func (k *KSyncer) Push(ctx context.Context) (*PushResult, error) {
-	r, err := k.syncer.Push(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return &PushResult{
-		Created: r.Created,
-		Updated: r.Updated,
-		Deleted: r.Deleted,
-		Errors:  r.Errors,
-	}, nil
+	return nil, client.ErrRetired
 }
 
 // SyncContext syncs the project context (PRD, scenarios, etc.) from cloud.
@@ -105,24 +49,7 @@ func (k *KSyncer) SyncContext(ctx context.Context) error {
 
 // SyncAll performs a full bidirectional sync (push + pull).
 func (k *KSyncer) SyncAll(ctx context.Context) (*SyncResult, error) {
-	r, err := k.syncer.SyncAll(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return &SyncResult{
-		Pushed: PushResult{
-			Created: r.Pushed.Created,
-			Updated: r.Pushed.Updated,
-			Deleted: r.Pushed.Deleted,
-			Errors:  r.Pushed.Errors,
-		},
-		Pulled: PullResult{
-			Created: r.Pulled.Created,
-			Updated: r.Pulled.Updated,
-			Deleted: r.Pulled.Deleted,
-			Errors:  r.Pulled.Errors,
-		},
-	}, nil
+	return nil, client.ErrRetired
 }
 
 // GetSyncStatus returns the current sync status for the project.

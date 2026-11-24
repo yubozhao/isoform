@@ -177,3 +177,15 @@ func samePath(a, b string) bool {
 	rb, errB := filepath.EvalSymlinks(b)
 	return errA == nil && errB == nil && ra == rb
 }
+
+func TestRetiredBackendHasNoDefaultURL(t *testing.T) {
+	t.Setenv(AgentHomeEnv, t.TempDir())
+	t.Setenv(EnvBaseURL, "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.WebBaseURL != "" || cfg.APIBaseURL != "" || cfg.BaseURL != "" {
+		t.Fatal("empty configuration resolved a backend endpoint")
+	}
+}

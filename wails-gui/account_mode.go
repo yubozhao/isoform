@@ -19,7 +19,7 @@ func noYansuAccount() bool {
 // errNoYansuAccount is returned by every Yansu backend API helper. The backend
 // is not part of the product, so all round-trips fail closed with a clear,
 // non-fatal error (callers degrade to offline instead of blocking UI).
-var errNoYansuAccount = errors.New("no Isoform account: the backend is not used")
+var errNoYansuAccount = errors.New("The Yansu service is retired.")
 
 // ArchivedConnectorInfo describes a previously-disconnected local connector whose
 // credentials were archived so the user can reuse them (reconnect without

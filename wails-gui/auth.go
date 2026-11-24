@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -293,33 +292,7 @@ func normalizeBaseURL(raw string) string {
 	return strings.TrimRight(strings.TrimSpace(raw), "/")
 }
 
-func deriveLocalAPIBaseURLFromWeb(webBaseURL string) string {
-	u, err := url.Parse(webBaseURL)
-	if err != nil {
-		return ""
-	}
-	host := strings.ToLower(u.Hostname())
-	if u.Port() != "3000" {
-		return ""
-	}
-	if host != "localhost" && host != "127.0.0.1" && host != "::1" {
-		return ""
-	}
-
-	alt := *u
-	if host == "::1" {
-		alt.Host = "[::1]:8080"
-	} else {
-		alt.Host = host + ":8080"
-	}
-	alt.Path = ""
-	alt.RawQuery = ""
-	alt.Fragment = ""
-	return normalizeBaseURL(alt.String())
-}
-
 const defaultStagingWebBaseURL = "https://staging-dashboard.example.com"
-const defaultProductionWebBaseURL = "https://dashboard.yansu.ai"
 
 // isReleaseBuild reports whether DefaultWebBaseURL was overridden at build time
 // via -ldflags (i.e. this is a CI-produced binary, not a local dev build).
@@ -339,27 +312,17 @@ func resolveWebBaseURL(cfg yansuConfig) string {
 	case "staging":
 		return defaultStagingWebBaseURL
 	case "production":
-		return defaultProductionWebBaseURL
+		return ""
 	}
 	// 3. Release builds: use the build-time injected value.
 	if isReleaseBuild() {
 		return DefaultWebBaseURL
 	}
 	if isReleaseChannel() {
-		return defaultProductionWebBaseURL
+		return ""
 	}
 	// 4. Local dev builds (DefaultWebBaseURL is empty): fall back to staging.
 	return defaultStagingWebBaseURL
-}
-
-func resolveAPIBaseURL(cfg yansuConfig) string {
-	// Derive from resolved web base URL.
-	// When YANSU_URL points to localhost:3000, automatically use :8080 for API.
-	webBaseURL := resolveWebBaseURL(cfg)
-	if local := deriveLocalAPIBaseURLFromWeb(webBaseURL); local != "" {
-		return local
-	}
-	return webBaseURL
 }
 
 // saveConfig writes the full config back to config.json.
@@ -399,17 +362,22 @@ func updateConfig(fn func(*yansuConfig)) error {
 
 // loadWebBaseURL returns the web frontend URL used for browser redirects.
 func loadWebBaseURL() string {
-	return resolveWebBaseURL(loadConfig())
+	// A saved environment or build override must never supply a backend endpoint.
+	return ""
 }
 
 // GetWebBaseURL exposes the current web base URL to the frontend.
 func (a *App) GetWebBaseURL() string {
-	return loadWebBaseURL()
+	// The desktop uses this hint to select the staging analytics configuration.
+	if strings.Contains(resolveWebBaseURL(loadConfig()), "staging") {
+		return defaultStagingWebBaseURL
+	}
+	return ""
 }
 
 // loadAPIBaseURL returns the API URL used for HTTP calls and daemon WS.
 func loadAPIBaseURL() string {
-	return resolveAPIBaseURL(loadConfig())
+	return ""
 }
 
 // ── Identity methods (exposed to frontend via Wails) ──

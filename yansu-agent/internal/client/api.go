@@ -1,51 +1,22 @@
 package client
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"time"
 )
 
 // Client is the Yansu API client
-type Client struct {
-	baseURL      string
-	token        string
-	organization string
-	product      string
-	project      string
-	productUUID  string
-	httpClient   *http.Client
-}
+type Client struct{}
 
-// New creates a new API client
-//
-//isoform:destination yansu_backend
-func New(baseURL, token string) *Client {
-	httpClient := &http.Client{
-		Timeout: 30 * time.Second,
-	}
-	return &Client{
-		baseURL:    baseURL,
-		token:      token,
-		httpClient: httpClient,
-	}
-}
+var ErrRetired = errors.New("The Yansu service is retired.")
 
-// SetProject sets the project context for subsequent requests
-func (c *Client) SetProject(org, product, project string) {
-	c.organization = org
-	c.product = product
-	c.project = project
-}
-
-// SetProductUUID sets the product UUID for knowledge queries
-func (c *Client) SetProductUUID(uuid string) {
-	c.productUUID = uuid
-}
+// Legacy commands still use these signatures. Never retain credentials or construct a transport.
+func New(baseURL, token string) *Client                 { return &Client{} }
+func (*Client) SetProject(org, product, project string) {}
+func (*Client) SetProductUUID(uuid string)              {}
 
 // UserProfile represents the authenticated user's profile.
 type UserProfile struct {
@@ -137,84 +108,13 @@ type ContextResponse struct {
 }
 
 // GetProject retrieves a project by org/product/project names
-//
-//isoform:destination yansu_backend
 func (c *Client) GetProject(ctx context.Context, org, product, project string) (*Project, error) {
-	url := fmt.Sprintf("%s/api/orgs/%s/products/%s/projects/%s", c.baseURL, org, product, project)
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	c.setHeaders(req)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, c.handleError(resp)
-	}
-
-	var result struct {
-		UUID         string `json:"uuid"`
-		Name         string `json:"name"`
-		ProductUUID  string `json:"product_uuid"`
-		CodingBranch string `json:"coding_branch"`
-		Product      struct {
-			Name         string `json:"name"`
-			Organization struct {
-				Name string `json:"name"`
-			} `json:"organization"`
-		} `json:"product"`
-		CreatedAt time.Time `json:"created_at"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return &Project{
-		UUID:         result.UUID,
-		Name:         result.Name,
-		Organization: result.Product.Organization.Name,
-		Product:      result.Product.Name,
-		ProductUUID:  result.ProductUUID,
-		CodingBranch: result.CodingBranch,
-		CreatedAt:    result.CreatedAt,
-	}, nil
+	return nil, ErrRetired
 }
 
 // GetProjectCodeRepositories retrieves code repositories for a project
-//
-//isoform:destination yansu_backend
 func (c *Client) GetProjectCodeRepositories(ctx context.Context, org, product, project string) ([]*CodeRepository, error) {
-	url := fmt.Sprintf("%s/api/public/orgs/%s/products/%s/projects/%s/code-repositories",
-		c.baseURL, org, product, project)
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	c.setHeaders(req)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, c.handleError(resp)
-	}
-
-	var repos []*CodeRepository
-	if err := json.NewDecoder(resp.Body).Decode(&repos); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return repos, nil
+	return nil, ErrRetired
 }
 
 // StageResponse represents stage data from the API
@@ -225,194 +125,28 @@ type StageResponse struct {
 }
 
 // GetProjectContext retrieves the project context by fetching stages
-//
-//isoform:destination yansu_backend
 func (c *Client) GetProjectContext(ctx context.Context) (*ContextResponse, error) {
-	// Fetch all stages for the project
-	url := fmt.Sprintf("%s/api/orgs/%s/products/%s/projects/%s/stages",
-		c.baseURL, c.organization, c.product, c.project)
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	c.setHeaders(req)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, c.handleError(resp)
-	}
-
-	var stages []StageResponse
-	if err := json.NewDecoder(resp.Body).Decode(&stages); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	// Build context from stages
-	context := &ContextResponse{}
-	for _, stage := range stages {
-		switch stage.Type {
-		case "prd":
-			context.PRD = stage.Content
-		case "simulations":
-			context.Scenarios = stage.Content
-		}
-	}
-
-	return context, nil
+	return nil, ErrRetired
 }
 
 // ListKnowledge retrieves all knowledge for the current product
-//
-//isoform:destination yansu_backend
 func (c *Client) ListKnowledge(ctx context.Context) ([]*KnowledgeResponse, error) {
-	// Use the hierarchical knowledge endpoint
-	url := fmt.Sprintf("%s/api/orgs/%s/products/%s/knowledge",
-		c.baseURL, c.organization, c.product)
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	c.setHeaders(req)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, c.handleError(resp)
-	}
-
-	// The response may be an array or an object with data field
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	// Try array first
-	var knowledge []*KnowledgeResponse
-	if err := json.Unmarshal(body, &knowledge); err == nil {
-		return knowledge, nil
-	}
-
-	// Try object with data field
-	var result struct {
-		Data []*KnowledgeResponse `json:"data"`
-	}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return result.Data, nil
+	return nil, ErrRetired
 }
 
 // CreateKnowledge creates a new knowledge item
-//
-//isoform:destination yansu_backend
 func (c *Client) CreateKnowledge(ctx context.Context, req *CreateKnowledgeRequest) (*KnowledgeResponse, error) {
-	// Use hierarchical endpoint
-	url := fmt.Sprintf("%s/api/orgs/%s/products/%s/knowledge",
-		c.baseURL, c.organization, c.product)
-
-	body, err := json.Marshal(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	c.setHeaders(httpReq)
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return nil, c.handleError(resp)
-	}
-
-	var knowledge KnowledgeResponse
-	if err := json.NewDecoder(resp.Body).Decode(&knowledge); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return &knowledge, nil
+	return nil, ErrRetired
 }
 
 // UpdateKnowledge updates an existing knowledge item
-//
-//isoform:destination yansu_backend
 func (c *Client) UpdateKnowledge(ctx context.Context, uuid string, req *UpdateKnowledgeRequest) (*KnowledgeResponse, error) {
-	// Use flat knowledge endpoint
-	url := fmt.Sprintf("%s/api/knowledge/%s", c.baseURL, uuid)
-
-	body, err := json.Marshal(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, "PUT", url, bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	c.setHeaders(httpReq)
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, c.handleError(resp)
-	}
-
-	var knowledge KnowledgeResponse
-	if err := json.NewDecoder(resp.Body).Decode(&knowledge); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return &knowledge, nil
+	return nil, ErrRetired
 }
 
 // DeleteKnowledge deletes a knowledge item
-//
-//isoform:destination yansu_backend
 func (c *Client) DeleteKnowledge(ctx context.Context, uuid string) error {
-	// Use flat knowledge endpoint
-	url := fmt.Sprintf("%s/api/knowledge/%s", c.baseURL, uuid)
-
-	req, err := http.NewRequestWithContext(ctx, "DELETE", url, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	c.setHeaders(req)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		return c.handleError(resp)
-	}
-
-	return nil
+	return ErrRetired
 }
 
 // LogActivity logs a development activity
@@ -446,90 +180,18 @@ type ExtractKnowledgeResponse struct {
 }
 
 // ExtractKnowledge uses AI to extract potential knowledge from code changes
-//
-//isoform:destination yansu_backend
 func (c *Client) ExtractKnowledge(ctx context.Context, req *ExtractKnowledgeRequest) (*ExtractKnowledgeResponse, error) {
-	url := fmt.Sprintf("%s/api/orgs/%s/products/%s/knowledge/extract",
-		c.baseURL, c.organization, c.product)
-
-	body, err := json.Marshal(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	c.setHeaders(httpReq)
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, c.handleError(resp)
-	}
-
-	var result ExtractKnowledgeResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return &result, nil
+	return nil, ErrRetired
 }
 
 // Verify verifies the token is valid by fetching the user profile
-//
-//isoform:destination yansu_backend
 func (c *Client) Verify(ctx context.Context) error {
-	url := fmt.Sprintf("%s/api/auth/profile", c.baseURL)
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	c.setHeaders(req)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return c.handleError(resp)
-	}
-
-	return nil
+	return ErrRetired
 }
 
 // GetProfile returns the current user's profile.
-//
-//isoform:destination yansu_backend
 func (c *Client) GetProfile(ctx context.Context) (*UserProfile, error) {
-	url := fmt.Sprintf("%s/api/auth/profile", c.baseURL)
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	c.setHeaders(req)
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, c.handleError(resp)
-	}
-	var profile UserProfile
-	if err := json.NewDecoder(resp.Body).Decode(&profile); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-	return &profile, nil
+	return nil, ErrRetired
 }
 
 // SlackBinding represents a personal Slack identity binding returned by GET /api/daemon/me/binding.
@@ -541,135 +203,23 @@ type SlackBinding struct {
 
 // GetMySlackBinding returns the most recent Slack binding for the authenticated user.
 // Used by the daemon at startup to auto-discover team_id and slack_user_id.
-//
-//isoform:destination yansu_backend
 func (c *Client) GetMySlackBinding(ctx context.Context) (*SlackBinding, error) {
-	url := fmt.Sprintf("%s/api/daemon/me/binding", c.baseURL)
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	c.setHeaders(req)
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("no Slack binding found — visit %s/settings/slack to connect your workspace", c.baseURL)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, c.handleError(resp)
-	}
-	var binding SlackBinding
-	if err := json.NewDecoder(resp.Body).Decode(&binding); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-	return &binding, nil
+	return nil, ErrRetired
 }
 
 // ListOrganizations returns all organizations the current user belongs to.
-//
-//isoform:destination yansu_backend
 func (c *Client) ListOrganizations(ctx context.Context) ([]Organization, error) {
-	url := fmt.Sprintf("%s/api/orgs?page_size=100", c.baseURL)
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	c.setHeaders(req)
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, c.handleError(resp)
-	}
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-	return decodeListOrPagedItems[Organization](body)
+	return nil, ErrRetired
 }
 
 // ListProducts returns all products in the given organization.
-//
-//isoform:destination yansu_backend
 func (c *Client) ListProducts(ctx context.Context, org string) ([]Product, error) {
-	url := fmt.Sprintf("%s/api/orgs/%s/products?page_size=100", c.baseURL, org)
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	c.setHeaders(req)
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, c.handleError(resp)
-	}
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-	return decodeListOrPagedItems[Product](body)
+	return nil, ErrRetired
 }
 
 // ListProjectsInProduct returns all projects in the given org/product.
-//
-//isoform:destination yansu_backend
 func (c *Client) ListProjectsInProduct(ctx context.Context, org, product string) ([]*Project, error) {
-	url := fmt.Sprintf("%s/api/orgs/%s/products/%s/projects", c.baseURL, org, product)
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	c.setHeaders(req)
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, c.handleError(resp)
-	}
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	type projectItem struct {
-		UUID         string    `json:"uuid"`
-		Name         string    `json:"name"`
-		DisplayName  string    `json:"display_name"`
-		ProductUUID  string    `json:"product_uuid"`
-		CodingBranch string    `json:"coding_branch"`
-		CreatedAt    time.Time `json:"created_at"`
-	}
-	toProjects := func(items []projectItem) []*Project {
-		result := make([]*Project, len(items))
-		for i, item := range items {
-			result[i] = &Project{
-				UUID:         item.UUID,
-				Name:         item.Name,
-				Organization: org,
-				Product:      product,
-				ProductUUID:  item.ProductUUID,
-				CodingBranch: item.CodingBranch,
-				CreatedAt:    item.CreatedAt,
-			}
-		}
-		return result
-	}
-
-	items, decodeErr := decodeListOrPagedItems[projectItem](body)
-	if decodeErr != nil {
-		return nil, decodeErr
-	}
-	return toProjects(items), nil
+	return nil, ErrRetired
 }
 
 // decodeListOrPagedItems decodes a JSON body that is either a direct array of T
@@ -688,28 +238,6 @@ func decodeListOrPagedItems[T any](body []byte) ([]T, error) {
 	return paged.Items, nil
 }
 
-func (c *Client) setHeaders(req *http.Request) {
-	req.Header.Set("Authorization", "Bearer "+c.token)
-	req.Header.Set("User-Agent", "yansu-agent/1.0")
-}
-
-func (c *Client) handleError(resp *http.Response) error {
-	body, _ := io.ReadAll(resp.Body)
-
-	var errResp struct {
-		Error   string `json:"error"`
-		Message string `json:"message"`
-	}
-	if json.Unmarshal(body, &errResp) == nil && errResp.Error != "" {
-		return fmt.Errorf("API error (%d): %s", resp.StatusCode, errResp.Error)
-	}
-	if errResp.Message != "" {
-		return fmt.Errorf("API error (%d): %s", resp.StatusCode, errResp.Message)
-	}
-
-	return fmt.Errorf("API error (%d): %s", resp.StatusCode, string(body))
-}
-
 // DaemonContextMessage represents a single message in conversation context.
 type DaemonContextMessage struct {
 	UserID    string    `json:"user_id"`
@@ -723,30 +251,8 @@ type DaemonFetchContextResponse struct {
 }
 
 // DaemonFetchContext retrieves conversation context for a relay event.
-//
-//isoform:destination yansu_backend
 func (c *Client) DaemonFetchContext(ctx context.Context, relayID string) (*DaemonFetchContextResponse, error) {
-	url := fmt.Sprintf("%s/api/daemon/fetch-context", c.baseURL)
-	payload, _ := json.Marshal(map[string]string{"relay_id": relayID})
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(payload))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	c.setHeaders(req)
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, c.handleError(resp)
-	}
-	var result DaemonFetchContextResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-	return &result, nil
+	return nil, ErrRetired
 }
 
 // DaemonVerifyResponse is the response from POST /api/daemon/verify-slack.
@@ -763,66 +269,13 @@ type DaemonConfirmResponse struct {
 }
 
 // DaemonVerifySlack initiates Slack user verification by sending a DM with a code.
-//
-//isoform:destination yansu_backend
 func (c *Client) DaemonVerifySlack(ctx context.Context, slackUserID string) (*DaemonVerifyResponse, error) {
-	url := fmt.Sprintf("%s/api/daemon/verify-slack", c.baseURL)
-	payload, _ := json.Marshal(map[string]string{"slack_user_id": slackUserID})
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(payload))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	c.setHeaders(req)
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-	var result DaemonVerifyResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		if result.Error != "" {
-			return &result, nil
-		}
-		return nil, fmt.Errorf("API error (%d)", resp.StatusCode)
-	}
-	return &result, nil
+	return nil, ErrRetired
 }
 
 // DaemonConfirmSlack confirms a Slack verification code and creates the binding.
-//
-//isoform:destination yansu_backend
 func (c *Client) DaemonConfirmSlack(ctx context.Context, slackUserID, code string) (*DaemonConfirmResponse, error) {
-	url := fmt.Sprintf("%s/api/daemon/confirm-slack", c.baseURL)
-	payload, _ := json.Marshal(map[string]string{
-		"slack_user_id": slackUserID,
-		"code":          code,
-	})
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(payload))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	c.setHeaders(req)
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-	var result DaemonConfirmResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		if result.Error != "" {
-			return &result, nil
-		}
-		return nil, fmt.Errorf("API error (%d)", resp.StatusCode)
-	}
-	return &result, nil
+	return nil, ErrRetired
 }
 
 // ============================================================================
@@ -1015,346 +468,55 @@ func decodeListResponse[T any](body []byte) ([]T, int, error) {
 // ============================================================================
 
 // projectURL returns the base hierarchical URL for the configured project.
-func (c *Client) projectURL() string {
-	return fmt.Sprintf("%s/api/orgs/%s/products/%s/projects/%s",
-		c.baseURL, c.organization, c.product, c.project)
-}
 
 // ListStages returns all stages for the configured project (summary mode).
-//
-//isoform:destination yansu_backend
 func (c *Client) ListStages(ctx context.Context) ([]StageSummaryResponse, error) {
-	url := c.projectURL() + "/stages?summary=true"
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	c.setHeaders(req)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, c.handleError(resp)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	items, _, err := decodeListResponse[StageSummaryResponse](body)
-	if err != nil {
-		return nil, err
-	}
-	return items, nil
+	return nil, ErrRetired
 }
 
 // GetStage returns full details for a single stage.
-//
-//isoform:destination yansu_backend
 func (c *Client) GetStage(ctx context.Context, stageName string) (*StageDetailResponse, error) {
-	url := fmt.Sprintf("%s/stages/%s", c.projectURL(), stageName)
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	c.setHeaders(req)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, c.handleError(resp)
-	}
-
-	var result StageDetailResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-	return &result, nil
+	return nil, ErrRetired
 }
 
 // RunStage triggers execution of a stage.
-//
-//isoform:destination yansu_backend
 func (c *Client) RunStage(ctx context.Context, stageName string) (*StageDetailResponse, error) {
-	url := fmt.Sprintf("%s/stages/%s/run", c.projectURL(), stageName)
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	c.setHeaders(req)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, c.handleError(resp)
-	}
-
-	var result StageDetailResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-	return &result, nil
+	return nil, ErrRetired
 }
 
 // ListFeedbacksByStage returns feedbacks for all versions of a stage.
-//
-//isoform:destination yansu_backend
 func (c *Client) ListFeedbacksByStage(ctx context.Context, stageName string) ([]FeedbackItem, int, error) {
-	url := fmt.Sprintf("%s/stages/%s/feedback", c.projectURL(), stageName)
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return nil, 0, fmt.Errorf("failed to create request: %w", err)
-	}
-	c.setHeaders(req)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, 0, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, 0, c.handleError(resp)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, 0, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	return decodeListResponse[FeedbackItem](body)
+	return nil, 0, ErrRetired
 }
 
 // ListPendingReplyFeedbacks returns feedbacks awaiting the current user's reply.
-//
-//isoform:destination yansu_backend
 func (c *Client) ListPendingReplyFeedbacks(ctx context.Context) ([]PendingReplyFeedback, int, error) {
-	url := c.projectURL() + "/feedback/pending-reply"
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return nil, 0, fmt.Errorf("failed to create request: %w", err)
-	}
-	c.setHeaders(req)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, 0, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, 0, c.handleError(resp)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, 0, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	return decodeListResponse[PendingReplyFeedback](body)
+	return nil, 0, ErrRetired
 }
 
 // ListFeedbackComments returns all comments for a given feedback UUID (flat API).
-//
-//isoform:destination yansu_backend
 func (c *Client) ListFeedbackComments(ctx context.Context, feedbackUUID string) ([]FeedbackCommentListItem, int, error) {
-	const pageSize = 200
-
-	var (
-		allComments []FeedbackCommentListItem
-		total       int
-		offset      int
-	)
-
-	for {
-		url := fmt.Sprintf("%s/api/feedback/%s/comments?limit=%d&offset=%d", c.baseURL, feedbackUUID, pageSize, offset)
-
-		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-		if err != nil {
-			return nil, 0, fmt.Errorf("failed to create request: %w", err)
-		}
-		c.setHeaders(req)
-
-		resp, err := c.httpClient.Do(req)
-		if err != nil {
-			return nil, 0, fmt.Errorf("failed to send request: %w", err)
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			defer resp.Body.Close()
-			return nil, 0, c.handleError(resp)
-		}
-
-		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			return nil, 0, fmt.Errorf("failed to read response: %w", err)
-		}
-
-		// Backend returns {comments: [], total: N}
-		var wrap struct {
-			Comments []FeedbackCommentListItem `json:"comments"`
-			Total    int                       `json:"total"`
-		}
-		if err := json.Unmarshal(body, &wrap); err != nil {
-			return nil, 0, fmt.Errorf("failed to decode response: %w", err)
-		}
-
-		if total == 0 {
-			total = wrap.Total
-		}
-
-		pageCount := len(wrap.Comments)
-		allComments = append(allComments, wrap.Comments...)
-
-		switch {
-		case total > 0 && len(allComments) >= total:
-			return allComments, total, nil
-		case pageCount == 0:
-			return allComments, len(allComments), nil
-		case total == 0 && pageCount < pageSize:
-			return allComments, len(allComments), nil
-		default:
-			offset += pageCount
-		}
-	}
+	return nil, 0, ErrRetired
 }
 
 // CreateFeedbackComment creates a comment on a feedback (flat API).
-//
-//isoform:destination yansu_backend
 func (c *Client) CreateFeedbackComment(ctx context.Context, feedbackUUID string, commentReq CreateFeedbackCommentRequest) (*FeedbackCommentItem, error) {
-	url := fmt.Sprintf("%s/api/feedback/%s/comments", c.baseURL, feedbackUUID)
-
-	body, err := json.Marshal(commentReq)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	c.setHeaders(req)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return nil, c.handleError(resp)
-	}
-
-	var result FeedbackCommentItem
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-	return &result, nil
+	return nil, ErrRetired
 }
 
 // RetryFeedback retries AI processing for a feedback (flat API).
-//
-//isoform:destination yansu_backend
 func (c *Client) RetryFeedback(ctx context.Context, feedbackUUID string) error {
-	url := fmt.Sprintf("%s/api/feedback/%s/retry", c.baseURL, feedbackUUID)
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	c.setHeaders(req)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return c.handleError(resp)
-	}
-	return nil
+	return ErrRetired
 }
 
 // GetFeedback returns a single feedback by UUID (flat API).
-//
-//isoform:destination yansu_backend
 func (c *Client) GetFeedback(ctx context.Context, feedbackUUID string) (*FeedbackItem, error) {
-	url := fmt.Sprintf("%s/api/feedback/%s", c.baseURL, feedbackUUID)
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	c.setHeaders(req)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, c.handleError(resp)
-	}
-
-	var result FeedbackItem
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-	return &result, nil
+	return nil, ErrRetired
 }
 
 // UpdateFeedback updates a feedback (flat API). Used for resolve/status changes.
-//
-//isoform:destination yansu_backend
 func (c *Client) UpdateFeedback(ctx context.Context, feedbackUUID string, status string) error {
-	url := fmt.Sprintf("%s/api/feedback/%s", c.baseURL, feedbackUUID)
-
-	payload := map[string]string{"status": status}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "PUT", url, bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	c.setHeaders(req)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return c.handleError(resp)
-	}
-	return nil
+	return ErrRetired
 }
 
 // UpdateStageRequest is the request body for updating stage content.
@@ -1364,97 +526,18 @@ type UpdateStageRequest struct {
 }
 
 // UpdateStage updates the content of a stage, creating a new minor version.
-//
-//isoform:destination yansu_backend
 func (c *Client) UpdateStage(ctx context.Context, stageName string, req UpdateStageRequest) (*StageDetailResponse, error) {
-	url := fmt.Sprintf("%s/stages/%s", c.projectURL(), stageName)
-
-	body, err := json.Marshal(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, "PUT", url, bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	c.setHeaders(httpReq)
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, c.handleError(resp)
-	}
-
-	var result StageDetailResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-	return &result, nil
+	return nil, ErrRetired
 }
 
 // GetStageTasksSummary returns task execution summary for a stage.
-//
-//isoform:destination yansu_backend
 func (c *Client) GetStageTasksSummary(ctx context.Context, stageName string) (*ExecutorTaskSummary, error) {
-	url := fmt.Sprintf("%s/stages/%s/tasks/summary", c.projectURL(), stageName)
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	c.setHeaders(req)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, c.handleError(resp)
-	}
-
-	var result ExecutorTaskSummary
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-	return &result, nil
+	return nil, ErrRetired
 }
 
 // ListStageVersions returns version history for a stage.
-//
-//isoform:destination yansu_backend
 func (c *Client) ListStageVersions(ctx context.Context, stageName string) ([]StageVersionItem, int, error) {
-	url := fmt.Sprintf("%s/stages/%s/versions", c.projectURL(), stageName)
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return nil, 0, fmt.Errorf("failed to create request: %w", err)
-	}
-	c.setHeaders(req)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, 0, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, 0, c.handleError(resp)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, 0, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	return decodeListResponse[StageVersionItem](body)
+	return nil, 0, ErrRetired
 }
 
 // ============================================================================
@@ -1510,121 +593,23 @@ type ScenarioDetail struct {
 }
 
 // ListScenarios returns all scenarios for the configured project.
-//
-//isoform:destination yansu_backend
 func (c *Client) ListScenarios(ctx context.Context) ([]ScenarioItem, error) {
-	url := fmt.Sprintf("%s/scenarios", c.projectURL())
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	c.setHeaders(req)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, c.handleError(resp)
-	}
-
-	var result struct {
-		Scenarios []ScenarioItem `json:"scenarios"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-	return result.Scenarios, nil
+	return nil, ErrRetired
 }
 
 // GetScenario returns full details for a single scenario by UUID.
-//
-//isoform:destination yansu_backend
 func (c *Client) GetScenario(ctx context.Context, uuid string) (*ScenarioDetail, error) {
-	url := fmt.Sprintf("%s/scenarios/%s", c.projectURL(), uuid)
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	c.setHeaders(req)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, c.handleError(resp)
-	}
-
-	var result ScenarioDetail
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-	return &result, nil
+	return nil, ErrRetired
 }
 
 // RequeueScenario re-queues a failed or passed scenario.
-//
-//isoform:destination yansu_backend
 func (c *Client) RequeueScenario(ctx context.Context, uuid string) (*ScenarioDetail, error) {
-	url := fmt.Sprintf("%s/scenarios/%s/requeue", c.projectURL(), uuid)
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	c.setHeaders(req)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, c.handleError(resp)
-	}
-
-	var result ScenarioDetail
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-	return &result, nil
+	return nil, ErrRetired
 }
 
 // CancelScenario cancels a queued or building scenario.
-//
-//isoform:destination yansu_backend
 func (c *Client) CancelScenario(ctx context.Context, uuid string) (*ScenarioDetail, error) {
-	url := fmt.Sprintf("%s/scenarios/%s/cancel", c.projectURL(), uuid)
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	c.setHeaders(req)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, c.handleError(resp)
-	}
-
-	var result ScenarioDetail
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-	return &result, nil
+	return nil, ErrRetired
 }
 
 // GenerateChecklistResponse is returned when checklist generation is accepted.
@@ -1634,98 +619,18 @@ type GenerateChecklistResponse struct {
 }
 
 // GenerateScenarioChecklist triggers async checklist generation for a passed scenario.
-//
-//isoform:destination yansu_backend
 func (c *Client) GenerateScenarioChecklist(ctx context.Context, uuid string) (*GenerateChecklistResponse, error) {
-	url := fmt.Sprintf("%s/scenarios/%s/checklist/generate", c.projectURL(), uuid)
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	c.setHeaders(req)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusAccepted {
-		return nil, c.handleError(resp)
-	}
-
-	var result GenerateChecklistResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-	return &result, nil
+	return nil, ErrRetired
 }
 
 // UpdateScenarioChecklistItem sets the checked state of a checklist item.
-//
-//isoform:destination yansu_backend
 func (c *Client) UpdateScenarioChecklistItem(ctx context.Context, scenarioUUID, itemID string, checked bool) (*ScenarioDetail, error) {
-	url := fmt.Sprintf("%s/scenarios/%s/checklist/items/%s", c.projectURL(), scenarioUUID, itemID)
-
-	body, err := json.Marshal(map[string]bool{"checked": checked})
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "PATCH", url, bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	c.setHeaders(req)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, c.handleError(resp)
-	}
-
-	var result ScenarioDetail
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-	return &result, nil
+	return nil, ErrRetired
 }
 
 // RestoreStageVersion restores a stage to a previous version.
-//
-//isoform:destination yansu_backend
 func (c *Client) RestoreStageVersion(ctx context.Context, stageName string, versionNumber int) error {
-	url := fmt.Sprintf("%s/stages/%s/versions/restore", c.projectURL(), stageName)
-
-	payload := RestoreStageVersionRequest{VersionNumber: versionNumber}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	c.setHeaders(req)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return c.handleError(resp)
-	}
-	return nil
+	return ErrRetired
 }
 
 // SlackFileDownloadRequest represents a request to download a Slack file.
@@ -1744,47 +649,8 @@ type SlackFileDownloadResponse struct {
 }
 
 // DownloadSlackFile downloads a Slack file via the backend API.
-//
-//isoform:destination yansu_backend
 func (c *Client) DownloadSlackFile(ctx context.Context, teamID, fileID, url string) (*SlackFileDownloadResponse, error) {
-	apiURL := fmt.Sprintf("%s/api/slack/files/download", c.baseURL)
-
-	reqBody := SlackFileDownloadRequest{
-		TeamID: teamID,
-		FileID: fileID,
-		URL:    url,
-	}
-
-	bodyBytes, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("marshal request: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewReader(bodyBytes))
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.token))
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("http request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(body))
-	}
-
-	var result SlackFileDownloadResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decode response: %w", err)
-	}
-
-	return &result, nil
+	return nil, ErrRetired
 }
 
 // APITokenResponse represents the response from creating an API token
@@ -1797,35 +663,6 @@ type APITokenResponse struct {
 }
 
 // CreateAPIToken creates a long-lived API token
-//
-//isoform:destination yansu_backend
 func (c *Client) CreateAPIToken(ctx context.Context, name string, expiresInDays int) (*APITokenResponse, error) {
-	url := fmt.Sprintf("%s/api/auth/api-tokens", c.baseURL)
-	body := map[string]interface{}{
-		"name":            name,
-		"expires_in_days": expiresInDays,
-	}
-	jsonBody, err := json.Marshal(body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(jsonBody))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	c.setHeaders(req)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
-		return nil, c.handleError(resp)
-	}
-	var tokenResp APITokenResponse
-	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-	return &tokenResp, nil
+	return nil, ErrRetired
 }

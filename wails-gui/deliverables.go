@@ -1,16 +1,11 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
 	"io"
-	"mime/multipart"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	agenttools "yansu-agent/agent/tools"
 )
@@ -256,67 +251,8 @@ func detectContentType(filename string) string {
 }
 
 // apiPostMultipart sends a multipart/form-data POST request with text fields and file attachments.
-//
-//isoform:destination yansu_backend
 func apiPostMultipart(baseURL, token, path string, fields map[string]string, files []deliverableFile, result any) error {
-	if noYansuAccount() {
-		return errNoYansuAccount
-	}
-	var buf bytes.Buffer
-	writer := multipart.NewWriter(&buf)
-
-	// Write text fields.
-	for k, v := range fields {
-		if err := writer.WriteField(k, v); err != nil {
-			return fmt.Errorf("write field %s: %w", k, err)
-		}
-	}
-
-	// Write file parts.
-	for _, f := range files {
-		part, err := writer.CreateFormFile("attachments", f.Filename)
-		if err != nil {
-			return fmt.Errorf("create form file %s: %w", f.Filename, err)
-		}
-		if _, err := part.Write(f.Data); err != nil {
-			return fmt.Errorf("write file %s: %w", f.Filename, err)
-		}
-	}
-
-	if err := writer.Close(); err != nil {
-		return fmt.Errorf("close multipart writer: %w", err)
-	}
-
-	url := baseURL + path
-	req, err := http.NewRequest(http.MethodPost, url, &buf)
-	if err != nil {
-		return fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("Content-Type", writer.FormDataContentType())
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	client := &http.Client{Timeout: 120 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("POST %s: %w", path, err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("read response: %w", err)
-	}
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("POST %s returned %d: %s", path, resp.StatusCode, string(body))
-	}
-
-	if result != nil {
-		if err := json.Unmarshal(body, result); err != nil {
-			return fmt.Errorf("unmarshal response: %w", err)
-		}
-	}
-	return nil
+	return errNoYansuAccount
 }
 
 // buildSkipNote creates a text note for skipped files to append to the DM.

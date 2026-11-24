@@ -49,13 +49,10 @@ func TestClonePreservesProjectAgentFilesAndRunContext(t *testing.T) {
 				t.Fatal(err)
 			}
 			assertProjectAgentFiles(t, target, original)
-			hook, err := os.ReadFile(filepath.Join(target, ".git/hooks/post-commit"))
-			if err != nil || !strings.Contains(string(hook), "hook run") || !strings.Contains(string(hook), "push --knowledge-only") {
-				t.Fatalf("knowledge hook lost: %s, %v", hook, err)
+			if _, err := os.Stat(filepath.Join(target, ".git/hooks/post-commit")); !os.IsNotExist(err) {
+				t.Fatalf("unexpected post-commit hook: %v", err)
 			}
 
-			// CloneProject and CLI init create local context after checkout. It is
-			// deliberately untracked, so a new workspace will not contain it.
 			writeProjectTestFile(t, target, ".something/context.md", "Project requirements")
 			runner := wireHandoffPromptCapture(t, app)
 			prompt := sendHandoffBoundaryPrompt(t, app, runner, "Fix the project", target, "project-prompt")

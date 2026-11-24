@@ -3,10 +3,6 @@ package client
 import (
 	"context"
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
-	"strconv"
-	"strings"
 	"testing"
 )
 
@@ -229,92 +225,9 @@ func TestExecutorTaskSummary_Unmarshal_ByStatusShape(t *testing.T) {
 	}
 }
 
-func TestListFeedbackComments_PaginatesUntilTotal(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasPrefix(r.URL.Path, "/api/feedback/fb-1/comments") {
-			t.Fatalf("unexpected path: %s", r.URL.Path)
-		}
-
-		limit, err := strconv.Atoi(r.URL.Query().Get("limit"))
-		if err != nil {
-			t.Fatalf("limit parse failed: %v", err)
-		}
-		if limit != 200 {
-			t.Fatalf("limit = %d, want 200", limit)
-		}
-		offset, err := strconv.Atoi(r.URL.Query().Get("offset"))
-		if err != nil {
-			t.Fatalf("offset parse failed: %v", err)
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		switch offset {
-		case 0:
-			_, _ = w.Write([]byte(`{"comments":[{"uuid":"c1","feedback_uuid":"fb-1","user_uuid":"u1","content":"first","status":"active","created_at":"2026-01-01T00:00:00Z","user":{"uuid":"u1","name":"u1","display_name":"User 1"}}],"total":2}`))
-		case 1:
-			_, _ = w.Write([]byte(`{"comments":[{"uuid":"c2","feedback_uuid":"fb-1","user_uuid":"u2","content":"second","status":"active","created_at":"2026-01-01T00:00:01Z","user":{"uuid":"u2","name":"u2","display_name":"User 2"}}],"total":2}`))
-		default:
-			t.Fatalf("unexpected offset: %d", offset)
-		}
-	}))
-	defer server.Close()
-
-	c := New(server.URL, "test-token")
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	comments, total, err := c.ListFeedbackComments(ctx, "fb-1")
-	if err != nil {
-		t.Fatalf("ListFeedbackComments returned error: %v", err)
-	}
-
-	if total != 2 {
-		t.Fatalf("total = %d, want 2", total)
-	}
-	if len(comments) != 2 {
-		t.Fatalf("len(comments) = %d, want 2", len(comments))
-	}
-	if comments[0].UUID != "c1" || comments[1].UUID != "c2" {
-		t.Fatalf("unexpected comment order/content: %#v", comments)
-	}
-}
-
-func TestListFeedbackComments_UsesPageLengthWhenTotalMissing(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasPrefix(r.URL.Path, "/api/feedback/fb-2/comments") {
-			t.Fatalf("unexpected path: %s", r.URL.Path)
-		}
-		offset, err := strconv.Atoi(r.URL.Query().Get("offset"))
-		if err != nil {
-			t.Fatalf("offset parse failed: %v", err)
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		switch offset {
-		case 0:
-			_, _ = w.Write([]byte(`{"comments":[{"uuid":"c1","feedback_uuid":"fb-2","user_uuid":"u1","content":"only","status":"active","created_at":"2026-01-01T00:00:00Z","user":{"uuid":"u1","name":"u1","display_name":"User 1"}}],"total":0}`))
-		case 1:
-			_, _ = w.Write([]byte(`{"comments":[],"total":0}`))
-		default:
-			t.Fatalf("unexpected offset: %d", offset)
-		}
-	}))
-	defer server.Close()
-
-	c := New(server.URL, "test-token")
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	comments, total, err := c.ListFeedbackComments(ctx, "fb-2")
-	if err != nil {
-		t.Fatalf("ListFeedbackComments returned error: %v", err)
-	}
-
-	if total != 1 {
-		t.Fatalf("total = %d, want 1", total)
-	}
-	if len(comments) != 1 {
-		t.Fatalf("len(comments) = %d, want 1", len(comments))
-	}
-	if comments[0].UUID != "c1" {
-		t.Fatalf("unexpected comment: %#v", comments[0])
+func TestLegacyClientReturnsRetired(t *testing.T) {
+	c := New("https://legacy.invalid", "fixture")
+	if _, _, err := c.ListFeedbackComments(context.Background(), "example"); err != ErrRetired {
+		t.Fatal(err)
 	}
 }

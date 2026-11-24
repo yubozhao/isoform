@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 
@@ -101,27 +100,7 @@ func (a *App) DetectProject(dirPath string) (*ProjectContext, error) {
 
 // OpenProjectURL opens the Yansu web platform URL for the given project directory.
 func (a *App) OpenProjectURL(projectPath string) error {
-	if projectPath == "" {
-		return fmt.Errorf("project path is required")
-	}
-
-	projectFile := filepath.Join(projectPath, ".something", "project.json")
-	data, err := os.ReadFile(projectFile)
-	if err != nil {
-		return fmt.Errorf("failed to read project config: %w", err)
-	}
-
-	var cfg projectConfig
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return fmt.Errorf("failed to parse project config: %w", err)
-	}
-
-	if cfg.YansuURL == "" {
-		return fmt.Errorf("no yansu_url configured for this project")
-	}
-
-	runtime.BrowserOpenURL(a.ctx, cfg.YansuURL)
-	return nil
+	return errNoYansuAccount
 }
 
 // OpenProjectFolder opens the project directory in the system file manager.
@@ -154,74 +133,5 @@ func (a *App) OpenInApp(appBundle, projectPath string) error {
 
 // FetchProjectContext fetches PRD and scenarios from Yansu API for the given workDir
 func (a *App) FetchProjectContext(workDir string) (*ProjectContext, error) {
-	result := &ProjectContext{IsYansuProject: false}
-
-	if workDir == "" {
-		result.Error = "work directory is required"
-		return result, nil
-	}
-
-	// Check if this is a Yansu project
-	somethingDir := filepath.Join(workDir, ".something")
-	projectFile := filepath.Join(somethingDir, "project.json")
-
-	data, err := os.ReadFile(projectFile)
-	if err != nil {
-		if os.IsNotExist(err) {
-			result.Error = "not a Isoform project (no .something/project.json)"
-			return result, nil
-		}
-		result.Error = fmt.Sprintf("failed to read project config: %v", err)
-		return result, nil
-	}
-
-	// Parse project config
-	var cfg projectConfig
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		result.Error = fmt.Sprintf("failed to parse project config: %v", err)
-		return result, nil
-	}
-
-	result.IsYansuProject = true
-	result.ProjectName = cfg.Name
-	result.Organization = cfg.Organization
-	result.Product = cfg.Product
-
-	// Load token from ~/.yansu-agent/token
-	token, err := loadYansuToken()
-	if err != nil || token == "" {
-		result.Error = "Yansu token not found. Please run 'yansu login' first."
-		return result, nil
-	}
-
-	// Determine base URL - parse yansu_url to extract only scheme://host
-	// yansu_url stores full project URL like "https://staging-dashboard.example.com/org/product/project"
-	// We need just "https://staging-dashboard.example.com"
-	baseURL := "https://dashboard.yansu.ai"
-	if cfg.YansuURL != "" {
-		if parsedURL, err := url.Parse(cfg.YansuURL); err == nil && parsedURL.Host != "" {
-			baseURL = fmt.Sprintf("%s://%s", parsedURL.Scheme, parsedURL.Host)
-		}
-	}
-
-	// Fetch stages from API
-	stages, err := fetchStages(baseURL, token, cfg.Organization, cfg.Product, cfg.Name)
-	if err != nil {
-		result.Error = fmt.Sprintf("failed to fetch stages: %v", err)
-		return result, nil
-	}
-
-	// Extract PRD and scenarios from stages
-	for _, stage := range stages {
-		switch stage.Type {
-		case "prd":
-			result.PRD = stage.Content
-			result.PRDStatus = stage.Status
-		case "simulations":
-			result.Scenarios = stage.Content
-			result.ScenariosStatus = stage.Status
-		}
-	}
-
-	return result, nil
+	return nil, errNoYansuAccount
 }
