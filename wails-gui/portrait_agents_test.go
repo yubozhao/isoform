@@ -408,7 +408,7 @@ func readPortraitVars(t *testing.T, pkg string) map[string]string {
 			vars[key] = value
 		}
 	}
-	for _, key := range []string{"LEAD", "LEAD_ID", "LEAD_COMPANY", "SCRIPT", "ASK"} {
+	for _, key := range []string{"LEAD", "LEAD_ID", "SCRIPT"} {
 		if vars[key] == "" {
 			t.Fatalf("%s/portrait.vars lacks %s", pkg, key)
 		}
@@ -459,9 +459,9 @@ func TestPortraitEveryPackageCanLead(t *testing.T) {
 		}
 	}
 	// A non-Claude lead renders the same steps for itself: a Codex lead skips
-	// Codex, names OpenAI for the merge, and saves to the shared path.
-	codex := renderPortrait(t, string(lead), map[string]string{"LEAD": "Codex", "LEAD_ID": "codex", "LEAD_COMPANY": "OpenAI", "SCRIPT": `"$ISOFORM_SKILL_DIR/scripts/isoform-agents"`, "ASK": "as one numbered list the person answers once"})
-	for _, want := range []string{"isoform-agents\" detect codex`. It skips Codex, the lead.", "and the merge goes to OpenAI", "bundle <folder>/bundle.md codex=<folder>/codex.md", "~/.agents/agent-of-you/portrait.md", "the Codex row of the table", "as one numbered list the person answers once"} {
+	// Codex, shows the same progress lines, and saves to the shared path.
+	codex := renderPortrait(t, string(lead), map[string]string{"LEAD": "Codex", "LEAD_ID": "codex", "SCRIPT": `"$ISOFORM_SKILL_DIR/scripts/isoform-agents"`})
+	for _, want := range []string{"isoform-agents\" detect codex`. It skips Codex, the lead.", portraitOpeningLine, "`<Agent>: reading...`", "bundle <folder>/bundle.md codex=<folder>/codex.md", "~/.agents/agent-of-you/portrait.md", "the Codex row of the table"} {
 		if !strings.Contains(codex, want) {
 			t.Errorf("Codex lead lacks %q", want)
 		}
