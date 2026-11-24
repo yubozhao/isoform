@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -136,6 +137,7 @@ func (hb *hostBridge) publishMCPReadEndpoint() error {
 		if err := os.Remove(hb.mcpEndpointPath); err != nil && !os.IsNotExist(err) {
 			return err
 		}
+		removeStaleMCPReadSockets(dir)
 		nonce, err := newBrowserBridgeToken()
 		if err != nil {
 			return err
@@ -167,6 +169,32 @@ func (hb *hostBridge) publishMCPReadEndpoint() error {
 		return err
 	}
 	return nil
+}
+
+// removeStaleMCPReadSockets deletes read sockets left by launches that ended
+// without a clean shutdown (a clean one unlinks its own). A socket something
+// still answers on is kept, so another live process is never cut off. The
+// liveness probe dials a socket file on this computer.
+//
+//isoform:destination local
+func removeStaleMCPReadSockets(dir string) {
+	paths, err := filepath.Glob(filepath.Join(dir, "read-*.sock"))
+	if err != nil {
+		return
+	}
+	for _, path := range paths {
+		info, err := os.Lstat(path)
+		if err != nil || info.Mode()&os.ModeSocket == 0 {
+			continue
+		}
+		if conn, err := net.DialTimeout("unix", path, 200*time.Millisecond); err == nil {
+			conn.Close()
+			continue
+		}
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			log.Printf("[mcp-read] could not remove stale socket %s: %v", filepath.Base(path), err)
+		}
+	}
 }
 
 type mcpReadSocketContextKey struct{}
