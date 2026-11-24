@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import i18n from '@/i18n';
 import en from '@/i18n/locales/en/settings.json';
-import { FrontSettings, LETS_ENCRYPT_AGREEMENT_URL } from './front-settings';
+import { FrontSettings } from './front-settings';
+import { LETS_ENCRYPT_AGREEMENT_URL } from '@/components/agents/connect-link';
 
 const mocks = vi.hoisted(() => ({ status: vi.fn(), set: vi.fn(), open: vi.fn() }));
 vi.mock('@/lib/wails-shim-app', () => ({ GetFrontStatus: mocks.status, SetFrontEnabled: mocks.set }));

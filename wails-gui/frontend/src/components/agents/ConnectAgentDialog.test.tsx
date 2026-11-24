@@ -3,11 +3,13 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import i18n from "@/i18n";
 import en from "@/i18n/locales/en/app.json";
 
-const mocks = vi.hoisted(() => ({ start: vi.fn(), join: vi.fn(), answer: vi.fn(), cancel: vi.fn(), copy: vi.fn(), connectHere: vi.fn() }));
+const mocks = vi.hoisted(() => ({ start: vi.fn(), startForApp: vi.fn(), address: vi.fn(), join: vi.fn(), answer: vi.fn(), cancel: vi.fn(), copy: vi.fn(), connectHere: vi.fn(), open: vi.fn() }));
 vi.mock("@/lib/wails-shim-app", () => ({
-    StartAgentJoin: mocks.start, GetAgentJoin: mocks.join, AnswerAgentJoin: mocks.answer, CancelAgentJoin: mocks.cancel, NativeClipboardSetText: mocks.copy,
+    StartAgentJoin: mocks.start, StartAgentJoinForApp: mocks.startForApp, GetAgentAddress: mocks.address,
+    GetAgentJoin: mocks.join, AnswerAgentJoin: mocks.answer, CancelAgentJoin: mocks.cancel, NativeClipboardSetText: mocks.copy,
     ConnectAgentHere: mocks.connectHere,
 }));
+vi.mock("../../../wailsjs/runtime/runtime", () => ({ BrowserOpenURL: mocks.open }));
 
 import { ConnectAgentDialog, JOIN_POLL_MS } from "./ConnectAgentDialog";
 
@@ -27,6 +29,8 @@ beforeEach(async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     await i18n.changeLanguage("en");
     mocks.start.mockResolvedValue({ message, link: "https://abc.agents.isoform.ai/j/code", expiresAt: 0, local: false, mcpAddress: "https://abc.agents.isoform.ai/mcp?join=key" });
+    mocks.startForApp.mockResolvedValue({ message: "Join my Isoform: read https://abc.agents.isoform.ai/j/addr and follow the steps there.", link: "https://abc.agents.isoform.ai/j/addr", expiresAt: 0, local: false, mcpAddress: "https://abc.agents.isoform.ai/mcp?join=key" });
+    mocks.address.mockResolvedValue({ open: false, hostname: "", service: "", apps: [], needsTerms: true, unexpectedCertificates: [] });
     mocks.join.mockResolvedValue({ state: "waiting", expiresAt: 0 });
     mocks.copy.mockResolvedValue(undefined);
     mocks.answer.mockResolvedValue(undefined);
@@ -98,12 +102,20 @@ describe("Connect an agent", () => {
         render(<ConnectAgentDialog open onOpenChange={() => undefined} agents={agents} onConnected={() => undefined} />);
         await screen.findByText(message);
         fireEvent.click(screen.getByRole("button", { name: "Claude" }));
-        expect(screen.getByText("https://abc.agents.isoform.ai/mcp?join=key")).toBeInTheDocument();
+        // Nothing opens until Connect (v1.5.0 G10).
+        expect(screen.queryByText("https://abc.agents.isoform.ai/mcp?join=key")).not.toBeInTheDocument();
+        expect(mocks.startForApp).not.toHaveBeenCalled();
+        fireEvent.click(document.querySelector("[data-connect-address-open]")!);
+        await waitFor(() => expect(mocks.startForApp).toHaveBeenCalledWith("claude", true));
+        expect(await screen.findByText("https://abc.agents.isoform.ai/mcp?join=key")).toBeInTheDocument();
         expect(screen.getByText(en.agents.connectSheet.steps.claude)).toBeInTheDocument();
         fireEvent.click(screen.getByRole("button", { name: en.agents.connectSheet.copy }));
         await waitFor(() => expect(mocks.copy).toHaveBeenCalledWith("https://abc.agents.isoform.ai/mcp?join=key"));
         fireEvent.click(screen.getByRole("button", { name: "ChatGPT" }));
         expect(screen.getByText(en.agents.connectSheet.chatgptDev)).toBeInTheDocument();
+        // The open address serves ChatGPT too, without a second open.
+        expect(screen.getByText("https://abc.agents.isoform.ai/mcp?join=key")).toBeInTheDocument();
+        expect(mocks.startForApp).toHaveBeenCalledTimes(1);
         fireEvent.click(screen.getByRole("button", { name: "Muse" }));
         expect(screen.getByText("Muse can't connect to Isoform yet. It gets each task written in, and sends results back through a link.")).toBeInTheDocument();
         expect(screen.queryByText("https://abc.agents.isoform.ai/mcp?join=key")).not.toBeInTheDocument();
@@ -124,5 +136,53 @@ describe("Connect an agent", () => {
         // Closing the sheet closes the link still waiting.
         rerender(<ConnectAgentDialog open={false} onOpenChange={onOpenChange} agents={agents} onConnected={() => undefined} />);
         await waitFor(() => expect(mocks.cancel).toHaveBeenCalled());
+    });
+
+    it("shows the Let's Encrypt agreement above Connect only before the first acceptance (v1.5.0 G10)", async () => {
+        const { unmount } = render(<ConnectAgentDialog open onOpenChange={() => undefined} agents={agents} onConnected={() => undefined} />);
+        await screen.findByText(message);
+        fireEvent.click(screen.getByRole("button", { name: "Gemini" }));
+        const line = await waitFor(() => {
+            const el = document.querySelector('[data-connect-address-line="terms"]') as HTMLElement;
+            expect(el).not.toBeNull();
+            return el;
+        });
+        expect(line.textContent).toBe("This opens your agent address. What passes through it is listed in What leaves. The address gets a certificate from Let's Encrypt, and connecting means you accept their Subscriber Agreement ›.");
+        const agreement = line.querySelector("button")!;
+        expect(agreement.textContent).toBe("Subscriber Agreement ›");
+        fireEvent.click(agreement);
+        expect(mocks.open).toHaveBeenCalledWith("https://letsencrypt.org/repository/");
+        expect(screen.queryByRole("checkbox")).toBeNull();
+        unmount();
+
+        mocks.address.mockResolvedValue({ open: false, hostname: "", service: "", apps: [], needsTerms: false, unexpectedCertificates: [] });
+        render(<ConnectAgentDialog open onOpenChange={() => undefined} agents={agents} onConnected={() => undefined} />);
+        await screen.findByText(message);
+        fireEvent.click(screen.getByRole("button", { name: "Gemini" }));
+        await waitFor(() => expect(document.querySelector('[data-connect-address-line="plain"]')?.textContent).toBe(en.agents.connectSheet.addressLine));
+        expect(screen.queryByText(/Let's Encrypt/)).toBeNull();
+        fireEvent.click(document.querySelector("[data-connect-address-open]")!);
+        await waitFor(() => expect(mocks.startForApp).toHaveBeenCalledWith("gemini", false));
+    });
+
+    it("asks where any other agent runs; on this computer opens no address, somewhere else does on Connect (v1.5.0 G11)", async () => {
+        render(<ConnectAgentDialog open onOpenChange={() => undefined} agents={agents} onConnected={() => undefined} />);
+        await screen.findByText(message);
+        expect(screen.getByText(en.agents.connectSheet.whereRuns)).toBeInTheDocument();
+        const here = document.querySelector('[data-connect-where-choice="here"]') as HTMLElement;
+        expect(here.getAttribute("aria-pressed")).toBe("true");
+        expect(document.querySelector("[data-connect-address-open]")).toBeNull();
+        fireEvent.click(document.querySelector('[data-connect-where-choice="elsewhere"]')!);
+        expect(screen.getByText(en.agents.connectSheet.runsElsewhereLine)).toBeInTheDocument();
+        expect(screen.queryByText(message)).toBeNull();
+        expect(mocks.startForApp).not.toHaveBeenCalled();
+        fireEvent.click(document.querySelector("[data-connect-address-open]")!);
+        await waitFor(() => expect(mocks.startForApp).toHaveBeenCalledWith("other", true));
+        expect(await screen.findByText(/abc\.agents\.isoform\.ai\/j\/addr/)).toBeInTheDocument();
+        // Back to this computer: a new private link, and no address asked for.
+        mocks.start.mockClear();
+        fireEvent.click(here);
+        await waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(1));
+        expect(mocks.startForApp).toHaveBeenCalledTimes(1);
     });
 });

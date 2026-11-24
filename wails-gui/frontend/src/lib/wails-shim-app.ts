@@ -6768,7 +6768,7 @@ export const BuildWorkProfileDraft = appBinding<[], import('./work-profile').Wor
 // The Isoform front on this computer (front_service.go, front_ct_watch.go).
 // Explicit exports per CLAUDE.md rule 14: front-settings.tsx imports them.
 export interface FrontUnexpectedCertificate { id: string; issuer: string; notBefore: string; foundAt: number }
-export interface AgentAddressView { open: boolean; hostname: string; service: string; apps: string[]; unexpectedCertificates: FrontUnexpectedCertificate[] }
+export interface AgentAddressView { open: boolean; hostname: string; service: string; apps: string[]; needsTerms: boolean; unexpectedCertificates: FrontUnexpectedCertificate[] }
 export const GetAgentAddress = appBinding<[], AgentAddressView>("GetAgentAddress");
 export const CloseAgentAddress = appBinding<[], void>("CloseAgentAddress");
 export interface FrontStatus { enabled: boolean; running: boolean; hostname: string; unexpectedCertificates?: FrontUnexpectedCertificate[] }

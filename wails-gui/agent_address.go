@@ -12,18 +12,25 @@ import (
 const frontTermsAcceptedKey = "front_terms_first_accepted_at"
 
 type AgentAddressView struct {
-	Open                   bool                         `json:"open"`
-	Hostname               string                       `json:"hostname"`
-	Service                string                       `json:"service"`
-	Apps                   []string                     `json:"apps"`
+	Open     bool     `json:"open"`
+	Hostname string   `json:"hostname"`
+	Service  string   `json:"service"`
+	Apps     []string `json:"apps"`
+	// NeedsTerms is true until the person first accepts Let's Encrypt's
+	// Subscriber Agreement, which the connect sheet shows above its button
+	// (computer-conformance-answers v1.5.0 G10). A configured bridge owns
+	// its own certificate, so it needs none.
+	NeedsTerms             bool                         `json:"needsTerms"`
 	UnexpectedCertificates []FrontUnexpectedCertificate `json:"unexpectedCertificates"`
 }
 
 // StartAgentJoinForApp is the connect sheet's explicit action. acceptedTerms
 // records the person's first acceptance before asking the CA for a certificate.
+// "other" is Any other agent that runs somewhere else (v1.5.0 G11); one on
+// this computer takes StartAgentJoin's private link instead.
 func (a *App) StartAgentJoinForApp(app string, acceptedTerms bool) (AgentJoinStart, error) {
 	switch app {
-	case "claude", "chatgpt", "gemini", "grok":
+	case "claude", "chatgpt", "gemini", "grok", "other":
 	default:
 		return AgentJoinStart{}, errors.New("this app cannot connect through the agent address")
 	}
@@ -168,6 +175,7 @@ func (a *App) GetAgentAddress() AgentAddressView {
 			v.Apps = append(v.Apps, ag.Name)
 		}
 	}
+	v.NeedsTerms = !configuredAgentBridge() && !a.frontTermsAccepted()
 	if configuredAgentBridge() {
 		if base, err := a.taskLinkBaseURL(); err == nil {
 			v.Service = strings.TrimPrefix(base, "https://")
@@ -186,6 +194,17 @@ func (a *App) GetAgentAddress() AgentAddressView {
 		}
 	}
 	return v
+}
+
+// frontTermsAccepted says whether the person has accepted Let's Encrypt's
+// agreement once. An unreadable store counts as not yet, so the sheet shows
+// the agreement rather than hiding it.
+func (a *App) frontTermsAccepted() bool {
+	if a.store == nil {
+		return false
+	}
+	value, err := a.store.GetUIState(context.Background(), frontTermsAcceptedKey)
+	return err == nil && value != ""
 }
 
 // Compatibility with the Settings page until the connect sheet owns the address.

@@ -6,12 +6,13 @@ import en from "@/i18n/locales/en/app.json";
 const mocks = vi.hoisted(() => ({
     agents: vi.fn(), connected: vi.fn(), handoffs: vi.fn(), results: vi.fn(), openFile: vi.fn(), disconnect: vi.fn(), setAgent: vi.fn(),
     start: vi.fn(), join: vi.fn(), answer: vi.fn(), cancel: vi.fn(), copy: vi.fn(),
+    address: vi.fn(), startForApp: vi.fn(),
     statuses: vi.fn(), askAgain: vi.fn(), takeBack: vi.fn(), useful: vi.fn(), openApp: vi.fn(), history: vi.fn(), setLearn: vi.fn(),
 }));
 vi.mock("@/lib/wails-shim-app", () => ({
     GetYourAgents: mocks.agents, GetConnectedAgents: mocks.connected, GetWorkOnItHandoffs: mocks.handoffs, GetTaskLinkResults: mocks.results,
     OpenAgentFile: mocks.openFile, DisconnectAgent: mocks.disconnect, DisconnectAgentHere: mocks.disconnect, SetYourAgent: mocks.setAgent, ConnectAgentHere: vi.fn(), GetHandoffStatuses: mocks.statuses, AskAgentAgain: mocks.askAgain, TakeHandoffBack: mocks.takeBack, GetUsefulHandoffs: mocks.useful, OpenAgentApp: mocks.openApp, GetAssistantHistory: mocks.history, SetLearnFromIt: mocks.setLearn,
-    StartAgentJoin: mocks.start, GetAgentJoin: mocks.join, AnswerAgentJoin: mocks.answer, CancelAgentJoin: mocks.cancel, NativeClipboardSetText: mocks.copy,
+    StartAgentJoin: mocks.start, StartAgentJoinForApp: mocks.startForApp, GetAgentAddress: mocks.address, GetAgentJoin: mocks.join, AnswerAgentJoin: mocks.answer, CancelAgentJoin: mocks.cancel, NativeClipboardSetText: mocks.copy,
 }));
 
 import zh from "@/i18n/locales/zh-CN/app.json";
@@ -23,6 +24,7 @@ const today = (h: number, m: number) => new Date(2026, 10, 15, h, m).getTime();
 beforeEach(async () => {
     vi.resetAllMocks();
     await i18n.changeLanguage("en");
+    mocks.address.mockResolvedValue({ open: false, hostname: "", service: "", apps: [], needsTerms: true, unexpectedCertificates: [] });
     mocks.agents.mockResolvedValue({
         choices: { code: "codex", else: "" },
         agents: [
