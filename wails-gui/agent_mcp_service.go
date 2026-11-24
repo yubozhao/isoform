@@ -22,6 +22,7 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 
 	"wails-gui/internal/agentinbox"
+	"wails-gui/internal/agentjoin"
 	"wails-gui/internal/tasklink"
 	"wails-gui/internal/topicday"
 )
@@ -53,7 +54,8 @@ func (a *App) agentMCPHandler() http.Handler {
 		hooks.AddBeforeInitialize(func(ctx context.Context, _ any, req *mcp.InitializeRequest) {
 			if code, _ := ctx.Value(agentMCPJoinKey).(string); code != "" && req != nil {
 				// An agent connecting with the join address asks to join.
-				_, _ = a.agentJoinService().AttemptMCP(code, req.Params.ClientInfo.Name, agentMCPSession(ctx))
+				base, _ := ctx.Value(agentMCPBaseKey).(string)
+				_, _ = a.agentJoinService().AttemptMCP(code, req.Params.ClientInfo.Name, agentMCPSession(ctx), strings.HasPrefix(base, "https://"))
 			}
 		})
 		protocol := server.NewMCPServer("isoform", "1.0.0",
@@ -70,11 +72,7 @@ func (a *App) agentMCPHandler() http.Handler {
 			server.WithHTTPContextFunc(func(ctx context.Context, r *http.Request) context.Context {
 				ctx = context.WithValue(ctx, agentMCPJoinKey, strings.TrimSpace(r.URL.Query().Get("join")))
 				ctx = context.WithValue(ctx, agentMCPKeyKey, strings.TrimSpace(r.URL.Query().Get("key")))
-				scheme := "http"
-				if r.TLS != nil {
-					scheme = "https"
-				}
-				ctx = context.WithValue(ctx, agentMCPBaseKey, scheme+"://"+r.Host)
+				ctx = context.WithValue(ctx, agentMCPBaseKey, agentjoin.RequestOrigin(r))
 				if bearer, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
 					ctx = context.WithValue(ctx, agentMCPBearerKey, strings.TrimSpace(bearer))
 				}

@@ -46,12 +46,15 @@ func (a *App) beginStorageStartup(ctx context.Context) {
 			a.startupServices(ctx)
 		})
 	}
-	runtime.EventsOn(ctx, "storage:retry-cut", func(...interface{}) {
-		if a.GetStorageStartupStatus().Code == "cut_recovery_failed" {
-			start()
-		}
-		runtime.EventsEmit(ctx, "storage:retry-cut-started")
-	})
+	// Only a Wails lifecycle context carries events; tests start with a plain one.
+	if ctx.Value("events") != nil {
+		runtime.EventsOn(ctx, "storage:retry-cut", func(...interface{}) {
+			if a.GetStorageStartupStatus().Code == "cut_recovery_failed" {
+				start()
+			}
+			runtime.EventsEmit(ctx, "storage:retry-cut-started")
+		})
+	}
 	start()
 }
 

@@ -9,6 +9,7 @@
 package agentjoin
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -56,6 +57,7 @@ var (
 
 // Agent is one joined agent. TokenHash is the only form of its token kept.
 type Agent struct {
+	ViaAddress bool   `json:"viaAddress"`
 	ID         string `json:"id"`
 	Name       string `json:"name"`
 	Device     string `json:"device"`
@@ -84,9 +86,10 @@ type Join struct {
 
 type join struct {
 	Join
-	codeHash string
-	token    string // held between Allow and the one status read that takes it
-	session  string // the MCP session that asked, for an MCP join
+	viaAddress bool
+	codeHash   string
+	token      string // held between Allow and the one status read that takes it
+	session    string // the MCP session that asked, for an MCP join
 	// mcpKey is the tool server's own key for this join, shown only on the
 	// join page (not in the pasted message). After the Yes it is the
 	// agent's credential, so the message alone is useless afterwards.
@@ -101,7 +104,9 @@ type Hooks struct {
 	Allowed func() error
 	// Changed is told when the join or the agents change (to save and redraw).
 	Changed func()
-	Now     func() time.Time
+	// Abandoned runs when polling exhausts an unused join.
+	Abandoned func()
+	Now       func() time.Time
 }
 
 // Service holds the open join and the joined agents.
@@ -157,7 +162,7 @@ func randomCheck() (string, error) {
 
 // Start opens a join link and returns its code. Any join still open is
 // closed: one at a time.
-func (s *Service) Start() (string, time.Time, error) {
+func (s *Service) Start(viaAddress bool) (string, time.Time, error) {
 	code, err := randomSecret(16)
 	if err != nil {
 		return "", time.Time{}, err
@@ -168,10 +173,26 @@ func (s *Service) Start() (string, time.Time, error) {
 	}
 	expires := s.now().Add(CodeTTL)
 	s.mu.Lock()
-	s.open = &join{Join: Join{State: StateWaiting, ExpiresAt: expires.UnixMilli()}, codeHash: hash(code), mcpKey: mcpKey, mcpKeyHash: hash(mcpKey)}
+	s.open = &join{viaAddress: viaAddress, Join: Join{State: StateWaiting, ExpiresAt: expires.UnixMilli()}, codeHash: hash(code), mcpKey: mcpKey, mcpKeyHash: hash(mcpKey)}
 	s.mu.Unlock()
 	s.changed()
 	return code, expires, nil
+}
+
+// NeedsAddress snapshots pending and approved connections under one lock.
+func (s *Service) NeedsAddress() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.expireLocked()
+	if j := s.open; j != nil && j.viaAddress && (j.State == StateWaiting || j.State == StateRequested) {
+		return true
+	}
+	for _, ag := range s.agents {
+		if ag.ViaAddress {
+			return true
+		}
+	}
+	return false
 }
 
 // Cancel closes the open join.
@@ -207,7 +228,7 @@ func (s *Service) expireLocked() {
 // address: it asks to join under the name its client gives. Each attempt
 // gets its own check number; only the first is taken, so a second agent with
 // a leaked address can't replace it. It returns the check to show.
-func (s *Service) AttemptMCP(code, name, session string) (string, error) {
+func (s *Service) AttemptMCP(code, name, session string, viaAddress bool) (string, error) {
 	name, ok := oneLine(name)
 	if !ok {
 		name = "An agent"
@@ -234,6 +255,7 @@ func (s *Service) AttemptMCP(code, name, session string) (string, error) {
 		s.mu.Unlock()
 		return "", errAnswered
 	}
+	j.viaAddress = j.viaAddress || viaAddress
 	j.State, j.Name, j.Device, j.MayOpen, j.Check, j.Via, j.session = StateRequested, name, "Isoform's tools (MCP)", "Only what each hand-off sends", check, "mcp", session
 	s.mu.Unlock()
 	s.changed()
@@ -312,7 +334,7 @@ func (s *Service) Answer(allow bool) (*Agent, error) {
 		s.mu.Unlock()
 		return nil, err
 	}
-	agent := Agent{ID: "ag_" + id, Name: s.open.Name, Device: s.open.Device, MayOpen: s.open.MayOpen, TokenHash: hash(token), JoinedAt: s.now().UnixMilli()}
+	agent := Agent{ViaAddress: s.open.viaAddress, ID: "ag_" + id, Name: s.open.Name, Device: s.open.Device, MayOpen: s.open.MayOpen, TokenHash: hash(token), JoinedAt: s.now().UnixMilli()}
 	if s.open.Via == "mcp" {
 		// Rotate: the join page's key dies with the link. The agent's key is
 		// fresh, delivered only over the session that completed the code, so
@@ -472,12 +494,12 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case tail == "" && (r.Method == http.MethodGet || r.Method == http.MethodHead):
 		s.mu.Lock()
 		key := ""
-		if s.open != nil {
+		if s.open != nil && s.open.codeHash == hash(code) {
 			key = s.open.mcpKey
 		}
 		s.mu.Unlock()
 		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-		_, _ = io.WriteString(w, Page(baseOf(r), code, key))
+		_, _ = io.WriteString(w, Page(RequestOrigin(r), code, key))
 	case tail == "" && r.Method == http.MethodPost:
 		s.serveAnswer(w, r, hash(code))
 	default:
@@ -486,8 +508,18 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// baseOf is the origin the agent used, for the page's own URLs.
-func baseOf(r *http.Request) string {
+type bridgeOriginKey struct{}
+
+// WithBridgeOrigin marks the configured proxy target listener. Never derive
+// the public origin from a forwarded header supplied by a loopback client.
+func WithBridgeOrigin(r *http.Request, origin string) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), bridgeOriginKey{}, origin))
+}
+
+func RequestOrigin(r *http.Request) string {
+	if origin, ok := r.Context().Value(bridgeOriginKey{}).(string); ok {
+		return origin
+	}
 	scheme := "http"
 	if r.TLS != nil {
 		scheme = "https"
@@ -537,6 +569,7 @@ func (s *Service) serveAnswer(w http.ResponseWriter, r *http.Request, codeHash s
 		http.Error(w, "Another agent already answered this link.", http.StatusConflict)
 		return
 	}
+	s.open.viaAddress = s.open.viaAddress || strings.HasPrefix(RequestOrigin(r), "https://")
 	s.open.State, s.open.Name, s.open.Device, s.open.MayOpen, s.open.Check = StateRequested, name, device, mayOpen, check
 	s.mu.Unlock()
 	s.changed()
@@ -562,6 +595,9 @@ func (s *Service) serveStatus(w http.ResponseWriter, codeHash string) {
 		s.open = nil
 		s.mu.Unlock()
 		s.changed()
+		if s.hooks.Abandoned != nil {
+			s.hooks.Abandoned()
+		}
 		http.Error(w, gone, http.StatusGone)
 		return
 	}

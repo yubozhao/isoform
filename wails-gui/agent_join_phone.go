@@ -53,7 +53,7 @@ type mobileAgentJoinView struct {
 
 // startPhoneAgentJoin makes a join link from a phone.
 func (a *App) startPhoneAgentJoin(deviceID, reconnect string) (AgentJoinStart, string, error) {
-	start, err := a.StartAgentJoin()
+	start, err := a.startExistingAgentJoin(true)
 	if err != nil {
 		return AgentJoinStart{}, "", err
 	}

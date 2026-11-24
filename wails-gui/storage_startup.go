@@ -62,6 +62,13 @@ func (s *storageStartupState) snapshot() StorageStartupStatus {
 
 func (s *storageStartupState) start(open func() (*storage.Store, error), publish func(*storage.Store), startServices func()) {
 	s.mu.Lock()
+	if s.stopped && !s.started {
+		// Stopped before it began: nothing opens, but waiters on done still finish.
+		s.started = true
+		close(s.done)
+		s.mu.Unlock()
+		return
+	}
 	if s.stopped || s.started && s.status.Code != "cut_recovery_failed" {
 		s.mu.Unlock()
 		return

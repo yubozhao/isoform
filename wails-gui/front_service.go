@@ -8,7 +8,7 @@ package main
 // by TLS-ALPN-01, which travels through the same passthrough, and its key
 // never leaves the computer. Behind TLS: task links (/t/), later MCP.
 //
-// Off unless front_enabled is true. The computer accepts only Isoform's
+// While an address join or connection needs it, the computer accepts only Isoform's
 // front (frontDefaultIDs; ISOFORM_FRONT_IDS overrides it for development)
 // and gets its certificate from Let's Encrypt (ISOFORM_FRONT_ACME_DIRECTORY
 // set to "staging" picks the staging CA for testing).
@@ -66,7 +66,6 @@ const (
 )
 
 var (
-	errFrontOff     = errors.New("the front is off")
 	errFrontNoIDs   = errors.New("no front ids are set")
 	errFrontBadLink = errors.New("the front link did not report a hostname")
 	frontLabelRE    = regexp.MustCompile(`^[a-z2-7]{52}$`)
@@ -136,19 +135,28 @@ func (c *frontCertSource) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certi
 
 // frontState is the app's front service. Zero value is ready.
 type frontState struct {
+	// lifecycle serializes resource ownership, expiry, retry and shutdown.
+	lifecycle      sync.Mutex
+	expiry         *time.Timer
+	restart        *time.Timer
+	shutdown       bool
+	certRetryAfter time.Time
+	certManager    *autocert.Manager // reuse the same renewal timer across open/close cycles
+	certHostname   string
+
 	mu       sync.Mutex
 	running  bool
-	stopping bool
+	exited   bool // the supervisor observed the current link exit during startup
 	cmd      *exec.Cmd
 	server   *http.Server
 	listener net.Listener
 	info     frontLinkInfo
 	ctCancel context.CancelFunc
 	// test seams
-	ctAPI    string
-	dir      string
-	enabled  func() bool
-	certFunc func(hostname string, cacheDir string) func(*tls.ClientHelloInfo) (*tls.Certificate, error)
+	restartWait time.Duration
+	ctAPI       string
+	dir         string
+	certFunc    func(hostname string, cacheDir string) func(*tls.ClientHelloInfo) (*tls.Certificate, error)
 }
 
 func (s *frontState) dirPath() (string, error) {
@@ -160,17 +168,6 @@ func (s *frontState) dirPath() (string, error) {
 		return "", err
 	}
 	return filepath.Join(root, frontDirName), nil
-}
-
-func (a *App) frontEnabled() bool {
-	if a.front.enabled != nil {
-		return a.front.enabled()
-	}
-	if a.store == nil {
-		return false
-	}
-	value, err := a.store.GetUIState(context.Background(), frontEnabledKey)
-	return err == nil && strings.EqualFold(strings.TrimSpace(value), "true")
 }
 
 func frontSuffix() string {
@@ -226,8 +223,8 @@ func (a *App) frontHostname() string {
 
 // startFront starts the TLS listener and the link. It is idempotent.
 func (a *App) startFront() error {
-	if !a.frontEnabled() {
-		return errFrontOff
+	if time.Now().Before(a.front.certRetryAfter) {
+		return errors.New("front certificate unavailable, retry after the issuance pause")
 	}
 	ids, err := frontAllowedIDs()
 	if err != nil {
@@ -239,8 +236,8 @@ func (a *App) startFront() error {
 		s.mu.Unlock()
 		return nil
 	}
-	s.stopping = false
 	s.mu.Unlock()
+	a.stopFront()
 
 	dir, err := s.dirPath()
 	if err != nil {
@@ -277,7 +274,8 @@ func (a *App) startFront() error {
 	ctCtx, ctCancel := context.WithCancel(context.Background())
 	watch := &frontCTWatch{hostname: info.Hostname, dir: dir, api: s.ctAPI, notify: func(title, body, click string) { a.NotifyUser(title, body, click) }, language: normalizeUILanguage(a.currentUILanguage())}
 	s.mu.Lock()
-	s.running, s.cmd, s.server, s.listener, s.info, s.ctCancel = true, cmd, server, ln, info, ctCancel
+	s.exited = false
+	s.running, s.cmd, s.server, s.listener, s.info, s.ctCancel = false, cmd, server, ln, info, ctCancel
 	s.mu.Unlock()
 	go a.runFrontCTWatch(ctCtx, watch)
 	go func() {
@@ -286,6 +284,22 @@ func (a *App) startFront() error {
 		}
 	}()
 	go a.superviseFrontLink(cmd)
+	// The TLS listener must already serve the CA's ALPN challenge. Wait for
+	// issuance before publishing a join link or reporting the hostname ready.
+	_, err = certs.GetCertificate(&tls.ClientHelloInfo{ServerName: info.Hostname, CipherSuites: []uint16{tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256}})
+	if err != nil {
+		a.front.certRetryAfter = time.Now().Add(frontCertBackoff)
+		a.stopFront()
+		return fmt.Errorf("front certificate: %w", err)
+	}
+	s.mu.Lock()
+	if s.cmd != cmd || s.exited {
+		s.mu.Unlock()
+		a.stopFront()
+		return errors.New("front link exited during startup")
+	}
+	s.running = true
+	s.mu.Unlock()
 	log.Printf("[front] serving %s", info.Hostname)
 	return nil
 }
@@ -329,14 +343,17 @@ func (a *App) frontCertGetter(hostname, cacheDir string) func(*tls.ClientHelloIn
 		return a.front.certFunc(hostname, cacheDir)
 	}
 	directory, _ := frontACMEDirectory()
+	if m := a.front.certManager; m != nil && a.front.certHostname == hostname && m.Cache == autocert.DirCache(cacheDir) && m.Client.DirectoryURL == directory {
+		return m.GetCertificate
+	}
 	m := &autocert.Manager{
-		// Turning the front on is the person's choice to get a certificate
-		// for their hostname under the CA's subscriber terms.
+		// openAgentAddress verifies the recorded acceptance before startup.
 		Prompt:     autocert.AcceptTOS,
 		Cache:      autocert.DirCache(cacheDir),
 		HostPolicy: autocert.HostWhitelist(hostname),
 		Client:     &acme.Client{DirectoryURL: directory},
 	}
+	a.front.certManager, a.front.certHostname = m, hostname
 	return m.GetCertificate
 }
 
@@ -393,74 +410,66 @@ func (a *App) superviseFrontLink(cmd *exec.Cmd) {
 	err := cmd.Wait()
 	s := &a.front
 	s.mu.Lock()
-	current := s.cmd == cmd
-	stopping := s.stopping
-	s.mu.Unlock()
-	if !current || stopping {
+	if s.cmd != cmd {
+		s.mu.Unlock()
 		return
 	}
-	log.Printf("[front] link exited (%v); restarting in %s", err, frontLinkRestartWait)
-	time.Sleep(frontLinkRestartWait)
-	a.stopFront()
-	if a.frontEnabled() {
-		if err := a.startFront(); err != nil {
-			log.Printf("[front] restart failed: %v", err)
-		}
+	s.running = false
+	s.exited = true
+	s.mu.Unlock()
+	s.lifecycle.Lock()
+	s.mu.Lock()
+	current := s.cmd == cmd
+	s.mu.Unlock()
+	defer s.lifecycle.Unlock()
+	if current {
+		a.stopFront()
+		log.Printf("[front] link exited: %v", err)
+		a.scheduleFrontRestart()
 	}
+}
+
+// Called under lifecycle. Recheck demand at every attempt, including after
+// certificate issuance backoff. A disconnection can cancel the pending retry.
+func (a *App) scheduleFrontRestart() {
+	s := &a.front
+	if s.shutdown || !a.agentJoinService().NeedsAddress() {
+		return
+	}
+	wait := s.restartWait
+	if wait == 0 {
+		wait = frontLinkRestartWait
+	}
+	wait = max(wait, time.Until(s.certRetryAfter))
+	if s.restart != nil {
+		s.restart.Stop()
+	}
+	s.restart = time.AfterFunc(wait, func() {
+		s.lifecycle.Lock()
+		defer s.lifecycle.Unlock()
+		if s.shutdown || !a.agentJoinService().NeedsAddress() || a.frontHostname() != "" {
+			return
+		}
+		if err := a.openAgentAddress(false); err != nil {
+			log.Printf("[front] restart failed: %v", err)
+			a.scheduleFrontRestart()
+		}
+	})
 }
 
 func (a *App) stopFront() {
 	s := &a.front
 	s.mu.Lock()
 	cmd, server, ctCancel := s.cmd, s.server, s.ctCancel
-	s.stopping = true
 	s.running, s.cmd, s.server, s.listener, s.info, s.ctCancel = false, nil, nil, nil, frontLinkInfo{}, nil
 	s.mu.Unlock()
 	if ctCancel != nil {
 		ctCancel()
 	}
 	if server != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		_ = server.Shutdown(ctx)
-		cancel()
+		_ = server.Close()
 	}
 	if cmd != nil && cmd.Process != nil {
 		_ = cmd.Process.Kill()
 	}
-}
-
-func (a *App) startFrontIfEnabled() {
-	if !a.frontEnabled() {
-		return
-	}
-	if err := a.startFront(); err != nil {
-		log.Printf("[front] not started: %v", err)
-	}
-}
-
-// GetFrontStatus reports whether the front runs and its hostname.
-func (a *App) GetFrontStatus() map[string]any {
-	host := a.frontHostname()
-	status := map[string]any{"enabled": a.frontEnabled(), "running": host != "", "hostname": host}
-	if dir, err := a.front.dirPath(); err == nil {
-		if alerts, err := readFrontCTAlerts(dir); err == nil && len(alerts) > 0 {
-			status["unexpectedCertificates"] = alerts
-		}
-	}
-	return status
-}
-
-// SetFrontEnabled turns the front on or off.
-func (a *App) SetFrontEnabled(enabled bool) error {
-	if a.store == nil {
-		return errors.New("storage is not ready")
-	}
-	if err := a.store.SetUIState(context.Background(), frontEnabledKey, fmt.Sprintf("%t", enabled)); err != nil {
-		return err
-	}
-	if !enabled {
-		a.stopFront()
-		return nil
-	}
-	return a.startFront()
 }
