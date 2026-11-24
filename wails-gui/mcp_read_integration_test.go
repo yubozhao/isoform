@@ -188,7 +188,7 @@ func TestMCPReadRealStdioRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	listed, err := c.ListTools(ctx, mcp.ListToolsRequest{})
-	if err != nil || len(listed.Tools) != 9 {
+	if err != nil || len(listed.Tools) != 11 {
 		t.Fatalf("tools/list: %+v, %v", listed, err)
 	}
 	var call mcp.CallToolRequest
@@ -201,6 +201,27 @@ func TestMCPReadRealStdioRoundTrip(t *testing.T) {
 	raw, _ := json.Marshal(result)
 	if result.IsError || !strings.Contains(string(raw), "stdio evidence project") || !strings.Contains(string(raw), "untrusted") || !strings.Contains(string(raw), "source") {
 		t.Fatalf("tools/call: %s", raw)
+	}
+	// The owner portrait over the same boundary: a draft writes nothing; keep
+	// writes once and records the authorized client.
+	portraitPath, _ := ownerPortraitPath()
+	call.Params.Name, call.Params.Arguments = "portrait_draft", map[string]any{}
+	result, err = c.CallTool(ctx, call)
+	raw, _ = json.Marshal(result)
+	if err != nil || result.IsError || !strings.Contains(string(raw), "works_on") || !strings.Contains(string(raw), "untrusted_observation") {
+		t.Fatalf("portrait_draft: %s %v", raw, err)
+	}
+	if _, err := os.Stat(portraitPath); !os.IsNotExist(err) {
+		t.Fatal("portrait_draft wrote the portrait")
+	}
+	call.Params.Name, call.Params.Arguments = "portrait_keep", map[string]any{"sections": []any{map[string]any{"id": "works_on", "lines": []any{map[string]any{"text": "Builds desktop apps", "source": "person"}}}}}
+	result, err = c.CallTool(ctx, call)
+	raw, _ = json.Marshal(result)
+	if err != nil || result.IsError || !strings.Contains(string(raw), "Nothing was uploaded") {
+		t.Fatalf("portrait_keep: %s %v", raw, err)
+	}
+	if kept, err := ownerPortraitRead(portraitPath); err != nil || kept.Version != 1 || kept.KeptFrom != "codex" {
+		t.Fatalf("kept portrait: %+v %v", kept, err)
 	}
 	for _, invalid := range []struct {
 		args    map[string]any
