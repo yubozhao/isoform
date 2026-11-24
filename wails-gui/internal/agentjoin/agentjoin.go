@@ -206,6 +206,20 @@ func (s *Service) Cancel() {
 	}
 }
 
+// CancelAddressJoin closes the open join only when it was made for the agent
+// address; a loopback join for an agent on this computer stays.
+func (s *Service) CancelAddressJoin() {
+	s.mu.Lock()
+	had := s.open != nil && s.open.viaAddress
+	if had {
+		s.open = nil
+	}
+	s.mu.Unlock()
+	if had {
+		s.changed()
+	}
+}
+
 // Current is the open join, or nil.
 func (s *Service) Current() *Join {
 	s.mu.Lock()

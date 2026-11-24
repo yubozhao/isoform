@@ -128,6 +128,37 @@ func (a *App) shutdownAgentAddress() {
 	a.stopFront()
 }
 
+// agentJoinedViaAddress says whether a connected agent reaches Isoform
+// through the agent address.
+func (a *App) agentJoinedViaAddress(id string) bool {
+	for _, ag := range a.agentJoinService().Agents() {
+		if ag.ID == id {
+			return ag.ViaAddress
+		}
+	}
+	return false
+}
+
+// CloseAgentAddress is What leaves' Stop for the agent address: it ends a
+// waiting join made for the address and disconnects every agent that reaches
+// Isoform through it, and the address closes with the last one. Agents on
+// this computer stay connected.
+func (a *App) CloseAgentAddress() error {
+	svc := a.agentJoinService()
+	svc.CancelAddressJoin()
+	var errs []error
+	for _, ag := range svc.Agents() {
+		if !ag.ViaAddress {
+			continue
+		}
+		if err := a.DisconnectAgent(ag.ID); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	a.closeUnusedAddress()
+	return errors.Join(errs...)
+}
+
 func (a *App) GetAgentAddress() AgentAddressView {
 	host := a.frontHostname()
 	v := AgentAddressView{Open: host != "", Hostname: host, Service: "Isoform's front", Apps: []string{}, UnexpectedCertificates: []FrontUnexpectedCertificate{}}

@@ -593,6 +593,7 @@ export interface YourDataLeaves {
     texts?: { on: boolean; namesOn: boolean; thisWeek?: number; incomplete?: true };
     chatApps?: { apps: string[]; thisWeek?: number; incomplete?: true };
     agentsAsk?: { thisWeek?: number; incomplete?: true; byAgent?: { agent: string; thisWeek?: number; incomplete?: true }[] };
+    agentAddress?: { open: boolean; service: string; apps: string[]; thisWeek?: number; incomplete?: true };
     usageCounts: { on: boolean };
 }
 
@@ -6769,6 +6770,7 @@ export const BuildWorkProfileDraft = appBinding<[], import('./work-profile').Wor
 export interface FrontUnexpectedCertificate { id: string; issuer: string; notBefore: string; foundAt: number }
 export interface AgentAddressView { open: boolean; hostname: string; service: string; apps: string[]; unexpectedCertificates: FrontUnexpectedCertificate[] }
 export const GetAgentAddress = appBinding<[], AgentAddressView>("GetAgentAddress");
+export const CloseAgentAddress = appBinding<[], void>("CloseAgentAddress");
 export interface FrontStatus { enabled: boolean; running: boolean; hostname: string; unexpectedCertificates?: FrontUnexpectedCertificate[] }
 export const GetFrontStatus = appBinding<[], FrontStatus>("GetFrontStatus");
 export const SetFrontEnabled = appBinding<[boolean], void>("SetFrontEnabled");
