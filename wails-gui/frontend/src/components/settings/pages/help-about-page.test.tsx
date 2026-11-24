@@ -497,23 +497,11 @@ describe("Settings About", () => {
     });
 
     describe("what came from Privacy and Storage (settings batch D2)", () => {
-        it("keeps Share diagnostic data under Help, with its saved value, and changes it through the same binding", async () => {
-            mocks.getTelemetry.mockResolvedValue("off");
-            const { container } = render(<HelpAboutPage onReplayOnboarding={vi.fn()} />);
-            const share = await screen.findByRole("switch", { name: "Share diagnostic data" });
-            await waitFor(() => expect(share).not.toBeChecked());
-            const text = container.textContent ?? "";
-            expect(text.indexOf("Help and Send feedback")).toBeLessThan(text.indexOf("Share diagnostic data"));
-            fireEvent.click(share);
-            await waitFor(() => expect(mocks.setTelemetry).toHaveBeenCalledWith("detailed"));
-        });
-
-        it("shows a failed diagnostic data read with Try again, never a false Off", async () => {
-            mocks.getTelemetry.mockRejectedValueOnce(new Error("down"));
+        it("has no usage-counts switch: it lives on Your data's What leaves row (batch F, T13)", async () => {
             render(<HelpAboutPage onReplayOnboarding={vi.fn()} />);
             await screen.findByText("Isoform for your computer");
-            await waitFor(() => expect(screen.queryByRole("switch", { name: "Share diagnostic data" })).not.toBeInTheDocument());
-            expect(screen.getAllByText("Couldn't read this setting.").length).toBeGreaterThan(0);
+            expect(screen.queryByRole("switch", { name: "Share diagnostic data" })).not.toBeInTheDocument();
+            expect(screen.queryByRole("switch", { name: /Usage counts/ })).not.toBeInTheDocument();
         });
 
         it("keeps Ask before risky commands under Advanced with its saved value, saving through the same binding (Chat still runs commands)", async () => {

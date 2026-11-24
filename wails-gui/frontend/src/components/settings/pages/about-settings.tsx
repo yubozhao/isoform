@@ -38,7 +38,6 @@ import {
     wireChoices,
 } from "@/components/onboarding/v2/models";
 import { SettingReadError } from "./setting-read-error";
-import { useTelemetryPreference } from "@/hooks/useTelemetryPreference";
 import { SettingsControlCard } from "./capture-shared";
 
 // The rows About holds (computer-conformance-answers v1.0.0 T2): Your name,
@@ -351,40 +350,6 @@ export function AboutModels() {
                 )}
             </div>
         </SettingsCard>
-    );
-}
-
-// ── Diagnostic data ──
-//
-// "Share diagnostic data", under Help until Your data's Usage counts row ships
-// (design T6). It came from Settings › Privacy in settings batch D2, with the
-// same binding and saved value.
-
-export function DiagnosticDataCard() {
-    const { t } = useTranslation("settings");
-    const { failure: changeFailure, fail: failChange } = useSettingsFailure();
-    const { enabled, loading, saving, readFailed, read, setEnabled } = useTelemetryPreference();
-    const title = t("privacy.diagnostics.title");
-
-    const handleChange = (next: boolean) => {
-        void setEnabled(next).catch(() => {
-            failChange(t("privacy.diagnostics.saveFailed"), () => void handleChange(next));
-        });
-    };
-
-    return (
-        <SettingsControlCard
-            title={title}
-            description={t("privacy.diagnostics.description")}
-            control={
-                readFailed ? null : loading ? null : (
-                    <Switch aria-label={title} checked={enabled} disabled={saving} onCheckedChange={handleChange} />
-                )
-            }
-        >
-            {readFailed && <SettingsFailureLine failure={{ text: t("settingRead.failed"), retry: read }} />}
-            <SettingsFailureLine failure={changeFailure} />
-        </SettingsControlCard>
     );
 }
 
