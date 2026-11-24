@@ -25,7 +25,6 @@ import (
 	"yansu-agent/internal/config"
 	daemonpkg "yansu-agent/internal/daemon"
 	"yansu-agent/internal/knowledge"
-	yansusync "yansu-agent/internal/sync"
 	"yansu-agent/internal/updater"
 	"yansu-agent/runtoken"
 )
@@ -50,11 +49,9 @@ func main() {
 }
 
 var rootCmd = &cobra.Command{
-	Use:   "yansu",
-	Short: "Yansu Agent - Local development companion",
-	Long: `Yansu Agent syncs your project's knowledge base and context
-with the Yansu cloud, enabling AI coding assistants to understand
-your project better.`,
+	Use:     "yansu",
+	Short:   "Yansu Agent - Local development companion",
+	Long:    "Local development companion for Isoform.",
 	Version: version,
 }
 
@@ -64,10 +61,8 @@ your project better.`,
 
 var loginCmd = &cobra.Command{
 	Use:   "login",
-	Short: "Authenticate with Yansu",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return auth.Login()
-	},
+	Short: "The Yansu service is retired",
+	RunE:  retiredNotice,
 }
 
 var logoutCmd = &cobra.Command{
@@ -137,253 +132,9 @@ var statusCmd = &cobra.Command{
 
 var cloneCmd = &cobra.Command{
 	Use:   "clone <org/product/project>",
-	Short: "Clone a Yansu project with full context",
-	Long: `Clone a Yansu project repository and set up the local environment
-with knowledge base and project context.
-
-Example:
-  yansu clone acme/web-app/user-auth-feature`,
-	Args: cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return runClone(args[0])
-	},
-}
-
-func runClone(projectRef string) error {
-	// Parse org/product/project reference
-	parts := splitProjectRef(projectRef)
-	if len(parts) != 3 {
-		return fmt.Errorf("invalid project reference: expected org/product/project format")
-	}
-	org, product, projectName := parts[0], parts[1], parts[2]
-
-	cfg, err := config.Load()
-	if err != nil {
-		return fmt.Errorf("failed to load config: %w (run 'yansu login' first)", err)
-	}
-	if cfg.Token == "" {
-		return fmt.Errorf("not authenticated (run 'yansu login' first)")
-	}
-
-	ctx := context.Background()
-	apiClient := client.New(cfg.BaseURL, cfg.Token)
-
-	// 1. Get project info
-	fmt.Printf("Fetching project %s...\n", projectRef)
-	project, err := apiClient.GetProject(ctx, org, product, projectName)
-	if err != nil {
-		return fmt.Errorf("failed to get project: %w", err)
-	}
-
-	// 2. Clone via Yansu Git proxy
-	targetDir := project.Name
-	if _, err := os.Stat(targetDir); err == nil {
-		return fmt.Errorf("directory %s already exists", targetDir)
-	}
-
-	// Build Git proxy URL with embedded token for authentication
-	// Format: https://<token>@<host>/git/<org>/<product>/<project>.git
-	gitProxyURL := buildGitProxyURL(cfg.BaseURL, cfg.Token, org, product, projectName)
-
-	fmt.Printf("Cloning via Yansu Git proxy...\n")
-	fmt.Printf("  URL: %s\n", maskToken(gitProxyURL))
-	if err := gitClone(gitProxyURL, targetDir); err != nil {
-		return fmt.Errorf("git clone failed: %w\n\nIf this is a new project without a repository, create the directory manually:\n  mkdir %s", err, targetDir)
-	} else {
-		// Checkout coding branch if specified
-		if project.CodingBranch != "" {
-			fmt.Printf("Checking out branch %s...\n", project.CodingBranch)
-			if err := gitCheckout(targetDir, project.CodingBranch); err != nil {
-				fmt.Printf("Warning: could not checkout branch %s: %v\n", project.CodingBranch, err)
-			}
-		}
-	}
-
-	// 4. Initialize .something directory
-	somethingDir := filepath.Join(targetDir, ".something")
-	if err := knowledge.EnsureDirectories(somethingDir); err != nil {
-		return fmt.Errorf("failed to create .something directory: %w", err)
-	}
-
-	// 5. Save project config
-	// Use org/product from command args since API response may not include nested data
-	yansuURL := fmt.Sprintf("%s/orgs/%s/products/%s/projects/%s", cfg.BaseURL, org, product, projectName)
-	projectCfg := &config.ProjectConfig{
-		UUID:         project.UUID,
-		Name:         project.Name,
-		Organization: org,
-		Product:      product,
-		ProductUUID:  project.ProductUUID,
-		YansuURL:     yansuURL,
-		CreatedAt:    project.CreatedAt,
-	}
-	if err := config.SaveProject(somethingDir, projectCfg); err != nil {
-		return fmt.Errorf("failed to save project config: %w", err)
-	}
-
-	// 6. Sync knowledge and context
-	apiClient.SetProject(org, product, projectName)
-	apiClient.SetProductUUID(project.ProductUUID)
-	syncer := yansusync.NewSyncer(targetDir, somethingDir, apiClient)
-
-	fmt.Print("Syncing knowledge... ")
-	pullResult, err := syncer.Pull(ctx)
-	if err != nil {
-		fmt.Printf("warning: %v\n", err)
-	} else {
-		fmt.Printf("done (%d items)\n", len(pullResult.Created))
-	}
-
-	fmt.Print("Syncing context... ")
-	if err := syncer.SyncContext(ctx); err != nil {
-		fmt.Printf("warning: %v\n", err)
-	} else {
-		fmt.Println("done")
-	}
-
-	// 7. Update index
-	knowledge.UpdateIndex(somethingDir)
-
-	// 9. Install git hook for automatic knowledge capture
-	gitDir := filepath.Join(targetDir, ".git")
-	if _, err := os.Stat(gitDir); err == nil {
-		installGitHook(targetDir)
-	}
-
-	// 10. Auto-register in daemon project registry
-	ref := fmt.Sprintf("%s/%s/%s", org, product, projectName)
-	absTargetDir, _ := filepath.Abs(targetDir)
-	registry := daemonpkg.NewProjectRegistry()
-	if loadErr := registry.Load(); loadErr == nil {
-		_ = registry.Register(ref, absTargetDir) // best-effort; don't fail clone
-	}
-
-	fmt.Println()
-	fmt.Printf("✓ Project cloned to %s\n", targetDir)
-	if project.CodingBranch != "" {
-		fmt.Printf("✓ Branch: %s\n", project.CodingBranch)
-	}
-	fmt.Printf("✓ Knowledge synced (%d items)\n", len(pullResult.Created))
-	fmt.Printf("✓ Git hook installed (auto knowledge capture)\n")
-	fmt.Println()
-	fmt.Println("Start coding with your favorite AI agent:")
-	fmt.Printf("  cd %s && claude\n", targetDir)
-	fmt.Println()
-	fmt.Println("Knowledge capture is automatic:")
-	fmt.Println("  - AI analyzes each commit")
-	fmt.Println("  - Patterns and decisions are extracted")
-	fmt.Println("  - Knowledge is pushed to cloud automatically")
-
-	return nil
-}
-
-// installGitHook installs the git hook in the given directory
-func installGitHook(targetDir string) {
-	hooksDir := filepath.Join(targetDir, ".git", "hooks")
-	os.MkdirAll(hooksDir, 0755)
-
-	hookPath := filepath.Join(hooksDir, "post-commit")
-
-	// Get yansu executable path
-	yansuPath, err := os.Executable()
-	if err != nil {
-		yansuPath = "yansu"
-	}
-
-	// Build hook content
-	// Runs both knowledge extraction and push in background
-	hookContent := fmt.Sprintf(`#!/bin/sh
-# Yansu Agent - Automatic Knowledge Capture & Sync
-# This hook analyzes commits and syncs knowledge automatically
-
-# Run yansu hook and push in background to avoid slowing down commits
-(
-  # Extract knowledge from commit
-  %s hook run 2>/dev/null
-  # Push knowledge to cloud
-  %s push --knowledge-only 2>/dev/null
-) &
-`, yansuPath, yansuPath)
-
-	os.WriteFile(hookPath, []byte(hookContent), 0755)
-}
-
-// gitClone clones a git repository
-//
-//isoform:destination yansu_backend
-func gitClone(repoURL, targetDir string) error {
-	// Disable SSL verification for localhost (self-signed certs in development)
-	if strings.Contains(repoURL, "localhost") || strings.Contains(repoURL, "127.0.0.1") {
-		cmd := exec.Command("git", "-c", "http.sslVerify=false", "clone", repoURL, targetDir)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		return cmd.Run()
-	}
-
-	cmd := exec.Command("git", "clone", repoURL, targetDir)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
-}
-
-// gitCheckout checks out a branch in the repository
-//
-//isoform:destination yansu_backend
-func gitCheckout(repoDir, branch string) error {
-	// First try to checkout existing branch
-	cmd := exec.Command("git", "checkout", branch)
-	cmd.Dir = repoDir
-	if err := cmd.Run(); err != nil {
-		// If branch doesn't exist locally, try to fetch and checkout from remote
-		fetchCmd := exec.Command("git", "fetch", "origin", branch)
-		fetchCmd.Dir = repoDir
-		if fetchErr := fetchCmd.Run(); fetchErr != nil {
-			return fmt.Errorf("branch %s not found locally or remotely", branch)
-		}
-
-		// Try checkout again after fetch
-		checkoutCmd := exec.Command("git", "checkout", branch)
-		checkoutCmd.Dir = repoDir
-		if checkoutErr := checkoutCmd.Run(); checkoutErr != nil {
-			// Try creating tracking branch
-			trackCmd := exec.Command("git", "checkout", "-b", branch, "origin/"+branch)
-			trackCmd.Dir = repoDir
-			return trackCmd.Run()
-		}
-	}
-	return nil
-}
-
-// buildGitProxyURL builds the Git proxy URL for cloning
-// Format: https://<token>@<host>/git/<org>/<product>/<project>.git
-func buildGitProxyURL(baseURL, token, org, product, project string) string {
-	// Parse the base URL to extract host
-	host := baseURL
-	if idx := len("https://"); len(host) > idx && host[:idx] == "https://" {
-		host = host[idx:]
-	} else if idx := len("http://"); len(host) > idx && host[:idx] == "http://" {
-		host = host[idx:]
-	}
-	// Remove trailing slash
-	if len(host) > 0 && host[len(host)-1] == '/' {
-		host = host[:len(host)-1]
-	}
-
-	return fmt.Sprintf("https://%s@%s/git/%s/%s/%s.git", token, host, org, product, project)
-}
-
-// maskToken hides the token in a URL for safe printing
-func maskToken(url string) string {
-	// URL format: https://<token>@host/...
-	atIdx := strings.Index(url, "@")
-	if atIdx == -1 {
-		return url
-	}
-	schemeEnd := strings.Index(url, "://")
-	if schemeEnd == -1 || schemeEnd >= atIdx {
-		return url
-	}
-	return url[:schemeEnd+3] + "****" + url[atIdx:]
+	Short: "The Yansu service is retired",
+	Args:  cobra.ExactArgs(1),
+	RunE:  retiredError,
 }
 
 func splitProjectRef(ref string) []string {
@@ -424,316 +175,34 @@ func containsHelper(s, substr string) bool {
 
 var syncCmd = &cobra.Command{
 	Use:   "sync",
-	Short: "Manually sync knowledge with cloud",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return runSync()
-	},
+	Short: "The Yansu service is retired",
+	RunE:  retiredError,
 }
-
-func runSync() error {
-	projectRoot, err := config.FindProjectRoot()
-	if err != nil {
-		return fmt.Errorf("not in a Yansu project: %w", err)
-	}
-
-	cfg, err := config.Load()
-	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
-	}
-	if cfg.Token == "" {
-		return fmt.Errorf("not authenticated (run 'yansu login' first)")
-	}
-
-	somethingDir := config.GetSomethingDir(projectRoot)
-	projectCfg, err := config.LoadProject(somethingDir)
-	if err != nil {
-		return fmt.Errorf("failed to load project config: %w", err)
-	}
-
-	apiClient := client.New(cfg.BaseURL, cfg.Token)
-	apiClient.SetProject(projectCfg.Organization, projectCfg.Product, projectCfg.Name)
-	apiClient.SetProductUUID(projectCfg.ProductUUID)
-
-	syncer := yansusync.NewSyncer(projectRoot, somethingDir, apiClient)
-
-	fmt.Println("Syncing...")
-	result, err := syncer.SyncAll(context.Background())
-	if err != nil {
-		return fmt.Errorf("sync failed: %w", err)
-	}
-
-	// Print results
-	if len(result.Pushed.Created) > 0 {
-		fmt.Printf("Pushed (created): %d\n", len(result.Pushed.Created))
-		for _, t := range result.Pushed.Created {
-			fmt.Printf("  + %s\n", t)
-		}
-	}
-	if len(result.Pushed.Updated) > 0 {
-		fmt.Printf("Pushed (updated): %d\n", len(result.Pushed.Updated))
-		for _, t := range result.Pushed.Updated {
-			fmt.Printf("  ~ %s\n", t)
-		}
-	}
-	if len(result.Pushed.Deleted) > 0 {
-		fmt.Printf("Pushed (deleted): %d\n", len(result.Pushed.Deleted))
-		for _, t := range result.Pushed.Deleted {
-			fmt.Printf("  - %s\n", t)
-		}
-	}
-	if len(result.Pulled.Created) > 0 {
-		fmt.Printf("Pulled (created): %d\n", len(result.Pulled.Created))
-		for _, t := range result.Pulled.Created {
-			fmt.Printf("  + %s\n", t)
-		}
-	}
-	if len(result.Pulled.Updated) > 0 {
-		fmt.Printf("Pulled (updated): %d\n", len(result.Pulled.Updated))
-		for _, t := range result.Pulled.Updated {
-			fmt.Printf("  ~ %s\n", t)
-		}
-	}
-	if len(result.Pulled.Deleted) > 0 {
-		fmt.Printf("Pulled (deleted): %d\n", len(result.Pulled.Deleted))
-		for _, t := range result.Pulled.Deleted {
-			fmt.Printf("  - %s\n", t)
-		}
-	}
-
-	if len(result.Pushed.Created)+len(result.Pushed.Updated)+len(result.Pushed.Deleted)+
-		len(result.Pulled.Created)+len(result.Pulled.Updated)+len(result.Pulled.Deleted) == 0 {
-		fmt.Println("Already up to date.")
-	} else {
-		fmt.Println()
-		fmt.Println("✓ Sync complete")
-	}
-
-	return nil
-}
-
-// ============================================================================
-// Pull Command
-// ============================================================================
 
 var pullCmd = &cobra.Command{
 	Use:   "pull",
-	Short: "Pull latest code, knowledge and context from cloud",
-	Long: `Pull updates from cloud and git remote:
-  1. Git pull - fetch and merge latest code from remote
-  2. Knowledge - download knowledge items from cloud
-  3. Context - sync PRD and scenarios from cloud`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return runPull()
-	},
+	Short: "The Yansu service is retired",
+	RunE:  retiredError,
 }
-
-func runPull() error {
-	projectRoot, err := config.FindProjectRoot()
-	if err != nil {
-		return fmt.Errorf("not in a Yansu project: %w", err)
-	}
-
-	cfg, err := config.Load()
-	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
-	}
-	if cfg.Token == "" {
-		return fmt.Errorf("not authenticated (run 'yansu login' first)")
-	}
-
-	somethingDir := config.GetSomethingDir(projectRoot)
-	projectCfg, err := config.LoadProject(somethingDir)
-	if err != nil {
-		return fmt.Errorf("failed to load project config: %w", err)
-	}
-
-	// 1. Git pull
-	fmt.Print("Pulling latest code... ")
-	if err := gitPull(projectRoot); err != nil {
-		fmt.Printf("warning: %v\n", err)
-	} else {
-		fmt.Println("done")
-	}
-
-	// 2. Pull knowledge and context
-	apiClient := client.New(cfg.BaseURL, cfg.Token)
-	apiClient.SetProject(projectCfg.Organization, projectCfg.Product, projectCfg.Name)
-	apiClient.SetProductUUID(projectCfg.ProductUUID)
-
-	syncer := yansusync.NewSyncer(projectRoot, somethingDir, apiClient)
-
-	fmt.Print("Pulling knowledge... ")
-	pullResult, err := syncer.Pull(context.Background())
-	if err != nil {
-		fmt.Printf("warning: %v\n", err)
-	} else {
-		total := len(pullResult.Created) + len(pullResult.Updated) + len(pullResult.Deleted)
-		if total > 0 {
-			fmt.Printf("done (%d created, %d updated, %d deleted)\n",
-				len(pullResult.Created), len(pullResult.Updated), len(pullResult.Deleted))
-		} else {
-			fmt.Println("up to date")
-		}
-	}
-
-	fmt.Print("Syncing context... ")
-	if err := syncer.SyncContext(context.Background()); err != nil {
-		fmt.Printf("warning: %v\n", err)
-	} else {
-		fmt.Println("done")
-	}
-
-	// Update index
-	knowledge.UpdateIndex(somethingDir)
-
-	fmt.Println()
-	fmt.Println("✓ Pull complete")
-
-	return nil
-}
-
-// gitPull runs git pull in the given directory
-//
-//isoform:destination yansu_backend
-func gitPull(projectRoot string) error {
-	cmd := exec.Command("git", "pull")
-	cmd.Dir = projectRoot
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%s: %w", strings.TrimSpace(string(output)), err)
-	}
-	return nil
-}
-
-// ============================================================================
-// Push Command
-// ============================================================================
-
-var pushCodeOnlyFlag bool
-var pushKnowledgeOnlyFlag bool
 
 var pushCmd = &cobra.Command{
 	Use:   "push",
-	Short: "Push code and knowledge to remote",
-	Long: `Push git commits to remote repository and knowledge to Yansu cloud.
-
-By default, pushes both code (git push) and knowledge.
-
-Examples:
-  yansu push              # Push both code and knowledge
-  yansu push --code       # Push only git commits
-  yansu push --knowledge  # Push only knowledge to cloud`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return runPush()
-	},
+	Short: "Report that the Yansu service is retired",
+	RunE:  retiredNotice,
 }
 
 func init() {
-	pushCmd.Flags().BoolVar(&pushCodeOnlyFlag, "code", false, "Push only git commits (skip knowledge)")
-	pushCmd.Flags().BoolVar(&pushKnowledgeOnlyFlag, "knowledge", false, "Push only knowledge (skip git push)")
+	for _, name := range []string{"code", "knowledge", "knowledge-only"} {
+		pushCmd.Flags().Bool(name, false, "Accepted for compatibility with installed hooks")
+	}
 }
 
-func runPush() error {
-	projectRoot, err := config.FindProjectRoot()
-	if err != nil {
-		return fmt.Errorf("not in a Yansu project: %w", err)
-	}
-
-	// Determine what to push
-	pushCode := !pushKnowledgeOnlyFlag
-	pushKnowledge := !pushCodeOnlyFlag
-
-	// Push git commits
-	if pushCode {
-		fmt.Println("Pushing code...")
-		if err := gitPush(projectRoot); err != nil {
-			fmt.Printf("  Warning: git push failed: %v\n", err)
-		} else {
-			fmt.Println("  ✓ Code pushed to remote")
-		}
-	}
-
-	// Push knowledge
-	if pushKnowledge {
-		cfg, err := config.Load()
-		if err != nil {
-			return fmt.Errorf("failed to load config: %w", err)
-		}
-		if cfg.Token == "" {
-			return fmt.Errorf("not authenticated (run 'yansu login' first)")
-		}
-
-		somethingDir := config.GetSomethingDir(projectRoot)
-		projectCfg, err := config.LoadProject(somethingDir)
-		if err != nil {
-			return fmt.Errorf("failed to load project config: %w", err)
-		}
-
-		apiClient := client.New(cfg.BaseURL, cfg.Token)
-		apiClient.SetProject(projectCfg.Organization, projectCfg.Product, projectCfg.Name)
-		apiClient.SetProductUUID(projectCfg.ProductUUID)
-
-		syncer := yansusync.NewSyncer(projectRoot, somethingDir, apiClient)
-
-		fmt.Println("Pushing knowledge...")
-		result, err := syncer.Push(context.Background())
-		if err != nil {
-			return fmt.Errorf("knowledge push failed: %w", err)
-		}
-
-		// Print results
-		if len(result.Created) > 0 {
-			fmt.Printf("  Created: %d\n", len(result.Created))
-			for _, t := range result.Created {
-				fmt.Printf("    + %s\n", t)
-			}
-		}
-		if len(result.Updated) > 0 {
-			fmt.Printf("  Updated: %d\n", len(result.Updated))
-			for _, t := range result.Updated {
-				fmt.Printf("    ~ %s\n", t)
-			}
-		}
-		if len(result.Deleted) > 0 {
-			fmt.Printf("  Deleted: %d\n", len(result.Deleted))
-			for _, t := range result.Deleted {
-				fmt.Printf("    - %s\n", t)
-			}
-		}
-		if len(result.Errors) > 0 {
-			fmt.Printf("  Errors: %d\n", len(result.Errors))
-			for _, e := range result.Errors {
-				fmt.Printf("    ! %s\n", e)
-			}
-		}
-
-		if len(result.Created)+len(result.Updated)+len(result.Deleted) == 0 {
-			fmt.Println("  No knowledge changes to push.")
-		} else {
-			fmt.Println("  ✓ Knowledge pushed to cloud")
-		}
-	}
-
-	fmt.Println()
-	fmt.Println("✓ Push complete")
-
+func retiredNotice(cmd *cobra.Command, args []string) error {
+	fmt.Fprintln(cmd.OutOrStdout(), "The Yansu service is retired; nothing was sent.")
 	return nil
 }
 
-// gitPush pushes commits to the remote repository
-//
-//isoform:destination yansu_backend
-func gitPush(projectRoot string) error {
-	cmd := exec.Command("git", "push")
-	cmd.Dir = projectRoot
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
-}
-
-// ============================================================================
-// Analyze Command
-// ============================================================================
+func retiredError(cmd *cobra.Command, args []string) error { return client.ErrRetired }
 
 var analyzeAutoFlag bool
 var analyzeCommitsFlag int
@@ -1042,30 +511,13 @@ TODO: What should future developers (or AI agents) know about this?
 
 var hookCmd = &cobra.Command{
 	Use:   "hook",
-	Short: "Manage git hooks for automatic knowledge capture",
-	Long: `Manage git hooks that automatically capture knowledge from commits.
-
-When installed, the post-commit hook analyzes each commit using AI
-and extracts patterns, decisions, and learnings as knowledge.
-
-This is coding-agent agnostic - it works regardless of which AI tool
-(Claude Code, Cursor, Windsurf, Copilot, etc.) made the changes.`,
+	Short: "Manage legacy Yansu Git hooks",
 }
 
 var hookInstallCmd = &cobra.Command{
 	Use:   "install",
-	Short: "Install git hooks for automatic knowledge capture",
-	Long: `Install a post-commit hook that automatically analyzes commits
-and extracts knowledge using AI.
-
-The hook will:
-1. Analyze each commit's diff and message
-2. Use AI to identify patterns, decisions, and learnings
-3. Create knowledge files in .something/new-knowledge/
-4. Push knowledge to cloud automatically`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return runHookInstall()
-	},
+	Short: "The Yansu service is retired",
+	RunE:  retiredError,
 }
 
 var hookUninstallCmd = &cobra.Command{
@@ -1086,84 +538,9 @@ var hookStatusCmd = &cobra.Command{
 
 var hookRunCmd = &cobra.Command{
 	Use:    "run",
-	Short:  "Run the hook (called by git post-commit)",
-	Hidden: true, // Internal command called by git hook
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return runHookRun()
-	},
-}
-
-func runHookInstall() error {
-	projectRoot, err := config.FindProjectRoot()
-	if err != nil {
-		return fmt.Errorf("not in a Yansu project: %w", err)
-	}
-
-	gitDir := filepath.Join(projectRoot, ".git")
-	if _, err := os.Stat(gitDir); os.IsNotExist(err) {
-		return fmt.Errorf("not a git repository")
-	}
-
-	hooksDir := filepath.Join(gitDir, "hooks")
-	if err := os.MkdirAll(hooksDir, 0755); err != nil {
-		return fmt.Errorf("failed to create hooks directory: %w", err)
-	}
-
-	hookPath := filepath.Join(hooksDir, "post-commit")
-
-	// Check if hook already exists
-	existingContent := ""
-	if data, err := os.ReadFile(hookPath); err == nil {
-		existingContent = string(data)
-	}
-
-	// Check if yansu hook is already installed
-	if contains(existingContent, "yansu hook run") {
-		fmt.Println("Yansu hook is already installed.")
-		return nil
-	}
-
-	// Get yansu executable path
-	yansuPath, err := os.Executable()
-	if err != nil {
-		yansuPath = "yansu"
-	}
-
-	// Build hook content
-	// Runs both knowledge extraction and push in background
-	hookContent := fmt.Sprintf(`#!/bin/sh
-# Yansu Agent - Automatic Knowledge Capture & Sync
-# This hook analyzes commits and syncs knowledge automatically
-
-# Run yansu hook and push in background to avoid slowing down commits
-(
-  # Extract knowledge from commit
-  %s hook run 2>/dev/null
-  # Push knowledge to cloud
-  %s push --knowledge-only 2>/dev/null
-) &
-`, yansuPath, yansuPath)
-
-	if existingContent != "" {
-		// Append to existing hook
-		if existingContent[len(existingContent)-1] != '\n' {
-			existingContent += "\n"
-		}
-		hookContent = existingContent + "\n" + hookContent
-	}
-
-	if err := os.WriteFile(hookPath, []byte(hookContent), 0755); err != nil {
-		return fmt.Errorf("failed to write hook: %w", err)
-	}
-
-	fmt.Println("✓ Git post-commit hook installed")
-	fmt.Println()
-	fmt.Println("Now, after each commit:")
-	fmt.Println("  1. AI analyzes your changes")
-	fmt.Println("  2. Knowledge is extracted automatically")
-	fmt.Println("  3. Knowledge is pushed to cloud automatically")
-
-	return nil
+	Short:  "The Yansu service is retired",
+	Hidden: true,
+	RunE:   retiredNotice,
 }
 
 func runHookUninstall() error {
@@ -1275,181 +652,6 @@ func runHookStatus() error {
 	return nil
 }
 
-func runHookRun() error {
-	// This is called by the git post-commit hook
-	// It runs in the background to avoid slowing down commits
-
-	projectRoot, err := config.FindProjectRoot()
-	if err != nil {
-		// Silently fail - not a Yansu project
-		return nil
-	}
-
-	cfg, err := config.Load()
-	if err != nil || cfg.Token == "" {
-		// Silently fail - not authenticated
-		return nil
-	}
-
-	somethingDir := config.GetSomethingDir(projectRoot)
-	projectCfg, err := config.LoadProject(somethingDir)
-	if err != nil {
-		// Silently fail - no project config
-		return nil
-	}
-
-	// Get last commit info
-	commitMsg, err := getLastCommitMessage(projectRoot)
-	if err != nil {
-		return nil
-	}
-
-	commitDiff, err := getLastCommitDiff(projectRoot)
-	if err != nil {
-		return nil
-	}
-
-	changedFiles, err := getLastCommitFiles(projectRoot)
-	if err != nil {
-		changedFiles = ""
-	}
-
-	// Skip trivial commits
-	if len(commitDiff) < 100 {
-		return nil
-	}
-
-	// Truncate large diffs
-	maxDiffSize := 10000
-	if len(commitDiff) > maxDiffSize {
-		commitDiff = commitDiff[:maxDiffSize] + "\n... (truncated)"
-	}
-
-	// Call backend AI to extract knowledge
-	ctx := context.Background()
-	apiClient := client.New(cfg.BaseURL, cfg.Token)
-	apiClient.SetProject(projectCfg.Organization, projectCfg.Product, projectCfg.Name)
-	apiClient.SetProductUUID(projectCfg.ProductUUID)
-
-	result, err := apiClient.ExtractKnowledge(ctx, &client.ExtractKnowledgeRequest{
-		Diff:          commitDiff,
-		CommitMessage: commitMsg,
-		ChangedFiles:  changedFiles,
-	})
-	if err != nil {
-		// Log error to file for debugging
-		logHookError(somethingDir, fmt.Sprintf("Failed to extract knowledge: %v", err))
-		return nil
-	}
-
-	if result.Skipped || len(result.Knowledge) == 0 {
-		// No significant knowledge found
-		return nil
-	}
-
-	// Create knowledge files
-	newKnowledgeDir := filepath.Join(somethingDir, "new-knowledge")
-	os.MkdirAll(newKnowledgeDir, 0755)
-
-	timestamp := time.Now().Format("20060102-150405")
-	for i, k := range result.Knowledge {
-		filename := fmt.Sprintf("auto-%s-%d.md", timestamp, i+1)
-		filePath := filepath.Join(newKnowledgeDir, filename)
-
-		content := fmt.Sprintf(`# Action
-create
-
-# Trigger
-%s
-
-# Content
-%s
-`, k.Trigger, k.Content)
-
-		if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
-			logHookError(somethingDir, fmt.Sprintf("Failed to write knowledge file: %v", err))
-		}
-	}
-
-	// Log success
-	logHookSuccess(somethingDir, fmt.Sprintf("Extracted %d knowledge items from commit", len(result.Knowledge)))
-
-	return nil
-}
-
-//isoform:destination local
-func getLastCommitMessage(projectRoot string) (string, error) {
-	cmd := exec.Command("git", "log", "-1", "--pretty=format:%s%n%n%b")
-	cmd.Dir = projectRoot
-	output, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-	return string(output), nil
-}
-
-//isoform:destination local
-func getLastCommitDiff(projectRoot string) (string, error) {
-	cmd := exec.Command("git", "diff", "HEAD~1", "HEAD", "--no-color")
-	cmd.Dir = projectRoot
-	output, err := cmd.Output()
-	if err != nil {
-		// Maybe first commit, try without HEAD~1
-		cmd2 := exec.Command("git", "show", "HEAD", "--no-color", "--format=")
-		cmd2.Dir = projectRoot
-		output, err = cmd2.Output()
-		if err != nil {
-			return "", err
-		}
-	}
-	return string(output), nil
-}
-
-//isoform:destination local
-func getLastCommitFiles(projectRoot string) (string, error) {
-	cmd := exec.Command("git", "diff", "HEAD~1", "HEAD", "--name-only")
-	cmd.Dir = projectRoot
-	output, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-	return string(output), nil
-}
-
-func logHookError(somethingDir, msg string) {
-	logDir := filepath.Join(somethingDir, "logs")
-	os.MkdirAll(logDir, 0755)
-	logFile := filepath.Join(logDir, "hook.log")
-
-	f, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return
-	}
-	defer f.Close()
-
-	timestamp := time.Now().Format("2006-01-02 15:04:05")
-	f.WriteString(fmt.Sprintf("[%s] ERROR: %s\n", timestamp, msg))
-}
-
-func logHookSuccess(somethingDir, msg string) {
-	logDir := filepath.Join(somethingDir, "logs")
-	os.MkdirAll(logDir, 0755)
-	logFile := filepath.Join(logDir, "hook.log")
-
-	f, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return
-	}
-	defer f.Close()
-
-	timestamp := time.Now().Format("2006-01-02 15:04:05")
-	f.WriteString(fmt.Sprintf("[%s] INFO: %s\n", timestamp, msg))
-}
-
-// ============================================================================
-// Update Command
-// ============================================================================
-
 var updateForceFlag bool
 
 var updateCmd = &cobra.Command{
@@ -1501,22 +703,14 @@ func runUpdate() error {
 
 var daemonCmd = &cobra.Command{
 	Use:   "daemon",
-	Short: "Slack-driven local agent daemon",
-	Long: `Run a persistent daemon that receives Slack messages routed via the Yansu backend
-relay and executes yansu commands or Claude Code on your local machine.
-
-Setup:
-  yansu login                # authenticate with Yansu backend
-  (visit <backend>/settings/slack to connect your Slack workspace)
-  yansu local register       # register current project with the daemon
-  yansu daemon start         # start the daemon`,
+	Short: "Manage the retired Yansu daemon",
 }
 
 var daemonStartCmd = &cobra.Command{
 	Use:   "start",
 	Short: "Start the daemon (runs until Ctrl+C or SIGTERM)",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runDaemonStart()
+		return daemonpkg.Run(cmd.Context())
 	},
 }
 
@@ -1541,26 +735,6 @@ This alias is kept for backwards compatibility.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runDaemonRegister()
 	},
-}
-
-func runDaemonStart() error {
-	cfg, err := config.Load()
-	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
-	}
-	if cfg.Token == "" {
-		return fmt.Errorf("not authenticated (run 'yansu login' first)")
-	}
-
-	daemonCfg, err := config.LoadDaemonConfig()
-	if err != nil {
-		return fmt.Errorf("failed to load daemon config: %w", err)
-	}
-	if err := validateDaemonExecutor(daemonCfg.Executor); err != nil {
-		return err
-	}
-
-	return daemonpkg.Run(context.Background(), cfg, daemonCfg)
 }
 
 func validateDaemonExecutor(executor string) error {
@@ -1765,77 +939,9 @@ var setupTokenExpiresIn int
 
 var setupTokenCmd = &cobra.Command{
 	Use:   "setup-token",
-	Short: "Generate a long-lived API token for Claude Code integration",
-	Long: `Generate a long-lived API token for use with the Anthropic-compatible Yansu API.
-
-The token will be valid for the specified duration (default: 365 days).
-
-Usage with Anthropic SDK:
-  export ANTHROPIC_BASE_URL=https://dashboard.yansu.ai/anthropic
-  export ANTHROPIC_API_KEY=<generated-token>
-
-Usage with Claude Code:
-  export ANTHROPIC_BASE_URL=https://dashboard.yansu.ai/anthropic
-  export ANTHROPIC_AUTH_TOKEN=<generated-token>`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return runSetupToken()
-	},
+	Short: "The Yansu service is retired",
+	RunE:  retiredError,
 }
-
-func runSetupToken() error {
-	cfg, err := config.Load()
-	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
-	}
-
-	if cfg.Token == "" {
-		return fmt.Errorf("not authenticated (run 'yansu login' first)")
-	}
-
-	ctx := context.Background()
-	apiClient := client.New(cfg.BaseURL, cfg.Token)
-
-	// Verify authentication first
-	_, err = apiClient.GetProfile(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to verify authentication: %w", err)
-	}
-
-	if setupTokenName == "" {
-		setupTokenName = "default"
-	}
-
-	tokenResp, err := apiClient.CreateAPIToken(ctx, setupTokenName, setupTokenExpiresIn)
-	if err != nil {
-		return fmt.Errorf("failed to create API token: %w", err)
-	}
-
-	// Determine the base URL for Anthropic
-	anthropicBaseURL := cfg.BaseURL + "/anthropic"
-
-	fmt.Println()
-	fmt.Printf("Your API token (valid for %d days):\n", setupTokenExpiresIn)
-	fmt.Println()
-	fmt.Printf("%s\n", tokenResp.Token)
-	fmt.Println()
-	fmt.Println("Store this token securely. You won't be able to see it again.")
-	fmt.Println()
-	fmt.Println("Use this token with Claude Code by setting:")
-	fmt.Println()
-	fmt.Printf("  export ANTHROPIC_BASE_URL=%s\n", anthropicBaseURL)
-	fmt.Printf("  export ANTHROPIC_AUTH_TOKEN=%s\n", tokenResp.Token)
-	fmt.Println()
-	fmt.Println("Or with the Anthropic SDK:")
-	fmt.Println()
-	fmt.Printf("  export ANTHROPIC_BASE_URL=%s\n", anthropicBaseURL)
-	fmt.Printf("  export ANTHROPIC_API_KEY=%s\n", tokenResp.Token)
-
-	return nil
-}
-
-// ============================================================================
-// ls — browse cloud orgs / products / projects
-// ============================================================================
 
 var listCmd = &cobra.Command{
 	Use:     "list [org | org/product | org/product/project]",
@@ -2065,110 +1171,10 @@ func runLocalPath(ref string) error {
 
 var projectInitCmd = &cobra.Command{
 	Use:   "init <org/product/project>",
-	Short: "Initialise the current directory as a yansu project",
-	Long: `Create .something/project.json in the current directory, pull knowledge
-and context from the cloud, install the git hook, and register the project
-with the local daemon. Use this when the repo was already cloned via git
-directly (not via yansu clone).`,
-	Args: cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return runProjectInit(args[0])
-	},
+	Short: "The Yansu service is retired",
+	Args:  cobra.ExactArgs(1),
+	RunE:  retiredError,
 }
-
-func runProjectInit(projectRef string) error {
-	parts := splitProjectRef(projectRef)
-	if len(parts) != 3 {
-		return fmt.Errorf("invalid project reference: expected org/product/project format")
-	}
-	org, product, projectName := parts[0], parts[1], parts[2]
-
-	cfg, err := config.Load()
-	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
-	}
-	if cfg.Token == "" {
-		return fmt.Errorf("not authenticated (run 'yansu login' first)")
-	}
-
-	cwd, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("failed to get current directory: %w", err)
-	}
-
-	ctx := context.Background()
-	apiClient := client.New(cfg.BaseURL, cfg.Token)
-
-	fmt.Printf("Fetching project %s...\n", projectRef)
-	project, err := apiClient.GetProject(ctx, org, product, projectName)
-	if err != nil {
-		return fmt.Errorf("failed to get project: %w", err)
-	}
-
-	somethingDir := filepath.Join(cwd, ".something")
-	if err := knowledge.EnsureDirectories(somethingDir); err != nil {
-		return fmt.Errorf("failed to create .something directory: %w", err)
-	}
-
-	yansuURL := fmt.Sprintf("%s/%s/%s/%s", cfg.BaseURL, org, product, projectName)
-	projectCfg := &config.ProjectConfig{
-		UUID:         project.UUID,
-		Name:         project.Name,
-		Organization: org,
-		Product:      product,
-		ProductUUID:  project.ProductUUID,
-		YansuURL:     yansuURL,
-		CreatedAt:    project.CreatedAt,
-	}
-	if err := config.SaveProject(somethingDir, projectCfg); err != nil {
-		return fmt.Errorf("failed to save project config: %w", err)
-	}
-	fmt.Println("✓ Created .something/project.json")
-
-	apiClient.SetProject(org, product, projectName)
-	apiClient.SetProductUUID(project.ProductUUID)
-	syncer := yansusync.NewSyncer(cwd, somethingDir, apiClient)
-
-	fmt.Print("Pulling knowledge... ")
-	pullResult, err := syncer.Pull(ctx)
-	if err != nil {
-		fmt.Printf("warning: %v\n", err)
-	} else {
-		fmt.Printf("done (%d items)\n", len(pullResult.Created))
-	}
-
-	fmt.Print("Pulling context... ")
-	if err := syncer.SyncContext(ctx); err != nil {
-		fmt.Printf("warning: %v\n", err)
-	} else {
-		fmt.Println("done")
-	}
-
-	knowledge.UpdateIndex(somethingDir)
-
-	gitDir := filepath.Join(cwd, ".git")
-	if _, err := os.Stat(gitDir); err == nil {
-		installGitHook(cwd)
-		fmt.Println("✓ Git hook installed")
-	}
-
-	ref := fmt.Sprintf("%s/%s/%s", org, product, projectName)
-	registry := daemonpkg.NewProjectRegistry()
-	if loadErr := registry.Load(); loadErr != nil {
-		fmt.Printf("warning: could not load project registry: %v\n", loadErr)
-	} else if regErr := registry.Register(ref, cwd); regErr != nil {
-		fmt.Printf("warning: could not register project in daemon: %v\n", regErr)
-	} else {
-		fmt.Printf("✓ Registered in daemon: %s\n", ref)
-	}
-
-	fmt.Printf("\n✓ Initialised as %s\n", ref)
-	return nil
-}
-
-// ============================================================================
-// daemon status / stop / restart / logs
-// ============================================================================
 
 var daemonProcessStatusCmd = &cobra.Command{
 	Use:   "status",
@@ -2190,7 +1196,7 @@ var daemonRestartCmd = &cobra.Command{
 	Use:   "restart",
 	Short: "Restart the yansu daemon",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runDaemonRestart()
+		return runDaemonRestart(cmd.Context())
 	},
 }
 
@@ -2275,7 +1281,7 @@ func runDaemonStop() error {
 	return nil
 }
 
-func runDaemonRestart() error {
+func runDaemonRestart(ctx context.Context) error {
 	pid, err := config.ReadPIDFile()
 	if err != nil {
 		return fmt.Errorf("failed to read PID file: %w", err)
@@ -2302,7 +1308,7 @@ func runDaemonRestart() error {
 		config.RemovePIDFile()
 	}
 	fmt.Println("Starting daemon...")
-	return runDaemonStart()
+	return daemonpkg.Run(ctx)
 }
 
 func runDaemonLogs(follow bool, lines int) error {

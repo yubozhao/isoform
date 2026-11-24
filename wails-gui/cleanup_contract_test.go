@@ -75,23 +75,3 @@ func TestRemovedConnectorHasNoComposerContract(t *testing.T) {
 		})
 	}
 }
-
-func TestWeChatHistoryCommentNamesExistingDaemonPaths(t *testing.T) {
-	data, err := os.ReadFile("wechat_monitor.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	match := regexp.MustCompile(`the daemon\.go ([^\n]+) path\.`).FindStringSubmatch(string(data))
-	if len(match) != 2 {
-		t.Fatal("daemon history path reference missing")
-	}
-	daemon, err := os.ReadFile("daemon.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range strings.Split(match[1], "/") {
-		if !strings.Contains(string(daemon), `"`+strings.ToLower(name)+`"`) {
-			t.Errorf("comment names missing daemon path %q", name)
-		}
-	}
-}

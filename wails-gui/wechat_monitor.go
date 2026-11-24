@@ -525,8 +525,7 @@ func (m *wechatMonitor) handleMessage(ctx context.Context, msg wechatMessage) {
 
 	// Persist this exchange so future turns get rolling text context via
 	// input.History even when the agent session can't be resumed, and trigger
-	// the memory pipeline so the soul/memory stays up to date — matching
-	// the daemon.go Slack/Feishu path.
+	// the memory pipeline so the soul/memory stays up to date.
 	if lastContent != "" {
 		summary, roundCount := appendAndSummarizeConversation(m.app.store, threadKey, historyUserMsg, lastContent)
 		m.app.triggerMemory(memorySourceWeChat, threadKey, summary, roundCount)

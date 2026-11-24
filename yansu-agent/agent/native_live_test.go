@@ -12,7 +12,7 @@
 //
 // Environment variables read:
 //
-//	ANTHROPIC_BASE_URL    e.g. https://api.yansu.ai/anthropic
+//	ANTHROPIC_BASE_URL    e.g. https://provider.example.invalid/anthropic
 //	ANTHROPIC_AUTH_TOKEN  Bearer token (sub2api style)
 //	ANTHROPIC_API_KEY     x-api-key (direct Anthropic style)
 //	YANSU_LIVE_MODEL      optional — defaults to claude-sonnet-4-6

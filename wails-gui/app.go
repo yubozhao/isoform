@@ -37,7 +37,7 @@ import (
 )
 
 // DefaultWebBaseURL is the web dashboard URL injected at build time via
-// -ldflags "-X main.DefaultWebBaseURL=https://dashboard.yansu.ai".
+// -ldflags using main.DefaultWebBaseURL.
 // Left empty so local dev builds default to staging (see resolveWebBaseURL).
 var DefaultWebBaseURL string
 

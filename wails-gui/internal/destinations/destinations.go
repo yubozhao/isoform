@@ -36,7 +36,6 @@ const (
 	MCPServers      ID = "mcp_servers"
 	EmbeddingsAPI   ID = "embeddings_api"
 	Telemetry       ID = "telemetry"
-	YansuBackend    ID = "yansu_backend"
 	Metadata        ID = "metadata"
 	Local           ID = "local"
 )
@@ -114,9 +113,6 @@ var list = []Destination{
 	{Telemetry, "PostHog, Isoform's product analytics",
 		"Allowlisted product events, never content",
 		ContentNone, "only when the build carries a key and sharing isn't off"},
-	{YansuBackend, "The retired Yansu backend",
-		"Project knowledge and deliverables",
-		ContentYes, "only with a legacy Yansu sign-in"},
 	{Metadata, "Update, download and catalog servers",
 		"Versions, file names, fixed probes",
 		ContentNone, "always"},

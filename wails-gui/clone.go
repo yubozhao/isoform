@@ -3,12 +3,10 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net"
-	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -19,35 +17,9 @@ import (
 	"time"
 
 	"wails-gui/internal/platform/cmdutil"
-	"wails-gui/internal/platform/shellenv"
-	"yansu-agent/ksync"
 )
 
 // ── Clone helpers ──
-
-// buildGitProxyURL builds the Git proxy URL for cloning.
-// Format: https://<token>@<host>/git/<org>/<product>/<project>.git
-// The token is placed in the URL userinfo so the Yansu git proxy can
-// authenticate the request during the routing phase.
-func buildGitProxyURL(baseURL, token, org, product, project string) string {
-	if parsed, err := url.Parse(baseURL); err == nil && parsed.Host != "" {
-		scheme := parsed.Scheme
-		if scheme == "" {
-			scheme = "https"
-		}
-		return fmt.Sprintf("%s://%s@%s/git/%s/%s/%s.git", scheme, token, parsed.Host, org, product, project)
-	}
-
-	host := baseURL
-	for _, prefix := range []string{"https://", "http://"} {
-		if strings.HasPrefix(host, prefix) {
-			host = host[len(prefix):]
-			break
-		}
-	}
-	host = strings.TrimRight(host, "/")
-	return fmt.Sprintf("https://%s@%s/git/%s/%s/%s.git", token, host, org, product, project)
-}
 
 func isLocalGitHost(repoURL string) bool {
 	parsed, err := url.Parse(repoURL)
@@ -137,7 +109,7 @@ func gitClone(repoURL, targetDir string, onProgress cloneProgress) (string, erro
 	// -c http.postBuffer=...  — 512MB buffer for large pack uploads/downloads
 	// GIT_TERMINAL_PROMPT=0  — disables terminal-based prompts
 	// GCM_INTERACTIVE=never  — disables GCM GUI dialogs
-	// The proxy URL already contains the auth token in userinfo.
+
 	gitCfg := []string{
 		"-c", "credential.helper=",
 		"-c", "http.version=1.1",
@@ -206,15 +178,15 @@ func cloneReachabilityTarget(repoURL string) (host string, port string, ok bool)
 
 	// Support SCP-style SSH remotes, e.g. git@github.com:org/repo.git.
 	if !strings.Contains(repoURL, "://") {
-		at := strings.LastIndex(repoURL, "@")
-		if at >= 0 && at < len(repoURL)-1 {
-			hostPath := repoURL[at+1:]
-			colon := strings.Index(hostPath, ":")
-			if colon > 0 {
-				host = strings.TrimSpace(hostPath[:colon])
-				if host != "" {
-					return host, "22", true
-				}
+		// Git also accepts host:path without a user name.
+		authority, _, found := strings.Cut(repoURL, ":")
+		if found && !strings.ContainsAny(authority, "/\\") {
+			_, host, hasUser := strings.Cut(authority, "@")
+			if !hasUser {
+				host = authority
+			}
+			if host != "" && (hasUser || len(host) > 1) {
+				return host, "22", true
 			}
 		}
 	}
@@ -247,7 +219,7 @@ func cloneReachabilityTarget(repoURL string) (host string, port string, ok bool)
 // checkGitHostReachable performs a quick TCP dial to verify the git host is reachable
 // before starting a potentially long git clone operation.
 //
-//isoform:destination yansu_backend
+//isoform:destination metadata
 func checkGitHostReachable(repoURL string) error {
 	host, port, ok := cloneReachabilityTarget(repoURL)
 	if !ok {
@@ -301,121 +273,28 @@ func friendlyCloneError(err error, output string, ctxErr error, timeout time.Dur
 	}
 }
 
-// gitCheckout checks out a branch, fetching from remote if needed.
-func gitCheckout(repoDir, branch string) error {
-	cmd := cmdutil.GitCommand("checkout", branch)
-	cmd.Dir = repoDir
-	if err := cmd.Run(); err == nil {
-		return nil
-	}
-
-	// Fetch from remote and retry
-	fetch := cmdutil.GitCommand("fetch", "origin", branch)
-	fetch.Dir = repoDir
-	if err := fetch.Run(); err != nil {
-		return fmt.Errorf("branch %s not found locally or remotely", branch)
-	}
-
-	retry := cmdutil.GitCommand("checkout", branch)
-	retry.Dir = repoDir
-	if err := retry.Run(); err != nil {
-		// Create tracking branch
-		track := cmdutil.GitCommand("checkout", "-b", branch, "origin/"+branch)
-		track.Dir = repoDir
-		return track.Run()
-	}
-	return nil
+// CloneProject is retained for callers of the retired project proxy.
+func (a *App) CloneProject(org, product, projectName, projectUUID, productUUID, codingBranch, parentDir string) (string, error) {
+	return "", errNoYansuAccount
 }
 
-// CloneProject clones a remote project into parentDir/{projectName},
-// checks out the coding branch, and creates .something/project.json.
-// Returns the full path to the cloned directory.
-func (a *App) CloneProject(org, product, projectName, projectUUID, productUUID, codingBranch, parentDir string) (string, error) {
-	token, err := loadYansuToken()
-	if err != nil || token == "" {
-		return "", fmt.Errorf("not authenticated")
+const retiredGitDomain = "yansu.ai"
+
+func validateCloneURL(gitURL string) error {
+	host, _, _ := cloneReachabilityTarget(gitURL)
+	host = strings.TrimSuffix(strings.ToLower(host), ".")
+	if host == retiredGitDomain || strings.HasSuffix(host, "."+retiredGitDomain) {
+		return errNoYansuAccount
 	}
-
-	// Use default clone directory when parentDir is not specified.
-	if parentDir == "" {
-		base, err := cloneBaseDir()
-		if err != nil {
-			return "", fmt.Errorf("failed to resolve default clone directory: %w", err)
-		}
-		if err := os.MkdirAll(base, 0755); err != nil {
-			return "", fmt.Errorf("failed to create clone directory: %w", err)
-		}
-		parentDir = base
-	}
-
-	targetDir := filepath.Join(parentDir, projectName)
-
-	// Check if target already exists
-	if _, err := os.Stat(targetDir); err == nil {
-		return "", fmt.Errorf("directory already exists: %s", targetDir)
-	}
-
-	apiBaseURL := loadAPIBaseURL()
-	webBaseURL := loadWebBaseURL()
-	proxyURL := buildGitProxyURL(apiBaseURL, token, org, product, projectName)
-
-	log.Printf("Cloning %s/%s/%s into %s", org, product, projectName, targetDir)
-
-	if err := checkGitHostReachable(proxyURL); err != nil {
-		log.Printf("Clone failed for %s/%s/%s: preflight check failed: %v", org, product, projectName, err)
-		return "", err
-	}
-
-	if _, err := gitClone(proxyURL, targetDir, a.cloneProgressEmitter()); err != nil {
-		cleanupFailedCloneDir(targetDir)
-		log.Printf("Clone failed for %s/%s/%s into %s: %v", org, product, projectName, targetDir, err)
-		return "", err
-	}
-
-	// Checkout coding branch if specified
-	if codingBranch != "" {
-		if err := gitCheckout(targetDir, codingBranch); err != nil {
-			log.Printf("Warning: could not checkout branch %s: %v", codingBranch, err)
-		}
-	}
-
-	// Create .something/project.json
-	somethingDir := filepath.Join(targetDir, ".something")
-	if err := os.MkdirAll(somethingDir, 0755); err != nil {
-		return "", fmt.Errorf("failed to create .something directory: %w", err)
-	}
-
-	yansuURL := fmt.Sprintf("%s/orgs/%s/products/%s/projects/%s", webBaseURL, org, product, projectName)
-	cfg := projectConfig{
-		UUID:         projectUUID,
-		Name:         projectName,
-		Organization: org,
-		Product:      product,
-		ProductUUID:  productUUID,
-		YansuURL:     yansuURL,
-	}
-
-	data, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal project config: %w", err)
-	}
-	if err := os.WriteFile(filepath.Join(somethingDir, "project.json"), data, 0644); err != nil {
-		return "", fmt.Errorf("failed to write project config: %w", err)
-	}
-
-	// Post-clone setup: knowledge capture/sync hook
-	postCloneSetup(targetDir)
-
-	// Sync knowledge and context from cloud (fault-tolerant)
-	syncAfterClone(apiBaseURL, token, org, product, projectName, targetDir)
-
-	log.Printf("Project cloned to %s", targetDir)
-	return targetDir, nil
+	return nil
 }
 
 // CloneFromURL clones a git repository from any URL into ~/.yansu-agent/repos/{repo-name}.
 // Returns the full path to the cloned directory.
 func (a *App) CloneFromURL(gitURL string) (string, error) {
+	if err := validateCloneURL(gitURL); err != nil {
+		return "", err
+	}
 	repoName := repoNameFromURL(gitURL)
 	if repoName == "" {
 		return "", fmt.Errorf("could not determine repository name from URL: %s", gitURL)
@@ -450,8 +329,6 @@ func (a *App) CloneFromURL(gitURL string) (string, error) {
 		return "", err
 	}
 
-	postCloneSetup(targetDir)
-
 	log.Printf("Repository cloned to %s", targetDir)
 	return targetDir, nil
 }
@@ -461,56 +338,13 @@ func (a *App) CloneFromURL(gitURL string) (string, error) {
 // PullKnowledge pulls knowledge and context from cloud for a project.
 // Returns a summary map with counts of created/updated/deleted items.
 func (a *App) PullKnowledge(projectPath string) (map[string]any, error) {
-	k, err := ksync.NewKSyncerFromProject(projectPath)
-	if err != nil {
-		return nil, fmt.Errorf("init syncer: %w", err)
-	}
-
-	ctx := context.Background()
-	result := map[string]any{}
-
-	pullResult, err := k.Pull(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("pull knowledge: %w", err)
-	}
-	result["knowledge_created"] = len(pullResult.Created)
-	result["knowledge_updated"] = len(pullResult.Updated)
-	result["knowledge_deleted"] = len(pullResult.Deleted)
-
-	if syncErr := k.SyncContext(ctx); syncErr != nil {
-		log.Printf("Warning: context sync failed: %v", syncErr)
-	}
-	result["context_synced"] = true
-
-	return result, nil
+	return nil, errNoYansuAccount
 }
 
 // PushKnowledge pushes new-knowledge files to cloud for a project.
 // Returns a summary map with counts of created/updated/deleted items.
 func (a *App) PushKnowledge(projectPath string) (map[string]any, error) {
-	k, err := ksync.NewKSyncerFromProject(projectPath)
-	if err != nil {
-		return nil, fmt.Errorf("init syncer: %w", err)
-	}
-
-	ctx := context.Background()
-
-	pushResult, err := k.Push(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("push knowledge: %w", err)
-	}
-
-	return map[string]any{
-		"created": len(pushResult.Created),
-		"updated": len(pushResult.Updated),
-		"deleted": len(pushResult.Deleted),
-		"errors":  pushResult.Errors,
-	}, nil
-}
-
-// postCloneSetup installs the knowledge capture/sync hook after any git clone.
-func postCloneSetup(targetDir string) {
-	installGitHook(targetDir)
+	return nil, errNoYansuAccount
 }
 
 // cloneBaseDir returns the configured (or default) directory for cloned repositories.
@@ -621,92 +455,4 @@ func (a *App) cloneProgressEmitter() cloneProgress {
 			})
 		}
 	}
-}
-
-// syncAfterClone performs knowledge/context sync and daemon registration.
-// All operations are fault-tolerant — failures are logged but don't fail the clone.
-func syncAfterClone(baseURL, token, org, product, projectName, targetDir string) {
-	ctx := context.Background()
-
-	k := ksync.NewKSyncer(baseURL, token, org, product, projectName, targetDir)
-
-	if err := k.EnsureDirectories(); err != nil {
-		log.Printf("Warning: failed to ensure directories: %v", err)
-	}
-
-	if _, err := k.Pull(ctx); err != nil {
-		log.Printf("Warning: knowledge pull failed: %v", err)
-	}
-
-	if err := k.SyncContext(ctx); err != nil {
-		log.Printf("Warning: context sync failed: %v", err)
-	}
-
-	if err := k.UpdateIndex(); err != nil {
-		log.Printf("Warning: index update failed: %v", err)
-	}
-
-	registerWithDaemon(targetDir)
-}
-
-//isoform:destination yansu_backend
-func registerWithDaemon(projectPath string) {
-	dataRoot, err := flavorDataDir()
-	if err != nil {
-		return
-	}
-	socketPath := filepath.Join(dataRoot, "daemon.sock")
-
-	// Check if socket exists (daemon running)
-	if _, err := os.Stat(socketPath); err != nil {
-		return
-	}
-
-	daemonHTTP := &http.Client{
-		Transport: &http.Transport{
-			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial("unix", socketPath)
-			},
-		},
-		Timeout: 10 * time.Second,
-	}
-
-	body, _ := json.Marshal(map[string]string{"project": projectPath})
-	resp, err := daemonHTTP.Post("http://unix/register", "application/json", bytes.NewReader(body))
-	if err != nil {
-		log.Printf("Warning: daemon registration failed: %v", err)
-		return
-	}
-	resp.Body.Close()
-	log.Printf("Registered with background sync daemon")
-}
-
-// installGitHook installs a post-commit hook for automatic knowledge capture.
-func installGitHook(targetDir string) {
-	gitDir := filepath.Join(targetDir, ".git")
-	if _, err := os.Stat(gitDir); err != nil {
-		return
-	}
-
-	hooksDir := filepath.Join(gitDir, "hooks")
-	_ = os.MkdirAll(hooksDir, 0755)
-
-	yansuCmd := "yansu"
-	if installed := installedYansuCLIPath(); installed != "" {
-		yansuCmd = shellenv.ShellQuote(installed)
-	}
-
-	hookContent := fmt.Sprintf(`#!/bin/sh
-# Isoform Agent - Automatic Knowledge Capture & Sync
-# This hook analyzes commits and syncs knowledge automatically
-
-# Run yansu hook and push in background to avoid slowing down commits
-(
-  # Extract knowledge from commit
-  %s hook run 2>/dev/null
-  # Push knowledge to cloud
-  %s push --knowledge-only 2>/dev/null
-) &
-`, yansuCmd, yansuCmd)
-	_ = os.WriteFile(filepath.Join(hooksDir, "post-commit"), []byte(hookContent), 0755)
 }

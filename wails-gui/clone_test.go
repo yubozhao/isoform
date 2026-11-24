@@ -10,30 +10,6 @@ import (
 	"time"
 )
 
-func TestBuildGitProxyURLIncludesToken(t *testing.T) {
-	got := buildGitProxyURL("https://dashboard.yansu.ai", "my-token", "acme", "platform", "demo")
-	want := "https://my-token@dashboard.yansu.ai/git/acme/platform/demo.git"
-	if got != want {
-		t.Fatalf("buildGitProxyURL() = %q, want %q", got, want)
-	}
-}
-
-func TestBuildGitProxyURLDropsBasePath(t *testing.T) {
-	got := buildGitProxyURL("https://dashboard.yansu.ai/orgs/acme", "my-token", "acme", "platform", "demo")
-	want := "https://my-token@dashboard.yansu.ai/git/acme/platform/demo.git"
-	if got != want {
-		t.Fatalf("buildGitProxyURL() = %q, want %q", got, want)
-	}
-}
-
-func TestBuildGitProxyURLFallbackParsing(t *testing.T) {
-	got := buildGitProxyURL("dashboard.yansu.ai", "tok", "acme", "platform", "demo")
-	want := "https://tok@dashboard.yansu.ai/git/acme/platform/demo.git"
-	if got != want {
-		t.Fatalf("buildGitProxyURL() = %q, want %q", got, want)
-	}
-}
-
 func TestRepoNameFromURL(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -67,7 +43,7 @@ func TestIsLocalGitHost(t *testing.T) {
 		{name: "localhost", url: "https://localhost/git/a/b/c.git", expect: true},
 		{name: "ipv4 loopback", url: "https://127.0.0.1/git/a/b/c.git", expect: true},
 		{name: "ipv6 loopback", url: "https://[::1]/git/a/b/c.git", expect: true},
-		{name: "remote host", url: "https://dashboard.yansu.ai/git/a/b/c.git", expect: false},
+		{name: "remote host", url: "https://example.invalid/git/a/b/c.git", expect: false},
 		{name: "malformed url", url: "localhost/git/a/b/c.git", expect: false},
 		{name: "with token userinfo", url: "https://tok@localhost/git/a/b/c.git", expect: true},
 	}
@@ -79,18 +55,6 @@ func TestIsLocalGitHost(t *testing.T) {
 				t.Fatalf("isLocalGitHost(%q) = %v, want %v", tt.url, got, tt.expect)
 			}
 		})
-	}
-}
-
-func TestBuildGitProxyURLTokenNotLeakedInPath(t *testing.T) {
-	got := buildGitProxyURL("https://dashboard.yansu.ai", "secret-tok", "acme", "platform", "demo")
-	// Token should only appear in userinfo (before @), not in the path
-	parts := strings.SplitN(got, "@", 2)
-	if len(parts) != 2 {
-		t.Fatalf("expected URL with @ separator, got %q", got)
-	}
-	if strings.Contains(parts[1], "secret-tok") {
-		t.Fatalf("token leaked into host/path portion: %q", got)
 	}
 }
 
@@ -286,5 +250,29 @@ func TestCleanupFailedCloneDir(t *testing.T) {
 
 	if _, err := os.Stat(targetDir); !os.IsNotExist(err) {
 		t.Fatalf("expected cleanupFailedCloneDir to remove %s, stat err=%v", targetDir, err)
+	}
+}
+
+func TestRetiredProjectBindings(t *testing.T) {
+	a := &App{}
+	for _, raw := range []string{"https://dashboard.yansu.ai/git/org/project", "ssh://git@git.yansu.ai/project", "git@GIT.YANSU.AI.:org/repo", "yansu.ai:org/repo"} {
+		if err := validateCloneURL(raw); err != errNoYansuAccount {
+			t.Errorf("retired Git remote: %v", err)
+		}
+	}
+	if _, err := a.CloneProject("org", "product", "project", "", "", "", ""); err != errNoYansuAccount {
+		t.Fatal(err)
+	}
+	if _, err := a.PullKnowledge(""); err != errNoYansuAccount {
+		t.Fatal(err)
+	}
+	if _, err := a.PushKnowledge(""); err != errNoYansuAccount {
+		t.Fatal(err)
+	}
+	if err := a.OpenProjectURL(""); err != errNoYansuAccount {
+		t.Fatal(err)
+	}
+	if _, err := a.FetchProjectContext(""); err != errNoYansuAccount {
+		t.Fatal(err)
 	}
 }
