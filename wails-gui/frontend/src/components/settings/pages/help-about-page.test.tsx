@@ -24,8 +24,6 @@ const mocks = vi.hoisted(() => ({
     planModels: vi.fn(),
     getTelemetry: vi.fn(),
     setTelemetry: vi.fn(),
-    getRisky: vi.fn(),
-    setRisky: vi.fn(),
     handlers: {} as Record<string, (payload: unknown) => void>,
 }));
 vi.mock("@/lib/wails-shim-app", () => ({
@@ -47,8 +45,6 @@ vi.mock("@/lib/wails-shim-app", () => ({
     PlanSetupModelDownload: mocks.planModels,
     GetTelemetryTier: mocks.getTelemetry,
     SetTelemetryTier: mocks.setTelemetry,
-    GetAskBeforeRiskyCommands: mocks.getRisky,
-    SetAskBeforeRiskyCommands: mocks.setRisky,
 }));
 vi.mock("@/components/onboarding/models-panel", () => ({
     ModelsPanel: () => <div data-testid="about-models-panel" />,
@@ -125,8 +121,6 @@ describe("Settings About", () => {
         mocks.planModels.mockResolvedValue({ ...emptyPlan });
         mocks.getTelemetry.mockResolvedValue("detailed");
         mocks.setTelemetry.mockResolvedValue(undefined);
-        mocks.getRisky.mockResolvedValue(false);
-        mocks.setRisky.mockResolvedValue(undefined);
         mocks.background.mockImplementation(async (enabled) => {
             info = { ...info, backgroundUpdates: enabled };
         });
@@ -504,15 +498,13 @@ describe("Settings About", () => {
             expect(screen.queryByRole("switch", { name: /Usage counts/ })).not.toBeInTheDocument();
         });
 
-        it("keeps Ask before risky commands under Advanced with its saved value, saving through the same binding (Chat still runs commands)", async () => {
-            mocks.getRisky.mockResolvedValue(true);
+        it("has no Ask before risky commands: Chat runs no commands (computer-conformance-answers v1.4.0 S25)", async () => {
             render(<HelpAboutPage onReplayOnboarding={vi.fn()} />);
             await screen.findByText("Isoform for your computer");
             fireEvent.click(screen.getByRole("button", { name: /Advanced/ }));
-            const risky = await screen.findByRole("switch", { name: en.privacy.riskyCommands.title });
-            await waitFor(() => expect(risky).toBeChecked());
-            fireEvent.click(risky);
-            await waitFor(() => expect(mocks.setRisky).toHaveBeenCalledWith(false));
+            await screen.findByTestId("about-models-panel");
+            expect(screen.queryByText(/risky commands/i)).not.toBeInTheDocument();
+            expect(en.privacy).not.toHaveProperty("riskyCommands");
         });
 
         it("keeps the models panel and what diagnostic data includes under Advanced", async () => {

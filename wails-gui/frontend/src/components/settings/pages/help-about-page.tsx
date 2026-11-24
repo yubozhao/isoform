@@ -4,7 +4,6 @@ import {
     AboutModels,
     AppearanceSettings,
     LanguageSettings,
-    RiskyCommandsCard,
     StartAtLoginSettings,
     YourNameSettings,
 } from "./about-settings";
@@ -185,7 +184,6 @@ export function HelpAboutPage({ onReplayOnboarding }: HelpAboutPageProps) {
                     Settings › Storage (settings batch D2), under the models
                     line it details. */}
                 <ModelsPanel settings />
-                <RiskyCommandsCard />
                 <SettingsCard>
                     <SettingsRow
                         title={t("onboarding.title")}

@@ -329,11 +329,14 @@ func TestMainChatKeepsTheFullContextBundle(t *testing.T) {
 		handoffPrivateFocused,
 		"<soul-context>",
 		"<people-context>",
-		"<activity-cli>",
 		"## Current application",
 	} {
 		if !strings.Contains(composed, want) {
 			t.Errorf("main chat lost %q from its context bundle", want)
 		}
+	}
+	// Chat reads through its own tools and runs no commands (S25).
+	if strings.Contains(composed, "<activity-cli>") || strings.Contains(composed, "<memory-cli>") {
+		t.Error("main chat still carries a CLI manual")
 	}
 }

@@ -170,7 +170,6 @@ func pageReadCases(a *App, main string, day time.Time) []pageReadCase {
 		{"GetVoiceInputApps", func() (any, error) { return a.GetVoiceInputApps(), nil }},
 		{"GetBackgroundListening", func() (any, error) { return a.GetBackgroundListening(), nil }},
 		{"GetAutomaticMeetingRecordingEnabled", func() (any, error) { return a.GetAutomaticMeetingRecordingEnabled(), nil }},
-		{"GetAskBeforeRiskyCommands", func() (any, error) { return a.GetAskBeforeRiskyCommands() }},
 		{"LoadAllSidebarGroups", func() (any, error) { return a.LoadAllSidebarGroups() }},
 		{"LoadUIState", func() (any, error) { return a.LoadUIState("search-recents") }},
 		{"ListHandoffs", func() (any, error) { return a.ListHandoffs() }},

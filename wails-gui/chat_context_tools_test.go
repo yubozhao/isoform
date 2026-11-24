@@ -135,12 +135,14 @@ func TestStreamExternalChatComposedPromptAndToolServerSameTurnChatNativeReads(t 
 		t.Fatalf("People relationship notes were lost: %s", people)
 	}
 	help := chatContextMCPCall(t, c, "IsoformHelp", map[string]any{"query": "memory"})
-	if !strings.Contains(help, "memory list") {
+	// Chat reads through its own tools and runs no commands (S25): the
+	// manual names MemoryList, never a CLI, and the native tier has no CLI block.
+	if !strings.Contains(help, "MemoryList") || strings.Contains(help, "yansu memory") {
 		t.Fatalf("on-demand manual missing: %s", help)
 	}
 	native, _ := input.PromptFunc()
-	if !strings.Contains(native, handoffPrivatePeople) || !strings.Contains(native, "<memory-cli>") {
-		t.Fatal("native fallback lost its original tier")
+	if !strings.Contains(native, handoffPrivatePeople) || strings.Contains(native, "<memory-cli>") {
+		t.Fatal("native fallback lost its original tier, or still names the memory CLI")
 	}
 }
 
@@ -271,7 +273,7 @@ func TestToolServerChatContextResultsPrivacyAndRetry(t *testing.T) {
 				{"MemorySearch", "project", "project memory marker"},
 				{"PeopleLookup", "Project Person", "project relationship marker"},
 				{"RecentActivity", "", "project activity marker"},
-				{"IsoformHelp", "memory", "memory list"},
+				{"IsoformHelp", "memory", "MemoryList"},
 			} {
 				result := chatContextMCPCall(t, c, tc.name, map[string]any{"query": tc.query})
 				if gate == "readable" {

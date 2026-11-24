@@ -135,7 +135,7 @@ const reads: Record<string, unknown> = {
     GetPlatformPermissions: { platform: 'darwin', items: [], supported: true },
     GetBackgroundListening: false, GetActivityRetentionDays: 30, GetActivityMaxStorageGB: 0,
     GetActivityStorageStats: { totalBytes: 0 }, GetSensitiveApps: [], GetVoiceInputApps: [], ListSystemApps: [],
-    GetAskBeforeRiskyCommands: false, IsSystemAudioBackgroundListeningSupported: false,
+    IsSystemAudioBackgroundListeningSupported: false,
     GetHostBridgePort: 18080, GetHostBridgeMediaToken: 'fixture-token', GetAppIconsForBundleIDs: {},
     GetUserProfile: { name: 'Alex' }, GetProfile: { name: 'Alex' }, ListHandoffs: [], ListTaskSuggestions: [],
 };

@@ -681,6 +681,7 @@
             "mail": "你的邮件",
             "calendar": "你的日历",
             "brief": "你的简报",
+            "web": "网络",
             "fromAt": "来自{{source}} · {{title}}，{{time}} ›",
             "ariaAt": "来源：{{source}}，{{title}}，{{time}}"
         }

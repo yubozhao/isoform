@@ -546,7 +546,7 @@ export function getChatCorrectionUndo(item: Pick<StreamItem, 'kind' | 'toolName'
 export const CHAT_SOURCES_TOOL = 'main_chat_sources';
 
 /** The kinds of thing an answer can say it read (Go chatSourceKinds). */
-export const CHAT_SOURCE_KINDS = ['memory', 'person', 'activity', 'call', 'watch', 'mail', 'calendar', 'brief'] as const;
+export const CHAT_SOURCE_KINDS = ['memory', 'person', 'activity', 'call', 'watch', 'mail', 'calendar', 'brief', 'web'] as const;
 export type ChatSourceKind = typeof CHAT_SOURCE_KINDS[number];
 
 export interface ChatSource {

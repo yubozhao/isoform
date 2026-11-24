@@ -681,6 +681,7 @@
             "mail": "your mail",
             "calendar": "your calendar",
             "brief": "your brief",
+            "web": "the web",
             "fromAt": "From {{source}} · {{title}}, {{time}} ›",
             "ariaAt": "Source: {{source}}, {{title}}, {{time}}"
         }

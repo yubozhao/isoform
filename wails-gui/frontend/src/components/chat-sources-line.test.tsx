@@ -32,6 +32,19 @@ describe("ChatSourcesLine", () => {
         expect(screen.getByRole("button", { name: "Source: Who you know, Sam Lee" })).toBeInTheDocument();
     });
 
+    it("shows the web as a chip that opens nothing (computer-conformance-answers v1.4.0 C1)", () => {
+        const open = vi.fn();
+        render(<ChatSourcesLine item={line({ sources: [{ kind: "web", id: "web-1", title: "Acme Robotics", target: { kind: "none" } }] })} onOpenTarget={open} />);
+        expect(screen.getByText("From the web · Acme Robotics ›")).toBeInTheDocument();
+        expect(screen.queryByRole("button")).toBeNull();
+    });
+
+    it("reads the web in Chinese", async () => {
+        await i18n.changeLanguage("zh-CN");
+        render(<ChatSourcesLine item={line({ sources: [{ kind: "web", id: "web-1", title: "Acme Robotics", target: { kind: "none" } }] })} />);
+        expect(screen.getByText("来自网络 · Acme Robotics ›")).toBeInTheDocument();
+    });
+
     it("shows nothing for a row without sources", () => {
         const { container } = render(<ChatSourcesLine item={line({ sources: [] })} />);
         expect(container.firstChild).toBeNull();

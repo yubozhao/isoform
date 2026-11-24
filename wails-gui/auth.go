@@ -179,9 +179,6 @@ type yansuConfig struct {
 	// we can distinguish "unset" (nil) from an explicit false: unset falls
 	// back to the default policy in shouldEnableCuaCursorOverlay().
 	CuaCursorOverlayEnabled *bool `json:"cua_cursor_overlay_enabled,omitempty"`
-	// AskBeforeRiskyCommands makes attended chats ask before risky Bash
-	// commands (Settings > Privacy). Off when unset, so the default is off.
-	AskBeforeRiskyCommands bool `json:"ask_before_risky_commands,omitempty"`
 	// Legacy global opt-out, consulted only by the Learn from it migration.
 	AssistantHistoryOff bool `json:"assistant_history_off,omitempty"`
 }
