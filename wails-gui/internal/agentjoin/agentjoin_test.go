@@ -67,7 +67,7 @@ const answer = `{"name":"Claude Code","device":"Bo's MacBook","mayOpen":"the hal
 // once, authenticates, and Revoke ends it.
 func TestJoinNeedsTheOwnersAllow(t *testing.T) {
 	f := newFixture(t)
-	code, expires, err := f.svc.Start()
+	code, expires, err := f.svc.Start(false)
 	if err != nil || expires.Sub(f.now) != CodeTTL {
 		t.Fatalf("start: %v %v", expires, err)
 	}
@@ -124,7 +124,7 @@ func TestJoinNeedsTheOwnersAllow(t *testing.T) {
 
 func TestJoinLinkExpiresAndCloses(t *testing.T) {
 	f := newFixture(t)
-	code, _, _ := f.svc.Start()
+	code, _, _ := f.svc.Start(false)
 	f.now = f.now.Add(CodeTTL + time.Second)
 	if status, _, _ := f.do(t, http.MethodGet, PathPrefix+code, ""); status != http.StatusGone {
 		t.Fatalf("expired link: %d", status)
@@ -133,7 +133,7 @@ func TestJoinLinkExpiresAndCloses(t *testing.T) {
 		t.Fatalf("expired state: %+v", j)
 	}
 
-	code, _, _ = f.svc.Start()
+	code, _, _ = f.svc.Start(false)
 	if status, _, _ := f.do(t, http.MethodGet, PathPrefix+"wrong", ""); status != http.StatusGone {
 		t.Fatalf("wrong code: %d", status)
 	}
@@ -149,8 +149,8 @@ func TestJoinLinkExpiresAndCloses(t *testing.T) {
 	}
 
 	// A new join closes the old one; switching off closes it too.
-	old, _, _ := f.svc.Start()
-	code, _, _ = f.svc.Start()
+	old, _, _ := f.svc.Start(false)
+	code, _, _ = f.svc.Start(false)
 	if status, _, _ := f.do(t, http.MethodGet, PathPrefix+old, ""); status != http.StatusGone {
 		t.Fatalf("old link still open: %d", status)
 	}
@@ -172,7 +172,7 @@ func TestMessageNamesTheLink(t *testing.T) {
 func TestStatusReadsRaceTheTokenAndCancel(t *testing.T) {
 	for round := 0; round < 20; round++ {
 		f := newFixture(t)
-		code, _, _ := f.svc.Start()
+		code, _, _ := f.svc.Start(false)
 		f.do(t, http.MethodPost, PathPrefix+code, answer)
 		if _, err := f.svc.Answer(true); err != nil {
 			t.Fatal(err)

@@ -4281,6 +4281,7 @@ export interface AgentJoinStart { message: string; link: string; expiresAt: numb
 export type AgentJoinState = "waiting" | "requested" | "allowed" | "denied" | "expired";
 export interface AgentJoin { state: AgentJoinState; expiresAt: number; name?: string; device?: string; mayOpen?: string; check?: string; agentId?: string }
 export interface ConnectedAgent { id: string; name: string; device: string; mayOpen: string; joinedAt: number; lastSeenAt?: number; catalogId?: string }
+export const StartAgentJoinForApp = appBinding<[string, boolean], AgentJoinStart>("StartAgentJoinForApp");
 export const StartAgentJoin = appBinding<[], AgentJoinStart>("StartAgentJoin");
 export const GetAgentJoin = appBinding<[], AgentJoin | null>("GetAgentJoin");
 export const AnswerAgentJoin = appBinding<[boolean], void>("AnswerAgentJoin");
@@ -6773,6 +6774,8 @@ export const BuildWorkProfileDraft = appBinding<[], import('./work-profile').Wor
 // The Isoform front on this computer (front_service.go, front_ct_watch.go).
 // Explicit exports per CLAUDE.md rule 14: front-settings.tsx imports them.
 export interface FrontUnexpectedCertificate { id: string; issuer: string; notBefore: string; foundAt: number }
+export interface AgentAddressView { open: boolean; hostname: string; service: string; apps: string[]; unexpectedCertificates: FrontUnexpectedCertificate[] }
+export const GetAgentAddress = appBinding<[], AgentAddressView>("GetAgentAddress");
 export interface FrontStatus { enabled: boolean; running: boolean; hostname: string; unexpectedCertificates?: FrontUnexpectedCertificate[] }
 export const GetFrontStatus = appBinding<[], FrontStatus>("GetFrontStatus");
 export const SetFrontEnabled = appBinding<[boolean], void>("SetFrontEnabled");

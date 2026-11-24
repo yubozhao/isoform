@@ -707,7 +707,7 @@ func (a *App) startupServices(ctx context.Context) {
 	a.deferLaunchTask("task_links", a.startTaskLinksAtLaunch)
 	a.deferLaunchTask("work_on_it", a.startWorkOnIt)
 	a.deferLaunchTask("assistant_calls", a.startAssistantCallRecord)
-	a.deferLaunchTask("front", a.startFrontIfEnabled)
+	a.deferLaunchTask("front", a.restoreAgentAddress)
 	a.deferLaunchTask("ocr_prewarm", ocr.PrewarmHelper)
 	a.deferLaunchTask("assistant_history", a.scheduleAssistantHistory)
 	// A Forget everything that was running or pending carries on.
@@ -1474,8 +1474,8 @@ func (a *App) shutdown(ctx context.Context) {
 	}
 	// A quit leaves no restart gap in Activity (computer-trouble rule 2).
 	noteTroubleQuit(time.Now())
+	a.shutdownAgentAddress()
 	a.shutdownTaskLinks()
-	a.stopFront()
 	// Before any teardown and before telemetry starts its final flush, so the
 	// quit install and its event are sent with the rest.
 	a.installStagedUpdateOnQuit()

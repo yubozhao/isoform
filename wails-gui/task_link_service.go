@@ -76,11 +76,13 @@ type taskLinkState struct {
 	once  sync.Once
 	store *tasklink.Store
 	// fileMu guards the two files; listenMu the listener.
-	fileMu      sync.Mutex
-	listenMu    sync.Mutex
-	server      *http.Server
-	listenAddr  string
-	unsubscribe func()
+	fileMu        sync.Mutex
+	listenMu      sync.Mutex
+	server        *http.Server
+	listenAddr    string
+	privateServer *http.Server // local joins when the configured port is a public bridge target
+	bridgeOnly    bool         // listener has no independent task-link user
+	unsubscribe   func()
 	// hooks for Work on it (taken and done) and tests.
 	onTaken  func(tasklink.Link)
 	onResult func(tasklink.Link, tasklink.Result)
@@ -276,41 +278,97 @@ func loopbackListenAddr(addr string) error {
 
 // startTaskLinkListener serves /t/ on loopback. It is idempotent.
 func (a *App) startTaskLinkListener() error {
+	return a.listenForTaskLinks(false)
+}
+
+func (a *App) listenForTaskLinks(addressOnly bool) error {
 	s := &a.taskLinks
 	s.listenMu.Lock()
 	defer s.listenMu.Unlock()
 	if s.server != nil {
+		s.bridgeOnly = s.bridgeOnly && addressOnly
 		return nil
 	}
-	addr := taskLinkListenAddr()
-	if err := loopbackListenAddr(addr); err != nil {
+	var handler http.Handler = a.agentMux()
+	if configuredAgentBridge() {
+		base, err := a.taskLinkBaseURL()
+		if err != nil {
+			return err
+		}
+		mux := handler
+		handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// The configured listener is the bridge target, even when the proxy
+			// rewrites Host. Only independently issued task links outlive the address.
+			if !strings.HasPrefix(r.URL.Path, tasklink.PathPrefix) && !a.agentJoinService().NeedsAddress() {
+				http.NotFound(w, r)
+				return
+			}
+			mux.ServeHTTP(w, agentjoin.WithBridgeOrigin(r, base))
+		})
+	}
+	server, err := serveAgentLoopback(taskLinkListenAddr(), handler)
+	if err != nil {
 		return err
+	}
+	s.server, s.listenAddr, s.bridgeOnly = server, server.Addr, addressOnly
+	return nil
+}
+
+// The public bridge forwards the configured port. Local joins use a separate,
+// stable loopback port so closing access through the bridge preserves them.
+func (a *App) privateJoinBase() (string, error) {
+	s := &a.taskLinks
+	s.listenMu.Lock()
+	defer s.listenMu.Unlock()
+	if s.privateServer == nil {
+		addr := "127.0.0.1:8794"
+		if _, port, _ := net.SplitHostPort(taskLinkListenAddr()); port == "8794" {
+			addr = taskLinkDefaultAddr
+		}
+		server, err := serveAgentLoopback(addr, a.agentMux())
+		if err != nil {
+			return "", err
+		}
+		s.privateServer = server
+	}
+	return "http://" + s.privateServer.Addr, nil
+}
+
+func serveAgentLoopback(addr string, handler http.Handler) (*http.Server, error) {
+	if err := loopbackListenAddr(addr); err != nil {
+		return nil, err
 	}
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		return fmt.Errorf("task link listener: %w", err)
+		return nil, fmt.Errorf("task link listener: %w", err)
 	}
-	server := &http.Server{
-		Handler:           a.agentMux(),
-		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      30 * time.Second,
-		MaxHeaderBytes:    16 << 10,
-	}
-	s.server, s.listenAddr = server, ln.Addr().String()
+	server := &http.Server{Addr: ln.Addr().String(), Handler: handler, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10}
 	go func() {
 		if err := server.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Printf("[task-links] listener stopped: %v", err)
 		}
 	}()
-	log.Printf("[task-links] serving on %s", s.listenAddr)
-	return nil
+	return server, nil
+}
+
+func (a *App) closeUnusedBridge() {
+	s := &a.taskLinks
+	s.listenMu.Lock()
+	defer s.listenMu.Unlock()
+	if s.bridgeOnly && s.server != nil {
+		_ = s.server.Close()
+		s.server, s.listenAddr, s.bridgeOnly = nil, "", false
+	}
 }
 
 func (a *App) stopTaskLinkListener() {
 	s := &a.taskLinks
 	s.listenMu.Lock()
 	server := s.server
+	if s.privateServer != nil {
+		_ = s.privateServer.Close()
+		s.privateServer = nil
+	}
 	s.server, s.listenAddr = nil, ""
 	s.listenMu.Unlock()
 	if server == nil {
@@ -332,7 +390,22 @@ func (a *App) startTaskLinksAtLaunch() {
 	// The listener serves task links and the agents' channel: start it when
 	// a link is open or an agent has joined, so a joined agent can reach its
 	// inbox after a restart.
-	if len(a.taskLinkStore().Links()) == 0 && len(a.agentJoinService().Agents()) == 0 && len(a.agentInboxService().Items()) == 0 {
+	agents := a.agentJoinService().Agents()
+	if configuredAgentBridge() {
+		for _, ag := range agents {
+			if !ag.ViaAddress {
+				if _, err := a.privateJoinBase(); err != nil {
+					log.Printf("[agents] local listener: %v", err)
+				}
+				break
+			}
+		}
+		// The address lifecycle restores its own bridge listener.
+		if len(a.taskLinkStore().Links()) == 0 {
+			return
+		}
+	}
+	if len(a.taskLinkStore().Links()) == 0 && len(agents) == 0 && len(a.agentInboxService().Items()) == 0 {
 		return
 	}
 	if err := a.startTaskLinkListener(); err != nil {

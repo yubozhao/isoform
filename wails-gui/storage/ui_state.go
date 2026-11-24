@@ -87,6 +87,12 @@ func (s *Store) postUIStateMessage(ctx context.Context, key, previous, value, me
 	return order, nil
 }
 
+// DeleteUIState removes a retired setting, including its stored value.
+func (s *Store) DeleteUIState(ctx context.Context, key string) error {
+	_, err := s.db.ExecContext(ctx, "DELETE FROM ui_state WHERE key = ?", key)
+	return err
+}
+
 // SetUIState sets a key-value pair in the ui_state table.
 func (s *Store) SetUIState(ctx context.Context, key, value string) error {
 	_, err := s.db.ExecContext(ctx, `

@@ -148,11 +148,10 @@ func TestFrontServesTaskLinksOverTLSForItsHostnameOnly(t *testing.T) {
 	host := testFrontLabel + ".agents.isoform.ai"
 	cert, pool := selfSignedFor(t, host)
 	var certCalls atomic.Int32
-	on := &atomic.Bool{}
-	on.Store(true)
+
 	a := &App{}
 	a.front.dir = t.TempDir()
-	a.front.enabled = on.Load
+
 	a.front.certFunc = func(hostname, _ string) func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
 		if hostname != host {
 			t.Errorf("certificate asked for %q", hostname)
@@ -226,14 +225,9 @@ func TestFrontServesTaskLinksOverTLSForItsHostnameOnly(t *testing.T) {
 	}
 }
 
-func TestFrontStaysOffWithoutTheSwitchOrIDs(t *testing.T) {
+func TestFrontStaysOffWithoutIDs(t *testing.T) {
 	a := &App{}
 	a.front.dir = t.TempDir()
-	a.front.enabled = func() bool { return false }
-	if err := a.startFront(); !errors.Is(err, errFrontOff) {
-		t.Fatalf("switch off: %v", err)
-	}
-	a.front.enabled = func() bool { return true }
 	t.Setenv(frontIDsEnv, "")
 	defer func(saved []string) { frontDefaultIDs = saved }(frontDefaultIDs)
 	frontDefaultIDs = nil

@@ -8,7 +8,7 @@ package main
 //
 // Joining needs the person twice: they make the link and paste it, and they
 // tap Allow when the agent's check number matches. It answers only while
-// task links are on and Closed Eyes is off.
+// the link is valid, including during Closed Eyes.
 
 import (
 	"encoding/json"
@@ -30,7 +30,7 @@ const (
 	agentsConnectedFile = "connected.json"
 )
 
-var errAgentJoinNoOrigin = errors.New("agents can't reach this computer yet: turn on the agent address in Settings")
+var errAgentJoinNoOrigin = errors.New("agents can't reach this computer through the agent address yet")
 
 type agentJoinState struct {
 	once   sync.Once
@@ -63,7 +63,8 @@ func (a *App) agentJoinService() *agentjoin.Service {
 				a.saveConnectedAgents()
 				a.notePhoneAgentJoinChanged()
 			},
-			Now: s.now,
+			Abandoned: func() { go a.closeUnusedAddress() },
+			Now:       s.now,
 		})
 		if agents, err := a.readConnectedAgents(); err != nil {
 			log.Printf("[agents] connected agents not restored: %v", err)
@@ -90,17 +91,51 @@ type AgentJoinStart struct {
 // still open is closed. Making the link is the person's yes; no switch and
 // not Closed Eyes stop it, since connecting sees and keeps nothing (G2).
 func (a *App) StartAgentJoin() (AgentJoinStart, error) {
+	return a.startExistingAgentJoin(false)
+}
+
+// The phone may share an already-open address. A desktop local join always
+// uses loopback, including when an app agent already owns the front.
+func (a *App) startExistingAgentJoin(fromPhone bool) (AgentJoinStart, error) {
+	a.front.lifecycle.Lock()
+	defer a.front.lifecycle.Unlock()
+	if a.front.shutdown {
+		return AgentJoinStart{}, errors.New("the computer is shutting down")
+	}
+	if fromPhone && a.GetAgentAddress().Open {
+		base, err := a.taskLinkBaseURL()
+		if err != nil {
+			return AgentJoinStart{}, err
+		}
+		return a.startJoinAt(base, true)
+	}
+	if configuredAgentBridge() {
+		base, err := a.privateJoinBase()
+		if err != nil {
+			return AgentJoinStart{}, err
+		}
+		return a.startJoinAt(base, false)
+	}
 	if err := a.startTaskLinkListener(); err != nil {
 		return AgentJoinStart{}, err
 	}
-	base, err := a.taskLinkBaseURL()
+	a.taskLinks.listenMu.Lock()
+	base := "http://" + a.taskLinks.listenAddr
+	a.taskLinks.listenMu.Unlock()
+	return a.startJoinAt(base, false)
+}
+
+func (a *App) startJoinAt(base string, viaAddress bool) (AgentJoinStart, error) {
+	code, expires, err := a.agentJoinService().Start(viaAddress)
 	if err != nil {
 		return AgentJoinStart{}, err
 	}
-	code, expires, err := a.agentJoinService().Start()
-	if err != nil {
-		return AgentJoinStart{}, err
+	if a.front.expiry != nil {
+		a.front.expiry.Stop()
 	}
+	// A loopback link can also receive a request through an already-open front.
+	a.front.expiry = time.AfterFunc(expires.Sub(a.agentJoinClock()), a.closeUnusedAddress)
+	a.closeUnusedAddressLocked()
 	link := base + agentjoin.PathPrefix + code
 	return AgentJoinStart{Message: agentjoin.Message(link), Link: link, ExpiresAt: expires.UnixMilli(), Local: !strings.HasPrefix(base, "https://"), MCPAddress: base + "/mcp?join=" + a.agentJoinService().MCPKey()}, nil
 }
@@ -113,6 +148,7 @@ func (a *App) GetAgentJoin() *agentjoin.Join {
 
 // AnswerAgentJoin is the person's Allow or Deny.
 func (a *App) AnswerAgentJoin(allow bool) error {
+	defer a.closeUnusedAddress()
 	agent, err := a.agentJoinService().Answer(allow)
 	if err == nil && agent != nil {
 		// Joined again: Connect again's entry goes (phone-agent v1.2.0 §6).
@@ -123,7 +159,10 @@ func (a *App) AnswerAgentJoin(allow bool) error {
 }
 
 // CancelAgentJoin closes the open join link.
-func (a *App) CancelAgentJoin() { a.agentJoinService().Cancel() }
+func (a *App) CancelAgentJoin() {
+	a.agentJoinService().Cancel()
+	a.closeUnusedAddress()
+}
 
 // ConnectedAgentView is one joined agent, without its token hash.
 type ConnectedAgentView struct {
@@ -153,6 +192,7 @@ func (a *App) DisconnectAgent(id string) error {
 	if err := a.agentJoinService().Revoke(id); err != nil {
 		return err
 	}
+	a.closeUnusedAddress()
 	a.keepDisconnectedAgent(disconnectedAgent{ID: id, Name: left.Name, CatalogID: left.CatalogID, DisconnectedAt: a.agentJoinClock().UnixMilli()})
 	a.agentInboxService().Withdraw(func(item agentinbox.Item) bool { return item.AgentID == id })
 	log.Printf("[agents] %s disconnected", id)
@@ -207,12 +247,11 @@ func (a *App) saveConnectedAgents() {
 	if svc == nil {
 		return
 	}
-	agents := svc.Agents()
 	a.agentJoin.fileMu.Lock()
 	defer a.agentJoin.fileMu.Unlock()
 	path, err := a.connectedAgentsPath()
 	if err == nil {
-		err = writeFrontJSON(path, agents)
+		err = writeFrontJSON(path, svc.Agents())
 	}
 	if err != nil {
 		log.Printf("[agents] connected agents not saved: %v", err)
