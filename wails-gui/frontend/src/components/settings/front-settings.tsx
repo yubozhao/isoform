@@ -7,8 +7,7 @@ import { SettingReadError } from "@/components/settings/pages/setting-read-error
 import { GetFrontStatus, SetFrontEnabled, type FrontStatus } from "@/lib/wails-shim-app";
 import { BrowserOpenURL } from "../../../wailsjs/runtime/runtime";
 
-/** The current Let's Encrypt subscriber agreement and its past versions. */
-export const LETS_ENCRYPT_AGREEMENT_URL = "https://letsencrypt.org/repository/";
+import { LETS_ENCRYPT_AGREEMENT_URL } from "@/components/agents/connect-link";
 
 /**
  * Agents reach this computer (front_service.go): a public address for the

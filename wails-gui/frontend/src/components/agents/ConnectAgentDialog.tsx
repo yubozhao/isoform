@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useTranslation } from "react-i18next";
+import { Trans, useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { activeInterval } from "@/lib/app-activity";
@@ -8,13 +8,16 @@ import {
     AnswerAgentJoin,
     CancelAgentJoin,
     ConnectAgentHere,
+    GetAgentAddress,
     GetAgentJoin,
     NativeClipboardSetText,
     StartAgentJoin,
+    StartAgentJoinForApp,
     type AgentJoin,
-    type AgentJoinStart,
     type YourAgents,
 } from "@/lib/wails-shim-app";
+import { BrowserOpenURL } from "../../../wailsjs/runtime/runtime";
+import { initialLinkState, LETS_ENCRYPT_AGREEMENT_URL, linkStart, linkTransition, type LinkEvent, type LinkNeed, type LinkState } from "./connect-link";
 
 /** How often the sheet reads the join while it waits for the agent. */
 export const JOIN_POLL_MS = 1500;
@@ -34,6 +37,23 @@ export const CONNECT_APPS = [
     { id: "muse", name: "Muse", how: "none" },
 ] as const;
 type ConnectApp = (typeof CONNECT_APPS)[number]["id"] | "other";
+type Where = "here" | "elsewhere";
+
+/** The link a choice needs (v1.5.0 G11): only an agent elsewhere or in its own app opens the address. */
+function linkNeed(app: ConnectApp, where: Where, pasting: boolean): LinkNeed {
+    if (pasting) return { kind: "local" };
+    switch (app) {
+        case "muse":
+            return { kind: "none" };
+        case "other":
+            return where === "here" ? { kind: "local" } : { kind: "address", for: "other" };
+        case "claude":
+        case "chatgpt":
+        case "gemini":
+        case "grok":
+            return { kind: "address", for: app };
+    }
+}
 
 /**
  * Connect an agent (computer-agents v1.0.0 rules 11 to 13, agents-join
@@ -48,31 +68,45 @@ export function ConnectAgentPanel({ active, agents, onConnected, onWaitingChange
     onWaitingChange?: (waiting: boolean) => void;
 }) {
     const { t } = useTranslation("app");
-    const [start, setStart] = useState<AgentJoinStart | null>(null);
+    const [link, setLink] = useState<LinkState>(initialLinkState);
+    const linkRef = useRef<LinkState>(initialLinkState);
     const [join, setJoin] = useState<AgentJoin | null>(null);
-    const [startFailed, setStartFailed] = useState(false);
+    // Until read, assume the agreement is still to be accepted: showing it is safe.
+    const [needsTerms, setNeedsTerms] = useState(true);
     const [copied, setCopied] = useState<"message" | "address" | null>(null);
     const [pasteInto, setPasteInto] = useState<string | null>(null);
     const [asking, setAsking] = useState<string | null>(null);
     const [hereFailed, setHereFailed] = useState<string | null>(null);
     const [connectedHere, setConnectedHere] = useState<Set<string>>(new Set());
     const [app, setApp] = useState<ConnectApp>("other");
+    const [where, setWhere] = useState<Where>("here");
     const announced = useRef<string | null>(null);
     const waitingRef = useRef(false);
 
-    const makeLink = useCallback(async () => {
-        setCopied(null);
-        try {
-            const made = await StartAgentJoin();
-            setStart(made);
-            setJoin({ state: "waiting", expiresAt: made.expiresAt });
-            setStartFailed(false);
-        } catch {
-            setStart(null);
-            setJoin(null);
-            setStartFailed(true);
-        }
+    const readTerms = useCallback(() => {
+        void GetAgentAddress().then((v) => setNeedsTerms(v.needsTerms)).catch(() => setNeedsTerms(true));
     }, []);
+
+    // Every change to the link goes through linkTransition; this only carries out its effects.
+    const send = useCallback((event: LinkEvent) => {
+        const [next, effects] = linkTransition(linkRef.current, event);
+        linkRef.current = next;
+        setLink(next);
+        for (const effect of effects) {
+            setCopied(null);
+            const local = effect.type === "startLocal";
+            const made = effect.type === "startLocal" ? StartAgentJoin() : StartAgentJoinForApp(effect.app, effect.acceptTerms);
+            void made.then(
+                (start) => {
+                    if (!local) readTerms();
+                    const before = linkRef.current;
+                    send({ type: "made", local, start });
+                    if (linkRef.current !== before) setJoin({ state: "waiting", expiresAt: start.expiresAt });
+                },
+                () => send({ type: "failed", local }),
+            );
+        }
+    }, [readTerms]);
 
     useEffect(() => {
         if (!active) return;
@@ -82,12 +116,24 @@ export function ConnectAgentPanel({ active, agents, onConnected, onWaitingChange
         setHereFailed(null);
         setConnectedHere(new Set());
         setApp("other");
-        void makeLink();
+        setWhere("here");
+        setJoin(null);
+        send({ type: "open" });
         // A link still waiting when the panel goes away is closed.
         return () => {
             if (waitingRef.current) void CancelAgentJoin();
         };
-    }, [active, makeLink]);
+    }, [active, send, readTerms]);
+
+    const start = linkStart(link);
+    const choose = (nextApp: ConnectApp, nextWhere: Where, pasting: boolean) => {
+        setApp(nextApp);
+        setWhere(nextWhere);
+        const need = linkNeed(nextApp, nextWhere, pasting);
+        // Whether the agreement is still to be accepted matters only once the address is asked for.
+        if (need.kind === "address") readTerms();
+        send({ type: "choose", need });
+    };
 
     const waiting = join?.state === "waiting" || join?.state === "requested";
     waitingRef.current = waiting;
@@ -165,7 +211,14 @@ export function ConnectAgentPanel({ active, agents, onConnected, onWaitingChange
                                     {agent.connected || connectedHere.has(agent.id) ? (
                                         <span className="text-[13px] text-muted">{t("agents.job.connected")}</span>
                                     ) : (
-                                        <Button variant="outline" size="sm" onClick={() => (oneClick(agent.id) ? setAsking(agent.id) : setPasteInto(agent.id))} disabled={!oneClick(agent.id) && !start}>
+                                        <Button variant="outline" size="sm" onClick={() => {
+                                            if (oneClick(agent.id)) {
+                                                setAsking(agent.id);
+                                                return;
+                                            }
+                                            setPasteInto(agent.id);
+                                            choose(app, where, true);
+                                        }}>
                                             {t("agents.connectSheet.connectThis")}
                                         </Button>
                                     )}
@@ -188,66 +241,96 @@ export function ConnectAgentPanel({ active, agents, onConnected, onWaitingChange
 
             <section className="flex flex-col gap-2" aria-label={t("agents.connectSheet.anyOther")}>
                 <h3 className={sectionLabel}>{pasteName ? t("agents.connectSheet.pasteIntoTitle", { agent: pasteName }) : t("agents.connectSheet.anyOther")}</h3>
-                {startFailed ? (
+                {!pasteName && (
+                    <div className="flex flex-wrap gap-1.5" role="group" aria-label={t("agents.connectSheet.whichApp")} data-connect-apps>
+                        {[...CONNECT_APPS.map((a) => ({ id: a.id as ConnectApp, name: a.name })), { id: "other" as ConnectApp, name: t("agents.connectSheet.otherAgent") }].map((a) => (
+                            <Button key={a.id} size="sm" variant={app === a.id ? "default" : "outline"} aria-pressed={app === a.id} onClick={() => choose(a.id, where, false)}>
+                                {a.name}
+                            </Button>
+                        ))}
+                    </div>
+                )}
+                {!pasteName && app === "other" && (
+                    <div className="flex flex-col gap-1.5" data-connect-where>
+                        <span className="text-[13px] font-semibold text-ink">{t("agents.connectSheet.whereRuns")}</span>
+                        <div className="flex flex-wrap gap-1.5" role="group" aria-label={t("agents.connectSheet.whereRuns")}>
+                            {(["here", "elsewhere"] as const).map((w) => (
+                                <Button key={w} size="sm" variant={where === w ? "default" : "outline"} aria-pressed={where === w} onClick={() => choose("other", w, false)} data-connect-where-choice={w}>
+                                    {w === "here" ? t("agents.connectSheet.onThis") : t("agents.connectSheet.runsElsewhere")}
+                                </Button>
+                            ))}
+                        </div>
+                        {where === "elsewhere" && <span className="text-[12.5px] leading-relaxed text-muted">{t("agents.connectSheet.runsElsewhereLine")}</span>}
+                    </div>
+                )}
+                {chosen?.how === "developer" && !pasteName && <p className="text-[13px] leading-relaxed text-muted" data-connect-dev>{t("agents.connectSheet.chatgptDev")}</p>}
+                {link.kind === "none" && chosen && (
+                    <p className="text-[13px] leading-relaxed text-ink" data-connect-cant>{t("agents.connectSheet.cantYet", { app: chosen.name })}</p>
+                )}
+                {(link.kind === "localFailed" || link.kind === "addressFailed") && (
                     <div className="flex items-center gap-3 text-[13px] text-muted" data-connect-failed>
                         {t("agents.actionFailed")}
-                        <Button variant="quiet" size="sm" onClick={() => void makeLink()}>{t("agents.retry")}</Button>
+                        <Button variant="quiet" size="sm" onClick={() => send(link.kind === "localFailed" ? { type: "retry" } : { type: "connect", acceptTerms: needsTerms })}>{t("agents.retry")}</Button>
                     </div>
-                ) : (
-                    start && (
-                        <>
-                            {!pasteName && (
-                                <div className="flex flex-wrap gap-1.5" role="group" aria-label={t("agents.connectSheet.whichApp")} data-connect-apps>
-                                    {[...CONNECT_APPS.map((a) => ({ id: a.id as ConnectApp, name: a.name })), { id: "other" as ConnectApp, name: t("agents.connectSheet.otherAgent") }].map((a) => (
-                                        <Button key={a.id} size="sm" variant={app === a.id ? "default" : "outline"} aria-pressed={app === a.id} onClick={() => setApp(a.id)}>
-                                            {a.name}
-                                        </Button>
-                                    ))}
-                                </div>
-                            )}
-                            {chosen && chosen.how === "none" ? (
-                                <p className="text-[13px] leading-relaxed text-ink" data-connect-cant>{t("agents.connectSheet.cantYet", { app: chosen.name })}</p>
-                            ) : chosen ? (
-                                <ol className="flex flex-col gap-3" data-connect-steps={chosen.id}>
-                                    {chosen.how === "developer" && <li className="text-[13px] leading-relaxed text-muted" data-connect-dev>{t("agents.connectSheet.chatgptDev")}</li>}
-                                    <li className="flex flex-col gap-1.5">
-                                        <span className="text-[13px] font-semibold text-ink">1 · {t("agents.connectSheet.copyAddress")}</span>
-                                        <div className="flex items-start gap-3 rounded-xl border border-border bg-panel-warm px-3.5 py-3">
-                                            <p className="min-w-0 flex-1 break-all font-mono text-[12.5px] text-ink" data-connect-address>{start.mcpAddress}</p>
-                                            <Button variant="outline" size="sm" onClick={() => void copy("address")}>
-                                                {copied === "address" ? t("agents.connectSheet.copied") : t("agents.connectSheet.copy")}
-                                            </Button>
-                                        </div>
-                                    </li>
-                                    <li className="flex flex-col gap-1">
-                                        <span className="text-[13px] font-semibold text-ink">2 · {t("agents.connectSheet.addIn", { app: chosen.name })}</span>
-                                        <span className="text-[12.5px] leading-relaxed text-muted">{t(`agents.connectSheet.steps.${chosen.id}`)}</span>
-                                    </li>
-                                    <li className="flex flex-col gap-1">
-                                        <span className="text-[13px] font-semibold text-ink">3 · {t("agents.connectSheet.checkCode")}</span>
-                                        <span className="text-[12.5px] leading-relaxed text-muted">{t("agents.connectSheet.waitingApp", { app: chosen.name })}</span>
-                                    </li>
-                                </ol>
-                            ) : (
-                                <>
-                                    <div className="flex items-start gap-3 rounded-xl border border-border bg-panel-warm px-3.5 py-3">
-                                        <p className="min-w-0 flex-1 break-words text-[13.5px] leading-relaxed text-ink" data-connect-message>{start.message}</p>
-                                        <Button variant="outline" size="sm" onClick={() => void copy("message")} data-connect-copy>
-                                            {copied === "message" ? t("agents.connectSheet.copied") : t("agents.connectSheet.copy")}
-                                        </Button>
-                                    </div>
-                                    <p className="text-[12.5px] leading-relaxed text-muted">
-                                        {pasteName ? t("agents.connectSheet.pasteInto", { agent: pasteName }) : t("agents.connectSheet.anyOtherHelp")}
-                                    </p>
-                                </>
-                            )}
-                            {start.local && <p className="text-[12.5px] leading-relaxed text-muted" data-connect-local>{t("agents.connectSheet.localOnly")}</p>}
-                        </>
-                    )
                 )}
+                {(link.kind === "confirm" || link.kind === "opening") && (
+                    <div className="flex flex-col items-start gap-2.5" data-connect-address-ask>
+                        <p className="text-[12.5px] leading-relaxed text-muted" data-connect-address-line={needsTerms ? "terms" : "plain"}>
+                            {needsTerms ? (
+                                <Trans
+                                    t={t}
+                                    i18nKey="agents.connectSheet.addressTerms"
+                                    components={{ agreement: <button type="button" className="text-accent hover:underline" onClick={() => BrowserOpenURL(LETS_ENCRYPT_AGREEMENT_URL)} /> }}
+                                />
+                            ) : (
+                                t("agents.connectSheet.addressLine")
+                            )}
+                        </p>
+                        <Button size="sm" disabled={link.kind === "opening"} onClick={() => send({ type: "connect", acceptTerms: needsTerms })} data-connect-address-open>
+                            {t("agents.connectSheet.connectThis")}
+                        </Button>
+                    </div>
+                )}
+                {start && chosen && link.kind === "address" && (
+                    <ol className="flex flex-col gap-3" data-connect-steps={chosen.id}>
+                        <li className="flex flex-col gap-1.5">
+                            <span className="text-[13px] font-semibold text-ink">1 · {t("agents.connectSheet.copyAddress")}</span>
+                            <div className="flex items-start gap-3 rounded-xl border border-border bg-panel-warm px-3.5 py-3">
+                                <p className="min-w-0 flex-1 break-all font-mono text-[12.5px] text-ink" data-connect-address>{start.mcpAddress}</p>
+                                <Button variant="outline" size="sm" onClick={() => void copy("address")}>
+                                    {copied === "address" ? t("agents.connectSheet.copied") : t("agents.connectSheet.copy")}
+                                </Button>
+                            </div>
+                        </li>
+                        <li className="flex flex-col gap-1">
+                            <span className="text-[13px] font-semibold text-ink">2 · {t("agents.connectSheet.addIn", { app: chosen.name })}</span>
+                            <span className="text-[12.5px] leading-relaxed text-muted">{t(`agents.connectSheet.steps.${chosen.id as "claude" | "chatgpt" | "gemini" | "grok"}`)}</span>
+                        </li>
+                        <li className="flex flex-col gap-1">
+                            <span className="text-[13px] font-semibold text-ink">3 · {t("agents.connectSheet.checkCode")}</span>
+                            <span className="text-[12.5px] leading-relaxed text-muted">{t("agents.connectSheet.waitingApp", { app: chosen.name })}</span>
+                        </li>
+                    </ol>
+                )}
+                {start && (pasteName || app === "other") && (
+                    <>
+                        <div className="flex items-start gap-3 rounded-xl border border-border bg-panel-warm px-3.5 py-3">
+                            <p className="min-w-0 flex-1 break-words text-[13.5px] leading-relaxed text-ink" data-connect-message>{start.message}</p>
+                            <Button variant="outline" size="sm" onClick={() => void copy("message")} data-connect-copy>
+                                {copied === "message" ? t("agents.connectSheet.copied") : t("agents.connectSheet.copy")}
+                            </Button>
+                        </div>
+                        <p className="text-[12.5px] leading-relaxed text-muted">
+                            {pasteName ? t("agents.connectSheet.pasteInto", { agent: pasteName }) : t("agents.connectSheet.anyOtherHelp")}
+                        </p>
+                    </>
+                )}
+                {start?.local && <p className="text-[12.5px] leading-relaxed text-muted" data-connect-local>{t("agents.connectSheet.localOnly")}</p>}
             </section>
 
-            {join && <JoinState join={join} onAnswer={(allow) => void answer(allow)} onNewLink={() => void makeLink()} />}
+            {join && (start || join.state === "requested" || join.state === "allowed") && (
+                <JoinState join={join} onAnswer={(allow) => void answer(allow)} onNewLink={() => send({ type: "retry" })} />
+            )}
         </div>
     );
 }

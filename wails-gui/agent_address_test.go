@@ -424,3 +424,50 @@ func TestAgentAddressStopKeepsLocalJoin(t *testing.T) {
 		t.Fatal("Stop ended a local join")
 	}
 }
+
+// Any other agent that runs somewhere else opens the address (v1.5.0 G11),
+// asks for Let's Encrypt's agreement only the first time (G10), and is
+// named among the address's apps once it joins.
+func TestAgentAddressOtherAgentSomewhereElse(t *testing.T) {
+	a, _ := addressTestApp(t)
+	if !a.GetAgentAddress().NeedsTerms {
+		t.Fatal("terms not asked before the first open")
+	}
+	if _, err := a.StartAgentJoinForApp("other", false); err == nil {
+		t.Fatal("first open without acceptance")
+	}
+	start, err := a.StartAgentJoinForApp("other", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if start.Local || !strings.HasPrefix(start.Link, "https://"+testFrontLabel+".agents.isoform.ai/j/") {
+		t.Fatalf("join: %+v", start)
+	}
+	if a.GetAgentAddress().NeedsTerms {
+		t.Fatal("terms asked again after acceptance")
+	}
+	svc := a.agentJoinService()
+	if _, err := svc.AttemptMCP(svc.MCPKey(), "Devin", "the cloud", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.AnswerAgentJoin(true); err != nil {
+		t.Fatal(err)
+	}
+	if got := a.GetAgentAddress(); !got.Open || strings.Join(got.Apps, ",") != "Devin" {
+		t.Fatalf("address: %+v", got)
+	}
+	if err := a.DisconnectAgent(svc.Agents()[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	if a.GetAgentAddress().Open {
+		t.Fatal("last disconnect kept the address")
+	}
+}
+
+func TestAgentAddressBridgeNeedsNoTerms(t *testing.T) {
+	a, _ := addressTestApp(t)
+	t.Setenv(taskLinkBaseURLEnv, "https://tasks.example.test")
+	if a.GetAgentAddress().NeedsTerms {
+		t.Fatal("a configured bridge asked for Let's Encrypt's agreement")
+	}
+}
