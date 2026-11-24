@@ -599,3 +599,33 @@ func TestEveryContentDestinationHasACounter(t *testing.T) {
 		}
 	}
 }
+
+func TestTavilyRemoved(t *testing.T) {
+	if _, ok := Lookup("tavily"); ok {
+		t.Error("retired Tavily destination still listed")
+	}
+	for _, root := range moduleRoots {
+		err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if entry.IsDir() && skipDirs[entry.Name()] {
+				return filepath.SkipDir
+			}
+			if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+				return nil
+			}
+			src, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			if strings.Contains(string(src), "TAVILY_API_KEY") || strings.Contains(string(src), "api.tavily.com") {
+				t.Errorf("%s references retired Tavily configuration or transport", path)
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}

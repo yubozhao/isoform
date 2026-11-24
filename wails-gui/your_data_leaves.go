@@ -36,6 +36,11 @@ type ChatLeaves struct {
 	WeeklyLeaves
 	Apps []string `json:"apps"`
 }
+type ComposioLeaves struct {
+	WeeklyLeaves
+	Connected bool     `json:"connected"`
+	Apps      []string `json:"apps"`
+}
 type AgentLeaves struct {
 	WeeklyLeaves
 	Agent string `json:"agent"`
@@ -48,6 +53,7 @@ type UsageLeaves struct {
 	On bool `json:"on"`
 }
 type YourDataLeaves struct {
+	Composio    *ComposioLeaves  `json:"composio,omitempty"`
 	WebSearches *SearchLeaves    `json:"webSearches,omitempty"`
 	Email       *EmailLeaves     `json:"email,omitempty"`
 	Texts       *TextLeaves      `json:"texts,omitempty"`
@@ -57,6 +63,8 @@ type YourDataLeaves struct {
 }
 
 type leavesPaths struct {
+	composio                                   bool
+	composioApps                               []string
 	search, email, texts, names, agents, usage bool
 	lastService, masked                        string
 	apps                                       []string
@@ -91,6 +99,9 @@ func (p leavesPaths) summary(rows []storage.DestinationCount, readErr error) You
 		return WeeklyLeaves{ThisWeek: &n, Incomplete: incomplete}
 	}
 	out := YourDataLeaves{UsageCounts: UsageLeaves{p.usage}}
+	if n := counts[destinations.Composio]; p.composio || n > 0 || lost[destinations.Composio] || readErr != nil {
+		out.Composio = &ComposioLeaves{week(n, lost[destinations.Composio]), p.composio, append([]string{}, p.composioApps...)}
+	}
 	if n := counts[destinations.AssistantSearch]; p.search || n > 0 || lost[destinations.AssistantSearch] {
 		out.WebSearches = &SearchLeaves{week(n, lost[destinations.AssistantSearch]), service}
 	}
@@ -130,6 +141,18 @@ func (a *App) yourDataLeaves() (YourDataLeaves, error) {
 		return YourDataLeaves{}, err
 	}
 	p := leavesPaths{usage: telemetrySharingOn(), search: topicSwitch.Enabled == nil || *topicSwitch.Enabled}
+	st, err := readComposioByok()
+	if err != nil {
+		return YourDataLeaves{}, err
+	}
+	p.composio = strings.TrimSpace(st.APIKey) != ""
+	if p.composio {
+		for _, app := range composioManagedApps {
+			if st.Connections[app].Status == composioStatusConnected {
+				p.composioApps = append(p.composioApps, app)
+			}
+		}
+	}
 	channelDir, err := textChannelDir()
 	if err != nil {
 		return YourDataLeaves{}, err

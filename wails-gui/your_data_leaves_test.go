@@ -241,3 +241,53 @@ func TestLeavesIncompleteAppliesToDestinationAndAgents(t *testing.T) {
 		t.Fatalf("wrong detail flags: %+v", out)
 	}
 }
+
+func TestComposioLeavesSavedStateAndHistory(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("YANSU_AGENT_HOME", dir)
+	t.Setenv(topicsStateDirEnvVar, dir)
+	app := newBindingsTestApp(t)
+	read := func() *ComposioLeaves {
+		t.Helper()
+		out, err := app.yourDataLeaves()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out.Composio
+	}
+	if row := read(); row != nil {
+		t.Fatalf("unexpected row before configuration: %+v", row)
+	}
+	if err := mutateComposioByok(func(st *composioByokState) {
+		st.APIKey = "local"
+		st.Connections["notion"] = composioByokConnection{Status: composioStatusConnected}
+		st.Connections["github"] = composioByokConnection{Status: composioStatusConnecting}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if row := read(); row == nil || !row.Connected || !slices.Equal(row.Apps, []string{"notion"}) || row.ThisWeek == nil || *row.ThisWeek != 0 {
+		t.Fatalf("saved connection: %+v", row)
+	}
+	if out, err := (&App{}).yourDataLeaves(); err != nil || out.Composio == nil || out.Composio.ThisWeek != nil {
+		t.Fatalf("unavailable counters: %+v, %v", out.Composio, err)
+	}
+	if err := app.ClearComposioApiKey(); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.store.RecordDestination(t.Context(), destinations.Call{ID: destinations.Composio, At: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	if row := read(); row == nil || row.Connected || row.Apps == nil || len(row.Apps) != 0 || row.ThisWeek == nil || *row.ThisWeek != 1 {
+		t.Fatalf("disconnected with recent send: %+v", row)
+	}
+	path, err := composioByokPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("{"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.yourDataLeaves(); err == nil {
+		t.Fatal("unreadable Composio state must fail the summary")
+	}
+}

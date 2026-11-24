@@ -1,7 +1,13 @@
 package main
 
 import (
+	"context"
 	"testing"
+	"time"
+
+	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/mark3labs/mcp-go/server"
+	"wails-gui/internal/destinations"
 
 	wmcp "wails-gui/internal/mcp"
 )
@@ -205,5 +211,47 @@ func TestNormalizeComposioToolServerSupportsLinear(t *testing.T) {
 		if got != composioLinearServerID {
 			t.Fatalf("normalized server = %q, want %q", got, composioLinearServerID)
 		}
+	}
+}
+
+func TestComposioToolCallRecordsOnlyDestination(t *testing.T) {
+	app := newBindingsTestApp(t)
+	if err := app.store.StartDestinationRecorder(); err != nil {
+		t.Fatal(err)
+	}
+	srv := server.NewMCPServer("apps", "1")
+	srv.AddTool(mcp.NewTool("lookup"), func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcp.NewToolResultText("ok"), nil
+	})
+	httpServer := server.NewTestStreamableHTTPServer(srv)
+	defer httpServer.Close()
+	spec, err := composioManagedSpec(composioNotionApp, httpServer.URL, map[string]string{"x-api-key": "private"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := wmcp.New()
+	defer manager.ShutdownAll(context.Background())
+	if err := manager.Spawn(t.Context(), spec); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.CallTool(t.Context(), spec.ID, "lookup", map[string]any{"query": "private"}); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := app.store.WeeklyDestinationCounts(t.Context(), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls int
+	for _, row := range rows {
+		if row.Incomplete {
+			continue
+		}
+		if row.ID != destinations.Composio || row.Detail != "" {
+			t.Fatalf("unexpected destination or detail: %+v", row)
+		}
+		calls += row.Calls
+	}
+	if calls != 1 {
+		t.Fatalf("one tool call recorded %d sends", calls)
 	}
 }

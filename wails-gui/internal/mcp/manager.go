@@ -664,7 +664,11 @@ func (m *Manager) CallTool(ctx context.Context, id, name string, args map[string
 	req := mcp.CallToolRequest{}
 	req.Params.Name = name
 	req.Params.Arguments = args
-	destinations.Record(destinations.MCPServers)
+	if mc.spec.ManagedComposio {
+		ctx = destinations.CountHTTP(ctx, destinations.Composio)
+	} else {
+		destinations.Record(destinations.MCPServers)
+	}
 	res, err := mc.client.CallTool(ctx, req)
 	if err != nil {
 		m.recordCallError(id, err)

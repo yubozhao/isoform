@@ -613,10 +613,11 @@ func composioManagedSpec(app, mcpURL string, headers map[string]string) (wmcp.Sp
 		copied[k] = v
 	}
 	return wmcp.Spec{
-		ID:        serverID,
-		Transport: mcpTransportHTTP,
-		URL:       mcpURL,
-		Headers:   copied,
+		ID:              serverID,
+		ManagedComposio: true,
+		Transport:       mcpTransportHTTP,
+		URL:             mcpURL,
+		Headers:         copied,
 	}, nil
 }
 

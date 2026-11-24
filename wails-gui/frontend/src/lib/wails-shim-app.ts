@@ -587,6 +587,7 @@ export const SetFindingProvider = appBinding<[FindingProviderView["choice"], str
 
 // Settings › Your data's numbers (your_data_summary.go).
 export interface YourDataLeaves {
+    composio?: { connected: boolean; apps: string[]; thisWeek?: number; incomplete?: true };
     webSearches?: { service: "claude_code" | "grok" | "gemini" | "doubao" | ""; thisWeek?: number; incomplete?: true };
     email?: { on: boolean; addressMasked?: string; thisWeek?: number; incomplete?: true };
     texts?: { on: boolean; namesOn: boolean; thisWeek?: number; incomplete?: true };
