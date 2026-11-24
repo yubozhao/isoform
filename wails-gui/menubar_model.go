@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"math"
 	"os"
 	goruntime "runtime"
@@ -82,7 +84,7 @@ var menuBarCopy = map[string]map[string]string{
 		"name": "Isoform", "watchListening": "watch listening", "watchNot": "watch not listening", "noWatch": "no watch paired", "closedEyes": "Closed Eyes", "openEyes": "Open eyes",
 		"markListening": "Listening", "markNotListening": "Not listening", "markClosed": "Closed Eyes",
 		"stillAnswer": "You can still answer while eyes are closed.", "allDone": "That's everything for now.", "nextBrief": "Next brief at {time}.",
-		"notSeeing": "not seeing", "openSettings": "Open System Settings", "troubleScreen": "Isoform hasn't seen your screen since {time}.", "troubleScreenNever": "Isoform hasn't seen your screen yet.", "troubleScreenWhy": "Screen Recording is off for Isoform.",
+		"notSeeing": "not seeing", "stateUnknown": "Can't tell what Isoform is seeing right now.", "tryAgain": "Try again", "openSettings": "Open System Settings", "troubleScreen": "Isoform hasn't seen your screen since {time}.", "troubleScreenNever": "Isoform hasn't seen your screen yet.", "troubleScreenWhy": "Screen Recording is off for Isoform.",
 		"troubleSignedOut": "{assistant} has been signed out since {time}, so briefs are shorter and Chat can't answer.", "troublePhone": "Your phone hasn't checked in since {time}. Notifications show here until it does.",
 		"nextItem": "Next · {i} of {n} · {source}", "nextItemNoSource": "Next · {i} of {n}", "openToday": "Open Today", "quickChat": "Quick chat",
 		"yes": "Yes", "no": "No", "source_brief": "Your brief", "source_topic": "Your topics", "source_prep": "Meeting prep", "source_agent": "Your agent", "source_day_one": "Day one",
@@ -111,7 +113,7 @@ var menuBarCopy = map[string]map[string]string{
 		"name": "Isoform", "watchListening": "手表正在听", "watchNot": "手表没在听", "noWatch": "没有配对手表", "closedEyes": "Closed Eyes", "openEyes": "睁眼",
 		"markListening": "正在听", "markNotListening": "没在听", "markClosed": "Closed Eyes",
 		"stillAnswer": "闭眼时你仍然可以回答。", "allDone": "目前就这些。", "nextBrief": "下一份简报在 {time}。",
-		"notSeeing": "看不到屏幕", "openSettings": "打开系统设置", "troubleScreen": "Isoform 自 {time} 起没能看到你的屏幕。", "troubleScreenNever": "Isoform 还没看到过你的屏幕。", "troubleScreenWhy": "Isoform 的屏幕录制已关闭。",
+		"notSeeing": "看不到屏幕", "stateUnknown": "现在无法确定 Isoform 看到了什么。", "tryAgain": "重试", "openSettings": "打开系统设置", "troubleScreen": "Isoform 自 {time} 起没能看到你的屏幕。", "troubleScreenNever": "Isoform 还没看到过你的屏幕。", "troubleScreenWhy": "Isoform 的屏幕录制已关闭。",
 		"troubleSignedOut": "{assistant} 自 {time} 起已退出登录，所以简报会更简短，聊天也无法回答。", "troublePhone": "你的手机自 {time} 起没有联系。在它联系之前，通知会显示在这里。",
 		"nextItem": "下一项 · 第 {i} 项，共 {n} 项 · {source}", "nextItemNoSource": "下一项 · 第 {i} 项，共 {n} 项", "openToday": "打开今天", "quickChat": "快速聊天",
 		"yes": "是", "no": "否", "source_brief": "你的简报", "source_topic": "你的主题", "source_prep": "会议准备", "source_agent": "你的 Agent", "source_day_one": "Day one",
@@ -586,8 +588,9 @@ func (a *App) menuBarView(lang string, readWaiting bool) (perfValue menuBarView,
 	observing := a.isActivityMonitorRunning() || a.backgroundListeningRunningNow()
 	view := menuBarView{Language: lang, Theme: currentThemePreference(), Words: w, Paused: paused}
 	trouble := a.menuBarTrouble(time.Now())
+	screenOff, screenKnown := a.menuBarScreenSwitch()
 	view.Status, view.State = menuBarStatus(w, lang, doing, paused, len(trouble) > 0 && trouble[0].Kind == troubleScreen,
-		a.menuBarScreenSwitchOff(), observing)
+		screenOff, screenKnown, observing)
 	view.Menu = menuBarMenu(lang, paused)
 	if status := a.GetUpdateStatus(); status.Status == "update-downloaded" && status.Version != "" {
 		view.Update = status.Version
@@ -657,10 +660,14 @@ func (a *App) menuBarView(lang string, readWaiting bool) (perfValue menuBarView,
 //   - seeing: "seeing";
 //   - otherwise the screen's state isn't known yet (the first second): the
 //     watch's part alone. An unknown state is never called off.
-func menuBarStatus(w map[string]string, lang string, doing DoingNow, paused, screenTrouble, screenOff, observing bool) (string, string) {
+func menuBarStatus(w map[string]string, lang string, doing DoingNow, paused, screenTrouble, screenOff, screenKnown, observing bool) (string, string) {
 	switch {
 	case paused:
 		return "paused", menuBarStateLine(w, menuBarPausedState(w, lang, doing))
+	case !screenKnown:
+		// Design S12 (answers v1.5.0): a state that can't be read says so,
+		// with Try again; it is never shown as seeing or as off.
+		return "unknown", w["stateUnknown"]
 	case screenTrouble:
 		return "not_seeing", menuBarStateLine(w, w["notSeeing"])
 	case screenOff:
@@ -671,13 +678,22 @@ func menuBarStatus(w map[string]string, lang string, doing DoingNow, paused, scr
 	return "starting", menuBarStateLine(w, "")
 }
 
-// menuBarScreenSwitchOff is the person's own screen switch in What Isoform
-// sees (a saved choice, read without asking macOS anything).
-func (a *App) menuBarScreenSwitchOff() bool {
+// menuBarScreenSwitch is the person's own screen switch in What Isoform sees
+// (a saved choice, read without asking macOS anything): whether it is off,
+// and whether it could be read. A failed read is not "on" (design S12).
+func (a *App) menuBarScreenSwitch() (off, known bool) {
 	if a == nil || a.store == nil || goruntime.GOOS != "darwin" {
-		return false
+		return false, true
 	}
-	return !a.isPermissionEnabled("screen_recording")
+	val, err := a.store.GetUIState(context.Background(), permissionUIStateKey("screen_recording"))
+	if err != nil {
+		log.Printf("[menubar] read the screen switch: %v", err)
+		return false, false
+	}
+	if val == "" {
+		return permissionsOffByDefault["screen_recording"], true
+	}
+	return val == "false", true
 }
 
 // menuBarModels is the popover's model download line, or "" when nothing

@@ -274,7 +274,7 @@ func TestMenuBarStatusUsesTheMarksWords(t *testing.T) {
 			{"not known yet", false, false, false, false, "starting", watch},
 			{"closed eyes", true, true, true, true, "paused", w["paused"] + " · " + watch},
 		} {
-			status, state := menuBarStatus(w, lang, DoingNow{}, tc.paused, tc.trouble, tc.screenOff, tc.observing)
+			status, state := menuBarStatus(w, lang, DoingNow{}, tc.paused, tc.trouble, tc.screenOff, true, tc.observing)
 			if status != tc.status || state != tc.state {
 				t.Errorf("%s %s: %q %q, want %q %q", lang, tc.name, status, state, tc.status, tc.state)
 			}
@@ -285,7 +285,7 @@ func TestMenuBarStatusUsesTheMarksWords(t *testing.T) {
 	}
 	// Nothing known at all: an empty line, and the label is just the name.
 	menuBarWatch.Store("")
-	if _, state := menuBarStatus(menuBarWords("en"), "en", DoingNow{}, false, false, false, false); state != "" {
+	if _, state := menuBarStatus(menuBarWords("en"), "en", DoingNow{}, false, false, false, true, false); state != "" {
 		t.Fatalf("unknown state %q", state)
 	}
 	if got := menuBarLabel(menuBarWords("en"), "", 0); got != "Isoform" {
