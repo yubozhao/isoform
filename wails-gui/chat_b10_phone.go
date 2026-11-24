@@ -95,7 +95,14 @@ func (a *App) mainChatTurnTools(tag string, origin promptOrigin, binding ...*top
 	out := append(a.mainChatExtraTools(tag, origin), a.mainChatDraftTools(tag, origin)...)
 	out = append(out, a.mainChatHandoffTools(tag, origin)...)
 	out = append(out, a.mainChatCorrectionTools(tag, origin, binding...)...)
-	return append(out, a.mainChatSourcesTools(tag, origin)...)
+	var web *chatWebTurn
+	if origin == promptOriginMac && len(binding) > 0 && binding[0] != nil {
+		web = binding[0].web
+	}
+	if web != nil {
+		out = append(out, &chatWebSearchTool{app: a, turn: web})
+	}
+	return append(out, a.mainChatSourcesTools(tag, origin, web)...)
 }
 
 // chatAnswerSurface is the answers-ledger surface of a turn's origin.

@@ -602,11 +602,23 @@ var runClaudeResearch = func(ctx context.Context, prompt string) (string, resear
 	cmd.Stdout = stdoutW
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
-	if err := startResearchProcess(cmd); err != nil {
+	launch, _ := ctx.Value(chatWebLaunchKey{}).(*chatWebLaunch)
+	start := startResearchProcess
+	if launch != nil {
+		start = launch.start
+	}
+	if err := start(cmd); err != nil {
 		stdoutW.Close()
 		return "", researchMeta{}, err
 	}
-	destinations.RecordSearch(researchViaClaudeCode)
+	detail := researchViaClaudeCode
+	if launch != nil {
+		detail = destinations.ChatSearchDetail
+	}
+	destinations.RecordSearch(detail)
+	if launch != nil {
+		launch.started()
+	}
 	defer forgetResearchProcess(cmd)
 	waited := make(chan error, 1)
 	go func() {

@@ -74,7 +74,7 @@ var list = []Destination{
 		"Text from the screen, calls and watch, pictures of WeChat windows, Messages for asks, briefs, Chat questions with what they're written from, topic names for proposals",
 		ContentYes, "once an assistant is set up; background reading stops under Closed Eyes"},
 	{AssistantSearch, "That assistant's web search, or Grok, Gemini or Doubao in the person's Chrome",
-		"Topic labels and interests' search words, Daily News topics, Chat's search queries",
+		"Topic labels and interests' search words, Daily News topics, public search words from Chat questions that needed the web",
 		ContentYes, "with topics or Daily News on, and when Chat searches"},
 	{AgentsHandoff, "The agents the person hands work to",
 		"What each hand-off's What went lists",

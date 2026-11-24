@@ -73,6 +73,7 @@ type chatSourcesPayload struct {
 }
 
 type chatSourcesTool struct {
+	web *chatWebTurn
 	app *App
 	tag string
 }
@@ -81,17 +82,21 @@ var _ tools.AuthorityDescriber = (*chatSourcesTool)(nil)
 
 // mainChatSourcesTools hands CiteSources to a main-chat turn typed on the
 // computer, where its line can be shown.
-func (a *App) mainChatSourcesTools(tag string, origin promptOrigin) []tools.Tool {
+func (a *App) mainChatSourcesTools(tag string, origin promptOrigin, turns ...*chatWebTurn) []tools.Tool {
 	if !chatB10Origin(origin) || !a.isMainChatSession(context.Background(), tag) {
 		return nil
 	}
-	return []tools.Tool{&chatSourcesTool{app: a, tag: tag}}
+	t := &chatSourcesTool{app: a, tag: tag}
+	if origin == promptOriginMac && len(turns) > 0 {
+		t.web = turns[0]
+	}
+	return []tools.Tool{t}
 }
 
 func (t *chatSourcesTool) Name() string { return chatSourcesToolName }
 
 func (t *chatSourcesTool) Description() string {
-	return "After answering a question about the user's own life, say which sources the answer read: the ref of each (memory:<id>, person:<id> or activity:<session id>, exactly as the context or a read printed it) and the exact phrase in your answer that comes from it. Call it once, after the answer, and then stop."
+	return "After answering a question about the user's own life, say which sources the answer read: the ref of each (web:<id>, memory:<id>, person:<id> or activity:<session id>, exactly as the context or a read printed it) and the exact phrase in your answer that comes from it. Call it once, after the answer, and then stop."
 }
 
 func (t *chatSourcesTool) JSONSchema() map[string]any {
@@ -104,7 +109,7 @@ func (t *chatSourcesTool) JSONSchema() map[string]any {
 				"items": map[string]any{
 					"type": "object",
 					"properties": map[string]any{
-						"ref":   map[string]any{"type": "string", "description": "The source's ref as printed: memory:<id>, person:<id>, or activity:<session id> for an Activity session, call or watch recording read with an activity tool or the activity CLI."},
+						"ref":   map[string]any{"type": "string", "description": "The source's ref as printed: web:<id> from this turn's SearchWeb, memory:<id>, person:<id>, or activity:<session id> for an Activity session, call or watch recording read with an activity tool or the activity CLI."},
 						"claim": map[string]any{"type": "string", "description": "The exact phrase in your answer that comes from this source."},
 					},
 					"required": []any{"ref"},
@@ -137,6 +142,9 @@ func (t *chatSourcesTool) Execute(ctx context.Context, call tools.ToolCall) (too
 	}
 	if t.app == nil || t.app.store == nil {
 		return tools.ToolResult{Content: "Sources could not be shown. Say nothing more.", IsError: true}, nil
+	}
+	if t.web != nil {
+		ctx = context.WithValue(ctx, chatWebTurnKey{}, t.web)
 	}
 	raw, _ := call.Input["sources"].([]any)
 	payload, dropped := t.app.chatSourcesFromInput(ctx, raw)
@@ -210,6 +218,15 @@ func (a *App) resolveChatSource(ctx context.Context, ref string) (chatSource, bo
 		return chatSource{}, false
 	}
 	switch kind {
+	case "web":
+		turn, _ := ctx.Value(chatWebTurnKey{}).(*chatWebTurn)
+		if turn == nil || !turn.active() {
+			return chatSource{}, false
+		}
+		turn.mu.Lock()
+		defer turn.mu.Unlock()
+		source, ok := turn.sources[id]
+		return source, ok
 	case "memory":
 		policy, err := a.mcpReadPrivacy(ctx)
 		if err != nil {

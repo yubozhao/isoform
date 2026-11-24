@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"golang.org/x/text/unicode/norm"
 
 	"wails-gui/internal/pii"
 	"wails-gui/internal/platform/ocr"
@@ -37,7 +40,8 @@ const (
 )
 
 type chatWebSearchTool struct {
-	app *App
+	app  *App
+	turn *chatWebTurn
 }
 
 var _ tools.AuthorityDescriber = (*chatWebSearchTool)(nil)
@@ -46,9 +50,14 @@ func (a *App) chatWebSearchTools() []tools.Tool {
 	return []tools.Tool{&chatWebSearchTool{app: a}}
 }
 
+func (t *chatWebSearchTool) RequiresFreshRead() bool { return t.turn != nil }
+
 func (t *chatWebSearchTool) Name() string { return chatWebSearchToolName }
 
 func (t *chatWebSearchTool) Description() string {
+	if t.turn != nil {
+		return mainChatWebInstructions
+	}
 	return "Search the public web and get a short answer with its links. Use it for current or public facts the user asks about: news, prices, products, documentation, companies, events. " +
 		"The query leaves this computer: write it in general words about the public topic only, never with the user's name, the names of people they know, email addresses, phone numbers, account or order numbers, private project names or anything from their files, mail or screen. " +
 		"A query with personal details is refused."
@@ -97,22 +106,55 @@ func (t *chatWebSearchTool) Execute(ctx context.Context, call tools.ToolCall) (t
 	}
 	query, _ := call.Input["query"].(string)
 	query = strings.Join(strings.Fields(query), " ")
-	if reason := webSearchQueryRefusal(query, t.app.webSearchPrivateNames(ctx)); reason != "" {
+	if t.turn != nil && !t.turn.active() {
+		return tools.ToolResult{Content: "Not searched: this Chat turn has ended.", IsError: true}, nil
+	}
+	if t.turn != nil && t.app.IsClosedEyesModeEnabled() {
+		return tools.ToolResult{Content: "Not searched: Closed Eyes is on.", IsError: true}, nil
+	}
+	names, err := t.app.webSearchPrivateNames(ctx, t.turn != nil)
+	if err != nil {
+		return tools.ToolResult{Content: "Not searched: the privacy check could not read known names.", IsError: true}, nil
+	}
+	blockedNames := names
+	if t.turn != nil {
+		blockedNames = nil
+	}
+	reason := webSearchQueryRefusal(norm.NFKC.String(query), blockedNames)
+	if reason == "" && t.turn != nil {
+		reason = t.turn.refusal(query, names)
+	}
+	if reason != "" {
 		return tools.ToolResult{Content: "Not searched: " + reason, IsError: true}, nil
 	}
 	if !chatWebSearchReady() {
 		return tools.ToolResult{Content: "Web search needs Claude Code signed in on this computer, and it is not. Tell the user plainly that you can't search the web right now and answer from what you know, saying it may be out of date.", IsError: true}, nil
 	}
 	prompt := "Search the web for " + strconv.Quote(query) + ". Answer in a few sentences from what the searches return, and list the links you used. Search only for this; do not search for anything else."
-	answer, meta, err := chatWebSearchRun(ctx, prompt)
-	if err != nil {
-		return tools.ToolResult{Content: "The web search didn't work: " + agencyBoundedText(err.Error(), 200), IsError: true}, nil
+	var receipt string
+	if t.turn != nil {
+		launch := &chatWebLaunch{app: t.app, turn: t.turn}
+		launch.started = func() {
+			source := t.turn.started(query)
+			ref := "web:" + source.ID
+			receipt = "\nref=" + ref + " " + query
+			t.app.emitBrowserEvent("main-chat:reading", map[string]any{"sessionId": t.turn.tag, "ref": ref, "source": source})
+		}
+		ctx = context.WithValue(ctx, chatWebLaunchKey{}, launch)
 	}
-	if !meta.searched() || strings.TrimSpace(answer) == "" {
-		return tools.ToolResult{Content: "The web search returned nothing for that query.", IsError: true}, nil
+	answer, meta, err := chatWebSearchRun(ctx, prompt)
+	if errors.Is(err, errChatWebClosedEyes) || errors.Is(err, errChatWebTurnEnded) {
+		return tools.ToolResult{Content: "Not searched: " + err.Error() + ".", IsError: true}, nil
+	}
+	if err != nil {
+		return tools.ToolResult{Content: "The web search didn't work." + receipt, IsError: true}, nil
+	}
+	answer = strings.TrimSpace(stripResearchMeta(answer))
+	if !meta.searched() || answer == "" {
+		return tools.ToolResult{Content: "The web search returned nothing for that query." + receipt, IsError: true}, nil
 	}
 	var out strings.Builder
-	out.WriteString(strings.TrimSpace(stripResearchMeta(answer)))
+	out.WriteString(answer)
 	if len(meta.URLs) > 0 {
 		out.WriteString("\n\nLinks the search returned (cite only these):")
 		for i, link := range meta.URLs {
@@ -122,7 +164,7 @@ func (t *chatWebSearchTool) Execute(ctx context.Context, call tools.ToolCall) (t
 			out.WriteString("\n- " + link)
 		}
 	}
-	return tools.ToolResult{Content: out.String()}, nil
+	return tools.ToolResult{Content: out.String() + receipt}, nil
 }
 
 var (
@@ -185,24 +227,26 @@ func isWordByte(b byte) bool {
 }
 
 // webSearchPrivateNames are the full names (two words or more) of the user
-// and the people Isoform knows. A single first name is left out: too many
-// are ordinary words.
-func (a *App) webSearchPrivateNames(ctx context.Context) []string {
+// and the people Isoform knows. CCA14 C1 also checks single-word names and aliases in Chat.
+func (a *App) webSearchPrivateNames(ctx context.Context, main bool) ([]string, error) {
 	if a == nil || a.store == nil {
-		return nil
+		return nil, fmt.Errorf("store unavailable")
 	}
 	rows, err := a.store.ListPrincipals(ctx)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	names := make([]string, 0, len(rows))
 	for _, row := range rows {
 		name := strings.Join(strings.Fields(row.DisplayName), " ")
-		if len(strings.Fields(name)) >= 2 {
+		if main {
+			names = append(names, row.Aliases...)
+		}
+		if (main && name != "") || len(strings.Fields(name)) >= 2 {
 			names = append(names, name)
 		}
 	}
-	return names
+	return names, nil
 }
 
 // injectWebSearchToolContext tells a chat's model to look things up
@@ -210,10 +254,11 @@ func (a *App) webSearchPrivateNames(ctx context.Context) []string {
 // for this chat, and how to keep the query free of personal details.
 func (a *App) injectWebSearchToolContext(tag string, origin promptOrigin) string {
 	main := a.isMainChatSession(context.Background(), tag)
-	// The tool is there only for other chats typed on the Mac
-	// (mainChatExtraTools); the main chat gives no web answers.
-	if main || origin != promptOriginMac {
+	if origin != promptOriginMac || strings.HasPrefix(tag, "spotlight_") {
 		return ""
+	}
+	if main {
+		return "<web-search-tool>\n" + mainChatWebInstructions + "\n</web-search-tool>\n\n"
 	}
 	return `<web-search-tool>
 In this chat, look things up on the web with SearchWeb, not opencli. Search when the answer depends on current or public facts (news, prices, releases, documentation, companies, events); answer from what you know when it does not.
