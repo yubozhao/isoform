@@ -100,6 +100,9 @@ func readPortraitSkill(t *testing.T) (string, string) {
 	return front, body
 }
 
+// Bo's opening line, the same for every lead.
+const portraitOpeningLine = "> Building your portrait: how you work with AI agents, so any agent you use can understand you faster. You can take it with you to other agents, and it's the start of your Agent of You, a version of you that others can hire.\n"
+
 func TestClaudeCodePluginSkillShape(t *testing.T) {
 	front, body := readPortraitSkill(t)
 	// Reads go through read tools only; nothing pre-allows a write or a shell.
@@ -108,14 +111,19 @@ func TestClaudeCodePluginSkillShape(t *testing.T) {
 	}
 	// The lead's steps, in order (rendered from portrait-spec/lead.md).
 	ordered := []string{
-		"goes to Anthropic",
+		"ask nothing before the draft. The first thing the person sees is exactly this opening line, and the progress lines follow directly after it:",
+		portraitOpeningLine,
+		"Say nothing else first",
 		"isoform-agents\" detect claude`",
+		"`<Agent>: reading...`",
+		"Kimi is included like the others",
+		"`<Agent>: too old, skipped`",
+		"`<Agent>: app not running, skipped`",
 		"Never update, upgrade, install or open anything",
-		"AskUserQuestion",
-		"and the merge goes to Anthropic",
-		"Kimi is not included unless they pick it",
-		"isoform-agents\" install <agent>",
+		"isoform-agents\" install <agent>` for each `ready` agent, without asking",
 		"isoform-agents\" run <agent>",
+		"`<Agent>: done`",
+		"`<Agent>: <the reason it printed>, skipped`",
 		"Without asking, read your own memory",
 		"~/.claude/agent-of-you/portrait.md",
 		"<!-- portrait-spec:begin -->",
@@ -131,9 +139,11 @@ func TestClaudeCodePluginSkillShape(t *testing.T) {
 		"### Conflicts to settle",
 		"**Who I am**: keep your own three sentences",
 		"**Offers**: keep 5 to 8",
-		"## 6. Ask about the gaps",
-		"## 8. Save only on an explicit keep",
+		"## 5. Ask about the gaps",
+		"## 7. Save only on an explicit keep",
 		"chmod 600 ~/.agents/agent-of-you/portrait.md",
+		"`Helpers added to: <every path step 2 printed>`",
+		"If the person stops without keeping",
 	}
 	at := 0
 	for _, want := range ordered {
@@ -153,8 +163,8 @@ func TestClaudeCodePluginSkillShape(t *testing.T) {
 			t.Errorf("skill lacks %q", want)
 		}
 	}
-	// No MCP dependency, and no consent question before reading Claude's notes.
-	for _, gone := range []string{"portrait_draft", "portrait_keep", "mcp__", "Ask exactly once", "May I also read", "Settings > Other AI apps"} {
+	// No MCP dependency, no opening notice and no question before the scan.
+	for _, gone := range []string{"portrait_draft", "portrait_keep", "mcp__", "Ask exactly once", "May I also read", "Settings > Other AI apps", "AskUserQuestion", "Ask once", "which agents may help", "unless they pick it", "goes to Anthropic", "Say where the draft goes", "Nothing is saved until you say keep", "{{ASK}}"} {
 		if strings.Contains(body, gone) {
 			t.Errorf("skill still contains %q", gone)
 		}
