@@ -1144,6 +1144,7 @@ export const SyncMessagesNow = makeNoop("SyncMessagesNow");
 export const SetPeopleLeftOut = makeNoop("SetPeopleLeftOut");
 export const ForgetMessages = makeNoop("ForgetMessages");
 export const GetAgentAddress = makeNoop("GetAgentAddress");
+export const CloseAgentAddress = makeNoop("CloseAgentAddress");
 export const GetFrontStatus = makeNoop("GetFrontStatus");
 export const SetFrontEnabled = makeNoop("SetFrontEnabled");
 // The hand-off card and its sheet run in the panel (quick_chat_handoff.go).

@@ -14,6 +14,7 @@ The id in each heading is the destination's id in the build's list, `wails-gui/i
 | `assistant_search` | That assistant's web search (Claude Code's WebSearch, or Grok / Gemini / Doubao in the person's Chrome through opencli) | Yes: topic labels, interests' search words, Chat queries | Yes, with topics | No |
 | `agents_handoff` | The agents the person hands work to (Claude Code, Codex, others) | Yes: what each hand-off's What went lists | Only when the person taps | Yes (Sent to your agents) |
 | `agents_mcp_read` | The person's own assistants reading Isoform over MCP (Claude Code, Codex) | Yes: activity search, memory, people, calendar, today's brief, playbooks, run history | Only after "Connect" in Settings | No |
+| `agent_address` | Agents in their own apps (Claude, ChatGPT, Gemini, Grok), through the agent address (Isoform's front, or the bridge the person set up) | Yes: the hand-offs each agent reads, the progress and results it posts, its requests and their answers | Only while an agent in its own app is connected | No (Settings owner, after design) |
 | `relay` | Isoform's relay, to the paired phone and watch | Sealed end to end; the relay can't read it | Only once a phone is paired | Yes |
 | `push` | Apple's push service, through the relay | No: a fixed line per kind | Only with a paired phone | Yes |
 | `text_relay` | Texts: relay, then Twilio | Generic line by default; **content when "include names" is on** | Off until the person verifies a number | No |
@@ -75,6 +76,10 @@ As in L5 above. The native loop's own WebFetch (`yansu-agent/agent/tools/web.go`
 
 `yansu-agent/mcpread/server.go` and `wails-gui/mcp_read_*.go`. Tools: `activity_search`, `memory_search`, `memory_list`, `people_lookup`, `calendar_today`, `calendar_range`, `brief_today`, `playbook_status`, `run_history`. A token is issued only by the Settings connection action (`issueMCPReadToken`). Closed Eyes answers "paused" (`mcp_read_integration_test.go`). What an assistant reads this way goes to that assistant's provider. **It has no row today.**
 
+
+### `agent_address`: agents in their own apps, through the agent address
+
+`agent_mcp_service.go` (`recordAddressAnswer`: one count per answered tool call from an agent that joined through the address; refusals and agents on this computer aren't counted) and `agent_address.go`. The address opens only while such an agent is connected or a join for one is waiting. With Isoform's front, TLS ends on this computer; with a configured bridge, the bridge can read what passes. Stop is `CloseAgentAddress`: it ends a waiting address join and disconnects every agent connected through the address, and the address closes with the last one. Your data's leaves row is `agentAddress` (open, service, apps, this week).
 ### `relay` and `push`
 
 `mobile_bridge.go` (every byte over the outbound relay socket as end-to-end sealed envelopes, PROTOCOL.md §4 and §6), `mobile_attachment.go` (the spoken brief, sealed with a per-file key), `mobile_recordings.go` (the computer fetches the watch and phone recordings the phone sealed). Push: `relay/internal/apnspush/client.go` sends Apple the title "Isoform" and a fixed line per kind (`momentFallbackText`, or "Isoform needs you."), plus the sealed notice as ciphertext. Both match the current rows.

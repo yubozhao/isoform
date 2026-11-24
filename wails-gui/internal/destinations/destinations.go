@@ -25,6 +25,7 @@ const (
 	AssistantSearch ID = "assistant_search"
 	AgentsHandoff   ID = "agents_handoff"
 	AgentsMCPRead   ID = "agents_mcp_read"
+	AgentAddress    ID = "agent_address"
 	Relay           ID = "relay"
 	Push            ID = "push"
 	TextRelay       ID = "text_relay"
@@ -80,6 +81,9 @@ var list = []Destination{
 	{AgentsMCPRead, "The person's own assistants, reading Isoform over MCP",
 		"Activity search, memory, people, calendar, today's brief, playbooks, run history",
 		ContentYes, "only after Connect in Settings; answers paused under Closed Eyes"},
+	{AgentAddress, "Agents in their own apps (Claude, ChatGPT, Gemini, Grok), through the agent address",
+		"What each agent asks and gets: the hand-offs it reads, the progress and results it posts, its requests and their answers",
+		ContentYes, "only while an agent in its own app is connected; refused under Closed Eyes"},
 	{Relay, "Isoform's relay, to the paired phone and watch",
 		"Today's items, briefs and results",
 		ContentSealed, "only with a paired phone"},

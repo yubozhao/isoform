@@ -49,6 +49,15 @@ type AgentsAskLeaves struct {
 	WeeklyLeaves
 	ByAgent *[]AgentLeaves `json:"byAgent,omitempty"`
 }
+
+// AgentAddressLeaves is what leaves through the agent address to agents in
+// their own apps. Stop is CloseAgentAddress.
+type AgentAddressLeaves struct {
+	WeeklyLeaves
+	Open    bool     `json:"open"`
+	Service string   `json:"service"`
+	Apps    []string `json:"apps"`
+}
 type UsageLeaves struct {
 	On bool `json:"on"`
 }
@@ -59,7 +68,9 @@ type YourDataLeaves struct {
 	Texts       *TextLeaves      `json:"texts,omitempty"`
 	ChatApps    *ChatLeaves      `json:"chatApps,omitempty"`
 	AgentsAsk   *AgentsAskLeaves `json:"agentsAsk,omitempty"`
-	UsageCounts UsageLeaves      `json:"usageCounts"`
+	// Address is the agent address row, present while it is open or counted.
+	Address     *AgentAddressLeaves `json:"agentAddress,omitempty"`
+	UsageCounts UsageLeaves         `json:"usageCounts"`
 }
 
 type leavesPaths struct {
@@ -68,6 +79,9 @@ type leavesPaths struct {
 	search, email, texts, names, agents, usage bool
 	lastService, masked                        string
 	apps                                       []string
+	address                                    bool
+	addressService                             string
+	addressApps                                []string
 }
 
 func (p leavesPaths) summary(rows []storage.DestinationCount, readErr error) YourDataLeaves {
@@ -123,6 +137,9 @@ func (p leavesPaths) summary(rows []storage.DestinationCount, readErr error) You
 			}
 			out.AgentsAsk.ByAgent = &agents
 		}
+	}
+	if n := counts[destinations.AgentAddress]; p.address || n > 0 || lost[destinations.AgentAddress] {
+		out.Address = &AgentAddressLeaves{week(n, lost[destinations.AgentAddress]), p.address, p.addressService, append([]string{}, p.addressApps...)}
 	}
 	return out
 }
@@ -232,6 +249,10 @@ func (a *App) yourDataLeaves() (YourDataLeaves, error) {
 		} else if !errors.Is(err, os.ErrNotExist) {
 			return YourDataLeaves{}, err
 		}
+	}
+	if a.store != nil {
+		address := a.GetAgentAddress()
+		p.address, p.addressService, p.addressApps = address.Open, address.Service, address.Apps
 	}
 	return p.summary(rows, readErr), nil
 }

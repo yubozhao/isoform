@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"wails-gui/internal/destinations"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -120,6 +121,15 @@ func (a *App) agentMCPAgent(ctx context.Context) (string, string, error) {
 	return "", "", errAgentMCPNotConnected
 }
 
+// recordAddressAnswer counts an answered tool call from an agent in its own
+// app: what it gets leaves through the agent address. Refusals and agents on
+// this computer aren't counted.
+func (a *App) recordAddressAnswer(agentID string, result *mcp.CallToolResult) {
+	if result != nil && !result.IsError && a.agentJoinedViaAddress(agentID) {
+		destinations.Record(destinations.AgentAddress)
+	}
+}
+
 func agentMCPSession(ctx context.Context) string {
 	if session := server.ClientSessionFromContext(ctx); session != nil {
 		return session.SessionID()
@@ -167,6 +177,7 @@ func (a *App) agentMCPTools() []agentMCPTool {
 				result = mcp.NewToolResultError(errAgentMCPNotTaking.Error())
 			} else {
 				result = handle(ctx, agentID, req)
+				a.recordAddressAnswer(agentID, result)
 			}
 			if fresh != "" {
 				base, _ := ctx.Value(agentMCPBaseKey).(string)

@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"github.com/mark3labs/mcp-go/mcp"
 	"net"
 	"net/http"
 	"net/url"
@@ -13,6 +14,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"wails-gui/internal/destinations"
 )
 
 func addressTestApp(t *testing.T) (*App, string) {
@@ -331,5 +333,94 @@ func TestAgentAddressConnectedHereStaysClosed(t *testing.T) {
 	}
 	if _, err := os.Stat(args); !os.IsNotExist(err) {
 		t.Fatal("coding agent started public front")
+	}
+}
+
+// What leaves through the agent address: answered calls from agents in their
+// own apps are counted, refusals and agents on this computer aren't; the
+// leaves row shows while the address is open, and its Stop disconnects only
+// the address agents and closes the address.
+func TestAgentAddressLeavesCountAndStop(t *testing.T) {
+	calls := observeDestinationCalls(t)
+	a, _ := addressTestApp(t)
+	if _, ok := destinations.Lookup(destinations.AgentAddress); !ok {
+		t.Fatal("agent address isn't a listed destination")
+	}
+	if out, err := a.yourDataLeaves(); err != nil || out.Address != nil {
+		t.Fatalf("closed address has a row: %+v %v", out.Address, err)
+	}
+	svc := a.agentJoinService()
+	if _, err := a.StartAgentJoinForApp("claude", true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.AttemptMCP(svc.MCPKey(), "Claude", "s1", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.AnswerAgentJoin(true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.StartAgentJoin(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.AttemptMCP(svc.MCPKey(), "Codex", "s2", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.AnswerAgentJoin(true); err != nil {
+		t.Fatal(err)
+	}
+	var viaAddress, here string
+	for _, ag := range svc.Agents() {
+		switch ag.Name {
+		case "Claude":
+			viaAddress = ag.ID
+		case "Codex":
+			here = ag.ID
+		}
+	}
+	if viaAddress == "" || here == "" {
+		t.Fatalf("agents: %+v", svc.Agents())
+	}
+	a.recordAddressAnswer(here, mcp.NewToolResultText("ok"))
+	a.recordAddressAnswer(viaAddress, mcp.NewToolResultError("refused"))
+	a.recordAddressAnswer(viaAddress, mcp.NewToolResultText("ok"))
+	expectDestination(t, calls, destinations.AgentAddress, "")
+	select {
+	case c := <-calls:
+		t.Fatalf("counted more than the one answered address call: %+v", c)
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	out, err := a.yourDataLeaves()
+	if err != nil || out.Address == nil || !out.Address.Open || out.Address.Service != "Isoform's front" || strings.Join(out.Address.Apps, ",") != "Claude" {
+		t.Fatalf("open address row: %+v %v", out.Address, err)
+	}
+
+	// A join waiting for the address is ended too; the Stop closes it.
+	if _, err := a.StartAgentJoinForApp("gemini", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.CloseAgentAddress(); err != nil {
+		t.Fatal(err)
+	}
+	if a.GetAgentAddress().Open || svc.NeedsAddress() || a.GetAgentJoin() != nil {
+		t.Fatalf("address still open after Stop: %+v", a.GetAgentAddress())
+	}
+	left := svc.Agents()
+	if len(left) != 1 || left[0].ID != here {
+		t.Fatalf("Stop disconnected an agent on this computer: %+v", left)
+	}
+}
+
+// Stop leaves a loopback join for an agent on this computer alone.
+func TestAgentAddressStopKeepsLocalJoin(t *testing.T) {
+	a, _ := addressTestApp(t)
+	if _, err := a.StartAgentJoin(); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.CloseAgentAddress(); err != nil {
+		t.Fatal(err)
+	}
+	if a.GetAgentJoin() == nil {
+		t.Fatal("Stop ended a local join")
 	}
 }
