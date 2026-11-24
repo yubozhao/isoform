@@ -171,6 +171,10 @@ func (hb *hostBridge) publishMCPReadEndpoint() error {
 
 type mcpReadSocketContextKey struct{}
 
+// mcpReadClientContextKey carries the authorized client (claude-code or
+// codex) so portrait_keep can record which assistant it was kept from.
+type mcpReadClientContextKey struct{}
+
 func (hb *hostBridge) removeMCPReadEndpoint() {
 	hb.mcpLifecycleMu.Lock()
 	defer hb.mcpLifecycleMu.Unlock()
@@ -187,7 +191,8 @@ func (hb *hostBridge) handleMCPRead(w http.ResponseWriter, r *http.Request) {
 		Name      string          `json:"name"`
 		Arguments json.RawMessage `json:"arguments"`
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
+	// 32 KiB fits a kept portrait (5 sections of 8 lines of 200 characters).
+	r.Body = http.MaxBytesReader(w, r.Body, 32<<10)
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&request); err != nil {
@@ -208,7 +213,8 @@ func (hb *hostBridge) handleMCPRead(w http.ResponseWriter, r *http.Request) {
 		hb.writeError(w, http.StatusServiceUnavailable, "Isoform is not ready")
 		return
 	}
-	data, err := hb.app.callMCPReadTool(r.Context(), request.Name, request.Arguments)
+	ctx := context.WithValue(r.Context(), mcpReadClientContextKey{}, r.Header.Get(mcpReadClientHeader))
+	data, err := hb.app.callMCPReadTool(ctx, request.Name, request.Arguments)
 	if err != nil {
 		status := http.StatusServiceUnavailable
 		var invalid *mcpReadValidationError

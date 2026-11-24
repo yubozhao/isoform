@@ -66,6 +66,17 @@ type mcpReadArguments struct {
 }
 
 func (a *App) callMCPReadTool(ctx context.Context, name string, raw json.RawMessage) (any, error) {
+	// The owner portrait tools (mcp_portrait.go) have their own arguments.
+	switch name {
+	case "portrait_draft":
+		if err := decodeStrictJSON(raw, &struct{}{}); err != nil {
+			return nil, mcpReadInvalid("invalid tool arguments")
+		}
+		return a.mcpPortraitDraft(ctx)
+	case "portrait_keep":
+		client, _ := ctx.Value(mcpReadClientContextKey{}).(string)
+		return a.mcpPortraitKeep(ctx, client, raw)
+	}
 	p, err := a.mcpReadPrivacy(ctx)
 	if err != nil {
 		return nil, err

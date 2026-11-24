@@ -72,13 +72,20 @@ func TestServeStdioDiscoveryAndUnavailableApp(t *testing.T) {
 	if err := json.Unmarshal(responses[2], &listed); err != nil {
 		t.Fatal(err)
 	}
-	wantNames := []string{"activity_search", "memory_search", "memory_list", "people_lookup", "calendar_today", "calendar_range", "brief_today", "playbook_status", "run_history"}
+	wantNames := []string{"activity_search", "memory_search", "memory_list", "people_lookup", "calendar_today", "calendar_range", "brief_today", "playbook_status", "run_history", "portrait_draft", "portrait_keep"}
 	if len(listed.Tools) != len(wantNames) {
 		t.Fatalf("listed %d tools, want %d", len(listed.Tools), len(wantNames))
 	}
 	found := map[string]bool{}
 	for _, tool := range listed.Tools {
 		found[tool.Name] = true
+		if tool.Name == "portrait_keep" {
+			// The one write: never marked read-only, never destructive.
+			if tool.Annotations["readOnlyHint"] != false || tool.Annotations["destructiveHint"] != false || !strings.Contains(tool.Description, "explicitly says keep") {
+				t.Errorf("portrait_keep must be an explicit, non-destructive write: %+v", tool)
+			}
+			continue
+		}
 		if !strings.Contains(tool.Description, "untrusted data") || tool.Annotations["readOnlyHint"] != true || tool.Annotations["destructiveHint"] != false {
 			t.Errorf("missing read-only trust boundary for %s: %+v", tool.Name, tool)
 		}
@@ -321,5 +328,24 @@ func TestStaleTCPDiscoveryNeverReceivesReadToken(t *testing.T) {
 	if err == nil {
 		connection.Close()
 		t.Fatal("read client connected to stale TCP endpoint")
+	}
+}
+
+func TestPortraitKeepSchemaBoundsTheCorrectedPortrait(t *testing.T) {
+	var keep mcp.Tool
+	for _, tool := range portraitTools() {
+		if tool.Name == "portrait_keep" {
+			keep = tool
+		}
+	}
+	data, err := json.Marshal(keep.InputSchema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := string(data)
+	for _, want := range []string{`"required":["sections"]`, `"maxItems":8`, `"maxLength":200`, `"claude_memory"`, `"wont_do"`, `"additionalProperties":false`} {
+		if !strings.Contains(schema, want) {
+			t.Errorf("portrait_keep schema lacks %s: %s", want, schema)
+		}
 	}
 }
