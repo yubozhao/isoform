@@ -89,6 +89,7 @@ button:focus-visible { outline:2px solid var(--color-border-focus); outline-offs
 <div class="pop" id="pop" role="dialog">
 <div class="upd sgn" id="sgn" hidden><span id="sgnText"></span><button id="sgnBtn" type="button"></button></div>
 <header class="hd" id="hd"><span class="mark" id="mark" role="img"></span><span id="nm"></span><span class="dot" aria-hidden="true"></span><span id="state"></span><button id="hb" type="button"></button></header>
+<div class="upd sgn" id="unk" role="status" hidden><span id="unkText"></span><button id="unkBtn" type="button"></button></div>
 <button class="br" id="br" type="button">
   <span class="pl" id="pl"></span>
   <span class="tx"><b id="briefTitle"></b><span class="bar" id="bar" hidden><i id="barFill"></i></span><span class="meta" id="briefMeta"></span></span>
@@ -204,7 +205,13 @@ button:focus-visible { outline:2px solid var(--color-border-focus); outline-offs
         el('nm').textContent = w.name;
         // The mark always has a label (pass-access v1.0.0 rule 12).
         el('mark').setAttribute('aria-label', model.markLabel || '');
-        el('state').textContent = model.state;
+        // Design S12: a state that can't be read says so in its own row,
+        // with Try again; the header keeps the mark and the name only.
+        const unknown = status === 'unknown';
+        el('state').textContent = unknown ? '' : model.state;
+        el('unk').hidden = !unknown;
+        el('unkText').textContent = unknown ? model.state : '';
+        el('unkBtn').textContent = w.tryAgain || '';
         // Closed Eyes is the popover's first control (redesign v1.0.0 rule 27).
         const hb = el('hb');
         hb.classList.toggle('acc', status === 'paused');
@@ -312,6 +319,7 @@ button:focus-visible { outline:2px solid var(--color-border-focus); outline-offs
     el('yes').onclick = () => { if (el('yes').dataset.id) send('workYes:' + el('yes').dataset.id); };
     el('no').onclick = () => { if (el('no').dataset.id) send('workNo:' + el('no').dataset.id); };
     el('qc').onclick = () => send('quickChat');
+    el('unkBtn').onclick = () => send('refreshState');
     el('make').onclick = () => send('makeHere');
     el('open').onclick = () => send('open');
     el('restart').onclick = () => send('restart');

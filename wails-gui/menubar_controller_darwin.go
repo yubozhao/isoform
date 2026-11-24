@@ -333,6 +333,9 @@ func (a *App) runMenuBarCommand(command string) error {
 	case "openScreenSettings":
 		// Trouble's one fix: the exact Screen Recording pane.
 		return a.OpenTroubleFix(troubleScreen)
+	case "refreshState":
+		// Design S12's Try again: read the state again now.
+		go a.presentMenuBarView()
 	case "quickChat":
 		// The same Quick chat as its shortcut, never the old panel session.
 		go a.openQuickChat("")
