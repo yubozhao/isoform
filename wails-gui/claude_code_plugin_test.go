@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 	"testing"
 	"unicode"
@@ -73,20 +72,12 @@ func TestClaudeCodePluginManifests(t *testing.T) {
 		t.Fatalf("plugin.json and the marketplace entry disagree: %+v vs %+v", plugin, entry)
 	}
 
-	var servers struct {
-		MCPServers map[string]struct {
-			Command string   `json:"command"`
-			Args    []string `json:"args"`
-		} `json:"mcpServers"`
-	}
-	readPluginJSON(t, filepath.Join(claudeCodePluginDir, ".mcp.json"), &servers)
-	server, ok := servers.MCPServers["isoform"]
-	if len(servers.MCPServers) != 1 || !ok || server.Command != "${CLAUDE_PLUGIN_ROOT}/bin/isoform-mcp" || len(server.Args) != 0 {
-		t.Fatalf(".mcp.json must start only the bundled launcher: %+v", servers)
-	}
-	info, err := os.Stat(filepath.Join(claudeCodePluginDir, "bin", "isoform-mcp"))
-	if err != nil || info.Mode().Perm()&0o111 == 0 {
-		t.Fatalf("launcher must exist and be executable: %v %v", info, err)
+	// Bo, 2026-11-24: the portrait comes from Claude's own memory first, so
+	// the plugin starts no MCP server and needs no Isoform install.
+	for _, gone := range []string{".mcp.json", "bin"} {
+		if _, err := os.Stat(filepath.Join(claudeCodePluginDir, gone)); !os.IsNotExist(err) {
+			t.Errorf("plugin must not ship %s: %v", gone, err)
+		}
 	}
 	for _, path := range []string{"README.md", filepath.Join("skills", "portrait", "SKILL.md")} {
 		if _, err := os.Stat(filepath.Join(claudeCodePluginDir, path)); err != nil {
@@ -95,7 +86,8 @@ func TestClaudeCodePluginManifests(t *testing.T) {
 	}
 }
 
-func TestClaudeCodePluginSkillMatchesTools(t *testing.T) {
+func readPortraitSkill(t *testing.T) (string, string) {
+	t.Helper()
 	data, err := os.ReadFile(filepath.Join(claudeCodePluginDir, "skills", "portrait", "SKILL.md"))
 	if err != nil {
 		t.Fatal(err)
@@ -105,35 +97,64 @@ func TestClaudeCodePluginSkillMatchesTools(t *testing.T) {
 	if !strings.HasPrefix(skill, "---\n") || !ok || !strings.Contains(front, "name: portrait\n") || !strings.Contains(front, "description: ") {
 		t.Fatalf("SKILL.md frontmatter: %q", front)
 	}
-	for _, want := range []string{"portrait_draft", "portrait_keep", "goes to Anthropic", "Ask exactly once", "explicit keep"} {
+	return front, body
+}
+
+func TestClaudeCodePluginSkillShape(t *testing.T) {
+	front, body := readPortraitSkill(t)
+	// Reads go through read tools only; nothing pre-allows a write or a shell.
+	if !strings.Contains(front+"\n", "\nallowed-tools: Read, Glob, Grep\n") {
+		t.Errorf("skill must pre-allow only the read tools: %q", front)
+	}
+	ordered := []string{
+		"goes to Anthropic",
+		"Without asking",
+		"~/.claude/CLAUDE.md",
+		"~/.claude/projects/*/memory/*.md",
+		"### Part A: Listing",
+		"**Who I am**: exactly three sentences",
+		"5 to 8 concrete offers",
+		"**Strengths**",
+		"**Limits**",
+		"**When to hire the human instead**",
+		"### Part B: Agent instructions",
+		"**How I work**",
+		"Leave out how the person runs their own development",
+		"**Taste and voice**",
+		"**Hard lines**",
+		"## 4. Ask about the gaps",
+		"## 6. Save only on an explicit keep",
+		"~/.claude/agent-of-you/portrait.md",
+	}
+	at := 0
+	for _, want := range ordered {
+		i := strings.Index(body[at:], want)
+		if i < 0 {
+			t.Fatalf("skill lacks %q after position %d", want, at)
+		}
+		at += i + len(want)
+	}
+	for _, want := range []string{
+		"Every line ends with its source in brackets", "[memory: <memory name>]", "[CLAUDE.md]", "(guess)", "[you said]",
+		"**at most 6**", "rates and availability", "which client or company names may be public", "writing samples", "bring the person in", "claims in the draft to confirm", "work they would turn down",
+		"secrets, keys, tokens", "email addresses, phone numbers, home folder paths", "private details about other people", "may be public",
+		"chmod 600 ~/.claude/agent-of-you/portrait.md", "Kept: <YYYY-MM-DD>", "nothing goes to isoform.ai",
+		`"Looks good", "fine" or silence is not a keep`,
+	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("skill lacks %q", want)
 		}
 	}
-	for _, section := range portraitSections {
-		if !strings.Contains(body, "`"+section+"`") {
-			t.Errorf("skill does not name section %s", section)
+	// No MCP dependency, and no consent question before reading local notes.
+	for _, gone := range []string{"portrait_draft", "portrait_keep", "mcp__", "MCP tool", "Ask exactly once", "Yes or no", "May I also read", "Settings > Other AI apps"} {
+		if strings.Contains(body, gone) {
+			t.Errorf("skill still contains %q", gone)
 		}
 	}
-	var sources []string
-	for source := range portraitKeepSources {
-		sources = append(sources, source)
-		if !strings.Contains(body, "`"+source+"`") {
-			t.Errorf("skill does not name source %s", source)
-		}
+	if !strings.Contains(body, "Nothing here needs Isoform or any MCP server") {
+		t.Error("skill must say it needs no Isoform or MCP server")
 	}
-	sort.Strings(sources)
-	// The bridge's keep schema lists the same sources (yansu-agent/mcpread).
-	bridge, err := os.ReadFile("../yansu-agent/mcpread/server.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, source := range sources {
-		if !strings.Contains(string(bridge), `"`+source+`"`) {
-			t.Errorf("bridge schema lacks source %s", source)
-		}
-	}
-	for _, path := range []string{"skills/portrait/SKILL.md", "README.md", "bin/isoform-mcp"} {
+	for _, path := range []string{"skills/portrait/SKILL.md", "README.md"} {
 		text, err := os.ReadFile(filepath.Join(claudeCodePluginDir, path))
 		if err != nil {
 			t.Fatal(err)
@@ -146,58 +167,6 @@ func TestClaudeCodePluginSkillMatchesTools(t *testing.T) {
 		if strings.Contains(string(text), "/Users/") {
 			t.Errorf("%s contains a home path", path)
 		}
-	}
-}
-
-func runPluginLauncher(t *testing.T, env ...string) (string, string, error) {
-	t.Helper()
-	launcher, err := filepath.Abs(filepath.Join(claudeCodePluginDir, "bin", "isoform-mcp"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	cmd := exec.Command(launcher)
-	cmd.Env = append([]string{"PATH=/usr/bin:/bin"}, env...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	err = cmd.Run()
-	return stdout.String(), stderr.String(), err
-}
-
-func TestClaudeCodePluginLauncher(t *testing.T) {
-	home := t.TempDir()
-	notInstalled := "Isoform is not installed on this computer. Get it at https://isoform.ai, open it once, then try again.\n"
-	// No data folder, then a data folder without the CLI: one plain line on
-	// stderr, nothing on stdout (which belongs to MCP), exit 1.
-	for _, env := range [][]string{{"HOME=" + home}, {"HOME=" + home, "ISOFORM_DATA_DIR=" + home}} {
-		stdout, stderr, err := runPluginLauncher(t, env...)
-		exit, ok := err.(*exec.ExitError)
-		if !ok || exit.ExitCode() != 1 || stdout != "" || stderr != notInstalled {
-			t.Fatalf("env %v: err=%v stdout=%q stderr=%q", env, err, stdout, stderr)
-		}
-	}
-	// With Isoform's data folder, it runs the CLI the app installed there
-	// against that folder, so it reaches the running app's socket.
-	dataDir := filepath.Join(home, ".isoform-agent")
-	if err := os.MkdirAll(filepath.Join(dataDir, "bin"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	fake := "#!/bin/sh\necho \"$0 $*\"\n"
-	if err := os.WriteFile(filepath.Join(dataDir, "bin", "yansu"), []byte(fake), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	stdout, stderr, err := runPluginLauncher(t, "HOME="+home)
-	want := filepath.Join(dataDir, "bin", "yansu") + " mcp serve --client claude-code --data-dir " + dataDir + "\n"
-	if err != nil || stdout != want || stderr != "" {
-		t.Fatalf("launcher: err=%v stdout=%q stderr=%q want %q", err, stdout, stderr, want)
-	}
-	// ISOFORM_YANSU wins, for tests and unusual installs.
-	override := filepath.Join(home, "other-yansu")
-	if err := os.WriteFile(override, []byte(fake), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	stdout, _, err = runPluginLauncher(t, "HOME="+home, "ISOFORM_YANSU="+override)
-	if err != nil || !strings.HasPrefix(stdout, override+" mcp serve") {
-		t.Fatalf("override: err=%v stdout=%q", err, stdout)
 	}
 }
 
@@ -214,6 +183,39 @@ func TestClaudeCodePluginValidatesWithRealCLI(t *testing.T) {
 		output, err := exec.Command(cli, "plugin", "validate", "--strict", path).CombinedOutput()
 		if err != nil {
 			t.Fatalf("claude plugin validate %s: %v\n%s", path, err, output)
+		}
+	}
+}
+
+// The bridge's "not connected" error quotes the app's own labels for the page,
+// the card and the button that issue an assistant's access. Renaming any of
+// them must update yansu-agent/mcpread/server.go too.
+func TestClaudeCodePluginConnectHintMatchesSettingsLabels(t *testing.T) {
+	var locale struct {
+		Pages map[string]struct {
+			Label string `json:"label"`
+		} `json:"pages"`
+		AssistantMcp struct {
+			Title      string `json:"title"`
+			ClaudeCode string `json:"claudeCode"`
+			Connect    string `json:"connect"`
+		} `json:"assistantMcp"`
+	}
+	data, err := os.ReadFile("frontend/src/i18n/locales/en/settings.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &locale); err != nil {
+		t.Fatal(err)
+	}
+	bridge, err := os.ReadFile("../yansu-agent/mcpread/server.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := locale.Pages["use-yansu-anywhere"].Label
+	for _, label := range []string{"Settings > " + page, "under " + locale.AssistantMcp.Title, "press " + locale.AssistantMcp.Connect, `name := "` + locale.AssistantMcp.ClaudeCode + `"`} {
+		if page == "" || !strings.Contains(string(bridge), label) {
+			t.Errorf("connect hint in the bridge lacks the app's label %q", label)
 		}
 	}
 }

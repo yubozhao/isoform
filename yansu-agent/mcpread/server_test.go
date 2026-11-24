@@ -349,3 +349,22 @@ func TestPortraitKeepSchemaBoundsTheCorrectedPortrait(t *testing.T) {
 		}
 	}
 }
+
+func TestMissingAccessNamesWhereToConnect(t *testing.T) {
+	root := shortMCPReadHome(t)
+	codexToken := writeCredentialFiles(t, root, "read-test.sock")
+	// Never connected: one plain instruction with the app's own labels.
+	_, _, err := newBridge(Config{DataDir: root, Client: "claude-code"}).credentials()
+	want := "Claude Code is not connected to Isoform yet. In Isoform, open Settings > Other AI apps, find Claude Code under Claude Code and Codex, and press Connect. You only do this once."
+	if err == nil || err.Error() != want {
+		t.Fatalf("missing token error = %v", err)
+	}
+	// A token with unsafe permissions is a different problem, same fix.
+	if err := os.Chmod(codexToken, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = newBridge(Config{DataDir: root, Client: "codex"}).credentials()
+	if err == nil || !strings.Contains(err.Error(), "unsafe file permissions") || !strings.Contains(err.Error(), "find Codex under Claude Code and Codex, and press Connect") {
+		t.Fatalf("unsafe token error = %v", err)
+	}
+}

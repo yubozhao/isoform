@@ -220,7 +220,7 @@ func (b *bridge) call(ctx context.Context, request mcp.CallToolRequest) (*mcp.Ca
 	}
 	switch response.StatusCode {
 	case http.StatusUnauthorized, http.StatusForbidden:
-		return mcp.NewToolResultError("Isoform MCP access is missing or revoked. Reconnect this assistant in Isoform Settings."), nil
+		return mcp.NewToolResultError(connectHint(b.cfg.Client, false)), nil
 	case http.StatusLocked:
 		return mcp.NewToolResultError("paused: Isoform observation is paused, closed eyes is enabled, or screen/accessibility observation is disabled. Resume observation in Isoform to read context."), nil
 	case http.StatusUnprocessableEntity, http.StatusServiceUnavailable:
@@ -271,14 +271,33 @@ func (b *bridge) credentials() (string, string, error) {
 		return "", "", errors.New("Isoform is not running or its private read socket is unavailable. Open Isoform and try again.")
 	}
 	tokenData, err := readPrivateFile(filepath.Join(dir, b.cfg.Client+".token"), true, 4096)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", "", errors.New(connectHint(b.cfg.Client, true))
+	}
 	if err != nil {
-		return "", "", errors.New("Isoform MCP access is missing, revoked, or has unsafe file permissions. Reconnect this assistant in Isoform Settings.")
+		return "", "", errors.New("Isoform MCP access has unsafe file permissions. " + connectHint(b.cfg.Client, false))
 	}
 	token := strings.TrimSpace(string(tokenData))
 	if token == "" || strings.ContainsAny(token, "\r\n\t ") {
-		return "", "", errors.New("Isoform MCP access token is invalid. Reconnect this assistant in Isoform Settings.")
+		return "", "", errors.New("Isoform MCP access token is invalid. " + connectHint(b.cfg.Client, false))
 	}
 	return socket, token, nil
+}
+
+// connectHint names the exact place in Isoform that issues this client's
+// access: Settings > Other AI apps, the "Claude Code and Codex" card, and the
+// client's Connect button (wails-gui/frontend/src/components/
+// assistant-mcp-settings.tsx). Isoform never issues access without that press.
+func connectHint(client string, never bool) string {
+	name := "Claude Code"
+	if client == "codex" {
+		name = "Codex"
+	}
+	where := "In Isoform, open Settings > Other AI apps, find " + name + " under Claude Code and Codex, and press Connect."
+	if never {
+		return name + " is not connected to Isoform yet. " + where + " You only do this once."
+	}
+	return "Isoform access for " + name + " is missing or was revoked. " + where
 }
 
 func readPrivateFile(path string, requirePrivate bool, limit int64) ([]byte, error) {
