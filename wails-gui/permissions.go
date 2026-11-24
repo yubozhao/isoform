@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"runtime"
@@ -24,6 +25,10 @@ type PermissionItem struct {
 	ActionLabel string `json:"actionLabel"`
 	Toggleable  bool   `json:"toggleable"`
 	Enabled     bool   `json:"enabled"`
+	// EnabledUnknown is set when the switch's saved state couldn't be read.
+	// Enabled is then meaningless: the row says it couldn't read the switch,
+	// never on or off.
+	EnabledUnknown bool `json:"enabledUnknown,omitempty"`
 }
 
 // permissionUIStateKey returns the ui_state key for a toggleable permission.
@@ -47,24 +52,37 @@ func (a *App) isPermissionEnabled(key string) bool {
 }
 
 func (a *App) isPermissionEnabledContext(ctx context.Context, key string) bool {
-	if key == messagesPermissionKey {
-		on, err := a.messagesSwitchRead(ctx)
-		if err != nil {
+	on, err := a.permissionSwitchRead(ctx, key)
+	if err != nil {
+		if key == messagesPermissionKey {
 			if err != errSettingsDefaultsUnavailable {
 				log.Printf("[permissions] read Messages switch: %v", err)
 			}
 			return false
 		}
-		return on
+		return !permissionsOffByDefault[key]
+	}
+	return on
+}
+
+// permissionSwitchRead is the switch's saved state, or an error when it
+// can't be read. Settings shows the error (a row never shows a switch it
+// couldn't read as on); a switch never saved reads as its default.
+func (a *App) permissionSwitchRead(ctx context.Context, key string) (bool, error) {
+	if key == messagesPermissionKey {
+		return a.messagesSwitchRead(ctx)
 	}
 	if a.store == nil {
-		return !permissionsOffByDefault[key]
+		return false, errors.New("the store is not ready")
 	}
 	val, err := a.store.GetUIState(ctx, permissionUIStateKey(key))
-	if err != nil || val == "" {
-		return !permissionsOffByDefault[key]
+	if err != nil {
+		return false, err
 	}
-	return val != "false"
+	if val == "" {
+		return !permissionsOffByDefault[key], nil
+	}
+	return val != "false", nil
 }
 
 // messagesSwitchRead is the stored Messages switch, its default when nothing
@@ -110,7 +128,8 @@ func (a *App) GetPlatformPermissions() (perfValue PlatformPermissions) {
 				perms.Items[i].Enabled = a.GetBackgroundListening()
 			}
 		} else {
-			perms.Items[i].Enabled = a.isPermissionEnabled(perms.Items[i].Key)
+			on, err := a.permissionSwitchRead(context.Background(), perms.Items[i].Key)
+			perms.Items[i].Enabled, perms.Items[i].EnabledUnknown = on, err != nil
 		}
 	}
 

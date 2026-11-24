@@ -3290,7 +3290,7 @@
             },
             "memory-dream": {
                 "name": "记忆整理",
-                "description": "在后台回顾和整合已保存的记忆。"
+                "description": "在后台回顾和整合已保存的记忆；你的 AI 会读取这些记忆来完成这项工作。"
             },
             "memory-dream-llm": {
                 "name": "AI 记忆整理",

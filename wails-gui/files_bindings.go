@@ -58,7 +58,13 @@ func (a *App) GetFilesOverview() (FilesOverview, error) {
 	if a == nil || a.store == nil {
 		return view, errors.New("the store is not ready")
 	}
-	view.Enabled = a.isPermissionEnabled(filesPermissionKey)
+	// A switch that can't be read fails the read; the page shows it with Try
+	// again, never as on.
+	enabled, err := a.permissionSwitchRead(context.Background(), filesPermissionKey)
+	if err != nil {
+		return view, err
+	}
+	view.Enabled = enabled
 	home, _ := os.UserHomeDir()
 	for _, folder := range a.filesPrivateFolders() {
 		view.PrivateFolders = append(view.PrivateFolders, FilesPrivateFolderView{
