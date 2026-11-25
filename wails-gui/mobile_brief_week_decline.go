@@ -8,6 +8,10 @@ import (
 // A decline belongs to the week, so another device and a later brief for the
 // same week see the same choice. The phone cannot choose the stored week.
 func (bridge *mobileBridge) serveWeekDecline(w http.ResponseWriter, r *http.Request, device mobileDeviceRecord, briefID string) {
+	if !featureOn(featureBriefExtras) {
+		mobileJSON(w, http.StatusConflict, nil, mobileBriefChangedMessage)
+		return
+	}
 	if bridge.app == nil || bridge.app.storeForMobile() == nil {
 		mobileJSON(w, http.StatusServiceUnavailable, nil, "the computer is not ready yet")
 		return

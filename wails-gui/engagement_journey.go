@@ -58,6 +58,9 @@ func (a *App) noteFirstWeekOnboarding(ctx context.Context, raw string) error {
 }
 
 func (a *App) journeyEnabled(kind engagement.Kind, now time.Time) bool {
+	if kind == engagement.KindWeeklyRecap && !featureOn(featureBriefExtras) {
+		return false
+	}
 	if a == nil || a.engagement == nil {
 		return false
 	}

@@ -614,7 +614,7 @@ func (s *mobileBriefService) composeNewBrief(ctx context.Context, input mobileBr
 		}
 		if len(paragraphs) > 0 && newBriefHasBothParts(paragraphs) || len(paragraphs) > 0 && attempt == 1 {
 			logLine("ok", codes, len(paragraphs))
-			if material.Tokens {
+			if material.Tokens && featureOn(featureBriefExtras) {
 				s.startTokensShadow(material, lang, draft, draftCodes, ask)
 			}
 			brief.writerItems = len(material.Items)
@@ -660,6 +660,9 @@ func newBriefHygieneKeeps(brief MobileBriefV1, paragraphs []MobileBriefPara) int
 // newBriefEnabled reports the newBrief setting. A service without a config
 // store (tests) uses the default.
 func (s *mobileBriefService) newBriefEnabled() bool {
+	if !featureOn(featureBriefExtras) {
+		return true
+	}
 	if s == nil || s.config == nil {
 		return defaultMobileBriefSettings().NewBrief
 	}

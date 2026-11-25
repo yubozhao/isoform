@@ -67,36 +67,7 @@ func TestMobileEndToEndThroughRelayBinary(t *testing.T) {
 		}
 	})
 
-	status, err := app.EnableMobileConnection(relayURL)
-	if err != nil || !status.Enabled {
-		t.Fatalf("enable: %+v %v", status, err)
-	}
-	mobileTestWaitFor(t, "a connected relay", func() bool {
-		current, _ := app.GetMobileConnectionStatus()
-		return current.RelayState == mobileRelayConnected
-	})
-
-	status, err = mobileE2EOpenInvitation(app)
-	if err != nil || status.ConnectionCode == "" {
-		t.Fatalf("generate: %+v %v", status, err)
-	}
-	phone := newMobileE2EPhone(t, relayURL, mobileTestDecodeInvitation(t, status.ConnectionCode))
-	phone.claim(t)
-	mobileTestWaitFor(t, "a pending claim on the hub", func() bool {
-		current, _ := app.GetMobileConnectionStatus()
-		return current.PendingPairing != nil
-	})
-	pending, _ := app.GetMobileConnectionStatus()
-	if pending.PendingPairing.Code != phone.code || pending.PendingPairing.DeviceName != "E2E iPhone" {
-		t.Fatalf("pending pairing does not match the phone: %+v vs %s", pending.PendingPairing, phone.code)
-	}
-	if _, err := app.ConfirmMobilePairing(pending.PendingPairing.PairingID, true); err != nil {
-		t.Fatalf("confirm: %v", err)
-	}
-	approval := phone.awaitApproval(t)
-	if approval.DeviceID != phone.deviceID || len(approval.Scopes) != len(mobileE2EPhoneScopes) || approval.HubName == "" {
-		t.Fatalf("approval: %+v", approval)
-	}
+	phone := pairMobileE2EPhone(t, app, relayURL)
 
 	code, body := phone.request(t, "GET", "/status", "")
 	if code != http.StatusOK || !strings.Contains(body, `"hubName"`) {
@@ -128,7 +99,7 @@ func TestMobileEndToEndThroughRelayBinary(t *testing.T) {
 	// Brief on the phone, one package (PROTOCOL.md section 8.1). The chat
 	// flow spent this minute's device requests on the relay (60 a minute).
 	time.Sleep(61 * time.Second)
-	mobileE2EBriefPackageGuard(t, app, svc.(*mobileBriefService), phone, relayURL)
+	mobileE2EBriefPackageGuard(t, app, svc.(*mobileBriefService), phone)
 	mobileE2ENote("", "AUTOMATED_PACKAGE_OK")
 
 	hold, _ := time.ParseDuration(os.Getenv("YANSU_MOBILE_E2E_HOLD"))
@@ -136,6 +107,42 @@ func TestMobileEndToEndThroughRelayBinary(t *testing.T) {
 		return
 	}
 	mobileE2EHold(t, app, hold)
+}
+
+func pairMobileE2EPhone(t *testing.T, app *App, relayURL string) *mobileE2EPhone {
+	t.Helper()
+	status, err := app.EnableMobileConnection(relayURL)
+	if err != nil || !status.Enabled {
+		t.Fatalf("enable: %+v %v", status, err)
+	}
+	mobileTestWaitFor(t, "a connected relay", func() bool {
+		current, _ := app.GetMobileConnectionStatus()
+		return current.RelayState == mobileRelayConnected
+	})
+
+	status, err = mobileE2EOpenInvitation(app)
+	if err != nil || status.ConnectionCode == "" {
+		t.Fatalf("generate: %+v %v", status, err)
+	}
+	phone := newMobileE2EPhone(t, relayURL, mobileTestDecodeInvitation(t, status.ConnectionCode))
+	phone.claim(t)
+	mobileTestWaitFor(t, "a pending claim on the hub", func() bool {
+		current, _ := app.GetMobileConnectionStatus()
+		return current.PendingPairing != nil
+	})
+	pending, _ := app.GetMobileConnectionStatus()
+	if pending.PendingPairing.Code != phone.code || pending.PendingPairing.DeviceName != "E2E iPhone" {
+		t.Fatalf("pending pairing does not match the phone: %+v vs %s", pending.PendingPairing, phone.code)
+	}
+	if _, err := app.ConfirmMobilePairing(pending.PendingPairing.PairingID, true); err != nil {
+		t.Fatalf("confirm: %v", err)
+	}
+	approval := phone.awaitApproval(t)
+	if approval.DeviceID != phone.deviceID || len(approval.Scopes) != len(mobileE2EPhoneScopes) || approval.HubName == "" {
+		t.Fatalf("approval: %+v", approval)
+	}
+
+	return phone
 }
 
 // The test phone connects to relayURL directly; this origin is only used in
@@ -591,7 +598,7 @@ func (p *mobileE2EPhone) awaitBriefDocument(t *testing.T, timeout time.Duration)
 // mobileE2EBriefPackageGuard is the brief-on-the-phone guard: the Mac makes a
 // written brief and reads it aloud, and the phone's copy holds its full text
 // and the matching recording, under the id and version Today names.
-func mobileE2EBriefPackageGuard(t *testing.T, app *App, svc *mobileBriefService, phone *mobileE2EPhone, relayURL string) {
+func mobileE2EBriefPackageGuard(t *testing.T, app *App, svc *mobileBriefService, phone *mobileE2EPhone) {
 	t.Helper()
 	// The read gates need open stores: an activity store and a memory folder
 	// of the test's own.
@@ -659,25 +666,7 @@ func mobileE2EBriefPackageGuard(t *testing.T, app *App, svc *mobileBriefService,
 		t.Fatalf("GET /briefs/{id} serves other bytes: %d %.300s", code, body)
 	}
 
-	// The recording on the relay is the one the brief names.
-	attachment := pushed.Audio.Attachment
-	request, _ := http.NewRequest(http.MethodGet, relayURL+"/v1/attachments/"+attachment.ID, nil)
-	request.Header.Set("Authorization", "Bearer "+phone.bearer)
-	response, err := phone.client.Do(request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	sealed, _ := io.ReadAll(response.Body)
-	response.Body.Close()
-	key, _ := base64.RawURLEncoding.DecodeString(attachment.Key)
-	nonce, _ := base64.RawURLEncoding.DecodeString(attachment.Nonce)
-	audio, err := openMobileAttachment(key, nonce, phone.invitation.Hub, attachment.ID, sealed)
-	if err != nil || response.StatusCode != http.StatusOK {
-		t.Fatalf("the recording could not be opened: %d %v", response.StatusCode, err)
-	}
-	if digest := sha256.Sum256(audio); hex.EncodeToString(digest[:]) != pushed.Audio.SHA256 || len(audio) != pushed.Audio.Bytes {
-		t.Fatal("the recording does not match the brief")
-	}
+	checkMobileE2ERecording(t, phone, pushed.Audio)
 
 	// Today names this brief and version.
 	for deadline := time.Now().Add(30 * time.Second); ; time.Sleep(2 * time.Second) {
@@ -703,6 +692,32 @@ func mobileE2EBriefPackageGuard(t *testing.T, app *App, svc *mobileBriefService,
 	}
 	if _, queued := app.mobileBridgeForUse().briefOutbox.entry(phone.deviceID); queued {
 		t.Fatal("the outbox kept a brief the phone saved")
+	}
+}
+
+func checkMobileE2ERecording(t *testing.T, phone *mobileE2EPhone, recording *MobileBriefAudio) {
+	t.Helper()
+	// The recording on the relay is the one the brief names.
+	if recording == nil || recording.Attachment == nil {
+		t.Fatal("phone package has no recording attachment")
+	}
+	attachment := recording.Attachment
+	request, _ := http.NewRequest(http.MethodGet, phone.relay+"/v1/attachments/"+attachment.ID, nil)
+	request.Header.Set("Authorization", "Bearer "+phone.bearer)
+	response, err := phone.client.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealed, _ := io.ReadAll(response.Body)
+	response.Body.Close()
+	key, _ := base64.RawURLEncoding.DecodeString(attachment.Key)
+	nonce, _ := base64.RawURLEncoding.DecodeString(attachment.Nonce)
+	audio, err := openMobileAttachment(key, nonce, phone.invitation.Hub, attachment.ID, sealed)
+	if err != nil || response.StatusCode != http.StatusOK {
+		t.Fatalf("the recording could not be opened: %d %v", response.StatusCode, err)
+	}
+	if digest := sha256.Sum256(audio); hex.EncodeToString(digest[:]) != recording.SHA256 || len(audio) != recording.Bytes {
+		t.Fatal("the recording does not match the brief")
 	}
 }
 

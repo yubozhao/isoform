@@ -14,12 +14,13 @@ describe("useFeatureSwitches", () => {
     });
 
     it("starts with every turned-off feature off, then follows the Go side", async () => {
-        read.mockResolvedValue({ automations: true, playbooks: false, proactiveVoice: false, calendarHolds: false, chat: false });
+        read.mockResolvedValue({ automations: true, playbooks: false, proactiveVoice: false, calendarHolds: false, chat: false, briefExtras: true });
         const { result } = renderHook(() => useFeatureSwitches());
         expect(result.current).toEqual(FEATURES_OFF);
         await waitFor(() => expect(result.current.automations).toBe(true));
         expect(result.current.playbooks).toBe(false);
         expect(result.current.chat).toBe(false);
+        expect(result.current.briefExtras).toBe(true);
     });
 
     it("keeps everything off when the read fails", async () => {

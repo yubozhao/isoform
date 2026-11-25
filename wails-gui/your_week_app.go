@@ -79,7 +79,7 @@ func yourWeekWindow(brief MobileBriefV1, workDays []time.Weekday) (start, end, c
 }
 
 func (a *App) yourWeekResolvedWindow(ctx context.Context, brief MobileBriefV1) (start, end, cutoff time.Time, workDays int, ok bool) {
-	if brief.Slot != mobileBriefSlotEvening {
+	if !featureOn(featureBriefExtras) || brief.Slot != mobileBriefSlotEvening {
 		return
 	}
 	loc := time.Local

@@ -501,6 +501,9 @@ func projectMobileBriefToday(base MobileBriefV1, in mobileBriefInput) MobileBrie
 	in.HubName, in.DayShape, in.ColdStart = base.HubName, base.DayShape, base.ColdStart
 	oldRefs := map[string]MobileBriefRef{}
 	for _, ref := range base.Evidence {
+		if !featureOn(featureBriefExtras) && ref.SourceKind == "chat_message" {
+			continue
+		}
 		oldRefs[ref.Ref] = ref
 	}
 	// Attendance shares the rebuilt evidence budget and chief sections. Retain
@@ -634,9 +637,12 @@ func projectMobileBriefToday(base MobileBriefV1, in mobileBriefInput) MobileBrie
 		inputs = mobileBriefModelInputs(base)
 	}
 	for _, ref := range base.Evidence {
-		if inputs[mobileBriefSourceKey(ref.SourceKind, ref.SourceID)] {
+		if _, kept := oldRefs[ref.Ref]; kept && inputs[mobileBriefSourceKey(ref.SourceKind, ref.SourceID)] {
 			in.RecapEvidence = append(in.RecapEvidence, ref)
 		}
+	}
+	if !featureOn(featureBriefExtras) {
+		in = mobileBriefBasicInput(in)
 	}
 	fresh := buildMobileBriefV1(in)
 	for i, attendance := range fresh.MeetingAttendance {

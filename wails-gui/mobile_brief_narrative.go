@@ -68,6 +68,9 @@ func composeMobileBriefNarrativeWithLeadAt(ctx context.Context, a *App, brief Mo
 	if len(picks) == 0 && len(mobileBriefDayItems(brief)) == 0 {
 		return fallback, "skipped", nil, "", ""
 	}
+	if !featureOn(featureBriefExtras) {
+		return fallback, "unavailable", nil, "", ""
+	}
 	if ctx.Err() != nil || !mobileBriefNarrativeAvailable(a) {
 		if ctx.Err() == nil {
 			// Without the native runner no model call is made at all (rule 4 cause).

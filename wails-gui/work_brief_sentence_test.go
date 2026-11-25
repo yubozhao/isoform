@@ -50,6 +50,7 @@ func TestBriefSentenceIDsRoundTrip(t *testing.T) {
 // Not right on a sentence (computer-brief v1.0.0 rules 7 and 8): a No with
 // its reason or words, kept in Your answers, undone like any answer.
 func TestNotRightOnABriefSentenceIsANoInYourAnswers(t *testing.T) {
+	featuresOff(t)
 	app := notRightTestApp(t)
 	id := workBriefSentenceID("2026-11-14-morning", 0)
 	if _, err := app.AnswerWork(workBriefSentenceID("2026-11-14-morning", 9), WorkAnswerInput{Action: workActionNo}); !errors.Is(err, errWorkItemGone) {

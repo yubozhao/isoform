@@ -79,6 +79,9 @@ func (a *App) appResearchPrompt(job *CronJobState, via string) (string, bool) {
 	case todayNewsJobName:
 		return a.buildTodayNewsPrompt(a.currentUILanguageName(), a.collectUserInterests(), via), true
 	case topicFindsJobName:
+		if !featureOn(featureBriefExtras) {
+			return "", false
+		}
 		// A daily search checks its switches again when it runs: one that
 		// starts after a pause, or after Watch my screen went off, sends
 		// nothing. A search the user started with Find new goes ahead.

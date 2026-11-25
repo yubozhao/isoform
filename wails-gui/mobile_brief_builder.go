@@ -881,7 +881,9 @@ func collectMobileBriefInput(
 	collectMobileBriefContext(a, &in)
 	collectMobileBriefCalendar(a, &in)
 	collectMobileBriefAttendance(a, &in)
-	collectMobileBriefWatching(a, &in)
+	if featureOn(featureBriefExtras) {
+		collectMobileBriefWatching(a, &in)
+	}
 	collectMobileBriefDoing(a, &in)
 	if err := collectMobileBriefPeople(a, &in); errors.Is(err, storage.ErrReadRevisionChanged) {
 		return mobileBriefInput{}, errMobileBriefSourcesChanged

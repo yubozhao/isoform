@@ -53,9 +53,18 @@ type chatOffGoldenRun struct {
 // Both runs use the same fixed clock and fixtures; only the chat switch
 // differs. The chat-off run must also post nothing to the main chat.
 func TestChatOffBriefsReachThePhoneUnchanged(t *testing.T) {
+	for _, extras := range []string{"", string(featureBriefExtras)} {
+		t.Run("brief-extras="+extras, func(t *testing.T) {
+			chatOffGoldenCompare(t, extras)
+		})
+	}
+}
+
+func chatOffGoldenCompare(t *testing.T, extras string) {
+	t.Helper()
 	var on, off chatOffGoldenRun
-	t.Run("chat on", func(t *testing.T) { on = chatOffGoldenBuild(t, "all") })
-	t.Run("chat off", func(t *testing.T) { off = chatOffGoldenBuild(t, "") })
+	t.Run("chat on", func(t *testing.T) { on = chatOffGoldenBuild(t, strings.TrimSuffix("chat,"+extras, ",")) })
+	t.Run("chat off", func(t *testing.T) { off = chatOffGoldenBuild(t, extras) })
 	if t.Failed() {
 		return
 	}

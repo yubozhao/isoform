@@ -222,6 +222,9 @@ func collectMobileBriefRecap(a *App, in *mobileBriefInput) {
 // Mac: observing is not paused and Watch my screen is on. A paused Daily
 // News adds nothing.
 func collectMobileBriefNews(a *App, in *mobileBriefInput) {
+	if !featureOn(featureBriefExtras) {
+		return
+	}
 	if in.Slot != mobileBriefSlotMorning || a == nil {
 		return
 	}
