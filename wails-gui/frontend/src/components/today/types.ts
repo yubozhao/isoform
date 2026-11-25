@@ -34,6 +34,9 @@ export interface TodayNewsData {
 }
 
 export interface TodayActionHandlers {
+    /** false while the chat switch is off (scope cut 2026-11, A3): every way
+     *  into Chat leaves Today. Unset means Chat is there. */
+    chat?: boolean;
     /** Answers a commitment's Find time chip in place. */
     onFindTime?: (source?: import("./HoldCard").HoldCardSource) => void;
     onFindTimeRange?: (range: { first: string; last: string; minutes: number; nextWeek?: boolean }) => void;

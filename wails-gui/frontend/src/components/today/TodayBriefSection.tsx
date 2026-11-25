@@ -540,6 +540,7 @@ export function TodayBriefSection({
     dayShapeFailure = null,
     quietFooter,
     band = false,
+    briefExtras = true,
     onOpenPastBriefs,
     onReadAll,
     afterBand,
@@ -552,6 +553,8 @@ export function TodayBriefSection({
     /** The brief leads as the band (computer-today v1.0.0, SH1), with
      *  today's full card under it. */
     band?: boolean;
+    /** The brief-extras switch, for the band (scope cut B2). */
+    briefExtras?: boolean;
     onOpenPastBriefs?: () => void;
     view: TodayBriefView | null;
     dayShape?: TodayDayShape | null;
@@ -898,6 +901,7 @@ export function TodayBriefSection({
                 onReadAll={onReadAll}
                 onOpenPastBriefs={onOpenPastBriefs}
                 active={active}
+                extras={briefExtras}
                 firstCaption={firstBrief?.caption}
             />
             {afterBand}
@@ -1150,7 +1154,7 @@ function LocalDailySummary({ summary, handlers, tr, now, labelHidden = false }: 
                 shows it: its headings and lists render, never their markers. */}
             <DigestMarkdown text={summary.text} variant="compact" className={labelHidden ? undefined : "mt-2"} />
             <div className="mt-3 flex gap-3 text-[12px]">
-                <Button size="sm" variant="ghost" onClick={() => handlers.onStartChat(tr("prompts.summary", { date }), summaryChatContext(date))}>{tr("actions.askAbout")}</Button>
+                {handlers.chat !== false && <Button size="sm" variant="ghost" onClick={() => handlers.onStartChat(tr("prompts.summary", { date }), summaryChatContext(date))}>{tr("actions.askAbout")}</Button>}
                 <Button size="sm" variant="ghost" aria-label={tr("actions.openActivityForSummary")} onClick={handlers.onOpenActivity}>{tr("actions.openActivity")}</Button>
             </div>
         </section>
@@ -1457,6 +1461,8 @@ function briefParts({
     // wrote their words with the brief; a click puts them in the message box
     // at once, unsent (backlog item 64), and Send checks the card again.
     const cards = cardsShown ? (brief.cards ?? []).filter((card) => {
+        // With Chat off, a card that would send to Chat isn't offered (A3).
+        if (handlers.chat === false && card.mode === "send") return false;
         const weekLabel = brief.yourWeek?.open?.find((row) => row.cardId === card.id)?.label;
         const reply = isReplyChip(card) || (weekLabel ? isReplyChip({ ...card, label: weekLabel }) : false);
         return (!hasHoldOffer || card.kind !== "action") && !isNewMessageChip(card.label ?? "") && !isNewMessageChip(weekLabel ?? "") && (!reply || !paused && card.refs.some((ref) => evidence.get(ref)?.sourceKind === "brief_waiting_reply")) &&
@@ -1500,7 +1506,7 @@ function briefParts({
             if (card.target) handlers.onOpenActivitySuggestion?.(card.target);
             return;
         }
-        if (card.mode !== "send") return;
+        if (card.mode !== "send" || handlers.chat === false) return;
         handlers.onStartChat(card.message, { ...todayBriefCardRef(brief.briefId, card.id, card.message), ...(action ? { telemetryAction: action } : {}) });
     };
     const askCard = (card: MobileBriefCard, action: "T10" | "T81" = "T10") => {
@@ -2052,7 +2058,7 @@ function BriefRow({
     const sinceDay = item.attentionReason?.trim() || item.evidenceUnavailable
         ? null
         : briefSinceDay(item.since, now, i18n.resolvedLanguage ?? i18n.language, tr, timeZone);
-    const canFollow = link?.kind !== "mainChat" || !!handlers.onOpenMainChat;
+    const canFollow = link?.kind !== "mainChat" || (handlers.chat !== false && !!handlers.onOpenMainChat);
     const follow = () => {
         if (!link) return;
         switch (link.kind) {

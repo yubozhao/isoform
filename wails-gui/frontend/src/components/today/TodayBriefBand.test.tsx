@@ -151,3 +151,17 @@ describe("TodayBriefBand at every size (computer-window v1.0.0 rules 6, 7, 9)", 
         expect(screen.getByTestId("today-brief-band-frame")).toHaveClass("@container");
     });
 });
+
+describe("TodayBriefBand, the basic brief (scope cut 2026-11 B2)", () => {
+    beforeEach(async () => { await i18n.changeLanguage("en"); });
+    afterEach(cleanup);
+    it("names the sources the brief used in one line, with no counts", () => {
+        const withSources = view({ brief: brief({ evidence: [
+            { ref: "e1", sourceKind: "calendar", sourceId: "c1", label: "1:1", observedAt: "2026-11-15T17:00:00Z", group: "calendar" },
+            { ref: "e2", sourceKind: "activity", sourceId: "s1", label: "Screen", observedAt: "2026-11-15T16:00:00Z", group: "screen" },
+        ] } as unknown as Partial<MobileBriefDocument>) });
+        band({ view: withSources, extras: false });
+        expect(screen.getByTestId("brief-band-contents")).toHaveTextContent("Calendar · Screen");
+        expect(screen.getByTestId("brief-band-contents")).not.toHaveTextContent(/meetings|to answer/);
+    });
+});

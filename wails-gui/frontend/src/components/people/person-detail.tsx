@@ -3,6 +3,7 @@
 // topics and where Isoform saw them, then everything else folded below. A
 // section shows only when it has something in it.
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useChatOn } from '@/hooks/useFeatureSwitches';
 import { useTranslation } from 'react-i18next';
 import { GitMerge, Link, MoreHorizontal, Pencil, Trash2, Unlink, UserPlus } from 'lucide-react';
 import { type PersonCard, type PersonDetail, type PrincipalDTO, type PrincipalWithStatsDTO } from '@/lib/wails-shim-app';
@@ -179,6 +180,7 @@ export function PersonDetailPanel({
         </div>
     );
 
+    const chatOn = useChatOn();
     if (!detail) {
         return (
             <article aria-label={name} className="flex flex-col gap-5">
@@ -203,7 +205,9 @@ export function PersonDetailPanel({
     // owe, a send waiting on them, back in touch) stay listed as before.
     const promises = sortPromises(detail.loops.filter(isPromise).map((loop) => ({ loop, personId, name })));
     const otherLoops = detail.loops.filter((loop) => !isPromise(loop));
-    const chatNotes = detail.chatNotes ?? [];
+    // "Said in Chat" notes are hidden while Chat is (scope cut A4); they stay
+    // stored, and Forget everything still removes them.
+    const chatNotes = chatOn ? detail.chatNotes ?? [] : [];
     const promiseAnswered = () => {
         reread();
         onAnswered?.();

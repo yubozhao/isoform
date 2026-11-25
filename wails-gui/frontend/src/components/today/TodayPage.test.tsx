@@ -6,6 +6,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { chatThreadUpdates } from "@/lib/main-chat-view";
 import enChat from "@/i18n/locales/en/chat.json";
 import { TodayPage, phoneQuietOnToday } from "./TodayPage";
+import { FEATURE_SWITCHES_TEST_KEY, resetFeatureSwitchesForTest } from "@/hooks/useFeatureSwitches";
+
+/** Run with the chat switch set, then put the suite's switches back
+ *  (test-setup.ts turns chat on for every test). */
+async function withChat<T>(on: boolean, run: () => Promise<T> | T): Promise<T> {
+    const store = globalThis as Record<string, unknown>;
+    const previous = store[FEATURE_SWITCHES_TEST_KEY];
+    store[FEATURE_SWITCHES_TEST_KEY] = { ...(previous as Record<string, unknown> | undefined), chat: on };
+    resetFeatureSwitchesForTest();
+    try { return await run(); } finally {
+        store[FEATURE_SWITCHES_TEST_KEY] = previous;
+        resetFeatureSwitchesForTest();
+    }
+}
 import { todayNextBrief, dayShapeFixture } from "./today-next.fixture";
 import { useMainChatItemPanel } from "@/hooks/useMainChatItemPanel";
 import { resetMainChatWaitingStore } from "@/lib/main-chat-waiting-store";
@@ -599,23 +613,24 @@ describe("TodayPage topic panel (RC 1 part 2)", () => {
     });
 
     it("opens a requested topic on its own page in Today's place, once, and Esc goes back", async () => {
-        width(1200);
-        const elsewhere = { id: "atlas", name: "Atlas migration", kind: "work" as const, pinned: true };
-        const done = vi.fn();
-        render(<TodayPage handlers={handlers} topicRequest={{ topic: elsewhere, nonce: 1 }} onTopicRequestDone={done} />);
-        await act(async () => {});
-        // A topic opens its own page in Today's place (computer-today v1.2.0 rule 3).
-        const page = screen.getByTestId("today-topic-page");
-        expect(screen.getByTestId("today-column")).toContainElement(page);
-        expect(page).toHaveAccessibleName("Atlas migration");
-        // App clears the request, so Today does not open it again on its next visit.
-        expect(done).toHaveBeenCalledTimes(1);
-        // Ask about {topic} › opens Chat with the topic attached.
-        fireEvent.click(screen.getByTestId("topic-page-ask"));
-        expect(handlers.onStartChat).toHaveBeenCalledWith("prompts.askTopic", { sourceKind: "topic", sourceId: "atlas", generatedTitle: "Atlas migration" });
-        // Esc goes back to Today.
-        fireEvent.keyDown(document, { key: "Escape" });
-        await waitFor(() => expect(screen.queryByTestId("today-topic-page")).not.toBeInTheDocument());
+        await withChat(false, async () => {
+            width(1200);
+            const elsewhere = { id: "atlas", name: "Atlas migration", kind: "work" as const, pinned: true };
+            const done = vi.fn();
+            render(<TodayPage handlers={handlers} topicRequest={{ topic: elsewhere, nonce: 1 }} onTopicRequestDone={done} />);
+            await act(async () => {});
+            // A topic opens its own page in Today's place (computer-today v1.2.0 rule 3).
+            const page = screen.getByTestId("today-topic-page");
+            expect(screen.getByTestId("today-column")).toContainElement(page);
+            expect(page).toHaveAccessibleName("Atlas migration");
+            // App clears the request, so Today does not open it again on its next visit.
+            expect(done).toHaveBeenCalledTimes(1);
+            // With the chat switch off (the default), the topic page has no Ask link (scope cut A3).
+            expect(screen.queryByTestId("topic-page-ask")).not.toBeInTheDocument();
+            // Esc goes back to Today.
+            fireEvent.keyDown(document, { key: "Escape" });
+            await waitFor(() => expect(screen.queryByTestId("today-topic-page")).not.toBeInTheDocument());
+        });
     });
 
 });
@@ -814,14 +829,37 @@ describe("nothing opens beside Today (computer-today v1.2.0)", () => {
         }
     });
 
-    it("sends Reply about this from the brief in full to Chat, where it lives", async () => {
-        const onAskAboutParagraph = vi.fn().mockResolvedValue(true);
-        renderToday({ ...handlers, onAskAboutParagraph });
-        await act(async () => {});
-        fireEvent.click(screen.getByTestId("brief-band-read-all"));
-        fireEvent.click(await screen.findByRole("button", { name: "cbrief.reply" }));
-        expect(onAskAboutParagraph).toHaveBeenCalledWith("2026-10-22-morning", 0, "Halcyon's launch memo is due Tuesday.", "");
-        expect(screen.queryByTestId("topic-panel-pinned")).not.toBeInTheDocument();
+    it("offers no Reply about this in the brief in full while Chat is off, and Not right stays (scope cut A3)", async () => {
+        await withChat(false, async () => {
+            const onAskAboutParagraph = vi.fn().mockResolvedValue(true);
+            renderToday({ ...handlers, onAskAboutParagraph });
+            await act(async () => {});
+            fireEvent.click(screen.getByTestId("brief-band-read-all"));
+            await screen.findByTestId("today-brief-full");
+            expect(screen.queryByRole("button", { name: "cbrief.reply" })).not.toBeInTheDocument();
+            expect(screen.getAllByTestId("brief-full-not-right").length).toBeGreaterThan(0);
+            expect(onAskAboutParagraph).not.toHaveBeenCalled();
+        });
+    });
+
+    it("keeps the brief band and Your work, with no Quick chat hint in the keys line, while Chat is off (A3)", async () => {
+        await withChat(false, async () => {
+            renderToday();
+            await act(async () => {});
+            expect(screen.getByTestId("today-brief-band")).toBeInTheDocument();
+            expect(screen.queryByTestId("your-work-keys-quick-chat")).not.toBeInTheDocument();
+        });
+    });
+
+    it("brings Ask about a topic and Reply about this back with the chat switch on", async () => {
+        await withChat(true, async () => {
+            const onAskAboutParagraph = vi.fn().mockResolvedValue(true);
+            renderToday({ ...handlers, onAskAboutParagraph });
+            await act(async () => {});
+            fireEvent.click(screen.getByTestId("brief-band-read-all"));
+            fireEvent.click(await screen.findByRole("button", { name: "cbrief.reply" }));
+            expect(onAskAboutParagraph).toHaveBeenCalledWith("2026-10-22-morning", 0, "Halcyon's launch memo is due Tuesday.", "");
+        });
     });
 });
 

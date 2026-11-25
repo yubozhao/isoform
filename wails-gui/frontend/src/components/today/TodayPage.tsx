@@ -30,6 +30,7 @@ import { TodayPauseLine } from "./TodayPauseLine";
 import type { TodayBriefFocus } from "@/lib/main-chat-navigation";
 import { historyFound, historyName, useFirstDay } from "@/hooks/useFirstDay";
 import { TroubleLine, useTrouble } from "@/components/trouble-line";
+import { useFeatureSwitches } from "@/hooks/useFeatureSwitches";
 
 /** Past this, a phone that went quiet while the watch was listening is said
  *  on Today (computer-conformance-answers v1.4.0 W5). */
@@ -123,6 +124,13 @@ export function TodayPage({
     const { t: ta } = useTranslation("app");
     const status = useTodayStatus(true);
     const assistantSignOut = useAssistantSignOut();
+    // Chat is behind its switch (scope cut 2026-11, A3): off, Today offers no
+    // way into it: no Ask about a topic, no Reply about this, no Quick chat hint.
+    const features = useFeatureSwitches();
+    const chatOn = (features as typeof features & { chat?: boolean }).chat === true;
+    // The brief's extras are behind their switch (scope cut 2026-11, B2): off,
+    // the basic brief shows one sources line and Hear it as play, pause and a bar.
+    const briefExtras = (features as typeof features & { briefExtras?: boolean }).briefExtras === true;
     // What stopped that nobody chose, one line under the date (computer-trouble
     // v1.0.0): the screen, the assistant, the internet. A quiet phone shows here
     // only when the watch was listening when it went quiet, past 3 hours
@@ -287,14 +295,21 @@ export function TodayPage({
     const pageHandlers = useMemo<TodayActionHandlers>(() => {
         const { onFindTime: _findTime, onFindTimeRange: _findTimeRange, ...rest } = handlers;
         void _findTime; void _findTimeRange;
+        // With Chat off, the handlers that only lead into Chat aren't passed
+        // down, so nothing on Today can offer them (A3).
+        const chatOnly = chatOn ? {} : {
+            chat: false, onAskAboutParagraph: undefined, onAskBriefCard: undefined, onPrefillChat: undefined,
+            onOpenMainChat: undefined, onOpenBriefConversation: undefined, onBriefMeeting: undefined, onPrepareInTopic: undefined,
+        };
         return {
             ...rest,
+            ...chatOnly,
             answeredBriefCards,
             onOpenDayMeeting: function openDayMeeting(id) {
                 setDayMeetingFailed(null);
                 void GetTodayDayMeetingTarget(id).then((target) => {
                     if (target.kind === "notes" && target.sessionId && handlers.onOpenMeetingNotes) handlers.onOpenMeetingNotes(target.sessionId);
-                    else if (target.kind === "prep" && target.meeting) {
+                    else if (target.kind === "prep" && target.meeting && chatOn) {
                         const meeting: TodayBeforeYouTalk = target.meeting;
                         const time = computerClock(new Date(meeting.startAt), i18n.resolvedLanguage);
                         handlers.onStartChat(tr("beforeYouTalk.briefPrompt", { title: meeting.meetingTitle, name: meeting.personName, time }), { sourceKind: "calendar", sourceId: meeting.meetingId, meetingPrep: true, meetingStartMs: meeting.startAt, generatedTitle: meeting.meetingTitle, generatedPeople: [meeting.personName] });
@@ -306,10 +321,12 @@ export function TodayPage({
             onOpenTopic: (topicId: string) => { if (!openTopic(topicId)) handlers.onOpenTopic?.(topicId); },
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [handlers, answeredBriefCards, openTopic, i18n]);
+    }, [handlers, answeredBriefCards, openTopic, i18n, chatOn]);
     // Ask about {topic} ›: Chat with the topic attached (computer-conformance
     // answers v1.0.0, the correction to computer-today v1.2.0 rule 3).
-    const askAboutTopic = (topic: TodayTopic) => handlers.onStartChat(tr("prompts.askTopic", { topic: topic.name }), { sourceKind: "topic", sourceId: topic.id, generatedTitle: topic.name });
+    const askAboutTopic = (topic: TodayTopic) => handlers.onAskAboutTopic
+        ? handlers.onAskAboutTopic({ id: topic.id, name: topic.name })
+        : handlers.onStartChat(tr("prompts.askTopic", { topic: topic.name }), { sourceKind: "topic", sourceId: topic.id, generatedTitle: topic.name });
 
     // Day 1's first brief says what it was made from, with chips from the
     // same facts (first-day handoff §3).
@@ -352,9 +369,10 @@ export function TodayPage({
                             onUndo={work.undo}
                             onHandOff={openHandOff}
                             onNotRight={work.answer}
-                            onReply={handlers.onAskAboutParagraph ? (index, text) => { void handlers.onAskAboutParagraph!(fullBrief.briefId, index, text, ""); } : undefined}
+                            onReply={chatOn && handlers.onAskAboutParagraph ? (index, text) => { void handlers.onAskAboutParagraph!(fullBrief.briefId, index, text, ""); } : undefined}
                             onOpenBrief={(id, title) => openBrief(id, title)}
                             onBack={back}
+                            extras={briefExtras}
                         />
                     ) : place?.kind === "topic" ? (
                         <TodayTopicPage
@@ -364,7 +382,8 @@ export function TodayPage({
                             onAnswer={work.answer}
                             onUndo={work.undo}
                             onHandOff={openHandOff}
-                            onAsk={() => askAboutTopic(place.topic)}
+                            onAsk={chatOn ? () => askAboutTopic(place.topic) : undefined}
+                            quickChat={chatOn}
                             onBack={back}
                         />
                     ) : place?.kind === "earlier" ? (
@@ -407,6 +426,7 @@ export function TodayPage({
                         dayShapeFailure={dayShapeFailed ? { lastUpdatedAt: dayShapeUpdatedAt, retry: retryDayShape } : null}
                         quietFooter={quietLines.length > 0 || pausedText ? <>{quietLines.map((line) => <p key={line.id} data-testid="today-quiet-line">{line.text}</p>)}{pausedText && <TodayPauseLine />}</> : null}
                         band
+                        briefExtras={briefExtras}
                         onOpenPastBriefs={() => openPlace({ kind: "brief" })}
                         onReadAll={() => openPlace({ kind: "brief" })}
                         afterBand={work.list ? <TodayYourWork keys={false} focusRequest={workRequest} list={work.list} active={active && !handOff} onAnswer={work.answer} onUndo={work.undo} onHandOff={openHandOff} noAgents={!!yourAgents && !yourAgents.agents.some((agent) => agent.connected)} onConnectAgent={handlers.onOpenAgents} agentsFailed={!yourAgents && agentsReadFailed} onRetryAgents={() => { setAgentsReadFailed(false); setAgentsAttempt((n) => n + 1); }} onOpenRef={(ref) => {
@@ -442,7 +462,7 @@ export function TodayPage({
                 rule 8). Only on Today itself, where the keys answer. */}
             {work.list && !place && (
                 <div className="shrink-0 border-t border-border-divider bg-background px-7 py-2.5" data-testid="today-keys-strip">
-                    <div className="mx-auto w-full max-w-[1180px]"><TodayKeysLine /></div>
+                    <div className="mx-auto w-full max-w-[1180px]"><TodayKeysLine quickChat={chatOn} /></div>
                 </div>
             )}
             {active && handOff && <TodayHandOffSheet key={handOff.item.id} item={handOff.item} edited={handOff.edited} twoStep={handOff.twoStep} failedText={work.failedText} agents={yourAgents} agentsFailed={agentsFailed} onRetryAgents={readYourAgents} onSend={(input) => work.answer(handOff.item.id, input)} onClose={() => setHandOff(null)} />}

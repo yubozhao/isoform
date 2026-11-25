@@ -26,11 +26,16 @@ const (
 	// featureCalendarHolds: calendar holds.
 	featureCalendarHolds featureSwitch = "calendar-holds"
 	featureBriefExtras   featureSwitch = "brief-extras"
+	// featureActivityExtras: Activity beyond the record (scope cut 2026-11,
+	// docs/plans/scope-cut-2026-11.md §4 and B3): the Screen and Agents tabs,
+	// the stitched list, screen-seen agent runs, the topic line, Not this
+	// topic and Remind me in a row's •••, and Your answers' 14-day bars.
+	featureActivityExtras featureSwitch = "activity-extras"
 )
 
 const featureSwitchesEnv = "YANSU_FEATURES"
 
-var allFeatureSwitches = []featureSwitch{featureAutomations, featurePlaybooks, featureProactiveVoice, featureCalendarHolds, featureWatchNotes, featureChat, featureBriefExtras}
+var allFeatureSwitches = []featureSwitch{featureAutomations, featurePlaybooks, featureProactiveVoice, featureCalendarHolds, featureWatchNotes, featureChat, featureBriefExtras, featureActivityExtras}
 
 // featureOn reports whether a turned-off feature has been turned back on.
 func featureOn(feature featureSwitch) bool {
@@ -52,6 +57,7 @@ type FeatureSwitches struct {
 	ProactiveVoice bool `json:"proactiveVoice"`
 	CalendarHolds  bool `json:"calendarHolds"`
 	Chat           bool `json:"chat"`
+	ActivityExtras bool `json:"activityExtras"`
 }
 
 // GetFeatureSwitches is the Wails binding for FeatureSwitches.
@@ -63,6 +69,7 @@ func (a *App) GetFeatureSwitches() FeatureSwitches {
 		ProactiveVoice: featureOn(featureProactiveVoice),
 		CalendarHolds:  featureOn(featureCalendarHolds),
 		Chat:           featureOn(featureChat),
+		ActivityExtras: featureOn(featureActivityExtras),
 	}
 }
 

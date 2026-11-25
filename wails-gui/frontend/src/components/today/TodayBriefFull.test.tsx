@@ -210,3 +210,38 @@ describe("TodayBriefFull items answered with the keys (computer-brief v1.0.0 rul
         expect(onAnswer).not.toHaveBeenCalled();
     });
 });
+
+describe("the basic brief (scope cut 2026-11 B2: brief-extras off)", () => {
+    const grouped = { ...brief, evidence: [
+        { ref: "e1", sourceKind: "calendar", sourceId: "c1", label: "1:1", observedAt: "2026-11-15T17:00:00Z", group: "calendar" },
+        { ref: "e2", sourceKind: "mail", sourceId: "m1", label: "Thread", observedAt: "2026-11-15T16:00:00Z", group: "mail" },
+    ] } as unknown as MobileBriefDocument;
+    beforeEach(async () => {
+        await i18n.changeLanguage("en");
+        mocks.list.mockResolvedValue([]);
+        mocks.toggle.mockReset().mockResolvedValue(undefined);
+        mocks.seek.mockReset();
+    });
+    afterEach(cleanup);
+
+    it("plays and pauses with a bar, and has no speed, no 15 s seek and no arrow seek", async () => {
+        render(<TodayBriefFull brief={grouped} view={view} active extras={false} onOpenBrief={vi.fn()} onBack={vi.fn()} />);
+        await act(async () => {});
+        expect(screen.getByTestId("brief-full-player")).toBeInTheDocument();
+        expect(screen.queryByTestId("brief-full-speed")).not.toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "Back 15 seconds" })).not.toBeInTheDocument();
+        fireEvent.keyDown(document.body, { key: "ArrowRight" });
+        expect(mocks.seek).not.toHaveBeenCalled();
+        fireEvent.keyDown(document.body, { key: " ", code: "Space" });
+        expect(mocks.toggle).toHaveBeenCalled();
+    });
+
+    it("shows one sources line in place of In this brief by kind, and no items under paragraphs", async () => {
+        render(<TodayBriefFull brief={grouped} view={view} active items={[offer]} extras={false} onAnswer={vi.fn()} onNotRight={vi.fn()} onOpenBrief={vi.fn()} onBack={vi.fn()} />);
+        await act(async () => {});
+        expect(screen.getByTestId("brief-full-sources-line")).toHaveTextContent(/^Calendar · Mail$/);
+        expect(screen.queryByTestId("brief-full-sources")).not.toBeInTheDocument();
+        expect(screen.queryByTestId("brief-full-item")).not.toBeInTheDocument();
+        expect(screen.getAllByTestId("brief-full-not-right").length).toBeGreaterThan(0);
+    });
+});

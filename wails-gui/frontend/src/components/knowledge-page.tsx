@@ -51,7 +51,7 @@ import { PlaybookCards, type PlaybookRunState } from '@/components/playbooks/Pla
 import { PlaybookPageActions } from '@/components/playbooks/PlaybookPageActions';
 import { listConfirmedPlaybooks } from '@/components/playbooks/playbook-lists';
 import { usePlaybookLibrary } from '@/components/playbooks/usePlaybookLibrary';
-import { useFeatureSwitches } from '@/hooks/useFeatureSwitches';
+import { useChatOn, useFeatureSwitches } from '@/hooks/useFeatureSwitches';
 import { GenerateSOPFromDescription, RefreshDerivedView, RunPlaybookNow, type SopEntry, type SopRunResult } from '@/lib/wails-shim-app';
 import {
     KNOW_HOW_KINDS,
@@ -1822,6 +1822,8 @@ function KnowHowDetail({
     const when = card.savedAt > 0 ? dateTimeInWords(card.savedAt, locale) : '';
     const whenLine = [when, apps].filter(Boolean).join(' · ');
     const [asking, setAsking] = useState(false);
+    // Ask goes to Chat, which the scope cut hides (A4).
+    const chatOn = useChatOn();
     const [draft, setDraft] = useState<'idle' | 'drafting' | 'failed'>('idle');
     useEffect(() => {
         setAsking(false);
@@ -1905,14 +1907,16 @@ function KnowHowDetail({
                             {t('detail.cta.how_to')}
                         </Button>
                     )}
-                    <Button
-                        variant={kind === 'how_to' && draft === 'idle' ? 'secondary' : 'default'}
-                        size="sm"
-                        aria-expanded={asking}
-                        onClick={() => setAsking((open) => !open)}
-                    >
-                        {t('detail.ask')}
-                    </Button>
+                    {chatOn && (
+                        <Button
+                            variant={kind === 'how_to' && draft === 'idle' ? 'secondary' : 'default'}
+                            size="sm"
+                            aria-expanded={asking}
+                            onClick={() => setAsking((open) => !open)}
+                        >
+                            {t('detail.ask')}
+                        </Button>
+                    )}
                     <Button variant="outline" size="sm" onClick={onEdit} disabled={!entry}>
                         {t('detail.edit')}
                     </Button>
@@ -1934,7 +1938,7 @@ function KnowHowDetail({
                 {draft === 'failed' && (
                     <ActivityInlineNotice notice={errorNotice(t('detail.draftFailed'), turnIntoPlaybook)} className="m-0 text-[12.5px]" />
                 )}
-                {asking && (
+                {chatOn && asking && (
                     <ActivityAskInline context={{ sourceKind: 'knowledge', sourceId: card.id }} onClose={() => setAsking(false)} />
                 )}
 

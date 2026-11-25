@@ -6612,6 +6612,8 @@ export interface FeatureSwitches {
     /** Chat, Quick chat and the chat apps (scope cut 2026-11, A1). */
     chat: boolean;
     briefExtras: boolean;
+    /** Activity beyond the record (scope cut 2026-11, B3), off by default. */
+    activityExtras: boolean;
 }
 export const GetFeatureSwitches = appBinding<[], FeatureSwitches>("GetFeatureSwitches");
 export const GetMainChatOverview = appBinding<[], import("../../wailsjs/go/models").main.MainChatOverview>("GetMainChatOverview");

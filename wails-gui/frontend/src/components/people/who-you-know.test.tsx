@@ -159,7 +159,22 @@ describe('A person on Who you know', () => {
         expect(screen.getByRole('button', { name: 'Draft a reply' })).toBeInTheDocument();
     });
 
+    // Scope cut A4: "Said in Chat" notes are hidden while Chat is; the
+    // person's own notes stay.
+    it('hides Chat corrections in Notes while Chat is hidden', async () => {
+        // Chat is off for this case (test-setup turns every switch on).
+        (globalThis as Record<string, unknown>).__isoformFeatureSwitchesForTest = { automations: true, playbooks: true, proactiveVoice: true, calendarHolds: true, chat: false, activityExtras: true };
+        bind('GetPersonDetail', vi.fn().mockResolvedValue(detail({ notes: 'Prefers mornings', chatNotes: [{ id: 'n1', text: 'Lena leads the import team' }] })));
+        const entryRow = { principal: { id: 'lena', kind: 'contact', displayName: 'Lena', notes: 'Prefers mornings', aliases: [] }, stats: { totalMessages: 0, byApp: [], recentMessages: [] } } as never;
+        render(<PersonDetailPanel personId="lena" entry={entryRow} revision={0} actions={actions} />);
+        expect(await screen.findByText('Prefers mornings')).toBeInTheDocument();
+        expect(screen.queryByText('Lena leads the import team')).toBeNull();
+        expect(screen.queryByText('Said in Chat')).toBeNull();
+    });
+
     it('shows a Chat correction read-only in Notes, and nothing once Undo removed it', async () => {
+        // Chat is on for this case (the scope cut's `chat` switch).
+        (globalThis as Record<string, unknown>).__isoformFeatureSwitchesForTest = { automations: true, playbooks: true, proactiveVoice: true, calendarHolds: true, chat: true };
         const read = bind('GetPersonDetail', vi.fn().mockResolvedValue(detail({ notes: 'Prefers mornings', chatNotes: [{ id: 'n1', text: 'Lena leads the import team' }] })));
         const entryRow = { principal: { id: 'lena', kind: 'contact', displayName: 'Lena', notes: 'Prefers mornings', aliases: [] }, stats: { totalMessages: 0, byApp: [], recentMessages: [] } } as never;
         const page = render(<PersonDetailPanel personId="lena" entry={entryRow} revision={0} actions={actions} />);

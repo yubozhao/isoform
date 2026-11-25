@@ -31,12 +31,13 @@ import {
     ClipboardCopy,
 } from 'lucide-react';
 import { ActivityOpenChatContext } from './activity-ask-inline';
+import { useActivityExtras, useChatOn } from '@/hooks/useFeatureSwitches';
 import { ActivityInlineNotice, type ActivityNotice } from './activity-inline-notice';
 import { SearchIcon } from '@/assets/icons/SearchIcon';
 import { RedactionShieldIcon } from '@/components/icons/redaction-shield-icon';
 import { ActivityDayView, type ActivityDaySection } from './activity-day-view';
 import type { WorkedOnView } from './activity-stitched';
-import type { MobileBriefActivityTarget } from '@/lib/wails-shim-app';
+import type { ActivityFeedRow, MobileBriefActivityTarget } from '@/lib/wails-shim-app';
 import { AutomationDetailDialog } from '@/components/automations/AutomationDetailDialog';
 import {
     formatDateStr,
@@ -114,6 +115,20 @@ const ACTIVITY_TABS = [
     { id: 'answers', labelKey: 'act.tabAnswers' },
 ] as const satisfies readonly { id: ActivitySectionId; labelKey: string }[];
 type ActivityTabId = (typeof ACTIVITY_TABS)[number]['id'];
+
+/** Without Activity's extras (scope cut B3) three tabs stay: Your day,
+ *  Watch and Your answers. The Screen timeline opens from a screen row. */
+const BASIC_ACTIVITY_TABS = ACTIVITY_TABS.filter((tab) => tab.id !== 'workedOn' && tab.id !== 'agents');
+
+/** The Screen timeline group a screen row opens: the one holding the row's
+ *  start, else the first after it, else the last before it. */
+export function timelineGroupAt<G extends { startTime: number; endTime: number }>(groups: readonly G[], atMs: number): G | null {
+    const holding = groups.find((group) => group.startTime <= atMs && atMs <= group.endTime);
+    if (holding) return holding;
+    const after = groups.filter((group) => group.startTime > atMs).sort((a, b) => a.startTime - b.startTime)[0];
+    if (after) return after;
+    return [...groups].sort((a, b) => b.endTime - a.endTime)[0] ?? null;
+}
 
 interface ActivityPageProps {
     /** Optional close handler (Escape ladder's last rung). The page is a main
@@ -2015,8 +2030,18 @@ function formatDayNavLabel(date: Date, todayLabel: string, yesterdayLabel: strin
 }
 
 // ── Main activity page ───────────────────────────────────────────────
-export function ActivityPage({ onClose, initialSessionId, initialDate, noticedFocus, onNoticedFocusConsumed, initialThreadId, onInitialThreadConsumed, initialConversationId, onOpenTopic, cronJobs, backButton, section, onSectionChange, onOpenChat, onStartChat, highlightedFrames, highlightedPipelineRunId, restrictToSessionIds, initialEventTimestamp, highlightedSenderName }: ActivityPageProps) {
+export function ActivityPage({ onClose, initialSessionId, initialDate, noticedFocus, onNoticedFocusConsumed, initialThreadId, onInitialThreadConsumed, initialConversationId, onOpenTopic, cronJobs, backButton, section: requestedSection, onSectionChange, onOpenChat: openChatProp, onStartChat: startChatProp, highlightedFrames, highlightedPipelineRunId, restrictToSessionIds, initialEventTimestamp, highlightedSenderName }: ActivityPageProps) {
     const { t } = useTranslation('activity');
+    // With Chat hidden (scope cut A4), no row offers Chat about this and
+    // nothing opens Chat from Activity.
+    const chatOn = useChatOn();
+    const onOpenChat = chatOn ? openChatProp : undefined;
+    const onStartChat = chatOn ? startChatProp : undefined;
+    // Without the extras the Screen and Agents tabs are gone: a section left
+    // there (a remembered visit, a link) shows Your day.
+    const extras = useActivityExtras();
+    const section: ActivitySectionId = !extras && (requestedSection === 'workedOn' || requestedSection === 'agents') ? 'yourDay' : requestedSection;
+    const tabs = extras ? ACTIVITY_TABS : BASIC_ACTIVITY_TABS;
     // One day at a time (computer-conformance-answers A4): previous and next beside the
     // date steps through days. The Screen timeline has its own time filter.
     // A session jump (memory / knowledge / people / chat link) lands
@@ -2332,8 +2357,14 @@ export function ActivityPage({ onClose, initialSessionId, initialDate, noticedFo
     // flow: resolve the session's day first so the sidebar lists its siblings,
     // then select it. Falls back to the current range when the detail fetch
     // fails so the jump never dead-ends.
+    // The time a screen row opened the timeline at; a pick or a session jump clears it.
+    const [timelineAtMs, setTimelineAtMs] = useState<number | null>(null);
+    // The loads below pick a group outside render; they read it here.
+    const timelineAtRef = useRef<number | null>(null);
+    timelineAtRef.current = timelineAtMs;
     const openSessionInTimeline = useCallback((sessionId: string) => {
         const select = () => {
+            setTimelineAtMs(null);
             setSelectedTimelineGroupId(null);
             setSelectedId(sessionId);
             onSectionChange('timeline');
@@ -2349,6 +2380,19 @@ export function ActivityPage({ onClose, initialSessionId, initialDate, noticedFo
                 select();
             })
             .catch(select);
+    }, [onSectionChange]);
+
+    // A screen row of Your day (without the extras) opens the Screen
+    // timeline on its day, at the group holding its stretch.
+    const openScreenStretch = useCallback((row: ActivityFeedRow) => {
+        const day = formatDateStr(new Date(row.startMs));
+        setCustomStart(day);
+        setCustomEnd(day);
+        setTimePreset('custom');
+        setSelectedId(null);
+        setSelectedTimelineGroupId(null);
+        setTimelineAtMs(row.startMs);
+        onSectionChange('timeline');
     }, [onSectionChange]);
 
     // A watch conversation from a row of Your day opens in place: the Watch
@@ -2547,7 +2591,8 @@ export function ActivityPage({ onClose, initialSessionId, initialDate, noticedFo
                             return anchoredGroup.id;
                         }
                     }
-                    return groups[0]?.id ?? null;
+                    const atScreenRow = timelineAtRef.current === null ? null : timelineGroupAt(groups, timelineAtRef.current);
+                    return atScreenRow?.id ?? groups[0]?.id ?? null;
                 });
 
                 setSelectedId((prev) => {
@@ -2627,7 +2672,8 @@ export function ActivityPage({ onClose, initialSessionId, initialDate, noticedFo
                         if (prev && groups.some((group) => group.id === prev)) {
                             return prev;
                         }
-                        return groups[0]?.id ?? null;
+                        const atScreenRow = timelineAtRef.current === null ? null : timelineGroupAt(groups, timelineAtRef.current);
+                        return atScreenRow?.id ?? groups[0]?.id ?? null;
                     });
                 })
                 .then(() => setSessionsFailed(false))
@@ -2718,8 +2764,9 @@ export function ActivityPage({ onClose, initialSessionId, initialDate, noticedFo
         const bySelectedSession = selectedId
             ? timelineGroups.find((group) => (group.sessionIds ?? []).includes(selectedId))
             : null;
-        setSelectedTimelineGroupId(bySelectedSession?.id ?? timelineGroups[0].id);
-    }, [isTimeline, selectedTimelineGroup, selectedId, timelineGroups]);
+        const atScreenRow = timelineAtMs === null ? null : timelineGroupAt(timelineGroups, timelineAtMs);
+        setSelectedTimelineGroupId(bySelectedSession?.id ?? atScreenRow?.id ?? timelineGroups[0].id);
+    }, [isTimeline, selectedTimelineGroup, selectedId, timelineGroups, timelineAtMs]);
 
     // Load the visible detail. The Screen timeline section uses app-run
     // groups; other session-oriented entry points can still fall back to the
@@ -3577,10 +3624,11 @@ export function ActivityPage({ onClose, initialSessionId, initialDate, noticedFo
     // The header's tabs: Screen holds both its views (What you worked on and
     // the Screen timeline); arrow keys move between tabs, as on You.
     const tabIds = useId();
-    const activeTab: ActivityTabId = isTimeline ? 'workedOn' : section;
+    // Without the extras the timeline is the detail behind a Your day row.
+    const activeTab: ActivityTabId = isTimeline ? (extras ? 'workedOn' : 'yourDay') : section;
     const moveTab = (from: ActivityTabId, step: 1 | -1) => {
-        const index = ACTIVITY_TABS.findIndex((tab) => tab.id === from);
-        const next = ACTIVITY_TABS[(index + step + ACTIVITY_TABS.length) % ACTIVITY_TABS.length].id;
+        const index = tabs.findIndex((tab) => tab.id === from);
+        const next = tabs[(index + step + tabs.length) % tabs.length].id;
         onSectionChange(next);
         document.getElementById(`${tabIds}-tab-${next}`)?.focus();
     };
@@ -3612,7 +3660,7 @@ export function ActivityPage({ onClose, initialSessionId, initialDate, noticedFo
                         aria-label={t('sections.label') as string}
                         className="flex w-fit max-w-full flex-wrap gap-0.5 rounded-[10px] border border-border bg-panel-warm p-[3px]"
                     >
-                        {ACTIVITY_TABS.map(({ id, labelKey }) => {
+                        {tabs.map(({ id, labelKey }) => {
                             const active = id === activeTab;
                             return (
                                 <button
@@ -3936,6 +3984,7 @@ export function ActivityPage({ onClose, initialSessionId, initialDate, noticedFo
                                                     key={group.id}
                                                     ref={isActive ? selectedSessionRef : undefined}
                                                     onClick={() => {
+                                                        setTimelineAtMs(null);
                                                         setSelectedTimelineGroupId(group.id);
                                                         setSelectedId(group.primarySessionId);
                                                         onSectionChange('timeline');
@@ -4040,6 +4089,7 @@ export function ActivityPage({ onClose, initialSessionId, initialDate, noticedFo
                             onOpenConversation={openConversation}
                             onOpenTopic={onOpenTopic}
                             onOpenRecording={openSessionInTimeline}
+                            onOpenScreen={openScreenStretch}
                         />
                     ) : null}
                     </ActivityOpenChatContext.Provider>

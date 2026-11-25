@@ -754,4 +754,95 @@ describe('ActivityFeed', () => {
         expect(screen.getByText('Pricing page copy')).toBeInTheDocument();
         clock.mockRestore();
     });
+
+    // Scope cut B3: without Activity's extras Your day keeps screen, watch,
+    // closed and trouble rows; a screen row opens the Screen timeline; the
+    // topic line, Not this topic and Remind me go; Open where it happened stays.
+    describe('without the Activity extras', () => {
+        const switchesOff = () => {
+            (globalThis as Record<string, unknown>).__isoformFeatureSwitchesForTest = { automations: true, playbooks: true, proactiveVoice: true, calendarHolds: true, activityExtras: false };
+        };
+        const row = (title: string) => screen.getByText(title).closest('li') as HTMLElement;
+
+        beforeEach(switchesOff);
+
+        it('keeps only screen, watch, closed and trouble rows', async () => {
+            binding('GetActivityFeed').mockResolvedValue([
+                { id: 'h-1', kind: 'handoff', startMs: at(16), endMs: at(16, 5), title: 'Draft the release notes', agent: 'Claude' },
+                { id: 'run-1', kind: 'agent', startMs: at(15), endMs: at(15, 20), activeMs: 1_200_000, app: 'Codex' },
+                { id: '', kind: 'trouble', startMs: at(13), endMs: at(13, 30), cause: 'crashed' },
+                { id: '', kind: 'closed', startMs: at(11, 4), endMs: at(12, 4) },
+                { id: 'rec-1', kind: 'watch', startMs: at(10), endMs: at(10, 36), title: 'Pricing with Sam', conversation: true },
+                { id: 'm-1', kind: 'screen', startMs: at(9), endMs: at(9, 30), title: 'Pricing page copy', app: 'Mail' },
+            ]);
+            await act(async () => {
+                render(<ActivityFeed date={day} />);
+            });
+            await screen.findByText('Pricing page copy');
+            expect([...document.querySelectorAll('[data-feed-kind]')].map((li) => li.getAttribute('data-feed-kind'))).toEqual(['trouble', 'closed', 'watch', 'screen']);
+            // No Remind me, so the day's activities are not read.
+            expect(binding('GetActivitiesInRange')).not.toHaveBeenCalled();
+        });
+
+        it('opens the Screen timeline from a screen row, with no topic line and only Open where it happened in •••', async () => {
+            const m1 = { id: 'm-1', kind: 'screen', startMs: at(11), endMs: at(11, 30), title: 'Import script', detail: '3 files in halcyon/import', basis: { setting: 'screen' } };
+            binding('GetActivityFeed').mockResolvedValue([
+                m1,
+                { id: 'm-2', kind: 'screen', startMs: at(10), endMs: at(10, 30), title: 'Pricing page copy', detail: 'Rewrote the plans table', basis: { setting: 'screen' } },
+            ]);
+            binding('GetActivityRowDetails').mockResolvedValue([
+                { kind: 'screen', id: 'm-1', topicId: 't-1', topicName: 'Halcyon import', open: { kind: 'file', label: 'import.go' } },
+                { kind: 'screen', id: 'm-2', topicId: 't-2', topicName: 'Pricing' },
+            ]);
+            const openScreen = vi.fn();
+            await act(async () => {
+                render(<ActivityFeed date={day} onOpenTopic={vi.fn()} onOpenScreen={openScreen} />);
+            });
+            await screen.findByText('Import script');
+            await waitFor(() => expect(binding('GetActivityRowDetails')).toHaveBeenCalled());
+            await waitFor(() => expect(within(row('Import script')).getByRole('button', { name: 'More for Import script' })).toBeInTheDocument());
+            expect(document.querySelector('[data-feed-topic]')).toBeNull();
+            expect(row('Import script').querySelector('[data-feed-line]')!.textContent).toBe('3 files in halcyon/import');
+            // A row with only a topic has nothing in •••.
+            expect(within(row('Pricing page copy')).queryByRole('button', { name: 'More for Pricing page copy' })).toBeNull();
+            fireEvent.pointerDown(within(row('Import script')).getByRole('button', { name: 'More for Import script' }), { button: 0, pointerType: 'mouse' });
+            const menu = await screen.findByRole('menu');
+            expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Open import.go']);
+            fireEvent.keyDown(menu, { key: 'Escape' });
+            await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+            fireEvent.click(within(row('Import script')).getByRole('button', { name: 'Open: Import script' }));
+            expect(openScreen).toHaveBeenCalledWith(expect.objectContaining({ id: 'm-1', kind: 'screen', startMs: m1.startMs }));
+            expect(within(row('Import script')).getByRole('button', { name: 'Forget: Import script' })).toBeInTheDocument();
+        });
+
+        it('still lists everything a watch conversation takes with it, and removes it', async () => {
+            binding('GetActivityFeed').mockResolvedValueOnce([
+                { id: 'dev:1', kind: 'watch', startMs: at(10), endMs: at(10, 36), title: 'Pricing with Sam', conversation: true, basis: { setting: 'watch' } },
+            ]).mockResolvedValue([]);
+            binding('GetWatchConversationForgetPreview').mockResolvedValue({
+                id: 'dev:1', name: 'Pricing with Sam', lineCount: 40, audio: [], hasNote: true,
+                followups: [{ id: 'f1', title: 'Reply to Sam' }],
+                claims: [{ id: 'c1', title: 'Sam owns pricing' }],
+                sameHourClaims: [{ id: 'c2', title: 'Bo prefers mornings' }],
+                claimsLosingSupport: [], stayingWithAgents: ['Claude'], count: 5,
+            });
+            binding('ForgetWatchConversation').mockResolvedValue(undefined);
+            await act(async () => {
+                render(<ActivityFeed date={day} />);
+            });
+            fireEvent.click(await screen.findByRole('button', { name: 'Forget: Pricing with Sam' }));
+            const dialog = await screen.findByRole('dialog');
+            const plan = within(dialog).getByTestId('forget-plan');
+            expect([...plan.querySelectorAll('ul:not([data-testid]) li')].map((li) => li.textContent)).toEqual([
+                'the notes made from it · Watch',
+                'Reply to Sam · Your work',
+                '"Sam owns pricing" · You · About you',
+                'A claim from the same hour: "Bo prefers mornings" · You · About you',
+            ]);
+            expect(within(plan).getByTestId('forget-staying')).toHaveTextContent('Sent to Claude · stays with Claude');
+            fireEvent.click(within(dialog).getByRole('button', { name: 'Forget all 5' }));
+            await waitFor(() => expect(binding('ForgetWatchConversation')).toHaveBeenCalledWith('dev:1'));
+            await waitFor(() => expect(screen.queryByText('Pricing with Sam')).toBeNull());
+        });
+    });
 });

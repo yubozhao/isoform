@@ -74,7 +74,9 @@ export const NO_WORD_MS = 2 * 60 * 60_000;
 /** How long the one-line Undo stays after an answer (rule 13). */
 export const UNDO_LINE_MS = 5_000;
 
-export function TodayYourWork({ list, active, onAnswer, onUndo, onHandOff, noAgents = false, onConnectAgent, agentsFailed = false, onRetryAgents, onOpenRef, title, keys = true, focusRequest = null, now = new Date() }: {
+export function TodayYourWork({ list, active, onAnswer, onUndo, onHandOff, noAgents = false, onConnectAgent, agentsFailed = false, onRetryAgents, onOpenRef, title, keys = true, focusRequest = null, quickChat = true, now = new Date() }: {
+    /** The keys line names ⌥Space Quick chat only while Chat is on (A3). */
+    quickChat?: boolean;
     /** Open this item, asked for from elsewhere (Quick chat's Open): an open
      *  one becomes the open item with focus; any other is brought into view.
      *  A new nonce asks again. */
@@ -441,14 +443,14 @@ export function TodayYourWork({ list, active, onAnswer, onUndo, onHandOff, noAge
                     <button type="button" className="shrink-0 font-medium text-accent" onClick={() => void undo(lineItem)}>{tr("work.undo")} <kbd className="ml-1 text-[11px] opacity-60">⌘Z</kbd></button>
                 </div>
             )}
-            {keys && <TodayKeysLine />}
+            {keys && <TodayKeysLine quickChat={quickChat} />}
         </section>
     );
 }
 
 /** The keys for Your work: ↑↓ move, Y N M answer, E edit, ⌘Z undo, and
  *  ⌥Space Quick chat at the right (computer-today v1.0.0 rule 4). */
-export function TodayKeysLine() {
+export function TodayKeysLine({ quickChat = true }: { quickChat?: boolean } = {}) {
     const { t } = useTranslation("today");
     const tr: Translate = (key, options) => t(key as never, options as never) as unknown as string;
     return (
@@ -461,7 +463,7 @@ export function TodayKeysLine() {
                     <span className="ml-1">{tr("ctoday.keys")}</span>
                 </span>
                 {/* Below 880 the strip drops Quick chat's hint; ⌥Space still works (rule 8). */}
-                <span className="hidden @min-[880px]:inline" data-testid="your-work-keys-quick-chat"><kbd className="rounded border border-border px-1">⌥Space</kbd> {tr("work.quickChat")}</span>
+                {quickChat && <span className="hidden @min-[880px]:inline" data-testid="your-work-keys-quick-chat"><kbd className="rounded border border-border px-1">⌥Space</kbd> {tr("work.quickChat")}</span>}
             </div>
         </div>
     );

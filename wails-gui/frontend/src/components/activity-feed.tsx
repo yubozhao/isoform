@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import type { TodayTopic } from '@/components/today/topics';
 import { toTodayTopics } from '@/hooks/useTodayTopics';
+import { useActivityExtras } from '@/hooks/useFeatureSwitches';
 import { GetTodayTopics } from '@/lib/page-queries';
 import { pageQueryCache } from '@/lib/query-cache';
 import {
@@ -675,7 +676,11 @@ export function useActivityRowDetails(start: number, end: number, onOpenRecordin
     };
 }
 
-export function ActivityFeed({ date, kinds, emptyText, onOpenConversation, onOpenTopic, onOpenRecording }: {
+/** Without Activity's extras (scope cut B3) Your day keeps these kinds:
+ *  agent runs and hand-offs leave Activity. */
+const BASIC_FEED_KINDS: ReadonlySet<ActivityFeedKind> = new Set(['screen', 'watch', 'closed', 'trouble']);
+
+export function ActivityFeed({ date, kinds, emptyText, onOpenConversation, onOpenTopic, onOpenRecording, onOpenScreen }: {
     date: Date;
     /** The sources this tab shows; all of them when left out. */
     kinds?: ActivityFeedKind[];
@@ -686,8 +691,12 @@ export function ActivityFeed({ date, kinds, emptyText, onOpenConversation, onOpe
     onOpenTopic?: (topic: TodayTopic) => void;
     /** Opens a call's recording in the Screen timeline. */
     onOpenRecording?: (sessionId: string) => void;
+    /** Opens the Screen timeline at a screen row's stretch (without the
+     *  extras, where the Screen tab is gone). */
+    onOpenScreen?: (row: ActivityFeedRow) => void;
 }) {
     const { t, i18n } = useTranslation('activity');
+    const extras = useActivityExtras();
     const [rows, setRows] = useState<ActivityFeedRow[] | null>(null);
     const [failed, setFailed] = useState(false);
     const [start, end] = dayBounds(date);
@@ -697,7 +706,8 @@ export function ActivityFeed({ date, kinds, emptyText, onOpenConversation, onOpe
     const { loadDetails } = rowDetails;
     // Remind me's pending times and withheld moments: the day's activities,
     // the same cached read the Screen tab makes.
-    const wantsScreen = !kindsKey || kindsKey.split(',').includes('screen');
+    // Remind me is an extra: without it the feed reads no activities.
+    const wantsScreen = extras && (!kindsKey || kindsKey.split(',').includes('screen'));
     const activitiesKey = `activities:${formatDateStr(date)}`;
     const activityStart = dayStartMs(date);
     const activityEnd = dayEndMs(date);
@@ -721,12 +731,12 @@ export function ActivityFeed({ date, kinds, emptyText, onOpenConversation, onOpe
         GetActivityFeed(start, end)
             .then((list) => {
                 const wanted = kindsKey ? new Set(kindsKey.split(',')) : null;
-                setRows((list ?? []).filter((row) => !wanted || wanted.has(row.kind)));
+                setRows((list ?? []).filter((row) => (!wanted || wanted.has(row.kind)) && (extras || BASIC_FEED_KINDS.has(row.kind))));
                 setFailed(false);
             })
             .catch(() => setFailed(true));
         loadDetails();
-    }, [start, end, kindsKey, loadDetails]);
+    }, [start, end, kindsKey, extras, loadDetails]);
 
     useEffect(() => {
         setRows(null);
@@ -748,6 +758,18 @@ export function ActivityFeed({ date, kinds, emptyText, onOpenConversation, onOpe
         ? (row: ActivityFeedRow) => { if (row.kind === 'watch' && row.conversation) onOpenConversation(row.id, row.startMs); }
         : undefined;
     const openTopic = onOpenTopic ? (id: string, name: string) => openTopicFromRow(onOpenTopic, id, name) : undefined;
+    // A row's open: a watch conversation opens on Watch; without the extras
+    // a screen row opens the Screen timeline at its stretch.
+    const openFor = (row: ActivityFeedRow) => {
+        if (row.kind === 'watch' && row.conversation) return open;
+        if (row.kind === 'screen' && !extras) return onOpenScreen;
+        return undefined;
+    };
+    // Without the extras a row has no topic line (topics open from a work item).
+    const detailFor = (row: ActivityFeedRow) => {
+        const detail = rowDetails.details?.get(rowDetailKey(row.kind, row.id));
+        return detail && !extras ? { ...detail, topicId: undefined, topicName: undefined } : detail;
+    };
 
     return (
         <section data-testid="activity-feed" aria-label={t('feed.label') as string}>
@@ -795,12 +817,12 @@ export function ActivityFeed({ date, kinds, emptyText, onOpenConversation, onOpe
                             key={`${row.kind}-${row.id}`}
                             row={row}
                             onForget={forget.ask}
-                            onOpen={open && row.kind === 'watch' && row.conversation ? open : undefined}
-                            detail={rowDetails.details?.get(rowDetailKey(row.kind, row.id))}
-                            onOpenTopic={openTopic}
-                            onNotThisTopic={rowDetails.notThisTopic}
+                            onOpen={openFor(row)}
+                            detail={detailFor(row)}
+                            onOpenTopic={extras ? openTopic : undefined}
+                            onNotThisTopic={extras ? rowDetails.notThisTopic : undefined}
                             onOpenWhere={rowDetails.openWhere}
-                            reminder={reminderFor(row)}
+                            reminder={extras ? reminderFor(row) : undefined}
                         />
                     ),
                 )}
