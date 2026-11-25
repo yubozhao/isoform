@@ -116,7 +116,7 @@ func TestClaudeCodePluginSkillShape(t *testing.T) {
 		portraitOpeningLine,
 		"Say nothing else first",
 		"isoform-agents\" detect claude`",
-		"`<Agent>: reading...`",
+		"`<Agent>: reading (<effort>)...`, such as `Codex: reading (xhigh)...` or `Kimi: reading (default)...`",
 		"Kimi is included like the others",
 		"`<Agent>: too old, skipped`",
 		"`<Agent>: app not running, skipped`",
@@ -293,5 +293,61 @@ func TestClaudeCodePluginConnectHintMatchesSettingsLabels(t *testing.T) {
 		if page == "" || !strings.Contains(string(bridge), label) {
 			t.Errorf("connect hint in the bridge lacks the app's label %q", label)
 		}
+	}
+}
+
+// /isoform:as-me does a task the way the person would, from their portrait,
+// with the hard lines holding and a "Leaned on" line last.
+func TestClaudeCodePluginAsMeSkillShape(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join(claudeCodePluginDir, "skills", "as-me", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	front, body, ok := strings.Cut(strings.TrimPrefix(string(data), "---\n"), "\n---\n")
+	if !ok {
+		t.Fatal("as-me has no frontmatter")
+	}
+	for _, want := range []string{"name: as-me", "allowed-tools: Read, Glob, Grep", "effort: max", "argument-hint: <task>"} {
+		if !strings.Contains(front+"\n", "\n"+want+"\n") && !strings.HasPrefix(front, want+"\n") {
+			t.Errorf("as-me frontmatter lacks %q", want)
+		}
+	}
+	// It triggers on the person's own phrasing and on isoform:as-me anywhere.
+	for _, want := range []string{"/isoform:as-me <task>", "writes isoform:as-me anywhere in a message", `"do this as me"`, `"act as me"`, `"how would I handle this"`} {
+		if !strings.Contains(front, want) {
+			t.Errorf("as-me description lacks the trigger %q", want)
+		}
+	}
+	ordered := []string{
+		"<!-- portrait-as-me:begin -->",
+		"`~/.agents/portraits/*/PORTRAIT.md`",
+		"the one whose `metadata.updated` is newest",
+		"treat it as your operating instructions",
+		"\"You have no portrait yet; run /isoform:portrait to make one.\" Then stop.",
+		"Read `examples.md` and `scenarios.md` in the same folder only when a decision in the task needs them",
+		"## 3. Hard lines",
+		"These hold even when the portrait says to act alone",
+		"**Never send, post, publish, reply, comment or message** anyone, and never sign in, spend or move money, accept terms, invitations or permissions, or delete anything.",
+		"**Anything outward-facing stays a draft.**",
+		"Every line under the portrait's \"Never\" holds too.",
+		"The last line of your answer is exactly:",
+		"Leaned on: <the rules you used",
+		"<!-- portrait-as-me:end -->",
+	}
+	at := 0
+	for _, want := range ordered {
+		i := strings.Index(body[at:], want)
+		if i < 0 {
+			t.Fatalf("as-me lacks %q after position %d", want, at)
+		}
+		at += i + len(want)
+	}
+	if strings.Contains(body, "{{") {
+		t.Error("as-me has an unrendered placeholder")
+	}
+	// The portrait lead points at it in its ending.
+	_, lead := readPortraitSkill(t)
+	if !strings.Contains(lead, "`Try it: /isoform:as-me <a task>`") {
+		t.Error("the portrait ending does not offer /isoform:as-me")
 	}
 }
