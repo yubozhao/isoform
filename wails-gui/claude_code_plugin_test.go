@@ -143,38 +143,59 @@ func TestClaudeCodePluginSkillShape(t *testing.T) {
 		"collects every agent's corrections in one `## Corrections` block",
 		"**Corrections first.**",
 		"at least 2 corrections stands; a rule with fewer is marked \"(guess)\"",
-		"**Settle conflicts yourself.**",
+		"**Scope conflicts; never pick one silently.**",
+		"write one rule that says which side applies where: \"In <scope>, merge without asking; everywhere else, wait for their yes.\"",
+		"Never leave a line marked \"(conflict)\".",
 		"**One imperative line per point**",
 		"**Sources go in a trailing comment**",
-		// The prompt's sections, most important first.
+		"**PORTRAIT.md stays short and points to the rest.**",
+		// The folder: PORTRAIT.md with skill-style frontmatter, then the
+		// prompt's sections, most important first.
+		"Write the folder `<folder>/portrait/` with these files:",
+		"---\nname: <folder name>\ndescription: \"",
+		"metadata:\n  format: portrait/1",
 		"# <First name>'s agentic self",
 		"## Who you are\nYou are <first name>'s agentic self: you act for them, the way they would.\nYou are an AI: never tell anyone you are <first name>, and never invent facts about their life.",
-		"## How you decide\n- <rule>. For example: <situation>;",
+		"## How you decide\n- <rule, with its scope when it has one>. For example: <situation>;",
+		"- For a new kind of decision, read examples.md.",
 		"## When to act and when to ask\n| Action | What to do |",
 		"| Act alone <!-- sources --> |", "| Act, then tell |", "| Ask first |", "| Never |",
 		"## Never\n",
 		"## What they care about\n",
 		"## How they do things\n",
+		"- For the full steps, read references/methods.md.",
 		"## What they know\n",
 		"## How they communicate\n",
+		"- For samples of their writing, read examples.md.",
 		"## People and places they work in\n",
 		"## What you don't know\n",
-		"Outside this prompt, say so and ask.",
+		"Outside this portrait, say so and ask.",
+		"`scenarios.md`: every earlier scenario, unchanged, then about 5 new ones aimed at the \"(guess)\" rules and at scoped conflicts",
+		"- Verdict: not yet",
+		"`examples.md`:", "`corrections.md`:", "`references/methods.md`",
 		// Saved at once, with no reply needed.
 		"## 5. Save it at once",
 		"Do not wait for any reply.",
-		"a first line `Made: <YYYY-MM-DD>`, a blank line, then the system prompt",
-		"isoform-agents\" save <folder>/portrait.md`",
-		"moves any earlier `portrait.md` there to `portrait-<YYYY-MM-DD-HHMM>.md`",
+		"isoform-agents\" save <folder>/portrait`",
+		"`~/.agents/portraits/<name>/`",
+		"copies any earlier version to `versions/<YYYY-MM-DD-HHMM>/` first, moves a single-file portrait from `~/.agents/agent-of-you/` into `versions/` too, and ends with `portrait check`",
+		// The ending: optional calibration, helpers, where, take it anywhere,
+		// and Agent of You last.
+		"## 6. Finish with calibration and the summary",
+		"wait for nothing",
+		"> Calibration: here's how your agent would act in these situations. Mark any right or wrong, or skip.",
 		"`Helpers added to: <every path step 2 printed>`",
-		// Calibration is optional and nothing waits on it.
-		"## 6. Offer calibration, without waiting",
-		"It asks nothing that must be answered: the portrait is already complete and saved.",
-		"> Calibration: here's how your agent would act in 5 situations. Tell me any that are wrong, or skip.",
-		"Ask no other question, and end your turn.",
-		"## 7. Apply later corrections and save again",
+		"Where the portrait is: `~/.agents/portraits/<name>/`",
+		"`Take it anywhere:`, then one line per agent with its install command, `~/.agents/portraits/<name>/scripts/portrait install <agent>`",
+		"Show these commands only: never run `portrait install` yourself; the person runs it if they want it.",
+		"> Next: it can become your Agent of You, a version of you others can hire. It stays on this computer until you choose to publish.",
+		"Do not print the whole portrait or a long breakdown of what each agent added",
+		"## 7. Apply verdicts and corrections, and save again",
+		"scripts/portrait verdict <n> right`",
 		"becomes a new rule",
-		"isoform-agents\" save ~/.agents/agent-of-you/portrait.next.md`",
+		"Scenarios they do not mark stay `not yet`.",
+		"scripts/portrait snapshot` first",
+		"raise `metadata.version` by 1",
 		"Never wait for an approval before saving.",
 	}
 	at := 0
@@ -198,7 +219,7 @@ func TestClaudeCodePluginSkillShape(t *testing.T) {
 		// 0.4 is a system prompt: no listing, offers or buyers.
 		"Part A", "Part B", "Listing", "listing", "buyer", "Buyer", "Work you can hire me for", "When to hire the human instead", "5 to 8", "Who I am", "at most 6",
 		// The person never has to answer: no open questions, no keep step.
-		"at most 2", "open questions", "right or wrong", "Shall I", "explicit keep", "says keep", "nothing is saved until", "Nothing is saved until", "chmod 600 ~/.agents"} {
+		"at most 2", "open questions", "Shall I", "Made: <YYYY-MM-DD>", "agent-of-you/portrait.next.md", "Tell the person in one line what each agent added", "explicit keep", "says keep", "nothing is saved until", "Nothing is saved until", "chmod 600 ~/.agents"} {
 		if strings.Contains(body, gone) {
 			t.Errorf("skill still contains %q", gone)
 		}

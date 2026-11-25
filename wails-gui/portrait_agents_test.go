@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -82,6 +81,7 @@ ok) cat "` + filepath.Join(root, "draft.md") + `" ;;
 fail) echo "boom" >&2; exit 1 ;;
 login) echo "Please log in first" >&2; exit 1 ;;
 shape) echo "Sure! Here is a summary of the person." ;;
+decorated) esc=$(printf '\033'); sed "s/^/  ${esc}[1m/; s/$/${esc}[0m/" "` + filepath.Join(root, "draft.md") + `" ;;
 slow) sleep 30 ;;
 slowchild) sleep 60 & echo $! > "` + filepath.Join(root, "child.pid") + `"; wait ;;
 esac
@@ -274,7 +274,7 @@ func TestPortraitAgentsRunFailuresAreOneLine(t *testing.T) {
 	for mode, want := range map[string]string{
 		"fail":  "codex: exited with status 1\n",
 		"login": "codex: not signed in\n",
-		"shape": "codex: no usable draft\n",
+		"shape": "codex: no usable draft (39 bytes)\n",
 		"slow":  "codex: took longer than 1s\n",
 	} {
 		out := filepath.Join(s.home, mode+".md")
@@ -285,6 +285,19 @@ func TestPortraitAgentsRunFailuresAreOneLine(t *testing.T) {
 		if data, _ := os.ReadFile(out); len(data) != 0 {
 			t.Errorf("%s: a failed run kept output %q", mode, data)
 		}
+	}
+}
+
+// Some CLIs decorate their text output (Kimi's print mode on Bo's run): the
+// draft still counts once colour codes and indentation are stripped.
+func TestPortraitAgentsRunCleansDecoratedOutput(t *testing.T) {
+	s := newPortraitStubs(t, claudeCodePluginDir, "kimi")
+	out := filepath.Join(s.home, "kimi.md")
+	if _, stderr, code := s.run(t, []string{"STUB_KIMI=decorated"}, "run", "kimi", out); code != 0 {
+		t.Fatalf("decorated run: %d %q", code, stderr)
+	}
+	if data, _ := os.ReadFile(out); string(data) != portraitFixtureDraft {
+		t.Fatalf("decorated draft not cleaned:\n%q", data)
 	}
 }
 
@@ -484,6 +497,50 @@ func TestPortraitAgentsHistoryCountsOnlyTheirOwnWords(t *testing.T) {
 		t.Fatalf("codex history:\n%s", data)
 	}
 
+	// Codex rollouts: only sessions the person ran (source vscode or cli),
+	// only their input_text, never injected wrappers, exec scripts or
+	// subagents; compressed rollouts too when zstd is installed.
+	day := filepath.Join(s.home, ".codex", "sessions", strings.ReplaceAll(today, "-", "/"))
+	rollout := func(source, text string) string {
+		return strings.Join([]string{
+			`{"timestamp":"` + today + `T09:00:00Z","type":"session_meta","payload":{"id":"x","originator":"Codex Desktop","source":` + source + `}}`,
+			`{"timestamp":"` + today + `T09:00:01Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<environment_context>no, instead</environment_context>"}]}}`,
+			`{"timestamp":"` + today + `T09:00:02Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"I opened a new branch."}]}}`,
+			`{"timestamp":"` + today + `T09:00:03Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"` + text + `"}]}}`,
+		}, "\n") + "\n"
+	}
+	writePortraitFile(t, filepath.Join(day, "rollout-a.jsonl"), rollout(`"vscode"`, "no, stay on the current branch"))
+	writePortraitFile(t, filepath.Join(day, "rollout-b.jsonl"), rollout(`"exec"`, "no, instead run the queue script"))
+	writePortraitFile(t, filepath.Join(day, "rollout-c.jsonl"), rollout(`{"subagent":{"thread_spawn":{}}}`, "no, instead check the tests"))
+	zstd, zstdErr := exec.LookPath("zstd")
+	if zstdErr == nil {
+		plain := filepath.Join(s.root, "rollout-d.jsonl")
+		writePortraitFile(t, plain, rollout(`"cli"`, "don't rename the file"))
+		if err := exec.Command(zstd, "-q", plain, "-o", filepath.Join(day, "rollout-d.jsonl.zst")).Run(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, code := s.run(t, []string{"PATH=" + s.bin + ":/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"}, "history", "codex", out); code != 0 {
+		t.Fatal("codex rollout history failed")
+	}
+	data, _ = os.ReadFile(out)
+	text = string(data)
+	if !strings.Contains(text, "- When: "+today+". Before: I opened a new branch. Said: no, stay on the current branch [history]\n") {
+		t.Fatalf("codex rollout history missed the person's correction:\n%s", text)
+	}
+	if zstdErr == nil && !strings.Contains(text, "Said: don't rename the file [history]") {
+		t.Errorf("codex history skipped a compressed rollout:\n%s", text)
+	}
+	for _, leak := range []string{"queue script", "check the tests", "environment_context", "no, instead\n"} {
+		if strings.Contains(text, leak) {
+			t.Errorf("codex history counted %q:\n%s", leak, text)
+		}
+	}
+	// The older history.jsonl still counts, after the rollouts.
+	if !strings.HasSuffix(text, "- When: unknown. Said: stop asking and merge [history]\n- When: unknown. Said: don't push yet [history]\n") {
+		t.Errorf("codex history.jsonl fallback:\n%s", text)
+	}
+
 	// Gemini: the person's prompts in logs.json.
 	writePortraitFile(t, filepath.Join(s.home, ".gemini", "tmp", "abc", "logs.json"), `[
   {
@@ -508,57 +565,6 @@ func TestPortraitAgentsHistoryCountsOnlyTheirOwnWords(t *testing.T) {
 	}
 	if data, _ := os.ReadFile(out); !strings.HasPrefix(string(data), "# No history search for kimi") {
 		t.Fatalf("kimi history: %q", data)
-	}
-}
-
-// The prompt is saved without any reply, and an earlier portrait is never
-// lost: it moves aside to portrait-<date-time>.md first.
-func TestPortraitAgentsSaveKeepsEveryEarlierPortrait(t *testing.T) {
-	s := newPortraitStubs(t, claudeCodePluginDir)
-	dir := filepath.Join(s.home, ".agents", "agent-of-you")
-	for i, text := range []string{"Made: 2026-11-01\n\nfirst\n", "Made: 2026-11-24\n\nsecond\n", "Made: 2026-11-24\n\nthird\n"} {
-		src := filepath.Join(s.home, "portrait.md")
-		writePortraitFile(t, src, text)
-		out, stderr, code := s.run(t, nil, "save", src)
-		if code != 0 || !strings.HasSuffix(out, "saved ~/.agents/agent-of-you/portrait.md\n") {
-			t.Fatalf("save %d: %d %q %q", i, code, out, stderr)
-		}
-		if (i == 0) == strings.Contains(out, "moved the earlier portrait to ~/.agents/agent-of-you/portrait-") {
-			t.Errorf("save %d: %q", i, out)
-		}
-		if _, err := os.Stat(src); !os.IsNotExist(err) {
-			t.Errorf("save %d left its source", i)
-		}
-	}
-	if data, _ := os.ReadFile(filepath.Join(dir, "portrait.md")); string(data) != "Made: 2026-11-24\n\nthird\n" {
-		t.Fatalf("portrait.md: %q", data)
-	}
-	earlier, _ := filepath.Glob(filepath.Join(dir, "portrait-*.md"))
-	contents := ""
-	for _, path := range earlier {
-		if !regexp.MustCompile(`/portrait-\d{4}-\d{2}-\d{2}-\d{4}(-\d+)?\.md$`).MatchString(path) {
-			t.Errorf("earlier name %s", path)
-		}
-		data, _ := os.ReadFile(path)
-		contents += string(data)
-		if info, _ := os.Stat(path); info.Mode().Perm() != 0o600 {
-			t.Errorf("%s mode %v", path, info.Mode().Perm())
-		}
-	}
-	if len(earlier) != 2 || !strings.Contains(contents, "first") || !strings.Contains(contents, "second") {
-		t.Fatalf("earlier portraits %v: %q", earlier, contents)
-	}
-	if info, _ := os.Stat(dir); info.Mode().Perm() != 0o700 {
-		t.Errorf("folder mode %v", info.Mode().Perm())
-	}
-	if info, _ := os.Stat(filepath.Join(dir, "portrait.md")); info.Mode().Perm() != 0o600 {
-		t.Errorf("portrait mode %v", info.Mode().Perm())
-	}
-	// A helper can never save.
-	src := filepath.Join(s.home, "x.md")
-	writePortraitFile(t, src, "x\n")
-	if _, _, code := s.run(t, []string{"ISOFORM_PORTRAIT_HELPER=1"}, "save", src); code != 65 {
-		t.Errorf("save inside a helper exit %d", code)
 	}
 }
 
@@ -622,6 +628,16 @@ func TestPortraitEveryPackageCanLead(t *testing.T) {
 		if info, err := os.Stat(filepath.Join(pkg, "scripts", "isoform-agents")); err != nil || info.Mode().Perm()&0o111 == 0 {
 			t.Errorf("%s: the script must be executable", pkg)
 		}
+		tool, err := os.ReadFile(filepath.Join(portraitSpecDir, "portrait"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if copied, err := os.ReadFile(filepath.Join(pkg, "scripts", "portrait")); err != nil || !bytes.Equal(copied, tool) {
+			t.Errorf("%s: scripts/portrait differs from portrait-spec; run sync.sh", pkg)
+		}
+		if info, err := os.Stat(filepath.Join(pkg, "scripts", "portrait")); err != nil || info.Mode().Perm()&0o111 == 0 {
+			t.Errorf("%s: scripts/portrait must be executable", pkg)
+		}
 		copied, err = os.ReadFile(filepath.Join(pkg, "helpers", "isoform-portrait-helper", "SKILL.md"))
 		if err != nil || string(copied) != renderPortrait(t, string(helper), vars) {
 			t.Errorf("%s: the helper differs from portrait-spec/helper.md; run sync.sh", pkg)
@@ -656,7 +672,7 @@ func TestPortraitEveryPackageCanLead(t *testing.T) {
 			t.Errorf("helper lacks %q", want)
 		}
 	}
-	for _, path := range []string{"spec.md", "helper.md", "lead.md", "sync.sh", "isoform-agents"} {
+	for _, path := range []string{"spec.md", "helper.md", "lead.md", "sync.sh", "isoform-agents", "portrait", "PORTRAIT-FORMAT.md"} {
 		text, err := os.ReadFile(filepath.Join(portraitSpecDir, path))
 		if err != nil {
 			t.Fatal(err)
@@ -704,4 +720,37 @@ func TestPortraitAgentsDetectWithRealCLIs(t *testing.T) {
 		t.Fatalf("detect: %v\n%s", err, output)
 	}
 	t.Log(string(output))
+}
+
+// Opt-in, never by default: run the real Kimi CLI in print mode on a prompt
+// that reads no memory, to confirm its text output still passes the draft
+// check (Bo's first run reported "no usable draft" for a valid draft).
+func TestPortraitAgentsKimiOutputShapeWithRealCLI(t *testing.T) {
+	if os.Getenv("YANSU_KIMI_INTEGRATION") != "1" {
+		t.Skip("set YANSU_KIMI_INTEGRATION=1 to run the real Kimi CLI once")
+	}
+	work := t.TempDir()
+	cmd := exec.Command("kimi", "-p", "Reply with exactly these three lines and nothing else, reading no files:\n### Portrait draft\n#### How you decide\n### Corrections", "--output-format", "text")
+	cmd.Dir = work
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("kimi: %v", err)
+	}
+	t.Logf("kimi printed %d bytes; line starts: %q", len(out), firstRunes(string(out), 40))
+	draft := filepath.Join(work, "draft.md")
+	if err := os.WriteFile(draft, out, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	clean, err := exec.Command("sh", "-c", `esc=$(printf '\033'); awk -v esc="$esc" '{ line = $0; gsub(esc "\\[[0-9;?]*[A-Za-z]", "", line); sub(/\r$/, "", line); if (match(line, /(#+ |- )/) && substr(line, 1, RSTART - 1) ~ /^[ \t>*|]*$/) line = substr(line, RSTART); print line }' "$1" | grep -c '^#### How you decide'`, "sh", draft).Output()
+	if err != nil || strings.TrimSpace(string(clean)) != "1" {
+		t.Fatalf("the cleaned Kimi output has no draft heading at a line start: %v %q", err, clean)
+	}
+}
+
+func firstRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) > n {
+		r = r[:n]
+	}
+	return string(r)
 }
