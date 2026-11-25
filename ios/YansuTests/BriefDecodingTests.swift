@@ -313,7 +313,7 @@ final class BriefDecodingTests: XCTestCase {
             .environmentObject(environment.today)
             .environmentObject(environment.tasks)
             .environmentObject(environment.actions)
-            .environmentObject(environment.chat)
+            .environmentObject(environment.chat).environmentObject(environment.chatAvailability)
             .environmentObject(environment.pairing)
             .environmentObject(environment.push)
             .environmentObject(environment.notifications)

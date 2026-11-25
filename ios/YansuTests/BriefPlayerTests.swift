@@ -46,11 +46,37 @@ final class BriefPlayerTests: XCTestCase {
         try cache.store(Data([1, 2, 3]), brief: brief, hubID: hub, audio: try XCTUnwrap(brief.audio))
     }
 
-    private func makePlayer(_ cache: BriefAudioCache, engine: TestEngine? = nil) -> BriefAudioPlayer {
+    private func makePlayer(_ cache: BriefAudioCache, engine: TestEngine? = nil,
+                            offersExtras: Bool = true) -> BriefAudioPlayer {
         let engine = engine ?? TestEngine()
         return BriefAudioPlayer(cache: cache, requestAudio: { _ in throw BriefAudioError.notAvailable },
                                 downloadAudio: { _ in throw BriefAudioError.notAvailable },
-                                makeEngine: { _ in engine }, managesSystemPlayback: false)
+                                makeEngine: { _ in engine }, managesSystemPlayback: false, offersExtras: offersExtras)
+    }
+
+    // Scope cut B2 (phone half): Hear it is play, pause and a position bar. The phone's player offers no speed or
+    // seek, a speed saved before still plays at normal speed, and the bar's position and length are the audio's.
+    func testThePhonesPlayerIsPlayPauseAndABar() async throws {
+        XCTAssertFalse(BriefPlayerExtras.onPhone, "the phone shows no speed, 15 s seek or read-along")
+        let cache = try makeCache()
+        let spoken = brief()
+        try withAudio(spoken, in: cache)
+        try cache.writeRecall(BriefPlaybackRecall(speed: 1.5))
+        let engine = TestEngine()
+        let player = makePlayer(cache, engine: engine, offersExtras: BriefPlayerExtras.onPhone)
+        XCTAssertFalse(player.offersExtras)
+        XCTAssertEqual(player.speed, .normal, "a speed chosen before the cut is not applied")
+
+        await player.toggle(brief: spoken, hubID: hub)
+        XCTAssertEqual(player.state, .playing)
+        XCTAssertEqual(engine.rate, 1)
+        XCTAssertEqual(player.duration, 60, "the bar's length")
+        await player.toggle(brief: spoken, hubID: hub)
+        XCTAssertEqual(player.state, .paused)
+        XCTAssertFalse(engine.playing)
+        await player.toggle(brief: spoken, hubID: hub)
+        XCTAssertEqual(player.state, .playing)
+        XCTAssertEqual(engine.rate, 1)
     }
 
     func testPlayerKeepsTheBriefItStartedWhenANewerOneArrives() async throws {

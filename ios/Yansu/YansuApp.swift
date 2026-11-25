@@ -38,6 +38,7 @@ struct YansuApp: App {
                 .environmentObject(environment.work)
                 .environmentObject(environment.actions)
                 .environmentObject(environment.chat)
+                .environmentObject(environment.chatAvailability)
                 .environmentObject(environment.pairing)
                 .environmentObject(environment.push)
                 .environmentObject(environment.notifications)

@@ -141,7 +141,7 @@ export function YourWatchPage({ showPlace = SHOW_WATCH_PLACE }: { showPlace?: bo
                         <p
                             key={index}
                             className="settings-row-desc -mt-1 pb-2"
-                            data-testid={index === 0 ? `your-watch-interim-${key}` : `your-watch-apple-${key}`}
+                            data-testid={key === "place" ? `your-watch-apple-${key}` : `your-watch-interim-${key}`}
                         >
                             {line}
                         </p>
@@ -169,11 +169,13 @@ export function YourWatchPage({ showPlace = SHOW_WATCH_PLACE }: { showPlace?: bo
             </SettingsCard>
             <SettingsCard>
                 {row("notes")}
-                {/* While on (interim words for design): the watch asks the
-                    wearer to allow it the first time; Place names the area
-                    through Apple (PR 1466). */}
-                {row("heartRate", [t("yourWatch.allowOnWatch")])}
-                {showPlace && row("place", [t("yourWatch.allowOnWatch"), t("yourWatch.place.apple")])}
+                {/* While on (computer-conformance answers v1.5.0 W8, W10):
+                    Heart rate waits for the watch's one-time Health
+                    permission, which is not a second switch (the watch's
+                    toggle is this same setting, PROTOCOL.md 24.15); Place's
+                    second line says what leaves for Apple to name the area. */}
+                {row("heartRate", [t("yourWatch.heartAllow")])}
+                {showPlace && row("place", [t("yourWatch.place.apple")])}
                 <SettingsFailureLine failure={changeFailure} />
             </SettingsCard>
         </>

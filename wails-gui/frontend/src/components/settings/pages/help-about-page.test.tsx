@@ -502,18 +502,29 @@ describe("Settings About", () => {
             render(<HelpAboutPage onReplayOnboarding={vi.fn()} />);
             await screen.findByText("Isoform for your computer");
             fireEvent.click(screen.getByRole("button", { name: /Advanced/ }));
-            await screen.findByTestId("about-models-panel");
+            await screen.findByText("What diagnostic data includes");
             expect(screen.queryByText(/risky commands/i)).not.toBeInTheDocument();
             expect(en.privacy).not.toHaveProperty("riskyCommands");
         });
 
-        it("keeps the models panel and what diagnostic data includes under Advanced", async () => {
+        it("keeps what diagnostic data includes under Advanced, and the models panel out of it", async () => {
+            render(<HelpAboutPage onReplayOnboarding={vi.fn()} />);
+            await screen.findByText("Isoform for your computer");
+            fireEvent.click(screen.getByRole("button", { name: /Advanced/ }));
+            expect(screen.getByText("What diagnostic data includes")).toBeInTheDocument();
+            expect(screen.queryByTestId("about-models-panel")).not.toBeInTheDocument();
+        });
+
+        it("opens Models › from the models line, with a way back to About (answers v1.5.0 S21)", async () => {
             render(<HelpAboutPage onReplayOnboarding={vi.fn()} />);
             await screen.findByText("Isoform for your computer");
             expect(screen.queryByTestId("about-models-panel")).not.toBeInTheDocument();
-            fireEvent.click(screen.getByRole("button", { name: /Advanced/ }));
+            fireEvent.click(await screen.findByRole("button", { name: "Models ›" }));
             expect(screen.getByTestId("about-models-panel")).toBeInTheDocument();
-            expect(screen.getByText("What diagnostic data includes")).toBeInTheDocument();
+            expect(screen.queryByText("Isoform for your computer")).not.toBeInTheDocument();
+            fireEvent.click(screen.getByRole("button", { name: "About" }));
+            expect(await screen.findByText("Isoform for your computer")).toBeInTheDocument();
+            expect(screen.queryByTestId("about-models-panel")).not.toBeInTheDocument();
         });
     });
 });

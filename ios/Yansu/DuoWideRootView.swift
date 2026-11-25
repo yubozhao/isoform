@@ -7,6 +7,7 @@ struct DuoWideRootView: View {
     @EnvironmentObject private var chat: ChatStore
     @EnvironmentObject private var today: TodayStore
     @EnvironmentObject private var briefs: BriefStore
+    @EnvironmentObject private var chatAvailability: ChatAvailabilityStore
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.locale) private var locale
@@ -19,7 +20,8 @@ struct DuoWideRootView: View {
     @Namespace private var todayCardNamespace
 
     private var selectedTab: DuoTab {
-        DuoTab.shown(for: router.selectedTab, showsWatch: watchRecordings.showsWatchTab)
+        DuoTab.shown(for: router.selectedTab, showsWatch: watchRecordings.showsWatchTab,
+                     showsChat: chatAvailability.chatShown)
     }
 
     private var hasSelection: Bool {
@@ -78,7 +80,11 @@ struct DuoWideRootView: View {
                     OwnerProfileButton()
                         .environmentObject(pairing)
                         .environmentObject(router)
-                    tabCapsule
+                    // One page needs no tabs (PhoneTabs).
+                    if PhoneTabs.showsTabBar(DuoTab.rail(showsWatch: watchRecordings.showsWatchTab,
+                                                         showsChat: chatAvailability.chatShown).map(\.routerTab)) {
+                        tabCapsule
+                    }
                     Spacer(minLength: 0)
                 }
                 .padding(.top, DuoLayout.paneTop)
@@ -125,6 +131,8 @@ struct DuoWideRootView: View {
                 case .watch:
                     if !watchRecordings.showsWatchTab { router.selectedTab = .today }
                 case .chat:
+                    // With Chat off there is no Chat tab, and a link to it lands on Today (scope cut A6).
+                    guard chatAvailability.chatShown else { router.selectedTab = .today; break }
                     if navigation.path(for: .chat).isEmpty {
                         navigation.replaceCurrent(with: .topics, on: .chat)
                     }
@@ -138,6 +146,10 @@ struct DuoWideRootView: View {
             .onChange(of: watchRecordings.showsWatchTab) { _, shows in
                 // The watch was unpaired while its tab was open.
                 if !shows, router.selectedTab == .watch { router.selectedTab = .today }
+            }
+            .onChange(of: chatAvailability.chatShown) { _, shows in
+                // Chat was switched off on the computer while its tab was open.
+                if !shows, router.selectedTab == .chat { router.selectedTab = .today }
             }
             .onAppear(perform: reconcileTodaySelection)
             .onChange(of: briefs.cachedBriefs) { _, _ in reconcileTodaySelection() }
@@ -353,7 +365,8 @@ struct DuoWideRootView: View {
 
     private var tabCapsule: some View {
         VStack(spacing: 2) {
-            ForEach(DuoTab.rail(showsWatch: watchRecordings.showsWatchTab), id: \.self) { tab in
+            ForEach(DuoTab.rail(showsWatch: watchRecordings.showsWatchTab, showsChat: chatAvailability.chatShown),
+                    id: \.self) { tab in
                 switch tab {
                 case .today: tabButton(.today, symbol: "sun.max", title: String(localized: "Today"), name: "today")
                 // The mark in the watch's pose, as on the narrow bar (rule 3).

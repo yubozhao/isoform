@@ -24,6 +24,7 @@ struct BriefCardsView: View {
     @EnvironmentObject private var chat: ChatStore
     @EnvironmentObject private var briefs: BriefStore
     @EnvironmentObject private var pairing: PairingStore
+    @EnvironmentObject private var chatAvailability: ChatAvailabilityStore
     @EnvironmentObject private var router: NotificationRouter
     @EnvironmentObject private var environment: AppEnvironment
     @State private var notice: String?
@@ -36,13 +37,15 @@ struct BriefCardsView: View {
 
     private var canTalk: Bool {
         let scopes = pairing.paired?.scopes ?? []
-        return scopes.contains("brief:read") && SettingsView.allowsChat(scopes)
+        // With Chat off on the computer there is no Ask or Talk, and no question cards (scope cut A6).
+        return chatAvailability.briefAskShown && scopes.contains("brief:read") && SettingsView.allowsChat(scopes)
     }
 
     var body: some View {
         let attention = showsAttention ? brief.attentionItems : []
         VStack(alignment: .leading, spacing: 20) {
-            if let week = brief.yourWeek {
+            // Your week went with Chat (scope cut A6): with Chat off the brief shows as on any other day.
+            if let week = brief.yourWeek, chatAvailability.chatShown {
                 // The written brief always shows; on a week day Your week follows it.
                 if showsParagraphs {
                     paragraphs

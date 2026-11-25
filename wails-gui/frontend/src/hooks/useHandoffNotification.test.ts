@@ -14,24 +14,33 @@ vi.mock("../../wailsjs/runtime/runtime", () => ({
     }),
 }));
 vi.mock("@/lib/notify", () => ({ notifyToast: vi.fn() }));
-vi.mock("../lib/tts-player", () => ({ maybeSpeakNotification: vi.fn(() => Promise.resolve()) }));
+vi.mock("../lib/tts-player", () => ({ speakOnce: vi.fn(() => Promise.resolve()) }));
 
 import { notifyToast } from "@/lib/notify";
-import { maybeSpeakNotification } from "../lib/tts-player";
+import { speakOnce } from "../lib/tts-player";
 import { useHandoffNotification } from "./useHandoffNotification";
 
+// Read notifications aloud (answers v1.5.0 S22): Go decides (on, not quiet
+// hours) and sends each notification's title; the hook only says it.
 describe("useHandoffNotification", () => {
     beforeEach(() => {
         vi.clearAllMocks();
         for (const name of Object.keys(handlers)) delete handlers[name];
     });
 
-    it("does not raise a New task in Tasks toast", () => {
+    it("says each notification Go sends to be spoken, and nothing else", () => {
         const { unmount } = renderHook(() => useHandoffNotification());
-        act(() => handlers["handoff:created"]({ id: "task-one", title: "Fix tests" }));
-        expect(notifyToast).not.toHaveBeenCalled();
-        expect(maybeSpeakNotification).toHaveBeenCalledWith("Fix tests");
+        act(() => handlers["notification:speak"]({ title: "Your brief is ready" }));
+        expect(speakOnce).toHaveBeenCalledWith("Your brief is ready");
+        act(() => handlers["notification:speak"]({ title: "  " }));
+        expect(speakOnce).toHaveBeenCalledTimes(1);
         unmount();
+        expect(handlers["notification:speak"]).toBeUndefined();
+    });
+
+    it("no longer speaks a new hand-off, which is not a notification, and raises no toast", () => {
+        renderHook(() => useHandoffNotification());
         expect(handlers["handoff:created"]).toBeUndefined();
+        expect(notifyToast).not.toHaveBeenCalled();
     });
 });

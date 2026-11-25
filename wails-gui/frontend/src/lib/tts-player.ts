@@ -1,7 +1,6 @@
 import { useSyncExternalStore } from 'react';
 
 import {
-    GetAutoSpeakNotificationsEnabled,
     PrewarmTts,
     SplitSpeechText,
     SynthesizeSpeech,
@@ -318,22 +317,4 @@ export async function speakOnce(text: string): Promise<void> {
     if (!trimmed) return;
     autoSpeakSeq += 1;
     await toggleSpeak(`auto-speak:${autoSpeakSeq}`, trimmed);
-}
-
-/**
- * Read a notification's title aloud, but only when the "read notifications
- * aloud" category is on. Best-effort. Uses speakOnce so
- * two notifications with identical titles don't toggle each other off.
- */
-export async function maybeSpeakNotification(text: string): Promise<void> {
-    const trimmed = text?.trim();
-    if (!trimmed) return;
-    try {
-        const enabled = await GetAutoSpeakNotificationsEnabled();
-        if (enabled) {
-            await speakOnce(trimmed);
-        }
-    } catch {
-        // ignore — auto-speak is best-effort
-    }
 }

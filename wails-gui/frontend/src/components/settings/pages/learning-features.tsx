@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { SettingsFailureLine, useSettingsFailure } from "@/components/settings/settings-failure";
+import { useSettingsFailure } from "@/components/settings/settings-failure";
 import { Switch } from "@/components/ui/switch";
 import { LoadUIState, SaveUIState } from "../../../../wailsjs/go/main/App";
 import {
@@ -9,7 +9,6 @@ import {
 } from "@/components/activity-learning-settings";
 import { SettingsCard, SettingsRow } from "@/components/settings/settings-primitives";
 import { SettingReadError } from "./setting-read-error";
-import { SettingsControlCard } from "./capture-shared";
 
 // ── What Isoform learns ──
 //
@@ -18,8 +17,8 @@ import { SettingsControlCard } from "./capture-shared";
 // turning one off trims the matching model work and skips what it would have
 // created. Observing never starts work on its own.
 //
-// "Learn by comparison" (the shadow observer) and its "Prediction confidence"
-// follow-up are less common, so they sit under the page's Advanced section.
+// "Prediction confidence" is less common, so it sits on Developer tools; the
+// "Learn by comparison" switch went (answers v1.5.0 S16).
 
 const SHADOW_CONFIDENCE_ADJUSTMENT_KEY = "shadow_confidence_adjustment_enabled";
 
@@ -106,36 +105,27 @@ export function LearningFeaturesSettings() {
 }
 
 /**
- * Advanced: "Learn by comparison", with its switch beside the title, and
- * "Prediction confidence" as a row under it. The follow-up only has an effect
- * while comparisons run, so it is disabled with a reason while the parent is
- * off. Same layout as Listen with Record meetings automatically on the
- * Observation page: the dependent row sits in the parent's card, not indented.
+ * Developer tools: "Prediction confidence", which initiative_confidence.go
+ * still reads for automation proposals. "Learn by comparison"
+ * (triage_enable_shadow) went from here (computer-conformance answers v1.5.0
+ * S16: a row stays only while code reads it): the shadow observer was deleted
+ * on November 14, and the one triage that still loads the key forces it off
+ * (activitySummaryTriageFlags), so the switch changed nothing. Confidence no
+ * longer waits on it.
  */
-export function LearnByComparisonSettings() {
+export function PredictionConfidenceSettings() {
     const { t } = useTranslation("settings");
-    const comparison = useLearningSwitch(ACTIVITY_LEARNING_FEATURE_KEYS.shadow);
     const confidence = useLearningSwitch(SHADOW_CONFIDENCE_ADJUSTMENT_KEY);
-    const comparisonTitle = t("activityTriage.shadowTitle");
     const confidenceTitle = t("activityTriage.confidenceAdjustmentTitle");
 
     return (
-        <SettingsControlCard
-            title={comparisonTitle}
-            description={t("activityTriage.shadowDescription")}
-            control={<LearningControl setting={comparison} title={comparisonTitle} />}
-        >
-            <SettingsFailureLine failure={comparison.changeFailure} />
+        <SettingsCard>
             <SettingsRow
                 title={confidenceTitle}
-                description={
-                    comparison.enabled !== false
-                        ? t("activityTriage.confidenceAdjustmentDescription")
-                        : t("learningMemory.comparison.confidenceNeedsComparison")
-                }
+                description={t("activityTriage.confidenceAdjustmentDescription")}
                 failure={confidence.changeFailure}
-                control={<LearningControl setting={confidence} title={confidenceTitle} disabled={comparison.enabled !== true} />}
+                control={<LearningControl setting={confidence} title={confidenceTitle} />}
             />
-        </SettingsControlCard>
+        </SettingsCard>
     );
 }

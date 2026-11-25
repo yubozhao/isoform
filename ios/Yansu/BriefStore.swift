@@ -747,6 +747,8 @@ protocol LibraryHistoryAPI: Sendable {
 
 extension HubChannel: LibraryHistoryAPI {
     func libraryDecisions() async throws -> [LibraryRecord] {
+        // With Chat off (scope cut A6) /chats answers 404; the decisions come from the main chat, so there are none.
+        guard try await abilities().chatAvailable else { return [] }
         guard let main = try await chats(limit: 1).first(where: { $0.kind == .main }) else { return [] }
         guard Identifiers.isSafePathID(main.id) else { throw HubRequestError.invalidIdentifier }
         return try await perform(.chat(id: main.id, after: nil, limit: 50))

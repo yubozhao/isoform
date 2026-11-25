@@ -1,34 +1,45 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { GetPlatformPermissions } from "../../../../wailsjs/go/main/App";
+import { GetContactsAccessStatus, OpenPermissionSettings, type ContactsAccessStatus } from "@/lib/wails-shim-app";
 import { EventsOn } from "../../../../wailsjs/runtime/runtime";
 import { Button } from "@/components/ui/button";
 import { SettingsRow } from "@/components/settings/settings-primitives";
+import { SettingsFailureLine, useSettingsFailure } from "@/components/settings/settings-failure";
 
-// ── Contacts prerequisite ──
+// ── Contacts, in What Isoform sees › Messages' details ──
 //
-// The People sheet explains what is read and records consent before macOS
-// is asked. Settings only links there; it cannot request Contacts itself.
-// It sits in What Isoform sees › Messages' details, where "people you know"
-// is used (settings batch D3, from Learning and memory; design to place).
-// It shows only while Contacts is missing.
+// computer-conformance answers v1.5.0 S15: Contacts decides who "people you
+// know" are, so it is Messages' own line: "Contacts · how Isoform knows who
+// you know", its state and Open System Settings. Under it, what Messages does
+// without Contacts, from the code: the Messages reader sends a conversation
+// to the AI only when someone in it resolves to a person Isoform knows by
+// their iMessage number or email (imessage_capture.go, svc.resolve), so
+// without Contacts the people known from elsewhere are still read.
+//
+// Before macOS has been asked, System Settings has no Isoform row to turn
+// on, and the People sheet records consent before the prompt; so the row
+// then offers that sheet instead (RequestContactsAccess runs only there).
 
 const CONTACTS_PERMISSION_KEY = "contacts";
 
 export function ContactsPermissionRow({ onOpenPeople }: { onOpenPeople: () => void }) {
     const { t } = useTranslation("settings");
-    const [missing, setMissing] = useState(false);
+    const { failure: openFailure, fail: failOpen, clear } = useSettingsFailure();
+    const [status, setStatus] = useState<ContactsAccessStatus | null>(null);
+    const [readFailed, setReadFailed] = useState(false);
     const mounted = useRef(true);
 
     const refresh = useCallback(() => {
-        GetPlatformPermissions()
-            .then((permissions) => {
+        GetContactsAccessStatus()
+            .then((next) => {
                 if (!mounted.current) return;
-                const item = permissions.items.find((i) => i.key === CONTACTS_PERMISSION_KEY);
-                setMissing(Boolean(item && item.actionable && !item.granted));
+                setStatus(next);
+                setReadFailed(false);
             })
             .catch(() => {
-                // Without a reading there is nothing to prompt for.
+                if (!mounted.current) return;
+                setStatus(null);
+                setReadFailed(true);
             });
     }, []);
 
@@ -51,24 +62,44 @@ export function ContactsPermissionRow({ onOpenPeople }: { onOpenPeople: () => vo
         };
     }, [refresh]);
 
-    if (!missing) return null;
+    const openSystem = () => {
+        clear();
+        OpenPermissionSettings(CONTACTS_PERMISSION_KEY).catch(() => failOpen(t("sees.openSystemFailed"), openSystem));
+    };
 
+    if (readFailed) {
+        return <SettingsFailureLine failure={{ text: t("sees.contactsFailed"), retry: refresh }} />;
+    }
+    // Where this computer has no Contacts to give, there is nothing to say.
+    if (!status || !status.supported || status.permission === "not_applicable") return null;
+
+    const state =
+        status.permission === "granted"
+            ? t("sees.contactsAllowed")
+            : status.permission === "not_determined"
+              ? t("sees.contactsNotAsked")
+              : t("sees.contactsNotAllowed");
     return (
-        <>
+        <div data-testid="sees-contacts">
             <SettingsRow
-                title={t("learningMemory.contacts.title")}
-                description={t("learningMemory.contacts.description")}
+                title={t("sees.contacts")}
+                description={state}
+                failure={openFailure}
                 control={
-                    <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={onOpenPeople}
-                    >
-                        {t("learningMemory.contacts.openPeople")}
-                    </Button>
+                    status.permission === "not_determined" ? (
+                        <Button type="button" variant="outline" size="sm" onClick={onOpenPeople}>
+                            {t("learningMemory.contacts.openPeople")}
+                        </Button>
+                    ) : (
+                        <Button type="button" variant="outline" size="sm" onClick={openSystem}>
+                            {t("sees.openSystem")}
+                        </Button>
+                    )
                 }
             />
-        </>
+            <p className="settings-row-desc -mt-1 pb-2" data-testid="sees-messages-without-contacts">
+                {t("sees.messagesWithoutContacts")}
+            </p>
+        </div>
     );
 }

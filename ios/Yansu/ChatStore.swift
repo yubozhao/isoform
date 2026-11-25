@@ -1636,6 +1636,13 @@ final class ChatStore: ObservableObject {
         return isCurrent(generation)
     }
 
+    /// Scope cut A6: the computer switched Chat off, so the phone deletes its Chat cache (the chats directory:
+    /// transcripts, the main-chat marker, drafts and waiting messages) and forgets Chat's in-memory state. The
+    /// pairing, the brief cache, recordings and the watch are not Chat's and stay. Safe to run again.
+    func purgeForChatOff() -> Bool {
+        clearAfterUnpair()
+    }
+
     @discardableResult
     func clearAfterUnpair() -> Bool {
         pairingGeneration = UUID()

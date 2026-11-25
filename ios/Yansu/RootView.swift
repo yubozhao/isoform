@@ -10,6 +10,7 @@ struct RootView: View {
     @EnvironmentObject private var firstRun: FirstRunStore
     @EnvironmentObject private var pairing: PairingStore
     @EnvironmentObject private var onScreen: BriefOnScreen
+    @EnvironmentObject private var chatAvailability: ChatAvailabilityStore
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.locale) private var locale
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -41,6 +42,11 @@ struct RootView: View {
         case .tasks: return copy.text(en: "Tasks", zhCN: "任务")
         case .settings: return copy.text(en: "Settings", zhCN: "设置")
         }
+    }
+
+    /// The root pages, decided in one place (PhoneTabs) until Isoform design answers "one page or two".
+    private var rootTabs: [NotificationRouter.Tab] {
+        PhoneTabs.root(chatAvailable: chatAvailability.chatShown, watchPaired: watchRecordings.showsWatchTab)
     }
 
     var body: some View {
@@ -88,6 +94,7 @@ struct RootView: View {
             .environmentObject(environment.actions)
             .environmentObject(environment.notifications)
             .environmentObject(environment.keepAwake)
+            .environmentObject(environment.chatAvailability)
             .environmentObject(push)
         }
         .sheet(item: $router.briefRoute) { route in
@@ -101,6 +108,7 @@ struct RootView: View {
             .environmentObject(environment.brief)
             .environmentObject(environment.pairing)
             .environmentObject(environment.chat)
+            .environmentObject(environment.chatAvailability)
             .environmentObject(environment.actions)
             .environmentObject(environment.today)
             .environmentObject(router)
@@ -119,14 +127,17 @@ struct RootView: View {
                 environment.today.startListening()
             }
             async let snapshot: Void = environment.today.refresh()
+            async let chat: Void = chatAvailability.refresh()
             if environment.refreshesBriefs { await environment.brief.refresh() }
             await snapshot
+            await chat
         }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .active:
                 environment.today.startListening()
                 Task { await environment.today.refresh() }
+                Task { await chatAvailability.refresh() }
                 Task {
                     await environment.push.resumeIfOptedIn()
                     await environment.notifications.refresh()
@@ -248,7 +259,7 @@ struct RootView: View {
                 .toolbar(.hidden, for: .tabBar)
 
                 // Watch is a tab while this phone has a watch paired, or had one and the system has not said yet.
-                if watchRecordings.showsWatchTab {
+                if rootTabs.contains(.watch) {
                     NavigationStack {
                         WatchTabView(recordings: watchRecordings)
                             .navigationBarTitleDisplayMode(.large)
@@ -260,6 +271,8 @@ struct RootView: View {
                     .toolbar(.hidden, for: .tabBar)
                 }
 
+                // Chat is a tab only while the computer offers it (scope cut A6).
+                if rootTabs.contains(.chat) {
                 NavigationStack(path: navigationPath(.chat)) {
                     ChatTabView()
                         .navigationTitle(String(localized: "Chat"))
@@ -289,6 +302,7 @@ struct RootView: View {
                 .tabItem { Label(Self.tabTitle(.chat, locale: locale), systemImage: "bubble.left") }
                 .tag(NotificationRouter.Tab.chat)
                 .toolbar(.hidden, for: .tabBar)
+                }
 
             }
         .toolbar(.hidden, for: .tabBar)
@@ -296,6 +310,11 @@ struct RootView: View {
         .onChange(of: watchRecordings.showsWatchTab) { _, hasWatch in
             if !hasWatch, router.selectedTab == .watch { router.selectedTab = .today }
         }
+        // Chat was switched off on the computer: its tab is gone, so Today shows.
+        .onChange(of: rootTabs) { _, tabs in
+            router.selectedTab = PhoneTabs.landing(router.selectedTab, in: tabs)
+        }
+        .onAppear { router.selectedTab = PhoneTabs.landing(router.selectedTab, in: rootTabs) }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 7) {
                 if showsMiniPlayer {
@@ -303,8 +322,8 @@ struct RootView: View {
                         .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
                 }
                 // The bar stays while the Chat composer has focus, so the other tabs are always one tap away.
-                if !router.isCorrecting && router.openThreads.isEmpty && onScreen.readingCounts.isEmpty && !barStepsAside {
-                    FloatingTabBar(router: router, chat: environment.chat, tasks: environment.tasks)
+                if showsTabBar && !router.isCorrecting && router.openThreads.isEmpty && onScreen.readingCounts.isEmpty && !barStepsAside {
+                    FloatingTabBar(router: router, chat: environment.chat, tasks: environment.tasks, tabs: rootTabs)
                         .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
                 }
             }
@@ -326,6 +345,9 @@ struct RootView: View {
 
     /// P162: at accessibility text sizes the Chat tab (and the topics pushed from it) gives the bar's room to the
     /// keyboard while it is up; the keyboard's Done brings the bar back. Default sizes keep the bar while typing (P159).
+    /// One page needs no tab bar (PhoneTabs).
+    private var showsTabBar: Bool { PhoneTabs.showsTabBar(rootTabs) }
+
     private var barStepsAside: Bool {
         keyboardShown && dynamicTypeSize.isAccessibilitySize && router.selectedTab == .chat
     }
@@ -335,7 +357,7 @@ struct RootView: View {
     /// The bar is 72 pt (56 pt compact) and stays while the Chat composer has focus, but steps aside for an open
     /// brief correction. The mini player is about 56 pt, with 7 pt between it and the bar.
     private var tabChromeHeight: CGFloat {
-        let bar: CGFloat = router.isCorrecting || !router.openThreads.isEmpty || !onScreen.readingCounts.isEmpty || barStepsAside ? 0 : (router.isTabBarCompact ? 56 : 72)
+        let bar: CGFloat = !showsTabBar || router.isCorrecting || !router.openThreads.isEmpty || !onScreen.readingCounts.isEmpty || barStepsAside ? 0 : (router.isTabBarCompact ? 56 : 72)
         let player: CGFloat = showsMiniPlayer ? 56 + (bar > 0 ? 7 : 0) : 0
         return bar + player
     }
@@ -360,7 +382,8 @@ struct RootView: View {
     }
 
     private func prepareTopicComposer(id: String, message: String) -> Bool {
-        guard let topic = environment.topics.topic(id), environment.topics.support != .unsupported else { return false }
+        guard chatAvailability.chatShown, let topic = environment.topics.topic(id),
+              environment.topics.support != .unsupported else { return false }
         environment.topics.saveDraft(TopicStore.Draft(text: message), for: topic.id)
         duoNavigation.setPushedPath([.draft(topic.id)], on: .chat)
         router.selectedTab = .chat

@@ -29,8 +29,8 @@
         "foot": "在“活动”中忘记某项内容，这里对应的条目也会一起删除。{{assistant}} 的提供方在每次调用后保留什么，由其自身条款决定。",
         "hourRow": "{{hour}} · {{group}} · {{times}}",
         "sawThatHour": "Isoform 那一小时看到的内容",
-        "held_one": "另有 {{count}} 次，用于建议，按小时计数。",
-        "held_other": "另有 {{count}} 次，用于建议，按小时计数。",
+        "held_one": "另有 {{count}} 次，用于建议问题和回复，按小时计数。",
+        "held_other": "另有 {{count}} 次，用于建议问题和回复，按小时计数。",
         "kinds": {
             "mail": "邮件",
             "calendar": "日历",
@@ -66,10 +66,10 @@
             "messages_other": "信息（{{count}} 个对话）",
             "wechat_one": "微信窗口（1 个窗口）",
             "wechat_other": "微信窗口（{{count}} 个窗口）",
-            "memory_one": "关于你（1 条笔记）",
-            "memory_other": "关于你（{{count}} 条笔记）",
-            "knowledge_one": "你的做事方式（1 条）",
-            "knowledge_other": "你的做事方式（{{count}} 条）",
+            "memory_one": "关于你（1 行）",
+            "memory_other": "关于你（{{count}} 行）",
+            "knowledge_one": "你的做事方式（1 行）",
+            "knowledge_other": "你的做事方式（{{count}} 行）",
             "people_one": "你认识的人（1 人）",
             "people_other": "你认识的人（{{count}} 人）",
             "activity_one": "活动（1 个片段）",
@@ -80,8 +80,8 @@
             "chat_other": "聊天（{{count}} 条消息）",
             "web_one": "网络（1 个网页）",
             "web_other": "网络（{{count}} 个网页）",
-            "topic_names_one": "你的话题名称（1 个话题）",
-            "topic_names_other": "你的话题名称（{{count}} 个话题）",
+            "topic_names_one": "你的话题（1 个名称）",
+            "topic_names_other": "你的话题（{{count}} 个名称）",
             "agents_history_one": "你的智能体历史（1 个会话）",
             "agents_history_other": "你的智能体历史（{{count}} 个会话）",
             "work_one": "你的工作（1 项）",
@@ -1376,7 +1376,8 @@
         "updateReady": "{{version}} 已准备好 · <restart>立即重启</restart>",
         "helpTitle": "帮助和发送反馈",
         "models": "在这台电脑上：用于隐私和查找内容的模型 · {{size}}",
-        "modelsShort": "隐私和搜索模型需要 {{size}} 可用空间 · 当前可用 {{free}}"
+        "modelsShort": "隐私和搜索模型需要 {{size}} 可用空间 · 当前可用 {{free}}",
+        "modelsOpen": "模型 ›"
     },
     "onboarding": {
         "title": "重新进行初始设置",
@@ -1520,7 +1521,7 @@
         "automationDescription": "自动化任务在后台完成时，播报一句简短提示。",
         "automationDoneSpeech": "自动化任务{{name}}已完成。",
         "notificationsTitle": "朗读通知",
-        "notificationsDescription": "出现新知识、新记忆和任务通知时朗读其标题。",
+        "notificationsDescription": "在这台电脑上把每条通知读出来。附近的人都能听到。",
         "voicesTitle": "语音",
         "voiceChinese": "中文语音",
         "voiceEnglish": "英文语音",
@@ -2874,12 +2875,7 @@
         "learns": {
             "title": "Isoform 会学习什么"
         },
-        "comparison": {
-            "confidenceNeedsComparison": "开启「通过对比学习」后才能使用此项。"
-        },
         "contacts": {
-            "title": "通过通讯录认出联系人",
-            "description": "在「你认识的人」页面查看 Isoform 将读取的信息，再选择要导入的联系人。",
             "openPeople": "前往「你认识的人」选择"
         }
     },
@@ -3113,9 +3109,7 @@
                 "changeFailed": "无法更改此项。"
             },
             "forget": {
-                "title": "忘记 Isoform 记下的内容",
                 "description": "删除从信息中记下的所有请求和承诺。已读取过的消息不会再次读取。",
-                "action": "忘记",
                 "failed": "无法忘记这些内容。"
             }
         },
@@ -3152,24 +3146,6 @@
                 "removeLabel": "不再将 {{folder}} 设为私密",
                 "pickerTitle": "选择要设为私密的文件夹",
                 "changeFailed": "无法更改此设置。"
-            }
-        },
-        "captured": {
-            "title": "Isoform 记录了什么",
-            "description": "Isoform 在这台电脑上保存的内容，按今天和最近 7 天计数。",
-            "source": "类型",
-            "today": "今天",
-            "week": "最近 7 天",
-            "paused": "已暂停。恢复观察前，Isoform 不会保存任何内容。",
-            "loadFailed": "无法读取这些数字。",
-            "sources": {
-                "screens": "看到的屏幕画面",
-                "textRead": "读取了文字的画面",
-                "audioMinutes": "转写到语音的分钟数",
-                "meetings": "会议转写记录",
-                "typing": "保存的输入文字",
-                "calendarEvents": "读取的日历事件",
-                "calendarPeeks": "查看网页日历的次数"
             }
         }
     },
@@ -3819,7 +3795,18 @@
         "switchReadFailed": "无法读取这一项是否开启。",
         "aoyReadFailed": "无法读取发送给 Agent of You 的内容。",
         "changeTitle": "Isoform 保留多久",
-        "changeSub": "保留时间，以及 Isoform 在这台电脑上可以使用的空间。满了之后，最早的先删除。"
+        "changeSub": "保留时间，以及 Isoform 在这台电脑上可以使用的空间。满了之后，最早的先删除。",
+        "counted": "{{kind}} · 今天 {{today}} · 7 天 {{week}}",
+        "countsFailed": "无法读取 Isoform 今天和本周记录的内容。",
+        "countKinds": {
+            "screens": "看到的屏幕画面",
+            "textRead": "读取了文字的画面",
+            "audioMinutes": "转写到语音的分钟数",
+            "meetings": "会议转写记录",
+            "typing": "保存的输入文字",
+            "calendarEvents": "读取的日历事件",
+            "calendarPeeks": "查看网页日历的次数"
+        }
     },
     "aoy": {
         "aoy": "Agent of You",
@@ -4070,7 +4057,7 @@
                 "openai": "OpenAI"
             },
             "keyLabel": "OpenAI 密钥",
-            "keySaved": "已保存密钥；留空即保留",
+            "keySaved": "已保存密钥。留空即保留。",
             "leaves": "会把文本发送给 OpenAI；见“离开电脑的内容”。",
             "addressLabel": "Ollama 地址",
             "save": "保存",
@@ -4119,9 +4106,9 @@
     },
     "sees": {
         "screen": "屏幕",
-        "screenSub": "屏幕上的内容，以及你在 Chrome 和同类浏览器中的历史记录，你排除的应用除外",
+        "screenSub": "屏幕上的内容，以及你在 {{browsers}} 中的浏览记录，你排除的应用除外",
         "calls": "通话和会议",
-        "callsSub": "你说的话和录下的通话，在这台电脑上转写",
+        "callsSub": "开启“聆听”时这台电脑的麦克风听到的内容，以及你录下的通话，在这台电脑上转写",
         "mailCalRem": "邮件、日历和提醒事项",
         "mailCalRemSub": "这台电脑上的账户，在原处读取",
         "messages": "信息",
@@ -4145,8 +4132,20 @@
         "back": "Isoform 看到的",
         "speechSpaceFailed": "无法读取语音识别是否已在这台电脑上。",
         "wechatPic": "无法读取文字时，以图片形式读取微信窗口 · 发送给 {{assistant}}",
-        "wechatPicWaiting": "在这台电脑上有隐私模型（会遮挡屏幕图片中的敏感内容）之前，图片会等待。",
-        "wechatPicFailed": "无法更改此设置。"
+        "wechatPicWaiting": "图片会等到隐私模型在这台电脑上就绪。它会在图片离开前遮挡其中的卡号、密码和验证码。",
+        "wechatPicFailed": "无法更改此设置。",
+        "watchSpeechWait": "手表听到的谈话会先保存，等语音识别就绪后再转写。",
+        "contacts": "通讯录 · Isoform 借此认出你认识的人",
+        "contactsAllowed": "已允许",
+        "contactsNotAllowed": "未允许",
+        "contactsNotAsked": "尚未询问",
+        "contactsFailed": "无法读取 Isoform 是否可以读取你的通讯录。",
+        "messagesWithoutContacts": "没有通讯录时，只会读取与 Isoform 已通过号码或邮箱认识的人的对话。",
+        "forgetSource": "忘记来自{{source}}的一切…",
+        "forget": "忘记",
+        "openSystemFailed": "无法打开系统设置。",
+        "screenSubInterim": "屏幕上的内容，以及你在 Chrome 和同类浏览器中的历史记录，你排除的应用除外",
+        "screenSubNone": "屏幕上的内容，你排除的应用除外"
     },
     "watch": {
         "phoneQuiet": "你的手机自 {{time}} 起没有联系过，所以之后手表上的内容都还没有传来。在手机上打开 Isoform 即可发送。",
@@ -4170,9 +4169,9 @@
         "place": {
             "title": "地点",
             "description": "加上所在区域，比如「Mission District」。不记录具体地址。",
-            "apple": "Apple 根据你所在的位置命名区域，位置约精确到一公里，每到一个新地方只做一次。"
+            "apple": "区域名称由 Apple 提供。你的手表会把你所在的位置发给 Apple，约精确到一公里，每到一个新地方只发一次。"
         },
-        "allowOnWatch": "第一次在手表上打开时，手表会请你允许。"
+        "heartAllow": "你的手表会请你允许一次。在你允许之前，不会添加任何内容。"
     },
     "leaves": {
         "assistant": "{{assistant}}，它读取你的一天并写下你的简报和回答",

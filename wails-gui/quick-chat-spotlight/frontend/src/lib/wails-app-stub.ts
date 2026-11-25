@@ -1063,6 +1063,7 @@ export const SetWatchListeningOff = makeNoop("SetWatchListeningOff");
 export const GetWatchPhoneQuiet = makeNoop("GetWatchPhoneQuiet");
 export const GetWatchListening = makeNoop("GetWatchListening");
 export const TurnOffWatchListening = makeNoop("TurnOffWatchListening");
+export const GetBrowsersRead = makeNoop("GetBrowsersRead");
 export const GetActivityVision = makeNoop("GetActivityVision");
 export const SetActivityVisionEnabled = makeNoop("SetActivityVisionEnabled");
 export const GetCalendarFirstDay = makeNoop("GetCalendarFirstDay");

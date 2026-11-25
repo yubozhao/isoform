@@ -17,7 +17,8 @@ import { SettingReadError } from "./setting-read-error";
 // General's Advanced in settings batch D1; reading Chat's answers aloud went.
 // Announce finished automations keeps its behaviour and saved value but is not
 // shown: automations are behind their switch (answers v1.2.0 AG12). Read
-// notifications aloud sits here until design places it.
+// notifications aloud sits here beside the voices (answers v1.5.0 S22): off
+// until turned on, silenced by quiet hours (notification_speech.go).
 
 // ── Read aloud ──
 

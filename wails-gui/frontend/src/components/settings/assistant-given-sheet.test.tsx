@@ -53,6 +53,8 @@ describe("See them", () => {
         expect(screen.getByText(/From: your watch · 7\sPM, 49 min of talk/)).toBeInTheDocument();
         // Counts carry their unit.
         expect(screen.getByText("From: Mail (4 threads), Calendar (1 event)")).toBeInTheDocument();
+        // You's tabs hold lines (design v1.5.0 T19).
+        expect(screen.getByText("From: About you (2 lines)")).toBeInTheDocument();
         expect(screen.getByText("“What did Sam ask for?”")).toBeInTheDocument();
         expect(screen.getByText("Draft the pricing note")).toBeInTheDocument();
         expect(screen.getAllByText(/Forget something in Activity, and its entries here go with it\. What Claude's provider keeps/).length).toBeGreaterThan(0);
@@ -82,7 +84,7 @@ describe("See them", () => {
 
     it("counts the calls no group shows yet, and says nothing when there are none", async () => {
         render(<AssistantGivenSheet open onOpenChange={() => {}} assistant="Claude" />);
-        const held = await screen.findByText("And 5 more times, for suggestions, counted by the hour.");
+        const held = await screen.findByText("And 5 more times, to suggest questions and replies, counted by the hour.");
         expect(held.closest("[data-given-group]")).toBeNull();
         expect(held.querySelector("button")).toBeNull();
         expect(held.tagName).toBe("P");
@@ -158,6 +160,14 @@ describe("See them", () => {
         mocks.fail = false;
         fireEvent.click(screen.getByText(en.settingRead.retry));
         expect(await screen.findByText("12 times")).toBeInTheDocument();
+    });
+
+    it("counts You's tabs in lines and topics in names (design v1.5.0 T19)", () => {
+        const t = i18n.getFixedT("en", "settings");
+        expect(t("given.counts.memory", { count: 3 })).toBe("About you (3 lines)");
+        expect(t("given.counts.knowledge", { count: 2 })).toBe("How you do things (2 lines)");
+        expect(t("given.counts.topic_names", { count: 3 })).toBe("Your topics (3 names)");
+        expect(t("given.counts.topic_names", { count: 1 })).toBe("Your topics (1 name)");
     });
 
     it("has every given string in both languages", () => {

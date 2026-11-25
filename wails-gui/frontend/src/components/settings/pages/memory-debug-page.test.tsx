@@ -97,27 +97,25 @@ describe("Developer tools › Memory and search (from Learning and memory, setti
         await waitFor(() => expect(screen.getByRole("switch", { name: "About you" })).toHaveAttribute("aria-checked", "false"));
     });
 
-    it("disables Prediction confidence with a reason while Learn by comparison is off", async () => {
+    it("has no Learn by comparison switch, which nothing reads, and keeps Prediction confidence on its own (S16)", async () => {
         mocks.uiState = { triage_enable_shadow: "false" };
         renderPage();
 
-        const comparison = await screen.findByRole("switch", { name: "Learn by comparison" });
-        await waitFor(() => expect(comparison).toHaveAttribute("aria-checked", "false"));
         const confidence = await screen.findByRole("switch", { name: "Prediction confidence" });
-        expect(confidence).toBeDisabled();
-        expect(screen.getByText("Turn on Learn by comparison to use this.")).toBeInTheDocument();
-
-        fireEvent.click(comparison);
-        expect(mocks.saveUIState).toHaveBeenCalledWith("triage_enable_shadow", "true");
         await waitFor(() => expect(confidence).toBeEnabled());
+        expect(screen.queryByRole("switch", { name: "Learn by comparison" })).not.toBeInTheDocument();
         expect(screen.queryByText("Turn on Learn by comparison to use this.")).not.toBeInTheDocument();
+        expect(mocks.loadUIState).not.toHaveBeenCalledWith("triage_enable_shadow");
+
+        fireEvent.click(confidence);
+        expect(mocks.saveUIState).toHaveBeenCalledWith("shadow_confidence_adjustment_enabled", "false");
     });
 
-    it("holds what Isoform learns, learn by comparison, both previews and the search index, unchanged", async () => {
+    it("holds what Isoform learns, Prediction confidence, both previews and the search index", async () => {
         renderPage();
         expect(screen.getByRole("heading", { name: "What Isoform learns" })).toBeInTheDocument();
         await waitFor(() => expect(mocks.loadUIState).toHaveBeenCalledWith("triage_enable_sop"));
-        expect(await screen.findByRole("switch", { name: "Learn by comparison" })).toBeInTheDocument();
+        expect(await screen.findByRole("switch", { name: "Prediction confidence" })).toBeInTheDocument();
         expect(screen.getByText("Daily topics preview")).toBeInTheDocument();
 
         expect(screen.getByText("Chat context preview")).toBeInTheDocument();

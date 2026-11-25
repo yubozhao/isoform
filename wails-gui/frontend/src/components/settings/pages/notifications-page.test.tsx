@@ -249,6 +249,9 @@ describe("NotificationsPage", () => {
         expect(await screen.findByRole("heading", { name: "Read aloud" })).toBeInTheDocument();
         expect(await screen.findByText("English voice")).toBeInTheDocument();
         expect(screen.getByText("Read notifications aloud")).toBeInTheDocument();
+        // Off until turned on, in design's words (answers v1.5.0 S22).
+        expect(screen.getByText("Says each notification out loud on this computer. Anyone nearby hears it.")).toBeInTheDocument();
+        await waitFor(() => expect(screen.getByRole("switch", { name: "Read notifications aloud" })).not.toBeChecked());
         expect(screen.queryByText("Read chat replies aloud")).not.toBeInTheDocument();
         // Automations are behind their switch (answers v1.2.0 AG12): kept, not shown.
         expect(screen.queryByText("Announce finished automations")).not.toBeInTheDocument();

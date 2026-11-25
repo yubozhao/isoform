@@ -759,6 +759,9 @@ final class BriefAudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate 
     private let downloadAudio: @MainActor (BriefAudio) async throws -> Data
     private let makeEngine: @MainActor (URL) throws -> BriefAudioPlayback
     private let managesSystemPlayback: Bool
+    /// Speed, 15 s back and ahead (BriefPlayerExtras): off on the phone, so it plays at normal speed and the lock
+    /// screen offers play and pause only.
+    let offersExtras: Bool
     private let authorizationReceipt: @MainActor () -> BriefAudioReceipt?
     private let resolveAuthorizationReceipt: @MainActor (MobileBriefV1) async -> BriefAudioReceipt?
     private var engine: BriefAudioPlayback?
@@ -800,6 +803,7 @@ final class BriefAudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate 
              return player
          },
          managesSystemPlayback: Bool = true,
+         offersExtras: Bool = BriefPlayerExtras.onPhone,
          authorizationReceipt: @escaping @MainActor () -> BriefAudioReceipt? = { nil },
          resolveAuthorizationReceipt: @escaping @MainActor (MobileBriefV1) async -> BriefAudioReceipt? = { _ in nil }) {
         self.cache = cache
@@ -808,9 +812,10 @@ final class BriefAudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate 
         self.downloadAudio = downloadAudio
         self.makeEngine = makeEngine
         self.managesSystemPlayback = managesSystemPlayback
+        self.offersExtras = offersExtras
         self.authorizationReceipt = authorizationReceipt
         self.resolveAuthorizationReceipt = resolveAuthorizationReceipt
-        if let saved = cache.readRecall()?.speed, let chosen = BriefPlaybackSpeed(rawValue: saved) {
+        if offersExtras, let saved = cache.readRecall()?.speed, let chosen = BriefPlaybackSpeed(rawValue: saved) {
             speed = chosen
         }
         super.init()
@@ -1432,11 +1437,13 @@ final class BriefAudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate 
         center.playCommand.isEnabled = true
         center.pauseCommand.isEnabled = true
         center.togglePlayPauseCommand.isEnabled = true
-        center.changePlaybackPositionCommand.isEnabled = true
+        // Without the extras the lock screen and Now Playing offer play and pause only (scope cut B2).
+        center.changePlaybackPositionCommand.isEnabled = offersExtras
         center.skipForwardCommand.preferredIntervals = [15]
         center.skipBackwardCommand.preferredIntervals = [15]
-        center.skipForwardCommand.isEnabled = true
-        center.skipBackwardCommand.isEnabled = true
+        center.skipForwardCommand.isEnabled = offersExtras
+        center.skipBackwardCommand.isEnabled = offersExtras
+        if offersExtras {
         remoteTargets.append((center.skipForwardCommand, center.skipForwardCommand.addTarget { [weak self] _ in
             Task { @MainActor [weak self] in self?.skip(by: 15) }
             return .success
@@ -1445,6 +1452,14 @@ final class BriefAudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate 
             Task { @MainActor [weak self] in self?.skip(by: -15) }
             return .success
         }))
+        remoteTargets.append((center.changePlaybackPositionCommand,
+                              center.changePlaybackPositionCommand.addTarget { [weak self] event in
+            guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
+            let position = event.positionTime
+            Task { @MainActor [weak self] in self?.seek(to: position) }
+            return .success
+        }))
+        }
         remoteTargets.append((center.playCommand, center.playCommand.addTarget { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self, let engine = self.engine, self.state != .playing else { return }
@@ -1462,13 +1477,6 @@ final class BriefAudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate 
                 if self.state == .playing { self.pause() }
                 else { self.start(engine) }
             }
-            return .success
-        }))
-        remoteTargets.append((center.changePlaybackPositionCommand,
-                              center.changePlaybackPositionCommand.addTarget { [weak self] event in
-            guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
-            let position = event.positionTime
-            Task { @MainActor [weak self] in self?.seek(to: position) }
             return .success
         }))
         #if os(iOS)

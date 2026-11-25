@@ -93,6 +93,18 @@ describe("Settings › Your AI", () => {
         expect(document.querySelector("[data-your-ai-finding-openai]")).toBeNull();
     });
 
+    it("says a saved key in design's words (v1.5.0 T18)", async () => {
+        mocks.finding = { choice: "local", hasOpenAIKey: true, localModelDownloaded: true, localModelBytes: 0 };
+        render(<YourAISection />);
+        await waitFor(() => expect(document.querySelector("[data-your-ai-finding-change]")).not.toBeDisabled());
+        openFindingMenu();
+        pickFinding("openai");
+        expect(await screen.findByLabelText(en.yourAI.finding.keyLabel)).toHaveAttribute(
+            "placeholder",
+            "A key is saved. Leave this empty to keep it.",
+        );
+    });
+
     it("saves Ollama with its address and On this computer straight away", async () => {
         render(<YourAISection />);
         await waitFor(() => expect(document.querySelector("[data-your-ai-finding-change]")).not.toBeDisabled());

@@ -323,6 +323,7 @@ func (a *App) engagementDesktop(_ context.Context, row storage.EngagementMomentR
 		OnOpened:    receipt(storage.EngagementReceiptOpened, ""),
 		OnDismissed: receipt(storage.EngagementReceiptDismissed, ""),
 	})
+	a.speakNotification(title)
 	return nil
 }
 

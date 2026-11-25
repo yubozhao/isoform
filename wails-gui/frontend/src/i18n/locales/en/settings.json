@@ -29,8 +29,8 @@
         "foot": "Forget something in Activity, and its entries here go with it. What {{assistant}}'s provider keeps after each call is set by its own terms.",
         "hourRow": "{{hour}} · {{group}} · {{times}}",
         "sawThatHour": "what Isoform saw that hour",
-        "held_one": "And {{count}} more time, for suggestions, counted by the hour.",
-        "held_other": "And {{count}} more times, for suggestions, counted by the hour.",
+        "held_one": "And {{count}} more time, to suggest questions and replies, counted by the hour.",
+        "held_other": "And {{count}} more times, to suggest questions and replies, counted by the hour.",
         "kinds": {
             "mail": "Mail",
             "calendar": "Calendar",
@@ -66,10 +66,10 @@
             "messages_other": "Messages ({{count}} conversations)",
             "wechat_one": "WeChat windows (1 window)",
             "wechat_other": "WeChat windows ({{count}} windows)",
-            "memory_one": "About you (1 note)",
-            "memory_other": "About you ({{count}} notes)",
-            "knowledge_one": "How you do things (1 entry)",
-            "knowledge_other": "How you do things ({{count}} entries)",
+            "memory_one": "About you (1 line)",
+            "memory_other": "About you ({{count}} lines)",
+            "knowledge_one": "How you do things (1 line)",
+            "knowledge_other": "How you do things ({{count}} lines)",
             "people_one": "Who you know (1 person)",
             "people_other": "Who you know ({{count}} people)",
             "activity_one": "Activity (1 moment)",
@@ -80,8 +80,8 @@
             "chat_other": "Chat ({{count}} messages)",
             "web_one": "The web (1 page)",
             "web_other": "The web ({{count}} pages)",
-            "topic_names_one": "your topic names (1 topic)",
-            "topic_names_other": "your topic names ({{count}} topics)",
+            "topic_names_one": "Your topics (1 name)",
+            "topic_names_other": "Your topics ({{count}} names)",
             "agents_history_one": "Your agents' history (1 session)",
             "agents_history_other": "Your agents' history ({{count}} sessions)",
             "work_one": "Your work (1 item)",
@@ -1376,7 +1376,8 @@
         "updateReady": "{{version}} is ready · <restart>Restart now</restart>",
         "helpTitle": "Help and Send feedback",
         "models": "On this computer: models for privacy and for finding things · {{size}}",
-        "modelsShort": "Privacy and search models need {{size}} free · {{free}} free now"
+        "modelsShort": "Privacy and search models need {{size}} free · {{free}} free now",
+        "modelsOpen": "Models ›"
     },
     "onboarding": {
         "title": "Run setup again",
@@ -1520,7 +1521,7 @@
         "automationDescription": "Say a short notice when an automation finishes in the background.",
         "automationDoneSpeech": "Automation {{name}} finished.",
         "notificationsTitle": "Read notifications aloud",
-        "notificationsDescription": "Speak the title of new knowledge, memory and task notifications when they appear.",
+        "notificationsDescription": "Says each notification out loud on this computer. Anyone nearby hears it.",
         "voicesTitle": "Voices",
         "voiceChinese": "Chinese voice",
         "voiceEnglish": "English voice",
@@ -2874,12 +2875,7 @@
         "learns": {
             "title": "What Isoform learns"
         },
-        "comparison": {
-            "confidenceNeedsComparison": "Turn on Learn by comparison to use this."
-        },
         "contacts": {
-            "title": "Recognize people from your Contacts",
-            "description": "Choose which contacts to import on the Who you know page, after reviewing what Isoform reads.",
             "openPeople": "Choose in Who you know"
         }
     },
@@ -3113,9 +3109,7 @@
                 "changeFailed": "Couldn't change this."
             },
             "forget": {
-                "title": "Forget what Isoform noted",
                 "description": "Deletes every ask and promise noted from Messages. Messages already read are not read again.",
-                "action": "Forget",
                 "failed": "Couldn't forget this."
             }
         },
@@ -3152,24 +3146,6 @@
                 "removeLabel": "Stop keeping {{folder}} private",
                 "pickerTitle": "Choose a folder to keep private",
                 "changeFailed": "Couldn't change this."
-            }
-        },
-        "captured": {
-            "title": "What Isoform captured",
-            "description": "What Isoform saved on this computer, counted for today and for the last 7 days.",
-            "source": "Kind",
-            "today": "Today",
-            "week": "Last 7 days",
-            "paused": "Paused. Isoform saves nothing until you resume observing.",
-            "loadFailed": "Couldn't read these counts.",
-            "sources": {
-                "screens": "Screens seen",
-                "textRead": "Screens read for text",
-                "audioMinutes": "Minutes with speech transcribed",
-                "meetings": "Meeting transcripts",
-                "typing": "Typed text saved",
-                "calendarEvents": "Calendar events read",
-                "calendarPeeks": "Web calendar checks"
             }
         }
     },
@@ -3819,7 +3795,18 @@
         "switchReadFailed": "Couldn't read whether this is on.",
         "aoyReadFailed": "Couldn't read what Agent of You was sent.",
         "changeTitle": "How long Isoform keeps things",
-        "changeSub": "Keep times and the space Isoform may use on this computer. When it's full, the oldest goes first."
+        "changeSub": "Keep times and the space Isoform may use on this computer. When it's full, the oldest goes first.",
+        "counted": "{{kind}} · today {{today}} · 7 days {{week}}",
+        "countsFailed": "Couldn't read what Isoform captured today and this week.",
+        "countKinds": {
+            "screens": "Screens seen",
+            "textRead": "Screens read for text",
+            "audioMinutes": "Minutes with speech transcribed",
+            "meetings": "Meeting transcripts",
+            "typing": "Typed text saved",
+            "calendarEvents": "Calendar events read",
+            "calendarPeeks": "Web calendar checks"
+        }
     },
     "aoy": {
         "aoy": "Agent of You",
@@ -4070,7 +4057,7 @@
                 "openai": "OpenAI"
             },
             "keyLabel": "OpenAI key",
-            "keySaved": "A key is saved; leave empty to keep it",
+            "keySaved": "A key is saved. Leave this empty to keep it.",
             "leaves": "Sends text to OpenAI; see What leaves.",
             "addressLabel": "Ollama address",
             "save": "Save",
@@ -4119,9 +4106,9 @@
     },
     "sees": {
         "screen": "Screen",
-        "screenSub": "What's on screen and your history in Chrome and browsers like it, with the apps you exclude left out",
+        "screenSub": "What's on screen and your browsing history in {{browsers}}, with the apps you exclude left out",
         "calls": "Calls and meetings",
-        "callsSub": "What you say and your recorded calls, transcribed on this computer",
+        "callsSub": "What this computer's microphone hears while Listen is on, and your recorded calls, transcribed on this computer",
         "mailCalRem": "Mail, calendar and reminders",
         "mailCalRemSub": "Your accounts on this computer, read where they are",
         "messages": "Messages",
@@ -4145,8 +4132,20 @@
         "back": "What Isoform sees",
         "speechSpaceFailed": "Couldn't read whether speech recognition is on this computer.",
         "wechatPic": "WeChat windows as pictures, when their text can't be read · sent to {{assistant}}",
-        "wechatPicWaiting": "Pictures wait until the privacy model, which masks pictures of your screen, is on this computer.",
-        "wechatPicFailed": "Couldn't change this."
+        "wechatPicWaiting": "Pictures wait until the privacy model is on this computer. It hides card numbers, passwords and codes in them before they leave.",
+        "wechatPicFailed": "Couldn't change this.",
+        "watchSpeechWait": "Your watch's talk is kept, and transcribed once speech recognition is here.",
+        "contacts": "Contacts · how Isoform knows who you know",
+        "contactsAllowed": "Allowed",
+        "contactsNotAllowed": "Not allowed",
+        "contactsNotAsked": "Not asked yet",
+        "contactsFailed": "Couldn't read whether Isoform can read your Contacts.",
+        "messagesWithoutContacts": "Without Contacts, only conversations with people Isoform already knows by their number or email are read.",
+        "forgetSource": "Forget everything from {{source}}…",
+        "forget": "Forget",
+        "openSystemFailed": "Couldn't open System Settings.",
+        "screenSubInterim": "What's on screen and your history in Chrome and browsers like it, with the apps you exclude left out",
+        "screenSubNone": "What's on screen, with the apps you exclude left out"
     },
     "watch": {
         "phoneQuiet": "Your phone hasn't been in touch since {{time}}, so nothing from your watch has come since. Open Isoform on your phone to send it.",
@@ -4170,9 +4169,9 @@
         "place": {
             "title": "Place",
             "description": "Adds the area, like \"Mission District\". Never the address.",
-            "apple": "Apple names the area from where you were, rounded to about a kilometre, once for each new place."
+            "apple": "Apple names the area. Your watch sends Apple where you were, rounded to about a kilometre, once for each new place."
         },
-        "allowOnWatch": "Your watch asks you to allow it the first time you open it there."
+        "heartAllow": "Your watch asks you to allow it once. Until you do, nothing is added."
     },
     "leaves": {
         "assistant": "{{assistant}}, which reads your day and writes your briefs and answers",

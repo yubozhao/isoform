@@ -9,7 +9,7 @@ import {
 } from "./about-settings";
 import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Loader2, Copy, Mail } from "lucide-react";
+import { ChevronLeft, Loader2, Copy, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
     GetPerfSnapshot,
@@ -170,6 +170,26 @@ export interface HelpAboutPageProps {
  */
 export function HelpAboutPage({ onReplayOnboarding }: HelpAboutPageProps) {
     const { t } = useTranslation("settings");
+    // Models › (answers v1.5.0 S21): the models line opens each model by its
+    // job, size and state, with where it downloads from, in place, as What
+    // Isoform sees opens a source; a back link returns to About. The custom
+    // mirror shows there only while Developer tools are on.
+    const [models, setModels] = useState(false);
+    if (models) {
+        return (
+            <div className="flex flex-col gap-4" data-testid="about-models-page">
+                <button
+                    type="button"
+                    onClick={() => setModels(false)}
+                    className="self-start inline-flex items-center gap-1 text-xs text-muted hover:text-ink transition-colors"
+                >
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                    {t("pages.about.label")}
+                </button>
+                <ModelsPanel settings />
+            </div>
+        );
+    }
     return (
         <>
             <YourNameSettings />
@@ -177,13 +197,9 @@ export function HelpAboutPage({ onReplayOnboarding }: HelpAboutPageProps) {
             <LanguageSettings />
             <AppearanceSettings />
             <AboutUpdates />
-            <AboutModels />
+            <AboutModels onOpen={() => setModels(true)} />
             <GetHelp />
             <SettingsAdvanced pageId="about" hint={t("about.advancedHint")}>
-                {/* Each model by job, its downloads, sources and mirror: from
-                    Settings › Storage (settings batch D2), under the models
-                    line it details. */}
-                <ModelsPanel settings />
                 <SettingsCard>
                     <SettingsRow
                         title={t("onboarding.title")}

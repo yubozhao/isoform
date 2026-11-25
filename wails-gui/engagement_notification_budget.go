@@ -108,5 +108,6 @@ func (a *App) notifyAutomaticDesktop(title, body, clickData string) string {
 	if !svc.deliverAutomaticDesktop(func() { showDesktopToast(title, body, a.notifyIconPath(), clickData) }) {
 		return "suppressed"
 	}
+	a.speakNotification(title)
 	return "desktop"
 }

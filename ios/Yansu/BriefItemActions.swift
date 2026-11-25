@@ -12,6 +12,8 @@ enum BriefItemAction: Equatable, Sendable {
 struct BriefItemActions: View {
     let card: FeedCardModel
     let canGiveFeedback: Bool
+    /// Useful went with Chat (scope cut A6: "Not right is the one correction").
+    var offersUseful = true
     @ObservedObject var feed: FeedStore
     let today: TodayStore
     let briefStore: BriefStore
@@ -30,12 +32,14 @@ struct BriefItemActions: View {
                            undo: pending.todayFeedback?.dispatchedAt == nil ? { Task { await feed.undoToday(pending.key) } } : nil)
             } else if let choice = feed.choices[card.key], choice.action == .notRelevant {
                 statusLine(choice.delivery == .pending ? String(localized: "Waits for your computer") : String(localized: "Fewer like this"))
-            } else if !Self.actions(for: card, canGiveFeedback: canGiveFeedback).isEmpty {
+            } else if !Self.actions(for: card, canGiveFeedback: canGiveFeedback, offersUseful: offersUseful).isEmpty {
                 HStack(spacing: 8) {
-                    Button(String(localized: "Useful")) { Task { await hold(.like) } }
-                        .buttonStyle(YansuChipButtonStyle())
-                        .disabled(feed.choices[card.key] != nil)
-                        .accessibilityIdentifier("feed.like")
+                    if offersUseful {
+                        Button(String(localized: "Useful")) { Task { await hold(.like) } }
+                            .buttonStyle(YansuChipButtonStyle())
+                            .disabled(feed.choices[card.key] != nil)
+                            .accessibilityIdentifier("feed.like")
+                    }
                     Button(String(localized: "Not for me")) { Task { await hold(.notRelevant) } }
                         .buttonStyle(YansuChipButtonStyle())
                         .disabled(feed.choices[card.key] != nil)
@@ -50,9 +54,9 @@ struct BriefItemActions: View {
     }
 
     /// The actions a row offers for its card: none without feedback permission, and none for a remembered item.
-    static func actions(for card: FeedCardModel, canGiveFeedback: Bool) -> [BriefItemAction] {
+    static func actions(for card: FeedCardModel, canGiveFeedback: Bool, offersUseful: Bool = true) -> [BriefItemAction] {
         guard canGiveFeedback, card.memoryID == nil else { return [] }
-        return [.useful, .notForMe]
+        return offersUseful ? [.useful, .notForMe] : [.notForMe]
     }
 
     /// The feed card a brief item is drawn from, matched by its content (a one-time work item's chat link is removed

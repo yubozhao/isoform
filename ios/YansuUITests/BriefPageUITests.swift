@@ -20,7 +20,9 @@ final class BriefPageUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["brief.title"].firstMatch.waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["brief.made"].firstMatch.exists)
         XCTAssertFalse(app.buttons["brief.previous"].exists, "the arrows went; swiping moves between briefs")
-        XCTAssertTrue(app.buttons["brief.back15"].firstMatch.exists)
+        XCTAssertTrue(app.buttons["brief.play"].firstMatch.exists)
+        XCTAssertFalse(app.buttons["brief.back15"].exists, "Hear it is play, pause and a bar (scope cut B2)")
+        XCTAssertFalse(app.buttons["brief.speed"].exists)
         attachScreenshot(app, named: "brief-1-top")
         let paragraph = app.buttons["brief.paragraph.0"].firstMatch
         if paragraph.exists { paragraph.tap() }

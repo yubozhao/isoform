@@ -42,6 +42,8 @@ const mocks = vi.hoisted(() => ({
     listPrincipals: vi.fn(),
     captureCounts: vi.fn(),
     getWatchListening: vi.fn(),
+    contactsStatus: vi.fn(),
+    browsersRead: vi.fn(),
     turnOffWatchListening: vi.fn(),
     getReadHistory: vi.fn(),
     setReadHistory: vi.fn(),
@@ -119,6 +121,8 @@ vi.mock("@/lib/wails-shim-app", () => ({
     ListPrincipals: mocks.listPrincipals,
     GetCaptureCounts: mocks.captureCounts,
     GetWatchListening: mocks.getWatchListening,
+    GetContactsAccessStatus: mocks.contactsStatus,
+    GetBrowsersRead: mocks.browsersRead,
     TurnOffWatchListening: mocks.turnOffWatchListening,
     GetReadAssistantHistory: mocks.getReadHistory,
     SetReadAssistantHistory: mocks.setReadHistory,
@@ -154,6 +158,10 @@ vi.mock("@/lib/browser-bridge", async (importOriginal) => ({
 }));
 
 vi.mock("sonner", () => ({ toast: mocks.toast }));
+
+function contactsStatus(permission: string) {
+    return { supported: true, platform: "darwin", permission, consentAccepted: true, consentAcceptedAt: "", importedCount: 3, lastImportAt: "", vcardSupported: true };
+}
 
 function emit(name: string, ...args: unknown[]) {
     act(() => {
@@ -365,6 +373,8 @@ describe("ObservationPage", () => {
             { id: "me", kind: "self", displayName: "Sam" },
         ]);
         mocks.getWatchListening.mockResolvedValue({ off: false, hasWatch: true });
+        mocks.contactsStatus.mockResolvedValue(contactsStatus("granted"));
+        mocks.browsersRead.mockResolvedValue(["Chrome", "Arc"]);
         mocks.turnOffWatchListening.mockResolvedValue({ off: true, since: "2026-11-21T10:00:00Z", hasWatch: true });
         mocks.getReadHistory.mockResolvedValue(true);
         mocks.setReadHistory.mockResolvedValue(undefined);
@@ -385,11 +395,12 @@ describe("ObservationPage", () => {
 
         await waitFor(() => expect(screen.getByRole("switch", { name: "Screen" })).toBeInTheDocument());
         await screen.findByRole("switch", { name: "Your watch" });
+        await screen.findByText(/browsing history in Chrome and Arc/);
         const rows = [...document.querySelectorAll("[data-testid^=sees-row-]")].map((el) => el.getAttribute("data-testid"));
         expect(rows).toEqual(["sees-row-screen", "sees-row-calls", "sees-row-mail", "sees-row-messages", "sees-row-watch", "sees-row-agents"]);
         const words = [
-            ["Screen", "What's on screen and your history in Chrome and browsers like it, with the apps you exclude left out"],
-            ["Calls and meetings", "What you say and your recorded calls, transcribed on this computer"],
+            ["Screen", "What's on screen and your browsing history in Chrome and Arc, with the apps you exclude left out"],
+            ["Calls and meetings", "What this computer's microphone hears while Listen is on, and your recorded calls, transcribed on this computer"],
             ["Mail, calendar and reminders", "Your accounts on this computer, read where they are"],
             ["Messages", "Your iMessage and text conversations with people you know, on this computer"],
             ["Your watch", "Talk it hears while on your wrist, by the hour"],
@@ -663,7 +674,7 @@ describe("ObservationPage", () => {
     });
 
     it("says it couldn't read the speech model, with Try again, never a size", async () => {
-        mocks.planSpeech.mockRejectedValueOnce(new Error("no"));
+        mocks.planSpeech.mockRejectedValue(new Error("no"));
         render(<ObservationPage />);
         const row = screen.getByTestId("sees-row-calls");
         expect(await within(row).findByText("Couldn't read whether speech recognition is on this computer.")).toBeInTheDocument();
@@ -673,8 +684,66 @@ describe("ObservationPage", () => {
         expect(await within(row).findByTestId("sees-speech-space")).toBeInTheDocument();
     });
 
+    it("names the browsers read on this computer on Screen, in its row and its details (T16)", async () => {
+        mocks.browsersRead.mockResolvedValue(["Chrome"]);
+        render(<ObservationPage anchor="sees-screen" />);
+        expect(await screen.findByText("What's on screen and your browsing history in Chrome, with the apps you exclude left out")).toBeInTheDocument();
+    });
+
+    it("says only what's on screen when no browser's history is read", async () => {
+        mocks.browsersRead.mockResolvedValue([]);
+        render(<ObservationPage />);
+        expect(await within(screen.getByTestId("sees-row-screen")).findByText("What's on screen, with the apps you exclude left out")).toBeInTheDocument();
+    });
+
+    it("keeps the interim Screen line, which says more, when the browsers can't be read", async () => {
+        mocks.browsersRead.mockRejectedValue(new Error("no"));
+        render(<ObservationPage />);
+        await waitFor(() => expect(mocks.browsersRead).toHaveBeenCalled());
+        expect(within(screen.getByTestId("sees-row-screen")).getByText("What's on screen and your history in Chrome and browsers like it, with the apps you exclude left out")).toBeInTheDocument();
+    });
+
+    it("says on Your watch that its talk is kept until speech recognition is here, Listen off or on (S14)", async () => {
+        mocks.getListening.mockResolvedValue(false);
+        mocks.planSpeech.mockResolvedValue(speechPlan({ enoughSpace: true }));
+        render(<ObservationPage />);
+        const row = screen.getByTestId("sees-row-watch");
+        expect(await within(row).findByTestId("sees-watch-speech-wait")).toHaveTextContent(
+            "Your watch's talk is kept, and transcribed once speech recognition is here.",
+        );
+    });
+
+    it("has no watch speech line once the model is here", async () => {
+        render(<ObservationPage />);
+        await screen.findByRole("switch", { name: "Your watch" });
+        await waitFor(() => expect(mocks.planSpeech).toHaveBeenCalledTimes(2));
+        expect(screen.queryByTestId("sees-watch-speech-wait")).toBeNull();
+    });
+
+    it("has no watch speech line while the watch isn't listening", async () => {
+        mocks.planSpeech.mockResolvedValue(speechPlan());
+        mocks.getListening.mockResolvedValue(false);
+        mocks.getWatchListening.mockResolvedValue({ off: true, since: "2026-11-21T10:00:00Z", hasWatch: true });
+        render(<ObservationPage />);
+        await screen.findByText("Off. Tap the mark on your watch to start listening.");
+        expect(screen.queryByTestId("sees-watch-speech-wait")).toBeNull();
+        expect(mocks.planSpeech).not.toHaveBeenCalled();
+    });
+
+    it("says it couldn't read the speech model on Your watch, with Try again", async () => {
+        mocks.getListening.mockResolvedValue(false);
+        mocks.planSpeech.mockRejectedValueOnce(new Error("no"));
+        render(<ObservationPage />);
+        const row = screen.getByTestId("sees-row-watch");
+        expect(await within(row).findByText("Couldn't read whether speech recognition is on this computer.")).toBeInTheDocument();
+        mocks.planSpeech.mockResolvedValue(speechPlan());
+        fireEvent.click(within(row).getByRole("button", { name: "Try again" }));
+        expect(await within(row).findByTestId("sees-watch-speech-wait")).toBeInTheDocument();
+    });
+
     it("shows no speech hint while listening is off", async () => {
         mocks.getListening.mockResolvedValue(false);
+        mocks.getWatchListening.mockResolvedValue({ off: true, since: "2026-11-21T10:00:00Z", hasWatch: true });
         mocks.planSpeech.mockResolvedValue(speechPlan());
         render(<ObservationPage />);
         await screen.findByRole("switch", { name: "Calls and meetings" });
@@ -699,7 +768,7 @@ describe("ObservationPage", () => {
         mocks.getVision.mockResolvedValue({ enabled: true, privacyModelReady: false });
         render(<ObservationPage anchor="sees-screen" />);
         expect(
-            await screen.findByText("Pictures wait until the privacy model, which masks pictures of your screen, is on this computer."),
+            await screen.findByText("Pictures wait until the privacy model is on this computer. It hides card numbers, passwords and codes in them before they leave."),
         ).toBeInTheDocument();
     });
 
@@ -1091,7 +1160,13 @@ describe("ObservationPage", () => {
         fireEvent.click(await within(card).findByRole("button", { name: "Stop leaving out Lee" }));
         await waitFor(() => expect(mocks.setLeftOut).toHaveBeenCalledWith([]));
 
+        // Rule 3's form: it asks first, with what it removes (answers v1.5.0 T16).
+        expect(within(card).getByText("Forget everything from Messages…")).toBeInTheDocument();
         fireEvent.click(within(card).getByRole("button", { name: "Forget" }));
+        expect(mocks.forgetMessages).not.toHaveBeenCalled();
+        const ask = await screen.findByRole("dialog");
+        expect(within(ask).getByText("Deletes every ask and promise noted from Messages. Messages already read are not read again.")).toBeInTheDocument();
+        fireEvent.click(within(ask).getByRole("button", { name: "Forget" }));
         await waitFor(() => expect(mocks.forgetMessages).toHaveBeenCalled());
 
         // The switch is its own; Screen never turns it.
@@ -1104,16 +1179,18 @@ describe("ObservationPage", () => {
         expect(mocks.setPermission).not.toHaveBeenCalledWith("messages_history", expect.anything());
     });
 
-    it("shows the Contacts row in Messages' details while Contacts is missing, opening Who you know (settings batch D3)", async () => {
-        const withContacts = withMessages(macPermissions());
-        withContacts.items.push(permission("contacts", { granted: false, actionable: true }));
-        mocks.getPermissions.mockResolvedValue(withContacts);
-        const onOpenPeople = vi.fn();
-        render(<ObservationPage anchor="sees-messages" onOpenPeople={onOpenPeople} />);
-        await screen.findByTestId("sees-details-messages");
-        fireEvent.click(await screen.findByRole("button", { name: "Choose in Who you know" }));
-        expect(onOpenPeople).toHaveBeenCalledTimes(1);
-        expect(screen.getByText("Recognize people from your Contacts")).toBeInTheDocument();
+    it("shows Messages' Contacts row with its state, Open System Settings and what Messages does without it (S15)", async () => {
+        mocks.getPermissions.mockResolvedValue(withMessages(macPermissions()));
+        mocks.contactsStatus.mockResolvedValue(contactsStatus("denied"));
+        render(<ObservationPage anchor="sees-messages" onOpenPeople={vi.fn()} />);
+        const row = await screen.findByTestId("sees-contacts");
+        expect(within(row).getByText("Contacts · how Isoform knows who you know")).toBeInTheDocument();
+        expect(within(row).getByText("Not allowed")).toBeInTheDocument();
+        expect(within(row).getByTestId("sees-messages-without-contacts")).toHaveTextContent(
+            "Without Contacts, only conversations with people Isoform already knows by their number or email are read.",
+        );
+        fireEvent.click(within(row).getByRole("button", { name: "Open System Settings" }));
+        expect(mocks.openPermissionSettings).toHaveBeenCalledWith("contacts");
     });
 
     it("hides the mail card where the computer has no Mail", async () => {
@@ -1241,7 +1318,7 @@ describe("ObservationPage", () => {
         expect(screen.queryByRole("switch", { name: "Use the microphone" })).not.toBeInTheDocument();
     });
 
-    it("lists what Isoform captured under an anchor Today links to", async () => {
+    it("has no captured-counts card: its numbers are on Your data's rows (answers v1.5.0 T16)", async () => {
         mocks.captureCounts.mockResolvedValue({
             paused: false,
             notReady: false,
@@ -1250,12 +1327,11 @@ describe("ObservationPage", () => {
             sources: [{ source: "screens", today: 412, week: 2903 }],
         });
         const { container } = render(<ObservationPage />);
-
-        const row = await screen.findByRole("row", { name: /Screens seen/ });
-        expect(within(row).getByText("412")).toBeInTheDocument();
-        const anchor = container.querySelector('[data-settings-anchor="captured"]');
-        expect(anchor).toHaveTextContent("What Isoform captured");
-        expect(mocks.captureCounts).toHaveBeenCalledTimes(1);
+        await screen.findByRole("switch", { name: "Your watch" });
+        expect(screen.queryByText("What Isoform captured")).not.toBeInTheDocument();
+        expect(screen.queryByText(/Screens seen/)).not.toBeInTheDocument();
+        expect(container.querySelector('[data-settings-anchor="captured"]')).toBeNull();
+        expect(mocks.captureCounts).not.toHaveBeenCalled();
     });
 
 });

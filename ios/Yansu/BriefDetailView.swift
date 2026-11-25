@@ -15,6 +15,7 @@ struct BriefDetailView: View {
     @EnvironmentObject private var store: BriefStore
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var pairing: PairingStore
+    @EnvironmentObject private var chatAvailability: ChatAvailabilityStore
     @EnvironmentObject private var chat: ChatStore
     @EnvironmentObject private var router: NotificationRouter
     @EnvironmentObject private var onScreen: BriefOnScreen
@@ -51,7 +52,8 @@ struct BriefDetailView: View {
     private var canListen: Bool { pairing.paired?.scopes.contains("brief:read") == true && hubID != nil }
     private var canTalk: Bool {
         let scopes = pairing.paired?.scopes ?? []
-        return scopes.contains("brief:read") && SettingsView.allowsChat(scopes)
+        // With Chat off on the computer there is no Ask or Talk, and no question cards (scope cut A6).
+        return chatAvailability.briefAskShown && scopes.contains("brief:read") && SettingsView.allowsChat(scopes)
     }
 
     /// The briefs with words, newest first: the order the swipes and arrows move through.
@@ -59,8 +61,9 @@ struct BriefDetailView: View {
     private var neighbours: (previous: String?, next: String?) { BriefPages.neighbours(of: briefID, in: order) }
 
     /// The written paragraph being spoken, when the player holds this brief and has started it.
+    /// Without the player extras (scope cut B2) there is no read-along: nothing is highlighted or followed.
     private func spoken(_ brief: MobileBriefV1, hubID: String) -> Int? {
-        guard player.matches(brief: brief, hubID: hubID), player.started else { return nil }
+        guard player.offersExtras, player.matches(brief: brief, hubID: hubID), player.started else { return nil }
         return player.spokenParagraph
     }
 
@@ -268,6 +271,8 @@ struct BriefDetailView: View {
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("brief.audioStatus")
             }
+            // Speed and 15 s back and ahead are the player's extras, which the phone does not show (scope cut B2).
+            if player.offersExtras {
             HStack {
                 skipButton(seconds: -15, title: String(localized: "brief.back15"), label: String(localized: "Back 15 seconds"),
                            identifier: "brief.back15", enabled: selected)
@@ -288,6 +293,7 @@ struct BriefDetailView: View {
                 Spacer(minLength: 0)
                 skipButton(seconds: 15, title: String(localized: "brief.on15"), label: String(localized: "Ahead 15 seconds"),
                            identifier: "brief.ahead15", enabled: selected)
+            }
             }
         }
         .padding(16)

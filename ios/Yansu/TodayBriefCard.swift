@@ -204,6 +204,7 @@ struct TodayBriefCardView: View {
     var folded = false
 
     @EnvironmentObject private var brief: BriefStore
+    @EnvironmentObject private var chatAvailability: ChatAvailabilityStore
     @EnvironmentObject private var todayStore: TodayStore
     @Environment(\.locale) private var locale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -221,7 +222,8 @@ struct TodayBriefCardView: View {
         let due = TodayBriefCard.dueWhileAsleep(schedule, current: shown, asleep: asleep, now: now)
         let outOfTouch = TodayBriefCard.dueWhileOutOfTouch(schedule, current: shown, asleep: asleep,
                                                            lastConnected: todayStore.lastConnected, now: now)
-        let weekShown = shown.yourWeek != nil
+        // Your week went with Chat (scope cut A6).
+        let weekShown = shown.yourWeek != nil && chatAvailability.chatShown
         let entry = HistoryEntry(id: shown.identifier, slot: shown.slot, localDate: shown.localDate,
                                  asOf: shown.asOfDate, narrativeStatus: shown.narrativeStatus, isCached: true,
                                  displaySlot: shown.displaySlot, timezone: shown.timezone,
