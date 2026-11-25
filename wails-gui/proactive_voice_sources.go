@@ -216,8 +216,7 @@ func (a *App) loadProactiveVoiceMail(ctx context.Context, m engagement.Moment, n
 }
 
 func (a *App) proactiveVoicePermission(ctx context.Context, key string) bool {
-	value, err := a.store.GetUIState(ctx, permissionUIStateKey(key))
-	return err == nil && value != "false" && (value != "" || !permissionsOffByDefault[key])
+	return a.captureAllowed(ctx, "proactive_voice_"+key, key)
 }
 
 func proactiveVoiceAppAllowed(bundle, name string) bool {

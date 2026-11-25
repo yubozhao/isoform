@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"sync/atomic"
 
 	"wails-gui/internal/platform/activitymon"
 	"wails-gui/internal/platform/clipboard"
@@ -38,7 +37,6 @@ type clipboardObserver struct {
 	app     *App
 	watcher *clipboard.Watcher
 	self    string
-	enabled atomic.Bool
 	// front is the frontmost app when the current copy was seen, and
 	// kindOnly whether the copy keeps only its kind; Accept and OnCopy run
 	// one after the other on the watcher goroutine.
@@ -57,7 +55,6 @@ func (a *App) startClipboardObserver(ctx context.Context) {
 		return
 	}
 	obs := &clipboardObserver{app: a, self: clipboard.SelfBundleID()}
-	obs.enabled.Store(a.isPermissionEnabled(clipboardPermissionKey))
 	watcher := &clipboard.Watcher{
 		Board:   clipboard.SystemBoard{},
 		Allowed: obs.allowed,
@@ -108,7 +105,6 @@ func (a *App) clipboardSwitchChanged(enabled bool) {
 	if obs == nil {
 		return
 	}
-	obs.enabled.Store(enabled)
 	obs.watcher.Rebaseline()
 }
 
@@ -135,7 +131,7 @@ func (o *clipboardObserver) sampleFront() clipboard.App {
 }
 
 func (o *clipboardObserver) allowed() bool {
-	return o.enabled.Load() && !o.app.IsClosedEyesModeEnabled()
+	return o.app.captureAllowed(context.Background(), "clipboard_observer", clipboardPermissionKey) && !o.app.IsClosedEyesModeEnabled()
 }
 
 // accept decides, before anything copied is read, whether the apps in front

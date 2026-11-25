@@ -111,7 +111,7 @@ func (a *App) SyncRemindersNow() error {
 	if !remindersAccessGranted() {
 		return errRemindersNotAuthorized
 	}
-	if !a.isPermissionEnabled(remindersPermissionKey) {
+	if !a.captureAllowed(context.Background(), "reminders_sync", remindersPermissionKey) {
 		return errors.New("reminders reading is switched off")
 	}
 	_, err := a.remindersSync.Sync(context.Background(), "refresh")

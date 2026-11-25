@@ -326,7 +326,7 @@ func TestPluginsMailSwitchRetainsMessagesAndMoments(t *testing.T) {
 	}
 	app := pluginTestApp(t)
 	ctx := context.Background()
-	app.mailSync = &mailSyncService{store: app.store, enabled: func() bool { return app.isPermissionEnabled(mailPermissionKey) }}
+	app.mailSync = &mailSyncService{store: app.store, enabled: newMailSyncService(app).enabled}
 	if _, err := app.store.UpsertMailMessages(ctx, []storage.MailMessageRow{{ID: "m", Mailbox: storage.MailboxInbox, Subject: "Keep this", At: time.Now().UnixMilli()}}, 0); err != nil {
 		t.Fatal(err)
 	}

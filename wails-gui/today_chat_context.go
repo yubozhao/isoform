@@ -439,7 +439,7 @@ func (a *App) collectTodayChatSourcesWithActivities(ctx context.Context, now tim
 	if ctx.Err() != nil {
 		return out
 	}
-	if a.store != nil && a.isPermissionEnabledContext(ctx, remindersPermissionKey) && ctx.Err() == nil && remindersAccessGranted() {
+	if a.store != nil && a.captureAllowed(ctx, "today_chat_context_reminders", remindersPermissionKey) && ctx.Err() == nil && remindersAccessGranted() {
 		out.Reminders = map[string]string{}
 		if rows, err := a.store.ListReminders(ctx, false); err == nil {
 			for _, row := range rows {

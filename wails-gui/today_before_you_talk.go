@@ -66,7 +66,7 @@ func (a *App) todayBeforeYouTalkAt(now time.Time) (*TodayBeforeYouTalk, error) {
 			return nil, nil
 		}
 	}
-	if a.IsClosedEyesModeEnabled() || !a.isPermissionEnabledContext(ctx, calendarPermissionKey) || !a.peopleAppReadable(ctx, "calendar") || !a.peopleAppReadable(ctx, "com.apple.iCal") {
+	if a.IsClosedEyesModeEnabled() || !a.captureAllowed(ctx, "today_before_you_talk", calendarPermissionKey) || !a.peopleAppReadable(ctx, "calendar") || !a.peopleAppReadable(ctx, "com.apple.iCal") {
 		return nil, nil
 	}
 	privacy, err := a.mcpReadPrivacy(ctx)
@@ -137,7 +137,7 @@ func (a *App) todayBeforeYouTalkMeetingAt(ctx context.Context, meetingID string,
 // A phone can inspect the next meeting earlier in the day than the desktop's
 // one-hour Before you talk card, under the same source and privacy gates.
 func (a *App) todayBeforeYouTalkMeeting(ctx context.Context, meetingID string, now time.Time, anyTimeToday bool) (*TodayBeforeYouTalk, error) {
-	if a == nil || a.store == nil || a.IsClosedEyesModeEnabled() || !a.isPermissionEnabledContext(ctx, calendarPermissionKey) || !a.peopleAppReadable(ctx, "calendar") || !a.peopleAppReadable(ctx, "com.apple.iCal") {
+	if a == nil || a.store == nil || a.IsClosedEyesModeEnabled() || !a.captureAllowed(ctx, "today_before_you_talk", calendarPermissionKey) || !a.peopleAppReadable(ctx, "calendar") || !a.peopleAppReadable(ctx, "com.apple.iCal") {
 		return nil, errTodayChatItemUnavailable
 	}
 	privacy, err := a.mcpReadPrivacy(ctx)

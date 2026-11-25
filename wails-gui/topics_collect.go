@@ -96,7 +96,7 @@ func collectTopicInput(a *App, now time.Time) topicInput {
 				}
 			}
 		}
-		if a.isPermissionEnabled(filesPermissionKey) {
+		if a.captureAllowed(context.Background(), "topics_collect", filesPermissionKey) {
 			if rows, err := store.ListFileActivity(from.UnixMilli(), now.UnixMilli()); err == nil {
 				in.Files = rows
 			}

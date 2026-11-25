@@ -62,7 +62,7 @@ func newTestMailService(t *testing.T, now time.Time, people map[string]string) m
 	svc := &mailSyncService{
 		store:     st,
 		now:       func() time.Time { return now },
-		enabled:   func() bool { return enabled },
+		enabled:   func() (bool, bool) { return enabled, true },
 		protected: func() bool { return guarded },
 		paused:    func() bool { return paused },
 		pauses:    func() ([]observationPause, error) { return pauseLog, nil },

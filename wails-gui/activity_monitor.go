@@ -15,6 +15,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -179,6 +180,8 @@ type pendingPIISnapshot struct {
 // activityMonitorState holds the runtime state for the activity monitor.
 // It is managed by App-level methods; not a standalone struct with its own goroutines.
 type activityMonitorState struct {
+	startMu            sync.Mutex // serializes start, its pending retry and stop
+	startRetry         *time.Timer
 	mu                 sync.Mutex
 	monitor            activitymon.Monitor
 	capture            activitymon.ScreenCapture
@@ -590,7 +593,7 @@ func (a *App) prepareActivityReads() {
 	// Buffer window must be >= meetingFlushInterval so early meeting speech
 	// isn't evicted before the session is extracted.
 	buf := activitybuf.NewRingBuffer(5000, meetingFlushInterval+time.Minute)
-	mon := activitymon.New()
+	mon := activitymon.New(a.activityCaptureAllowed)
 	cap := activitymon.NewScreenCapture()
 	rotator := NewStorageRotator(store, activityRotatorConfigFor(readActivityRetentionConfig()))
 	rotator.onExpire = a.forgetAssistantCallsBefore
@@ -992,17 +995,56 @@ func (a *App) resumeDeferredPIIExtract(am *activityMonitorState) {
 	go a.extractSession(trigger)
 }
 
+func (a *App) activityCaptureAllowed() bool {
+	on, _ := a.screenCaptureState("activity_monitor")
+	return on
+}
+
+func (a *App) screenCaptureState(source string) (bool, bool) {
+	if runtime.GOOS == "windows" {
+		return a.captureState(context.Background(), source, "screen_capture", "input_automation")
+	}
+	return a.captureState(context.Background(), source, "screen_recording", "accessibility")
+}
+
 // startActivityMonitor begins monitoring user activity.
 func (a *App) startActivityMonitor() error {
 	if a.activity == nil {
 		return fmt.Errorf("activity monitor not initialized")
+	}
+	am := a.activity
+	am.startMu.Lock()
+	defer am.startMu.Unlock()
+	return a.startActivityMonitorLocked(am)
+}
+
+func (a *App) startActivityMonitorLocked(am *activityMonitorState) error {
+	if on, known := a.screenCaptureState("activity_monitor"); !on {
+		// At startup there is no event loop yet to supply the next tick.
+		if !known && a.ctx != nil && a.ctx.Err() == nil && am.startRetry == nil {
+			var retry *time.Timer
+			retry = time.AfterFunc(visualCheckInterval, func() {
+				am.startMu.Lock()
+				defer am.startMu.Unlock()
+				if am.startRetry != retry {
+					return
+				}
+				am.startRetry = nil
+				if a.ctx.Err() == nil && activityMonitorOSGranted() {
+					if err := a.startActivityMonitorLocked(am); err != nil {
+						log.Printf("[activity] failed to start: %v", err)
+					}
+				}
+			})
+			am.startRetry = retry
+		}
+		return nil
 	}
 	if a.IsClosedEyesModeEnabled() {
 		log.Printf("[activity] closed-eyes mode active, skipping activity monitor start")
 		return nil
 	}
 
-	am := a.activity
 	am.mu.Lock()
 	if am.enabled {
 		am.mu.Unlock()
@@ -1012,7 +1054,7 @@ func (a *App) startActivityMonitor() error {
 
 	// Start event monitoring
 	err := am.monitor.Start(a.ctx, func(evt activitymon.ActivityEvent) {
-		if a.IsClosedEyesModeEnabled() {
+		if a.IsClosedEyesModeEnabled() || !a.activityCaptureAllowed() {
 			return
 		}
 		// A private or incognito window keeps no keystrokes, window title
@@ -1108,6 +1150,12 @@ func (a *App) stopActivityMonitorWithOptions(flushInMeeting bool, discardPending
 	}
 
 	am := a.activity
+	am.startMu.Lock()
+	defer am.startMu.Unlock()
+	if am.startRetry != nil {
+		am.startRetry.Stop()
+		am.startRetry = nil
+	}
 	am.mu.Lock()
 	if !am.enabled {
 		triager := am.triager
@@ -1869,7 +1917,7 @@ func (a *App) captureSnapshotForEvent(trigger string) {
 // session_end frame may wait for a busy capture or PII slot. Shutdown flushes
 // pass 0 so the quit finishes inside the shutdown watchdog.
 func (a *App) captureSnapshotForEventWithWait(trigger string, sessionEndWait time.Duration) {
-	if a.IsClosedEyesModeEnabled() {
+	if a.IsClosedEyesModeEnabled() || !a.activityCaptureAllowed() {
 		return
 	}
 	activityPipelineMetrics.captureAttempts.Add(1)
@@ -2960,7 +3008,7 @@ func (a *App) runVisualChangeDetection() {
 // Matches screenpipe: visual check captures for comparison only, then triggers
 // a full capture through the standard path (which includes content dedup).
 func (a *App) checkVisualChange() {
-	if a.IsClosedEyesModeEnabled() {
+	if a.IsClosedEyesModeEnabled() || !a.activityCaptureAllowed() {
 		return
 	}
 	activityPipelineMetrics.visualChecks.Add(1)
@@ -5092,7 +5140,9 @@ func (a *App) runPeriodicSessionFlusher(stopCh <-chan struct{}) {
 			continue
 		}
 
-		a.extractSession("periodic_flush")
+		if a.activityCaptureAllowed() {
+			a.extractSession("periodic_flush")
+		}
 	}
 }
 
@@ -5122,7 +5172,11 @@ func (a *App) runMeetingLifecycleWatcher(stopCh <-chan struct{}, am *activityMon
 			return false
 		}
 	}
-	poll := func() { a.pollMeetingLifecycle(am, &watcher, time.Now(), stopped) }
+	poll := func() {
+		if a.activityCaptureAllowed() {
+			a.pollMeetingLifecycle(am, &watcher, time.Now(), stopped)
+		}
+	}
 
 	poll() // run once immediately so we catch meetings that are already active
 

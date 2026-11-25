@@ -147,7 +147,7 @@ func (a *App) SyncCalendarsNow() error {
 	if !calendarAccessGranted() {
 		return errCalendarNotAuthorized
 	}
-	if !a.isPermissionEnabled(calendarPermissionKey) {
+	if !a.captureAllowed(context.Background(), "calendar_sync", calendarPermissionKey) {
 		return errors.New("calendar reading is switched off")
 	}
 	_, err := a.calendarSync.Sync(context.Background(), "refresh")

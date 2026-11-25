@@ -171,7 +171,7 @@ func (a *App) setupClaimsCalendarEvidence(now time.Time) []setupClaimEvidence {
 // setupClaimsMailEvidence is who writes to the person most, with a few
 // subjects each, from the mail already read (senders and subjects only).
 func (a *App) setupClaimsMailEvidence(ctx context.Context, now time.Time) []setupClaimEvidence {
-	if !a.isPermissionEnabled(mailPermissionKey) || (a.mailSync != nil && !a.mailSync.readingAllowed()) {
+	if !a.captureAllowed(ctx, "setup_claims", mailPermissionKey) || (a.mailSync != nil && !a.mailSync.readingAllowed()) {
 		return nil
 	}
 	rows, err := a.store.ListMailMessages(ctx, now.AddDate(0, 0, -setupClaimsMailDays).UnixMilli())

@@ -123,7 +123,7 @@ func newIMessageService(a *App) *imessageService {
 	svc := &imessageService{
 		store:     a.store,
 		now:       time.Now,
-		enabled:   func() bool { return a.isPermissionEnabled(messagesPermissionKey) },
+		enabled:   func() bool { return a.captureAllowed(context.Background(), "imessage_capture", messagesPermissionKey) },
 		protected: imessageProtected,
 		paused:    a.IsClosedEyesModeEnabled,
 		pauses:    a.observationPauses,
@@ -428,6 +428,9 @@ func (s *imessageService) Sync(ctx context.Context, reason string) (imessageSync
 			newest = min(newest, fresh[0].RowID-1)
 			continue
 		}
+		if !s.readingAllowed() {
+			return res, errIMessageStopped
+		}
 		asked++
 		window := fresh
 		if s.readChat != nil {
@@ -447,6 +450,9 @@ func (s *imessageService) Sync(ctx context.Context, reason string) (imessageSync
 			if line.row > after {
 				freshRefs[line.Ref] = true
 			}
+		}
+		if !s.readingAllowed() {
+			return res, errIMessageStopped
 		}
 		callCtx, done := context.WithTimeout(ctx, imessageCallTimeout)
 		if s.noteCall != nil && len(kept) > 0 {

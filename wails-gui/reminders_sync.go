@@ -122,7 +122,7 @@ func newRemindersSyncService(a *App) *remindersSyncService {
 		now:        time.Now,
 		loc:        time.Local,
 		granted:    remindersAccessGranted,
-		enabled:    func() bool { return a.isPermissionEnabled(remindersPermissionKey) },
+		enabled:    func() bool { return a.captureAllowed(context.Background(), "reminders_sync", remindersPermissionKey) },
 		changes:    remindersStoreChanged,
 		kicks:      make(chan string, 4),
 		resetStore: resetSystemCalendarStore,

@@ -222,6 +222,7 @@ type App struct {
 	voiceMemoryMu            sync.Mutex
 	voiceMemoryGeneration    uint64            // guarded by voiceMemoryMu; fences explicit enrollment across Forget
 	authManager              *AuthManager      // centralized auth fallback (see auth_manager.go)
+	captureSwitchFailures    sync.Map          // sources with an outstanding switch read failure
 	settingsDefaultsHeldOff  atomic.Bool       // A startup read failed. All three switches stay off until relaunch.
 	legacySettingsDefaults   atomic.Bool       // Missing choices keep their old values while migration needs a retry.
 	telemetry                *PostHogTelemetry // PostHog-backed native.Telemetry; safe to use even when init failed (no-op fallback)

@@ -25,7 +25,7 @@ func (a *App) topicOutboundWaiting(ctx context.Context) map[string]int64 {
 		if err != nil || !a.peopleProfileAllowsModelRead(ctx, principal, cache) || !a.peopleMetadataReadable(ctx, principal.ID, cache) {
 			continue
 		}
-		if send.Channel == "mail" && (!a.isPermissionEnabledContext(ctx, mailPermissionKey) || !a.peopleAppReadable(ctx, "email")) {
+		if send.Channel == "mail" && (!a.captureAllowed(ctx, "main_chat_send_projection", mailPermissionKey) || !a.peopleAppReadable(ctx, "email")) {
 			continue
 		}
 		if send.Channel == "slack" && !a.peopleAppReadable(ctx, "slack") {

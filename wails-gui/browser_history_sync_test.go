@@ -59,7 +59,7 @@ func newTestHistoryReader(t *testing.T, home string, now time.Time) (*browserHis
 		scratch:   t.TempDir(),
 		now:       func() time.Time { return now },
 		store:     func() *ActivityStore { return store },
-		allowed:   func() bool { return true },
+		allowed:   func() (bool, bool) { return true, true },
 		pauses:    func() ([]observationPause, error) { return nil, nil },
 		sensitive: func(string, string) bool { return false },
 		mtimes:    map[string]time.Time{},
@@ -150,11 +150,11 @@ func TestBrowserHistoryReaderRespectsPausesAndProtectedBrowsers(t *testing.T) {
 	// Watching off (or paused): nothing read, and reading later starts from
 	// now, never reaching back into the time it was off.
 	r.sensitive = func(string, string) bool { return false }
-	r.allowed = func() bool { return false }
+	r.allowed = func() (bool, bool) { return false, true }
 	if added, _ := r.readOnce(context.Background()); added != 0 || *marker != now.UnixMilli() {
 		t.Fatalf("read while not allowed, or the start did not move: %d %d", added, *marker)
 	}
-	r.allowed = func() bool { return true }
+	r.allowed = func() (bool, bool) { return true, true }
 	r.mtimes = map[string]time.Time{}
 	if added, _ := r.readOnce(context.Background()); added != 0 {
 		t.Fatalf("visits from before reading was allowed again were read: %d", added)

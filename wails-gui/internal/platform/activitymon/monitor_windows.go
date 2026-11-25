@@ -135,16 +135,16 @@ func cachedAppName(exePath string) string {
 // goroutine. We deliberately avoid touching the foreground window (disk I/O,
 // process queries) inside the hook proc — that work is done in the drain.
 type rawEvent struct {
-	kind    EventKind
-	timeMs  int64
-	vk      uint32
-	keyChar string
-	clickX  float64
-	clickY  float64
+	kind   EventKind
+	timeMs int64
+	vk     uint32
+	clickX float64
+	clickY float64
 }
 
 // windowsMonitor implements Monitor using Windows low-level hooks.
 type windowsMonitor struct {
+	allowed  func() bool
 	mu       sync.Mutex
 	running  bool
 	cancel   context.CancelFunc
@@ -257,8 +257,8 @@ func FrontmostWindowBounds() WindowBounds { return WindowBounds{} }
 func FindVisibleSensitiveWindows(_ []string) []WindowBounds { return nil }
 
 // New creates a new Windows Monitor.
-func New() Monitor {
-	m := &windowsMonitor{}
+func New(allowed func() bool) Monitor {
+	m := &windowsMonitor{allowed: allowed}
 	globalMonitor = m
 	return m
 }
@@ -401,6 +401,9 @@ func (m *windowsMonitor) runEventDrain(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case ev := <-m.events:
+			if !m.allowed() {
+				continue
+			}
 			// frontmostWindowExe (not the 3-arg getForegroundWindowInfo
 			// wrapper) so we keep the lowercase exe basename as the
 			// Windows-side bundleID. Without this every event hits the
@@ -421,8 +424,8 @@ func (m *windowsMonitor) runEventDrain(ctx context.Context) {
 			switch ev.kind {
 			case EventKeyboard:
 				evt.KeyCode = uint16(ev.vk)
-				if ev.keyChar != "" {
-					evt.KeyChars = []string{ev.keyChar}
+				if char := vkToString(ev.vk); char != "" {
+					evt.KeyChars = []string{char}
 				}
 			case EventClick:
 				evt.ClickX = ev.clickX
@@ -485,10 +488,9 @@ func keyboardHookProc(nCode, wParam, lParam uintptr) uintptr {
 
 		if vk != vkShift && vk != vkControl && vk != vkMenu && vk != vkLWin && vk != vkRWin {
 			globalMonitor.enqueueRaw(rawEvent{
-				kind:    EventKeyboard,
-				timeMs:  time.Now().UnixMilli(),
-				vk:      vk,
-				keyChar: vkToString(vk),
+				kind:   EventKeyboard,
+				timeMs: time.Now().UnixMilli(),
+				vk:     vk,
 			})
 		}
 	}

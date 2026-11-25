@@ -95,7 +95,7 @@ func TestFocusedChatRedactsBeforePromptCaps(t *testing.T) {
 
 func TestFocusedChatCaptureStopsBeforeProtectedAppRead(t *testing.T) {
 	isolateActivityPrivacyTest(t)
-	app := &App{}
+	app := &App{store: newIdentityTestStore(t)}
 	app.closedEyes.enabled.Store(true)
 	if got := app.captureFocusedAppContext("com.apple.Notes", time.Second); got != nil {
 		t.Fatal("paused app capture returned content")

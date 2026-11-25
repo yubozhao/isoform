@@ -84,7 +84,7 @@ type filesActivityReader struct {
 	now   func() time.Time
 	store func() *ActivityStore
 	// enabled is the files switch; paused is observing paused.
-	enabled func() bool
+	enabled captureSwitch
 	paused  func() bool
 	pauses  func() ([]observationPause, error)
 	// sensitive reports an app the user protects (or a password manager).
@@ -92,12 +92,13 @@ type filesActivityReader struct {
 	privateFolders func() []string
 	// since and setSince keep the filesSinceKey marker; lastRead and
 	// setLastRead the filesLastReadKey time.
-	since       func() (int64, bool)
-	setSince    func(int64)
-	setLastRead func(time.Time)
-	started     time.Time
-	query       func(text, scope string, limit int) ([]recentfiles.Item, error)
-	exists      func(path string) bool
+	since          func() (int64, bool)
+	setSince       func(int64)
+	setLastRead    func(time.Time)
+	unknownThrough int64 // last tick with an unreadable switch
+	started        time.Time
+	query          func(text, scope string, limit int) ([]recentfiles.Item, error)
+	exists         func(path string) bool
 	// onRead runs after a read that stored something.
 	onRead func()
 
@@ -143,7 +144,9 @@ func newFilesActivityReader(a *App) *filesActivityReader {
 			}
 			return a.activity.store
 		},
-		enabled:   func() bool { return a.isPermissionEnabled(filesPermissionKey) },
+		enabled: func() (bool, bool) {
+			return a.captureState(context.Background(), "files_activity_sync", filesPermissionKey)
+		},
 		paused:    a.IsClosedEyesModeEnabled,
 		pauses:    a.observationPauses,
 		sensitive: fileSensitiveApp,
@@ -304,7 +307,7 @@ func (r *filesActivityReader) loop(ctx context.Context) {
 
 // readingAllowed is the switch on and observing not paused.
 func (r *filesActivityReader) readingAllowed() bool {
-	return (r.enabled == nil || r.enabled()) && (r.paused == nil || !r.paused())
+	return r.enabled.on() && (r.paused == nil || !r.paused())
 }
 
 // readOnce runs one pass: with the switch off it keeps saved activity;
@@ -319,7 +322,12 @@ func (r *filesActivityReader) readOnce(ctx context.Context) (int, error) {
 		return 0, nil
 	}
 	now := r.now()
-	if r.enabled != nil && !r.enabled() {
+	on, known := r.enabled()
+	if !known {
+		r.unknownThrough = now.UnixMilli()
+		return 0, nil
+	}
+	if !on {
 		// Reading resumes from the moment it is switched on again.
 		r.setSince(now.UnixMilli())
 		// Privacy exclusions still apply to retained observations.
@@ -334,6 +342,10 @@ func (r *filesActivityReader) readOnce(ctx context.Context) (int, error) {
 		// First run: start now, never reach back.
 		floor = now.UnixMilli()
 		r.setSince(floor)
+	}
+	// Keep the outage boundary in memory while preference writes may also fail.
+	if r.unknownThrough > floor {
+		floor = r.unknownThrough
 	}
 	// Nothing from before this launch: Isoform was not running then.
 	if started := r.started.UnixMilli(); !r.started.IsZero() && started > floor {

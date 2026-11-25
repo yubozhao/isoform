@@ -664,7 +664,7 @@ func (a *App) currentTodayBriefCandidateWithPrefill(ctx context.Context, ref Mob
 	case mobileBriefFileSource:
 		collectMobileBriefDoingContext(ctx, a, &in, false)
 	case mobileBriefCalendarSource, mobileBriefDayShapeSource:
-		if !a.isPermissionEnabledContext(ctx, calendarPermissionKey) || !calendarAccessGranted() {
+		if !a.captureAllowed(ctx, "today_chat_context_sources", calendarPermissionKey) || !calendarAccessGranted() {
 			return mobileBriefCandidate{}, TodayChatPrefill{}, false
 		}
 		if ref.SourceKind == mobileBriefCalendarSource && a.store != nil {

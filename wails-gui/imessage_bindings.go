@@ -104,7 +104,7 @@ func (a *App) SyncMessagesNow() error {
 	if a == nil || a.imessage == nil {
 		return errors.New("Messages is not available on this computer")
 	}
-	enabled, err := a.messagesSwitchRead(context.Background())
+	enabled, err := a.permissionSwitchRead(context.Background(), messagesPermissionKey)
 	if err != nil {
 		return err
 	}
