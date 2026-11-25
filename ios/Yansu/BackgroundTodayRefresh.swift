@@ -18,9 +18,13 @@ enum BackgroundTodayRefresh {
                 guard let task = task as? BGAppRefreshTask else { task.setTaskCompleted(success: false); return }
                 let operation = Task { @MainActor in
                     let app = AppEnvironment.shared
-                    let result = await app.backgroundTodayRefresh()
+                    // The brief and Today beside the watch drain, never in front of it: recordings come first, and
+                    // a wake is often cut off. The task's result is the refresh's; a drain cut off is normal.
+                    async let refreshed = app.backgroundBriefRefresh()
                     // Watch recordings still on this phone go with every wake, tapped or not.
-                    await WatchLink.shared.drainInBackground()
+                    async let drained: Void = WatchLink.shared.drainInBackground()
+                    let result = await refreshed
+                    await drained
                     schedule(app.keepAwake.briefSchedule, paired: app.pairing.isPaired)
                     task.setTaskCompleted(success: result)
                 }

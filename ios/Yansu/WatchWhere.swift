@@ -42,8 +42,9 @@ struct WatchWhere: Equatable, Sendable {
         count == 1 ? String(localized: "1 hour") : String(localized: "\(count) hours")
     }
 
+    /// `watchFound` is false while the system says Isoform is not on the watch.
     static func of(rows: [WatchRecordingRow], outcome: WatchRecordingForwarder.Outcome, computer: WatchComputerState,
-                   cause: WatchWaitCause? = nil, sendingSince: Date? = nil, now: Date = Date(),
+                   cause: WatchWaitCause? = nil, sendingSince: Date? = nil, watchFound: Bool = true, now: Date = Date(),
                    calendar: Calendar = .current, locale: Locale = .current) -> WatchWhere {
         let onWatch = rows.filter { $0.stage == .onWatch }.count
         let failed = rows.filter { $0.stage == .failedToSend }.count
@@ -118,6 +119,16 @@ struct WatchWhere: Equatable, Sendable {
                 return make(onPhone == 1 ? String(localized: "1 hour is going to your computer now.")
                             : String(localized: "\(onPhone) hours are going to your computer now."))
             }
+        }
+        if onWatch > 0, !watchFound {
+            // The system says Isoform is not on the watch and not why (v1.5.0 W2, W6): where the
+            // hours are, what happens next, and the one thing that may be the wearer's to do.
+            let lead = onWatch == 1 ? String(localized: "1 hour is on your watch, waiting for this phone.")
+                : String(localized: "\(onWatch) hours are on your watch, waiting for this phone.")
+            let next = onWatch == 1 ? String(localized: "This phone can't reach Isoform there right now; it comes when it can.")
+                : String(localized: "This phone can't reach Isoform there right now; they come when it can.")
+            return make(lead + " " + next + " "
+                        + String(localized: "If Isoform doesn't come back on your watch, install it from the Watch app on this phone."))
         }
         if onWatch > 0 {
             return make(onWatch == 1 ? String(localized: "1 hour is on your watch. It comes to this phone when it's near.")

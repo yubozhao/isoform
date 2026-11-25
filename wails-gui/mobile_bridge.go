@@ -88,6 +88,7 @@ type mobileBridge struct {
 	// briefOutbox keeps each phone's newest brief on disk until the phone
 	// confirms it (mobile_brief_outbox.go).
 	briefOutbox    *mobileBriefOutbox
+	briefReady     *mobileBriefReadyLedger
 	pendingControl []map[string]any
 	workers        map[string]chan mobileEnvelope
 	// chat holds the phone's view of running chats (mobile_chat.go).
@@ -249,6 +250,7 @@ func newMobileBridge(app *App, stateDir string) (*mobileBridge, error) {
 		devices:       devices,
 		pendingBriefs: make(map[string]mobileBriefFrame),
 		briefOutbox:   loadMobileBriefOutbox(stateDir),
+		briefReady:    loadMobileBriefReadyLedger(stateDir),
 		workers:       make(map[string]chan mobileEnvelope),
 		directGrants:  loadMobileDirectGrants(stateDir),
 		replayWindows: loadMobileReplayWindows(stateDir, devices),
@@ -909,6 +911,7 @@ func (bridge *mobileBridge) dropDevice(id string) error {
 	bridge.pruneWatchPairingReportsLocked()
 	delete(bridge.pendingBriefs, id)
 	bridge.briefOutbox.drop(id)
+	bridge.briefReady.drop(id)
 	bridge.closeWorkerLocked(id)
 	bridge.dropDirectGrant(id)
 	return nil
@@ -921,6 +924,7 @@ func (bridge *mobileBridge) removeDeviceLocked(id string) {
 	delete(bridge.devices, id)
 	delete(bridge.pendingBriefs, id)
 	bridge.briefOutbox.drop(id)
+	bridge.briefReady.drop(id)
 	bridge.closeWorkerLocked(id)
 	bridge.dropDirectGrant(id)
 }
@@ -1356,7 +1360,7 @@ func (bridge *mobileBridge) publishBriefTo(brief MobileBriefV1, notify bool, dev
 			bridge.storePendingBrief(frames[id], true)
 			continue
 		}
-		bridge.briefOutbox.handed(id, brief.BriefID, now)
+		bridge.briefHanded(client, id, brief.BriefID)
 	}
 	return nil
 }
@@ -1440,7 +1444,7 @@ func (bridge *mobileBridge) resendBriefOutbox(client *mobileRelayClient, covered
 		}
 		frame := mobileBriefFrame{T: "brief", Env: env, AsOf: entry.AsOf, Notify: entry.Notify, DeliverAt: entry.DeliverAt}
 		if client.send(frame) == nil {
-			bridge.briefOutbox.handed(entry.DeviceID, entry.BriefID, time.Now())
+			bridge.briefHanded(client, entry.DeviceID, entry.BriefID)
 		}
 	}
 }
@@ -1480,7 +1484,7 @@ func (bridge *mobileBridge) flushPendingBriefs(client *mobileRelayClient, frames
 			continue
 		}
 		if id := bridge.mobileBriefFrameID(frame); id != "" {
-			bridge.briefOutbox.handed(frame.Env.Dev, id, time.Now())
+			bridge.briefHanded(client, frame.Env.Dev, id)
 		}
 	}
 	bridge.resendBriefOutbox(client, covered)

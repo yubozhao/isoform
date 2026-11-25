@@ -109,6 +109,27 @@ enum TodayBriefCard {
     static func dueWhileAsleep(_ schedule: MobileBriefSchedule, current: MobileBriefV1, asleep: Bool, now: Date,
                                calendar: Calendar = .current) -> Date? {
         guard asleep else { return nil }
+        return uncoveredSlot(schedule, current: current, now: now, calendar: calendar)
+    }
+
+    /// The scheduled brief that is due and not here because this phone has not reached the computer since its slot
+    /// (phone-today rule 7; computer-conformance-answers v1.4.0): its time, or nil. It is a different state from the
+    /// computer asleep, where the phone reached the relay and the computer did not answer; that line wins.
+    static func dueWhileOutOfTouch(_ schedule: MobileBriefSchedule, current: MobileBriefV1, asleep: Bool,
+                                   lastConnected: Date?, now: Date, calendar: Calendar = .current) -> Date? {
+        guard !asleep, let due = uncoveredSlot(schedule, current: current, now: now, calendar: calendar) else { return nil }
+        if let lastConnected, lastConnected >= due { return nil }
+        return due
+    }
+
+    /// "Your 7:00 AM brief comes when this phone reaches your computer." Never "missed", never "late".
+    static func outOfTouchLine(_ due: Date, time: (Date) -> String) -> String {
+        String.localizedStringWithFormat(String(localized: "today.phoneBrief"), time(due))
+    }
+
+    /// The newest slot at or before now (today or yesterday) that the current brief does not cover.
+    private static func uncoveredSlot(_ schedule: MobileBriefSchedule, current: MobileBriefV1, now: Date,
+                                      calendar: Calendar) -> Date? {
         let times = [schedule.morning, schedule.evening].compactMap { $0 }
         let days = [0, -1].compactMap { calendar.date(byAdding: .day, value: $0, to: now) }
         let due = days.flatMap { day in times.compactMap { clockDate($0, on: day, calendar: calendar) } }
@@ -198,6 +219,8 @@ struct TodayBriefCardView: View {
         let asleep = todayStore.hubUnreachable || brief.hubOnline == false
         let schedule = todayStore.snapshot?.schedule ?? MobileBriefSchedule(morning: nil, evening: nil)
         let due = TodayBriefCard.dueWhileAsleep(schedule, current: shown, asleep: asleep, now: now)
+        let outOfTouch = TodayBriefCard.dueWhileOutOfTouch(schedule, current: shown, asleep: asleep,
+                                                           lastConnected: todayStore.lastConnected, now: now)
         let weekShown = shown.yourWeek != nil
         let entry = HistoryEntry(id: shown.identifier, slot: shown.slot, localDate: shown.localDate,
                                  asOf: shown.asOfDate, narrativeStatus: shown.narrativeStatus, isCached: true,
@@ -225,7 +248,8 @@ struct TodayBriefCardView: View {
                     }
                 }
             } else {
-                card(shown, entry: entry, holdsBrief: holdsBrief, asleep: asleep, isFolded: isFolded, due: due)
+                card(shown, entry: entry, holdsBrief: holdsBrief, asleep: asleep, isFolded: isFolded, due: due,
+                     outOfTouch: outOfTouch)
             }
         }
         .id(shown.identifier)
@@ -250,7 +274,7 @@ struct TodayBriefCardView: View {
     }
 
     private func card(_ shown: MobileBriefV1, entry: HistoryEntry, holdsBrief: Bool, asleep: Bool, isFolded: Bool,
-                      due: Date?) -> some View {
+                      due: Date?, outOfTouch: Date?) -> some View {
         let playShown = TodayBriefCard.showsPlay(hasWords: shown.hasWords, hasAudio: hasAudio, holdsBrief: holdsBrief,
                                                  audioOnComputer: shown.audio?.isFinished == true && !shown.audioIsWithdrawn,
                                                  computerOnline: asleep ? false : brief.hubOnline)
@@ -266,6 +290,18 @@ struct TodayBriefCardView: View {
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("feed.brief.waiting")
+            } else if let outOfTouch {
+                // A newer brief is due but this phone hasn't reached the computer since its slot: the last brief stays
+                // under its own time, with one amber line above its title (rule 7).
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: "clock").font(.caption).foregroundStyle(YansuTheme.warning)
+                    Text(TodayBriefCard.outOfTouchLine(outOfTouch, time: time))
+                        .font(.footnote)
+                        .foregroundStyle(YansuTheme.warning)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("feed.brief.outOfTouch")
             }
             if let making = TodayBriefCard.makingLine(todayStore.snapshot?.briefStatus?.making, now: now, time: time)
                 ?? TodayBriefCard.makingLine(todayStore.snapshot?.briefRequest, time: time) {

@@ -567,6 +567,14 @@ final class AppEnvironment: ObservableObject {
         Task { await weekDeclines.retryPending() }
     }
 
+    /// A background wake (a scheduled refresh or a silent `ready` push, PROTOCOL.md 9.5): fetch the brief first, so the
+    /// Today read that follows can name it in the local brief notice, then Today.
+    func backgroundBriefRefresh() async -> Bool {
+        guard vault.current() != nil else { return false }
+        if refreshesBriefs { await brief.refresh() }
+        return await backgroundTodayRefresh()
+    }
+
     func backgroundTodayRefresh() async -> Bool {
         guard let paired = vault.current() else { return false }
         let identity = TodayPairingIdentity(hubID: paired.hubID, deviceID: paired.deviceID)

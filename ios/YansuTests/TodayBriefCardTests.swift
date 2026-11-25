@@ -211,6 +211,39 @@ final class TodayBriefCardTests: XCTestCase {
                      "yesterday's evening brief covers yesterday's evening slot")
     }
 
+    // Nov 22: the phone was out of touch overnight and showed last night's brief with nothing saying it was old.
+    func testOutOfTouchLineShowsWhenThePhoneHasNotReachedTheComputerSinceTheSlot() throws {
+        let schedule = MobileBriefSchedule(morning: "07:00", evening: "17:50")
+        let now = try date("2026-11-22T10:46:00Z")
+        let evening = brief(id: "evening", asOf: "2026-11-21T17:50:40Z")
+        let lastConnected = try date("2026-11-21T19:18:57Z")
+        let due = TodayBriefCard.dueWhileOutOfTouch(schedule, current: evening, asleep: false,
+                                                    lastConnected: lastConnected, now: now, calendar: utc)
+        XCTAssertEqual(due, try date("2026-11-22T07:00:00Z"))
+        let line = TodayBriefCard.outOfTouchLine(try XCTUnwrap(due), time: { self.clock($0) })
+        XCTAssertEqual(line, "Your \(clock(try date("2026-11-22T07:00:00Z"))) brief comes when this phone reaches your computer.")
+        XCTAssertFalse(line.lowercased().contains("missed") || line.lowercased().contains("late"))
+        XCTAssertNotNil(TodayBriefCard.dueWhileOutOfTouch(schedule, current: evening, asleep: false, lastConnected: nil,
+                                                          now: now, calendar: utc), "never connected counts as out of touch")
+    }
+
+    func testOutOfTouchLineStaysAwayWhenCurrentConnectedOrTheComputerIsAsleep() throws {
+        let schedule = MobileBriefSchedule(morning: "07:00", evening: "17:50")
+        let now = try date("2026-11-22T10:46:00Z")
+        let evening = brief(id: "evening", asOf: "2026-11-21T17:50:40Z")
+        let morning = brief(id: "morning", asOf: "2026-11-22T07:00:40Z")
+        let old = try date("2026-11-21T19:18:57Z")
+        XCTAssertNil(TodayBriefCard.dueWhileOutOfTouch(schedule, current: morning, asleep: false, lastConnected: old,
+                                                       now: now, calendar: utc), "the current brief covers the slot")
+        XCTAssertNil(TodayBriefCard.dueWhileOutOfTouch(schedule, current: evening, asleep: false,
+                                                       lastConnected: try date("2026-11-22T07:05:00Z"), now: now, calendar: utc),
+                     "the phone reached the computer after the slot: not this state")
+        XCTAssertNil(TodayBriefCard.dueWhileOutOfTouch(schedule, current: evening, asleep: true, lastConnected: old,
+                                                       now: now, calendar: utc), "computer asleep is its own line")
+        XCTAssertNotNil(TodayBriefCard.dueWhileAsleep(schedule, current: evening, asleep: true, now: now, calendar: utc),
+                        "and that line shows instead")
+    }
+
     func testClockSlotsAcceptOnlyHourAndMinute() throws {
         let day = try date("2026-10-28T12:00:00Z")
         XCTAssertEqual(TodayBriefCard.clockDate("06:50", on: day, calendar: utc), try date("2026-10-28T06:50:00Z"))

@@ -114,6 +114,15 @@ type withdrawFrame struct {
 	IDs      []string `json:"ids"`
 }
 
+// readyFrame asks for a background wake: a brief was just stored for the
+// device (PROTOCOL.md 9.5). DeliverAt, for a brief held until its slot, holds
+// the wake until then too.
+type readyFrame struct {
+	T         string `json:"t"`
+	DeviceID  string `json:"deviceId"`
+	DeliverAt string `json:"deliverAt,omitempty"`
+}
+
 // briefYieldFrame drops a device's scheduled brief push: the computer is awake
 // at the slot and decides where the brief rings (PROTOCOL.md 8.2).
 type briefYieldFrame struct {
@@ -253,6 +262,8 @@ func (s *session) apply(t string, data []byte) string {
 		return s.revoke(data)
 	case "withdraw":
 		return s.withdraw(data)
+	case "ready":
+		return s.ready(data)
 	case "brief_yield":
 		return s.briefYield(data)
 	case "purge":
@@ -554,6 +565,32 @@ func (s *session) withdraw(data []byte) string {
 		return ""
 	default:
 		return "withdraw could not be queued"
+	}
+}
+
+// ready queues a background wake for a device whose brief was just stored.
+// An unknown device is not an error: it may have just unpaired.
+func (s *session) ready(data []byte) string {
+	var f readyFrame
+	if !decodeFrame(data, &f) || !wire.ValidUUID(f.DeviceID) {
+		return "invalid ready frame"
+	}
+	now := s.m.Now()
+	due := now
+	if f.DeliverAt != "" {
+		at, err := wire.ParseTime(f.DeliverAt)
+		if err != nil || at.After(now.Add(maxBriefDelay)) {
+			return "invalid ready frame"
+		}
+		due = at
+	}
+	ctx, cancel := storeContext()
+	defer cancel()
+	switch err := s.m.Store.AddReady(ctx, s.hubID, f.DeviceID, now, due); {
+	case err == nil, errors.Is(err, store.ErrNotFound):
+		return ""
+	default:
+		return "ready could not be queued"
 	}
 }
 

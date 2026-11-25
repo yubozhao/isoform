@@ -73,9 +73,32 @@ final class AgentPushAppDelegate: NSObject, UIApplicationDelegate, UNUserNotific
         environment.push.receiveRegistrationFailure()
     }
 
-    /// A silent `withdraw` push: notices read on another device leave this one (notify A).
+    /// A silent `ready` push: a brief is ready on the computer, so fetch it (PROTOCOL.md 9.5). A silent `withdraw`
+    /// push: notices read on another device leave this one (notify A).
     func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any],
                      fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
+        if BriefReadyWake.parse(userInfo) != nil {
+            let app = environment ?? AppEnvironment.shared
+            let once = BriefReadyWake.Completion(completionHandler)
+            let work = Task {
+                let result = await BriefReadyWake.handle(userInfo, pairedHub: app.vault.current()?.hubID) {
+                    // As the scheduled wake does: the brief and Today beside the watch drain.
+                    async let refreshed = app.backgroundBriefRefresh()
+                    async let drained: Void = WatchLink.shared.drainInBackground()
+                    let value = await refreshed
+                    await drained
+                    return value
+                }
+                once.finish(result ?? .noData)
+            }
+            // Answer iOS before its time is up, so it doesn't thin out this app's pushes.
+            Task {
+                try? await Task.sleep(for: .seconds(BriefReadyWake.answerWithin))
+                work.cancel()
+                once.finish(.newData)
+            }
+            return
+        }
         guard let withdraw = NoticeWithdraw.parse(userInfo),
               let paired = (environment ?? AppEnvironment.shared).vault.current(), paired.hubID == withdraw.hub else {
             completionHandler(.noData)

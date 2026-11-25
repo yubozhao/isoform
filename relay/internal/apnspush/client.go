@@ -222,6 +222,26 @@ func withdrawPayloadFor(claim push.Claim) (withdrawNotification, error) {
 	return n, nil
 }
 
+// readyNotification is the background push that wakes a phone to fetch the
+// brief just stored for it (PROTOCOL.md 9.5): no alert, no sound, and nothing
+// about the brief, only the hub it is from.
+type readyNotification struct {
+	Aps struct {
+		ContentAvailable int `json:"content-available"`
+	} `json:"aps"`
+	Yansu struct {
+		Kind string `json:"kind"`
+		Hub  string `json:"hub"`
+	} `json:"yansu"`
+}
+
+func readyPayloadFor(claim push.Claim) readyNotification {
+	var n readyNotification
+	n.Aps.ContentAvailable = 1
+	n.Yansu.Kind, n.Yansu.Hub = push.KindReady, claim.HubID
+	return n
+}
+
 type pushGrantAps struct {
 	ContentAvailable int `json:"content-available"`
 }
@@ -379,14 +399,18 @@ func (c *Client) Send(ctx context.Context, claim push.Claim) (push.Outcome, erro
 	}
 	var payload any
 	pushType, priority, collapse := apns2.PushTypeAlert, priorityFor(claim), collapseFor(claim)
-	if claim.Kind == push.KindWithdraw {
+	switch claim.Kind {
+	case push.KindWithdraw:
 		withdraw, err := withdrawPayloadFor(claim)
 		if err != nil {
 			return push.Permanent, err
 		}
 		// A background push: no alert, low priority, never collapsed.
 		payload, pushType, priority, collapse = withdraw, apns2.PushTypeBackground, apns2.PriorityLow, ""
-	} else {
+	case push.KindReady:
+		// A background wake, like withdraw: Apple requires priority 5 for it.
+		payload, pushType, priority, collapse = readyPayloadFor(claim), apns2.PushTypeBackground, apns2.PriorityLow, ""
+	default:
 		alert, err := notificationFor(claim)
 		if err != nil {
 			return push.Permanent, err
