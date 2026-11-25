@@ -25,11 +25,12 @@ const (
 	featureProactiveVoice featureSwitch = "proactive-voice"
 	// featureCalendarHolds: calendar holds.
 	featureCalendarHolds featureSwitch = "calendar-holds"
+	featureBriefExtras   featureSwitch = "brief-extras"
 )
 
 const featureSwitchesEnv = "YANSU_FEATURES"
 
-var allFeatureSwitches = []featureSwitch{featureAutomations, featurePlaybooks, featureProactiveVoice, featureCalendarHolds, featureWatchNotes, featureChat}
+var allFeatureSwitches = []featureSwitch{featureAutomations, featurePlaybooks, featureProactiveVoice, featureCalendarHolds, featureWatchNotes, featureChat, featureBriefExtras}
 
 // featureOn reports whether a turned-off feature has been turned back on.
 func featureOn(feature featureSwitch) bool {
@@ -45,6 +46,7 @@ func featureOn(feature featureSwitch) bool {
 // FeatureSwitches is what the frontend reads to hide the entries of features
 // that are off.
 type FeatureSwitches struct {
+	BriefExtras    bool `json:"briefExtras"`
 	Automations    bool `json:"automations"`
 	Playbooks      bool `json:"playbooks"`
 	ProactiveVoice bool `json:"proactiveVoice"`
@@ -55,6 +57,7 @@ type FeatureSwitches struct {
 // GetFeatureSwitches is the Wails binding for FeatureSwitches.
 func (a *App) GetFeatureSwitches() FeatureSwitches {
 	return FeatureSwitches{
+		BriefExtras:    featureOn(featureBriefExtras),
 		Automations:    featureOn(featureAutomations),
 		Playbooks:      featureOn(featurePlaybooks),
 		ProactiveVoice: featureOn(featureProactiveVoice),

@@ -17,6 +17,7 @@ func (a *App) threadOutcomeSourceReadable(ctx context.Context, sourceID string) 
 	if a == nil || a.activity == nil || a.activity.store == nil || a.IsClosedEyesModeEnabled() || ctx.Err() != nil {
 		return false
 	}
+	// The cache holds readability of Activity rows, never chat content.
 	if memo := mainChatReadMemoFrom(ctx); memo != nil {
 		return memo.threadSourceReadable(sourceID, func() bool {
 			return a.threadOutcomeSourceReadableUncached(ctx, sourceID)

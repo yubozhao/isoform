@@ -394,6 +394,9 @@ func mobileBriefOpenerMessage(brief MobileBriefV1, lang string) (string, MobileB
 // Isoform's fixed sentences: the buttons (at most two, from the brief's
 // offers), a question for every row Today shows, and the opener.
 func mobileBriefPatternCards(brief MobileBriefV1, language string) []MobileBriefCard {
+	if !featureOn(featureBriefExtras) {
+		return nil
+	}
 	lang := mobileBriefVoiceLang(language)
 	var cards []MobileBriefCard
 	// A button keeps its offer's id, which the phone names, and reads the
@@ -717,6 +720,9 @@ func mobileBriefNamesSubject(text, subject string) bool {
 // mobileBriefApplyCardWords keeps each valid model-written card's words; any
 // other card keeps Isoform's sentence.
 func mobileBriefApplyCardWords(brief MobileBriefV1, cards []MobileBriefCard, words []mobileBriefCardWords, languageName string) []MobileBriefCard {
+	if !featureOn(featureBriefExtras) {
+		return nil
+	}
 	lang := mobileBriefVoiceLang(languageName)
 	byID := map[string]mobileBriefCardWords{}
 	for _, word := range words {

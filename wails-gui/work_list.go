@@ -300,7 +300,7 @@ func (a *App) buildWorkList(ctx context.Context, now time.Time) (WorkList, error
 	}
 	brief := a.applyWorkAnswers(briefItems)
 	rest := a.applyWorkAnswers(append(append(append(append(a.workTopicItems(ctx), a.workPrepItems(now)...), a.workResultItems(now, brief)...), a.workRequestItems(now)...), a.workDayOneItems(ctx, now)...))
-	if havePhone {
+	if havePhone && featureOn(featureBriefExtras) {
 		workPlaceBriefAgentItems(phone, brief, rest)
 	}
 	sort.SliceStable(rest, func(i, j int) bool {
@@ -522,6 +522,9 @@ func workListDropEnded(list WorkList, now time.Time) WorkList {
 // workOfferParagraph is the first paragraph that cites one of the offer's
 // sources, or nil.
 func workOfferParagraph(narrative []MobileBriefPara, refs []string) *int {
+	if !featureOn(featureBriefExtras) {
+		return nil
+	}
 	cited := map[string]bool{}
 	for _, ref := range refs {
 		cited[ref] = true

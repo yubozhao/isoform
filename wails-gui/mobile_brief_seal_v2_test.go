@@ -93,6 +93,7 @@ func TestSealedBriefReadsDoNoSourceLookupsOrSeals(t *testing.T) {
 // An explicit withdrawal (a forgotten memory) removes what cites it, on the
 // computer read and on the phone read, and the copy is amended under the new print.
 func TestWithdrawnMemoryLeavesSealedBriefOnComputerAndPhone(t *testing.T) {
+	featuresOff(t)
 	app, svc, source := newStoredMobileBriefPrivacyFixture(t)
 	svc.wg.Wait()
 	if _, _, wrote := svc.seal(t.Context(), source); !wrote {

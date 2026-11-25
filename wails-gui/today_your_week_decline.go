@@ -26,6 +26,9 @@ func todayYourWeekLegacyDeclineKey(start, end string) string {
 }
 
 func (a *App) todayYourWeekDeclined(ctx context.Context, start, end string) (bool, error) {
+	if !featureOn(featureBriefExtras) {
+		return false, nil
+	}
 	key, err := todayYourWeekDeclineKey(start)
 	if err != nil {
 		return false, err
@@ -69,6 +72,9 @@ func (a *App) GetTodayYourWeekDeclined(start string) (bool, error) {
 
 // DeclineTodayYourWeek saves Not now for this week only.
 func (a *App) DeclineTodayYourWeek(start string) error {
+	if !featureOn(featureBriefExtras) {
+		return errFeatureOff(featureBriefExtras)
+	}
 	key, err := todayYourWeekDeclineKey(start)
 	if err != nil {
 		return err

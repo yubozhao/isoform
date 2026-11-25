@@ -181,7 +181,7 @@ func (a *App) announceBriefStoredBeforeEngagement(brief MobileBriefV1) bool {
 // the moment carries the push, so the phone is not pushed twice. manual is set
 // for a brief the person asked for; it arrives without a buzz (ST86).
 func (a *App) produceBriefReady(brief MobileBriefV1, notify, manual bool) bool {
-	if a != nil && a.engagement != nil {
+	if featureOn(featureBriefExtras) && a != nil && a.engagement != nil {
 		a.refreshYourWeekWorkDays(context.Background(), a.engagement.now())
 	}
 	if brief.NarrativeStatus == "quiet" {

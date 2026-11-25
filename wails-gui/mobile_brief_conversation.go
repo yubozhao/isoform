@@ -486,6 +486,9 @@ func mobileBriefClosingFrom(brief MobileBriefV1, drafts []mobileBriefOfferDraft,
 	for _, draft := range drafts {
 		offers = append(offers, draft.offer)
 	}
+	if !featureOn(featureBriefExtras) {
+		return MobileBriefPara{}, offers
+	}
 	text := drafts[0].offer.Text
 	return MobileBriefPara{Text: text, Refs: uniqueSortedStrings(append([]string(nil), drafts[0].offer.Refs...))}, offers
 }

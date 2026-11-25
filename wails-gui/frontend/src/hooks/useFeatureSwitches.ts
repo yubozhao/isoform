@@ -3,7 +3,7 @@ import { GetFeatureSwitches, type FeatureSwitches } from "@/lib/wails-shim-app";
 
 /** Every turned-off feature is off until the Go side says otherwise, so an
  *  entry never flashes in before the read. */
-export const FEATURES_OFF: FeatureSwitches = { automations: false, playbooks: false, proactiveVoice: false, calendarHolds: false, chat: false };
+export const FEATURES_OFF: FeatureSwitches = { automations: false, playbooks: false, proactiveVoice: false, calendarHolds: false, chat: false, briefExtras: false };
 
 /** Tests answer every read with this (test-setup.ts turns every feature on;
  *  a switch's guard tests turn it off). Never set in the app. */

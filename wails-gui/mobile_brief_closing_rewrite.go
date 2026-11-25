@@ -56,6 +56,9 @@ func mobileBriefRewrittenClosing(brief MobileBriefV1, before MobileBriefPara, la
 // then "Not now" (today-review v1.1.7, v1.1.8 #3, v1.1.17 D18). Without a bound question or an
 // offer it asks about there are none, and Today then shows no question.
 func mobileBriefClosingChips(brief MobileBriefV1, language string) []MobileBriefCard {
+	if !featureOn(featureBriefExtras) {
+		return nil
+	}
 	closing := mobileBriefClosingParagraph(brief)
 	digest := mobileBriefClosingDigest(brief)
 	if closing.Text == "" || closing.Hold != nil || digest == "" {

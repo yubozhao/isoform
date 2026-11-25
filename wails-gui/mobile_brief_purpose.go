@@ -729,6 +729,9 @@ func mobileBriefPurposeMoments(a *App, keys []string, now time.Time) map[string]
 // Only identifiers from structured report metadata cross this boundary. The
 // chat body is neither copied into the brief nor sent to its narrative model.
 func mobileBriefPurposeChatRefs(a *App, moments map[string]storage.EngagementMomentRow, asOf time.Time) map[string]mobileBriefCandidate {
+	if !featureOn(featureBriefExtras) {
+		return nil
+	}
 	out := map[string]mobileBriefCandidate{}
 	if a.store == nil || len(moments) == 0 {
 		return out

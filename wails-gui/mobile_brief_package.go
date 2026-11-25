@@ -333,6 +333,10 @@ func (a *App) mobileBriefPackageDocument(source MobileBriefV1, settings mobileBr
 func mobileBriefPackageFinish(phone MobileBriefV1, settings mobileBriefSettings) MobileBriefV1 {
 	phone = mobileBriefWithoutLiveDayShape(phone)
 	phone = mobileBriefWithJoinedGreeting(phone)
+	// Keep the v1 array on the wire even when projection emptied the section.
+	if !featureOn(featureBriefExtras) && phone.Sections.Watching == nil {
+		phone.Sections.Watching = []MobileBriefItem{}
+	}
 	phone.Kind = mobileBriefPackageKind(phone)
 	phone.DueAt = mobileBriefPackageDueAt(phone, settings)
 	return phone

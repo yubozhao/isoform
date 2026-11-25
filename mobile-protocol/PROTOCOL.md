@@ -766,7 +766,8 @@ create or send a calendar event.
   matches when known). These rows support Today's document list and Chat about this.
   Never a path or anything inside a file; file-history items stay in `doing` and
   never feed `review`, `decide`, `plan`, `highlights` or the narrative model.
-- `watching` lists browser history for the window: the sites visited most
+- A basic brief sends an empty `watching` array. With `brief-extras` enabled,
+  `watching` lists browser history for the window: the sites visited most
   (`sourceKind` `web`, `kind` `site`, `title` the host, `detail` the visit count, `status`
   `visited`) and research threads (`kind` `research`, `title` the search, `detail` the pages read
   after it as a count, `status` `researched`). Page titles stay on the Mac; hosts and queries

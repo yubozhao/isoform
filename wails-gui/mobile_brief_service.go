@@ -1113,7 +1113,7 @@ func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, s
 	if s.app != nil {
 		startPrint = s.app.briefPrivacyPrint()
 	}
-	if s.app != nil {
+	if featureOn(featureBriefExtras) && s.app != nil {
 		s.app.releaseOpenAnswerHolds(ctx, asOf, true)
 	}
 	windowStart := s.windowStart(asOf)
@@ -1129,7 +1129,7 @@ func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, s
 	if slot == mobileBriefSlotEvening && s.app != nil {
 		s.app.fillThreadOutcomes(ctx, asOf, s.location)
 	}
-	if s.app != nil && s.app.engagement != nil {
+	if featureOn(featureBriefExtras) && s.app != nil && s.app.engagement != nil {
 		// Weekly projections can include these receipts, but their readers
 		// must not write after the collection fence starts.
 		s.app.engagement.inferCompletedReceipts(ctx, s.app.engagement.now())
@@ -1166,6 +1166,9 @@ func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, s
 	if slot == mobileBriefSlotMorning {
 		input.YesterdayActivity = s.app.mobileBriefYesterdayActivityFor(ctx, input.AsOf, input.briefDayRef(input.Location), input.Location)
 	}
+	if !featureOn(featureBriefExtras) {
+		input = mobileBriefBasicInput(input)
+	}
 	input.PreviousBriefs = s.store.briefs()
 	input = mobileBriefWithoutExcluded(input, s.app.mobileBriefExclusions())
 	brief := buildMobileBriefV1(input)
@@ -1177,7 +1180,7 @@ func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, s
 		generation.Message = mobileBriefLateMessage(slot, s.app.currentUILanguage())
 		brief.Generation = generation
 	}
-	if s.app != nil {
+	if featureOn(featureBriefExtras) && s.app != nil {
 		// The freshest finds on the user's topics lead the watching section.
 		brief = s.app.topicFindsForBrief(brief, asOf)
 	}
@@ -1244,6 +1247,9 @@ func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, s
 		paragraphs, status, words, weekLead, weekLeadFacts = composeMobileBriefNarrativeWithLeadAt(ctx, s.app, brief, cards, s.now)
 	}
 	brief.Narrative = paragraphs
+	if !featureOn(featureBriefExtras) && mobileBriefClosingParagraph(brief).Text != "" {
+		brief.Narrative = brief.Narrative[:len(brief.Narrative)-1]
+	}
 	brief.NarrativeStatus = status
 	brief.WeekLead, brief.WeekLeadFacts = weekLead, weekLeadFacts
 	if s.app != nil {
@@ -1258,13 +1264,13 @@ func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, s
 			return MobileBriefV1{}, errMobileBriefSourcesChanged
 		}
 	}
-	if s.app != nil && s.app.topicSource != nil {
+	if featureOn(featureBriefExtras) && s.app != nil && s.app.topicSource != nil {
 		_, _ = s.app.topicsSvc().registryViews(ctx)
 	}
 	// Reuse this post-model source read for navigation and the final binding.
 	// Collection must finish before patchMu: slow stores cannot block patches.
 	var sources todayChatSources
-	if s.app != nil && len(brief.Narrative) > 0 && (modelBinding != nil || s.app.topicSource != nil && len(s.app.topicsSvc().store.load().ChatTopics) > 0) {
+	if s.app != nil && len(brief.Narrative) > 0 && (modelBinding != nil || featureOn(featureBriefExtras) && s.app.topicSource != nil && len(s.app.topicsSvc().store.load().ChatTopics) > 0) {
 		sources = s.app.collectTodayChatSources(ctx, time.Now())
 	}
 	brief = s.app.mobileBriefWithParagraphTopicsFrom(ctx, brief, sources)
@@ -1284,7 +1290,7 @@ func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, s
 		log.Printf("[mobile-brief] the adaptive %s brief was built outside its delivery window and not stored", slot)
 		return MobileBriefV1{}, errMobileBriefTimingDeferred
 	}
-	if s.app != nil {
+	if featureOn(featureBriefExtras) && s.app != nil {
 		// A search may have finished during the narrative: take its finds.
 		brief = s.app.topicFindsForBrief(brief, asOf)
 	}
@@ -1299,7 +1305,7 @@ func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, s
 	// whole reply, so it is never silenced for its length; what is stored is what is shown and
 	// spoken (design R74 v1.0.1).
 	brief.Narrative = mobileBriefTrimParagraphs(brief.Narrative)
-	if s.app != nil && !mobileBriefStaticEmpty(brief) {
+	if featureOn(featureBriefExtras) && s.app != nil && !mobileBriefStaticEmpty(brief) {
 		// "Your agents:" is Isoform's own words, never the writer's
 		// (brief-agents v1.0.0): added once the writer's text is final and
 		// before the voice is made from it, so its sentence marks line up.
@@ -1415,7 +1421,7 @@ func (s *mobileBriefService) generateWithMetadataOnStored(ctx context.Context, s
 		s.app.emitBrowserEvent("brief:stored", brief.BriefID)
 		s.app.emitBrowserEvent("mobile:updated")
 		// The day's search for new finds follows the morning brief.
-		if s.beginWork() {
+		if featureOn(featureBriefExtras) && s.beginWork() {
 			go func() {
 				defer s.wg.Done()
 				s.app.maybeStartDailyTopicFinds("brief")

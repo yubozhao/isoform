@@ -30,6 +30,9 @@ func (a *App) PostMorningBriefWeekAnswerFromChip(briefID, previous, answer strin
 }
 
 func (a *App) postMorningBriefWeekAnswer(briefID, previous, answer string, fromChip bool) error {
+	if !featureOn(featureBriefExtras) {
+		return errFeatureOff(featureBriefExtras)
+	}
 	err := a.postMorningBriefWeekAnswerOnce(briefID, previous, answer, fromChip)
 	if err == nil {
 		noteBriefActed()
@@ -107,6 +110,9 @@ func morningBriefWeekStart(at time.Time, loc *time.Location) string {
 }
 
 func (a *App) morningBriefWeekIntent(ctx context.Context, at time.Time, loc *time.Location) (string, error) {
+	if !featureOn(featureBriefExtras) {
+		return "", nil
+	}
 	if a == nil || a.store == nil || at.IsZero() {
 		return "", errors.New("week intent unavailable")
 	}
@@ -149,6 +155,9 @@ func (a *App) morningBriefWeekQuestion(brief MobileBriefV1, now time.Time) *Morn
 }
 
 func (a *App) morningBriefWeekEligible(brief MobileBriefV1, now time.Time) bool {
+	if !featureOn(featureBriefExtras) {
+		return false
+	}
 	if a == nil || a.store == nil || a.IsClosedEyesModeEnabled() || brief.Slot != mobileBriefSlotMorning || brief.NarrativeStatus != "ok" || len(brief.Narrative) == 0 {
 		return false
 	}
@@ -263,6 +272,9 @@ func morningBriefWeekQuestionSpeech(question *MorningBriefWeekQuestion, language
 // SaveMorningBriefWeekIntent records only an explicit answer to the current
 // week's offered question. A stale phone cannot overwrite another answer.
 func (a *App) SaveMorningBriefWeekIntent(briefID, answer string) error {
+	if !featureOn(featureBriefExtras) {
+		return errFeatureOff(featureBriefExtras)
+	}
 	answer = strings.TrimSpace(answer)
 	if answer == "" || utf8.RuneCountInString(answer) > 160 || strings.ContainsAny(answer, "\r\n") || !mobileBriefCopySafe(answer) || redactThreadOutcomeText(answer) != answer {
 		return errors.New("invalid week intent")
@@ -309,6 +321,9 @@ func (a *App) SaveMorningBriefWeekIntent(briefID, answer string) error {
 // ChangeMorningBriefWeekIntent changes only the answer the desktop showed;
 // another device's newer choice cannot be overwritten by a stale click.
 func (a *App) ChangeMorningBriefWeekIntent(briefID, previous, answer string) error {
+	if !featureOn(featureBriefExtras) {
+		return errFeatureOff(featureBriefExtras)
+	}
 	answer = strings.TrimSpace(answer)
 	if answer == "" || utf8.RuneCountInString(answer) > 160 || strings.ContainsAny(answer, "\r\n") || !mobileBriefCopySafe(answer) || redactThreadOutcomeText(answer) != answer {
 		return errors.New("invalid week intent")

@@ -714,6 +714,9 @@ func (a *App) dropResearchLog(job *CronJobState) {
 // the brief is on.
 func (a *App) startTopics(ctx context.Context) {
 	a.topicsSvc().startRegistryWorker(ctx)
+	if !featureOn(featureBriefExtras) {
+		return
+	}
 	go func() {
 		timer := time.NewTimer(2 * time.Minute)
 		defer timer.Stop()

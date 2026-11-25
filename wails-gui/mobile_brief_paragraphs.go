@@ -14,7 +14,7 @@ import (
 // output is authority. Recheck the snapshot's complete source closure on reads.
 func (a *App) mobileBriefWithParagraphTopics(ctx context.Context, brief MobileBriefV1) MobileBriefV1 {
 	brief = mobileBriefWithoutParagraphTopics(brief)
-	if a == nil || a.topicSource == nil || a.IsClosedEyesModeEnabled() || len(brief.Narrative) == 0 {
+	if !featureOn(featureBriefExtras) || a == nil || a.topicSource == nil || a.IsClosedEyesModeEnabled() || len(brief.Narrative) == 0 {
 		return brief
 	}
 	snapshots := a.topicsSvc().store.load().ChatTopics
@@ -40,7 +40,7 @@ type mobileBriefParagraphTopicLink struct {
 
 func (a *App) mobileBriefWithParagraphTopicsFrom(ctx context.Context, brief MobileBriefV1, sources todayChatSources) MobileBriefV1 {
 	brief = mobileBriefWithoutParagraphTopics(brief)
-	if a == nil || a.topicSource == nil || a.IsClosedEyesModeEnabled() || ctx.Err() != nil || len(brief.Narrative) == 0 {
+	if !featureOn(featureBriefExtras) || a == nil || a.topicSource == nil || a.IsClosedEyesModeEnabled() || ctx.Err() != nil || len(brief.Narrative) == 0 {
 		return brief
 	}
 	cache := sources.briefTopics

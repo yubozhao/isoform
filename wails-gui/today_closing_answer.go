@@ -29,6 +29,9 @@ func todayNonHoldClosing(brief MobileBriefV1) bool {
 }
 
 func (a *App) todayClosingAnswer(brief MobileBriefV1) *TodayClosingAnswer {
+	if !featureOn(featureBriefExtras) {
+		return nil
+	}
 	if a == nil || a.store == nil || !todayNonHoldClosing(brief) {
 		return nil
 	}
@@ -51,6 +54,9 @@ func (a *App) todayClosingAnswer(brief MobileBriefV1) *TodayClosingAnswer {
 // PostTodayClosingAnswer posts exactly the chosen, still-readable answer and
 // folds it in the same transaction. A stale choice changes neither record.
 func (a *App) PostTodayClosingAnswer(briefID, cardID, shownMessage, previous string) (TodayClosingAnswer, error) {
+	if !featureOn(featureBriefExtras) {
+		return TodayClosingAnswer{}, errFeatureOff(featureBriefExtras)
+	}
 	var empty TodayClosingAnswer
 	if a == nil || a.store == nil || briefID == "" || cardID == "" || shownMessage == "" {
 		return empty, errTodayChatItemUnavailable

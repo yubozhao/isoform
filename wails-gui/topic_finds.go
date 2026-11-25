@@ -462,6 +462,9 @@ func (a *App) topicsLive() bool {
 // or "manual". It returns started, running, cooldown, off, unconfigured or
 // no_topics.
 func (a *App) startTopicFinds(reason string) (string, error) {
+	if !featureOn(featureBriefExtras) {
+		return "off", nil
+	}
 	svc := a.topicsSvc()
 	// One start at a time: the ticker, a stored brief and "Find new" can all
 	// arrive together.
@@ -634,7 +637,7 @@ func (s *topicsService) topicFindsCooldownUntil() time.Time {
 // morning brief was stored, or an hour after its time when none came, or
 // after the morning time when the brief is off.
 func (a *App) maybeStartDailyTopicFinds(trigger string) {
-	if !a.topicsLive() {
+	if !featureOn(featureBriefExtras) || !a.topicsLive() {
 		return
 	}
 	svc := a.topicsSvc()
@@ -898,6 +901,9 @@ func (a *App) topicFindsForBrief(brief MobileBriefV1, asOf time.Time) MobileBrie
 // attachFindsToTodayBrief adds new finds to today's stored brief and sends
 // it to paired phones again, without a second notice.
 func (a *App) attachFindsToTodayBrief(items []TopicFind) {
+	if !featureOn(featureBriefExtras) {
+		return
+	}
 	patcher, ok := a.mobileBriefSource().(mobileBriefPatcher)
 	if !ok {
 		return
