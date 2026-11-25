@@ -56,7 +56,6 @@ func TestChatSwitchEveryEntryPoint(t *testing.T) {
 		"BringBackToMainChat":            func() error { _, err := app.BringBackToMainChat("side-1"); return err },
 		"AttachQuickChatContext":         func() error { return app.AttachQuickChatContext("spotlight_1", "com.example") },
 		"SetQuickChatHotkey":             func() error { return app.SetQuickChatHotkey(app.GetQuickChatHotkey()) },
-		"StartQuickChatHotkey":           func() error { return app.StartQuickChatHotkey() },
 		"SendPrompt on a Quick chat ask": func() error {
 			return app.SendPrompt("hi", "", "", "", "spotlight_1", false, false, "", "", "", "en", "")
 		},
@@ -76,8 +75,8 @@ func TestChatSwitchEveryEntryPoint(t *testing.T) {
 		chatOn(t)
 		for name, call := range entries {
 			switch name {
-			case "SetQuickChatHotkey", "StartQuickChatHotkey":
-				// These touch the computer's global hotkey; on, they are
+			case "SetQuickChatHotkey":
+				// This touches the computer's global hotkey; on, it is
 				// covered by the Quick chat tests.
 				continue
 			}
@@ -251,7 +250,8 @@ func TestChatSwitchSinksPostNothing(t *testing.T) {
 	}
 }
 
-// With Chat off no Quick chat helper, hotkey, chat-app scanner or bot starts.
+// With Chat off no Quick chat helper, chat-app scanner or bot starts. The
+// global key tap starts for Closed Eyes and, under go test, ends at once.
 func TestChatSwitchStartsNoChatGoroutine(t *testing.T) {
 	chatOff(t)
 	app := &App{ctx: context.Background(), spotlight: newSpotlightSupervisor(0)}
