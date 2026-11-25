@@ -243,7 +243,8 @@ struct WatchTabView: View {
     /// and the door to the hours by place.
     private var whereCard: some View {
         let here = WatchWhere.of(rows: recordings.rows, outcome: recordings.outcome, computer: computerState,
-                                 cause: recordings.waitCause, sendingSince: recordings.sendingSince)
+                                 cause: recordings.waitCause, sendingSince: recordings.sendingSince,
+                                 watchFound: !recordings.connection.isoformNotFound)
         return VStack(alignment: .leading, spacing: 12) {
             Text("Where your hours are", comment: "Title of the card on the Watch tab that says where the watch's hours are")
                 .font(.footnote.weight(.semibold)).foregroundStyle(YansuTheme.tertiary)

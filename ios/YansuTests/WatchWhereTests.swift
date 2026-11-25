@@ -176,4 +176,33 @@ final class WatchWhereTests: XCTestCase {
         here = place([row(.onPhone)], .relayFull)
         XCTAssertTrue(here.sentence.hasPrefix("Too many recordings are waiting for your computer."))
     }
+
+    /// v1.5.0 W6: while the system says Isoform is not on the watch, hours on the watch are not
+    /// "coming when it's near". The sentence says where they are, what happens next and the one
+    /// thing that may be the wearer's, and never a cause this phone doesn't know.
+    func testHoursOnAWatchWhereIsoformIsNotFound() {
+        func away(_ rows: [WatchRecordingRow], _ outcome: WatchRecordingForwarder.Outcome = .drained) -> WatchWhere {
+            WatchWhere.of(rows: rows, outcome: outcome, computer: .reachable, watchFound: false,
+                          now: now, calendar: calendar, locale: Locale(identifier: "en_US"))
+        }
+        XCTAssertEqual(away([row(.onWatch), row(.onWatch)]).sentence,
+                       "2 hours are on your watch, waiting for this phone. This phone can't reach Isoform there right now; "
+                       + "they come when it can. If Isoform doesn't come back on your watch, install it from the Watch app on this phone.")
+        XCTAssertEqual(away([row(.onWatch)]).sentence,
+                       "1 hour is on your watch, waiting for this phone. This phone can't reach Isoform there right now; "
+                       + "it comes when it can. If Isoform doesn't come back on your watch, install it from the Watch app on this phone.")
+        XCTAssertFalse(away([row(.onWatch)]).sentence.contains("update"), "the phone doesn't know an update is why")
+        XCTAssertNil(away([row(.onWatch)]).ringed, "the places stay as they were; only the sentence is new")
+        // What this phone holds still speaks first, and nothing on the watch means no watch sentence.
+        XCTAssertEqual(away([row(.onWatch), row(.onPhone)], .pairAgain).sentence,
+                       "Open Settings and choose Pair again. Your recordings stay on this phone until then.")
+        XCTAssertTrue(away([row(.transcribed)]).sentence.hasPrefix("Every hour is on your computer"))
+        // Found, the sentence is the one it was.
+        XCTAssertEqual(place([row(.onWatch)]).sentence, "1 hour is on your watch. It comes to this phone when it's near.")
+        XCTAssertTrue(WatchConnection.appAway.isoformNotFound)
+        XCTAssertTrue(WatchConnection.appMissing.isoformNotFound)
+        XCTAssertFalse(WatchConnection.ready(reachable: false).isoformNotFound)
+        XCTAssertFalse(WatchConnection.noWatch.isoformNotFound)
+        XCTAssertFalse(WatchConnection.unknown.isoformNotFound)
+    }
 }

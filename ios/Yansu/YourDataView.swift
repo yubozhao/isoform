@@ -139,7 +139,8 @@ struct YourDataView: View {
                         row(String(localized: "data.sent"), sub: String(localized: "data.sentWhere"))
                     }
                     // With Place on, the watch asks Apple to name the area (design's
-                    // data.appleArea). Shown while Place is on and for a week after.
+                    // data.appleArea, v1.5.0 W9): the part before the first " · " is the title,
+                    // the rest the sub-line. Shown while Place is on and for a week after.
                     if watchTab.namesAppleForTheArea {
                         Divider().overlay(YansuTheme.borderSubtle)
                         row(String(localized: "data.appleArea"), sub: String(localized: "data.appleAreaSub"))

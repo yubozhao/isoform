@@ -35,6 +35,14 @@ enum WatchConnection: Equatable, Sendable {
         }
     }
 
+    /// The system says Isoform is not on the paired watch. It never says why (v1.5.0 W2).
+    var isoformNotFound: Bool {
+        switch self {
+        case .appMissing, .appAway: return true
+        case .unknown, .noWatch, .ready: return false
+        }
+    }
+
     /// Whether the Watch tab shows. A phone that has had a watch keeps the tab while the system
     /// has not said yet (at launch, or when it never reports); only a plain "no watch is paired"
     /// takes it away.
@@ -342,20 +350,22 @@ enum WatchRecordingsCopy {
         return parts.joined(separator: " · ")
     }
 
-    static func connection(_ connection: WatchConnection) -> String? {
+    /// The watch's lines at the head of the hours by place, one Text each.
+    static func connection(_ connection: WatchConnection) -> [String] {
         switch connection {
-        case .unknown: return nil
-        case .noWatch: return String(localized: "No watch is paired with this phone.", comment: "Watch page: no watch")
-        case .appMissing:
-            return String(localized: "Isoform isn't on your watch yet. Open the Watch app on this phone and install Isoform under Available Apps.",
-                          comment: "Watch page: the watch app is not installed")
-        case .appAway:
-            return String(localized: "Isoform on your watch isn't answering right now. After an update it comes back by itself.",
-                          comment: "Watch page: the watch had the app and the system now says it is not installed")
+        case .unknown: return []
+        case .noWatch: return [String(localized: "No watch is paired with this phone.", comment: "Watch page: no watch")]
+        case .appMissing, .appAway:
+            // The system says only that Isoform is not on the watch, never why: right after an
+            // update it says so for a while too (computer-conformance-answers v1.5.0 W2). Whether
+            // this phone saw Isoform there before is its own memory, not the system's answer, so
+            // both cases say the same three lines.
+            return [String(localized: "watch.cantReach"), String(localized: "watch.afterUpdate"),
+                    String(localized: "watch.installHow")]
         case .ready(let reachable):
-            return reachable
+            return [reachable
                 ? String(localized: "Your watch is connected.", comment: "Watch page: the watch is reachable now")
-                : String(localized: "Your watch sends recordings when it is near this phone.", comment: "Watch page: the watch is not reachable now")
+                : String(localized: "Your watch sends recordings when it is near this phone.", comment: "Watch page: the watch is not reachable now")]
         }
     }
 
@@ -489,8 +499,10 @@ struct WatchRecordingsView: View {
                     .font(.body.weight(.semibold))
                     .foregroundStyle(YansuTheme.ink)
                     .accessibilityIdentifier("watchRecordings.summary")
-                if let line = WatchRecordingsCopy.connection(model.connection) {
-                    Text(line).font(.footnote).foregroundStyle(YansuTheme.secondary)
+                ForEach(Array(WatchRecordingsCopy.connection(model.connection).enumerated()), id: \.offset) { item in
+                    Text(item.element).font(.footnote).foregroundStyle(YansuTheme.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("watchRecordings.connection.\(item.offset)")
                 }
                 Text("This phone keeps the audio only until your computer has it.",
                      comment: "At the head of the watch's hours by place")

@@ -1186,6 +1186,31 @@ advertises `noticesRead: true`.
   delivered notifications that match. iOS throttles background pushes, so the poll above stays the
   guarantee. A relay or push gateway without this refuses the frame and stays connected.
 
+### 9.5 Ready: a silent wake for every brief (hub decision, 2026-11-22)
+
+Every brief that is ready (scheduled, early, on request, and a resend after the relay was away) wakes each
+paired phone with the push scope once, so the phone fetches it without being opened. It is separate from a
+brief frame's `notify`, which stays the alerting push and its own rule.
+
+- **Computer.** After the relay takes a brief frame for a phone, the computer sends
+  `{"t":"ready","deviceId"[,"deliverAt"]}` on the same connection, so the relay has stored the brief first.
+  `deliverAt` is the held brief's slot (section 8.2). One wake per brief version per phone: the computer keeps
+  the last version it woke each phone for on disk (`brief-ready.json`, device and brief ids only), so a relaunch
+  that saves the same brief again sends nothing, and an amended version is a new wake. None while Closed Eyes is
+  on, and none for a phone without the push scope or once it is unpaired.
+- **Relay.** It queues one background push for that device, due at `deliverAt` when it is later than now,
+  replacing a ready wake still queued for it (a device has at most one), expiring 6 hours after it is due:
+  `{"aps":{"content-available":1},"yansu":{"kind":"ready","hub":"<hubId>"}}`, `apns-push-type: background`,
+  priority 5, no collapse id. A device without a push registration gets nothing. The push gateway accepts kind
+  `ready` only with an empty notice. A relay or push gateway without this refuses the frame and stays connected.
+- **What it carries.** The hub id, which the phone needs to match its pairing, and nothing else: no brief id,
+  title, slot or time. The phone needs no brief id: it reads the newest brief it is due (`GET /v1/brief/latest`)
+  and compares it with the one it holds, which costs one small read when it already has it.
+- **Phone.** On `ready` from its paired hub it fetches the brief, then Today (as a scheduled wake does), inside
+  the background time iOS gives, and reports `newData` or `failed`; for another hub, `noData`. iOS throttles
+  background pushes and gives none to an app swiped away in the app switcher, so the reads on open and the
+  scheduled wakes stay the guarantee.
+
 ## 10. Scopes
 
 | Scope | Grants |

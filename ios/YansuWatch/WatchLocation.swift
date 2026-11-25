@@ -11,6 +11,9 @@ final class WatchLocationSampler: NSObject, CLLocationManagerDelegate {
     private let geocoder = CLGeocoder()
     private var current: WatchRecordingContext.Location?
     private var generation = 0
+    /// Between a part's begin and the recording's reset. A fix that arrives after listening
+    /// ended is dropped, so Apple is asked only while the watch listens (v1.5.0 W9).
+    private var listening = false
     private var authorization: CheckedContinuation<Bool, Never>?
     private var names = WatchPlaceNames.load()
 
@@ -44,9 +47,11 @@ final class WatchLocationSampler: NSObject, CLLocationManagerDelegate {
     func begin() {
         guard isAllowed else {
             current = nil
+            listening = false
             return
         }
         generation += 1
+        listening = true
         manager.requestLocation()
     }
 
@@ -56,6 +61,7 @@ final class WatchLocationSampler: NSObject, CLLocationManagerDelegate {
     /// The recording ended: forget where it was.
     func reset() {
         generation += 1
+        listening = false
         current = nil
         geocoder.cancelGeocode()
     }
@@ -75,7 +81,7 @@ final class WatchLocationSampler: NSObject, CLLocationManagerDelegate {
         guard let fix = locations.last else { return }
         let latitude = fix.coordinate.latitude, longitude = fix.coordinate.longitude, accuracy = fix.horizontalAccuracy
         Task { @MainActor in
-            guard let coarse = WatchRecordingContext.Location(latitude: latitude, longitude: longitude,
+            guard self.listening, let coarse = WatchRecordingContext.Location(latitude: latitude, longitude: longitude,
                                                               accuracyMeters: accuracy) else { return }
             let known = self.current
             // The same rounded position keeps the name it already has.

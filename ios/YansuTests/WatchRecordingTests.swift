@@ -595,8 +595,28 @@ final class WatchTabTests: XCTestCase {
         XCTAssertEqual(WatchConnection.from(paired: true, installed: true, reachable: false, hadApp: true), .ready(reachable: false))
         XCTAssertTrue(WatchConnection.appAway.hasWatch)
         XCTAssertTrue(WatchConnection.showsTab(.appAway, seenBefore: false))
-        XCTAssertNotNil(WatchRecordingsCopy.connection(.appAway))
-        XCTAssertNotEqual(WatchRecordingsCopy.connection(.appAway), WatchRecordingsCopy.connection(.appMissing))
+        XCTAssertFalse(WatchRecordingsCopy.connection(.appAway).isEmpty)
+    }
+
+    /// v1.5.0 W2: the system says only that Isoform is not on the watch, not why. Missing and away
+    /// say the same three lines, in design's words; "isn't on your watch yet" is never said.
+    func testAWatchWithoutIsoformSaysThreeLinesOfWhatThePhoneKnows() {
+        let three = ["This phone can't reach Isoform on your watch right now.",
+                     "After an update this can happen for a while. It comes back by itself.",
+                     "If it doesn't, open the Watch app on this phone and install Isoform under Available Apps."]
+        XCTAssertEqual(WatchRecordingsCopy.connection(.appMissing), three)
+        XCTAssertEqual(WatchRecordingsCopy.connection(.appAway), three)
+        XCTAssertEqual(String(localized: "watch.cantReach"), three[0])
+        XCTAssertEqual(String(localized: "watch.afterUpdate"), three[1])
+        XCTAssertEqual(String(localized: "watch.installHow"), three[2])
+        for state in [WatchConnection.appMissing, .appAway] {
+            XCTAssertFalse(WatchRecordingsCopy.connection(state).joined().contains("isn't on your watch yet"))
+        }
+        // The other states keep their one line, and an unknown pairing says nothing.
+        XCTAssertEqual(WatchRecordingsCopy.connection(.noWatch), ["No watch is paired with this phone."])
+        XCTAssertEqual(WatchRecordingsCopy.connection(.ready(reachable: true)), ["Your watch is connected."])
+        XCTAssertEqual(WatchRecordingsCopy.connection(.ready(reachable: false)), ["Your watch sends recordings when it is near this phone."])
+        XCTAssertEqual(WatchRecordingsCopy.connection(.unknown), [])
     }
 
     /// Heart rate and Place are one choice for the computer, the phone and the watch (24.15).
@@ -636,7 +656,10 @@ final class WatchTabTests: XCTestCase {
         XCTAssertFalse(WatchTabModel.namesApple(placeOn: nil, lastOn: nil, now: now), "an older computer: the phone cannot know")
         XCTAssertTrue(WatchTabModel.namesApple(placeOn: false, lastOn: now.addingTimeInterval(-6 * 24 * 3600), now: now))
         XCTAssertFalse(WatchTabModel.namesApple(placeOn: false, lastOn: now.addingTimeInterval(-8 * 24 * 3600), now: now))
+        // v1.5.0 W9: the row is design's one line, split at its first " · " into title and sub-line.
         XCTAssertEqual(String(localized: "data.appleArea"), "Apple, to name the area")
+        XCTAssertEqual(String(localized: "data.appleAreaSub"),
+                       "Where you were, rounded to about a kilometre, once for each new place · sent from your watch, while Place is on and it's listening")
         XCTAssertEqual(String(localized: "watch.set.placeSub"), "Adds the area, like \"Mission District\". Never the address.")
         XCTAssertEqual(String(localized: "watch.set.heartSub"), "Adds \"heart rate raised\" beside what was said. Never the numbers.")
     }
