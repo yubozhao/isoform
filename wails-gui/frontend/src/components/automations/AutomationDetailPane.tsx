@@ -12,6 +12,7 @@ import { ConfirmDialog } from '@/components/confirm-dialog';
 import { cn } from '@/lib/utils';
 import { CronJobDetail, type CronJobDetailHandle } from './CronJobDetail';
 import { AskForChange } from './ScheduleAsk';
+import { useFeatureSwitches } from '@/hooks/useFeatureSwitches';
 import { createScheduleTextLabels, cronToHumanReadable, type ScheduleTextLabels } from './schedule-utils';
 import type { CronJobState, CronRunState, RefusalOptions } from '@/hooks/useCronJobs';
 import { FailureLine } from '@/components/tasks/FailureLine';
@@ -163,6 +164,7 @@ export function AutomationDetailPane({
         else setDeleteFailed(true);
     };
     const [askOpen, setAskOpen] = useState(false);
+    const chatOn = useFeatureSwitches().chat;
 
     // Escape: cancel edit → close detail (return to chat).
     useEffect(() => {
@@ -236,14 +238,17 @@ export function AutomationDetailPane({
                                 <Play className="h-3 w-3" />
                                 {t('automations.runNow')}
                             </button>
-                            <button
-                                type="button"
-                                data-testid="schedule-ask-for-change"
-                                onClick={() => setAskOpen(true)}
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-ink hover:bg-border/50 transition-colors"
-                            >
-                                {t('scheduleAsk.askForChange')}
-                            </button>
+                            {/* Ask for a change goes through the main chat: none while Chat is off (scope cut 2026-11). */}
+                            {chatOn && (
+                                <button
+                                    type="button"
+                                    data-testid="schedule-ask-for-change"
+                                    onClick={() => setAskOpen(true)}
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-ink hover:bg-border/50 transition-colors"
+                                >
+                                    {t('scheduleAsk.askForChange')}
+                                </button>
+                            )}
                             <StatusToggle
                                 enabled={enabled}
                                 onToggle={() => void toggle()}
@@ -284,7 +289,7 @@ export function AutomationDetailPane({
                     {toggleFailed && <FailureLine tone="copper" testId="schedule-toggle-failed" text={t('tasks.failure.save')} onRetry={() => void toggle()} />}
                 </div>
             )}
-            {askOpen && (
+            {chatOn && askOpen && (
                 <AskForChange
                     job={job}
                     describe={(current) => scheduleSummary(current, scheduleTextLabels)}
