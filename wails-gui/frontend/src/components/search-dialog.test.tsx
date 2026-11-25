@@ -182,6 +182,13 @@ function option(name: string | RegExp): HTMLElement {
     return screen.getByRole("option", { name });
 }
 
+// Scope cut A2: these guards run with Chat off, as the app does by default;
+// the rollback cases turn the \`chat\` switch on.
+beforeEach(() => {
+    const g = globalThis as Record<string, unknown>;
+    g.__isoformFeatureSwitchesForTest = { ...(g.__isoformFeatureSwitchesForTest as object), chat: false };
+});
+
 describe("SearchDialog (Find)", () => {
     beforeAll(() => {
         Element.prototype.scrollIntoView = vi.fn();
@@ -216,8 +223,20 @@ describe("SearchDialog (Find)", () => {
         work: { title }, yes: { does: "keep", line: "" }, reasons: [], createdAt: "", order: 0,
     });
     const workList = (items: unknown[]) => ({ v: 1, version: "1", generatedAt: "", toAnswer: items.length, backFromAgents: 0, items });
-    const KEYS: Record<string, string> = { "go-today": "⌘1", "go-chat": "⌘2", "go-agents": "⌘3", "go-activity": "⌘4", "go-you": "⌘5", "open-settings": "⌘," };
-    const GO_TO = [en.sidebar.today, en.sidebar.mainChat, en.sidebar.agents, en.sidebar.activity, en.sidebar.you, en.searchDialog.goTo.settings];
+    const KEYS: Record<string, string> = { "go-today": "⌘1", "go-agents": "⌘2", "go-activity": "⌘3", "go-you": "⌘4", "go-chat": "⌘5", "open-settings": "⌘," };
+    // Scope cut A2: four places, no Chat.
+    const GO_TO = [en.sidebar.today, en.sidebar.agents, en.sidebar.activity, en.sidebar.you, en.searchDialog.goTo.settings];
+    const SWITCHES_KEY = "__isoformFeatureSwitchesForTest";
+    let switchesBefore: unknown;
+    /** The `chat` switch on (the rollback): Chat's group and Go to › Chat come back. */
+    const chatOn = () => {
+        const g = globalThis as Record<string, unknown>;
+        switchesBefore = g[SWITCHES_KEY];
+        g[SWITCHES_KEY] = { ...(switchesBefore as object), chat: true };
+    };
+    const chatRestore = () => {
+        (globalThis as Record<string, unknown>)[SWITCHES_KEY] = switchesBefore;
+    };
     const settle = () => act(async () => { await new Promise((resolve) => setTimeout(resolve, 400)); });
 
     it("puts ready work from Your work first and opens it on Today", async () => {
@@ -257,7 +276,34 @@ describe("SearchDialog (Find)", () => {
         expect(binding("NoteFindSearch")).toHaveBeenCalledWith("lena");
     });
 
-    it("orders a query's groups as design S10 does: Ready, Topics, Conversations, People, Claims, Chat, Your answers, Go to", async () => {
+    it("has no Chat group and no Go to › Chat while Chat is gone (scope cut A2)", async () => {
+        binding("SearchEverything").mockResolvedValue(REMOTE);
+        await renderSearch();
+        await type("halcyon");
+        await screen.findByText(txt("Priya at Halcyon"));
+        await settle();
+        expect(headings()).not.toContain(en.searchDialog.groups.chats);
+        expect(screen.queryByText(txt("Halcyon asked to move the sync up"))).toBeNull();
+        await type("chat");
+        expect(rowTitles(en.searchDialog.groups.goTo)).not.toContain(en.sidebar.mainChat);
+    });
+
+    // Settings owner's A5 review: Chat apps is a Chat page, so Find doesn't
+    // list it under Go to while Chat is off (searchSettingsPages' features).
+    it("lists no Chat apps page under Go to while Chat is gone", async () => {
+        await renderSearch();
+        for (const word of ["Slack", enSettings.pages["chat-apps"].label]) {
+            await type(word);
+            await settle();
+            expect(screen.queryByRole("option", { name: new RegExp(enSettings.pages["chat-apps"].label) })).toBeNull();
+        }
+        await type("notifications");
+        expect(rowTitles(en.searchDialog.groups.goTo)).toContain(enSettings.pages.notifications.label);
+    });
+
+    it("orders a query's groups as design S10 does, with Chat while its switch is on", async () => {
+        chatOn();
+        try {
         binding("GetWorkList").mockResolvedValue(workList([workItem("w1", "A draft for Ana")]));
         binding("FindAnything").mockResolvedValue({ query: "a", failedGroups: [], groups: [
             { group: "answers", results: [{ id: "x1", group: "answers", title: "Said yes to a call", target: { kind: "answer", id: "x1" }, forget: { kind: "answer", id: "x1" } }] },
@@ -281,8 +327,12 @@ describe("SearchDialog (Find)", () => {
         ]);
         // Go to is last: the places, then the Settings pages, in one group.
         const goTo = rowTitles(en.searchDialog.groups.goTo);
-        expect(goTo.slice(0, 4)).toEqual([en.sidebar.today, en.sidebar.mainChat, en.sidebar.agents, en.sidebar.activity]);
+        // "a" matches every place but You; Chat comes after the four.
+        expect(goTo.slice(0, 4)).toEqual([en.sidebar.today, en.sidebar.agents, en.sidebar.activity, en.sidebar.mainChat]);
         expect(goTo.length).toBeGreaterThan(5);
+        } finally {
+            chatRestore();
+        }
     });
 
     it("lists a person once when both FindAnything and the chat search find them", async () => {
@@ -335,7 +385,7 @@ describe("SearchDialog (Find)", () => {
     describe("Go to", () => {
         it("shows each place with its key when the query names it", async () => {
             await renderSearch({ shortcutFor: (id) => KEYS[id] });
-            const keys = ["⌘1", "⌘2", "⌘3", "⌘4", "⌘5", "⌘,"];
+            const keys = ["⌘1", "⌘2", "⌘3", "⌘4", "⌘,"];
             for (const [index, label] of GO_TO.entries()) {
                 await type(label);
                 const row = within(group(en.searchDialog.groups.goTo)).getAllByRole("option")
@@ -367,6 +417,9 @@ describe("SearchDialog (Find)", () => {
     });
 
     describe("keeps the chat and Settings sources", () => {
+        // These search chats: the rollback with the `chat` switch on.
+        beforeEach(chatOn);
+        afterEach(chatRestore);
         it("finds chats by title in every project and opens the owning project's chat", async () => {
             const { actions } = await renderSearch();
             await type("halcyon erp");
@@ -479,6 +532,9 @@ describe("SearchDialog (Find)", () => {
     });
 
     describe("matched words (conformance answers S5)", () => {
+        // These search chats: the rollback with the `chat` switch on.
+        beforeEach(chatOn);
+        afterEach(chatRestore);
         it("bolds the query's words in the title and the meta line, case-insensitively, as elements", async () => {
             binding("SearchEverything").mockResolvedValue(REMOTE);
             await renderSearch();
@@ -502,6 +558,9 @@ describe("SearchDialog (Find)", () => {
     });
 
     describe("search over chats and people", () => {
+        // These search chats: the rollback with the `chat` switch on.
+        beforeEach(chatOn);
+        afterEach(chatRestore);
         beforeEach(() => {
             binding("SearchEverything").mockResolvedValue(REMOTE);
         });
@@ -643,6 +702,9 @@ describe("SearchDialog (Find)", () => {
     });
 
     describe("Enter opens what was found", () => {
+        // These search chats: the rollback with the `chat` switch on.
+        beforeEach(chatOn);
+        afterEach(chatRestore);
         it("\"brief\" and Enter opens the chat that says it", async () => {
             binding("SearchEverything").mockResolvedValue({
                 query: "brief",

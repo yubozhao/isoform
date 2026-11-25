@@ -17,24 +17,27 @@ import {
     HEAR_FIXED_KEY,
     ITEM_FIXED_KEYS,
     NEW_LINE_FIXED_KEY,
-    PAGE_KEYS,
     type KeyCombo,
 } from '@/hooks/useKeybindings';
+import { useFeatureSwitches } from '@/hooks/useFeatureSwitches';
 import { isMac, isWindows } from '@/lib/platform';
+import { chatFeatureOn, shellPlaces } from '@/lib/shell-places';
 
 // The item, brief and New line keys are Today's and Chat's handlers. The
 // sheet lists them so they can be learned and binds nothing (computer-keys
 // v1.0.0 r2); a binding may not take them (findFixedKeyClash).
 
-/** In Isoform, in the design's order: the pages, then Find, the sidebar,
- *  Settings and this sheet. */
-const IN_APP_IDS = [
-    ...PAGE_KEYS.map((page) => `go-${page}`),
-    'command-palette',
-    'toggle-sidebar',
-    'open-settings',
-    'keyboard-shortcuts',
-];
+/** In Isoform, in the design's order: the places that are shown, then Find,
+ *  the sidebar, Settings and this sheet. */
+function inAppIds(chatOn: boolean) {
+    return [
+        ...shellPlaces(chatOn).map((page) => `go-${page}`),
+        'command-palette',
+        'toggle-sidebar',
+        'open-settings',
+        'keyboard-shortcuts',
+    ];
+}
 
 interface KeysSheetProps {
     open: boolean;
@@ -99,6 +102,9 @@ function KeysSheetBody({ keybindings, vimMode, onVimModeChange }: Omit<KeysSheet
     const { t } = useTranslation('settings');
     const editor = useShortcutEditor(keybindings);
     useQuickChatHotkeyHydration(keybindings);
+    // Chat and Quick chat are gone (scope cut A2); their keys come back
+    // with the `chat` switch.
+    const chatOn = chatFeatureOn(useFeatureSwitches());
 
     const row = (id: string, note?: string) => {
         const action = keybindings.actions.find((entry) => entry.id === id);
@@ -125,10 +131,10 @@ function KeysSheetBody({ keybindings, vimMode, onVimModeChange }: Omit<KeysSheet
     return (
         <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-6 py-4">
             <KeysGroup title={t('keys.anywhere')}>
-                {row(QUICK_CHAT_GLOBAL_ID)}
+                {chatOn ? row(QUICK_CHAT_GLOBAL_ID) : null}
                 {row('pause-observing', t('keys.always'))}
             </KeysGroup>
-            <KeysGroup title={t('keys.inApp')}>{IN_APP_IDS.map((id) => row(id))}</KeysGroup>
+            <KeysGroup title={t('keys.inApp')}>{inAppIds(chatOn).map((id) => row(id))}</KeysGroup>
             <KeysGroup title={t('keys.onItem')}>
                 {ITEM_FIXED_KEYS.map(({ labelKey, combos }) => (
                     <FixedRow key={labelKey} name={t(labelKey as never) as string} combos={combos} />
@@ -137,20 +143,24 @@ function KeysSheetBody({ keybindings, vimMode, onVimModeChange }: Omit<KeysSheet
             <KeysGroup title={t('keys.brief')}>
                 <FixedRow name={t('keys.hear')} combos={HEAR_FIXED_KEY.combos} />
             </KeysGroup>
-            <KeysGroup title={t('keys.chat')}>
-                {row('send-prompt')}
-                <FixedRow name={t('keys.newLine')} combos={NEW_LINE_FIXED_KEY.combos} />
-            </KeysGroup>
+            {chatOn ? (
+                <KeysGroup title={t('keys.chat')}>
+                    {row('send-prompt')}
+                    <FixedRow name={t('keys.newLine')} combos={NEW_LINE_FIXED_KEY.combos} />
+                </KeysGroup>
+            ) : null}
             <SettingsFailureLine failure={editor.failure} />
 
             <div className="flex flex-col gap-3 border-t border-border pt-4">
-                <div className="flex items-center justify-between gap-4">
-                    <div className="flex min-w-0 flex-col">
-                        <span className="text-[13px] text-ink">{t('keys.vim')}</span>
-                        <span className="text-xs text-muted">{t('keys.vimSub')}</span>
+                {chatOn ? (
+                    <div className="flex items-center justify-between gap-4">
+                        <div className="flex min-w-0 flex-col">
+                            <span className="text-[13px] text-ink">{t('keys.vim')}</span>
+                            <span className="text-xs text-muted">{t('keys.vimSub')}</span>
+                        </div>
+                        <Switch checked={vimMode} onCheckedChange={onVimModeChange} aria-label={t('keys.vim')} />
                     </div>
-                    <Switch checked={vimMode} onCheckedChange={onVimModeChange} aria-label={t('keys.vim')} />
-                </div>
+                ) : null}
                 <p className="text-xs text-muted">{t('keys.focusNote')}</p>
             </div>
         </div>

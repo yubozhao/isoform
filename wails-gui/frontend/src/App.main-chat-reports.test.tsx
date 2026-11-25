@@ -347,6 +347,31 @@ describe('App main-chat report wiring', () => {
         expect(screen.getByTestId('stream')).toBeInTheDocument();
     });
 
+    // Scope cut A2: with the chat switch off, a Chat deep link (here a work
+    // notification) and ⌘5 land on Today, never on a page that is gone.
+    it('lands a Chat deep link and the Chat key on Today while Chat is gone', async () => {
+        const g = globalThis as Record<string, unknown>;
+        g.__isoformFeatureSwitchesForTest = { ...(g.__isoformFeatureSwitchesForTest as object), chat: false };
+        render(<App />);
+        await screen.findByTestId('TodayPage');
+        // A leftover caller that opens Chat lands on Today.
+        await act(async () => { fixture.sidebarProps!.onOpenMainChat(); });
+        expect(screen.getByTestId('TodayPage')).toBeInTheDocument();
+        expect(screen.queryByTestId('stream')).not.toBeInTheDocument();
+        const listeners = fixture.listeners.get('notification:clicked');
+        await act(async () => {
+            for (const listener of listeners!) listener('main-chat:work');
+        });
+        expect(localStorage.getItem('yansu.appMode')).toBe('today');
+        expect(screen.getByTestId('TodayPage')).toBeInTheDocument();
+        expect(screen.queryByTestId('stream')).not.toBeInTheDocument();
+        await act(async () => {
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: '5', metaKey: true, ctrlKey: !navigator.platform.includes('Mac') }));
+        });
+        expect(localStorage.getItem('yansu.appMode')).toBe('today');
+        expect(screen.queryByTestId('stream')).not.toBeInTheDocument();
+    });
+
     it('loads and opens a proactive item from a main-chat-item notification', async () => {
         binding('LoadMainChatProactiveItem').mockResolvedValue({
             id: 'proactive-1',

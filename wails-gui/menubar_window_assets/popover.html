@@ -254,6 +254,9 @@ button:focus-visible { outline:2px solid var(--color-border-focus); outline-offs
         el('makeText').textContent = w.make;
         el('make').hidden = !!model.brief && model.brief.kind === 'sign_in';
         el('make').disabled = !!model.loading || (model.brief && model.brief.kind === 'making');
+        // Quick chat went with Chat (scope cut A2); the row shows only while
+        // the chat switch is on.
+        el('qc').hidden = !model.quickChatOn;
         el('qcText').textContent = w.quickChat;
         el('qcKey').textContent = model.quickChat || '';
         el('openText').textContent = w.open;

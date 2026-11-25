@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ALL_PLACES, type Place } from '@/lib/shell-places';
 import { useTranslation } from 'react-i18next';
 import { isMac, isWindows } from '@/lib/platform';
 
@@ -67,9 +68,11 @@ function pauseObservingCombo(): KeyCombo | null {
 /** Read-only: shown on Settings > General > Advanced and on Observation. */
 export const PAUSE_OBSERVING_COMBO = pauseObservingCombo();
 
-/** The pages ⌘1 to ⌘5 open, in the sidebar's order. */
-export const PAGE_KEYS = ['today', 'chat', 'agents', 'activity', 'you'] as const;
-export type PageKey = (typeof PAGE_KEYS)[number];
+/** The pages ⌘1 to ⌘5 open, in the sidebar's order (lib/shell-places.ts):
+ *  Today, Agents, Activity, You, then Chat, which shows only while its
+ *  switch is on (scope cut A2). */
+export const PAGE_KEYS: readonly Place[] = ALL_PLACES;
+export type PageKey = Place;
 
 function plainKey(key: string, mods: Partial<KeyCombo> = {}): KeyCombo {
     return { meta: false, ctrl: false, alt: false, shift: false, key, ...mods };

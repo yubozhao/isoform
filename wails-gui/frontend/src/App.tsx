@@ -144,6 +144,8 @@ import { comboToDisplayString, useKeybindings, type PageKey } from "@/hooks/useK
 import { useInterfaceZoom } from "@/hooks/useInterfaceZoom";
 import { useChatMessageJump } from "@/hooks/useChatMessageJump";
 import { useMainChatWaitingCount } from "@/hooks/useMainChatWaitingCount";
+import { useFeatureSwitches } from "@/hooks/useFeatureSwitches";
+import { chatFeatureOn, landingView } from "@/lib/shell-places";
 import { usePageWindowTitle } from "@/hooks/usePageWindowTitle";
 import { useSidebarResize } from "@/hooks/useSidebarResize";
 import { useTerminal } from "@/hooks/useTerminal";
@@ -853,6 +855,7 @@ export default function App() {
     // Launches open Today, except legacy Handoffs state migrates to Tasks.
     // About you, How you do things and Who you know are main views, opened
     // from the sidebar's You rows (sidebar handoff 1.0.0, section 2).
+    const featureSwitches = useFeatureSwitches();
     const [appMode, setAppMode] = useState<AppMode>(() => {
         if (localStorage.getItem("yansu.appMode") === "handoffs") {
             return "agents";
@@ -860,6 +863,8 @@ export default function App() {
         return "today";
     });
     const appModeRef = useRef(appMode);
+    const chatOnRef = useRef(false);
+    chatOnRef.current = chatFeatureOn(featureSwitches);
     const closedEyes = useClosedEyes();
     appModeRef.current = appMode;
     // Set once handleSetAppMode exists (below); the You page setters use it.
@@ -1049,8 +1054,9 @@ export default function App() {
                     );
                     if (s) {
                         setAutomationsSelectedJobId(null);
-                        setAppMode("chat");
-                        localStorage.setItem("yansu.appMode", "chat");
+                        const view = landingView("chat", chatOnRef.current);
+                        setAppMode(view);
+                        localStorage.setItem("yansu.appMode", view);
                         projects.handleSwitchSession(p.id, s.localId);
                         return;
                     }
@@ -1093,7 +1099,9 @@ export default function App() {
     const todayChatRequestRef = useRef(0);
     const todayBriefGate = useRef(new TodayBriefRequestGate());
     const handleSetAppMode = useCallback((mode: AppMode | "handoffs") => {
-        const destination = mode === "handoffs" ? "agents" : mode;
+        // Chat is gone while its switch is off (scope cut A2): every way in,
+        // a caller, a saved mode or an old deep link, lands on Today.
+        const destination = landingView(mode === "handoffs" ? "agents" : mode, chatOnRef.current);
         if (destination !== "memory" && destination !== "knowledge" && destination !== "people") {
             youPageReturnRef.current = destination;
         }
@@ -3296,7 +3304,8 @@ export default function App() {
         projects.activeSession?.streaming,
     ]);
 
-    // ⌘1 to ⌘5 open the sidebar's pages (pass-access v1.0.0 rule 1). Set
+    // ⌘1 to ⌘4 open the sidebar's places, and ⌘5 Chat while its switch is on
+    // (pass-access v1.0.0 rule 1, scope cut A2). Set
     // each render below, once every page opener exists.
     const goToPageRef = useRef<(page: PageKey) => void>(() => {});
     goToPageRef.current = (page: PageKey) => {
@@ -3306,6 +3315,11 @@ export default function App() {
                 handleSetAppMode("today");
                 break;
             case "chat":
+                // ⌘5 with the Chat switch off lands on Today and opens nothing.
+                if (!chatOnRef.current) {
+                    handleSetAppMode("today");
+                    break;
+                }
                 handleSetAppMode("chat");
                 void Promise.resolve(projects.handleOpenMainChat()).finally(
                     () => requestAnimationFrame(() => focusComposer()),
