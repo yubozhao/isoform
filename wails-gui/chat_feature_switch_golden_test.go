@@ -21,8 +21,15 @@ import (
 //   - the phone Today snapshot's generatedAt (mobile_today.go buildToday).
 //
 // The sealed briefs, the phone's decrypted briefs, Today's brief, Needs you
-// and the menu bar are compared with nothing normalized.
+// and the menu bar are compared with nothing normalized; the menu bar's
+// Chat-only fields are asserted on their own (chatOffGoldenMenuChatOnly).
 var chatOffGoldenWallClock = map[string]bool{"generatedAt": true}
+
+// chatOffGoldenMenuChatOnly lists the menu bar fields that belong to Chat and
+// so differ by design (scope cut A2 hides the Quick chat row). They are taken
+// out of the compared menu bar and asserted on their own: with Chat off each
+// is absent or false.
+var chatOffGoldenMenuChatOnly = []string{"quickChatOn"}
 
 // chatOffGoldenHandoffs are the handoff fixtures of newTestMobileBriefService,
 // saved again with fixed times. handoff.Store stamps an entry saved without
@@ -36,6 +43,8 @@ type chatOffGoldenRun struct {
 	reads map[string]any
 	// mainChatAdded is how many main-chat stream rows the run wrote.
 	mainChatAdded int
+	// menuChatOnly holds the menu bar's Chat-only fields, by name.
+	menuChatOnly map[string]any
 }
 
 // Scope cut 2026-11, PR A1 (docs/plans/scope-cut-2026-11.md, section 6): with
@@ -60,10 +69,23 @@ func TestChatOffBriefsReachThePhoneUnchanged(t *testing.T) {
 			t.Errorf("%s differs with Chat off: %s", name, diff)
 		}
 	}
+	// What differs by design is asserted, not ignored: with Chat on a
+	// brief-ready moment posts to the main chat and with Chat off nothing
+	// does; with Chat off the menu bar's Chat-only fields are off.
+	if on.mainChatAdded == 0 {
+		t.Error("the chat-on run posted nothing to the main chat, so the run proves nothing about Chat off")
+	}
 	if off.mainChatAdded != 0 {
 		t.Errorf("the chat-off run added %d main-chat rows, want none", off.mainChatAdded)
 	}
-	t.Logf("main-chat rows added: chat on %d, chat off %d", on.mainChatAdded, off.mainChatAdded)
+	for _, field := range chatOffGoldenMenuChatOnly {
+		if value, ok := off.menuChatOnly[field]; ok && value != false {
+			t.Errorf("menu bar %s with Chat off = %v, want absent or false", field, value)
+		}
+		if value, ok := on.menuChatOnly[field]; ok && value != true {
+			t.Errorf("menu bar %s with Chat on = %v, want true", field, value)
+		}
+	}
 }
 
 // chatOffGoldenBuild runs one day with the feature switches set to features:
@@ -197,6 +219,15 @@ func chatOffGoldenBuild(t *testing.T, features string) chatOffGoldenRun {
 	}
 	menu, err := app.menuBarView("en", true)
 	read("menu bar", menu, err, nil)
+	run.menuChatOnly = map[string]any{}
+	if fields, ok := run.reads["menu bar"].(map[string]any); ok {
+		for _, field := range chatOffGoldenMenuChatOnly {
+			if value, present := fields[field]; present {
+				run.menuChatOnly[field] = value
+				delete(fields, field)
+			}
+		}
+	}
 	run.mainChatAdded = chatOffGoldenMainChatRows(t, app) - before
 	return run
 }
