@@ -8,11 +8,13 @@ const mocks = vi.hoisted(() => ({
     start: vi.fn(), join: vi.fn(), answer: vi.fn(), cancel: vi.fn(), copy: vi.fn(),
     address: vi.fn(), startForApp: vi.fn(),
     statuses: vi.fn(), askAgain: vi.fn(), takeBack: vi.fn(), useful: vi.fn(), openApp: vi.fn(), history: vi.fn(), setLearn: vi.fn(),
+    deliverables: vi.fn(), openDeliverable: vi.fn(), revealDeliverable: vi.fn(),
 }));
 vi.mock("@/lib/wails-shim-app", () => ({
     GetYourAgents: mocks.agents, GetConnectedAgents: mocks.connected, GetWorkOnItHandoffs: mocks.handoffs, GetTaskLinkResults: mocks.results,
     OpenAgentFile: mocks.openFile, DisconnectAgent: mocks.disconnect, DisconnectAgentHere: mocks.disconnect, SetYourAgent: mocks.setAgent, ConnectAgentHere: vi.fn(), GetHandoffStatuses: mocks.statuses, AskAgentAgain: mocks.askAgain, TakeHandoffBack: mocks.takeBack, GetUsefulHandoffs: mocks.useful, OpenAgentApp: mocks.openApp, GetAssistantHistory: mocks.history, SetLearnFromIt: mocks.setLearn,
     StartAgentJoin: mocks.start, StartAgentJoinForApp: mocks.startForApp, GetAgentAddress: mocks.address, GetAgentJoin: mocks.join, AnswerAgentJoin: mocks.answer, CancelAgentJoin: mocks.cancel, NativeClipboardSetText: mocks.copy,
+    ListDeliverables: mocks.deliverables, OpenDeliverableFile: mocks.openDeliverable, RevealDeliverableFile: mocks.revealDeliverable,
 }));
 
 import zh from "@/i18n/locales/zh-CN/app.json";
@@ -223,6 +225,42 @@ describe("Agents page", () => {
         fireEvent.pointerDown(within(cardOf("codex")!).getByRole("button", { name: en.agents.card.changeJob }), { button: 0, pointerType: "mouse" });
         fireEvent.click(await screen.findByRole("menuitem", { name: en.agents.card.notNow }));
         await waitFor(() => expect(mocks.setAgent).toHaveBeenCalledWith("code", ""));
+    });
+
+    it("lists the files a done local hand-off's task made, with Open and Show in Finder (Tasks removal keeps them)", async () => {
+        mocks.handoffs.mockResolvedValue([{ id: "h2", sourceKind: "brief_item", kind: "code", agentId: "codex", method: "connected", text: "Draft the memo", sentAt: today(17, 0), surface: "computer", taskId: "t9", taskState: "done", taskResult: "The memo is drafted." }]);
+        mocks.results.mockResolvedValue([]);
+        mocks.statuses.mockResolvedValue([]);
+        mocks.deliverables.mockResolvedValue([
+            { id: "handoff:t9", source: "handoff", sourceId: "t9", title: "Draft the memo", summary: "", status: "completed", files: [{ path: "/w/memo.md", name: "memo.md" }], createdAt: 1, updatedAt: 2 },
+            { id: "chat:x", source: "chat", sourceId: "t9", title: "Other", summary: "", status: "completed", files: [{ path: "/w/chat.md", name: "chat.md" }], createdAt: 1, updatedAt: 2 },
+        ]);
+        mocks.openDeliverable.mockResolvedValue(undefined);
+        mocks.revealDeliverable.mockResolvedValue(undefined);
+        render(<AgentsPage now={() => now} />);
+        await screen.findByText("The memo is drafted.");
+        const file = await waitFor(() => {
+            const el = document.querySelector('[data-agents-task-file="memo.md"]') as HTMLElement | null;
+            expect(el).not.toBeNull();
+            return el!;
+        });
+        expect(document.querySelector('[data-agents-task-file="chat.md"]')).toBeNull();
+        fireEvent.click(file);
+        await waitFor(() => expect(mocks.openDeliverable).toHaveBeenCalledWith("handoff", "t9", "/w/memo.md"));
+        fireEvent.contextMenu(file);
+        fireEvent.click(await screen.findByRole("menuitem", { name: en.agents.showInFinder }));
+        await waitFor(() => expect(mocks.revealDeliverable).toHaveBeenCalledWith("handoff", "t9", "/w/memo.md"));
+    });
+
+    it("shows no task files while the hand-off's task is still running", async () => {
+        mocks.handoffs.mockResolvedValue([{ id: "h2", sourceKind: "brief_item", kind: "code", agentId: "codex", method: "connected", text: "Draft the memo", sentAt: today(17, 0), surface: "computer", taskId: "t9", taskState: "running" }]);
+        mocks.results.mockResolvedValue([]);
+        mocks.statuses.mockResolvedValue([]);
+        mocks.deliverables.mockResolvedValue([{ id: "handoff:t9", source: "handoff", sourceId: "t9", title: "Draft the memo", summary: "", status: "in_progress", files: [{ path: "/w/memo.md", name: "memo.md" }], createdAt: 1, updatedAt: 2 }]);
+        render(<AgentsPage now={() => now} />);
+        await screen.findByText(/Draft the memo/);
+        await waitFor(() => expect(mocks.deliverables).toHaveBeenCalled());
+        expect(document.querySelector("[data-agents-task-file]")).toBeNull();
     });
 
     it("counts this week's hand-offs, what came back, and what you judged useful", async () => {

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FileText, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils";
 import { markPageContent } from "@/lib/page-switch-timing";
 import {
@@ -15,12 +16,16 @@ import {
     GetUsefulHandoffs,
     GetWorkOnItHandoffs,
     GetYourAgents,
+    ListDeliverables,
+    OpenDeliverableFile,
+    RevealDeliverableFile,
     OpenAgentApp,
     OpenAgentFile,
     SetYourAgent,
     TakeHandoffBack,
     type AssistantHistoryView,
     type ConnectedAgent,
+    type DeliverableEntry,
     type HandoffStatus,
     type TaskLinkResult,
     type WorkOnItHandoff,
@@ -97,6 +102,8 @@ export function AgentsPage({ now = () => new Date(), openHandoff, onOpenActivity
     const [takesOver, setTakesOver] = useState<{ kind: WorkOnItKind; current: string; agent: string } | null>(null);
     const [history, setHistory] = useState<AssistantHistoryView | null>(null);
     const [historyFailed, setHistoryFailed] = useState(false);
+    // The files each local hand-off's task made, by task id: on its own read, so a slow scan holds up nothing else.
+    const [taskFiles, setTaskFiles] = useState<Map<string, DeliverableEntry>>(new Map());
     const cardRef = useRef<HTMLElement>(null);
     const appliedNonce = useRef<number | null>(null);
 
@@ -107,6 +114,15 @@ export function AgentsPage({ now = () => new Date(), openHandoff, onOpenActivity
             setFailed(false);
         } catch {
             setFailed(true);
+        }
+    }, []);
+
+    const reloadTaskFiles = useCallback(async () => {
+        try {
+            const rows = await ListDeliverables();
+            setTaskFiles(new Map((rows ?? []).filter((d) => d.source === "handoff" && (d.files?.length ?? 0) > 0).map((d) => [d.sourceId, d] as const)));
+        } catch {
+            // Without the read, a done hand-off shows its result line alone.
         }
     }, []);
 
@@ -123,7 +139,8 @@ export function AgentsPage({ now = () => new Date(), openHandoff, onOpenActivity
     useEffect(() => {
         void reload();
         void reloadHistory();
-    }, [reload, reloadHistory]);
+        void reloadTaskFiles();
+    }, [reload, reloadHistory, reloadTaskFiles]);
     useEffect(() => {
         if (snapshot) markPageContent("agents");
     }, [snapshot]);
@@ -302,6 +319,8 @@ export function AgentsPage({ now = () => new Date(), openHandoff, onOpenActivity
                                     language={i18n.language}
                                     onOpenAgent={(id) => void act(() => OpenAgentApp(id))}
                                     onOpenFile={(linkId, file) => void act(() => OpenAgentFile(linkId, file))}
+                                    taskFiles={entry.type === "handoff" && entry.taskId ? taskFiles.get(entry.taskId) : undefined}
+                                    onTaskFile={(files, path, reveal) => void act(() => reveal ? RevealDeliverableFile(files.source, files.sourceId, path) : OpenDeliverableFile(files.source, files.sourceId, path))}
                                     onAskAgain={(id) => void act(() => AskAgentAgain(id))}
                                     onTakeBack={(id) => void act(() => TakeHandoffBack(id))}
                                 />
@@ -443,7 +462,7 @@ function RowStatusLine({ status, lastWorkedAt, language }: { status?: HandoffSta
     }
 }
 
-function TimelineItem({ entry, status, name, opens, focused, focusNonce, language, onOpenAgent, onOpenFile, onAskAgain, onTakeBack }: {
+function TimelineItem({ entry, status, name, opens, focused, focusNonce, language, onOpenAgent, onOpenFile, taskFiles, onTaskFile, onAskAgain, onTakeBack }: {
     entry: TimelineEntry;
     status?: HandoffStatus;
     name: string;
@@ -455,6 +474,9 @@ function TimelineItem({ entry, status, name, opens, focused, focusNonce, languag
     language: string;
     onOpenAgent: (agentId: string) => void;
     onOpenFile: (linkId: string, file: string) => void;
+    /** What a local hand-off's task made (ListDeliverables, source handoff). */
+    taskFiles?: DeliverableEntry;
+    onTaskFile: (files: DeliverableEntry, path: string, reveal: boolean) => void;
     onAskAgain: (id: string) => void;
     onTakeBack: (id: string) => void;
 }) {
@@ -486,6 +508,19 @@ function TimelineItem({ entry, status, name, opens, focused, focusNonce, languag
                                 {entry.taskResult}
                             </p>
                         )}
+                        {entry.taskState === "done" && taskFiles?.files.map((file) => (
+                            <ContextMenu key={file.path}>
+                                <ContextMenuTrigger asChild>
+                                    <button type="button" title={file.path} data-agents-task-file={file.name} onClick={() => onTaskFile(taskFiles, file.path, false)} className="inline-flex items-center gap-2 self-start rounded-lg border border-border px-2.5 py-1.5 text-[13px] text-ink hover:bg-surface-hover">
+                                        <FileText className="size-4 text-icon-subtle" />
+                                        {file.name}
+                                    </button>
+                                </ContextMenuTrigger>
+                                <ContextMenuContent>
+                                    <ContextMenuItem onSelect={() => onTaskFile(taskFiles, file.path, true)}>{t("agents.showInFinder")}</ContextMenuItem>
+                                </ContextMenuContent>
+                            </ContextMenu>
+                        ))}
                         {showText && <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-lg border border-border bg-panel px-3 py-2 font-sans text-[13px] leading-relaxed text-ink" data-agents-what-went>{entry.text}</pre>}
                     </>
                 ) : (
