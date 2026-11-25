@@ -77,8 +77,6 @@ export interface TodayActionHandlers {
     /** Opens Activity on a suggestion's day, with its editable field or draft. */
     onOpenActivitySuggestion?: (target: import("@/lib/wails-shim-app").MobileBriefActivityTarget) => void;
     onOpenPeople: (personId?: string) => void;
-    /** Opens "What Isoform captured" in Settings > Observation. */
-    onOpenCaptureCounts?: () => void;
     /** Opens a Settings page (the brief's missing permissions live on
      *  "activity", Settings > Observation). */
     onOpenSettings?: (topic: string) => void;
