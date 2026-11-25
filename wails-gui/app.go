@@ -2098,6 +2098,7 @@ func (a *App) NotifyUser(title, body, clickData string) string {
 		return "suppressed"
 	}
 	showDesktopToast(title, body, a.notifyIconPath(), clickData)
+	a.speakNotification(title)
 	return "desktop"
 }
 

@@ -138,28 +138,31 @@ describe("Settings › Your watch", () => {
         await waitFor(() => expect(mocks.heart).toHaveBeenCalledTimes(2));
     });
 
-    it("shows the allow-on-the-watch line under Heart rate and Place only while each is on", async () => {
+    it("shows the one-time allow line under Heart rate only while it's on (W8)", async () => {
         mocks.settings.mockResolvedValue(settings({ heartRate: { on: true, chosen: true }, place: off }));
         const first = render(<YourWatchPage />);
         expect(await screen.findByTestId("your-watch-interim-heartRate")).toHaveTextContent(
-            "Your watch asks you to allow it the first time you open it there.",
+            "Your watch asks you to allow it once. Until you do, nothing is added.",
         );
-        expect(screen.queryByTestId("your-watch-interim-place")).not.toBeInTheDocument();
         expect(screen.queryByTestId("your-watch-apple-place")).not.toBeInTheDocument();
         expect(screen.queryByTestId("your-watch-interim-notes")).not.toBeInTheDocument();
         first.unmount();
         mocks.settings.mockResolvedValue(settings({ heartRate: off, place: { on: true, chosen: true } }));
         render(<YourWatchPage />);
-        expect(await screen.findByTestId("your-watch-interim-place")).toHaveTextContent(en.yourWatch.allowOnWatch);
+        expect(await screen.findByTestId("your-watch-apple-place")).toBeInTheDocument();
         expect(screen.queryByTestId("your-watch-interim-heartRate")).not.toBeInTheDocument();
+        expect(screen.queryByText(en.yourWatch.heartAllow)).not.toBeInTheDocument();
     });
 
-    it("says under Place, while it's on, that Apple names the area from a rounded position", async () => {
+    it("gives Place two lines: the area, then what Apple is sent while it's on (W10)", async () => {
         mocks.settings.mockResolvedValue(settings({ place: { on: true, chosen: true } }));
         render(<YourWatchPage />);
-        expect(await screen.findByTestId("your-watch-apple-place")).toHaveTextContent(
-            "Apple names the area from where you were, rounded to about a kilometre, once for each new place.",
+        const place = (await screen.findByRole("switch", { name: "Place" })).closest("[data-your-watch-row]") as HTMLElement;
+        expect(within(place).getByText('Adds the area, like "Mission District". Never the address.')).toBeInTheDocument();
+        expect(within(place).getByTestId("your-watch-apple-place")).toHaveTextContent(
+            "Apple names the area. Your watch sends Apple where you were, rounded to about a kilometre, once for each new place.",
         );
+        expect(place.querySelectorAll("p.settings-row-desc")).toHaveLength(1);
         expect(screen.queryByTestId("your-watch-apple-heartRate")).not.toBeInTheDocument();
     });
 

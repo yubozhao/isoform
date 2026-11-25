@@ -9,6 +9,7 @@ import {
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "@/i18n";
 import { ModelsPanel } from "./models-panel";
+import { SettingsDevToolsContext } from "@/components/settings/settings-dev-tools";
 import { DownloadProgressLine } from "./model-download-progress";
 import {
     modelChoicesFixture,
@@ -346,6 +347,20 @@ it("atomically displays and confirms the successful source replacement", async (
         within(sheet).getByRole("button", { name: /^Download [0-9]/ }),
     );
     await waitFor(() => expect(mocks.start).toHaveBeenCalledWith(replacement));
+});
+
+it("shows the custom mirror in Settings only while Developer tools are on (answers v1.5.0 S21)", async () => {
+    const first = render(<ModelsPanel settings />);
+    await screen.findByTestId("model-job-live");
+    expect(screen.queryByLabelText("Your own mirror")).not.toBeInTheDocument();
+    first.unmount();
+    render(
+        <SettingsDevToolsContext.Provider value>
+            <ModelsPanel settings />
+        </SettingsDevToolsContext.Provider>,
+    );
+    await screen.findByTestId("model-job-live");
+    expect(screen.getByLabelText("Your own mirror")).toBeInTheDocument();
 });
 
 it("does not offer live model alternatives in Settings", async () => {

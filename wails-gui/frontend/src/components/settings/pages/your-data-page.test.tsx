@@ -65,6 +65,13 @@ vi.mock("@/lib/wails-shim-app", () => ({
     CloseAgentAddress: mocks.closeAddress,
 }));
 vi.mock("../../../../wailsjs/runtime/runtime", () => ({ EventsOn: vi.fn(() => () => {}) }));
+// What Isoform captured (answers v1.5.0 T16), read by useCaptureCounts.
+const captured = vi.hoisted(() => ({
+    counts: null as unknown,
+    loadFailed: false,
+    refresh: vi.fn(),
+}));
+vi.mock("@/hooks/useCaptureCounts", () => ({ useCaptureCounts: () => captured }));
 // The keep-times sheet is tested on its own (keep-times-sheet.test.tsx).
 vi.mock("@/components/settings/keep-times-sheet", () => ({
     KeepTimesSheet: ({ open }: { open: boolean }) => (open ? <div data-testid="keep-times-sheet" /> : null),
@@ -83,7 +90,47 @@ describe("Settings › Your data", () => {
         mocks.servers = [];
         mocks.tier = "off";
         mocks.tierFails = false;
+        captured.counts = null;
+        captured.loadFailed = false;
         vi.clearAllMocks();
+    });
+
+    it("puts what Isoform captured on the source rows, today and in 7 days (answers v1.5.0 T16)", async () => {
+        captured.counts = {
+            paused: true,
+            notReady: false,
+            todayStart: 0,
+            weekStart: 0,
+            sources: [
+                { source: "screens", today: 412, week: 2903 },
+                { source: "audioMinutes", today: 38, week: 210 },
+                { source: "calendarEvents", today: 0, week: 14 },
+                { source: "typing", today: 0, week: 0 },
+            ],
+        };
+        render(<YourDataPage />);
+        await screen.findByText(/3 apps never seen/);
+        const lines = (key: string) => [...row(key).querySelectorAll("[data-your-data-counts]")].map((el) => el.textContent);
+        expect(lines("screen")).toEqual(["Screens seen · today 412 · 7 days 2,903"]);
+        expect(lines("calls")).toEqual(["Minutes with speech transcribed · today 38 · 7 days 210"]);
+        expect(lines("mail")).toEqual(["Calendar events read · today 0 · 7 days 14"]);
+        expect(lines("messages")).toEqual([]);
+        // The card's Paused line went with it.
+        expect(screen.queryByText(/Paused\./)).not.toBeInTheDocument();
+    });
+
+    it("shows no counts until activity.db answers, and a failed read with Try again", async () => {
+        captured.counts = { paused: false, notReady: true, todayStart: 0, weekStart: 0, sources: [{ source: "screens", today: 4, week: 9 }] };
+        const first = render(<YourDataPage />);
+        await screen.findByText(/3 apps never seen/);
+        expect(document.querySelector("[data-your-data-counts]")).toBeNull();
+        first.unmount();
+        captured.counts = null;
+        captured.loadFailed = true;
+        render(<YourDataPage />);
+        const failure = await screen.findByText("Couldn't read what Isoform captured today and this week.");
+        fireEvent.click(within(failure.closest("[data-settings-failure]") as HTMLElement).getByRole("button", { name: "Try again" }));
+        expect(captured.refresh).toHaveBeenCalled();
     });
 
     it("keeps the six sources of What Isoform sees in its order, with keep times, sizes and the whole", async () => {

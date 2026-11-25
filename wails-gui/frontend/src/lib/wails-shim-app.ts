@@ -4504,6 +4504,9 @@ export interface WatchListeningView {
 }
 export const GetWatchListening = appBinding<[], WatchListeningView>("GetWatchListening");
 export const TurnOffWatchListening = appBinding<[], WatchListeningView>("TurnOffWatchListening");
+/** The browsers whose history is read on this computer, for What Isoform
+ *  sees › Screen's line (browsers_read.go). */
+export const GetBrowsersRead = appBinding<[], string[]>("GetBrowsersRead");
 /** WeChat pictures in What Isoform sees › Screen (activity_vision_switch.go). */
 export interface ActivityVisionView {
     enabled: boolean;

@@ -512,7 +512,7 @@ describe('Violet source and app parity', () => {
         const narrow = readFileSync(resolve(src, '../../../ios/Yansu/TabRootBar.swift'), 'utf8');
         const wide = readFileSync(resolve(src, '../../../ios/Yansu/DuoWideRootView.swift'), 'utf8');
         expect(root).toContain('.toolbar(.hidden, for: .tabBar)');
-        expect(root).toContain('FloatingTabBar(router: router, chat: environment.chat, tasks: environment.tasks)');
+        expect(root).toContain('FloatingTabBar(router: router, chat: environment.chat, tasks: environment.tasks, tabs: rootTabs)');
         expect(narrow).toContain('selected ? YansuTheme.accent : YansuTheme.secondary');
         expect(wide).toContain('.foregroundStyle(isSelected ? YansuTheme.accent : YansuTheme.secondary)');
     });

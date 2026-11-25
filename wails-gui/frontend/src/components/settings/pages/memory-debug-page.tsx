@@ -21,7 +21,7 @@ import { MemoryContextDebugSettings } from "@/components/memory-context-debug-se
 import { DailyTopicsPreview } from "@/components/daily-topics-preview";
 import { SettingsCard } from "@/components/settings/settings-primitives";
 import { formatBytes } from "@/components/settings/settings-format";
-import { LearnByComparisonSettings, LearningFeaturesSettings } from "./learning-features";
+import { LearningFeaturesSettings, PredictionConfidenceSettings } from "./learning-features";
 
 // ── Search index ──
 //
@@ -452,9 +452,9 @@ function DailyTopicsPreviewCard() {
 /**
  * Developer tools › Memory and search, from Learning and memory when that
  * page went (settings batch D3):
- * - what Isoform learns and learn by comparison, unchanged; the same switches
- *   are on Plugins, the ordinary place to turn them off, until design places
- *   them;
+ * - what Isoform learns, and Prediction confidence (Learn by comparison went:
+ *   nothing read it, answers v1.5.0 S16); the learning switches are also on
+ *   Plugins until design places them;
  * - the chat context preview, the daily topics preview and the search index
  *   (embedding provider, status, model download), which were already shown
  *   only with Developer tools on.
@@ -463,7 +463,7 @@ export function MemoryDebugPage() {
     return (
         <>
             <LearningFeaturesSettings />
-            <LearnByComparisonSettings />
+            <PredictionConfidenceSettings />
             <ChatContextPreviewCard />
             <DailyTopicsPreviewCard />
             <SearchIndexSettings />

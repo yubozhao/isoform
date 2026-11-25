@@ -8,15 +8,24 @@ enum DuoTab: Hashable {
 
     /// The rail's tabs, top to bottom: Today, Watch, Chat (phone-map v1.0.0 rule 4). Watch shows
     /// by the same rule as on the narrow bar (rule 80, `WatchRecordingsModel.showsWatchTab`).
-    static func rail(showsWatch: Bool) -> [DuoTab] {
-        showsWatch ? [.today, .watch, .chat] : [.today, .chat]
+    static func rail(showsWatch: Bool, showsChat: Bool = true) -> [DuoTab] {
+        PhoneTabs.root(chatAvailable: showsChat, watchPaired: showsWatch).compactMap(DuoTab.init(routerTab:))
+    }
+
+    init?(routerTab: NotificationRouter.Tab) {
+        switch routerTab {
+        case .today: self = .today
+        case .watch: self = .watch
+        case .chat: self = .chat
+        case .tasks, .settings: return nil
+        }
     }
 
     /// The tab the wide layout shows for the app's selected tab. With no watch there is no
     /// Watch tab, and a link to it lands on Today.
-    static func shown(for tab: NotificationRouter.Tab, showsWatch: Bool) -> DuoTab {
+    static func shown(for tab: NotificationRouter.Tab, showsWatch: Bool, showsChat: Bool = true) -> DuoTab {
         switch tab {
-        case .chat: return .chat
+        case .chat: return showsChat ? .chat : .today
         case .watch: return showsWatch ? .watch : .today
         case .today, .tasks, .settings: return .today
         }

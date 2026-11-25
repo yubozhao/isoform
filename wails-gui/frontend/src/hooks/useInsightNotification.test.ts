@@ -13,23 +13,22 @@ vi.mock("../../wailsjs/runtime/runtime", () => ({
     }),
 }));
 vi.mock("@/lib/notify", () => ({ notifyImportant: vi.fn() }));
-vi.mock("../lib/tts-player", () => ({ maybeSpeakNotification: vi.fn(() => Promise.resolve()) }));
 
 import { notifyImportant } from "@/lib/notify";
-import { maybeSpeakNotification } from "../lib/tts-player";
 import { useInsightNotification } from "./useInsightNotification";
 
+// Speech is no longer the frontend's: notifyImportant goes through NotifyUser,
+// which says the title when Read notifications aloud allows it
+// (notification_speech.go). A notice that isn't shown is never said.
 describe("useInsightNotification", () => {
     beforeEach(() => {
         vi.mocked(notifyImportant).mockClear();
-        vi.mocked(maybeSpeakNotification).mockClear();
     });
 
     it("stays silent for meeting notes from a recorded call", () => {
         renderHook(() => useInsightNotification());
         handlers["insight:saved"]({ kind: "knowledge", id: "meeting-1", title: "Meeting notes: Halcyon Meet, Oct 15 14:00", source: "meeting" });
         expect(notifyImportant).not.toHaveBeenCalled();
-        expect(maybeSpeakNotification).not.toHaveBeenCalled();
     });
 
     it("still announces other new knowledge", () => {
@@ -38,6 +37,5 @@ describe("useInsightNotification", () => {
         expect(notifyImportant).toHaveBeenCalledTimes(1);
         expect(vi.mocked(notifyImportant).mock.calls[0][1]).toBe("Open Isoform for the latest update.");
         expect(JSON.stringify(vi.mocked(notifyImportant).mock.calls)).not.toContain("How the release works");
-        expect(maybeSpeakNotification).not.toHaveBeenCalled();
     });
 });

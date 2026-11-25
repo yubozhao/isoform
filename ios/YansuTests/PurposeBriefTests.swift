@@ -292,7 +292,7 @@ final class PurposeBriefTests: XCTestCase {
             let text = try renderedText(BriefContentView(brief: brief, now: now)
                 .environmentObject(environment.actions)
                 .environmentObject(environment.pairing).environmentObject(environment)
-                .environmentObject(environment.chat).environmentObject(environment.brief)
+                .environmentObject(environment.chat).environmentObject(environment.chatAvailability).environmentObject(environment.brief)
                 .environmentObject(environment.router), name: "Due labels in \(section)")
             XCTAssertTrue(text.contains("due today"), text)
             XCTAssertTrue(text.contains("overdue"), text)
@@ -328,7 +328,7 @@ final class PurposeBriefTests: XCTestCase {
             func snapshot(_ name: String) throws -> String {
                 try renderedText(content.environmentObject(environment.actions)
                     .environmentObject(environment.pairing).environmentObject(environment)
-                    .environmentObject(environment.chat).environmentObject(environment.brief)
+                    .environmentObject(environment.chat).environmentObject(environment.chatAvailability).environmentObject(environment.brief)
                     .environmentObject(environment.router), name: name)
             }
             let before = try snapshot("Before midnight in \(section)")
@@ -386,7 +386,7 @@ final class PurposeBriefTests: XCTestCase {
             try renderedText(BriefContentView(brief: brief)
                 .environmentObject(environment.actions)
                 .environmentObject(environment.pairing).environmentObject(environment)
-                .environmentObject(environment.chat).environmentObject(environment.brief)
+                .environmentObject(environment.chat).environmentObject(environment.chatAvailability).environmentObject(environment.brief)
                 .environmentObject(environment.router), name: name)
         }
 
@@ -480,7 +480,7 @@ final class PurposeBriefTests: XCTestCase {
                 .environmentObject(environment.actions)
                 .environmentObject(environment.pairing)
                 .environmentObject(environment.router).environmentObject(environment)
-                .environmentObject(environment.chat).environmentObject(environment.brief), name: "Unavailable evidence in \(section)")
+                .environmentObject(environment.chat).environmentObject(environment.chatAvailability).environmentObject(environment.brief), name: "Unavailable evidence in \(section)")
             XCTAssertTrue(text.contains("ship the beta"), text)
             XCTAssertTrue(text.contains("active"), text)
             XCTAssertTrue(text.contains("evidence no longer on this mac"), text)
@@ -564,7 +564,7 @@ final class PurposeBriefTests: XCTestCase {
         let text = try renderedText(BriefContentView(brief: brief)
             .environmentObject(environment.actions)
             .environmentObject(environment.pairing).environmentObject(environment)
-            .environmentObject(environment.chat).environmentObject(environment.brief)
+            .environmentObject(environment.chat).environmentObject(environment.chatAvailability).environmentObject(environment.brief)
             .environmentObject(environment.router), name: "Brief with covered open loops")
         XCTAssertTrue(text.contains("ship the companion"), text)
         XCTAssertFalse(text.contains("no open loops right now"), text)

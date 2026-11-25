@@ -9,7 +9,8 @@ import { KeepTimesSheet } from "@/components/settings/keep-times-sheet";
 import { WhatLeavesCard } from "@/components/settings/what-leaves-card";
 import { Button } from "@/components/ui/button";
 import type { SettingsPageId } from "@/components/settings/settings-registry";
-import { DeleteAnswers, ExportAnswers, GetYourDataSummary, type YourDataSummary } from "@/lib/wails-shim-app";
+import { DeleteAnswers, ExportAnswers, GetYourDataSummary, type CaptureCountSource, type YourDataSummary } from "@/lib/wails-shim-app";
+import { useCaptureCounts } from "@/hooks/useCaptureCounts";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useSettingsFailure } from "@/components/settings/settings-failure";
 import { openSettingsPage, type OpenSettingsPage } from "./capture-shared";
@@ -32,6 +33,15 @@ function handoffAgentName(agent: string, t: TFunction<"settings">): string {
 }
 
 type SourceKey = "screen" | "calls" | "mail" | "messages" | "watch" | "agentsHistory";
+
+/** What Isoform captured, today and in the last seven days, on the source row
+ *  it came from (answers v1.5.0 T16: the captured-counts card went from What
+ *  Isoform sees). A kind Go adds later stays hidden until it gets a row. */
+const COUNTS_BY_SOURCE: Partial<Record<SourceKey, CaptureCountSource[]>> = {
+    screen: ["screens", "textRead", "typing"],
+    calls: ["audioMinutes", "meetings"],
+    mail: ["calendarEvents", "calendarPeeks"],
+};
 
 /** Settings › Your data (computer-data v1.0.0): what it keeps, by the six
  *  sources of What Isoform sees in its order, with keep times and sizes; the
@@ -120,6 +130,23 @@ export function YourDataPage({ onOpenPage }: { onOpenPage?: OpenSettingsPage } =
     const unknown = (key: "callsOn" | "messagesOn" | "agentsHistoryOn") => summary !== null && summary[key] === undefined;
     const switchFailure = { text: t("yourData.switchReadFailed"), retry: () => reload() };
     const line = (...parts: Array<string | undefined>) => parts.filter(Boolean).join(" · ");
+    // Numbers only once activity.db answers; while observing is paused they
+    // still say what was kept (the card's "Paused" line went with it).
+    const captured = useCaptureCounts();
+    const countFormat = new Intl.NumberFormat(i18n.language);
+    const countLines = (key: SourceKey): string[] => {
+        const kinds = COUNTS_BY_SOURCE[key];
+        if (!kinds || !captured.counts || captured.counts.notReady) return [];
+        return (captured.counts.sources ?? [])
+            .filter((row) => kinds.includes(row.source) && row.week > 0)
+            .map((row) =>
+                t("yourData.counted", {
+                    kind: t(`yourData.countKinds.${row.source}` as never),
+                    today: countFormat.format(row.today),
+                    week: countFormat.format(row.week),
+                }),
+            );
+    };
     const size = (bytes: number | undefined) => (bytes && bytes > 0 ? formatBytes(bytes) : undefined);
 
     const byAgent = Object.entries(summary?.handoffsByAgent ?? {})
@@ -156,11 +183,29 @@ export function YourDataPage({ onOpenPage }: { onOpenPage?: OpenSettingsPage } =
         <>
             {loadFailed && <SettingsFailureLine failure={{ text: t("yourData.loadFailed"), retry: reload }} />}
             <SettingsCard title={t("yourData.keeps")}>
-                {sources.map((source) => (
-                    <div key={source.key} data-your-data-row={source.key}>
-                        <SettingsRow title={source.title} description={source.description} control={source.control} failure={source.failure} />
-                    </div>
-                ))}
+                {sources.map((source) => {
+                    const lines = countLines(source.key);
+                    return (
+                        <div key={source.key} data-your-data-row={source.key}>
+                            <SettingsRow
+                                title={source.title}
+                                description={lines.length > 0 ? (
+                                    <>
+                                        {source.description}
+                                        {lines.map((text, index) => (
+                                            <span key={index} className="block" data-your-data-counts={source.key}>{text}</span>
+                                        ))}
+                                    </>
+                                ) : source.description}
+                                control={source.control}
+                                failure={source.failure}
+                            />
+                        </div>
+                    );
+                })}
+                {captured.loadFailed && (
+                    <SettingsFailureLine failure={{ text: t("yourData.countsFailed"), retry: () => captured.refresh() }} />
+                )}
                 {summary && summary.capBytes > 0 && (
                     <div data-your-data-row="total">
                         <SettingsRow

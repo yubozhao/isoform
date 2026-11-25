@@ -33,6 +33,8 @@ final class AppEnvironment: ObservableObject {
     let actions: ActionStore
     let weekDeclines: YourWeekDeclineStore
     let chat: ChatStore
+    /// Whether the computer offers Chat (scope cut A6): hides Chat's screens and purges its cache once.
+    let chatAvailability: ChatAvailabilityStore
     let feed: FeedStore
     let goals: GoalStore
     let ideas: IdeasStore
@@ -111,6 +113,8 @@ final class AppEnvironment: ObservableObject {
          todayURL: URL? = nil,
          notificationSettingsURL: URL? = nil,
          presenceOverride: (@Sendable () async throws -> Bool)? = nil,
+         chatStatusRead: (@MainActor () async throws -> HubStatus)? = nil,
+         chatAvailabilityDefaults: UserDefaults? = nil,
          removeLocalItem: @escaping (URL) throws -> Void = { try FileManager.default.removeItem(at: $0) }) {
         let vault = PairingVault(directory: directory, secrets: secrets)
         RemoteAccess.shared.configure(vault: vault)
@@ -219,6 +223,10 @@ final class AppEnvironment: ObservableObject {
                               isPaired: { pairing.isPaired },
                               cache: ChatCache(directory: chatDirectory, removeItem: removeLocalItem),
                               isRemote: { vault.isRemote })
+        let chatStore = self.chat
+        self.chatAvailability = ChatAvailabilityStore(defaults: chatAvailabilityDefaults ?? pushDefaults,
+                                                      readStatus: chatStatusRead ?? { try await hub.abilities() },
+                                                      purge: { chatStore.purgeForChatOff() })
         // Messages that waited for the computer go as soon as the phone hears from it again.
         // The Feed's file sits beside the write journal, so a test that isolates the journal isolates it too.
         self.feed = FeedStore(hub: feedHub ?? hub, journal: journal, guardian: LocalDecisionGuard(), isPaired: { pairing.isPaired },
@@ -563,7 +571,7 @@ final class AppEnvironment: ObservableObject {
             await actions.pruneJournal(keepingKeys: queuedKeys)
             if push.isReadyForRevocation { await pairing.retryPendingRevocations() }
         }
-        chat.resumeQueuedMessages()
+        if chatAvailability.chatShown { chat.resumeQueuedMessages() }
         Task { await weekDeclines.retryPending() }
     }
 
@@ -582,6 +590,7 @@ final class AppEnvironment: ObservableObject {
             let status = try await hub.perform(.status, timeout: 10).payload(HubStatus.self)
             guard vault.current()?.deviceID == identity.deviceID, vault.current()?.hubID == identity.hubID else { return false }
             keepAwake.accept(status)
+            chatAvailability.accept(status)
             let previous = today.snapshot
             let snapshot = try await hub.today(timeout: 10)
             try Task.checkCancellation()
@@ -809,6 +818,7 @@ final class AppEnvironment: ObservableObject {
         let audioCleared = audioPlayer.resetForPairing(hubID: vault.current()?.hubID)
         let briefCleared = brief.clearAfterUnpair()
         let chatCleared = chat.clearAfterUnpair()
+        chatAvailability.send(.unpaired)
         let notificationsCleared = notifications.clearAfterUnpair()
         keepAwake.clear()
         let todayCleared = today.clearAfterPairingChange()

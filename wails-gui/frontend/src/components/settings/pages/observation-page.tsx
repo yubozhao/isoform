@@ -23,6 +23,7 @@ import {
     GetModelChoices,
     PlanSetupModelDownload,
     GetWatchListening,
+    GetBrowsersRead,
     TurnOffWatchListening,
     type WatchListeningView,
     GetCalendarOverview,
@@ -80,7 +81,6 @@ import {
     type ListeningState,
     type OpenSettingsPage,
 } from "./capture-shared";
-import { CapturedCountsCard } from "./captured-counts-card";
 import { ContactsPermissionRow } from "@/components/settings/sources/contacts-permission-row";
 
 // ── What Isoform sees (page id "activity") ──
@@ -94,8 +94,8 @@ import { ContactsPermissionRow } from "@/components/settings/sources/contacts-pe
 // and speech model rows, and the apps it doesn't listen to; Mail, calendar
 // and reminders has the three cards; Messages its card; Your agents' history
 // the Claude Code and Codex switch. Copy and calendar holds went (answers
-// v1.0.0 T2). The captured counts stay at the foot (anchor "captured",
-// linked from Today).
+// v1.0.0 T2). The captured counts went to Your data's source rows (answers
+// v1.5.0 T16).
 
 const CLOSED_EYES_CHANGED_EVENT = "closed-eyes:changed";
 const CALENDAR_SYNCED_EVENT = "calendar:synced";
@@ -1262,6 +1262,7 @@ function MessagesCard({
     const [refreshing, setRefreshing] = useState(false);
     const [changing, setChanging] = useState(false);
     const [pendingRead, setPendingRead] = useState<boolean | null>(null);
+    const [askingForget, setAskingForget] = useState(false);
 
     const reload = useCallback(() => {
         GetMessagesOverview()
@@ -1345,6 +1346,7 @@ function MessagesCard({
         }
     };
 
+    const forgetTitle = t("sees.forgetSource", { source: t("sees.messages") });
     const handleForget = async () => {
         setChanging(true);
         try {
@@ -1429,9 +1431,8 @@ function MessagesCard({
                     }
                 />
             )}
-            {/* Contacts access, used to name the people you know (settings
-                batch D3, from Learning and memory; design to place). Shows
-                only while Contacts is missing. */}
+            {/* Contacts, Messages' own line: who "people you know" are, its
+                state and what Messages does without it (answers v1.5.0 S15). */}
             {onOpenPeople && <ContactsPermissionRow onOpenPeople={onOpenPeople} />}
             {leftOut.map((person) => {
                 const name = person.name || t("observation.messages.leftOut.unnamed");
@@ -1453,16 +1454,33 @@ function MessagesCard({
                     />
                 );
             })}
+            {/* computer-settings v1.0.0 rule 3 (kept by answers v1.5.0 T16):
+                the details end with Forget everything from the source, which
+                asks first with what it removes. Only while something is kept. */}
             {kept > 0 && (
-                <SettingsRow
-                    title={t("observation.messages.forget.title")}
-                    description={t("observation.messages.forget.description")}
-                    control={
-                        <Button size="sm" variant="outline" onClick={() => void handleForget()} disabled={changing}>
-                            {t("observation.messages.forget.action")}
-                        </Button>
-                    }
-                />
+                <>
+                    <SettingsRow
+                        title={forgetTitle}
+                        description={t("observation.messages.forget.description")}
+                        control={
+                            <Button size="sm" variant="outline" onClick={() => setAskingForget(true)} disabled={changing}>
+                                {t("sees.forget")}
+                            </Button>
+                        }
+                    />
+                    <ConfirmDialog
+                        open={askingForget}
+                        onOpenChange={setAskingForget}
+                        title={forgetTitle}
+                        description={t("observation.messages.forget.description")}
+                        confirmLabel={t("sees.forget")}
+                        variant="danger"
+                        onConfirm={() => {
+                            setAskingForget(false);
+                            void handleForget();
+                        }}
+                    />
+                </>
             )}
             <SettingsFailureLine failure={changeFailure} />
         </SettingsCard>
@@ -1756,7 +1774,34 @@ function usePermissionSwitch(failedText: string, onChanged: () => Promise<unknow
     return { pending, failure, change };
 }
 
-function ScreenRow({ permissions, readFailed, paused, onChanged, onOpen }: {
+/** Screen's line names the browsers whose history is read on this computer
+ *  (answers v1.5.0 T16), from the reader's own list (GetBrowsersRead). With
+ *  none, it says only what's on screen. Until the names are read, or if the
+ *  read fails, it keeps the interim line, which says more, never less. */
+function useScreenLine(): string {
+    const { t, i18n } = useTranslation("settings");
+    const [browsers, setBrowsers] = useState<string[] | null>(null);
+    useEffect(() => {
+        let live = true;
+        GetBrowsersRead()
+            .then((names) => {
+                if (live) setBrowsers(Array.isArray(names) ? names : null);
+            })
+            .catch(() => {
+                if (live) setBrowsers(null);
+            });
+        return () => {
+            live = false;
+        };
+    }, []);
+    if (browsers === null) return t("sees.screenSubInterim");
+    if (browsers.length === 0) return t("sees.screenSubNone");
+    const list = new Intl.ListFormat(i18n.language, { style: "long", type: "conjunction" }).format(browsers);
+    return t("sees.screenSub", { browsers: list });
+}
+
+function ScreenRow({ line, permissions, readFailed, paused, onChanged, onOpen }: {
+    line: string;
     permissions: PlatformPermissions | null;
     readFailed: boolean;
     paused: boolean;
@@ -1774,7 +1819,7 @@ function ScreenRow({ permissions, readFailed, paused, onChanged, onOpen }: {
         <SourceRow
             id="screen"
             title={title}
-            line={t("sees.screenSub")}
+            line={line}
             hint={permissions && missing.length > 0 ? t("sees.needsAccess") : undefined}
             failure={!permissions && readFailed ? readFailure(t, () => void onChanged()) : sw.failure}
             control={permissions && (
@@ -1815,7 +1860,9 @@ function useSpeechSpace(enabled: boolean) {
         return () => window.removeEventListener("focus", read);
     }, [enabled, read]);
     const short = plan !== null && plan.items.length > 0 && !plan.enoughSpace;
-    return { plan: short ? plan : null, failed, read };
+    // Not here yet, short of disk or not: what's heard is kept until it is.
+    const missing = plan !== null && plan.items.length > 0;
+    return { plan: short ? plan : null, missing, failed, read };
 }
 
 /** Until the speech model is here and while there's no room for it: the
@@ -1988,6 +2035,11 @@ function WatchRow() {
         }
     };
 
+    // While the watch listens and speech recognition isn't here yet, its talk
+    // waits to be transcribed (answers v1.5.0 S14). Listen on the computer
+    // doesn't decide it.
+    const watchListening = view !== null && !view.off && view.hasWatch;
+    const space = useSpeechSpace(watchListening && isWailsEnvironment());
     const title = t("sees.watch");
     let hint: string | undefined;
     let control: ReactNode = null;
@@ -2012,6 +2064,13 @@ function WatchRow() {
             title={title}
             line={t("sees.watchSub")}
             hint={hint}
+            below={watchListening && isWailsEnvironment() ? (
+                space.failed ? (
+                    <SettingsFailureLine failure={{ text: t("sees.speechSpaceFailed"), retry: space.read }} />
+                ) : space.missing ? (
+                    <span className="settings-row-desc" data-testid="sees-watch-speech-wait">{t("sees.watchSpeechWait")}</span>
+                ) : undefined
+            ) : undefined}
             failure={readFailed ? readFailure(t, read) : failure}
             control={control}
         />
@@ -2095,6 +2154,7 @@ export function ObservationPage({
     const { permissions, readFailed, refresh, requestPermission } = usePermissions();
     const { paused: closedEyes } = useClosedEyes();
     const listening = useListening();
+    const screenLine = useScreenLine();
     const paused = closedEyes === true;
     const [open, setOpen] = useState<SourceId | null>(() => sourceForAnchor(anchor));
     const [asking, setAsking] = useState(false);
@@ -2126,7 +2186,7 @@ export function ObservationPage({
 
     if (open) {
         const titles: Record<SourceId, [string, string]> = {
-            screen: [t("sees.screen"), t("sees.screenSub")],
+            screen: [t("sees.screen"), screenLine],
             calls: [t("sees.calls"), t("sees.callsSub")],
             mail: [t("sees.mailCalRem"), t("sees.mailCalRemSub")],
             messages: [t("sees.messages"), t("sees.messagesSub")],
@@ -2177,14 +2237,13 @@ export function ObservationPage({
             {/* computer-settings v1.0.0 rule 2's order, with Reminders in
                 Mail and calendar and Files in Screen (answers v1.0.0 T2). */}
             <div className="settings-card settings-card--padded" data-testid="sees-rows">
-                <ScreenRow permissions={permissions} readFailed={readFailed} paused={paused} onChanged={refresh} onOpen={() => setOpen("screen")} />
+                <ScreenRow line={screenLine} permissions={permissions} readFailed={readFailed} paused={paused} onChanged={refresh} onOpen={() => setOpen("screen")} />
                 <CallsRow listening={listening} permissions={permissions} paused={paused} onOpen={() => setOpen("calls")} />
                 <MailCalendarRemindersRow permissions={permissions} readFailed={readFailed} paused={paused} onChanged={refresh} onOpen={() => setOpen("mail")} />
                 <MessagesRow permissions={permissions} readFailed={readFailed} paused={paused} onChanged={refresh} onTurnedOn={askForMessages} onOpen={() => setOpen("messages")} />
                 <WatchRow />
                 <AgentsHistoryRow onOpen={() => setOpen("agents")} />
             </div>
-            <CapturedCountsCard />
             {ask}
         </>
     );

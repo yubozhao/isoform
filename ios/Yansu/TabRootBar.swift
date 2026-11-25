@@ -215,6 +215,8 @@ struct FloatingTabBar: View {
     @ObservedObject var chat: ChatStore
     @ObservedObject var tasks: TasksStore
     @ObservedObject var watch: WatchRecordingsModel = .shared
+    /// The root pages (PhoneTabs.root): the bar draws only these.
+    let tabs: [NotificationRouter.Tab]
     @Environment(\.locale) private var locale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var selectedTabLens
@@ -231,11 +233,13 @@ struct FloatingTabBar: View {
     var body: some View {
         HStack(spacing: 4) {
             tab(.today, title: RootView.tabTitle(.today, locale: locale), symbol: "sun.max")
-            if watch.showsWatchTab {
+            if tabs.contains(.watch) {
                 tab(.watch, title: RootView.tabTitle(.watch, locale: locale), symbol: "applewatch")
             }
-            tab(.chat, title: RootView.tabTitle(.chat, locale: locale), symbol: "bubble.left",
-                showsDot: chatNeedsAttention)
+            if tabs.contains(.chat) {
+                tab(.chat, title: RootView.tabTitle(.chat, locale: locale), symbol: "bubble.left",
+                    showsDot: chatNeedsAttention)
+            }
         }
         .padding(router.isTabBarCompact ? 4 : 6)
         .background(.ultraThinMaterial, in: Capsule())

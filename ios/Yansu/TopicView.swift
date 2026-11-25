@@ -16,6 +16,7 @@ struct TopicView: View {
     @EnvironmentObject private var router: NotificationRouter
     @EnvironmentObject private var actions: ActionStore
     @EnvironmentObject private var chat: ChatStore
+    @EnvironmentObject private var chatAvailability: ChatAvailabilityStore
     @FocusState private var composerFocused: Bool
     @Environment(\.tabChromeHeight) private var tabChromeHeight
 
@@ -48,7 +49,8 @@ struct TopicView: View {
                 .onChange(of: thread.items.last?.id) { _, _ in proxy.scrollTo(Self.bottom, anchor: .bottom) }
                 .onChange(of: thread.pending) { _, _ in proxy.scrollTo(Self.bottom, anchor: .bottom) }
             }
-            if showsComposer {
+            // With Chat off a topic message would fail on the computer (`feature_off: chat`), so no box (scope cut A6).
+            if showsComposer, chatAvailability.chatShown {
                 composer
             }
         }

@@ -9,6 +9,7 @@ struct BriefContentView: View {
     var topics: TopicStore? = nil
     @EnvironmentObject private var actions: ActionStore
     @EnvironmentObject private var pairing: PairingStore
+    @EnvironmentObject private var chatAvailability: ChatAvailabilityStore
     @EnvironmentObject private var environment: AppEnvironment
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var correctionHolds = DecisionHoldCoordinator()
@@ -148,6 +149,7 @@ struct BriefContentView: View {
             if let card, !readOnly {
                 BriefItemActions(card: card,
                                  canGiveFeedback: SettingsView.allowsFeedFeedback(pairing.paired?.scopes ?? []),
+                                 offersUseful: chatAvailability.chatShown,
                                  feed: environment.feed, today: environment.today, briefStore: environment.brief)
             }
             if let target = memoryCorrection, singleMemory(for: item)?.id == target.id {

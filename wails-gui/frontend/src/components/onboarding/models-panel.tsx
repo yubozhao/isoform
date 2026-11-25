@@ -39,6 +39,7 @@ import {
     modelEvaluationTable,
 } from "@/lib/setup-model-copy";
 import { formatBytes } from "@/components/settings/settings-format";
+import { useSettingsDevTools } from "@/components/settings/settings-dev-tools";
 import { SetupBody, SetupFooter, SetupHeading } from "./setup-layout";
 // Settings › Storage › Models keeps the setup board styles it was drawn with.
 import "./setup.css";
@@ -85,6 +86,7 @@ export function ModelsPanel({
     onBack?: () => void;
 }) {
     const { t } = useTranslation("onboarding");
+    const devTools = useSettingsDevTools();
     const { choices, downloads, network, refresh, error, unavailable } =
         useSetupModels();
     const [sourceDefaults, setSourceDefaults] = useState<
@@ -708,6 +710,11 @@ export function ModelsPanel({
                                     </Select>
                                 </div>
                             ))}
+                        {/* The custom mirror is a Developer tools detail
+                            (computer-conformance answers v1.5.0 S21); a saved
+                            one stays a source to pick above. */}
+                        {devTools && (
+                        <>
                         <label
                             className="text-xs text-muted"
                             htmlFor="setup-custom-mirror"
@@ -745,6 +752,8 @@ export function ModelsPanel({
                                 {t("models.saveFolder")}
                             </Button>
                         </div>
+                        </>
+                        )}
                         {sourceSaveFailed && (
                             <p role="alert" className="text-xs text-error">
                                 {t("models.sourceSaveFailed")}

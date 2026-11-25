@@ -292,9 +292,11 @@ type ModelsState =
  * microphone says (answers v1.2.0 S11). Their size is the catalog's for the
  * chosen models; short of disk, the line setup shows (ModelsLine) says what
  * they wait for. Sizes and free space come from setup's own bindings
- * (GetModelChoices, PlanSetupModelDownload), not a second one.
+ * (GetModelChoices, PlanSetupModelDownload), not a second one. The line opens
+ * Models › (answers v1.5.0 S21): each model by its job, size and state, with
+ * where it downloads from.
  */
-export function AboutModels() {
+export function AboutModels({ onOpen }: { onOpen?: () => void } = {}) {
     const { t, i18n } = useTranslation("settings");
     const [state, setState] = useState<ModelsState>({ kind: "loading" });
 
@@ -325,25 +327,34 @@ export function AboutModels() {
 
     return (
         <SettingsCard>
-            <div className="flex flex-col gap-1" data-testid="about-models">
-                {state.kind === "failed" ? (
-                    <SettingReadError retry={() => void read()} />
-                ) : state.kind === "loading" ? (
-                    <div aria-hidden className="h-4 w-64 rounded bg-active-row-bg animate-pulse" />
-                ) : (
-                    <>
-                        <span className="settings-row-title">
-                            {t("about.models", { size: formatModelBytes(state.size) })}
-                        </span>
-                        {state.short && (
-                            <span className="settings-row-desc text-warning" data-testid="about-models-short">
-                                {t("about.modelsShort", {
-                                    size: formatModelBytes(state.short.size),
-                                    free: formatModelBytes(state.short.free),
-                                })}
+            <div className="flex items-center gap-3">
+                <div className="flex flex-col gap-1 min-w-0 flex-1" data-testid="about-models">
+                    {state.kind === "failed" ? (
+                        <SettingReadError retry={() => void read()} />
+                    ) : state.kind === "loading" ? (
+                        <div aria-hidden className="h-4 w-64 rounded bg-active-row-bg animate-pulse" />
+                    ) : (
+                        <>
+                            <span className="settings-row-title">
+                                {t("about.models", { size: formatModelBytes(state.size) })}
                             </span>
-                        )}
-                    </>
+                            {state.short && (
+                                <span className="settings-row-desc text-warning" data-testid="about-models-short">
+                                    {t("about.modelsShort", {
+                                        size: formatModelBytes(state.short.size),
+                                        free: formatModelBytes(state.short.free),
+                                    })}
+                                </span>
+                            )}
+                        </>
+                    )}
+                </div>
+                {/* Models › opens whatever the line's read did: the page
+                    reads the models itself and says its own failure. */}
+                {onOpen && (
+                    <Button size="sm" variant="outline" className="shrink-0" onClick={onOpen}>
+                        {t("about.modelsOpen")}
+                    </Button>
                 )}
             </div>
         </SettingsCard>
