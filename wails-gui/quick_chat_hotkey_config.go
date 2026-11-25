@@ -134,6 +134,16 @@ func validateQuickChatHotkey(c QuickChatHotkeyConfig) error {
 
 // GetQuickChatHotkey is the Wails binding the renderer calls on mount to
 // hydrate the visible binding for the `quick-chat-global` action.
+// tapQuickChatHotkey is the Quick chat key the global key tap matches: the
+// saved one while Chat is on, none while it is off. The same tap carries
+// Closed Eyes' fixed key (closedEyesHotkeyDisplay), so it runs either way.
+func tapQuickChatHotkey() QuickChatHotkeyConfig {
+	if chatFeatureErr() != nil {
+		return QuickChatHotkeyConfig{Key: quickChatHotkeyKeyOff}
+	}
+	return currentQuickChatHotkey()
+}
+
 func (a *App) GetQuickChatHotkey() QuickChatHotkeyConfig {
 	return currentQuickChatHotkey()
 }
@@ -144,7 +154,8 @@ func (a *App) GetQuickChatHotkey() QuickChatHotkeyConfig {
 // them so the OS doesn't react. The renderer turns this on when the
 // recorder UI opens and back off when it closes.
 func (a *App) SetQuickChatHotkeyRecording(on bool) {
-	quickChatHotkeyRecording.Store(on)
+	// The recorder is Quick chat's; with Chat off the tap never swallows keys.
+	quickChatHotkeyRecording.Store(on && chatFeatureErr() == nil)
 }
 
 // SetQuickChatHotkey persists a new combo and updates the live config

@@ -120,10 +120,10 @@ func applyHotkeyToPlatform(_ QuickChatHotkeyConfig) {}
 // nil even if the system thread couldn't be initialized yet — actual
 // errors are logged from the pump goroutine, since hook installation
 // happens asynchronously after we LockOSThread.
+//
+// The hook carries Closed Eyes' key always and the Quick chat key only while
+// Chat is on (tapQuickChatHotkey).
 func (a *App) StartQuickChatHotkey() error {
-	if err := chatFeatureErr(); err != nil {
-		return err
-	}
 	quickChatHotkeyMu.Lock()
 	quickChatApp = a
 	quickChatHotkeyMu.Unlock()
@@ -152,7 +152,7 @@ func (a *App) StartQuickChatHotkey() error {
 	go globalQuickChatHotkey.runClosedEyesDrain(ctx)
 	go globalQuickChatHotkey.runRecordingDrain(ctx)
 
-	log.Printf("[quickChat] global hotkey enabled (current: %s)", describeCombo(currentQuickChatHotkey()))
+	log.Printf("[quickChat] global hotkey enabled (current: %s)", describeCombo(tapQuickChatHotkey()))
 	return nil
 }
 
@@ -305,7 +305,7 @@ func isModifierVK(vk uint32) bool {
 // (no superset / subset hits) so a user-bound Ctrl+Shift+Y doesn't fire
 // on, say, Ctrl+Shift+Alt+Y.
 func matchesCurrentCombo(vk uint32) bool {
-	cfg := currentQuickChatHotkey()
+	cfg := tapQuickChatHotkey()
 	if cfg.Key == quickChatHotkeyKeyOff {
 		return false
 	}

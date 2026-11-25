@@ -385,13 +385,12 @@ import (
 	"wails-gui/internal/platform/nativeprompt"
 )
 
-// StartQuickChatHotkey installs the configurable global hotkey listener.
-// Requires Accessibility permission (already granted for activity
-// monitoring). Returns an error if the event tap cannot be created.
+// StartQuickChatHotkey installs the global key tap: Closed Eyes' ⌘⌃⌥E
+// always, and the configurable Quick chat key only while Chat is on
+// (tapQuickChatHotkey). Requires Accessibility permission (already granted
+// for activity monitoring). Returns an error if the event tap cannot be
+// created.
 func (a *App) StartQuickChatHotkey() error {
-	if err := chatFeatureErr(); err != nil {
-		return err
-	}
 	if !nativeprompt.Allowed() {
 		return &monitorError{"QuickChat hotkey is unavailable under go test"}
 	}
@@ -408,12 +407,12 @@ func (a *App) StartQuickChatHotkey() error {
 
 	// Push the persisted combo into the cgo state before installing the
 	// tap so the first event after install already routes correctly.
-	applyQuickChatHotkeyDarwin(currentQuickChatHotkey())
+	applyQuickChatHotkeyDarwin(tapQuickChatHotkey())
 
 	if !bool(C.quickChatStartHotkey()) {
 		return &monitorError{"failed to create QuickChat event tap (check Accessibility permission)"}
 	}
-	log.Printf("[quickChat] global hotkey enabled (%s)", describeCombo(currentQuickChatHotkey()))
+	log.Printf("[quickChat] global hotkey enabled (%s)", describeCombo(tapQuickChatHotkey()))
 	return nil
 }
 
@@ -939,7 +938,7 @@ func goClosedEyesHotkeyTriggered() {
 // hotkey and the menu bar: the spotlight pill with its screen chip, else the
 // in-app panel. The pill's questions go to the one Chat thread.
 func (a *App) openQuickChat(bundleID string) {
-	if a == nil || a.ctx == nil {
+	if a == nil || a.ctx == nil || chatFeatureErr() != nil {
 		return
 	}
 	appName := bundleIDPrettyName(bundleID)

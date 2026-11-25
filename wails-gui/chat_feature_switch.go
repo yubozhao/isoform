@@ -11,7 +11,8 @@ import (
 // featureChat: Chat, Quick chat and the chat apps (bots). Isoform drops them
 // (docs/plans/scope-cut-2026-11.md, section 6, PR A1): with the switch off no
 // chat turn runs, the chat bindings and phone routes answer as if absent, no
-// Quick chat helper or hotkey starts, no bot starts, and nothing is posted to
+// Quick chat helper starts and the global key tap matches only Closed Eyes'
+// key, no bot starts, and nothing is posted to
 // the main chat. The saved chat history is kept, hidden. YANSU_FEATURES=chat
 // brings it back for one launch.
 const featureChat featureSwitch = "chat"
@@ -61,23 +62,24 @@ func mobileChatRoute(method, path string) bool {
 	return false
 }
 
-// startQuickChat starts the Quick chat helper and its global hotkey.
+// startQuickChat starts the global key tap and, with Chat on, the Quick chat
+// helper.
 func (a *App) startQuickChat() {
+	// The global key tap carries Closed Eyes' ⌘⌃⌥E as well as the Quick chat
+	// key, so it starts whether Chat is on or off; with Chat off it matches
+	// only Closed Eyes (tapQuickChatHotkey). Non-fatal on failure (e.g.
+	// Accessibility permission pending).
+	go func() {
+		if err := a.StartQuickChatHotkey(); err != nil {
+			log.Printf("[quickchat] global key tap unavailable: %v", err)
+		}
+	}()
 	// Quick chat is part of Chat: with Chat off no helper starts, and one left
 	// running by an earlier launch is stopped (scope cut 2026-11, A1).
 	if chatFeatureErr() == nil {
 		go func() {
 			if err := a.spotlight.Start(a.ctx); err != nil {
 				log.Printf("[spotlight] supervisor start failed: %v", err)
-			}
-		}()
-
-		// Quick Chat global hotkey. Non-fatal on failure: the in-app
-		// Cmd+J shortcut still works even if the global tap can't start
-		// (e.g. Accessibility permission pending).
-		go func() {
-			if err := a.StartQuickChatHotkey(); err != nil {
-				log.Printf("[quickchat] global hotkey unavailable: %v", err)
 			}
 		}()
 	} else if bin := findSpotlightBinary(); bin != "" {
