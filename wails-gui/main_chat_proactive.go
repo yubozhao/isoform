@@ -714,6 +714,9 @@ func mainChatPromptReportLine(row storage.StreamItemRow) string {
 // answers use the same live request boundary as the original work card.
 // Send uses the durable outbound boundary; other kinds retain their writes.
 func (a *App) ResolveMainChatProactiveAction(momentID, actionID string) (perfValue string, perfErr error) {
+	if err := chatFeatureErr(); err != nil {
+		return perfValue, err
+	}
 	defer logPageBinding("ResolveMainChatProactiveAction", time.Now(), &perfValue)
 	return a.resolveMainChatProactiveAction(momentID, actionID, engagement.ChannelDesktop, "", nil)
 }
@@ -722,6 +725,9 @@ func (a *App) ResolveMainChatProactiveAction(momentID, actionID string) (perfVal
 // edit of it when text differs from the draft. The card holds Send for 5
 // seconds with Undo before it calls this, so Mail only gets it after them.
 func (a *App) SendMainChatProactiveDraft(momentID, text string) (perfValue string, perfErr error) {
+	if err := chatFeatureErr(); err != nil {
+		return perfValue, err
+	}
 	defer logPageBinding("SendMainChatProactiveDraft", time.Now(), &perfValue)
 	return a.resolveMainChatProactiveActionText(momentID, mainChatSendAction, engagement.ChannelDesktop, "", nil, text)
 }
@@ -729,6 +735,9 @@ func (a *App) SendMainChatProactiveDraft(momentID, text string) (perfValue strin
 // CorrectMainChatProactiveFact records an explicit correction for a pending
 // learned fact without changing the resolver's existing correction action.
 func (a *App) CorrectMainChatProactiveFact(momentID, correction string) (string, error) {
+	if err := chatFeatureErr(); err != nil {
+		return "", err
+	}
 	if a == nil || a.store == nil {
 		return "", errors.New("chat is unavailable")
 	}

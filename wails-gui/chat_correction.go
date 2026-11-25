@@ -230,6 +230,9 @@ func chatCorrectionFromInput(input map[string]any) (chatCorrectionPayload, strin
 // UndoChatCorrection takes back a correction made in Chat: its note is
 // deleted and the line says Undone. An undone line stays undone.
 func (a *App) UndoChatCorrection(itemID string) (string, error) {
+	if err := chatFeatureErr(); err != nil {
+		return "", err
+	}
 	return a.undoChatCorrection(itemID, "computer")
 }
 

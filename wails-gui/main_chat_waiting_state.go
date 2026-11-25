@@ -47,6 +47,9 @@ type mainChatWaitingStateHolder struct {
 }
 
 func (a *App) GetMainChatWaiting() (perfValue MainChatWaitingState) {
+	if chatFeatureErr() != nil {
+		return perfValue
+	}
 	defer logPageBinding("GetMainChatWaiting", time.Now(), &perfValue)
 	if a == nil {
 		return MainChatWaitingState{Items: []StreamItemData{}}

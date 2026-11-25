@@ -132,6 +132,9 @@ func (a *App) sendMainChatWithContext(text string, ref TodayChatContextRef, orig
 
 func (a *App) sendMainChatWithRef(text string, ref TodayChatContextRef, origin promptOrigin, onAdmitted func(string, int)) (MainChatTopicSendResult, error) {
 	var result MainChatTopicSendResult
+	if err := chatFeatureErr(); err != nil {
+		return result, err
+	}
 	if a == nil || a.store == nil || strings.TrimSpace(text) == "" || len(text) > 64<<10 || strings.TrimSpace(ref.SourceKind) == "" {
 		return result, errTodayChatItemUnavailable
 	}
@@ -387,7 +390,17 @@ var errTopicCursor = errors.New("TOPIC_CURSOR_INVALID")
 // ListMainChatTopicItems returns the latest page or rows strictly before an
 // opaque cursor. Each page is oldest first; prepend older pages. Privacy is
 // rechecked on every call, so withdrawal also applies between pages.
-func (a *App) ListMainChatTopicItems(topicId string, cursor string, limit int) (pageResult MainChatTopicPage, pageErr error) {
+func (a *App) ListMainChatTopicItems(topicId string, cursor string, limit int) (MainChatTopicPage, error) {
+	if err := chatFeatureErr(); err != nil {
+		return MainChatTopicPage{}, err
+	}
+	return a.readMainChatTopicItems(topicId, cursor, limit)
+}
+
+// readMainChatTopicItems is ListMainChatTopicItems without Chat's switch: a
+// topic's page on the phone and its Today mark read the kept chat history as
+// before until the phone hides Chat (scope cut 2026-11, A1 and A6).
+func (a *App) readMainChatTopicItems(topicId string, cursor string, limit int) (pageResult MainChatTopicPage, pageErr error) {
 	defer func() { pageResult = displayModelCopy(pageResult, a.modelDisplayLanguage()) }()
 	page := MainChatTopicPage{TopicID: topicId, Items: []MainChatTopicItem{}}
 	if a == nil || a.store == nil || !validChatTopicID(topicId) {

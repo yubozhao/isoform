@@ -158,6 +158,9 @@ func (a *App) SendPromptWithAttachments(prompt string, workDir string, model str
 }
 
 func (a *App) sendPromptWithAttachments(prompt string, workDir string, model string, sessionID string, tag string, images []ImageData, files []FileData, planMode bool, thinkingEnabled bool, uiLanguage string, traceID string, promptComposer func(string, string) string, preparations ...func(context.Context) error) error {
+	if err := a.chatSessionRefused(tag); err != nil {
+		return err
+	}
 
 	resolvedWorkDir := strings.TrimSpace(workDir)
 	if resolvedWorkDir != "" {
@@ -416,6 +419,9 @@ func (a *App) executePrompt(prompt string, workDir string, model string, session
 }
 
 func (a *App) executePromptOwned(prompt string, userPrompt string, workDir string, model string, sessionID string, tag string, images []ImageData, planMode bool, thinkingEnabled bool, uiLanguage string, allowedTools []string, promptComposer func(string, string) string, traceID string, kickoffEvent string, origin promptOrigin, owner *bgShellSessionInfo, preparations ...func(context.Context) error) error {
+	if err := a.chatSessionRefused(tag); err != nil {
+		return err
+	}
 	trimmed := strings.TrimSpace(prompt)
 	if trimmed == "" {
 		return fmt.Errorf("prompt is required")

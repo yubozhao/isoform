@@ -577,6 +577,9 @@ func stashFocusedAppContext(sessionLocalID string, snap *focusedAppSnapshot) {
 // transition (handleSwitchProject + handleNewSession) typically takes
 // hundreds of ms anyway, masking this overhead.
 func (a *App) AttachQuickChatContext(sessionLocalID, bundleID string) error {
+	if err := chatFeatureErr(); err != nil {
+		return err
+	}
 	sessionLocalID = strings.TrimSpace(sessionLocalID)
 	if sessionLocalID == "" {
 		return nil

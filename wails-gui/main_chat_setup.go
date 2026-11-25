@@ -560,6 +560,9 @@ func emptyMainChatSetup() MainChatSetupState {
 // renderer's language: the first message is posted in it when the main chat
 // is still empty. It records what the live state already answers.
 func (a *App) GetMainChatSetup(lang string) (perfValue MainChatSetupState, perfErr error) {
+	if err := chatFeatureErr(); err != nil {
+		return perfValue, err
+	}
 	defer logPageBinding("GetMainChatSetup", time.Now(), &perfValue)
 	if a == nil || a.store == nil {
 		return emptyMainChatSetup(), fmt.Errorf("store not initialized")
@@ -588,6 +591,9 @@ func (a *App) GetMainChatSetup(lang string) (perfValue MainChatSetupState, perfE
 // shown now changes nothing. Legacy first-task answers stay known to the
 // binding, but that step is never shown again.
 func (a *App) AnswerMainChatSetup(step, answer string) (MainChatSetupState, error) {
+	if err := chatFeatureErr(); err != nil {
+		return MainChatSetupState{}, err
+	}
 	if a == nil || a.store == nil {
 		return emptyMainChatSetup(), fmt.Errorf("store not initialized")
 	}
@@ -650,6 +656,9 @@ func (a *App) AnswerMainChatSetup(step, answer string) (MainChatSetupState, erro
 // Screen Recording grant, and what onboarding still asks changes what the
 // message says.
 func (a *App) ensureMainChatIntroOnStartup() {
+	if chatFeatureErr() != nil {
+		return
+	}
 	if a == nil || a.store == nil {
 		return
 	}
@@ -679,6 +688,9 @@ func (a *App) ensureMainChatIntroOnStartup() {
 // chat does not ask for are ignored. The assistant is never closed here:
 // nothing in the chat works without one, so its card stays the way forward.
 func (a *App) CloseMainChatSetupSteps(steps []string) error {
+	if err := chatFeatureErr(); err != nil {
+		return err
+	}
 	if a == nil || a.store == nil {
 		return fmt.Errorf("store not initialized")
 	}
@@ -724,6 +736,9 @@ func (a *App) CloseMainChatSetupSteps(steps []string) error {
 // to another level), so the main chat asks them after all. Only answers
 // onboarding gave are reopened.
 func (a *App) ReopenMainChatSetupSteps(steps []string) error {
+	if err := chatFeatureErr(); err != nil {
+		return err
+	}
 	if a == nil || a.store == nil {
 		return fmt.Errorf("store not initialized")
 	}

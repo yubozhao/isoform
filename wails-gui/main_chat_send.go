@@ -661,6 +661,9 @@ func (a *App) sendMainChatAttached(text string, images []ImageData, files []File
 // composed: no other turn on the main chat can run in between.
 func (a *App) sendMainChatAs(id, text string, images []ImageData, files []FileData, origin promptOrigin, admitted func(), telemetryAction ...string) (MainChatTopicSendResult, error) {
 	var result MainChatTopicSendResult
+	if err := chatFeatureErr(); err != nil {
+		return result, err
+	}
 	if a == nil || a.store == nil || strings.TrimSpace(text) == "" || len(text) > 64<<10 {
 		return result, errTodayChatItemUnavailable
 	}

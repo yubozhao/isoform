@@ -163,6 +163,9 @@ var errNotSideChat = errors.New("this chat is not a side chat of Chat")
 // chat with a link back to the side chat. It returns the summary line. The
 // side chat itself is left untouched and stays in Recent as history.
 func (a *App) BringBackToMainChat(sideSessionID string) (string, error) {
+	if err := chatFeatureErr(); err != nil {
+		return "", err
+	}
 	if a == nil || a.store == nil {
 		return "", fmt.Errorf("store not initialized")
 	}

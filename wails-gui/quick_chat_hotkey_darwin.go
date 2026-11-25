@@ -389,6 +389,9 @@ import (
 // Requires Accessibility permission (already granted for activity
 // monitoring). Returns an error if the event tap cannot be created.
 func (a *App) StartQuickChatHotkey() error {
+	if err := chatFeatureErr(); err != nil {
+		return err
+	}
 	if !nativeprompt.Allowed() {
 		return &monitorError{"QuickChat hotkey is unavailable under go test"}
 	}

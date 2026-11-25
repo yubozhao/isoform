@@ -133,6 +133,9 @@ func (a *App) matchingMainChatRowTopics(ctx context.Context, refs []mainChatEvid
 // tagMainChatRowTopics publishes only 1-2 deterministic topic matches. A stale
 // registry/source snapshot rejects the write, leaving the chat row untouched.
 func (a *App) tagMainChatRowTopics(ctx context.Context, itemID string, refs []mainChatEvidenceRef) error {
+	if chatFeatureErr() != nil {
+		return nil
+	}
 	if a == nil || a.store == nil || a.topicSource == nil || a.IsClosedEyesModeEnabled() || len(refs) == 0 {
 		return nil
 	}
@@ -355,6 +358,9 @@ const mainChatTopicBackfillKey = "main_chat_topic_backfill_v1"
 // startMainChatTopicBackfill waits for a checked local registry snapshot, with
 // bounded retries and cancellation; it never invokes a model or search.
 func (a *App) startMainChatTopicBackfill(ctx context.Context) {
+	if chatFeatureErr() != nil {
+		return
+	}
 	go func() {
 		timer := time.NewTimer(time.Minute)
 		defer timer.Stop()

@@ -1311,6 +1311,10 @@ func (a *App) mainChatExtraTools(tag string, origin promptOrigin) []tools.Tool {
 		}
 		return nil
 	}
+	// No main-chat turn runs with Chat off; nor does its web search.
+	if chatFeatureErr() != nil {
+		return nil
+	}
 	switch origin {
 	case promptOriginPhone:
 		// Phone-chat rule 13 keeps this turn local.

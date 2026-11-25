@@ -273,6 +273,9 @@ type mainChatWaitingCursor struct {
 // GetMainChatOverview reads current counts and the local view preference without
 // creating a session or changing any chat row.
 func (a *App) GetMainChatOverview() (perfValue MainChatOverview, perfErr error) {
+	if err := chatFeatureErr(); err != nil {
+		return perfValue, err
+	}
 	defer logPageBinding("GetMainChatOverview", time.Now(), &perfValue)
 	return a.mainChatOverview(context.Background(), time.Now())
 }
@@ -338,7 +341,18 @@ func mainChatTodayCounts(rows []storage.StreamItemRow, projected []StreamItemDat
 
 // ListMainChatWaitingItems reads a backwards page of actionable cards, ordered
 // oldest first within the page; its exclusive cursor can be used to prepend.
-func (a *App) ListMainChatWaitingItems(cursor string, limit int) (perfValue MainChatWaitingPage, perfErr error) {
+func (a *App) ListMainChatWaitingItems(cursor string, limit int) (MainChatWaitingPage, error) {
+	if err := chatFeatureErr(); err != nil {
+		return MainChatWaitingPage{}, err
+	}
+	return a.readMainChatWaitingItems(cursor, limit)
+}
+
+// readMainChatWaitingItems is ListMainChatWaitingItems without Chat's switch.
+// Today's Needs you and the phone's Today read the cards waiting in the kept
+// chat history through it, so with Chat off they read as before (scope cut
+// 2026-11, A1: the brief and Your work stay unchanged).
+func (a *App) readMainChatWaitingItems(cursor string, limit int) (perfValue MainChatWaitingPage, perfErr error) {
 	defer logPageBinding("ListMainChatWaitingItems", time.Now(), &perfValue)
 	return derivedRead(a, derivedWaitingItems, fmt.Sprintf("%s|%d", cursor, limit), func() (MainChatWaitingPage, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -405,6 +419,9 @@ func (a *App) listMainChatWaitingItems(ctx context.Context, cursor string, limit
 
 // SetMainChatHideRoutine persists a view preference; it never changes rows.
 func (a *App) SetMainChatHideRoutine(hide bool) error {
+	if err := chatFeatureErr(); err != nil {
+		return err
+	}
 	if a == nil || a.store == nil {
 		return errTodayChatItemUnavailable
 	}

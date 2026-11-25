@@ -150,7 +150,7 @@ func (bridge *mobileBridge) serveTopicDetail(w http.ResponseWriter, r *http.Requ
 			mobileTopicError(w, err)
 			return
 		}
-		page, err := bridge.app.ListMainChatTopicItems(id, r.URL.Query().Get("cursor"), limit)
+		page, err := bridge.app.readMainChatTopicItems(id, r.URL.Query().Get("cursor"), limit)
 		if err != nil {
 			mobileTopicError(w, err)
 			return

@@ -113,6 +113,12 @@ func (a *App) handleSMSReplyWith(sms *smsChannel, id, body string, at time.Time)
 	case smsReplyAnswer:
 		a.engagementReceiptOn(engagement.ChannelText, outcome.MomentID, storage.EngagementReceiptActed, outcome.Action, at)
 	case smsReplyChat:
+		// With Chat off a texted free-text reply has no place to go: it is
+		// dropped, and the hint still answers short replies (scope cut
+		// 2026-11, A1).
+		if chatFeatureErr() != nil {
+			return true
+		}
 		if !a.postSMSToMainChat(id, outcome.Text, at) {
 			if err := sms.ForgetReply(id); err != nil {
 				log.Printf("[sms] a reply could not be released for a retry: %v", err)

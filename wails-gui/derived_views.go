@@ -564,7 +564,7 @@ func (d *derivedViews) prefetch(ctx context.Context) {
 	steps := []func(){
 		func() { _, _ = a.GetPortraitTodayCard() },
 		func() { _, _ = a.GetTodayDayShape(today.Format("2006-01-02")) },
-		func() { _, _ = a.ListMainChatWaitingItems("", chatFirstPageSize) },
+		func() { _, _ = a.readMainChatWaitingItems("", chatFirstPageSize) },
 		func() { _, _ = a.GetAboutYouPortrait() },
 		func() { _, _ = a.GetAboutYou() },
 		func() { _, _ = a.ListKnowHow() },
