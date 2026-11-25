@@ -162,6 +162,8 @@ export interface ActivityDayViewProps {
     onOpenTopic?: (topic: TodayTopic) => void;
     /** A call's recording opens in the Screen timeline. */
     onOpenRecording?: (sessionId: string) => void;
+    /** Without Activity's extras a screen row opens the Screen timeline at its stretch. */
+    onOpenScreen?: (row: ActivityFeedRow) => void;
 }
 
 export function ActivityDayView({
@@ -183,6 +185,7 @@ export function ActivityDayView({
     onOpenConversation,
     onOpenTopic,
     onOpenRecording,
+    onOpenScreen,
 }: ActivityDayViewProps) {
     const { t, i18n } = useTranslation('activity');
     const dateStr = formatDateStr(date);
@@ -448,6 +451,7 @@ export function ActivityDayView({
             onOpenConversation={onOpenConversation}
             onOpenTopic={onOpenTopic}
             onOpenRecording={onOpenRecording}
+            onOpenScreen={onOpenScreen}
         />
     );
 

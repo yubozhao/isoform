@@ -29,8 +29,12 @@ func TestFeatureSwitchesDefaultOffAndTurnBackOn(t *testing.T) {
 	if got := app.GetFeatureSwitches(); !got.Automations || !got.CalendarHolds || got.Playbooks || got.ProactiveVoice {
 		t.Fatalf("named switches = %+v, want automations and calendar holds only", got)
 	}
+	t.Setenv(featureSwitchesEnv, "activity-extras")
+	if got := app.GetFeatureSwitches(); !got.ActivityExtras || got.Automations {
+		t.Fatalf("activity-extras = %+v, want Activity's extras only", got)
+	}
 	t.Setenv(featureSwitchesEnv, "all")
-	if got := app.GetFeatureSwitches(); !got.Automations || !got.Playbooks || !got.ProactiveVoice || !got.CalendarHolds {
+	if got := app.GetFeatureSwitches(); !got.Automations || !got.Playbooks || !got.ProactiveVoice || !got.CalendarHolds || !got.ActivityExtras {
 		t.Fatalf("all = %+v, want every feature on", got)
 	}
 }

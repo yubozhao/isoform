@@ -373,6 +373,8 @@ describe('How you do things page', () => {
     });
 
     it('W2: no Add to agent rules, one-click fix or Remind me; a reference has only Ask', async () => {
+        // Chat is on for this case (the scope cut's `chat` switch).
+        (globalThis as Record<string, unknown>).__isoformFeatureSwitchesForTest = { automations: true, playbooks: true, proactiveVoice: true, calendarHolds: true, chat: true };
         await renderPage();
         for (const title of ['Docker cleanup', 'Isoform keeps', 'Agent picker']) {
             await selectCard(title);
@@ -1528,7 +1530,20 @@ describe('design review v1.0.0 (Thursday)', () => {
         expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
     });
 
+    // Scope cut A4: with Chat hidden, a piece of know-how offers no Ask.
+    it('offers no Ask about this while Chat is hidden', async () => {
+        // Chat is off for this case (test-setup turns every switch on).
+        (globalThis as Record<string, unknown>).__isoformFeatureSwitchesForTest = { automations: true, playbooks: true, proactiveVoice: true, calendarHolds: true, chat: false, activityExtras: true };
+        await renderPage();
+        await selectCard('Docker cleanup');
+        const detail = screen.getByRole('complementary', { name: 'Know-how detail' });
+        expect(within(detail).queryByRole('button', { name: 'Ask about this' })).toBeNull();
+        expect(within(detail).queryByRole('textbox', { name: 'Ask anything about this' })).toBeNull();
+    });
+
     it('W7: Ask about this asks in place under the detail and never opens Chat', async () => {
+        // Chat is on for this case (the scope cut's `chat` switch).
+        (globalThis as Record<string, unknown>).__isoformFeatureSwitchesForTest = { automations: true, playbooks: true, proactiveVoice: true, calendarHolds: true, chat: true };
         mocks.getCandidate.mockResolvedValue(null);
         await renderPage();
         await selectCard('Docker cleanup');

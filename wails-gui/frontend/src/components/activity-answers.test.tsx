@@ -61,6 +61,24 @@ describe('Your answers', () => {
         expect(within(sources).getByText('2 of 3 yes')).toBeInTheDocument();
     });
 
+    // Scope cut B3: without Activity's extras the 14-day bars go; today's
+    // numbers, Undo and Forget stay.
+    it('hides where yes comes from without the Activity extras, and keeps Undo and Forget', async () => {
+        (globalThis as Record<string, unknown>).__isoformFeatureSwitchesForTest = { automations: true, playbooks: true, proactiveVoice: true, calendarHolds: true, activityExtras: false };
+        binding('GetJudgmentStats').mockResolvedValue(stats);
+        binding('GetAnswers').mockResolvedValue({ answers: [
+            { id: 'a1', item: 'w1', kind: 'work', title: 'Reply to Sam', action: 'yes', at: today(9), surface: 'computer', canUndo: true },
+        ] });
+        await act(async () => {
+            render(<ActivityAnswers />);
+        });
+        expect(await screen.findByText('Reply to Sam')).toBeInTheDocument();
+        await waitFor(() => expect(document.querySelector('[data-answer-number="made"]')!.textContent).toBe(`9${enActivity.ans.made}`));
+        expect(screen.queryByTestId('answers-sources')).toBeNull();
+        expect(screen.getByRole('button', { name: 'Undo: Reply to Sam' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Forget: Reply to Sam' })).toBeInTheDocument();
+    });
+
     // Rules 10 and 11.
     it('lists every answer newest first with its reason or edit and where it was given, pages on, and forgets one', async () => {
         binding('GetAnswers')

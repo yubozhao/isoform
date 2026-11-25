@@ -31,3 +31,10 @@ export function briefSourcesByKind(brief: Pick<MobileBriefDocument, "evidence"> 
 export function watchConversations(brief: Pick<MobileBriefDocument, "evidence"> | null | undefined): number {
     return new Set((brief?.evidence ?? []).filter((ref) => ref.group === "watch").map((ref) => ref.sourceId)).size;
 }
+
+/** The basic brief's one sources line (scope cut 2026-11, B2): the kinds the
+ *  brief used, by their What Isoform sees names, in order, with no counts.
+ *  The words around it wait on design; this is the list itself. */
+export function briefSourcesLine(brief: Pick<MobileBriefDocument, "evidence"> | null | undefined, kindName: (kind: BriefSourceKind) => string): string {
+    return briefSourcesByKind(brief).map((group) => kindName(group.kind)).join(" · ");
+}

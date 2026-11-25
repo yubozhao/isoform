@@ -13,7 +13,7 @@ import { onPagePrivacyWithdrawal } from "@/lib/page-privacy-withdrawal";
 import { briefKind } from "@/lib/brief-title";
 import { clockTime } from "@/lib/brief-time";
 import type { WorkAnswerError } from "@/hooks/useWorkList";
-import { briefSourcesByKind } from "@/lib/brief-sources";
+import { briefSourcesByKind, briefSourcesLine } from "@/lib/brief-sources";
 import { BriefAudioPlayer } from "./BriefAudioPlayer";
 import { BriefSourceWhy } from "./BriefSourceWhy";
 import { spaceIsFree } from "./TodayBriefBand";
@@ -60,7 +60,12 @@ function clock(seconds: number): string {
  * right In this brief (its sources by kind, each opening its Why) above
  * Past briefs. Drawn from what this computer made.
  */
-export function TodayBriefFull({ brief, view, active, items = [], onAnswer, onUndo, onHandOff, onReply, onNotRight, onOpenBrief, onBack }: {
+export function TodayBriefFull({ brief, view, active, items = [], onAnswer, onUndo, onHandOff, onReply, onNotRight, onOpenBrief, onBack, extras = true }: {
+    /** The brief's extras (the brief-extras switch, scope cut 2026-11 B2).
+     *  Off: Hear it is play, pause and a bar (no speed, no 15 s seek, no
+     *  read-along), no items under paragraphs, and one sources line in place
+     *  of In this brief by kind. */
+    extras?: boolean;
     onUndo?: (id: string) => Promise<WorkAnswerError | null>;
     /** A Yes on agent work opens the hand-off sheet (SH4). */
     onHandOff?: (item: WorkItem) => void;
@@ -103,7 +108,7 @@ export function TodayBriefFull({ brief, view, active, items = [], onAnswer, onUn
             return now;
         });
     }), [brief.briefId, audio?.durationSeconds]);
-    const reading = playing ? readingAt(progress.position, audio?.marks) : null;
+    const reading = playing && extras ? readingAt(progress.position, audio?.marks) : null;
     const readingKey = reading ? `${reading.paragraph}:${reading.from}` : "";
     useEffect(() => {
         if (follow && readingKey) readingRef.current?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
@@ -114,7 +119,7 @@ export function TodayBriefFull({ brief, view, active, items = [], onAnswer, onUn
             if (spaceIsFree(event)) {
                 event.preventDefault();
                 void measureToday("T08", "do", "done", () => toggleBriefPlayback(brief.briefId).catch(() => {}));
-            } else if (arrowIsFree(event)) {
+            } else if (extras && arrowIsFree(event)) {
                 event.preventDefault();
                 seekBriefPlayback(brief.briefId, event.key === "ArrowLeft" ? -SEEK_SECONDS : SEEK_SECONDS);
             } else if (event.key === "Escape" && !document.querySelector('[role="dialog"]')) {
@@ -123,7 +128,7 @@ export function TodayBriefFull({ brief, view, active, items = [], onAnswer, onUn
         };
         document.addEventListener("keydown", onKey);
         return () => document.removeEventListener("keydown", onKey);
-    }, [active, audio, brief.briefId, onBack]);
+    }, [active, audio, brief.briefId, onBack, extras]);
 
     const itemsFor = (index: number) => items.filter((item) => item.ref?.briefId === brief.briefId && Number(item.ref?.paragraph) === index);
     const share = progress.duration > 0 ? Math.min(1, progress.position / progress.duration) : 0;
@@ -143,7 +148,7 @@ export function TodayBriefFull({ brief, view, active, items = [], onAnswer, onUn
                         <div className="flex flex-col gap-2 rounded-xl border border-border bg-panel px-4 py-3 shadow-card" data-testid="brief-full-player">
                             <div className="flex flex-wrap items-center gap-3">
                                 <BriefAudioPlayer key={brief.briefId} briefId={brief.briefId} audio={audio} caption={title} />
-                                <span className="ml-auto flex items-center gap-1">
+                                {extras && <span className="ml-auto flex items-center gap-1">
                                     <Button size="icon" variant="quiet" aria-label={tr("cbrief.back15")} aria-keyshortcuts="ArrowLeft" onClick={() => seekBriefPlayback(brief.briefId, -SEEK_SECONDS)}><RotateCcw className="size-4" /></Button>
                                     <Button size="icon" variant="quiet" aria-label={tr("cbrief.on15")} aria-keyshortcuts="ArrowRight" onClick={() => seekBriefPlayback(brief.briefId, SEEK_SECONDS)}><RotateCw className="size-4" /></Button>
                                     <Button size="sm" variant="quiet" aria-label={tr("cbrief.speed")} data-testid="brief-full-speed" onClick={() => {
@@ -151,7 +156,7 @@ export function TodayBriefFull({ brief, view, active, items = [], onAnswer, onUn
                                         setSpeed(next);
                                         setBriefPlaybackRate(next);
                                     }}>{`${speed}×`}</Button>
-                                </span>
+                                </span>}
                             </div>
                             <div className="flex items-center gap-2 text-[11.5px] tabular-nums text-muted">
                                 <span>{clock(progress.position)}</span>
@@ -172,7 +177,7 @@ export function TodayBriefFull({ brief, view, active, items = [], onAnswer, onUn
                                         {text.slice(reading.to)}
                                     </> : text}
                                 </p>
-                                {itemsFor(index).map((item) => <CompactItem key={item.id} item={item} onAnswer={onAnswer} onUndo={onUndo} onHandOff={onHandOff} tr={tr} />)}
+                                {extras && itemsFor(index).map((item) => <CompactItem key={item.id} item={item} onAnswer={onAnswer} onUndo={onUndo} onHandOff={onHandOff} tr={tr} />)}
                                 <div className="flex gap-3 text-[12.5px] opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100" data-testid="brief-full-actions">
                                     {onReply && <button type="button" className="font-medium text-accent" onClick={() => onReply(index, text)}>{tr("cbrief.reply")}</button>}
                                     {onNotRight && <button type="button" className="font-medium text-muted hover:text-ink" onClick={() => setNotRight(index)} data-testid="brief-full-not-right">{tr("cbrief.notRight")}</button>}
@@ -182,7 +187,10 @@ export function TodayBriefFull({ brief, view, active, items = [], onAnswer, onUn
                     </div>
                 </div>
                 <aside className="flex flex-col gap-2" data-testid="brief-full-past">
-                    {sources.length > 0 && (
+                    {!extras && sources.length > 0 && (
+                        <p className="mb-3 px-2.5 text-[12.5px] text-muted" data-testid="brief-full-sources-line">{briefSourcesLine(displayed, (kind) => tr(`cbrief.kind.${kind}`))}</p>
+                    )}
+                    {extras && sources.length > 0 && (
                         <section className="mb-3 flex flex-col gap-1" data-testid="brief-full-sources" aria-label={tr("cbrief.inBrief")}>
                             <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted">{tr("cbrief.inBrief")}</h3>
                             {sources.map((group) => <BriefSourceWhy key={group.kind} group={group} />)}

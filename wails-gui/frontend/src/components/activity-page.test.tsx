@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import i18n from '@/i18n';
 import enActivity from '@/i18n/locales/en/activity.json';
-import { ActivityPage, eventActionLabel, EventFramePopup, SessionPeopleChips, SessionSpeakerChips, type ActivitySectionId } from './activity-page';
+import { ActivityPage, eventActionLabel, timelineGroupAt, EventFramePopup, SessionPeopleChips, SessionSpeakerChips, type ActivitySectionId } from './activity-page';
 import type { activitymon } from '../../wailsjs/go/models';
 import type { CronJobsProp } from './timeline/useCalendarData';
 import type { MobileBriefActivityTarget } from '@/lib/wails-shim-app';
@@ -217,6 +217,63 @@ describe('ActivityPage section panel', () => {
         const tabs = [...document.querySelectorAll('[data-activity-section]')].map((row) => row.textContent);
         expect(tabs).toEqual([enActivity.day.yourDay, enActivity.act.tabScreen, enActivity.act.tabWatch, enActivity.act.tabAgents, enActivity.act.tabAnswers]);
         expect(document.querySelector('[data-activity-section="learned"]')).toBeNull();
+    });
+
+    // Scope cut B3: without Activity's extras three tabs stay, and a Screen
+    // or Agents section left from before shows Your day.
+    describe('without the Activity extras', () => {
+        beforeEach(() => {
+            (globalThis as Record<string, unknown>).__isoformFeatureSwitchesForTest = { automations: true, playbooks: true, proactiveVoice: true, calendarHolds: true, activityExtras: false };
+        });
+
+        it('offers three tabs: Your day, Watch and Your answers', async () => {
+            binding('GetWatchRecordings').mockResolvedValue([]);
+            await act(async () => {
+                render(<Harness initialSection="yourDay" />);
+            });
+            const tabs = [...document.querySelectorAll('[data-activity-section]')].map((row) => row.textContent);
+            expect(tabs).toEqual([enActivity.day.yourDay, enActivity.act.tabWatch, enActivity.act.tabAnswers]);
+        });
+
+        it.each(['workedOn', 'agents'] as const)('shows Your day for a %s section', async (section) => {
+            await act(async () => {
+                render(<Harness initialSection={section} />);
+            });
+            expect(screen.getByTestId('activity-feed')).toBeInTheDocument();
+            expect(screen.queryByRole('heading', { name: enActivity.day.workedOn })).toBeNull();
+            expect(document.querySelector('[data-activity-section="yourDay"]')).toHaveAttribute('aria-selected', 'true');
+        });
+
+        it('opens a screen row in the Screen timeline at the group holding its stretch', async () => {
+            const at = (h: number, m: number) => new Date(2026, 10, 2, h, m).getTime();
+            binding('GetActivityFeed').mockResolvedValue([
+                { id: 'm-1', kind: 'screen', startMs: at(10, 8), endMs: at(10, 18), title: 'Invoice sync notes', app: 'Google Chrome' },
+            ]);
+            binding('GetActivityTimelineGroups').mockResolvedValue([
+                { id: 'g1', appKey: 'com.microsoft.VSCode', appName: 'VS Code', startTime: at(9, 12), endTime: at(10, 2), activeMs: 50 * 60_000,
+                    eventCount: 0, sessionIds: ['s1'], triggerKinds: [], primarySessionId: 's1', summaryStatus: 'done',
+                    summary: { title: 'Reviewing ERP connector v0.3' } },
+                { id: 'g2', appKey: 'com.google.Chrome', appName: 'Google Chrome', startTime: at(10, 5), endTime: at(10, 20), activeMs: 15 * 60_000,
+                    eventCount: 0, sessionIds: ['s2'], triggerKinds: [], primarySessionId: 's2', summaryStatus: 'done',
+                    summary: { title: 'Northwind invoice sync notes' } },
+            ]);
+            await act(async () => { render(<Harness initialSection="yourDay" initialDate="2026-11-02" />); });
+            fireEvent.click(await screen.findByRole('button', { name: 'Open: Invoice sync notes' }));
+            const group = async (title: string) => (await screen.findAllByText(title)).map((el) => el.closest('button')).find(Boolean)!;
+            await waitFor(async () => expect(await group('Northwind invoice sync notes')).toHaveClass('bg-active-row-bg'));
+            expect(await group('Reviewing ERP connector v0.3')).not.toHaveClass('bg-active-row-bg');
+            // The timeline is the detail behind Your day: no Screen tab.
+            expect(document.querySelector('[data-activity-section="workedOn"]')).toBeNull();
+            expect(document.querySelector('[data-activity-section="yourDay"]')).toHaveAttribute('aria-selected', 'true');
+        });
+
+        it('picks the group holding a time, else the next one, else the last', () => {
+            const groups = [{ id: 'a', startTime: 10, endTime: 20 }, { id: 'b', startTime: 40, endTime: 50 }];
+            expect(timelineGroupAt(groups, 15)?.id).toBe('a');
+            expect(timelineGroupAt(groups, 30)?.id).toBe('b');
+            expect(timelineGroupAt(groups, 60)?.id).toBe('b');
+            expect(timelineGroupAt([], 15)).toBeNull();
+        });
     });
 
     // computer-conformance-answers v1.1.0 P1: screen-seen agent runs are

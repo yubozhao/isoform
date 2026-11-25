@@ -10,6 +10,7 @@ import { briefHasWords, briefTitle } from "@/lib/brief-title";
 import { measureToday } from "@/lib/today-telemetry";
 import type { MobileBriefDocument, TodayBriefView } from "@/lib/wails-shim-app";
 import { BriefAudioPlayer } from "./BriefAudioPlayer";
+import { briefSourcesLine } from "@/lib/brief-sources";
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
 
@@ -55,7 +56,9 @@ export function spaceIsFree(event: KeyboardEvent): boolean {
  * plays and pauses anywhere on Today. The next brief being made, or a try
  * that failed, is one line above the brief, which stays (phone-today rule 7).
  */
-export function TodayBriefBand({ brief, view, make, onMakeNow, showLead = true, readAll = false, onReadAll, onOpenPastBriefs, active, firstCaption }: {
+export function TodayBriefBand({ brief, view, make, onMakeNow, showLead = true, readAll = false, onReadAll, onOpenPastBriefs, active, firstCaption, extras = true }: {
+    /** Off (scope cut B2): In this brief is the one sources line, with no counts. */
+    extras?: boolean;
     brief: MobileBriefDocument;
     view: TodayBriefView;
     make: MakeBriefState;
@@ -108,10 +111,10 @@ export function TodayBriefBand({ brief, view, make, onMakeNow, showLead = true, 
 
     // What is in it, also as one line under the text below 880 of content
     // (computer-window v1.0.0 rule 6).
-    const contents = [
+    const contents = (extras ? [
         meetings > 0 ? tr(slot === "evening" ? "ctoday.meetings" : "ctoday.meetingsToday", { count: meetings }) : "",
         toAnswer > 0 ? tr("ctoday.toAnswer", { count: toAnswer }) : "",
-    ].filter(Boolean);
+    ] : [briefSourcesLine(displayed, (kind) => tr(`cbrief.kind.${kind}`))]).filter(Boolean);
     const pastBriefs = (testId: string) => onOpenPastBriefs && (
         <button
             type="button"

@@ -28,7 +28,8 @@ export function topicWork(list: WorkList | null, topicId: string): WorkList | nu
  * proposal as the shared item with the keys, and Done for this topic (Your
  * work, filtered to the topic); What Isoform saw; and Ask about it.
  */
-export function TodayTopicPage({ topic, list, active, onAnswer, onUndo, onHandOff, onAsk, onBack, now = new Date() }: {
+export function TodayTopicPage({ topic, list, active, onAnswer, onUndo, onHandOff, onAsk, onBack, quickChat = true, now = new Date() }: {
+    quickChat?: boolean;
     topic: TodayTopic;
     list: WorkList | null;
     active: boolean;
@@ -58,7 +59,7 @@ export function TodayTopicPage({ topic, list, active, onAnswer, onUndo, onHandOf
                 {topic.activityDays && <span className="text-[12.5px] text-muted" data-testid="topic-page-seen">{tr("topic.seen", { n: seen })}</span>}
             </header>
             <div className="grid grid-cols-1 items-start gap-6 min-[1100px]:grid-cols-[minmax(0,600px)_minmax(0,1fr)]">
-                {work && <TodayYourWork list={work} active={active} onAnswer={onAnswer} onUndo={onUndo} onHandOff={onHandOff} title={tr("topic.next")} now={now} />}
+                {work && <TodayYourWork quickChat={quickChat} list={work} active={active} onAnswer={onAnswer} onUndo={onUndo} onHandOff={onHandOff} title={tr("topic.next")} now={now} />}
                 <aside className="flex flex-col gap-2" data-testid="topic-page-saw">
                     <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted">{tr("topic.saw")}</h3>
                     {saw.map((moment, index) => (

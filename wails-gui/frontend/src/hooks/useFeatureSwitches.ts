@@ -3,7 +3,7 @@ import { GetFeatureSwitches, type FeatureSwitches } from "@/lib/wails-shim-app";
 
 /** Every turned-off feature is off until the Go side says otherwise, so an
  *  entry never flashes in before the read. */
-export const FEATURES_OFF: FeatureSwitches = { automations: false, playbooks: false, proactiveVoice: false, calendarHolds: false, chat: false, briefExtras: false };
+export const FEATURES_OFF: FeatureSwitches = { automations: false, playbooks: false, proactiveVoice: false, calendarHolds: false, chat: false, briefExtras: false, activityExtras: false };
 
 /** Tests answer every read with this (test-setup.ts turns every feature on;
  *  a switch's guard tests turn it off). Never set in the app. */
@@ -52,8 +52,23 @@ export function useFeatureSwitches(): FeatureSwitches {
     return switches;
 }
 
+/** Activity's extras (scope cut B3): the Screen and Agents tabs, the
+ *  stitched list, agent runs, the topic line, Not this topic, Remind me and
+ *  the 14-day bars. Off unless YANSU_FEATURES turns them on. */
+export function useActivityExtras(): boolean {
+    return useFeatureSwitches().activityExtras === true;
+}
+
 /** Test seam: forget the shared read. */
 export function resetFeatureSwitchesForTest(): void {
     cached = null;
     pending = null;
+}
+
+/** Chat is hidden by the scope cut of November 2026 (plan section 6, switch
+ *  `chat`, off by default). Until the switch reaches FeatureSwitches, a
+ *  missing field reads as off, so nothing shows a way into Chat. */
+export function useChatOn(): boolean {
+    const switches = useFeatureSwitches() as FeatureSwitches & { chat?: boolean };
+    return switches.chat === true;
 }

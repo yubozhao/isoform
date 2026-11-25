@@ -4,6 +4,7 @@ import type { TFunction } from 'i18next';
 import { ActivityInlineNotice } from '@/components/activity-inline-notice';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { cn } from '@/lib/utils';
+import { useActivityExtras } from '@/hooks/useFeatureSwitches';
 import {
     ForgetAnswer,
     GetAnswers,
@@ -118,7 +119,9 @@ export function ActivityAnswers() {
         { key: 'yes', value: String(total.accepted + total.useful), label: t('ans.yes') },
         { key: 'brief', value: t('ans.ofCount', { n: brief.accepted, m: brief.shown }), label: t('ans.brief') },
     ];
-    const rates = sourceRates(stats);
+    // The 14-day bars are an Activity extra (scope cut B3).
+    const extras = useActivityExtras();
+    const rates = extras ? sourceRates(stats) : [];
 
     const clock = (at: string) => {
         const date = new Date(at);
