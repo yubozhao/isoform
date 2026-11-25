@@ -111,7 +111,6 @@ import { MemoryPage } from "@/components/memory-page";
 import { PeoplePage, type PeopleSelection } from "@/components/people-page";
 import { AutomationDetailPane } from "@/components/automations/AutomationDetailPane";
 import { TodayPage } from "@/components/today/TodayPage";
-import { CAPTURED_COUNTS_ANCHOR } from "@/components/settings/pages/captured-counts-card";
 import type { TodayActionHandlers } from "@/components/today/types";
 import {
     Dialog,
@@ -1612,8 +1611,6 @@ export default function App() {
                 setPeopleInitialSelection(personId ? { personId } : undefined);
                 setPeopleOpen(true);
             },
-            onOpenCaptureCounts: () =>
-                openSettings("activity", { anchor: CAPTURED_COUNTS_ANCHOR }),
             onOpenSettings: (topic: string) => openSettings(topic as SettingsTopic),
             onOpenMainChat: () => {
                 handleSetAppMode("chat");

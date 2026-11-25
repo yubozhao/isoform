@@ -558,8 +558,7 @@ describe("TodayPage capture line", () => {
             refresh: vi.fn(),
         });
         mockUseCaptureCounts.mockClear();
-        const onOpenCaptureCounts = vi.fn();
-        renderToday({ ...handlers, onOpenCaptureCounts });
+        renderToday(handlers);
 
         expect(screen.queryByTestId("today-capture")).not.toBeInTheDocument();
         expect(screen.queryByText("captured.screensAndAudio")).not.toBeInTheDocument();
