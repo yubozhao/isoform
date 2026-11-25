@@ -291,3 +291,44 @@ func TestComposioLeavesSavedStateAndHistory(t *testing.T) {
 		t.Fatal("unreadable Composio state must fail the summary")
 	}
 }
+
+// With Chat off, the Web searches row drops Chat's searches from its words
+// only once none are in the week, so the summary counts them apart.
+func TestLeavesCountsChatSearchesApart(t *testing.T) {
+	on := leavesPaths{search: true}
+	out := on.summary([]storage.DestinationCount{
+		{ID: destinations.AssistantSearch, Detail: "grok", Calls: 3},
+		{ID: destinations.AssistantSearch, Detail: destinations.ChatSearchDetail, Calls: 2},
+	}, nil)
+	if *out.WebSearches.ThisWeek != 5 || out.WebSearches.FromChat == nil || *out.WebSearches.FromChat != 2 {
+		t.Fatalf("chat searches not counted apart: %+v", out.WebSearches)
+	}
+	none := on.summary([]storage.DestinationCount{{ID: destinations.AssistantSearch, Detail: "grok", Calls: 1}}, nil)
+	if none.WebSearches.FromChat == nil || *none.WebSearches.FromChat != 0 {
+		t.Fatalf("no chat searches should read 0: %+v", none.WebSearches)
+	}
+	unread := on.summary(nil, errors.New("store unavailable"))
+	if unread.WebSearches.FromChat != nil {
+		t.Fatalf("an unread week must leave fromChat unset: %+v", unread.WebSearches)
+	}
+}
+
+// S29 and S30: the Composio row knows whether the saved key can send, and the
+// agent address row names the address and whether its service can read it.
+func TestLeavesComposioActiveAndAddressSealed(t *testing.T) {
+	if managedComposioAppAccessEnabled {
+		t.Fatal("managed Composio access is on: the row's saved-key line no longer holds")
+	}
+	out := (leavesPaths{composio: true, composioActive: false}).summary(nil, nil)
+	if out.Composio == nil || !out.Composio.Connected || out.Composio.Active {
+		t.Fatalf("saved key that sends nothing: %+v", out.Composio)
+	}
+	sealed := (leavesPaths{address: true, addressSealed: true, addressHostname: "bo.agents.isoform.ai", addressService: "Isoform's front", addressApps: []string{"Claude"}}).summary(nil, nil)
+	if a := sealed.Address; a == nil || !a.Sealed || a.Hostname != "bo.agents.isoform.ai" || a.Service != "Isoform's front" {
+		t.Fatalf("front address: %+v", sealed.Address)
+	}
+	bridged := (leavesPaths{address: true, addressHostname: "x.example", addressService: "x.example"}).summary(nil, nil)
+	if bridged.Address == nil || bridged.Address.Sealed {
+		t.Fatalf("a configured bridge can read what passes: %+v", bridged.Address)
+	}
+}

@@ -136,6 +136,20 @@ describe("See them", () => {
         expect(onOpenChange).toHaveBeenCalledWith(false);
     });
 
+    it("stops the Answers group from growing while Chat is off, and drops it once empty (scope cut A5)", async () => {
+        (globalThis as Record<string, unknown>).__isoformFeatureSwitchesForTest = { automations: true, playbooks: true, proactiveVoice: true, calendarHolds: true, chat: false };
+        const view = render(<AssistantGivenSheet open onOpenChange={() => {}} assistant="Claude" />);
+        // What was sent stays listed until it ages out, with no link into Chat.
+        expect(await screen.findByText("Answers in Chat")).toBeInTheDocument();
+        expect(screen.getByText(/What did Sam ask for/)).toBeInTheDocument();
+        expect(screen.getAllByText("Open ›")).toHaveLength(2);
+        view.unmount();
+        (mocks.view as { answers: unknown[] }).answers = [];
+        render(<AssistantGivenSheet open onOpenChange={() => {}} assistant="Claude" />);
+        expect(await screen.findByText("Briefs")).toBeInTheDocument();
+        expect(screen.queryByText("Answers in Chat")).toBeNull();
+    });
+
     it("shows a failed read with Try again, never an empty list", async () => {
         mocks.fail = true;
         render(<AssistantGivenSheet open onOpenChange={() => {}} assistant="Claude" />);

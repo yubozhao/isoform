@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useFeatureSwitches } from "@/hooks/useFeatureSwitches";
 import type { TFunction } from "i18next";
 import { EventsEmit } from "../../../wailsjs/runtime/runtime";
 import { Button } from "@/components/ui/button";
@@ -155,6 +156,7 @@ export function AssistantGivenSheet({ open, onOpenChange, assistant }: {
 }) {
     const { t, i18n } = useTranslation("settings");
     const locale = i18n.language;
+    const chatOn = useFeatureSwitches().chat;
     const [view, setView] = useState<AssistantGivenView | null>(null);
     const [failed, setFailed] = useState(false);
 
@@ -251,6 +253,9 @@ export function AssistantGivenSheet({ open, onOpenChange, assistant }: {
                                     />
                                 ))}
                             </Group>
+                            {/* With Chat off the group stops growing; what was sent stays
+                                listed until it ages out of the week, then the group goes. */}
+                            {(chatOn || view.answers.length > 0) && (
                             <Group title={t("given.answers")} count={view.answers.length} removable={view.answers.every((a) => a.removable)} assistant={assistant}>
                                 {view.answers.map((a, i) => (
                                     <Row
@@ -258,10 +263,11 @@ export function AssistantGivenSheet({ open, onOpenChange, assistant }: {
                                         title={a.question ? t("given.question", { question: a.question }) : when(a.at, locale, t)}
                                         meta={a.question ? when(a.at, locale, t) : undefined}
                                         from={a.sources.length > 0 ? t("given.from", { sources: givenSources(a.sources, t) }) : t("given.fromQuestion")}
-                                        action={a.itemId ? <OpenLink onOpen={() => openTarget(`main-chat-item:${a.itemId}`)} /> : undefined}
+                                        action={chatOn && a.itemId ? <OpenLink onOpen={() => openTarget(`main-chat-item:${a.itemId}`)} /> : undefined}
                                     />
                                 ))}
                             </Group>
+                            )}
                             {view.proposals.length > 0 && (
                                 <Group title={t("given.proposals")} count={view.proposals.length} removable assistant={assistant}>
                                     {view.proposals.map((p) => (

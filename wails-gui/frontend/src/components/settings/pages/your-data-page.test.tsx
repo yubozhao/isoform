@@ -24,6 +24,8 @@ const mocks = vi.hoisted(() => ({
     tier: "off",
     tierFails: false,
     setTier: vi.fn(async () => {}),
+    clearComposio: vi.fn(async () => {}),
+    closeAddress: vi.fn(async () => {}),
 }));
 vi.mock("@/lib/work-profile", () => ({
     getWorkProfile: vi.fn(async () => {
@@ -59,6 +61,8 @@ vi.mock("@/lib/wails-shim-app", () => ({
         return mocks.tier;
     }),
     SetTelemetryTier: mocks.setTier,
+    ClearComposioApiKey: mocks.clearComposio,
+    CloseAgentAddress: mocks.closeAddress,
 }));
 vi.mock("../../../../wailsjs/runtime/runtime", () => ({ EventsOn: vi.fn(() => () => {}) }));
 // The keep-times sheet is tested on its own (keep-times-sheet.test.tsx).
@@ -263,6 +267,157 @@ describe("Settings › Your data", () => {
             expect(within(row("assistant")).getByRole("button", { name: "See them ›" })).toBeInTheDocument();
         });
 
+        describe("Composio and the agent address (answers v1.5.0 S29-S30)", () => {
+            const confirm = async (button: string) => {
+                fireEvent.click(screen.getByRole("button", { name: button }));
+                fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: button }));
+            };
+
+            it("says a saved key sends nothing, with Remove key", async () => {
+                withLeaves({ composio: { connected: true, active: false, apps: [], thisWeek: 0 } });
+                render(<YourDataPage />);
+                const composio = await waitRow("composio");
+                expect(composio).toHaveTextContent("Composio, with your key");
+                expect(composio).toHaveTextContent("Your key is saved on this computer. Nothing is sent through it now.");
+                fireEvent.click(within(composio).getByRole("button", { name: "Remove key" }));
+                await vi.waitFor(() => expect(mocks.clearComposio).toHaveBeenCalledOnce());
+            });
+
+            it("counts a key that sends, and Disconnect asks first", async () => {
+                withLeaves({ composio: { connected: true, active: true, apps: ["notion"], thisWeek: 6 } });
+                render(<YourDataPage />);
+                expect(await waitRow("composio")).toHaveTextContent("Composio can read both · this week 6");
+                await confirm("Disconnect");
+                expect(screen.queryByText("Disconnect Composio?")).toBeNull();
+                await vi.waitFor(() => expect(mocks.clearComposio).toHaveBeenCalledOnce());
+            });
+
+            it("keeps a disconnected key's row while it sent this week, with no button, and drops it after", async () => {
+                withLeaves({ composio: { connected: false, active: false, apps: [], thisWeek: 2 } });
+                render(<YourDataPage />);
+                const composio = await waitRow("composio");
+                expect(composio).toHaveTextContent("Composio · disconnected · this week 2");
+                expect(within(composio).queryByRole("button")).toBeNull();
+                cleanup();
+                withLeaves({ composio: { connected: false, active: false, apps: [], thisWeek: 0 } });
+                render(<YourDataPage />);
+                await screen.findByText(/which reads your day/);
+                expect(row("composio")).toBeNull();
+            });
+
+            it("names the address and says the front sees when and how much, never what", async () => {
+                withLeaves({ agentAddress: { open: true, hostname: "bo.agents.isoform.ai", service: "Isoform's front", apps: ["Claude", "ChatGPT"], sealed: true } });
+                render(<YourDataPage />);
+                const address = await waitRow("agentAddress");
+                expect(address).toHaveTextContent("Your agent address · bo.agents.isoform.ai");
+                expect(address).toHaveTextContent(
+                    "What Claude, ChatGPT ask Isoform and what they get comes through here, counted in Your agents above. Isoform's front carries it and sees when and how much, never what. The address's name is public.",
+                );
+                await confirm("Close address");
+                await vi.waitFor(() => expect(mocks.closeAddress).toHaveBeenCalledOnce());
+            });
+
+            it("says a bridge that can read it can, and the row goes once the address closes", async () => {
+                withLeaves({ agentAddress: { open: true, hostname: "x.example", service: "x.example", apps: ["Claude"], sealed: false } });
+                render(<YourDataPage />);
+                expect(await waitRow("agentAddress")).toHaveTextContent("passes through x.example, which can read it");
+                expect(row("agentAddress")).not.toHaveTextContent("never what");
+                cleanup();
+                withLeaves({ agentAddress: { open: false, hostname: "", service: "Isoform's front", apps: [], sealed: true, thisWeek: 3 } });
+                render(<YourDataPage />);
+                await screen.findByText(/which reads your day/);
+                expect(row("agentAddress")).toBeNull();
+            });
+
+            it("ends with the text line and every place your data goes (S27)", async () => {
+                withLeaves({});
+                render(<YourDataPage />);
+                expect(await screen.findByText("That's every place your data goes.")).toBeInTheDocument();
+                expect(document.querySelector("[data-your-data-text-out]")).toHaveTextContent(
+                    'like card numbers, passwords, one-time codes, keys and email addresses. A phone number goes only when it follows a word like "phone" or "tel". Names stay in.',
+                );
+            });
+        });
+
+        describe("with Chat off (scope cut A5)", () => {
+            const chatOff = () => {
+                (globalThis as Record<string, unknown>).__isoformFeatureSwitchesForTest = { automations: true, playbooks: true, proactiveVoice: true, calendarHolds: true, chat: false };
+            };
+
+            it("drops answers from the assistant row once none are in the week", async () => {
+                chatOff();
+                withLeaves({}, { assistantBriefs: 3, assistantAnswers: 0 });
+                render(<YourDataPage />);
+                expect(await screen.findByText("Claude Code, which reads your day and writes your briefs")).toBeInTheDocument();
+                expect(row("assistant")).toHaveTextContent("pictures of WeChat windows where the text can't be read · this week 3 briefs");
+                expect(row("assistant")).not.toHaveTextContent("answers");
+                expect(row("assistant")).not.toHaveTextContent("what you type in Chat");
+            });
+
+            it("keeps Chat's answers in the words while any are in the week, or the count is unread", async () => {
+                chatOff();
+                withLeaves({}, { assistantBriefs: 3, assistantAnswers: 2 });
+                render(<YourDataPage />);
+                expect(await screen.findByText("Claude Code, which reads your day and writes your briefs and answers")).toBeInTheDocument();
+                expect(row("assistant")).toHaveTextContent("what you type in Chat");
+                expect(row("assistant")).toHaveTextContent("this week 3 briefs, 2 answers");
+                cleanup();
+                chatOff();
+                withLeaves({}, { assistantBriefs: undefined, assistantAnswers: undefined });
+                render(<YourDataPage />);
+                expect(await screen.findByText("Claude Code, which reads your day and writes your briefs and answers")).toBeInTheDocument();
+            });
+
+            it("drops Chat's questions from Web searches only once none are in the week", async () => {
+                chatOff();
+                withLeaves({ webSearches: { service: "grok", thisWeek: 4, fromChat: 0 } });
+                render(<YourDataPage />);
+                expect(await waitRow("web")).toHaveTextContent("Your topic names and search words made from your interests · this week 4");
+                expect(row("web")).not.toHaveTextContent("Chat");
+                for (const web of [
+                    { service: "grok", thisWeek: 4, fromChat: 1 },
+                    { service: "grok", thisWeek: 4 },
+                    { service: "grok", thisWeek: 4, fromChat: 0, incomplete: true },
+                ]) {
+                    cleanup();
+                    chatOff();
+                    withLeaves({ webSearches: web });
+                    render(<YourDataPage />);
+                    expect(await waitRow("web")).toHaveTextContent("Chat questions that needed the web");
+                }
+            });
+
+            it("keeps Tool servers, which local tasks still use, with words that don't name Chat", async () => {
+                chatOff();
+                mocks.servers = [{ id: "fs", name: "Files", enabled: true }];
+                withLeaves({});
+                render(<YourDataPage />);
+                const servers = await waitRow("toolServers");
+                expect(servers).toHaveTextContent("Tool servers your tasks can use: Files · what a task asks, and what each sends back");
+                expect(servers).not.toHaveTextContent("Chat");
+                expect(within(servers).getByRole("button", { name: "Disconnect" })).toBeInTheDocument();
+            });
+
+            it("hides Chat apps once the bots sent nothing this week, and keeps a row that sent", async () => {
+                chatOff();
+                withLeaves({ chatApps: { apps: ["slack"], thisWeek: 0 } });
+                render(<YourDataPage />);
+                await screen.findByText(/which reads your day/);
+                expect(row("chatApps")).toBeNull();
+                for (const chatApps of [
+                    { apps: ["slack"], thisWeek: 2 },
+                    { apps: ["slack"] },
+                    { apps: ["slack"], thisWeek: 0, incomplete: true },
+                ]) {
+                    cleanup();
+                    chatOff();
+                    withLeaves({ chatApps });
+                    render(<YourDataPage />);
+                    expect(await waitRow("chatApps")).toHaveTextContent("Slack");
+                }
+            });
+        });
+
         it("shows a count it couldn't read as a failure with Try again, never 0", async () => {
             withLeaves({ webSearches: { service: "grok", incomplete: true } });
             render(<YourDataPage />);
@@ -358,12 +513,11 @@ describe("Settings › Your data", () => {
             expect(within(row("usage")).queryByRole("switch")).toBeNull();
         });
 
-        it("does not show the unverified text-out line (item 11, held for design)", async () => {
+        it("never shows v1.4.0's text line, which said less than the code removes (S27)", async () => {
             withLeaves({});
             render(<YourDataPage />);
             await screen.findByText(/which reads your day/);
             expect(screen.queryByText(/Names, email addresses and phone numbers stay in/)).toBeNull();
-            expect(screen.queryByText(/That's every place your data goes/)).toBeNull();
         });
     });
 });

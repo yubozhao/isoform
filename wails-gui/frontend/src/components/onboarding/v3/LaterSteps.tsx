@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useFeatureSwitches } from "@/hooks/useFeatureSwitches";
 import { Button } from "@/components/ui/button";
 import {
     GetYourAgents,
@@ -27,6 +28,7 @@ const AGENT_NAMES = { claude: "Claude Code", codex: "Codex", ollama: "Ollama" } 
 // agent connected takes the job its kind suggests ("Connected · for code").
 export function AgentsStep({ onNext }: { onNext: () => void }) {
     const { t } = useTranslation("onboarding");
+    const chatOn = useFeatureSwitches().chat;
     const { probe, refresh } = useAgentProbe(true);
     const signedIn = probe?.agents.find((agent) => agent.installed && agent.signedIn);
     // The assistant the row names: the one signed in, else one installed, else Claude Code.
@@ -85,7 +87,7 @@ export function AgentsStep({ onNext }: { onNext: () => void }) {
             {probe && !showScene && (
                 <div className="sv3-row sv3-models" data-testid="setup-v3-assistant">
                     <div>
-                        <p className="sv3-strong">{t("setup.assistant", { assistant: AGENT_NAMES[assistantId] })}</p>
+                        <p className="sv3-strong">{t(chatOn ? "setup.assistant" : "setup.assistantNoChat", { assistant: AGENT_NAMES[assistantId] })}</p>
                         {signedIn && <p className="sv3-quiet">{t("setup.assistantOk")}</p>}
                     </div>
                     {signedIn ? (

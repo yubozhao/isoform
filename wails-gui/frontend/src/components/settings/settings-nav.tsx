@@ -15,6 +15,7 @@ import {
     Wrench,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useFeatureSwitches } from "@/hooks/useFeatureSwitches";
 import { useAoyNavTag } from "@/components/settings/pages/agent-of-you/aoy-shared";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
@@ -82,6 +83,7 @@ export interface SettingsNavProps {
 export function SettingsNav({ activePage, onSelect, showDevTools }: SettingsNavProps) {
     const { t } = useTranslation("settings");
     const aoyTag = useAoyNavTag();
+    const features = useFeatureSwitches();
     const [query, setQuery] = useState("");
 
     const activeSection: SettingsSectionId | null = isSettingsPageId(activePage)
@@ -105,7 +107,7 @@ export function SettingsNav({ activePage, onSelect, showDevTools }: SettingsNavP
         if (!query.trim()) return [];
         const translate = (key: string) => t(key as never) as string;
         const needle = query.trim().toLowerCase();
-        const pages: NavResult[] = searchSettingsPages(query, translate).map((entry) => ({
+        const pages: NavResult[] = searchSettingsPages(query, translate, features).map((entry) => ({
             id: entry.id,
             label: translate(entry.labelKey),
             icon: entry.icon,
@@ -119,7 +121,7 @@ export function SettingsNav({ activePage, onSelect, showDevTools }: SettingsNavP
             revealAdvanced: false,
         })).filter((entry) => entry.label.toLowerCase().includes(needle));
         return [...pages, ...devPages];
-    }, [query, showDevTools, t]);
+    }, [query, showDevTools, t, features]);
 
     // A match on a page's keywords often names something under its Advanced
     // section, so the page opens with Advanced expanded for that visit.
@@ -158,7 +160,7 @@ export function SettingsNav({ activePage, onSelect, showDevTools }: SettingsNavP
     );
 
     const renderSection = (section: SettingsSection, index: number) => {
-        const pages = pagesInSection(section.id);
+        const pages = pagesInSection(section.id, features);
         if (pages.length === 0) return null;
         const spacing = index === 0 ? "" : section.dividerBefore ? "mt-3 pt-3 settings-nav-group-divider" : "mt-4";
         const heading = section.headingKey ? t(section.headingKey as never) : null;

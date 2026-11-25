@@ -914,6 +914,7 @@
         "modelLine": "正在为这台电脑获取语音识别 · {{size}} · {{n}}%",
         "modelFailed": "无法开始获取语音识别。稍后可在设置 › 模型中下载。",
         "assistant": "{{assistant}} 读取你的一天，撰写你的简报和回答",
+        "assistantNoChat": "{{assistant}} 读取你的一天，撰写你的简报",
         "assistantOk": "已登录 · 刚刚检查",
         "install": "安装",
         "signIn": "登录",

@@ -165,6 +165,10 @@ export interface SettingsPageEntry {
     aliases: readonly LegacySettingsTopic[];
     /** Shows a Soon tag beside the label; the page itself is a preview. */
     comingSoon?: boolean;
+    /** The turned-off feature the page belongs to (feature_switches.go). While
+     *  it is off the page is not listed or found, and links to it land on
+     *  Your data, which lists what still leaves. */
+    feature?: "chat";
 }
 
 // The first section is computer-conformance-answers v1.0.0 G1's order: What
@@ -214,7 +218,8 @@ export const SETTINGS_PAGES: readonly SettingsPageEntry[] = [
     page("notifications", "basics", Bell, ["text-messages", "read-aloud"]),
     page("plugins", "extensions", Puzzle),
     page("mcp", "extensions", Server),
-    page("chat-apps", "extensions", MessagesSquare, CHAT_APP_IDS),
+    // Chat is off (scope cut 2026-11, A5): its bots don't run.
+    { ...page("chat-apps", "extensions", MessagesSquare, CHAT_APP_IDS), feature: "chat" },
     page("use-yansu-anywhere", "extensions", Blocks),
     page("about", "help", LifeBuoy, [
         "support",
@@ -229,6 +234,21 @@ export const SETTINGS_PAGES: readonly SettingsPageEntry[] = [
 
 /** Settings opens on What Isoform sees (computer-settings v1.0.0 rule 1). */
 export const DEFAULT_SETTINGS_PAGE: SettingsPageId = "activity";
+
+/** Where a link to a page of a turned-off feature lands. */
+export const FEATURE_OFF_SETTINGS_PAGE: SettingsPageId = "your-data";
+
+/** Whether the page shows, given the turned-off features that are back on. */
+export function settingsPageShown(entry: SettingsPageEntry, features: { chat?: boolean }): boolean {
+    return entry.feature === undefined || features[entry.feature] === true;
+}
+
+/** The page a destination opens while some features are off: a page of a
+ *  turned-off feature lands on Your data. */
+export function shownSettingsDestination<T extends string>(page: T, features: { chat?: boolean }): T | SettingsPageId {
+    if (!isSettingsPageId(page)) return page;
+    return settingsPageShown(getSettingsPage(page), features) ? page : FEATURE_OFF_SETTINGS_PAGE;
+}
 
 export function isSettingsPageId(id: string): id is SettingsPageId {
     return (SETTINGS_PAGE_IDS as readonly string[]).includes(id);
@@ -250,8 +270,8 @@ export function getSettingsSection(id: SettingsSectionId): SettingsSection {
     return SETTINGS_SECTIONS.find((section) => section.id === id) ?? SETTINGS_SECTIONS[0];
 }
 
-export function pagesInSection(id: SettingsSectionId): SettingsPageEntry[] {
-    return SETTINGS_PAGES.filter((entry) => entry.section === id);
+export function pagesInSection(id: SettingsSectionId, features?: { chat?: boolean }): SettingsPageEntry[] {
+    return SETTINGS_PAGES.filter((entry) => entry.section === id && (!features || settingsPageShown(entry, features)));
 }
 
 export interface ResolvedSettingsTopic {
@@ -356,12 +376,14 @@ export function settingsPageNameMatches(
 export function searchSettingsPages(
     query: string,
     translate: (key: string) => string,
+    features?: { chat?: boolean },
 ): SettingsPageEntry[] {
     const needle = query.trim().toLowerCase();
     if (!needle) return [];
     const byName: SettingsPageEntry[] = [];
     const byDetail: SettingsPageEntry[] = [];
     for (const entry of SETTINGS_PAGES) {
+        if (features && !settingsPageShown(entry, features)) continue;
         if (settingsPageNameMatches(entry, query, translate)) {
             byName.push(entry);
             continue;

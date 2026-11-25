@@ -341,6 +341,14 @@ describe("NotificationsSettings", () => {
         expect(screen.queryByRole("button", { name: /more kinds?, nothing sent/ })).toBeNull();
     });
 
+    it("drops the answer kind, which only Chat sends, while Chat is off (scope cut A5)", async () => {
+        (globalThis as Record<string, unknown>).__isoformFeatureSwitchesForTest = { automations: true, playbooks: true, proactiveVoice: true, calendarHolds: true, chat: false };
+        const stats = Object.fromEntries(KINDS.map((kind) => [kind, { notificationSent: 1, channels: ["computer"], tag: "rare" } as Stats]));
+        await renderReady(makeView({}, stats));
+        expect(rankedOrder()).toEqual(KINDS.filter((kind) => kind !== "answer_ready"));
+        expect(screen.queryByText(en.proactiveNotifications.kinds.answer_ready.label)).toBeNull();
+    });
+
     it("turns a kind on from the fold and shows the returned state", async () => {
         await renderReady();
         openFold();

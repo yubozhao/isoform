@@ -18,6 +18,9 @@ import {
     searchSettingsPages,
     settingsPageNameMatches,
     splitSettingsKeywords,
+    settingsPageShown,
+    shownSettingsDestination,
+    getSettingsPage,
 } from "@/components/settings/settings-registry";
 
 type Locale = Record<string, unknown>;
@@ -414,4 +417,31 @@ describe("settings registry", () => {
         expect(searchSettingsPages(query, translate).map((p) => p.id)).toContain(page);
     });
 
+
+    describe("pages of a turned-off feature (scope cut A5)", () => {
+        const off = { chat: false };
+        const on = { chat: true };
+        const translate = (key: string) => key.split(".").reduce<unknown>((node, part) => (node as Record<string, unknown>)?.[part], enSettings) as string;
+
+        it("hides Chat apps while Chat is off and keeps every other page", () => {
+            expect(settingsPageShown(getSettingsPage("chat-apps"), off)).toBe(false);
+            expect(settingsPageShown(getSettingsPage("chat-apps"), on)).toBe(true);
+            const hidden = SETTINGS_PAGES.filter((entry) => !settingsPageShown(entry, off)).map((entry) => entry.id);
+            expect(hidden).toEqual(["chat-apps"]);
+            expect(pagesInSection("extensions", off).map((entry) => entry.id)).not.toContain("chat-apps");
+            expect(pagesInSection("extensions", on).map((entry) => entry.id)).toContain("chat-apps");
+        });
+
+        it("doesn't find Chat apps while Chat is off", () => {
+            expect(searchSettingsPages("Slack", translate, on).map((entry) => entry.id)).toContain("chat-apps");
+            expect(searchSettingsPages("Slack", translate, off).map((entry) => entry.id)).not.toContain("chat-apps");
+        });
+
+        it("lands a link to Chat apps on Your data while Chat is off", () => {
+            expect(shownSettingsDestination("chat-apps", off)).toBe("your-data");
+            expect(shownSettingsDestination("chat-apps", on)).toBe("chat-apps");
+            expect(shownSettingsDestination("mcp", off)).toBe("mcp");
+            expect(shownSettingsDestination("notifications", off)).toBe("notifications");
+        });
+    });
 });

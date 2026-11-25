@@ -306,6 +306,16 @@ describe("step 4 your agents", () => {
         expect(row.textContent).not.toMatch(/thinks with|agent/i);
     });
 
+    it("drops answers from the assistant row while Chat is off (scope cut A5)", async () => {
+        (globalThis as Record<string, unknown>).__isoformFeatureSwitchesForTest = { automations: true, playbooks: true, proactiveVoice: true, calendarHolds: true, chat: false };
+        mocks.load.mockResolvedValue("agents");
+        mocks.probe.current = { agents: [{ id: "claude", installed: true, signedIn: true }] };
+        render(<SetupV3 onFinish={vi.fn()} onSkip={vi.fn()} />);
+        const row = await screen.findByTestId("setup-v3-assistant");
+        expect(row.textContent).toContain("Claude Code reads your day and writes your briefs");
+        expect(row.textContent).not.toContain("answers");
+    });
+
     it("offers Sign in, which opens the assistant's own sign-in", async () => {
         mocks.load.mockResolvedValue("agents");
         mocks.probe.current = { agents: [{ id: "codex", installed: true, signedIn: false }] };
