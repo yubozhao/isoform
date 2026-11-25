@@ -8,6 +8,7 @@ import type { TodayChatContextRef } from '@/lib/today-chat-navigation';
 import type { CronJobState, CronRunState } from '@/hooks/useCronJobs';
 import { EventsOn } from '../../../wailsjs/runtime/runtime';
 import { extractAgentBlocks } from '@/lib/agent-deliverables';
+import { useFeatureSwitches } from '@/hooks/useFeatureSwitches';
 
 /** How long a schedule's detail waits for the main chat before it reads again. */
 const EXCHANGE_WAIT_MS = 180_000;
@@ -215,6 +216,7 @@ export function AskAboutRun({ run, onOpenChatMessage }: {
     const [text, setText] = useState('');
     const [history, setHistory] = useState<MainChatExchange[]>([]);
     const ref = useMemo<TodayChatContextRef>(() => ({ sourceKind: 'schedule_run', sourceId: run.id }), [run.id]);
+    const chatOn = useFeatureSwitches().chat;
 
     useEffect(() => {
         if (exchange.phase !== 'answered') return;
@@ -229,6 +231,8 @@ export function AskAboutRun({ run, onOpenChatMessage }: {
         if (await exchange.send(words, ref, true)) setText('');
     };
 
+    // The answer comes from the main chat: no ask while Chat is off (scope cut 2026-11).
+    if (!chatOn) return null;
     if (!open && history.length === 0) {
         return (
             <div className="flex justify-end">

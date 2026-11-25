@@ -132,3 +132,25 @@ describe('Ask about this run (K7, C16)', () => {
         expect(await screen.findByRole('alert')).toHaveTextContent("Didn't send. Try again.");
     });
 });
+
+describe('while Chat is off (scope cut 2026-11)', () => {
+    const key = '__isoformFeatureSwitchesForTest';
+    let saved: unknown;
+    beforeEach(() => {
+        const g = globalThis as Record<string, unknown>;
+        saved = g[key];
+        g[key] = { ...(saved as object), chat: false };
+    });
+    afterEach(() => { (globalThis as Record<string, unknown>)[key] = saved; });
+
+    it('offers no Ask for a change and no Ask about this run, and never reaches the main chat', async () => {
+        render(<AutomationDetailPane job={job('0 16 * * 5')} onClose={vi.fn()} onToggleEnabled={vi.fn()} onDelete={vi.fn()} onRunNow={vi.fn()}
+            onUpdate={vi.fn(async () => undefined)} loadRuns={vi.fn(async () => [])} loadRunLogs={vi.fn(async () => [])} />);
+        render(<AskAboutRun run={{ id: 'run-23' }} />);
+        expect(screen.getByTestId('cron-detail')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Ask for a change' })).toBeNull();
+        expect(screen.queryByTestId('schedule-ask-for-change')).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Ask about this run' })).toBeNull();
+        expect(mocks.main).not.toHaveBeenCalled();
+    });
+});
