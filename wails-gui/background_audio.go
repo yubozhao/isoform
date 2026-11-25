@@ -88,6 +88,7 @@ type backgroundAudioCapture struct {
 	micSnapshot        func() micInputSnapshot
 	sample             func(time.Time)
 	resolveTranscriber func() asr.Transcriber
+	allowBatch         func([]scheduledAudioChunk) bool
 
 	// captureLoopDone is closed by captureLoop on full exit, after any
 	// pending mic chunk has been flushed through forwardChunkDownstream.
@@ -519,6 +520,7 @@ func (b *backgroundAudioCapture) start() error {
 	b.captureLoopDone = make(chan struct{})
 	b.scheduler = newBackgroundTranscriptionScheduler(b.server, b.onSpeech)
 	b.scheduler.resolveTranscriber = b.resolveTranscriber
+	b.scheduler.allowBatch = b.allowBatch
 	b.scheduler.start()
 	stopCh := b.stopCh
 	b.mu.Unlock()
@@ -982,12 +984,13 @@ func (a *App) injectSpeechEvent(text string, source backgroundListeningSource, c
 	}
 	// Turning Listen or the microphone off drains the queue: what was still
 	// waiting for speech recognition is not kept.
-	if !a.GetBackgroundListening() || (source == backgroundListeningSourceMicrophone && !backgroundMicrophoneEnabled()) {
+	cfg := readAudioConfig()
+	if !cfg.allowsSource(source) {
 		return
 	}
 	// Likewise the computer's own sound outside calls, after its switch is
 	// turned off.
-	if source == backgroundListeningSourceSystem && !callSpeech && !a.GetSystemAudioOutsideCallsEnabled() {
+	if source == backgroundListeningSourceSystem && !callSpeech && !cfg.listenOutsideCalls(source) {
 		return
 	}
 	if a.activity == nil {

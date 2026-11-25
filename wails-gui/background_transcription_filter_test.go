@@ -9,6 +9,7 @@ import (
 )
 
 func TestShouldTranscribeBackgroundAudioChunk(t *testing.T) {
+	t.Setenv(agentHomeEnv, t.TempDir())
 	// A call window or title counts only with its app on the microphone.
 	tests := []struct {
 		name                string
@@ -418,12 +419,13 @@ func TestAnnotateBackgroundAudioChunkDoesNotFallbackDuringUnsupportedMeeting(t *
 }
 
 func TestAutomaticMeetingRecordingDisabledRejectsAndDoesNotAnnotateAudio(t *testing.T) {
+	t.Setenv(agentHomeEnv, t.TempDir())
 	app := &App{
 		activity: &activityMonitorState{
 			buf: activitybuf.NewRingBuffer(16, time.Minute),
 		},
 	}
-	app.meetingRecordingDisabled.Store(true)
+	app.meetingRecordingState.Store(meetingRecordingOff)
 
 	chunks := []capturedAudioChunk{
 		{
@@ -525,6 +527,7 @@ func TestAnnotateBackgroundAudioChunkStartsCandidateWhenMeetingAppIsInCall(t *te
 }
 
 func TestAnnotateBackgroundAudioChunkKeepsQuietCallAudio(t *testing.T) {
+	t.Setenv(agentHomeEnv, t.TempDir())
 	app := &App{
 		activity: &activityMonitorState{
 			buf:                     activitybuf.NewRingBuffer(16, time.Minute),
@@ -609,6 +612,7 @@ func TestListeningOutsideCallsKeepsTheComputerSoundBehindItsSwitch(t *testing.T)
 	if !app.shouldTranscribeBackgroundAudioChunk(mic) || app.shouldTranscribeBackgroundAudioChunk(sys) {
 		t.Fatal("outside calls: the microphone yes, the computer's sound no")
 	}
+	ensureBackgroundListeningDefaultForFreshInstall()
 	if err := app.SetSystemAudioOutsideCallsEnabled(true); err != nil {
 		t.Fatal(err)
 	}

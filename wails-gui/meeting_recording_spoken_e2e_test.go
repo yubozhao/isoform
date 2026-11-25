@@ -33,7 +33,10 @@ func TestMeetingRecordingSpokenFixtureEndToEnd(t *testing.T) {
 	live := newEngine()
 	defer func() { live.Stop() }()
 	t.Setenv("HOME", t.TempDir())
-	if err := updateConfig(func(cfg *yansuConfig) { cfg.AfterCallSpeechModelOff = true }); err != nil {
+	if err := updateConfig(func(cfg *yansuConfig) {
+		cfg.BackgroundListeningConfigured = true
+		cfg.AfterCallSpeechModelOff = true
+	}); err != nil {
 		t.Fatal(err)
 	}
 	saved := meetingFollowupModel

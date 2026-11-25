@@ -97,7 +97,12 @@ func (a *App) runBackgroundListeningPrivacyMonitor(ctx context.Context) {
 
 	state := backgroundListeningLockState{}
 	reconcile := func(source string) {
-		switch state.observe(a.isBackgroundListeningScreenLocked()) {
+		locked := a.isBackgroundListeningScreenLocked()
+		action := state.observe(locked)
+		if !locked {
+			a.reconcileBackgroundAudioConfig()
+		}
+		switch action {
 		case backgroundListeningLockSuspend:
 			log.Printf("[listening-privacy] paused reason=lock source=%s", source)
 			a.suspendBackgroundListeningForScreenLock()
@@ -117,6 +122,25 @@ func (a *App) runBackgroundListeningPrivacyMonitor(ctx context.Context) {
 		case <-ticker.C:
 			reconcile("poll")
 		}
+	}
+}
+
+// Use the existing privacy events and backstop to release active devices
+// during a config outage, then retry a skipped start after repair.
+func (a *App) reconcileBackgroundAudioConfig() {
+	a.backgroundAudioMu.Lock()
+	defer a.backgroundAudioMu.Unlock()
+	_, known := readAudioConfig().listening()
+	if !known {
+		a.audioConfigRetryPending = true
+		if a.isBackgroundListeningRunningLocked() {
+			a.stopBackgroundListeningWithDrainLocked(false)
+		}
+		return
+	}
+	if a.audioConfigRetryPending {
+		a.audioConfigRetryPending = false
+		a.startBackgroundListeningIfReadyLocked()
 	}
 }
 
@@ -193,7 +217,7 @@ func (a *App) backgroundAudioSuspendedReason(locked, running bool) string {
 		return backgroundAudioSuspendedPrivacyPause
 	case a != nil && !a.GetBackgroundListening():
 		return backgroundAudioSuspendedDisabled
-	case !running && resolveBackgroundListeningSource(loadConfig()) == backgroundListeningSourceNone:
+	case !running && readAudioConfig().source() == backgroundListeningSourceNone:
 		return backgroundAudioSuspendedMicrophoneOff
 	case !running:
 		return backgroundAudioSuspendedNotRunning

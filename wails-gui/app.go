@@ -213,9 +213,10 @@ type App struct {
 	tts                      *ttsState                       // text-to-speech / sherpa MeloTTS state (nil until first use)
 	meetingTranscriptActive  sync.Map                        // session IDs whose recording is being transcribed
 	backgroundAudioMu        sync.Mutex                      // serializes recorder start/stop across settings and privacy transitions
+	audioConfigRetryPending  bool                            // guarded by backgroundAudioMu
 	backgroundAudio          *backgroundAudioCapture         // background speech capture (nil until enabled)
 	meetingRecordingMu       sync.Mutex                      // serializes preference changes with automatic meeting lifecycle commits
-	meetingRecordingDisabled atomic.Bool                     // cached inverse preference; zero value preserves default-on behaviour
+	meetingRecordingState    atomic.Uint32                   // cached preference; unknown retries after a startup read failure
 	meetingRecordingEpoch    atomic.Uint64                   // invalidates captured/queued meeting work across every preference change
 	audioScreenLocked        func() bool                     // injected protected-desktop detector, initialized at startup
 	voiceID                  *voiceEnrollmentState           // speaker embedding extractor + Self-embedding cache (nil until first use)
@@ -235,11 +236,6 @@ type App struct {
 	// paused, transcribed when it resumes (meeting_audio_session.go).
 	callsKeptAtPauseMu sync.Mutex
 	callsKeptAtPause   []callKeptAtPause
-
-	// systemAudioOutsideCalls caches the switch that turns the computer's
-	// own sound into text outside calls (background_listening_outside_calls.go).
-	systemAudioOutsideCalls     atomic.Bool
-	systemAudioOutsideCallsOnce sync.Once
 
 	// Quick Chat Spotlight helper — see DESIGN.md in
 	// quick-chat-spotlight/. The supervisor spawns the helper
@@ -658,7 +654,7 @@ func NewApp() *App {
 	app.topicSource = &registryTopicSource{app: app}
 	app.magpie = newMagpieSidecar(defaultMagpieStateDir())
 	app.magpie.onHealthy = app.onMagpieHealthy
-	app.meetingRecordingDisabled.Store(loadConfig().AutomaticMeetingRecordingDisabled)
+	app.loadMeetingRecordingPreference()
 	app.termMgr = terminalsvc.NewManager(func(_ context.Context, terminalID string) {
 		app.emitBrowserEvent("terminal:exit", terminalID)
 	})
@@ -1061,9 +1057,7 @@ func (a *App) startupServices(ctx context.Context) {
 	// After the engine is ready, start background listening if the user has
 	// it enabled.
 	a.deferLaunchTask("voice_prewarm", func() {
-		if a.GetBackgroundListening() {
-			a.startBackgroundListeningIfReady()
-		}
+		a.startBackgroundListeningIfReady()
 		a.prewarmVoiceInput()
 		if a.launch.isStopped() {
 			return
@@ -1085,17 +1079,7 @@ func (a *App) startupServices(ctx context.Context) {
 			}
 		}
 
-		cfg := loadConfig()
-		configExists := hasPersistedConfig()
-		enabled := resolveBackgroundListeningEnabled(cfg, configExists)
-		log.Printf("[background-listening] config check: configured=%v disabled=%v enabled=%v whisperReady=%v whisperNil=%v",
-			cfg.BackgroundListeningConfigured, cfg.BackgroundListeningDisabled, enabled, whisperReady, whisper == nil)
-		if configExists && !cfg.BackgroundListeningConfigured {
-			log.Printf("[background-listening] existing install detected without explicit setting; leaving disabled for upgrade compatibility")
-		}
-		if enabled {
-			a.startBackgroundListeningIfReady()
-		}
+		a.startBackgroundListeningIfReady()
 		// Relay registration may have tried the watch backlog before prewarm.
 		if whisperReady {
 			go a.retryWaitingSpeech(ctx)

@@ -301,7 +301,7 @@ func TestMeetingNotesOutliveRetentionButNotDeletion(t *testing.T) {
 func TestMeetingNotesKeepTheSummaryFromTheAfterCallPass(t *testing.T) {
 	app := newMeetingNotesTestApp(t)
 	// Isolate stored-note persistence from automatic learning during teardown.
-	app.meetingRecordingDisabled.Store(true)
+	app.meetingRecordingState.Store(meetingRecordingOff)
 	stubMeetingNotesLearn(t)
 	prior := meetingFollowupModel
 	t.Cleanup(func() { meetingFollowupModel = prior })
@@ -331,7 +331,7 @@ func TestMeetingNotesKeepTheSummaryFromTheAfterCallPass(t *testing.T) {
 func TestMeetingNotesFollowTheirSliceToItsMeeting(t *testing.T) {
 	app := newMeetingNotesTestApp(t)
 	// Isolate stored-note persistence from automatic learning during teardown.
-	app.meetingRecordingDisabled.Store(true)
+	app.meetingRecordingState.Store(meetingRecordingOff)
 	stubMeetingNotesLearn(t)
 	store := app.activity.store
 	start := time.Now().Add(-time.Hour)
@@ -601,7 +601,7 @@ func TestWhatAPassLearnedGoesWhenItsNotesGoDuringThePass(t *testing.T) {
 						t.Fatal(err)
 					}
 				} else {
-					app.meetingRecordingDisabled.Store(true)
+					app.meetingRecordingState.Store(meetingRecordingOff)
 				}
 				return true
 			}

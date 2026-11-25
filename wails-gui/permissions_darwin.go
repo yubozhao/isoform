@@ -654,7 +654,8 @@ func systemAudioAccess() bool {
 	if !darwinSystemAudioCaptureSupported() {
 		return false
 	}
-	return loadConfig().SystemAudioPermissionGranted
+	granted, _ := readAudioConfig().systemPermission()
+	return granted
 }
 
 func setSystemAudioPermissionGranted(granted bool) {

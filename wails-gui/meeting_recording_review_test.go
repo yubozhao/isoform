@@ -354,6 +354,7 @@ func TestShutdownPartialTailEnrichesExcludedMicrophoneHolders(t *testing.T) {
 }
 func TestUnnamedMicrophoneHolderAvailableBeforeRecordingAdmission(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
+		t.Setenv(agentHomeEnv, t.TempDir())
 		app := &App{activity: &activityMonitorState{buf: activitybuf.NewRingBuffer(16, time.Hour)}}
 		r := &stoppableFakeRecorder{chunks: make(chan capturedAudioChunk, 2)}
 		captured := []capturedAudioChunk{}

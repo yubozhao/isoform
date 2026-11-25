@@ -437,7 +437,7 @@ func TestMeetingTranscriptAllowedFollowsTheSettings(t *testing.T) {
 	if app.meetingTranscriptAllowed(session, &epoch) {
 		t.Fatal("a protected session is never written up")
 	}
-	app.meetingRecordingDisabled.Store(true)
+	app.meetingRecordingState.Store(meetingRecordingOff)
 	if app.meetingTranscriptAllowed(ActivitySessionRow{ID: "s"}, &epoch) {
 		t.Fatal("recording turned off: nothing more is written")
 	}
@@ -453,7 +453,7 @@ func TestRecoverUntranscribedMeetingsWaitsForRecordingToBeOn(t *testing.T) {
 		meetingTranscriptRecoveryMu.Unlock()
 	})
 	app := &App{activity: &activityMonitorState{store: newLifecycleStore(t)}}
-	app.meetingRecordingDisabled.Store(true)
+	app.meetingRecordingState.Store(meetingRecordingOff)
 	app.recoverUntranscribedMeetings()
 	meetingTranscriptRecoveryMu.Lock()
 	done := meetingTranscriptRecoveryDone
@@ -1109,7 +1109,7 @@ func TestRecoveryFollowsTheProtectedRuleAndTheRecordingSetting(t *testing.T) {
 	// Call recording turned off: the leftovers are removed, as a recording
 	// in progress is when it is turned off.
 	app := &App{}
-	app.meetingRecordingDisabled.Store(true)
+	app.meetingRecordingState.Store(meetingRecordingOff)
 	leftoverTracks(t, day, "1792000200000-dddd4444", meetingAudioMeta{App: "Zoom", MeetingID: "m-2"})
 	app.recoverMeetingAudio(view, time.Now())
 	for _, name := range []string{".mic.pcm", ".json"} {
@@ -1186,7 +1186,7 @@ func TestEmptyEndPersistHoldsTheRecordingFence(t *testing.T) {
 		t.Fatal("the persist must wait for the fence")
 	case <-time.After(100 * time.Millisecond):
 	}
-	app.meetingRecordingDisabled.Store(true)
+	app.meetingRecordingState.Store(meetingRecordingOff)
 	app.meetingRecordingEpoch.Add(1)
 	app.meetingRecordingMu.Unlock()
 	<-done
@@ -1493,7 +1493,7 @@ func TestABrowserThatMayBeInACallIsNotDictation(t *testing.T) {
 	if app.browserMayBeInACall(speechCaptureContext{App: chrome, MicHolders: onMic}) {
 		t.Fatal("a browser on any other page holding the microphone is web dictation")
 	}
-	app.meetingRecordingDisabled.Store(true)
+	app.meetingRecordingState.Store(meetingRecordingOff)
 	if !app.browserMayBeInACall(speechCaptureContext{App: chrome, MicHolders: onMic}) {
 		t.Fatal("with meetings off a browser's calls are never told apart: no dictation label")
 	}

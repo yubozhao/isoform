@@ -13,16 +13,42 @@ func (a *App) GetAutomaticMeetingRecordingEnabled() (perfValue bool) {
 	return a.meetingRecordingOn()
 }
 
-// meetingRecordingOn is the preference in memory: an atomic flag that
-// SetAutomaticMeetingRecordingEnabled sets (and announces with
-// automatic-meeting-recording:changed) and that startup loads from config. The
-// detection poll and the audio hot paths read it without a perf line or a stack
-// walk, so an unchanged preference is never logged as a read.
+const (
+	meetingRecordingUnknown uint32 = iota // A zero-value App must read config before recording.
+	meetingRecordingOff
+	meetingRecordingEnabled
+)
+
+func (a *App) loadMeetingRecordingPreference() {
+	a.meetingRecordingState.Store(meetingRecordingUnknown)
+	a.meetingRecordingOn()
+}
+
+// A failed startup read stays pending. The next gate evaluation can observe
+// a repaired config. A simultaneous settings change wins over a pending read.
 func (a *App) meetingRecordingOn() bool {
+	on, _ := a.meetingRecordingPreference()
+	return on
+}
+
+func (a *App) meetingRecordingPreference() (on, known bool) {
 	if a == nil {
-		return true
+		return true, true
 	}
-	return !a.meetingRecordingDisabled.Load()
+	state := a.meetingRecordingState.Load()
+	if state == meetingRecordingUnknown {
+		on, known := readAudioConfig().meeting()
+		if !known {
+			return false, false
+		}
+		resolved := meetingRecordingOff
+		if on {
+			resolved = meetingRecordingEnabled
+		}
+		a.meetingRecordingState.CompareAndSwap(meetingRecordingUnknown, resolved)
+		state = a.meetingRecordingState.Load()
+	}
+	return state == meetingRecordingEnabled, true
 }
 
 // automaticMeetingRecordingEpoch snapshots the current preference generation.
@@ -34,7 +60,7 @@ func (a *App) automaticMeetingRecordingEpoch() (uint64, bool) {
 	}
 	for {
 		epoch := a.meetingRecordingEpoch.Load()
-		enabled := !a.meetingRecordingDisabled.Load()
+		enabled := a.meetingRecordingOn()
 		if epoch == a.meetingRecordingEpoch.Load() {
 			return epoch, enabled
 		}
@@ -45,7 +71,7 @@ func (a *App) automaticMeetingRecordingEpochIsCurrent(epoch uint64) bool {
 	if a == nil {
 		return epoch == 0
 	}
-	return !a.meetingRecordingDisabled.Load() && a.meetingRecordingEpoch.Load() == epoch
+	return a.meetingRecordingOn() && a.meetingRecordingEpoch.Load() == epoch
 }
 
 // SetAutomaticMeetingRecordingEnabled persists and hot-applies the user's
@@ -62,8 +88,8 @@ func (a *App) SetAutomaticMeetingRecordingEnabled(enabled bool) error {
 		return err
 	}
 
-	wasEnabled := !a.meetingRecordingDisabled.Load()
-	if wasEnabled == enabled {
+	state := a.meetingRecordingState.Load()
+	if state != meetingRecordingUnknown && (state == meetingRecordingEnabled) == enabled {
 		a.meetingRecordingMu.Unlock()
 		return nil
 	}
@@ -71,11 +97,11 @@ func (a *App) SetAutomaticMeetingRecordingEnabled(enabled bool) error {
 		// Publish the new generation before opening the gate. A reader can
 		// briefly reject new work, but can never accept old work as current.
 		a.meetingRecordingEpoch.Add(1)
-		a.meetingRecordingDisabled.Store(false)
+		a.meetingRecordingState.Store(meetingRecordingEnabled)
 	} else {
 		// Close the gate before invalidating the generation. Durable meeting
 		// writes take meetingRecordingMu, so none can outlive this setter.
-		a.meetingRecordingDisabled.Store(true)
+		a.meetingRecordingState.Store(meetingRecordingOff)
 		a.meetingRecordingEpoch.Add(1)
 	}
 	if !enabled {

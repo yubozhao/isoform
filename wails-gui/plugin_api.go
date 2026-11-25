@@ -85,7 +85,8 @@ func (a *App) builtinPluginEnabled(builtin plugins.Builtin, reader plugins.Reade
 		}
 		return a.GetBackgroundListening(), nil
 	case "meeting-recording":
-		return !loadConfig().AutomaticMeetingRecordingDisabled, nil
+		on, _ := readAudioConfig().meeting()
+		return on, nil
 	case "auto-speak":
 		return a.GetAutoSpeakEnabled(), nil
 	case "auto-speak-automation":
