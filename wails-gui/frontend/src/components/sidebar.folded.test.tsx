@@ -77,7 +77,7 @@ async function expectFoldedRail() {
     expect(rail).toHaveAttribute("data-collapsed", "true");
     expect(within(rail).queryByText(t("sidebar.stagingBadge"))).not.toBeInTheDocument();
     expect(rail).toHaveStyle({ width: "56px" });
-    for (const key of ["today", "mainChat", "agents", "activity", "you", "show"] as const) {
+    for (const key of ["today", "agents", "activity", "you", "show"] as const) {
         const button = within(rail).getByRole("button", { name: new RegExp(`^${t(`sidebar.${key}`)}`) });
         const icon = button.querySelector("svg")!;
         expectPainted(icon);
@@ -86,6 +86,13 @@ async function expectFoldedRail() {
     }
     expectPainted(within(rail).getByLabelText(t("sidebar.toAnswer", { count: 2 })));
 }
+
+// Scope cut A2: these guards run with Chat off, as the app does by default;
+// the rollback cases turn the \`chat\` switch on.
+beforeEach(() => {
+    const g = globalThis as Record<string, unknown>;
+    g.__isoformFeatureSwitchesForTest = { ...(g.__isoformFeatureSwitchesForTest as object), chat: false };
+});
 
 describe.each(["paper", "onedark"])("Folded sidebar paint on macOS (%s)", (theme) => {
     let style: HTMLStyleElement;

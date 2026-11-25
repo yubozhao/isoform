@@ -295,6 +295,9 @@ type menuBarView struct {
 	Next *menuBarNext `json:"next,omitempty"`
 	// QuickChat is Quick chat's shortcut, as the person set it.
 	QuickChat string `json:"quickChat,omitempty"`
+	// QuickChatOn shows the Quick chat row. Quick chat went with Chat in
+	// the scope cut (A2); the row comes back with the `chat` switch.
+	QuickChatOn bool `json:"quickChatOn,omitempty"`
 	// ClosedEyesKey is Closed Eyes' one shortcut, system-wide (pass-questions
 	// v1.0.0 rule 1), shown on the popover's first control.
 	ClosedEyesKey string `json:"closedEyesKey,omitempty"`
@@ -598,6 +601,7 @@ func (a *App) menuBarView(lang string, readWaiting bool) (perfValue menuBarView,
 	}
 	view.Models = a.menuBarModels(w)
 	view.QuickChat = quickChatHotkeyDisplay(currentQuickChatHotkey())
+	view.QuickChatOn = menuBarChatOn()
 	view.ClosedEyesKey = closedEyesHotkeyDisplay(goruntime.GOOS)
 	view.MarkLabel = menuBarMarkLabel(w, paused)
 	view.SignOut = menuBarTroubleRow(w, lang, trouble)
@@ -981,6 +985,10 @@ func (a *App) menuBarSignOutRow(order []string, w map[string]string) *menuBarSig
 // quickChatHotkeyDisplay is Quick chat's shortcut as the popover shows it:
 // "⌥⌥" for double Option, the modifier glyphs and key otherwise, and ""
 // when Quick chat has no shortcut.
+// menuBarChatOn reports the `chat` switch (scope cut A1 names it; this reads
+// it by name so the menu bar needs no other change when it lands).
+var menuBarChatOn = func() bool { return featureOn(featureSwitch("chat")) }
+
 func quickChatHotkeyDisplay(c QuickChatHotkeyConfig) string {
 	switch c.Key {
 	case "", quickChatHotkeyKeyOff:

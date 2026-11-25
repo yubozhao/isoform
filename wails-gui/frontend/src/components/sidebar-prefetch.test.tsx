@@ -69,17 +69,32 @@ afterEach(() => {
     resetPageQueries();
 });
 
+// Scope cut A2: these guards run with Chat off, as the app does by default;
+// the rollback cases turn the \`chat\` switch on.
+beforeEach(() => {
+    const g = globalThis as Record<string, unknown>;
+    g.__isoformFeatureSwitchesForTest = { ...(g.__isoformFeatureSwitchesForTest as object), chat: false };
+});
+
 describe('sidebar row prefetch', () => {
     it.each([
         ['Activity', ['EnsureDailySummary', 'GetActivitiesInRange', 'GetDayThreads']],
         ['Today', ['GetTodayTopics', 'GetLatestBrief']],
         ['Chat', ['GetMainChat']],
     ] as const)('pointerenter on the %s row starts its primary reads', async (label, expected) => {
-        renderSidebar();
-        fireEvent.pointerEnter(screen.getByRole('button', { name: label }));
-        await vi.waitFor(() => {
-            for (const name of expected) expect(fixture.calls).toContain(name);
-        });
+        // Chat shows only while its switch is on (scope cut A2).
+        const g = globalThis as Record<string, unknown>;
+        const before = g.__isoformFeatureSwitchesForTest;
+        if (label === 'Chat') g.__isoformFeatureSwitchesForTest = { ...(before as object), chat: true };
+        try {
+            renderSidebar();
+            fireEvent.pointerEnter(screen.getByRole('button', { name: label }));
+            await vi.waitFor(() => {
+                for (const name of expected) expect(fixture.calls).toContain(name);
+            });
+        } finally {
+            g.__isoformFeatureSwitchesForTest = before;
+        }
     });
 
     it('keyboard focus on the Activity row starts its reads', async () => {

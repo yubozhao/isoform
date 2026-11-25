@@ -889,3 +889,23 @@ func TestMenuBarMarkLabelSaysTheState(t *testing.T) {
 	}
 	menuBarWatch.Store("")
 }
+
+// Scope cut A2: Quick chat went with Chat. The popover's row shows only while
+// the `chat` switch is on (YANSU_FEATURES=chat, the rollback).
+func TestMenuBarQuickChatRowFollowsTheChatSwitch(t *testing.T) {
+	t.Setenv(featureSwitchesEnv, "")
+	if menuBarChatOn() {
+		t.Fatal("Quick chat row shown with the chat switch off")
+	}
+	t.Setenv(featureSwitchesEnv, "chat")
+	if !menuBarChatOn() {
+		t.Fatal("Quick chat row hidden with the chat switch on")
+	}
+	page, err := os.ReadFile(filepath.Join("menubar_window_assets", "popover.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(page), "el('qc').hidden = !model.quickChatOn;") {
+		t.Fatal("the popover no longer hides the Quick chat row by quickChatOn")
+	}
+}

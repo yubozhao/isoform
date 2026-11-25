@@ -17,6 +17,8 @@ import {
 import { type Project } from "@/types";
 import { SIDEBAR_OPEN_WIDTH, SIDEBAR_COLLAPSED_WIDTH } from "@/hooks/useSidebarResize";
 import { Button } from "@/components/ui/button";
+import { useFeatureSwitches } from "@/hooks/useFeatureSwitches";
+import { chatFeatureOn, shellPlaces } from "@/lib/shell-places";
 
 /** The main views. The sidebar shows five places (computer-map v1.0.0 §2):
  *  Today, Chat, Agents, Activity and You. You is About you ("memory"), How
@@ -95,6 +97,7 @@ export function Sidebar({
     appMode,
 }: SidebarProps) {
     const { t } = useTranslation("app");
+    const chatOn = chatFeatureOn(useFeatureSwitches());
 
     // Chat is one thread (computer-map §3 item 7): the Chat place is selected
     // whenever the chat view shows the main chat, from the first frame.
@@ -141,13 +144,15 @@ export function Sidebar({
         badgeLabel?: string;
         warmLazy?: boolean;
     };
-    const places: Place[] = [
-        { key: "today", label: t("sidebar.today"), Icon: TodayIcon, onClick: onOpenToday, active: appMode === "today", page: "today", badge: waitingCount, badgeLabel: t("sidebar.toAnswer", { count: waitingCount }) },
-        { key: "chat", label: t("sidebar.mainChat"), Icon: ChatBubbleIcon, onClick: onOpenMainChat, active: isOnMainChat, page: "chat" },
-        { key: "agents", label: t("sidebar.agents"), Icon: Bot, onClick: onOpenAgents, active: appMode === "agents", page: "agents", badge: agentsWaiting, badgeLabel: t("sidebar.agentsWaiting", { count: agentsWaiting }) },
-        { key: "activity", label: t("sidebar.activity"), Icon: Activity, onClick: onOpenActivity, active: appMode === "activity", page: "activity", warmLazy: true },
-        { key: "you", label: t("sidebar.you"), Icon: User, onClick: () => onOpenYou(), active: youOpen, page: "about-you" },
-    ];
+    const byKey: Record<string, Place> = {
+        today: { key: "today", label: t("sidebar.today"), Icon: TodayIcon, onClick: onOpenToday, active: appMode === "today", page: "today", badge: waitingCount, badgeLabel: t("sidebar.toAnswer", { count: waitingCount }) },
+        chat: { key: "chat", label: t("sidebar.mainChat"), Icon: ChatBubbleIcon, onClick: onOpenMainChat, active: isOnMainChat, page: "chat" },
+        agents: { key: "agents", label: t("sidebar.agents"), Icon: Bot, onClick: onOpenAgents, active: appMode === "agents", page: "agents", badge: agentsWaiting, badgeLabel: t("sidebar.agentsWaiting", { count: agentsWaiting }) },
+        activity: { key: "activity", label: t("sidebar.activity"), Icon: Activity, onClick: onOpenActivity, active: appMode === "activity", page: "activity", warmLazy: true },
+        you: { key: "you", label: t("sidebar.you"), Icon: User, onClick: () => onOpenYou(), active: youOpen, page: "about-you" },
+    };
+    // Four places after the scope cut: Chat shows only while its switch is on.
+    const places: Place[] = shellPlaces(chatOn).map((key) => byKey[key]);
 
     // One expanded row. The active row has the rounded highlight only (no
     // left-edge bar, project rule 12).

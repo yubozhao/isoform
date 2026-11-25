@@ -78,9 +78,24 @@ function renderSidebar(handlers: Partial<React.ComponentProps<typeof Sidebar>> =
     return { props, ...view };
 }
 
-const places = (locale: typeof en) => [locale.sidebar.today, locale.sidebar.mainChat, locale.sidebar.agents, locale.sidebar.activity, locale.sidebar.you];
+const places = (locale: typeof en) => [locale.sidebar.today, locale.sidebar.agents, locale.sidebar.activity, locale.sidebar.you];
+const SWITCHES_KEY = "__isoformFeatureSwitchesForTest";
+/** The `chat` switch on, for the rollback cases (scope cut A2). */
+const withChatOn = () => {
+    const g = globalThis as Record<string, unknown>;
+    const before = g[SWITCHES_KEY];
+    g[SWITCHES_KEY] = { ...(before as object), chat: true };
+    return () => { g[SWITCHES_KEY] = before; };
+};
 
-describe("Sidebar: five places (computer-map v1.0.0 §2)", () => {
+// Scope cut A2: these guards run with Chat off, as the app does by default;
+// the rollback cases turn the \`chat\` switch on.
+beforeEach(() => {
+    const g = globalThis as Record<string, unknown>;
+    g.__isoformFeatureSwitchesForTest = { ...(g.__isoformFeatureSwitchesForTest as object), chat: false };
+});
+
+describe("Sidebar: four places (scope cut A2)", () => {
     beforeEach(async () => {
         await i18n.changeLanguage("en");
         localStorage.clear();
@@ -100,22 +115,38 @@ describe("Sidebar: five places (computer-map v1.0.0 §2)", () => {
         expect(lockup.querySelector("svg")).toHaveClass("text-accent");
     });
 
-    it.each([en, zh])("lists Today, Chat, Agents, Activity and You, in order", async (locale) => {
+    it.each([en, zh])("lists Today, Agents, Activity and You, in order, with no Chat", async (locale) => {
         await i18n.changeLanguage(locale === en ? "en" : "zh-CN");
         renderSidebar();
         const navigation = screen.getByRole("navigation", { name: locale.sidebar.mainNavigation });
         expect(within(navigation).getAllByRole("button").map((row) => row.textContent)).toEqual(places(locale));
     });
 
-    it.each([false, true])("keeps the same five places on the rail and opens each (collapsed=%s)", (collapsed) => {
+    it.each([false, true])("keeps the same four places on the rail and opens each (collapsed=%s)", (collapsed) => {
         const { props } = renderSidebar({ collapsed });
         const rows = [...document.querySelectorAll<HTMLElement>("[data-sidebar-place]")];
-        expect(rows.map((row) => row.getAttribute("data-sidebar-place"))).toEqual(["today", "chat", "agents", "activity", "you"]);
-        const callbacks = [props.onOpenToday, props.onOpenMainChat, props.onOpenAgents, props.onOpenActivity, props.onOpenYou];
+        expect(rows.map((row) => row.getAttribute("data-sidebar-place"))).toEqual(["today", "agents", "activity", "you"]);
+        const callbacks = [props.onOpenToday, props.onOpenAgents, props.onOpenActivity, props.onOpenYou];
         rows.forEach((row, index) => {
             fireEvent.click(row);
             expect(callbacks[index]).toHaveBeenCalledOnce();
         });
+        expect(props.onOpenMainChat).not.toHaveBeenCalled();
+    });
+
+    // The rollback (YANSU_FEATURES=chat): Chat comes back after You, and the
+    // other places keep their order and keys.
+    it.each([false, true])("brings Chat back last while the chat switch is on (collapsed=%s)", (collapsed) => {
+        const restore = withChatOn();
+        try {
+            const { props } = renderSidebar({ collapsed });
+            const rows = [...document.querySelectorAll<HTMLElement>("[data-sidebar-place]")];
+            expect(rows.map((row) => row.getAttribute("data-sidebar-place"))).toEqual(["today", "agents", "activity", "you", "chat"]);
+            fireEvent.click(rows[4]);
+            expect(props.onOpenMainChat).toHaveBeenCalledOnce();
+        } finally {
+            restore();
+        }
     });
 
     it("has none of what goes: Search, Tasks, Goals, Library, Pinned, groups, sessions, New chat", () => {
@@ -154,10 +185,9 @@ describe("Sidebar: five places (computer-map v1.0.0 §2)", () => {
         expect(within(place("today")).getByLabelText(i18n.t("app:sidebar.toAnswer", { count: 3 }))).toHaveTextContent("3");
         expect(within(place("agents")).getByLabelText(i18n.t("app:sidebar.agentsWaiting", { count: 2 }))).toHaveTextContent("2");
         expect(en.sidebar.agentsWaiting).toBe("{{count}} waiting for your yes");
-        expect(place("chat").querySelector("[role=img]")).toBeNull();
+        expect(place("chat")).toBeNull();
         expect(sidebarSource).not.toMatch(/data-chat-dot|chatUnread|bg-copper/);
-        expect(place("chat")).toHaveAttribute("data-main-chat-row");
-        for (const key of ["chat", "activity", "you"]) expect(place(key).textContent).not.toMatch(/\d/);
+        for (const key of ["activity", "you"]) expect(place(key).textContent).not.toMatch(/\d/);
     });
 
     it.each([0, 2, 10])("keeps the folded Today badge compact for %i items", (count) => {
@@ -247,10 +277,10 @@ describe("Sidebar: five places (computer-map v1.0.0 §2)", () => {
 
     // computer-window v1.0.0 rule 4: each rail icon names its place and key on hover.
     it("names each rail icon and its key on hover", () => {
-        const keys: Record<string, string> = { "go-today": "⌘1", "go-chat": "⌘2", "go-agents": "⌘3", "go-activity": "⌘4", "go-you": "⌘5" };
+        const keys: Record<string, string> = { "go-today": "⌘1", "go-agents": "⌘2", "go-activity": "⌘3", "go-you": "⌘4", "go-chat": "⌘5" };
         renderSidebar({ collapsed: true, waitingCount: 2, shortcutFor: (id: string) => keys[id] });
         const rail = (key: string) => document.querySelector(`[data-rail-index][data-sidebar-place=${key}]`) as HTMLElement;
-        expect(rail("chat")).toHaveAttribute("title", "Chat · ⌘2");
+        expect(rail("agents")).toHaveAttribute("title", "Agents · ⌘2");
         expect(rail("today")).toHaveAttribute("title", "Today, 2 to answer · ⌘1");
         expect(rail("today")).toHaveAccessibleName("Today, 2 to answer");
     });
@@ -309,7 +339,7 @@ describe("Sidebar accessibility", () => {
     it.each([false, true])("reads counts and states as words, not just a badge or a dot (folded: %s)", (collapsed) => {
         renderSidebar({ collapsed, waitingCount: 4 });
         expect(screen.getByRole("button", { name: "Today, 4 to answer" })).toBeInTheDocument();
-        expect(screen.getByRole("button", { name: "Chat" })).toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "Chat" })).toBeNull();
     });
 
     it("names every button", () => {
@@ -318,12 +348,15 @@ describe("Sidebar accessibility", () => {
         expect(unnamed.map((b) => b.outerHTML.replace(/ class="[^"]*"/g, "").slice(0, 240))).toEqual([]);
     });
 
-    it("gives Today, Chat, Agents, Activity and You the keys 1 to 5, in the sidebar's order", () => {
+    // Interim keys until design answers (scope cut A2): the four places are
+    // ⌘1 to ⌘4 in sidebar order, and ⌘5 is Chat's, used only while its
+    // switch is on.
+    it("gives Today, Agents, Activity and You the keys 1 to 4, and Chat 5", () => {
         const { result } = renderHook(() => useKeybindings());
-        expect(PAGE_KEYS).toEqual(["today", "chat", "agents", "activity", "you"]);
+        expect(PAGE_KEYS).toEqual(["today", "agents", "activity", "you", "chat"]);
         renderSidebar();
         const order = Array.from(document.querySelectorAll("aside [data-sidebar-place]")).map((el) => el.getAttribute("data-sidebar-place"));
-        expect(order.slice(0, 5)).toEqual([...PAGE_KEYS]);
+        expect(order).toEqual(PAGE_KEYS.slice(0, 4));
         PAGE_KEYS.forEach((page, i) => {
             const combo = result.current.getCombo(`go-${page}`)!;
             expect(combo.key).toBe(String(i + 1));

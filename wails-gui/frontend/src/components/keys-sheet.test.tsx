@@ -65,6 +65,27 @@ function keyPaths(value: unknown, prefix = ""): string[] {
     );
 }
 
+const SWITCHES_KEY = "__isoformFeatureSwitchesForTest";
+/** The `chat` switch on for one test: the rollback brings back Quick chat,
+ *  In Chat and the Vim keys (scope cut A2). */
+function withChatOn<T>(run: () => T | Promise<T>): Promise<T> {
+    const g = globalThis as Record<string, unknown>;
+    const before = g[SWITCHES_KEY];
+    g[SWITCHES_KEY] = { ...(before as object), chat: true };
+    return Promise.resolve()
+        .then(run)
+        .finally(() => {
+            g[SWITCHES_KEY] = before;
+        });
+}
+
+// Scope cut A2: these guards run with Chat off, as the app does by default;
+// the rollback cases turn the \`chat\` switch on.
+beforeEach(() => {
+    const g = globalThis as Record<string, unknown>;
+    g.__isoformFeatureSwitchesForTest = { ...(g.__isoformFeatureSwitchesForTest as object), chat: false };
+});
+
 describe("Keyboard shortcuts sheet", () => {
     beforeEach(async () => {
         vi.clearAllMocks();
@@ -75,25 +96,20 @@ describe("Keyboard shortcuts sheet", () => {
         mocks.setQuickChatHotkeyRecording.mockResolvedValue(undefined);
     });
 
-    it("lists the five groups in the design's order with the app's names", () => {
+    const names = (group: string) =>
+        Array.from(within(screen.getByRole("region", { name: group })).getAllByText(/./, { selector: "span.text-ink" })).map(
+            (node) => node.textContent,
+        );
+
+    // Scope cut A2: Chat and Quick chat are gone, so is the In Chat group.
+    it("lists four groups in the design's order with the app's names, and no Chat", () => {
         render(<Harness />);
         const dialog = screen.getByRole("dialog", { name: "Keyboard shortcuts" });
         const groups = within(dialog).getAllByRole("region").map((group) => group.getAttribute("aria-label"));
-        expect(groups).toEqual([
-            "Anywhere on this computer",
-            "In Isoform",
-            "On an item in Your work",
-            "The brief",
-            "In Chat",
-        ]);
-        const names = (group: string) =>
-            Array.from(within(screen.getByRole("region", { name: group })).getAllByText(/./, { selector: "span.text-ink" })).map(
-                (node) => node.textContent,
-            );
-        expect(names("Anywhere on this computer")).toEqual(["Quick chat", "Closed Eyes"]);
+        expect(groups).toEqual(["Anywhere on this computer", "In Isoform", "On an item in Your work", "The brief"]);
+        expect(names("Anywhere on this computer")).toEqual(["Closed Eyes"]);
         expect(names("In Isoform")).toEqual([
             "Today",
-            "Chat",
             "Agents",
             "Activity",
             "You",
@@ -104,7 +120,8 @@ describe("Keyboard shortcuts sheet", () => {
         ]);
         expect(names("On an item in Your work")).toEqual(["Move", "Yes", "No", "Not mine", "Edit", "Undo"]);
         expect(names("The brief")).toEqual(["Hear it, or pause"]);
-        expect(names("In Chat")).toEqual(["Send", "New line"]);
+        expect(within(dialog).queryByText("Quick chat")).not.toBeInTheDocument();
+        expect(within(dialog).queryByRole("switch", { name: "Vim keys in Chat" })).not.toBeInTheDocument();
         // Never listed: the developer replay, the zoom keys and the old New chat.
         expect(within(dialog).queryByText("Run setup again")).not.toBeInTheDocument();
         expect(within(dialog).queryByText("Zoom in")).not.toBeInTheDocument();
@@ -112,30 +129,47 @@ describe("Keyboard shortcuts sheet", () => {
         expect(within(dialog).queryByText("⌘T")).not.toBeInTheDocument();
     });
 
+    it("brings back Quick chat, Chat, In Chat and the Vim keys while the chat switch is on", () =>
+        withChatOn(() => {
+            render(<Harness />);
+            const dialog = screen.getByRole("dialog", { name: "Keyboard shortcuts" });
+            expect(within(dialog).getAllByRole("region").map((group) => group.getAttribute("aria-label"))).toEqual([
+                "Anywhere on this computer",
+                "In Isoform",
+                "On an item in Your work",
+                "The brief",
+                "In Chat",
+            ]);
+            expect(names("Anywhere on this computer")).toEqual(["Quick chat", "Closed Eyes"]);
+            expect(names("In Isoform").slice(0, 5)).toEqual(["Today", "Agents", "Activity", "You", "Chat"]);
+            expect(names("In Chat")).toEqual(["Send", "New line"]);
+            expect(screen.getByRole("button", { name: "Send, Return, Change" })).toBeInTheDocument();
+            const vim = screen.getByRole("switch", { name: "Vim keys in Chat" });
+            expect(vim).toHaveAttribute("aria-checked", "false");
+            fireEvent.click(vim);
+            expect(vim).toHaveAttribute("aria-checked", "true");
+        }));
+
     it("shows Closed Eyes as always this one, with no Change, and the foot", () => {
         render(<Harness />);
         const anywhere = screen.getByRole("region", { name: "Anywhere on this computer" });
         expect(within(anywhere).getByText("always this one")).toBeInTheDocument();
         expect(within(anywhere).getByLabelText("Closed Eyes, Control Option Command E")).toBeInTheDocument();
-        expect(within(anywhere).getAllByRole("button", { name: /Change$/ })).toHaveLength(1);
+        expect(within(anywhere).queryAllByRole("button", { name: /Change$/ })).toHaveLength(0);
         expect(within(screen.getByRole("region", { name: "On an item in Your work" })).queryByRole("button")).toBeNull();
 
-        expect(screen.getByText("j and k to scroll, i to type, outside the box")).toBeInTheDocument();
+        expect(screen.queryByText("j and k to scroll, i to type, outside the box")).not.toBeInTheDocument();
         expect(
             screen.getByText("Y, N, M and E work only on the item in focus, so typing anywhere else never answers it."),
         ).toBeInTheDocument();
-        const vim = screen.getByRole("switch", { name: "Vim keys in Chat" });
-        expect(vim).toHaveAttribute("aria-checked", "false");
-        fireEvent.click(vim);
-        expect(vim).toHaveAttribute("aria-checked", "true");
     });
 
     it("puts focus on the first Change and reads each row with its keys as words", async () => {
         render(<Harness />);
-        const first = screen.getByRole("button", { name: "Quick chat, Option twice, Change" });
+        const first = screen.getByRole("button", { name: "Today, Command 1, Change" });
         await waitFor(() => expect(first).toHaveFocus());
-        expect(screen.getByRole("button", { name: "Agents, Command 3, Change" })).toBeInTheDocument();
-        expect(screen.getByRole("button", { name: "Send, Return, Change" })).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Agents, Command 2, Change" })).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "You, Command 4, Change" })).toBeInTheDocument();
     });
 
     it("records new keys and announces how to keep the old ones", async () => {
@@ -185,7 +219,8 @@ describe("Keyboard shortcuts sheet", () => {
         expect(localStorage.getItem("yansu.keybindings") ?? "{}").not.toContain("command-palette");
     });
 
-    it("keeps the Quick chat OS hook in step when it is changed from the sheet", async () => {
+    it("keeps the Quick chat OS hook in step when it is changed from the sheet (chat switch on)", () =>
+        withChatOn(async () => {
         render(<Harness />);
         await startRecording("Quick chat, Option twice, Change");
         await waitFor(() => expect(mocks.setQuickChatHotkeyRecording).toHaveBeenCalledWith(true));
@@ -195,7 +230,7 @@ describe("Keyboard shortcuts sheet", () => {
         await waitFor(() =>
             expect(screen.getByRole("button", { name: "Quick chat, Control Space, Change" })).toBeInTheDocument(),
         );
-    });
+        }));
 
     it("Escape while recording keeps the keys and the sheet; Escape again closes it and returns focus", async () => {
         render(<Harness initiallyOpen={false} />);

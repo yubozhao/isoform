@@ -42,7 +42,9 @@ import {
 import type { TodayTopic } from "@/components/today/topics";
 import { useObservationPaused } from "@/components/today/useObservationPaused";
 import type { CronJobState } from "@/hooks/useCronJobs";
-import { PAGE_KEYS, type PageKey } from "@/hooks/useKeybindings";
+import { type PageKey } from "@/hooks/useKeybindings";
+import { useFeatureSwitches } from "@/hooks/useFeatureSwitches";
+import { chatFeatureOn, shellPlaces } from "@/lib/shell-places";
 import { toTodayTopics } from "@/hooks/useTodayTopics";
 import { shortDate } from "@/lib/know-how";
 import { calendarDaysAgo } from "@/lib/memory-content";
@@ -324,6 +326,9 @@ interface RemoteState {
 // the query and the loaded sources start fresh on every open.
 function SearchBody({ escapeRef, movedRef, selected, setSelected, close, projects, shortcutFor, actions }: SearchBodyProps) {
     const { t, i18n } = useTranslation("app");
+    // Chat is gone (scope cut A2): no Chat group and no Go to › Chat while
+    // its switch is off.
+    const chatOn = chatFeatureOn(useFeatureSwitches());
     const { t: ts } = useTranslation("settings");
     const language = i18n.resolvedLanguage ?? i18n.language;
     const [query, setQuery] = useState("");
@@ -523,7 +528,7 @@ function SearchBody({ escapeRef, movedRef, selected, setSelected, close, project
             you: t("sidebar.you"),
         };
         const icon: Record<PageKey, Icon> = { today: Sunrise, chat: MessageSquare, agents: Bot, activity: Activity, you: CircleUser };
-        const rows: Row[] = PAGE_KEYS.map((page) => ({
+        const rows: Row[] = shellPlaces(chatOn).map((page) => ({
             key: `goto:${page}`,
             title: label[page],
             shortcut: shortcutFor?.(`go-${page}`),
@@ -538,7 +543,7 @@ function SearchBody({ escapeRef, movedRef, selected, setSelected, close, project
             run: run(() => act().openSettings()),
         });
         return needle ? rows.filter((row) => includes(row.title, needle)) : rows;
-    }, [t, shortcutFor, needle, run, act]);
+    }, [t, shortcutFor, needle, run, act, chatOn]);
 
     // Like the Settings sidebar search: a hit on the page name opens the
     // page as usual; a hit that came only from its keywords (which name what
@@ -600,6 +605,7 @@ function SearchBody({ escapeRef, movedRef, selected, setSelected, close, project
     const groups = useMemo<Group[]>(() => {
         const byGroup = new Map<GroupId, Row[]>();
         const push = (id: GroupId, row: Row) => {
+            if (id === "chats" && !chatOn) return;
             const rows = byGroup.get(id) ?? [];
             if (!rows.some((existing) => existing.key === row.key)) rows.push(row);
             byGroup.set(id, rows);
@@ -656,7 +662,8 @@ function SearchBody({ escapeRef, movedRef, selected, setSelected, close, project
         for (const row of goToRows) push("goTo", row);
         const text = query.trim();
         const translate = (key: string) => ts(key as never) as string;
-        for (const entry of searchSettingsPages(text, translate)) {
+        // Chat's Settings pages (Chat apps) go with Chat (scope cut A2, A5).
+        for (const entry of searchSettingsPages(text, translate, { chat: chatOn })) {
             push("goTo", {
                 key: `settings:${entry.id}`,
                 title: translate(entry.labelKey),
@@ -688,6 +695,7 @@ function SearchBody({ escapeRef, movedRef, selected, setSelected, close, project
         chatName,
         openTopicById,
         openSettingsPage,
+        chatOn,
     ]);
 
     // ── Selection: the first row, also as more rows arrive, until the
@@ -710,8 +718,8 @@ function SearchBody({ escapeRef, movedRef, selected, setSelected, close, project
         const failed = new Set<SearchPlace>();
         if (current?.failed) SHOWN_PLACES.forEach((place) => failed.add(place));
         for (const place of current?.results?.failedPlaces ?? []) failed.add(place);
-        return SHOWN_PLACES.filter((place) => failed.has(place));
-    }, [needle, current]);
+        return SHOWN_PLACES.filter((place) => failed.has(place) && (place !== "chat" || chatOn));
+    }, [needle, current, chatOn]);
 
     const words = useMemo(() => queryWords(query), [query]);
     const resultCount = keys.length;
