@@ -31,6 +31,8 @@ const mocks = vi.hoisted(() => ({
     voiceSamples: vi.fn(),
     enroll: vi.fn(),
     testVoice: vi.fn(),
+    voice: vi.fn(),
+    forgetVoice: vi.fn(),
 }));
 const firstDay = vi.hoisted(() => ({ value: { day: -1, firstDays: false, history: null, calendar: null } as Record<string, unknown> }));
 vi.mock("@/hooks/useFirstDay", () => ({ useFirstDay: () => firstDay.value }));
@@ -64,6 +66,8 @@ vi.mock("@/lib/wails-shim-app", () => ({
     ListVoiceSamples: mocks.voiceSamples,
     StartPersonResearch: mocks.startResearch,
     TestVoiceMatch: mocks.testVoice,
+    GetPersonVoice: mocks.voice,
+    ForgetPersonVoice: mocks.forgetVoice,
 }));
 
 // The page query cache installs its own invalidation listeners for some of
@@ -241,6 +245,9 @@ beforeEach(async () => {
     mocks.unlink.mockResolvedValue(undefined);
     mocks.cancel.mockResolvedValue(undefined);
     mocks.voiceSamples.mockResolvedValue([]);
+    // A person's voice line reads GetPersonVoice; unmocked, it failed 120 ms
+    // in (readWithRetry) and a slow run saw a second Try again (N12, N25).
+    mocks.voice.mockResolvedValue({ conversations: [], samples: 0 });
     firstDay.value = { day: -1, firstDays: false, history: null, calendar: null };
     await i18n.changeLanguage("en");
 });
@@ -1088,6 +1095,16 @@ describe("Everything stays reachable", () => {
         expect(aside).not.toHaveTextContent("runner not initialized");
         expect(aside).not.toHaveTextContent(/dossier|Research/);
         expect(i18n.t("people:dossierHeading", { lng: "zh-CN" })).toBe("简介");
+    });
+
+    it("reads the person's voice and shows no voice failure when none is named", async () => {
+        world();
+        render(<PeoplePage />);
+        const aside = await screen.findByRole("complementary", { name: "Person detail" });
+        await waitFor(() => expect(mocks.voice).toHaveBeenCalledWith("priya"));
+        // Past readWithRetry's 120 ms second try: a failed read would show by now.
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        expect(within(aside).queryByText("Couldn't read what Isoform knows of their voice.")).toBeNull();
     });
 
     it("N12/N27: a written profile reads Written and Sources; Delete profile asks first", async () => {
