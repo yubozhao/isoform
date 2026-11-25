@@ -677,7 +677,11 @@ func (r *darwinSystemAudioRecorder) Start() error {
 	// Creating the process tap is what shows the System Audio Recording
 	// dialog. Until the user has granted it once (recorded in config after
 	// the first working capture), only a user-driven request may create it.
-	if !loadConfig().SystemAudioPermissionGranted && !permissionPromptsAllowed() {
+	granted, known := readAudioConfig().systemPermission()
+	if !known {
+		return fmt.Errorf("system audio config unreadable: %w", errPermissionNotRequested)
+	}
+	if !granted && !permissionPromptsAllowed() {
 		log.Printf("[background-audio] system audio permission not granted yet; not asking outside a user request")
 		recordAudioCaptureEvent(AudioCaptureEvent{
 			Source: "system_audio", Kind: "skipped",

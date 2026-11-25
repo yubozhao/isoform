@@ -51,6 +51,9 @@ func (r *combinedAudioRecorder) Start() error {
 	var retry []audioRecorder
 	for _, recorder := range candidates {
 		source := primaryRecorderSource(recorder)
+		if r.canStart != nil && !r.canStart(source) {
+			continue
+		}
 		err := recorder.Start()
 		if errors.Is(err, errPermissionNotRequested) {
 			// Not an error: the permission has not been asked for yet, and

@@ -17,12 +17,13 @@ import (
 
 // listenOutsideCalls reports whether a chunk captured outside any call may
 // be turned into text.
-func (a *App) listenOutsideCalls(source backgroundListeningSource) bool {
+func (cfg audioCaptureConfig) listenOutsideCalls(source backgroundListeningSource) bool {
 	switch source {
 	case backgroundListeningSourceMicrophone:
 		return true
 	case backgroundListeningSourceSystem:
-		return a.GetSystemAudioOutsideCallsEnabled()
+		on, _ := cfg.outsideCalls()
+		return on
 	default:
 		return false
 	}
@@ -35,22 +36,15 @@ func (a *App) GetSystemAudioOutsideCallsEnabled() bool {
 	if a == nil {
 		return false
 	}
-	a.systemAudioOutsideCallsOnce.Do(func() {
-		a.systemAudioOutsideCalls.Store(loadConfig().BackgroundSystemAudioOutsideCalls)
-	})
-	return a.systemAudioOutsideCalls.Load()
+	on, _ := readAudioConfig().outsideCalls()
+	return on
 }
 
 // SetSystemAudioOutsideCallsEnabled persists the switch.
 func (a *App) SetSystemAudioOutsideCallsEnabled(enabled bool) error {
-	if err := updateConfig(func(cfg *yansuConfig) {
+	return updateConfig(func(cfg *yansuConfig) {
 		cfg.BackgroundSystemAudioOutsideCalls = enabled
-	}); err != nil {
-		return err
-	}
-	a.systemAudioOutsideCallsOnce.Do(func() {})
-	a.systemAudioOutsideCalls.Store(enabled)
-	return nil
+	})
 }
 
 // speechDictationTarget names the app the user was dictating into: a

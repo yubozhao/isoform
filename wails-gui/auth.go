@@ -266,26 +266,36 @@ func loadConfig() yansuConfig {
 // loadConfigChecked preserves the first-install defaults but reports an
 // unreadable or malformed existing file to settings callers.
 func loadConfigChecked() (yansuConfig, error) {
+	cfg, _, err := readConfigFile()
+	return cfg, err
+}
+
+// readConfigFile distinguishes a missing first-run file from an existing
+// legacy config in the same read that decodes its switches.
+func readConfigFile() (yansuConfig, bool, error) {
 	path, err := yansuConfigPath()
 	if err != nil {
-		return yansuConfig{}, err
+		return yansuConfig{}, false, err
 	}
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		return yansuConfig{UseYansuGateway: true}, nil
+		// A dangling config symlink is an unreadable existing setting.
+		if _, statErr := os.Lstat(path); os.IsNotExist(statErr) {
+			return yansuConfig{UseYansuGateway: true}, false, nil
+		}
 	}
 	if err != nil {
-		return yansuConfig{}, err
+		return yansuConfig{}, false, err
 	}
 	if strings.TrimSpace(string(data)) == "null" {
-		return yansuConfig{}, fmt.Errorf("config must be an object")
+		return yansuConfig{}, false, fmt.Errorf("config must be an object")
 	}
 	var cfg yansuConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return yansuConfig{}, err
+		return yansuConfig{}, false, err
 	}
 	cfg.UseYansuGateway = true
-	return cfg, nil
+	return cfg, true, nil
 }
 
 func normalizeBaseURL(raw string) string {

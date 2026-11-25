@@ -13,6 +13,7 @@ import (
 )
 
 func TestAutomaticMeetingRecordingDefaultsEnabled(t *testing.T) {
+	t.Setenv(agentHomeEnv, t.TempDir())
 	app := &App{}
 	if !app.GetAutomaticMeetingRecordingEnabled() {
 		t.Fatal("automatic meeting recording should default to enabled")
@@ -184,7 +185,7 @@ func TestAutomaticMeetingRecordingDisabledBlocksLateMeetingStartsAndSpeech(t *te
 			buf: activitybuf.NewRingBuffer(16, time.Minute),
 		},
 	}
-	app.meetingRecordingDisabled.Store(true)
+	app.meetingRecordingState.Store(meetingRecordingOff)
 
 	app.onMeetingStarted(app.activity, meetingdetect.Result{
 		IsMeeting:   true,

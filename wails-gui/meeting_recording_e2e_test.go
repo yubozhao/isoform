@@ -46,6 +46,7 @@ func (e *recordingFixtureEngine) TranscribeLongForm(r asr.SampleReader, source s
 func TestMeetingRecordingSyntheticEndToEnd(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		t.Setenv("HOME", t.TempDir())
+		ensureBackgroundListeningDefaultForFreshInstall()
 		app := mainChatTestApp(t)
 		store := newLifecycleStore(t)
 		app.activity = &activityMonitorState{store: store, buf: activitybuf.NewRingBuffer(64, time.Hour), capture: failingScreenCapture{}}
@@ -374,12 +375,12 @@ func TestMeetingRecoveryRetriesAnOldPendingRecording(t *testing.T) {
 	if !ok {
 		t.Fatal("recording was not saved")
 	}
-	app.meetingRecordingDisabled.Store(true)
+	app.meetingRecordingState.Store(meetingRecordingOff)
 	app.recoverUntranscribedMeetings()
 	if engine.calls != 0 {
 		t.Fatal("recording opt-out allowed recovery")
 	}
-	app.meetingRecordingDisabled.Store(false)
+	app.meetingRecordingState.Store(meetingRecordingEnabled)
 	app.recoverUntranscribedMeetings()
 	row, err := store.GetSessionByID(session.ID)
 	if err != nil || row.TranscriptPath == "" {

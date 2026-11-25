@@ -704,7 +704,7 @@ func TestInjectSpeechEvent_KeepsVoiceInputAppAsDictation(t *testing.T) {
 				},
 			}
 
-			hearComputerOutsideCalls(app)
+			hearComputerOutsideCalls(t)
 			ctx := speechCaptureContext{
 				App: activitymon.AppInfo{BundleID: tc.bundleID, AppName: "Test App"},
 			}
@@ -800,7 +800,7 @@ func TestInjectSpeechEvent_OtherMicUserSoftAmbient(t *testing.T) {
 				},
 			}
 
-			hearComputerOutsideCalls(app)
+			hearComputerOutsideCalls(t)
 			front := tc.frontBundle
 			if front == "" {
 				front = "com.example.regularapp"
@@ -1232,9 +1232,13 @@ func TestCaptureFocusStable(t *testing.T) {
 	}
 }
 
-// hearComputerOutsideCalls turns on "Hear the computer outside calls" for
-// one app, without writing the config file.
-func hearComputerOutsideCalls(app *App) {
-	app.systemAudioOutsideCallsOnce.Do(func() {})
-	app.systemAudioOutsideCalls.Store(true)
+func hearComputerOutsideCalls(t *testing.T) {
+	t.Helper()
+	t.Setenv(agentHomeEnv, t.TempDir())
+	if err := updateConfig(func(cfg *yansuConfig) {
+		cfg.BackgroundListeningConfigured = true
+		cfg.BackgroundSystemAudioOutsideCalls = true
+	}); err != nil {
+		t.Fatal(err)
+	}
 }

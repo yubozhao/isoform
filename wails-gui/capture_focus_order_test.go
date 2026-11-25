@@ -18,7 +18,7 @@ func withCaptureFocusFixture(t *testing.T, test func(*testing.T, *App, func(acti
 		a := &App{activity: &activityMonitorState{
 			visualStopCh: make(chan struct{}), lastCaptureTime: time.Now().UnixMilli(),
 		}}
-		a.meetingRecordingDisabled.Store(true)
+		a.meetingRecordingState.Store(meetingRecordingOff)
 		defer func() {
 			a.activity.mu.Lock()
 			defer a.activity.mu.Unlock()

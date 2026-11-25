@@ -275,6 +275,10 @@ func (a *App) isBackgroundListeningRunning() bool {
 	}
 	a.backgroundAudioMu.Lock()
 	defer a.backgroundAudioMu.Unlock()
+	return a.isBackgroundListeningRunningLocked()
+}
+
+func (a *App) isBackgroundListeningRunningLocked() bool {
 	a.mu.Lock()
 	capture := a.backgroundAudio
 	a.mu.Unlock()

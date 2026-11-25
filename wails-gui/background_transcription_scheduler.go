@@ -84,6 +84,7 @@ type backgroundTranscriptionScheduler struct {
 	cfg                backgroundTranscriptionSchedulerConfig
 	transcriber        asr.Transcriber
 	resolveTranscriber func() asr.Transcriber
+	allowBatch         func([]scheduledAudioChunk) bool
 	onSpeech           func(text string, source backgroundListeningSource, ctx speechCaptureContext)
 	queues             map[backgroundListeningSource][]scheduledAudioChunk
 	durations          map[backgroundListeningSource]time.Duration
@@ -435,7 +436,7 @@ func (s *backgroundTranscriptionScheduler) popBatchLocked(source backgroundListe
 // to the activity pipeline and matches the stop-drain semantics so the
 // two code paths can't disagree.
 func (s *backgroundTranscriptionScheduler) processBatch(batch []scheduledAudioChunk) {
-	if len(batch) == 0 {
+	if len(batch) == 0 || (s.allowBatch != nil && !s.allowBatch(batch)) {
 		return
 	}
 	source := batch[0].source

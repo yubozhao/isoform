@@ -20,6 +20,10 @@ func (a *App) shouldTranscribeBackgroundAudioChunk(chunk capturedAudioChunk) boo
 	if chunk.FocusUnavailable || chunk.CapturedApp.FocusUnavailable {
 		return false
 	}
+	cfg := readAudioConfig()
+	if !cfg.allowsSource(chunk.Source) {
+		return false
+	}
 	if a.chunkCapturedInCall(chunk) {
 		return true
 	}
@@ -36,7 +40,7 @@ func (a *App) shouldTranscribeBackgroundAudioChunk(chunk capturedAudioChunk) boo
 		chunk.MicHolders.listedAppHolds() || privateBrowserWindow(chunk.CapturedApp) {
 		return false
 	}
-	return a.listenOutsideCalls(chunk.Source)
+	return cfg.listenOutsideCalls(chunk.Source)
 }
 
 // chunkCapturedInCall reports whether a chunk belongs to a call in the

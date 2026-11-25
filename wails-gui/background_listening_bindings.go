@@ -11,7 +11,8 @@ import (
 // Exposed as a Wails binding for the frontend settings UI.
 func (a *App) GetBackgroundListening() (perfValue bool) {
 	defer logPageBinding("GetBackgroundListening", time.Now(), &perfValue)
-	return resolveBackgroundListeningEnabled(loadConfig(), hasPersistedConfig())
+	on, _ := readAudioConfig().listening()
+	return on
 }
 
 func (a *App) IsSystemAudioBackgroundListeningSupported() bool {
@@ -29,6 +30,9 @@ func (a *App) SetBackgroundListening(enabled bool) error {
 		return fmt.Errorf("cannot enable background listening while observation is paused")
 	}
 	if enabled {
+		if _, known := readAudioConfig().listening(); !known {
+			return fmt.Errorf("cannot enable background listening: config unreadable")
+		}
 		if err := a.ensureWhisperServerRunning(); err != nil {
 			return fmt.Errorf("cannot enable background listening: %v", err)
 		}
@@ -62,7 +66,8 @@ func (a *App) SetBackgroundListening(enabled bool) error {
 
 // backgroundMicrophoneEnabled reads the Microphone switch; absent means on.
 func backgroundMicrophoneEnabled() bool {
-	return !loadConfig().BackgroundMicrophonePaused
+	on, _ := readAudioConfig().microphone()
+	return on
 }
 
 // setBackgroundMicrophoneEnabled is the Microphone switch on macOS. It pauses
@@ -145,14 +150,17 @@ func (a *App) startBackgroundListeningIfReadyLocked() {
 		log.Printf("[background-listening] desktop locked, skipping recorder start")
 		return
 	}
-	if !a.GetBackgroundListening() {
+	cfg := readAudioConfig()
+	on, known := cfg.listening()
+	a.audioConfigRetryPending = !known
+	if !on {
 		return
 	}
 	// Native capture and durable call audio do not depend on ASR readiness.
 	// The scheduler resolves the current engine for each batch after a restart.
 	srv := a.speechTranscriber()
 
-	source := resolveBackgroundListeningSource(loadConfig())
+	source := cfg.source()
 	if source == backgroundListeningSourceNone {
 		log.Printf("[background-listening] microphone switched off and no system audio on this Mac; nothing to capture")
 		return
@@ -188,11 +196,10 @@ func (a *App) startBackgroundListeningIfReadyLocked() {
 	capture.onRecordingChunk = a.writeMeetingAudioChunk
 	capture.sample = a.sampleCaptureState
 	capture.resolveTranscriber = a.speechTranscriber
+	capture.allowBatch = a.allowBackgroundAudioBatch
 	if combined, ok := capture.recorder.(*combinedAudioRecorder); ok {
 		combined.canStart = func(source backgroundListeningSource) bool {
-			return a.GetBackgroundListening() && !a.IsClosedEyesModeEnabled() &&
-				!a.isBackgroundListeningScreenLocked() &&
-				(source != backgroundListeningSourceMicrophone || backgroundMicrophoneEnabled())
+			return readAudioConfig().allowsSource(source) && !a.IsClosedEyesModeEnabled() && !a.isBackgroundListeningScreenLocked()
 		}
 	}
 
@@ -203,14 +210,16 @@ func (a *App) startBackgroundListeningIfReadyLocked() {
 		log.Printf("[background-listening] failed to start: %v", err)
 		return
 	}
-	// The screen can lock while native recorder startup is in flight. Recheck
-	// before publishing the capture so the lock boundary remains fail closed.
-	if a.isBackgroundListeningScreenLocked() {
+	// Config and lock state may change during native recorder startup.
+	cfg = readAudioConfig()
+	on, known = cfg.listening()
+	a.audioConfigRetryPending = !known
+	if !on || cfg.source() != source || a.isBackgroundListeningScreenLocked() {
 		capture.stopDiscardingQueuedTranscription()
 		if srv != nil {
 			srv.SetBackgroundActive(false)
 		}
-		log.Printf("[background-listening] desktop locked during recorder start; capture discarded")
+		log.Printf("[background-listening] capture gates changed during recorder start; capture discarded")
 		return
 	}
 
