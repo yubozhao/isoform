@@ -1249,6 +1249,7 @@
         "youTo": "You → {{agent}}",
         "yesOn": "Yes on \"{{title}}\".",
         "whatWent": "What went",
+        "showInFinder": "Show in Finder",
         "isBack": "{{agent}} is back",
         "status": {
             "sent": "Sent · {{time}}",

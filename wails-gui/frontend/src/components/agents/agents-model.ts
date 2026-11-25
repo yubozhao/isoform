@@ -100,7 +100,7 @@ export interface AgentRowsOptions {
 }
 
 export type TimelineEntry =
-    | { type: "handoff"; key: string; at: number; agentId: string; title: string; answered: boolean; text: string; taskState?: WorkOnItHandoff["taskState"]; taskResult?: string }
+    | { type: "handoff"; key: string; at: number; agentId: string; title: string; answered: boolean; text: string; taskId?: string; taskState?: WorkOnItHandoff["taskState"]; taskResult?: string }
     | { type: "result"; key: string; at: number; agentId: string; linkId: string; status: TaskLinkResult["status"]; summary: string; files: string[] };
 
 export interface MadeFile {
@@ -225,7 +225,7 @@ export function todayTimeline(handoffs: WorkOnItHandoff[], results: TaskLinkResu
     const entries: TimelineEntry[] = [];
     for (const h of handoffs) {
         if (h.sentAt < since || (keys && !keys.includes(h.agentId))) continue;
-        entries.push({ type: "handoff", key: `h-${h.id}`, at: h.sentAt, agentId: h.agentId, title: handoffTitle(h.text), answered: answered.has(h.id), text: h.text, taskState: h.taskState, taskResult: h.taskResult });
+        entries.push({ type: "handoff", key: `h-${h.id}`, at: h.sentAt, agentId: h.agentId, title: handoffTitle(h.text), answered: answered.has(h.id), text: h.text, taskId: h.taskId, taskState: h.taskState, taskResult: h.taskResult });
     }
     for (const r of results) {
         if (r.resultAt < since || (keys && !keys.includes(r.agentId))) continue;
@@ -239,7 +239,7 @@ export function handoffTimeline(handoffs: WorkOnItHandoff[], results: TaskLinkRe
     const h = handoffs.find((x) => x.id === id);
     if (!h) return [];
     const answered = answeredHandoffs(handoffs, results);
-    const entries: TimelineEntry[] = [{ type: "handoff", key: `h-${h.id}`, at: h.sentAt, agentId: h.agentId, title: handoffTitle(h.text), answered: answered.has(h.id), text: h.text, taskState: h.taskState, taskResult: h.taskResult }];
+    const entries: TimelineEntry[] = [{ type: "handoff", key: `h-${h.id}`, at: h.sentAt, agentId: h.agentId, title: handoffTitle(h.text), answered: answered.has(h.id), text: h.text, taskId: h.taskId, taskState: h.taskState, taskResult: h.taskResult }];
     for (const r of results) {
         if (r.linkId === id) entries.push({ type: "result", key: `r-${r.linkId}`, at: r.resultAt, agentId: r.agentId, linkId: r.linkId, status: r.status, summary: r.summary, files: r.files ?? [] });
     }

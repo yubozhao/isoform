@@ -1249,6 +1249,7 @@
         "youTo": "你 → {{agent}}",
         "yesOn": "同意了“{{title}}”。",
         "whatWent": "发出的内容",
+        "showInFinder": "在访达中显示",
         "isBack": "{{agent}} 回来了",
         "status": {
             "sent": "已发送 · {{time}}",
