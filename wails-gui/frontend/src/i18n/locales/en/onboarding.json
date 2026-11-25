@@ -914,6 +914,7 @@
         "modelLine": "Getting speech recognition for this computer · {{size}} · {{n}}%",
         "modelFailed": "Couldn't start speech recognition. It can be downloaded later in Settings › Models.",
         "assistant": "{{assistant}} reads your day and writes your briefs and answers",
+        "assistantNoChat": "{{assistant}} reads your day and writes your briefs",
         "assistantOk": "Signed in · checked just now",
         "install": "Install",
         "signIn": "Sign in",

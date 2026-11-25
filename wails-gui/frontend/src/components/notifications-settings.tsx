@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useSettingsDevTools } from "@/components/settings/settings-dev-tools";
+import { useFeatureSwitches } from "@/hooks/useFeatureSwitches";
 import { AlertCircle, ChevronDown, Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -389,10 +390,15 @@ function Disclosure({ label, children }: { label: string; children: ReactNode })
     );
 }
 
+/** Kinds only Chat sends: an answer to a question asked in Chat (open answers
+ *  start from a Chat turn). They leave the list while Chat is off. */
+const CHAT_ONLY_KINDS: readonly string[] = ["answer_ready"];
+
 function LastThirtyDays({ view, state }: { view: EngagementSettingsView; state: EngagementSettingsState }) {
     const { t } = useTranslation("settings");
     const devTools = useSettingsDevTools();
-    const kinds = view.kinds ?? [];
+    const chatOn = useFeatureSwitches().chat;
+    const kinds = (view.kinds ?? []).filter((kind) => chatOn || !CHAT_ONLY_KINDS.includes(kind.kind));
     // Ranked by interruptions; the catalog order breaks ties.
     const ranked = kinds
         .map((kind, index) => ({ kind, index }))

@@ -6,8 +6,10 @@ import { SettingsFailureLine, useSettingsFailure, type SettingsFailure } from "@
 import { AssistantGivenSheet } from "@/components/settings/assistant-given-sheet";
 import { DisconnectButton } from "@/components/settings/pages/chat-apps/disconnect-button";
 import { useIsoformAssistant } from "@/components/settings/pages/your-ai-section";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { useFeatureSwitches } from "@/hooks/useFeatureSwitches";
 import { useTelemetryPreference } from "@/hooks/useTelemetryPreference";
 import {
     DisconnectFeishu,
@@ -19,6 +21,8 @@ import {
     UnbindDiscordAccount,
 } from "../../../wailsjs/go/main/App";
 import {
+    ClearComposioApiKey,
+    CloseAgentAddress,
     GetUserTopics,
     GetYourAgents,
     SetTopicFindsEnabled,
@@ -36,6 +40,10 @@ import {
 //
 // A count that couldn't be read shows its failure with Try again, never 0.
 // A count that may have dropped a call this week reads "at least {n}".
+//
+// While Chat is off (scope cut 2026-11, A5) the rows drop Chat from their
+// words and the Chat apps row goes, but only once nothing Chat sent is in
+// the week: a row never says less than was sent.
 
 type Weekly = { thisWeek?: number; incomplete?: true };
 
@@ -73,6 +81,50 @@ function disconnectChatApp(app: string): Promise<unknown> {
 }
 
 type ToolServer = { id: string; name: string; enabled: boolean };
+
+/** A row's stop that asks first (Composio's Disconnect, Close address). */
+function ConfirmStop({ label, title, description, onConfirm }: { label: string; title: string; description: string; onConfirm: () => void }) {
+    const [open, setOpen] = useState(false);
+    return (
+        <>
+            <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
+                {label}
+            </Button>
+            <ConfirmDialog
+                open={open}
+                onOpenChange={setOpen}
+                title={title}
+                description={description}
+                confirmLabel={label}
+                variant="danger"
+                onConfirm={onConfirm}
+            />
+        </>
+    );
+}
+
+/** Every destination in internal/destinations that sends the person's
+ *  content, and the row here that lists it. A Go test
+ *  (TestEveryContentDestinationHasAWhatLeavesRow) fails when a content
+ *  destination has no entry or its row isn't on the page, which is what lets
+ *  the card end with "That's every place your data goes." (data-leaves
+ *  v1.0.0 rules 3-4, answers v1.5.0 S29-S30). */
+export const DESTINATION_ROWS = {
+    assistant: "assistant",
+    assistant_search: "web",
+    agents_handoff: "agents",
+    agents_mcp_read: "agents",
+    agent_address: "agentAddress",
+    relay: "devices",
+    text_relay: "texts",
+    text_messages: "texts",
+    email: "email",
+    agent_of_you: "agentOfYou",
+    chat_bridges: "chatApps",
+    composio: "composio",
+    mcp_servers: "toolServers",
+    embeddings_api: "finding",
+} as const;
 
 function Row({ id, title, children, control, failure }: {
     id: string;
@@ -119,6 +171,7 @@ export function WhatLeavesCard({ summary, reload, agentsLine, agentNames, extraR
 }) {
     const { t } = useTranslation("settings");
     const assistant = useAssistantName();
+    const chatOn = useFeatureSwitches().chat;
     const [seeing, setSeeing] = useState(false);
     const countFailure: SettingsFailure = { text: t("leaves.countFailed"), retry: reload };
     const leaves = summary?.leaves;
@@ -187,9 +240,12 @@ export function WhatLeavesCard({ summary, reload, agentsLine, agentNames, extraR
     const briefs = summary?.assistantBriefs;
     const answers = summary?.assistantAnswers;
     const assistantCounted = typeof briefs === "number" && typeof answers === "number";
+    // Chat's answers stay in the words while any are in the week, or the week is unread.
+    const assistantChat = chatOn || !assistantCounted || answers > 0;
 
     const web = leaves?.webSearches;
     const webN = weekCount(web, t);
+    const webChat = chatOn || !web || web.incomplete || typeof web.fromChat !== "number" || web.fromChat > 0;
     const email = leaves?.email;
     const emailN = weekCount(email, t);
     const texts = leaves?.texts;
@@ -198,7 +254,23 @@ export function WhatLeavesCard({ summary, reload, agentsLine, agentNames, extraR
     const askN = weekCount(ask, t);
     const chat = leaves?.chatApps;
     const chatN = weekCount(chat, t);
+    // The bots don't run while Chat is off: the row goes once none sent this week.
+    const chatShown = !!chat && chat.apps.length > 0 && (chatOn || chatN === null || !!chat.incomplete || (chat.thisWeek ?? 0) > 0);
     const chatNames = (chat?.apps ?? []).map((app) => t((CHAT_APP_TITLE[app] ?? "leaves.chatAppsTitle") as never) as string);
+    const composio = leaves?.composio;
+    const composioN = weekCount(composio, t);
+    const composioSent = (composio?.thisWeek ?? 0) > 0 || !!composio?.incomplete;
+    const address = leaves?.agentAddress;
+    const addressApps = address && address.apps.length > 0 ? address.apps.join(", ") : t("leaves.addressNoApps");
+    const stop = useSettingsFailure();
+    const removeComposioKey = () => {
+        stop.clear();
+        ClearComposioApiKey().then(reload, () => stop.fail(t("leaves.disconnectFailed", { app: "Composio" }), removeComposioKey));
+    };
+    const closeAddress = () => {
+        stop.clear();
+        CloseAgentAddress().then(reload, () => stop.fail(t("leaves.disconnectFailed", { app: address?.hostname || "" }), closeAddress));
+    };
     const finding = summary?.findingLeaves;
     const findingN = typeof finding?.thisWeek === "number" ? String(finding.thisWeek) : null;
 
@@ -206,7 +278,7 @@ export function WhatLeavesCard({ summary, reload, agentsLine, agentNames, extraR
         <SettingsCard title={t("yourData.leaves")}>
             <Row
                 id="assistant"
-                title={t("leaves.assistant", { assistant })}
+                title={t(assistantChat ? "leaves.assistant" : "leaves.assistantNoChat", { assistant })}
                 failure={summary && !assistantCounted ? countFailure : null}
                 control={
                     <Button size="sm" variant="outline" onClick={() => setSeeing(true)}>
@@ -214,7 +286,11 @@ export function WhatLeavesCard({ summary, reload, agentsLine, agentNames, extraR
                     </Button>
                 }
             >
-                {assistantCounted ? t("leaves.assistantSub", { n: briefs, m: answers }) : t("leaves.assistantSubPlain")}
+                {!assistantCounted
+                    ? t("leaves.assistantSubPlain")
+                    : assistantChat
+                      ? t("leaves.assistantSub", { n: briefs, m: answers })
+                      : t("leaves.assistantSubNoChat", { n: briefs })}
             </Row>
             <AssistantGivenSheet open={seeing} onOpenChange={setSeeing} assistant={assistant} />
 
@@ -227,7 +303,7 @@ export function WhatLeavesCard({ summary, reload, agentsLine, agentNames, extraR
                         <Switch aria-label={t("leaves.webSwitch")} checked={findsOn} onCheckedChange={changeFinds} />
                     )}
                 >
-                    {webN === null ? t("leaves.webSubPlain") : t("leaves.webSub", { n: webN })}
+                    {webN === null ? t("leaves.webSubPlain") : t(webChat ? "leaves.webSub" : "leaves.webSubNoChat", { n: webN })}
                 </Row>
             )}
 
@@ -263,7 +339,27 @@ export function WhatLeavesCard({ summary, reload, agentsLine, agentNames, extraR
                 )}
             </Row>
 
-            {chat && chat.apps.length > 0 && (
+            {address?.open && (
+                <Row
+                    id="agentAddress"
+                    title={t("leaves.addressTitle", { address: address.hostname })}
+                    failure={stop.failure}
+                    control={
+                        <ConfirmStop
+                            label={t("leaves.addressClose")}
+                            title={t("leaves.addressCloseTitle")}
+                            description={t("leaves.addressCloseBody", { apps: addressApps })}
+                            onConfirm={closeAddress}
+                        />
+                    }
+                >
+                    {address.sealed
+                        ? t("leaves.addressSealed", { apps: addressApps, service: address.service })
+                        : t("leaves.addressReadable", { service: address.service })}
+                </Row>
+            )}
+
+            {chat && chatShown && (
                 <div data-your-data-row="chatApps">
                     <SettingsRow
                         title={t("leaves.chatAppsTitle")}
@@ -291,7 +387,10 @@ export function WhatLeavesCard({ summary, reload, agentsLine, agentNames, extraR
             )}
             {servers && servers.length > 0 && (
                 <div data-your-data-row="toolServers">
-                    <SettingsRow title={t("leaves.toolServers", { names: servers.map((server) => server.name).join(", ") })} failure={disconnect.failure} />
+                    <SettingsRow
+                        title={t(chatOn ? "leaves.toolServers" : "leaves.toolServersNoChat", { names: servers.map((server) => server.name).join(", ") })}
+                        failure={disconnect.failure}
+                    />
                     {servers.map((server) => (
                         <SettingsRow
                             key={server.id}
@@ -300,6 +399,43 @@ export function WhatLeavesCard({ summary, reload, agentsLine, agentNames, extraR
                         />
                     ))}
                 </div>
+            )}
+
+            {composio && (composio.connected || composioSent || composioN === null) && (
+                <Row
+                    id="composio"
+                    title={
+                        composio.connected
+                            ? t("leaves.composioTitle")
+                            : composioN === null
+                              ? t("leaves.composioName")
+                              : t("leaves.composioDisconnected", { n: composioN })
+                    }
+                    failure={composioN === null ? countFailure : stop.failure}
+                    control={
+                        composio.connected &&
+                        (composio.active || composioSent ? (
+                            <ConfirmStop
+                                label={t("leaves.composioDisconnect")}
+                                title={t("leaves.composioDisconnectTitle")}
+                                description={t("leaves.composioDisconnectBody")}
+                                onConfirm={removeComposioKey}
+                            />
+                        ) : (
+                            <Button size="sm" variant="outline" onClick={removeComposioKey}>
+                                {t("leaves.composioRemoveKey")}
+                            </Button>
+                        ))
+                    }
+                >
+                    {!composio.connected
+                        ? undefined
+                        : !composio.active && !composioSent
+                          ? t("leaves.composioSaved")
+                          : composioN === null
+                            ? t("leaves.composioSubPlain")
+                            : t("leaves.composioSub", { n: composioN })}
+                </Row>
             )}
 
             {finding && (
@@ -330,6 +466,11 @@ export function WhatLeavesCard({ summary, reload, agentsLine, agentNames, extraR
             />
 
             {extraRows}
+
+            <div className="space-y-1 px-1 pt-2 text-[12px] leading-relaxed text-muted">
+                <p data-your-data-text-out>{t("yourData.textOut")}</p>
+                <p data-your-data-everywhere>{t("yourData.everywhere")}</p>
+            </div>
         </SettingsCard>
     );
 }

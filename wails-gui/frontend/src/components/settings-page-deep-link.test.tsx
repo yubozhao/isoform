@@ -33,6 +33,7 @@ vi.mock("@/components/settings/pages/observation-page", () => ({
 vi.mock("@/components/settings/pages/closed-eyes-page", () => ({ ClosedEyesPage: pages.marker("closed-eyes") }));
 vi.mock("@/components/settings/pages/tool-servers-page", () => ({ ToolServersPage: pages.marker("tool-servers") }));
 vi.mock("@/components/settings/pages/plugins-page", () => ({ PluginsPage: pages.marker("plugins") }));
+vi.mock("@/components/settings/pages/your-data-page", () => ({ YourDataPage: pages.marker("your-data") }));
 vi.mock("@/components/settings/pages/chat-apps-page", () => ({
     // The list has no Advanced; each app's drill-in does.
     ChatAppsPage: ({ selectedApp, onSelectApp }: { selectedApp?: string; onSelectApp: (app?: string) => void }) =>
@@ -200,6 +201,19 @@ describe("SettingsPage Advanced deep links", () => {
         fireEvent.click(screen.getByRole("button", { name: "Back to chat apps" }));
         fireEvent.click(screen.getByRole("button", { name: "Open Discord" }));
         expect(advancedToggle()).toHaveAttribute("aria-expanded", "false");
+    });
+
+    it("lands an old Chat apps link on Your data while Chat is off (scope cut A5)", () => {
+        (globalThis as Record<string, unknown>).__isoformFeatureSwitchesForTest = { automations: true, playbooks: true, proactiveVoice: true, calendarHolds: true, chat: false };
+        for (const topic of ["chat-apps", "slack", "wechat"] as const) {
+            const view = render(<SettingsPage {...props()} initialTopic={topic} />);
+            expect(screen.getByTestId("page")).toHaveTextContent("your-data");
+            expect(screen.queryByRole("button", { name: /Chat apps/ })).toBeNull();
+            view.unmount();
+        }
+        render(<SettingsPage {...props()} />);
+        search("Slack");
+        expect(screen.queryByRole("button", { name: /Chat apps/ })).toBeNull();
     });
 
     it("opens a chat app from a plain visit to the list with Advanced as remembered", () => {

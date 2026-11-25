@@ -587,13 +587,13 @@ export const SetFindingProvider = appBinding<[FindingProviderView["choice"], str
 
 // Settings › Your data's numbers (your_data_summary.go).
 export interface YourDataLeaves {
-    composio?: { connected: boolean; apps: string[]; thisWeek?: number; incomplete?: true };
-    webSearches?: { service: "claude_code" | "grok" | "gemini" | "doubao" | ""; thisWeek?: number; incomplete?: true };
+    composio?: { connected: boolean; active: boolean; apps: string[]; thisWeek?: number; incomplete?: true };
+    webSearches?: { service: "claude_code" | "grok" | "gemini" | "doubao" | ""; thisWeek?: number; incomplete?: true; fromChat?: number };
     email?: { on: boolean; addressMasked?: string; thisWeek?: number; incomplete?: true };
     texts?: { on: boolean; namesOn: boolean; thisWeek?: number; incomplete?: true };
     chatApps?: { apps: string[]; thisWeek?: number; incomplete?: true };
     agentsAsk?: { thisWeek?: number; incomplete?: true; byAgent?: { agent: string; thisWeek?: number; incomplete?: true }[] };
-    agentAddress?: { open: boolean; service: string; apps: string[]; thisWeek?: number; incomplete?: true };
+    agentAddress?: { open: boolean; hostname: string; service: string; apps: string[]; sealed: boolean; thisWeek?: number; incomplete?: true };
     usageCounts: { on: boolean };
 }
 

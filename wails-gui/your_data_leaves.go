@@ -21,6 +21,11 @@ type WeeklyLeaves struct {
 type SearchLeaves struct {
 	WeeklyLeaves
 	Service string `json:"service"`
+	// FromChat is how many of this week's searches were Chat questions that
+	// needed the web; unset when the week couldn't be read. The row names
+	// Chat's searches while any are in the week, so it never says less than
+	// was sent after Chat is turned off.
+	FromChat *int `json:"fromChat,omitempty"`
 }
 type EmailLeaves struct {
 	WeeklyLeaves
@@ -38,8 +43,12 @@ type ChatLeaves struct {
 }
 type ComposioLeaves struct {
 	WeeklyLeaves
-	Connected bool     `json:"connected"`
-	Apps      []string `json:"apps"`
+	Connected bool `json:"connected"`
+	// Active is whether the saved key can send now. Managed Composio access is
+	// off in this build (managedComposioAppAccessEnabled), so a saved key
+	// sends nothing and the row says so.
+	Active bool     `json:"active"`
+	Apps   []string `json:"apps"`
 }
 type AgentLeaves struct {
 	WeeklyLeaves
@@ -54,9 +63,16 @@ type AgentsAskLeaves struct {
 // their own apps. Stop is CloseAgentAddress.
 type AgentAddressLeaves struct {
 	WeeklyLeaves
-	Open    bool     `json:"open"`
-	Service string   `json:"service"`
-	Apps    []string `json:"apps"`
+	Open     bool     `json:"open"`
+	Hostname string   `json:"hostname"`
+	Service  string   `json:"service"`
+	Apps     []string `json:"apps"`
+	// Sealed is true when TLS ends on this computer, so the service only
+	// relays ciphertext: Isoform's front passes the connection through and
+	// the certificate's key never leaves the computer (front_service.go). A
+	// configured bridge (taskLinkBaseURLEnv) owns its own certificate, so it
+	// can read what passes.
+	Sealed bool `json:"sealed"`
 }
 type UsageLeaves struct {
 	On bool `json:"on"`
@@ -74,12 +90,13 @@ type YourDataLeaves struct {
 }
 
 type leavesPaths struct {
-	composio                                   bool
+	composio, composioActive                   bool
 	composioApps                               []string
 	search, email, texts, names, agents, usage bool
 	lastService, masked                        string
 	apps                                       []string
-	address                                    bool
+	address, addressSealed                     bool
+	addressHostname                            string
 	addressService                             string
 	addressApps                                []string
 }
@@ -88,6 +105,7 @@ func (p leavesPaths) summary(rows []storage.DestinationCount, readErr error) You
 	counts := make(map[destinations.ID]int)
 	lost := make(map[destinations.ID]bool)
 	agents := []AgentLeaves{}
+	fromChat := 0
 	service := p.lastService
 	for _, row := range rows {
 		if row.Incomplete {
@@ -101,6 +119,9 @@ func (p leavesPaths) summary(rows []storage.DestinationCount, readErr error) You
 		switch row.ID {
 		case destinations.AssistantSearch:
 			service = destinations.SearchService(row.Detail)
+			if row.Detail == destinations.ChatSearchDetail {
+				fromChat += row.Calls
+			}
 		case destinations.AgentsMCPRead:
 			agents = append(agents, AgentLeaves{WeeklyLeaves{ThisWeek: &row.Calls}, row.Detail})
 		}
@@ -114,10 +135,13 @@ func (p leavesPaths) summary(rows []storage.DestinationCount, readErr error) You
 	}
 	out := YourDataLeaves{UsageCounts: UsageLeaves{p.usage}}
 	if n := counts[destinations.Composio]; p.composio || n > 0 || lost[destinations.Composio] || readErr != nil {
-		out.Composio = &ComposioLeaves{week(n, lost[destinations.Composio]), p.composio, append([]string{}, p.composioApps...)}
+		out.Composio = &ComposioLeaves{week(n, lost[destinations.Composio]), p.composio, p.composioActive, append([]string{}, p.composioApps...)}
 	}
 	if n := counts[destinations.AssistantSearch]; p.search || n > 0 || lost[destinations.AssistantSearch] {
-		out.WebSearches = &SearchLeaves{week(n, lost[destinations.AssistantSearch]), service}
+		out.WebSearches = &SearchLeaves{WeeklyLeaves: week(n, lost[destinations.AssistantSearch]), Service: service}
+		if readErr == nil {
+			out.WebSearches.FromChat = &fromChat
+		}
 	}
 	if n := counts[destinations.Email]; p.email || n > 0 || lost[destinations.Email] {
 		out.Email = &EmailLeaves{week(n, lost[destinations.Email]), p.email, p.masked}
@@ -139,7 +163,7 @@ func (p leavesPaths) summary(rows []storage.DestinationCount, readErr error) You
 		}
 	}
 	if n := counts[destinations.AgentAddress]; p.address || n > 0 || lost[destinations.AgentAddress] {
-		out.Address = &AgentAddressLeaves{week(n, lost[destinations.AgentAddress]), p.address, p.addressService, append([]string{}, p.addressApps...)}
+		out.Address = &AgentAddressLeaves{week(n, lost[destinations.AgentAddress]), p.address, p.addressHostname, p.addressService, append([]string{}, p.addressApps...), p.addressSealed}
 	}
 	return out
 }
@@ -163,6 +187,7 @@ func (a *App) yourDataLeaves() (YourDataLeaves, error) {
 		return YourDataLeaves{}, err
 	}
 	p.composio = strings.TrimSpace(st.APIKey) != ""
+	p.composioActive = p.composio && managedComposioAppAccessEnabled
 	if p.composio {
 		for _, app := range composioManagedApps {
 			if st.Connections[app].Status == composioStatusConnected {
@@ -253,6 +278,7 @@ func (a *App) yourDataLeaves() (YourDataLeaves, error) {
 	if a.store != nil {
 		address := a.GetAgentAddress()
 		p.address, p.addressService, p.addressApps = address.Open, address.Service, address.Apps
+		p.addressHostname, p.addressSealed = address.Hostname, !configuredAgentBridge()
 	}
 	return p.summary(rows, readErr), nil
 }

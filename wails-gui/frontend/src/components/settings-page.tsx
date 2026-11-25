@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import i18n from "@/i18n";
 import { activeInterval } from "@/lib/app-activity";
+import { useFeatureSwitches } from "@/hooks/useFeatureSwitches";
 import { SettingsPageBoundary } from "@/components/settings/settings-page-boundary";
 import { SettingsDevToolsContext } from "@/components/settings/settings-dev-tools";
 import {
@@ -78,6 +79,7 @@ import {
     isDevToolsTopicId,
     isSettingsPageId,
     resolveSettingsTopic,
+    shownSettingsDestination,
     type ChatAppId,
     type ResolvedSettingsTopic,
     type SettingsDestination,
@@ -201,8 +203,13 @@ export function SettingsPage({
     const showDevTools = devToolsUnlocked;
     // A Developer tools page (remembered from earlier, or a deep link) falls
     // back to What Isoform sees while Developer tools are off.
+    // A page of a turned-off feature (Chat apps while Chat is off) lands on
+    // Your data, which lists what still leaves.
+    const features = useFeatureSwitches();
     const activePage: SettingsDestination =
-        !showDevTools && isDevToolsTopicId(destination.page) ? DEFAULT_SETTINGS_PAGE : destination.page;
+        !showDevTools && isDevToolsTopicId(destination.page)
+            ? DEFAULT_SETTINGS_PAGE
+            : shownSettingsDestination(destination.page, features);
 
     // A deep link that arrives while Settings is already open.
     const lastDeepLink = useRef({ topic: initialTopic, options: initialOptions });
