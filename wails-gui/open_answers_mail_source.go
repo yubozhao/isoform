@@ -120,7 +120,7 @@ func (s *mailSyncService) openAnswerSnapshot(ctx context.Context, now time.Time)
 // Caller holds writeMu while reading emptyReads.
 func (s *mailSyncService) openAnswerReadable(now time.Time) bool {
 	if s.enabled == nil || s.protected == nil || s.paused == nil || s.process == nil || s.automation == nil ||
-		!s.enabled() || s.protected() || s.paused() || s.process() <= 0 || s.automation() != mailAutomationAllowed {
+		!s.enabled.on() || s.protected() || s.paused() || s.process() <= 0 || s.automation() != mailAutomationAllowed {
 		return false
 	}
 	s.mu.Lock()

@@ -112,7 +112,7 @@ func newCalendarSyncService(a *App) *calendarSyncService {
 		source:  eventKitSource{},
 		now:     time.Now,
 		granted: calendarAccessGranted,
-		enabled: func() bool { return a.isPermissionEnabled(calendarPermissionKey) },
+		enabled: func() bool { return a.captureAllowed(context.Background(), "calendar_sync", calendarPermissionKey) },
 		changes: calendarStoreChanged,
 		kicks:   make(chan string, 4),
 	}
@@ -122,7 +122,7 @@ func newCalendarSyncService(a *App) *calendarSyncService {
 	svc.onSynced = func(res calendarSyncResult) { a.afterCalendarSync(res) }
 	svc.webDetect = a.detectWebCalendarSources
 	svc.paused = a.IsClosedEyesModeEnabled
-	svc.peekEnabled = a.calendarPeekEnabled
+	svc.peekEnabled = a.calendarPeekCaptureAllowed
 	return svc
 }
 

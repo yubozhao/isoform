@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { assistantAgentId } from "@/components/agents/agents-model";
+import { useFeatureSwitches } from "@/hooks/useFeatureSwitches";
 import { ModelAccountsSettings } from "@/components/model-accounts-card";
 import { SettingsCard, SettingsRow } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
@@ -74,12 +75,14 @@ export function YourAISection() {
     }, []);
     const assistant = agents?.agents.find((agent) => agent.id === assistantId);
     const job = jobHeldBy(agents, assistantId);
+    // With Chat off (scope cut 2026-11), Isoform writes no answers.
+    const chatOn = useFeatureSwitches().chat;
     return (
         <>
             {assistant && (
                 <SettingsCard>
                     <p className="settings-row-desc text-ink" data-your-ai-lead>
-                        {t("yourAI.lead", { assistant: assistant.name })}
+                        {t(chatOn ? "yourAI.lead" : "yourAI.leadNoChat", { assistant: assistant.name })}
                     </p>
                     {job && (
                         <p className="settings-row-desc" data-your-ai-also>

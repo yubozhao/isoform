@@ -22,7 +22,7 @@ func (a *App) mobileBriefMessageAsk(ctx context.Context, id string, now time.Tim
 	if a == nil || a.store == nil || id == "" || a.IsClosedEyesModeEnabled() && !pausedBriefReadAllowed(ctx) {
 		return mobileBriefCandidate{}, false
 	}
-	if !a.isPermissionEnabledContext(ctx, messagesPermissionKey) || imessageProtected() {
+	if !a.captureAllowed(ctx, "mobile_brief_message_asks", messagesPermissionKey) || imessageProtected() {
 		return mobileBriefCandidate{}, false
 	}
 	row, found, err := a.store.GetMessageAsk(ctx, id)

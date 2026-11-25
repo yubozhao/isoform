@@ -25,7 +25,7 @@ func FrontmostWindowBounds() WindowBounds { return WindowBounds{} }
 func FindVisibleSensitiveWindows(_ []string) []WindowBounds { return nil }
 
 // New creates a no-op Monitor on non-darwin platforms.
-func New() Monitor {
+func New(allowed func() bool) Monitor {
 	return &stubMonitor{}
 }
 

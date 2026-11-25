@@ -65,7 +65,7 @@ func TestWindowMonitorNativeGuards(t *testing.T) {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("compile native harness: %v\n%s", err, out)
 	}
-	for _, name := range []string{"GeometryAndCallbacks", "MainWindowRestore", "FocusedWindowType", "TitleLabelType", "DescriptionLabelType", "HelpLabelType", "PlaceholderLabelType"} {
+	for _, name := range []string{"CapturePermission", "GeometryAndCallbacks", "MainWindowRestore", "FocusedWindowType", "TitleLabelType", "DescriptionLabelType", "HelpLabelType", "PlaceholderLabelType"} {
 		t.Run(name, func(t *testing.T) {
 			if out, err := exec.CommandContext(ctx, bin, name).CombinedOutput(); err != nil {
 				t.Fatalf("native guards: %v\n%s", err, out)
@@ -78,6 +78,8 @@ func TestWindowMonitorNativeGuards(t *testing.T) {
 // and feed real retained CoreFoundation objects to the production callers.
 // Cocoa headers are imported before macros so SDK declarations stay untouched.
 const windowAXFixtures = `
+static int captureAllowed = 1;
+int activityMonitorCaptureAllowed(void) { return captureAllowed; }
 #import <Cocoa/Cocoa.h>
 #include <ApplicationServices/ApplicationServices.h>
 #include <assert.h>
@@ -241,6 +243,22 @@ static void check_ax_caller(const char *name) {
 int main(int argc, char **argv) {
     @autoreleasepool {
         assert(argc == 2);
+        if (strcmp(argv[1], "CapturePermission") == 0) {
+            _monitorRunning = true;
+            CGEventRef key = CGEventCreateKeyboardEvent(NULL, 0, true);
+            assert(key);
+            CGEventSetIntegerValueField(key, kCGEventTargetUnixProcessID, getpid());
+            CActivityEvent captured;
+            captureAllowed = 0;
+            processTapEvent(kCGEventKeyDown, key, 100);
+            assert(!pop_event(&captured) && _lastKeydownMs == 0);
+            captureAllowed = 1;
+            processTapEvent(kCGEventKeyDown, key, 101);
+            assert(pop_event(&captured) && captured.timestampMs == 101);
+            assert(strcmp(captured.kind, "keyboard") == 0);
+            CFRelease(key);
+            return 0;
+        }
         if (strcmp(argv[1], "MainWindowRestore") == 0) {
             check_main_window_restore();
             return 0;

@@ -31,7 +31,7 @@ func collectMobileBriefDoingContext(ctx context.Context, a *App, in *mobileBrief
 	if a == nil || a.store == nil || a.activity == nil || a.activity.store == nil {
 		return
 	}
-	if !a.isPermissionEnabledContext(ctx, filesPermissionKey) || ctx.Err() != nil {
+	if !a.captureAllowed(ctx, "mobile_brief_files", filesPermissionKey) || ctx.Err() != nil {
 		return
 	}
 	loc := in.Location

@@ -21,7 +21,7 @@ func (a *App) morningBriefCalendarReadAllowed(ctx context.Context) bool {
 // current system permission before rechecking an exact stored occurrence.
 func (a *App) morningBriefCalendarReadAllowedWithGrant(ctx context.Context, granted bool) bool {
 	return a != nil && a.store != nil && (!a.IsClosedEyesModeEnabled() || pausedBriefReadAllowed(ctx)) && ctx.Err() == nil &&
-		a.isPermissionEnabledContext(ctx, calendarPermissionKey) && granted && proactiveVoiceAppAllowed("com.apple.iCal", "Calendar")
+		a.captureAllowed(ctx, "mobile_brief_ranked_calendar", calendarPermissionKey) && granted && proactiveVoiceAppAllowed("com.apple.iCal", "Calendar")
 }
 
 // morningBriefCalendarSourceReadable reopens the exact occurrence and checks

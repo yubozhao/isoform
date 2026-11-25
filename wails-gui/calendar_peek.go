@@ -471,10 +471,17 @@ func (s *calendarPeekService) readProvider(ctx context.Context, provider string,
 	return len(events), browser, nil
 }
 
+func (a *App) calendarPeekCaptureAllowed() bool {
+	return a.captureAllowed(context.Background(), "calendar_peek", calendarPermissionKey, calendarPeekEnabledKey)
+}
+
 // calendarPeekState gathers the rule inputs from the app.
 func (a *App) calendarPeekState(now time.Time) calendar.PeekState {
+	if !a.calendarPeekCaptureAllowed() {
+		return calendar.PeekState{}
+	}
 	state := calendar.PeekState{
-		Enabled:          a.calendarPeekEnabled() && a.isPermissionEnabled(calendarPermissionKey),
+		Enabled:          true,
 		Granted:          calendarAccessGranted(),
 		ComputerUseReady: activitymon.ComputerUseSupported() && activitymon.ComputerUsePermitted(),
 		ComputerUseBusy:  sharedComputerUseLease.Holder() != "",
@@ -514,7 +521,7 @@ func (a *App) calendarPeekState(now time.Time) calendar.PeekState {
 // observing paused, the lock, a device in use, a meeting.
 func (a *App) calendarPeekGuard() string {
 	switch {
-	case !a.calendarPeekEnabled() || !a.isPermissionEnabled(calendarPermissionKey):
+	case !a.calendarPeekCaptureAllowed():
 		return "switched off"
 	case a.IsClosedEyesModeEnabled():
 		return "closed eyes"

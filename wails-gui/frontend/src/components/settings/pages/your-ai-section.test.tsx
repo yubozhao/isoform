@@ -126,6 +126,13 @@ describe("Settings › Your AI", () => {
         expect(screen.getByText("Claude Code · also your agent for code")).toBeInTheDocument();
     });
 
+    it("drops \"and answers\" while Chat is off (scope cut 2026-11)", async () => {
+        (globalThis as Record<string, unknown>).__isoformFeatureSwitchesForTest = { automations: true, playbooks: true, proactiveVoice: true, calendarHolds: true, chat: false };
+        render(<YourAISection />);
+        expect(await screen.findByText("Claude Code reads your day and writes your briefs.")).toBeInTheDocument();
+        expect(screen.queryByText(/and answers/)).toBeNull();
+    });
+
     it("uses the assistant's own CLI outside subscriptions, and says nothing more when it holds no job", async () => {
         mocks.modelStatus = { mode: "external", accountOrder: [] };
         mocks.provider = "codex";

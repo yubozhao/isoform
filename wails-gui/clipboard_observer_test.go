@@ -136,16 +136,22 @@ func TestTriageTimelineHasOneLinePerCopy(t *testing.T) {
 }
 
 func TestClipboardObserverFollowsSwitchAndPause(t *testing.T) {
-	a := &App{}
+	a := &App{store: newIdentityTestStore(t)}
 	obs := &clipboardObserver{app: a, watcher: &clipboard.Watcher{}}
 	a.clipboard.Store(obs)
-	obs.enabled.Store(true)
+
 	if !obs.allowed() {
 		t.Fatal("on by default")
+	}
+	if err := a.store.SetUIState(t.Context(), permissionUIStateKey(clipboardPermissionKey), "false"); err != nil {
+		t.Fatal(err)
 	}
 	a.clipboardSwitchChanged(false)
 	if obs.allowed() {
 		t.Fatal("the switch turns it off")
+	}
+	if err := a.store.SetUIState(t.Context(), permissionUIStateKey(clipboardPermissionKey), "true"); err != nil {
+		t.Fatal(err)
 	}
 	a.clipboardSwitchChanged(true)
 	a.closedEyes.enabled.Store(true)
@@ -174,10 +180,10 @@ func (b *resumeRaceBoard) ReadText(int) (string, int, string, bool) {
 }
 
 func TestClipboardCopyInThePausesLastSecondIsNeverRecorded(t *testing.T) {
-	a := &App{audioScreenLocked: func() bool { return false }}
+	a := &App{store: newIdentityTestStore(t), audioScreenLocked: func() bool { return false }}
 	board := &resumeRaceBoard{count: 1}
 	obs := &clipboardObserver{app: a}
-	obs.enabled.Store(true)
+
 	var copies []clipboard.Copy
 	obs.watcher = &clipboard.Watcher{
 		Board:   board,

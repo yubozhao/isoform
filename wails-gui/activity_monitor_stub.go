@@ -6,3 +6,5 @@ package main
 func (a *App) startActivityMonitorIfPermitted() {}
 
 func (a *App) startActivityMonitorIfPermittedWith(_, _ bool) {}
+
+func activityMonitorOSGranted() bool { return false }

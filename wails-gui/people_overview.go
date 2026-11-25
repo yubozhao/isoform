@@ -516,7 +516,7 @@ func (a *App) peopleLoops(ctx context.Context, rows []PrincipalWithStatsDTO, now
 			}
 			loop := PersonLoop{ID: m.ID, Since: m.CreatedAt, Kind: "reappeared"}
 			if kind == "waiting_on_reply" {
-				if !a.isPermissionEnabledContext(ctx, mailPermissionKey) || !a.peopleAppReadableCached(ctx, "email", cache) || !policy.allows(activitySourceProvenance{StartTime: m.CreatedAt, EndTime: m.CreatedAt + 1, Apps: []string{"com.apple.mail", "Mail"}}) {
+				if !a.captureAllowed(ctx, "people_overview_mail", mailPermissionKey) || !a.peopleAppReadableCached(ctx, "email", cache) || !policy.allows(activitySourceProvenance{StartTime: m.CreatedAt, EndTime: m.CreatedAt + 1, Apps: []string{"com.apple.mail", "Mail"}}) {
 					continue
 				}
 				loop.Kind = "reply_owed"
@@ -565,7 +565,7 @@ func (a *App) peopleLoops(ctx context.Context, rows []PrincipalWithStatsDTO, now
 		appName := send.Channel
 		if appName == "mail" {
 			appName = "email"
-			if !a.isPermissionEnabledContext(ctx, mailPermissionKey) {
+			if !a.captureAllowed(ctx, "people_overview_mail", mailPermissionKey) {
 				continue
 			}
 		}
@@ -910,7 +910,7 @@ func (a *App) personTogether(ctx context.Context, p storage.PrincipalRow, recent
 	if a.IsClosedEyesModeEnabled() {
 		return nil
 	}
-	if a.isPermissionEnabledContext(ctx, calendarPermissionKey) && a.peopleAppReadableCached(ctx, "calendar", cache) && a.peopleAppReadableCached(ctx, "com.apple.iCal", cache) {
+	if a.captureAllowed(ctx, "people_overview_calendar", calendarPermissionKey) && a.peopleAppReadableCached(ctx, "calendar", cache) && a.peopleAppReadableCached(ctx, "com.apple.iCal", cache) {
 		privacy, err := a.mcpReadPrivacy(ctx)
 		if err == nil {
 			events, err := a.store.ListCalendarEvents(ctx, 0, time.Now().UnixMilli()+1, false)

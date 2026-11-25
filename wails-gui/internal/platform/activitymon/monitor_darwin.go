@@ -569,82 +569,57 @@ static void get_element_at_position(pid_t pid, double x, double y,
     CFRelease(element);
 }
 
-// ── CGEventTap callback ──────────────────────────────────────────────
-// HARD CONSTRAINT: this runs inline in session event delivery. Even as
-// a listen-only tap, time spent here delays the keyboard/mouse stream
-// for every app, and a slow pass gets the tap disabled by timeout. So
-// the callback only copies cheap event-local data (CGEvent fields die
-// with the event) and defers all AX/IPC enrichment to _axQueue.
-static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type,
-                                    CGEventRef event, void *userInfo) {
-    if (type == kCGEventTapDisabledByTimeout || type == kCGEventTapDisabledByUserInput) {
-        if (_eventTap) CGEventTapEnable(_eventTap, true);
-        return event;
-    }
+extern int activityMonitorCaptureAllowed(void);
 
+// Process the retained event on the serial AX queue. Neither a preference
+// read nor an AX request belongs on the system input delivery thread.
+static void processTapEvent(CGEventType type, CGEventRef event, long long ts) {
+    if (!_monitorRunning || !activityMonitorCaptureAllowed()) return;
     switch (type) {
     case kCGEventLeftMouseDown:
     case kCGEventRightMouseDown: {
         CGPoint loc = CGEventGetLocation(event);
         pid_t pid = (pid_t)CGEventGetIntegerValueField(event, kCGEventTargetUnixProcessID);
-        long long ts = current_time_millis();
-        // A click can end a typing burst (send button, candidate selection).
-        // Decide whether a burst was recently open at tap time (cheap read of
-        // _lastKeydownMs); the actual focused-field snapshot runs on _axQueue
-        // below so AX/IPC never blocks the event-tap thread.
         bool maybeBurstEnd = (pid > 0 && (ts - _lastKeydownMs) < 30000);
-        dispatch_async(_axQueue, ^{
-            // Tap-disable at stop() can race a few already-queued mach
-            // port events into this dispatch; drop them so a stopped
-            // session never leaks events into the next one.
-            if (!_monitorRunning) return;
-            CActivityEvent evt;
-            memset(&evt, 0, sizeof(evt));
-            evt.timestampMs = ts;
-            strncpy(evt.kind, "click", sizeof(evt.kind) - 1);
-            get_app_for_pid(pid, evt.appBundleID, sizeof(evt.appBundleID),
-                            evt.appName, sizeof(evt.appName));
-            // Fresh title (maxAge 0): a click can navigate or retitle
-            // the window, and clicks are low-rate enough to afford it.
-            if (pid > 0) {
-                get_window_title_cached(pid, evt.windowTitle, sizeof(evt.windowTitle), 0);
-            }
-            evt.clickX = loc.x;
-            evt.clickY = loc.y;
-            if (pid > 0) {
-                get_element_at_position(pid, loc.x, loc.y,
-                                        evt.clickRole, sizeof(evt.clickRole),
-                                        evt.clickLabel, sizeof(evt.clickLabel));
-            }
-            // Typed-text capture: snapshot the focused field so the Go differ
-            // can recover committed text. Runs on _axQueue (not the tap
-            // thread); the read reflects field state at dispatch time, which
-            // for a send-button click may already be cleared.
-            if (maybeBurstEnd) {
-                evt.fieldTextValid = read_focused_field_text(pid, evt.fieldText, sizeof(evt.fieldText));
-            }
-            push_event(&evt);
-        });
+        CActivityEvent evt;
+        memset(&evt, 0, sizeof(evt));
+        evt.timestampMs = ts;
+        strncpy(evt.kind, "click", sizeof(evt.kind) - 1);
+        get_app_for_pid(pid, evt.appBundleID, sizeof(evt.appBundleID),
+                        evt.appName, sizeof(evt.appName));
+        // Fresh title (maxAge 0): a click can navigate or retitle
+        // the window, and clicks are low-rate enough to afford it.
+        if (pid > 0) {
+            get_window_title_cached(pid, evt.windowTitle, sizeof(evt.windowTitle), 0);
+        }
+        evt.clickX = loc.x;
+        evt.clickY = loc.y;
+        if (pid > 0) {
+            get_element_at_position(pid, loc.x, loc.y,
+                                    evt.clickRole, sizeof(evt.clickRole),
+                                    evt.clickLabel, sizeof(evt.clickLabel));
+        }
+        // Typed-text capture: snapshot the focused field so the Go differ
+        // can recover committed text. Runs on _axQueue (not the tap
+        // thread); the read reflects field state at dispatch time, which
+        // for a send-button click may already be cleared.
+        if (maybeBurstEnd) {
+            evt.fieldTextValid = read_focused_field_text(pid, evt.fieldText, sizeof(evt.fieldText));
+        }
+        push_event(&evt);
         break;
     }
     case kCGEventKeyDown: {
         CActivityEvent evt;
         memset(&evt, 0, sizeof(evt));
-        evt.timestampMs = current_time_millis();
+        evt.timestampMs = ts;
         strncpy(evt.kind, "keyboard", sizeof(evt.kind) - 1);
         pid_t pid = (pid_t)CGEventGetIntegerValueField(event, kCGEventTargetUnixProcessID);
 
         evt.keyCode = (unsigned short)CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode);
         evt.modifiers = (unsigned long long)CGEventGetFlags(event);
 
-        // Typed-text capture: snapshot the focused field's text on every
-        // keydown so the Go side always has a baseline (first key of a burst)
-        // and a current value (latest key) to diff, without any burst-end AX
-        // read on another thread. This runs on the event-tap thread, the same
-        // place get_window_title already does a per-keydown AX call. The IME
-        // flag is read from the main-thread-maintained cache (g_imeComposing) —
-        // the tap thread must not call Carbon TIS itself.
-        _lastKeydownMs = current_time_millis();
+        _lastKeydownMs = ts;
         evt.imeComposing = g_imeComposing;
         if (pid > 0) {
             evt.fieldTextValid = read_focused_field_text(pid, evt.fieldText, sizeof(evt.fieldText));
@@ -728,27 +703,32 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type,
                 }
             }
         }
-        // evt is captured by value (the block copies the struct); the
-        // queue enriches its own copy and pushes that.
-        dispatch_async(_axQueue, ^{
-            if (!_monitorRunning) return;
-            CActivityEvent e = evt;
-            get_app_for_pid(pid, e.appBundleID, sizeof(e.appBundleID),
-                            e.appName, sizeof(e.appName));
-            // Cached title: typing bursts must not hammer the target
-            // app's AX server (see the cache comment for why).
-            if (pid > 0) {
-                get_window_title_cached(pid, e.windowTitle, sizeof(e.windowTitle),
-                                        TITLE_CACHE_TTL_MS);
-            }
-            push_event(&e);
-        });
+        get_app_for_pid(pid, evt.appBundleID, sizeof(evt.appBundleID),
+                        evt.appName, sizeof(evt.appName));
+        if (pid > 0) {
+            get_window_title_cached(pid, evt.windowTitle, sizeof(evt.windowTitle),
+                                    TITLE_CACHE_TTL_MS);
+        }
+        push_event(&evt);
         break;
     }
     default:
         break;
     }
+}
 
+static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type,
+                                   CGEventRef event, void *userInfo) {
+    if (type == kCGEventTapDisabledByTimeout || type == kCGEventTapDisabledByUserInput) {
+        if (_eventTap) CGEventTapEnable(_eventTap, true);
+        return event;
+    }
+    long long ts = current_time_millis();
+    CFRetain(event);
+    dispatch_async(_axQueue, ^{
+        processTapEvent(type, event, ts);
+        CFRelease(event);
+    });
     return event;
 }
 
@@ -765,7 +745,7 @@ static void axFocusCallback(AXObserverRef observer, AXUIElementRef element,
     long long ts = current_time_millis();
     CFRetain(element);
     dispatch_async(_axQueue, ^{
-        if (!_monitorRunning) {
+        if (!_monitorRunning || !activityMonitorCaptureAllowed()) {
             CFRelease(element);
             return;
         }
@@ -904,18 +884,11 @@ static void setup_workspace_observer(void) {
                 // the activity stream AND has caused recursive AX queries
                 // back into our own process.
                 if (pid == self_pid) return;
-                // Capture everything we need OFF the notification's
-                // userInfo before leaving the main thread — by the time
-                // the async block runs, `note` and the NSRunningApplication
-                // may have been released.
-                NSString *bundleID = app.bundleIdentifier;
-                NSString *appName = app.localizedName;
-                // Stamp at notification time, not enrich time: a backed
-                // up _axQueue must not skew app_switch ordering relative
-                // to the key/click events around it.
                 long long ts = current_time_millis();
                 dispatch_async(_axQueue, ^{
-                    if (!_monitorRunning) return;
+                    if (!_monitorRunning || !activityMonitorCaptureAllowed()) return;
+                    NSString *bundleID = app.bundleIdentifier;
+                    NSString *appName = app.localizedName;
                     CActivityEvent evt;
                     memset(&evt, 0, sizeof(evt));
                     evt.timestampMs = ts;
@@ -1352,6 +1325,7 @@ var (
 
 // darwinMonitor implements Monitor using macOS CGEventTap, NSWorkspace, and AXObserver.
 type darwinMonitor struct {
+	allowed  func() bool
 	mu       sync.Mutex
 	running  bool
 	cancel   context.CancelFunc
@@ -1461,8 +1435,8 @@ func FindVisibleSensitiveWindows(bundlePrefixes []string) []WindowBounds {
 }
 
 // New creates a new platform-specific Monitor.
-func New() Monitor {
-	return &darwinMonitor{}
+func New(allowed func() bool) Monitor {
+	return &darwinMonitor{allowed: allowed}
 }
 
 // GetStats returns a point-in-time snapshot of the event pipeline's
@@ -1494,6 +1468,7 @@ func (m *darwinMonitor) Start(ctx context.Context, callback func(ActivityEvent))
 	m.running = true
 	m.mu.Unlock()
 
+	nativeCaptureGate.Store(&m.allowed)
 	if !bool(C.start_activity_monitor()) {
 		m.mu.Lock()
 		m.running = false

@@ -78,7 +78,7 @@ func (a *App) SyncMailNow() error {
 	if a == nil || a.mailSync == nil {
 		return errors.New("Mail is not available on this computer")
 	}
-	if !a.isPermissionEnabled(mailPermissionKey) {
+	if !a.captureAllowed(context.Background(), "mail_sync", mailPermissionKey) {
 		return errors.New("mail reading is switched off")
 	}
 	if a.IsClosedEyesModeEnabled() {

@@ -75,7 +75,12 @@ func (a *App) permissionSwitchRead(ctx context.Context, key string) (bool, error
 	if a.store == nil {
 		return false, errors.New("the store is not ready")
 	}
-	val, err := a.store.GetUIState(ctx, permissionUIStateKey(key))
+	stateKey := permissionUIStateKey(key)
+	if key == calendarPeekEnabledKey {
+		// SetCalendarPeekEnabled stores this switch under its own key.
+		stateKey = calendarPeekEnabledKey
+	}
+	val, err := a.store.GetUIState(ctx, stateKey)
 	if err != nil {
 		return false, err
 	}
@@ -83,6 +88,38 @@ func (a *App) permissionSwitchRead(ctx context.Context, key string) (bool, error
 		return !permissionsOffByDefault[key], nil
 	}
 	return val != "false", nil
+}
+
+// A source that does bookkeeping on a known off must skip that work on a
+// read failure. Other gates only need the enabled result.
+type captureSwitch func() (on, known bool)
+
+func (read captureSwitch) on() bool {
+	on, known := read()
+	return on && known
+}
+
+// captureAllowed records a single outage for the whole source, including
+// sources that require two switches. A known off also ends an outage.
+func (a *App) captureAllowed(ctx context.Context, source string, keys ...string) bool {
+	on, _ := a.captureState(ctx, source, keys...)
+	return on
+}
+
+func (a *App) captureState(ctx context.Context, source string, keys ...string) (bool, bool) {
+	enabled := true
+	for _, key := range keys {
+		on, err := a.permissionSwitchRead(ctx, key)
+		if err != nil {
+			if _, reported := a.captureSwitchFailures.LoadOrStore(source, true); !reported {
+				log.Printf("[capture] %s skipped: switch state unknown", source)
+			}
+			return false, false
+		}
+		enabled = enabled && on
+	}
+	a.captureSwitchFailures.Delete(source)
+	return enabled, true
 }
 
 // messagesSwitchRead is the stored Messages switch, its default when nothing
@@ -175,19 +212,32 @@ func (a *App) RequestPermission(key string) (granted bool) {
 	runPermissionRequest(func() { granted = requestPermission(key) })
 	// The Grant button is the only place that asks macOS for calendar access;
 	// once it is granted the reader starts without waiting for its next tick.
-	if key == calendarPermissionKey && granted {
-		a.calendarPermissionChanged(true, a.isPermissionEnabled(key))
-	}
-	if key == remindersPermissionKey && granted {
-		a.remindersPermissionChanged(true, a.isPermissionEnabled(key))
-	}
-	if key == mailPermissionKey && granted {
-		a.mailPermissionChanged(true, a.isPermissionEnabled(key))
-	}
-	if key == messagesPermissionKey && granted {
-		a.imessagePermissionChanged(a.isPermissionEnabled(key))
+	if granted {
+		a.notifyCapturePermissionGranted(key)
 	}
 	return granted
+}
+
+// A grant wakes the reader only after the app switch can be read. A failed
+// read is neither a grant to capture nor a user request to switch off.
+func (a *App) notifyCapturePermissionGranted(key string) {
+	switch key {
+	case calendarPermissionKey, remindersPermissionKey, mailPermissionKey, messagesPermissionKey:
+		on, err := a.permissionSwitchRead(context.Background(), key)
+		if err != nil {
+			return
+		}
+		switch key {
+		case calendarPermissionKey:
+			a.calendarPermissionChanged(true, on)
+		case remindersPermissionKey:
+			a.remindersPermissionChanged(true, on)
+		case mailPermissionKey:
+			a.mailPermissionChanged(true, on)
+		case messagesPermissionKey:
+			a.imessagePermissionChanged(on)
+		}
+	}
 }
 
 func (a *App) OpenPermissionSettings(key string) error {

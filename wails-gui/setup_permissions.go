@@ -233,6 +233,7 @@ func (a *App) RequestAllPermissions() error {
 	}()
 	return nil
 }
+
 // RequestSetupPermissions asks only the given keys, one macOS prompt at a
 // time, for setup's one Allow per row (computer setup v1.0.0 rule 4). The
 // answers already saved for other keys stay. Answers arrive via
@@ -296,11 +297,8 @@ func (a *App) requestSetupPermission(key string) bool {
 	default:
 		granted = requestPermission(key)
 	}
-	if key == calendarPermissionKey && granted {
-		a.calendarPermissionChanged(true, a.isPermissionEnabled(key))
-	}
-	if key == remindersPermissionKey && granted {
-		a.remindersPermissionChanged(true, a.isPermissionEnabled(key))
+	if granted && (key == calendarPermissionKey || key == remindersPermissionKey) {
+		a.notifyCapturePermissionGranted(key)
 	}
 	return granted
 }

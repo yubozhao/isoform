@@ -61,14 +61,15 @@ type browserHistoryReader struct {
 	now     func() time.Time
 	store   func() *ActivityStore
 	// allowed is "Watch my screen" on and observing not paused.
-	allowed   func() bool
+	allowed   captureSwitch
 	pauses    func() ([]observationPause, error)
 	sensitive func(bundleID, name string) bool
 	// since and setSince keep the browserHistorySinceKey marker.
 	since    func() (int64, bool)
 	setSince func(int64)
 	// started is when this run began; no read reaches back before it.
-	started time.Time
+	unknownThrough int64 // last tick with an unreadable switch
+	started        time.Time
 
 	// protectedAt holds, per browser name, the last moment the browser was
 	// seen protected; its reading never reaches back before it.
@@ -104,8 +105,11 @@ func newBrowserHistoryReader(a *App) *browserHistoryReader {
 			}
 			return a.activity.store
 		},
-		allowed: func() bool {
-			return !a.IsClosedEyesModeEnabled() && a.screenWatchingEnabled()
+		allowed: func() (bool, bool) {
+			if a.IsClosedEyesModeEnabled() {
+				return false, true
+			}
+			return a.screenCaptureState("browser_history")
 		},
 		pauses:    a.observationPauses,
 		sensitive: browserVisitSensitive,
@@ -140,7 +144,8 @@ func newBrowserHistoryReader(a *App) *browserHistoryReader {
 
 // screenWatchingEnabled is the "Watch my screen" switch: both screen keys on.
 func (a *App) screenWatchingEnabled() bool {
-	return a.isPermissionEnabled("screen_recording") && a.isPermissionEnabled("accessibility")
+	on, _ := a.screenCaptureState("screen_watching")
+	return on
 }
 
 // startBrowserHistoryReader starts the loop once from startup.
@@ -289,13 +294,18 @@ func (r *browserHistoryReader) readOnce(ctx context.Context) (int, error) {
 	now := r.now()
 	// A browser the user protects loses what was kept of it even while
 	// reading is paused: its visits and its site summary.
-	for _, profile := range browserhistory.Profiles(r.home) {
-		if r.sensitive != nil && r.sensitive(profile.Browser.BundleID, profile.Browser.Name) {
-			_, _ = store.DeleteBrowserVisitsOf(profile.Browser.Name)
-			_, _ = store.DeleteBrowserSiteDaysOf(profile.Browser.Name)
+	for _, browser := range browserhistory.Browsers {
+		if r.sensitive != nil && r.sensitive(browser.BundleID, browser.Name) {
+			_, _ = store.DeleteBrowserVisitsOf(browser.Name)
+			_, _ = store.DeleteBrowserSiteDaysOf(browser.Name)
 		}
 	}
-	if r.allowed != nil && !r.allowed() {
+	on, known := r.allowed()
+	if !known {
+		r.unknownThrough = now.UnixMilli()
+		return 0, nil
+	}
+	if !on {
 		// Reading resumes from the moment it is allowed again.
 		r.setSince(now.UnixMilli())
 		return 0, nil
@@ -305,6 +315,10 @@ func (r *browserHistoryReader) readOnce(ctx context.Context) (int, error) {
 		// First run: start now, never reach back.
 		floor = now.UnixMilli()
 		r.setSince(floor)
+	}
+	// Keep the outage boundary in memory while preference writes may also fail.
+	if r.unknownThrough > floor {
+		floor = r.unknownThrough
 	}
 	// Nothing from before this launch: Isoform was not running then.
 	if started := r.started.UnixMilli(); !r.started.IsZero() && started > floor {

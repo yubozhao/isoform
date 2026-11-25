@@ -318,7 +318,7 @@ func TestMeetingJoinLinksAreWebOnly(t *testing.T) {
 func newTopicFindsTestApp(t *testing.T) *App {
 	t.Helper()
 	t.Setenv(topicsStateDirEnvVar, t.TempDir())
-	app := &App{}
+	app := &App{store: newIdentityTestStore(t)}
 	svc := app.topicsSvc()
 	svc.now = func() time.Time { return topicTestNow }
 	svc.collect = func(now time.Time) topicInput { return topicInput{Now: now} }
@@ -460,7 +460,7 @@ func TestTodayNewsPromptCarriesCleanLabelsAsData(t *testing.T) {
 
 func TestDailyTopicSearchStopsWhilePausedOrItsNoticeIsOff(t *testing.T) {
 	rig := newEngagementTestRig(t)
-	app := &App{engagement: rig.svc}
+	app := &App{engagement: rig.svc, store: rig.store}
 	if !app.dailyTopicSearchAllowed() {
 		t.Fatal("the daily search was blocked with nothing paused and its notice on")
 	}

@@ -170,6 +170,10 @@ func (a *App) readMobileBriefGatherRevision(ctx context.Context) (*mobileBriefGa
 		return nil, err
 	}
 	revision.policy = a.mobileBriefGatherPolicy(ctx)
+	if revision.policy == "" {
+		err = errMobileBriefSourcesChanged
+		return nil, err
+	}
 	err = ctx.Err()
 	if err != nil {
 		return nil, err
@@ -199,7 +203,11 @@ func (a *App) mobileBriefActivityPrivacyStamp(ctx context.Context, startedMs int
 func (a *App) mobileBriefGatherPolicy(ctx context.Context) string {
 	switches := map[string]bool{}
 	for _, key := range mobileBriefGatherPermissions {
-		switches[key] = a.isPermissionEnabledContext(ctx, key)
+		on, err := a.permissionSwitchRead(ctx, key)
+		if err != nil {
+			return ""
+		}
+		switches[key] = on
 	}
 	return mobileBriefModelDigest(struct {
 		ClosedEyes, Calendar, Reminders bool

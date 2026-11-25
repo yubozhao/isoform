@@ -64,7 +64,7 @@ func newTestFilesReader(t *testing.T, now time.Time) filesTestReader {
 		roots:   recentfiles.Roots(filesTestHome),
 		now:     func() time.Time { return now },
 		store:   func() *ActivityStore { return store },
-		enabled: func() bool { return enabled },
+		enabled: func() (bool, bool) { return enabled, true },
 		paused:  func() bool { return paused },
 		pauses:  func() ([]observationPause, error) { return pauseLog, nil },
 		sensitive: func(bundleID, name string) bool {

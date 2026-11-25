@@ -4053,6 +4053,7 @@
     "yourAI": {
         "title": "你的 AI",
         "lead": "{{assistant}} 读取你的一天，为你写简报和回答。",
+        "leadNoChat": "{{assistant}} 读取你的一天，为你写简报。",
         "alsoAgent": "{{app}} · 也是你的{{job}} Agent",
         "jobCode": "写代码",
         "jobElse": "其他所有事",

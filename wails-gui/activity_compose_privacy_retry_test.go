@@ -25,9 +25,8 @@ func TestComposerPrivacyReadFailureRemainsRetryable(t *testing.T) {
 	run.SessionIDs = []string{session.ID}
 	run.FirstEventRowID, run.LastEventRowID, run.EventCount = rows[0].ID, rows[0].ID, 1
 	insertComposableTimelineRun(t, store, run, ActivityTimelineGroupSummary{Title: "Project notes"})
-	// The activity DB stays healthy; only the independent privacy-pause
-	// lookup fails, as with a temporary database access failure.
-	if err := app.store.Close(); err != nil {
+	// Keep the screen switches readable so the composer reaches the pause log.
+	if err := app.store.SetUIState(t.Context(), observationPausesKey, "invalid JSON"); err != nil {
 		t.Fatal(err)
 	}
 	triager := &ActivityTriager{app: app}
@@ -41,7 +40,9 @@ func TestComposerPrivacyReadFailureRemainsRetryable(t *testing.T) {
 	if err != nil || len(ready) != 1 || ready[0].ID != run.ID {
 		t.Fatalf("read failure permanently removed run from queue: ready=%v err=%v", ready, err)
 	}
-	app.store = nil
+	if err := app.store.SetUIState(t.Context(), observationPausesKey, "[]"); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := triager.composeRun(context.Background(), run, 63_000); err != nil {
 		t.Fatalf("retry after privacy source recovered: %v", err)
 	}

@@ -158,7 +158,7 @@ func (a *App) SyncFilesNow() error {
 	if a == nil || a.filesActivity == nil {
 		return errors.New("recent files are not available on this computer")
 	}
-	if !a.isPermissionEnabled(filesPermissionKey) {
+	if !a.captureAllowed(context.Background(), "files_activity_sync", filesPermissionKey) {
 		return errors.New("recent files reading is switched off")
 	}
 	if a.IsClosedEyesModeEnabled() {

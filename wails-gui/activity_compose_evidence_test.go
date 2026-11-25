@@ -99,7 +99,7 @@ func TestMovementSyntheticTerminalChatComposesOneActivity(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := newTimelineTestStore(t)
-	tr := &ActivityTriager{app: &App{activity: &activityMonitorState{store: store}}}
+	tr := &ActivityTriager{app: &App{store: newIdentityTestStore(t), activity: &activityMonitorState{store: store}}}
 	var firstID string
 	for i, input := range fixture.Runs {
 		sessionID := input.App + "-synthetic"

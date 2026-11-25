@@ -239,7 +239,7 @@ func TestInjectFocusedAppContext_FormatsAndClears(t *testing.T) {
 	}
 	stashFocusedAppContext("sess-x", snap)
 
-	app := &App{}
+	app := &App{store: newIdentityTestStore(t)}
 	out := app.injectFocusedAppContext("sess-x")
 	if out == "" {
 		t.Fatal("expected non-empty context block")

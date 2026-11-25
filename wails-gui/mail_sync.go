@@ -119,7 +119,7 @@ type mailSyncService struct {
 	store *storage.Store
 	now   func() time.Time
 	// enabled is the switch; protected is Mail on the Privacy page's list.
-	enabled   func() bool
+	enabled   captureSwitch
 	protected func() bool
 	paused    func() bool
 	pauses    func() ([]observationPause, error)
@@ -171,7 +171,7 @@ func newMailSyncService(a *App) *mailSyncService {
 	svc := &mailSyncService{
 		store:   a.store,
 		now:     time.Now,
-		enabled: func() bool { return a.isPermissionEnabled(mailPermissionKey) },
+		enabled: func() (bool, bool) { return a.captureState(context.Background(), "mail_sync", mailPermissionKey) },
 		protected: func() bool {
 			_, sensitive := pii.IsSensitiveApp(mailheaders.BundleID)
 			return sensitive || pii.IsSensitiveAppName("Mail")
@@ -329,7 +329,7 @@ func (s *mailSyncService) loop(ctx context.Context) {
 
 // readingAllowed is the switch on and Mail not protected.
 func (s *mailSyncService) readingAllowed() bool {
-	return (s.enabled == nil || s.enabled()) && (s.protected == nil || !s.protected())
+	return s.enabled.on() && (s.protected == nil || !s.protected())
 }
 
 // syncIfAllowed runs one read when everything allows it. Switching reading
@@ -339,7 +339,11 @@ func (s *mailSyncService) syncIfAllowed(ctx context.Context, reason string) {
 		s.clearStored(ctx, "Mail protected")
 		return
 	}
-	if s.enabled != nil && !s.enabled() {
+	on, known := s.enabled()
+	if !known {
+		return
+	}
+	if !on {
 		// Keep the permission status current while reading is off. This
 		// probe never asks for access, launches Mail or reads its headers.
 		state := mailAutomationUnknown

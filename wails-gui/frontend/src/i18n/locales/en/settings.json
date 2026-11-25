@@ -4053,6 +4053,7 @@
     "yourAI": {
         "title": "Your AI",
         "lead": "{{assistant}} reads your day and writes your briefs and answers.",
+        "leadNoChat": "{{assistant}} reads your day and writes your briefs.",
         "alsoAgent": "{{app}} · also your agent for {{job}}",
         "jobCode": "code",
         "jobElse": "everything else",

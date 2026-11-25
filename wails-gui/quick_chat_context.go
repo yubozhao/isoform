@@ -655,6 +655,9 @@ func hasFocusedAppContext(tag string) bool {
 // sensitive app or a private browser window, there is no chip: everything comes back empty, so
 // no screen context can go with the question either.
 func (a *App) spotlightScreenChip(bundleID, appName string) (string, string, string) {
+	if a == nil || a.IsClosedEyesModeEnabled() || !a.screenWatchingEnabled() {
+		return "", "", ""
+	}
 	return a.spotlightScreenChipFrom(bundleID, appName, activitymon.FrontmostAppInfo())
 }
 

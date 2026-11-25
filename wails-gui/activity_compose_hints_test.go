@@ -10,7 +10,7 @@ import (
 func TestComposerTriageHintsDoNotSplitTaskAcrossSessionCut(t *testing.T) {
 	isolateActivityPrivacyTest(t)
 	store := newTimelineTestStore(t)
-	tr := &ActivityTriager{app: &App{activity: &activityMonitorState{store: store}}}
+	tr := &ActivityTriager{app: &App{store: newIdentityTestStore(t), activity: &activityMonitorState{store: store}}}
 	sessions := []ActivitySessionRow{
 		{ID: "capture-terminal", StartTime: 10_000, EndTime: 30_000, AppNames: `["Terminal"]`},
 		{ID: "capture-chat", StartTime: 390_000, EndTime: 410_000, AppNames: `["Claude"]`},

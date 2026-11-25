@@ -103,7 +103,7 @@ func TestComposerPlacesAnHourOfRunsInFewCalls(t *testing.T) {
 	isolateActivityPrivacyTest(t)
 	store := newTimelineTestStore(t)
 	runner := &composerBatchRunner{}
-	app := &App{runner: runner, activity: &activityMonitorState{store: store}}
+	app := &App{store: newIdentityTestStore(t), runner: runner, activity: &activityMonitorState{store: store}}
 	runs := saveComposerHour(t, store, 29)
 	triager := &ActivityTriager{app: app}
 	triager.runActivityComposerPass(context.Background())
@@ -139,7 +139,7 @@ func TestComposerBatchPlacesLeftOutRunsOneAtATime(t *testing.T) {
 	isolateActivityPrivacyTest(t)
 	store := newTimelineTestStore(t)
 	runner := &composerBatchRunner{omit: map[string]bool{"tg_compose_04": true}}
-	app := &App{runner: runner, activity: &activityMonitorState{store: store}}
+	app := &App{store: newIdentityTestStore(t), runner: runner, activity: &activityMonitorState{store: store}}
 	saveComposerHour(t, store, 6)
 	triager := &ActivityTriager{app: app}
 	triager.runActivityComposerPass(context.Background())
