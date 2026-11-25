@@ -507,6 +507,31 @@ describe("ObservationPage", () => {
         await waitFor(() => expect(within(screen.getByTestId("sees-row-watch")).getByRole("switch")).toBeChecked());
     });
 
+    it("shows a switch Go couldn't read as unknown, never on or off (enabledUnknown)", async () => {
+        mocks.getPermissions.mockResolvedValue(
+            macPermissions({ screen_recording: { enabled: false, enabledUnknown: true }, calendars: { enabled: false, enabledUnknown: true } }),
+        );
+        render(<ObservationPage />);
+        for (const id of ["screen", "mail"]) {
+            const row = screen.getByTestId(`sees-row-${id}`);
+            await waitFor(() => expect(within(row).getByText("Couldn't read whether this is on")).toBeInTheDocument());
+            expect(within(row).queryByRole("switch")).toBeNull();
+            expect(within(row).getByRole("button", { name: "Try again" })).toBeInTheDocument();
+        }
+        mocks.getPermissions.mockResolvedValue(macPermissions());
+        fireEvent.click(within(screen.getByTestId("sees-row-screen")).getByRole("button", { name: "Try again" }));
+        await waitFor(() => expect(within(screen.getByTestId("sees-row-screen")).getByRole("switch")).toBeChecked());
+    });
+
+    it("never describes an unreadable recent-files switch as off", async () => {
+        mocks.getPermissions.mockResolvedValue(withFiles(macPermissions(), { enabled: false, enabledUnknown: true }));
+        render(<ObservationPage anchor="sees-screen" />);
+        const card = (await screen.findByText("Recent files")).closest(".settings-card") as HTMLElement;
+        await waitFor(() => expect(within(card).getByText("Couldn't read whether this is on")).toBeInTheDocument());
+        expect(within(card).queryByRole("switch", { name: "Note my recent files" })).toBeNull();
+        expect(within(card).queryByText("Recent files are off and Isoform notes none of them.")).toBeNull();
+    });
+
     it("turns mail, calendar and reminders off together, and shows on while any one reads", async () => {
         mocks.getPermissions.mockResolvedValue(
             withMail(macPermissions({ calendars: { enabled: false }, reminders: { enabled: false } }), { enabled: true }),

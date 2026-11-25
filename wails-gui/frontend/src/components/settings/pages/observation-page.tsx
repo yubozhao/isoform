@@ -210,12 +210,14 @@ function WatchScreenCard({
             title={title}
             description={t("observation.watch.description")}
             control={
+                <KnownSwitch items={items} retry={() => void onChanged()}>
                 <Switch
                     aria-label={title}
                     checked={pending ?? watching}
                     disabled={!permissions || paused || missing.length > 0 || pending !== null}
                     onCheckedChange={(next) => void handleChange(next)}
                 />
+                </KnownSwitch>
             }
         >
             {reason && <SettingsReason>{reason}</SettingsReason>}
@@ -658,7 +660,8 @@ function FilesCard({
     };
 
     const lastRead = formatWhen(overview?.lastReadAt ?? "", i18n.language);
-    let readingDescription = t("observation.files.readingOff");
+    // A switch that couldn't be read is never described as off.
+    let readingDescription: string | undefined = item?.enabledUnknown ? undefined : t("observation.files.readingOff");
     if (reading) {
         const parts: string[] = [];
         if (overview) {
@@ -692,12 +695,14 @@ function FilesCard({
                 title={readingTitle}
                 description={readingDescription}
                 control={
+                    <KnownSwitch items={[item]} retry={() => void onChanged()}>
                     <Switch
                         aria-label={readingTitle}
                         checked={reading}
                         disabled={pendingRead !== null || paused}
                         onCheckedChange={(next) => void handleRead(next)}
                     />
+                    </KnownSwitch>
                 }
             />
             {reading && (overview?.folders ?? []).map((folder) => <FilesFolderRow key={folder.key} folder={folder} />)}
@@ -914,15 +919,19 @@ function CalendarsCard({
                               ]
                                   .filter(Boolean)
                                   .join(" \u00b7 ") || t("observation.calendars.readingDescription")
-                            : t("observation.calendars.readingOff")
+                            : item?.enabledUnknown
+                              ? undefined
+                              : t("observation.calendars.readingOff")
                     }
                     control={
+                        <KnownSwitch items={[item]} retry={() => void onChanged()}>
                         <Switch
                             aria-label={t("observation.calendars.readingTitle")}
                             checked={reading}
                             disabled={pendingRead !== null || paused}
                             onCheckedChange={(next) => void handleRead(next)}
                         />
+                        </KnownSwitch>
                     }
                 />
             )}
@@ -1037,7 +1046,8 @@ function RemindersCard({
 
     const lists = overview?.lists ?? [];
     const lastSync = formatWhen(overview?.lastSyncAt ?? "", i18n.language);
-    let readingDescription = t("observation.reminders.readingOff");
+    // A switch that couldn't be read is never described as off.
+    let readingDescription: string | undefined = item?.enabledUnknown ? undefined : t("observation.reminders.readingOff");
     if (reading) {
         const parts: string[] = [];
         if (overview) {
@@ -1078,12 +1088,14 @@ function RemindersCard({
                     title={t("observation.reminders.readingTitle")}
                     description={readingDescription}
                     control={
+                        <KnownSwitch items={[item]} retry={() => void onChanged()}>
                         <Switch
                             aria-label={t("observation.reminders.readingTitle")}
                             checked={reading}
                             disabled={pendingRead !== null || paused}
                             onCheckedChange={(next) => void handleRead(next)}
                         />
+                        </KnownSwitch>
                     }
                 />
             )}
@@ -1173,7 +1185,8 @@ function MailCard({
     if (!item && (!overview || !overview.supported)) return null;
 
     const lastSync = formatWhen(overview?.lastReadAt ?? "", i18n.language);
-    let readingDescription = t("observation.mail.readingOff");
+    // A switch that couldn't be read is never described as off.
+    let readingDescription: string | undefined = item?.enabledUnknown ? undefined : t("observation.mail.readingOff");
     if (reading) {
         const parts: string[] = [];
         if (overview && !mailOpen) parts.push(t("observation.mail.notOpen"));
@@ -1218,12 +1231,14 @@ function MailCard({
                     title={t("observation.mail.readingTitle")}
                     description={readingDescription}
                     control={
+                        <KnownSwitch items={[item]} retry={() => void onChanged()}>
                         <Switch
                             aria-label={t("observation.mail.readingTitle")}
                             checked={reading}
                             disabled={pendingRead !== null || paused}
                             onCheckedChange={(next) => void handleRead(next)}
                         />
+                        </KnownSwitch>
                     }
                 />
             )}
@@ -1360,7 +1375,8 @@ function MessagesCard({
     };
 
     const lastSync = formatWhen(overview?.lastReadAt ?? "", i18n.language);
-    let readingDescription = t("observation.messages.readingOff");
+    // A switch that couldn't be read is never described as off.
+    let readingDescription: string | undefined = item?.enabledUnknown ? undefined : t("observation.messages.readingOff");
     if (reading) {
         const parts: string[] = [];
         if (overview) {
@@ -1402,12 +1418,14 @@ function MessagesCard({
                     title={readingTitle}
                     description={readingDescription}
                     control={
+                        <KnownSwitch items={[item]} retry={() => void onChanged()}>
                         <Switch
                             aria-label={readingTitle}
                             checked={reading}
                             disabled={pendingRead !== null || paused}
                             onCheckedChange={(next) => void handleRead(next)}
                         />
+                        </KnownSwitch>
                     }
                 />
             )}
@@ -1747,6 +1765,18 @@ function readFailure(t: TFunction<"settings">, retry: () => void): SettingsFailu
     return { text: t("sees.readFailed"), retry };
 }
 
+/** A source switch whose saved state Go couldn't read (enabledUnknown) shows
+ *  the read failure with Try again in its place, never on or off. */
+function KnownSwitch({ items, retry, children }: {
+    items: readonly (PermissionItem | null | undefined)[];
+    retry: () => void;
+    children: ReactNode;
+}) {
+    const { t } = useTranslation("settings");
+    if (!items.some((item) => item?.enabledUnknown)) return <>{children}</>;
+    return <SettingsFailureLine failure={readFailure(t, retry)} />;
+}
+
 /** Writes every item so they always agree; the page reads the permissions
  *  again either way. */
 async function setItemsEnabled(items: PermissionItem[], next: boolean): Promise<void> {
@@ -1823,12 +1853,14 @@ function ScreenRow({ line, permissions, readFailed, paused, onChanged, onOpen }:
             hint={permissions && missing.length > 0 ? t("sees.needsAccess") : undefined}
             failure={!permissions && readFailed ? readFailure(t, () => void onChanged()) : sw.failure}
             control={permissions && (
+                <KnownSwitch items={items} retry={() => void onChanged()}>
                 <Switch
                     aria-label={title}
                     checked={sw.pending ?? watching}
                     disabled={paused || missing.length > 0 || sw.pending !== null}
                     onCheckedChange={(next) => void sw.change(items, next)}
                 />
+                </KnownSwitch>
             )}
             onOpen={onOpen}
         />
@@ -1945,12 +1977,14 @@ function MailCalendarRemindersRow({ permissions, readFailed, paused, onChanged, 
             hint={permissions && reading && noneGranted ? t("sees.needsAccess") : undefined}
             failure={!permissions && readFailed ? readFailure(t, () => void onChanged()) : sw.failure}
             control={permissions && (
+                <KnownSwitch items={items} retry={() => void onChanged()}>
                 <Switch
                     aria-label={title}
                     checked={sw.pending ?? reading}
                     disabled={paused || sw.pending !== null}
                     onCheckedChange={(next) => void sw.change(items, next)}
                 />
+                </KnownSwitch>
             )}
             onOpen={onOpen}
         />
@@ -1985,12 +2019,14 @@ function MessagesRow({ permissions, readFailed, paused, onChanged, onTurnedOn, o
             warning={on && item !== null && !item.granted}
             failure={!permissions && readFailed ? readFailure(t, () => void onChanged()) : sw.failure}
             control={item && (
+                <KnownSwitch items={[item]} retry={() => void onChanged()}>
                 <Switch
                     aria-label={title}
                     checked={on}
                     disabled={paused || sw.pending !== null}
                     onCheckedChange={(next) => void sw.change([item], next, next ? onTurnedOn : undefined)}
                 />
+                </KnownSwitch>
             )}
             onOpen={onOpen}
         />
