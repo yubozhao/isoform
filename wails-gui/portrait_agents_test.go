@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -83,6 +84,7 @@ login) echo "Please log in first" >&2; exit 1 ;;
 shape) echo "Sure! Here is a summary of the person." ;;
 decorated) esc=$(printf '\033'); sed "s/^/  ${esc}[1m/; s/$/${esc}[0m/" "` + filepath.Join(root, "draft.md") + `" ;;
 slow) sleep 30 ;;
+failhigh) case "$*" in *model_reasoning_effort*|*"--effort "*) echo "unsupported effort" >&2; exit 1 ;; esac; cat "` + filepath.Join(root, "draft.md") + `" ;;
 slowchild) sleep 60 & echo $! > "` + filepath.Join(root, "child.pid") + `"; wait ;;
 esac
 `
@@ -127,11 +129,11 @@ func TestPortraitAgentsDetectSkipsTheLead(t *testing.T) {
 		t.Errorf("detect listed the lead:\n%s", out)
 	}
 	for _, want := range []string{
-		"codex\tready\tOpenAI\t",
-		"gemini\ttoo_old\tGoogle\tgemini 0.1.2 has no skills; update it with: npm install -g @google/gemini-cli",
-		"cursor\tmissing\tCursor\tno cursor-agent command",
-		"kimi\tready\tMoonshot AI\t",
-		"alma\tapp_not_running\tAlma\topen the Alma app, then try again",
+		"codex\tready\tOpenAI\txhigh\t",
+		"gemini\ttoo_old\tGoogle\tdefault\tgemini 0.1.2 has no skills; update it with: npm install -g @google/gemini-cli",
+		"cursor\tmissing\tCursor\tdefault\tno cursor-agent command",
+		"kimi\tready\tMoonshot AI\tdefault\t",
+		"alma\tapp_not_running\tAlma\tdefault\topen the Alma app, then try again",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("detect lacks %q:\n%s", want, out)
@@ -145,7 +147,7 @@ func TestPortraitAgentsDetectSkipsTheLead(t *testing.T) {
 	}
 	// A Codex lead skips Codex and offers Claude as a helper.
 	out, _, _ = s.run(t, nil, "detect", "codex")
-	if strings.Contains(out, "codex\t") || !strings.Contains(out, "claude\tready\tAnthropic\t") || !strings.Contains(out, "gemini\tready\t") || !strings.Contains(out, "alma\tready\t") {
+	if strings.Contains(out, "codex\t") || !strings.Contains(out, "claude\tready\tAnthropic\tmax\t") || !strings.Contains(out, "gemini\tready\t") || !strings.Contains(out, "alma\tready\t") {
 		t.Fatalf("detect for a Codex lead:\n%s", out)
 	}
 	if _, stderr, code := s.run(t, nil, "detect"); code != 64 || !strings.Contains(stderr, "detect <lead>") {
@@ -224,7 +226,7 @@ func TestPortraitAgentsRunIsReadOnlyAndHeadless(t *testing.T) {
 	s := newPortraitStubs(t, claudeCodePluginDir, "claude", "codex", "gemini", "cursor-agent", "kimi", "alma")
 	flags := map[string]string{
 		"claude": "claude -p You are the claude helper",
-		"codex":  "codex exec --sandbox read-only --skip-git-repo-check --ephemeral You are the codex helper",
+		"codex":  "codex exec --sandbox read-only --skip-git-repo-check --ephemeral -c model_reasoning_effort=xhigh You are the codex helper",
 		"gemini": "gemini -p You are the gemini helper",
 		"cursor": "cursor-agent -p --output-format text You are the cursor helper",
 		"kimi":   "kimi -p You are the kimi helper",
@@ -271,11 +273,13 @@ func TestPortraitAgentsRunIsReadOnlyAndHeadless(t *testing.T) {
 
 func TestPortraitAgentsRunFailuresAreOneLine(t *testing.T) {
 	s := newPortraitStubs(t, claudeCodePluginDir, "codex")
+	// A failure at high effort is retried once at default and says so; a
+	// missing sign-in is not retried.
 	for mode, want := range map[string]string{
-		"fail":  "codex: exited with status 1\n",
+		"fail":  "codex: xhigh failed (exited with status 1), retried at default\ncodex: exited with status 1\n",
 		"login": "codex: not signed in\n",
-		"shape": "codex: no usable draft (39 bytes)\n",
-		"slow":  "codex: took longer than 1s\n",
+		"shape": "codex: xhigh failed (no usable draft (39 bytes)), retried at default\ncodex: no usable draft (39 bytes)\n",
+		"slow":  "codex: xhigh failed (took longer than 1s), retried at default\ncodex: took longer than 1s\n",
 	} {
 		out := filepath.Join(s.home, mode+".md")
 		_, stderr, code := s.run(t, []string{"STUB_CODEX=" + mode, "ISOFORM_AGENT_TIMEOUT=1"}, "run", "codex", out)
@@ -284,6 +288,58 @@ func TestPortraitAgentsRunFailuresAreOneLine(t *testing.T) {
 		}
 		if data, _ := os.ReadFile(out); len(data) != 0 {
 			t.Errorf("%s: a failed run kept output %q", mode, data)
+		}
+	}
+}
+
+// Every helper thinks at its agent's highest effort: Claude --effort max,
+// Codex model_reasoning_effort=xhigh, and no flag for agents without one. A
+// run that fails at high effort succeeds on its one retry at default.
+func TestPortraitAgentsRunAtHighestEffort(t *testing.T) {
+	s := newPortraitStubs(t, claudeCodePluginDir, "claude", "codex", "gemini", "cursor-agent", "kimi", "alma")
+	for _, agent := range []string{"claude", "codex", "gemini", "cursor", "kimi", "alma"} {
+		if _, stderr, code := s.run(t, nil, "run", agent, filepath.Join(s.home, agent+".md")); code != 0 {
+			t.Fatalf("run %s: %s", agent, stderr)
+		}
+	}
+	calls := s.calls(t)
+	// One log entry per run; a prompt spans many lines.
+	lines := map[string]string{}
+	starts := regexp.MustCompile(`(?m)^(claude|codex|gemini|cursor-agent|kimi|alma) `).FindAllStringIndex(calls, -1)
+	for i, at := range starts {
+		end := len(calls)
+		if i+1 < len(starts) {
+			end = starts[i+1][0]
+		}
+		entry := calls[at[0]:end]
+		lines[strings.Fields(entry)[0]] = entry
+	}
+	if !strings.Contains(lines["claude"], " --effort max ") {
+		t.Errorf("claude helper not at max effort: %s", lines["claude"])
+	}
+	if !strings.Contains(lines["codex"], " -c model_reasoning_effort=xhigh ") {
+		t.Errorf("codex helper not at xhigh: %s", lines["codex"])
+	}
+	for _, bin := range []string{"gemini", "cursor-agent", "kimi", "alma"} {
+		if strings.Contains(lines[bin], "effort") || strings.Contains(lines[bin], "thinking") {
+			t.Errorf("%s has no effort setting but was passed one: %s", bin, lines[bin])
+		}
+	}
+	for _, agent := range []string{"claude", "codex"} {
+		s := newPortraitStubs(t, claudeCodePluginDir, agent)
+		out := filepath.Join(s.home, agent+".md")
+		_, stderr, code := s.run(t, []string{"STUB_" + strings.ToUpper(agent) + "=failhigh"}, "run", agent, out)
+		level := map[string]string{"claude": "max", "codex": "xhigh"}[agent]
+		if code != 0 || stderr != agent+": "+level+" failed (exited with status 1), retried at default\n" {
+			t.Fatalf("%s retry at default: %d %q", agent, code, stderr)
+		}
+		if data, _ := os.ReadFile(out); string(data) != portraitFixtureDraft {
+			t.Errorf("%s retry kept no draft", agent)
+		}
+		log := s.calls(t)
+		runs := regexp.MustCompile(`(?m)^`+agent+` `).FindAllStringIndex(log, -1)
+		if len(runs) != 2 || strings.Contains(log[runs[1][0]:], "effort") {
+			t.Errorf("%s: the retry must run once, at default:\n%s", agent, s.calls(t))
 		}
 	}
 }
@@ -306,7 +362,7 @@ func TestPortraitAgentsRunCleansDecoratedOutput(t *testing.T) {
 func TestPortraitAgentsTimeoutKillsTheProcessGroup(t *testing.T) {
 	s := newPortraitStubs(t, claudeCodePluginDir, "codex")
 	_, stderr, code := s.run(t, []string{"STUB_CODEX=slowchild", "ISOFORM_AGENT_TIMEOUT=1"}, "run", "codex", filepath.Join(s.home, "out.md"))
-	if code != 2 || stderr != "codex: took longer than 1s\n" {
+	if code != 2 || stderr != "codex: xhigh failed (took longer than 1s), retried at default\ncodex: took longer than 1s\n" {
 		t.Fatalf("exit %d stderr %q", code, stderr)
 	}
 	data, err := os.ReadFile(filepath.Join(s.root, "child.pid"))
@@ -595,7 +651,7 @@ func readPortraitVars(t *testing.T, pkg string) map[string]string {
 			vars[key] = value
 		}
 	}
-	for _, key := range []string{"LEAD", "LEAD_ID", "SCRIPT"} {
+	for _, key := range []string{"LEAD", "LEAD_ID", "SCRIPT", "PORTRAIT_COMMAND", "AS_ME_COMMAND"} {
 		if vars[key] == "" {
 			t.Fatalf("%s/portrait.vars lacks %s", pkg, key)
 		}
@@ -654,11 +710,24 @@ func TestPortraitEveryPackageCanLead(t *testing.T) {
 		if strings.Contains(block, "{{") {
 			t.Errorf("%s: unrendered placeholder in the lead", pkg)
 		}
+		asme, err := os.ReadFile(filepath.Join(portraitSpecDir, "as-me.md"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		skill, err = os.ReadFile(filepath.Join(pkg, "skills", "as-me", "SKILL.md"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, rest, ok = strings.Cut(string(skill), "<!-- portrait-as-me:begin -->\n")
+		block, _, ok2 = strings.Cut(rest, "<!-- portrait-as-me:end -->")
+		if !ok || !ok2 || block != renderPortrait(t, string(asme), vars) {
+			t.Errorf("%s: the as-me skill differs from portrait-spec/as-me.md; run sync.sh", pkg)
+		}
 	}
 	// A non-Claude lead renders the same steps for itself: a Codex lead skips
 	// Codex, shows the same progress lines, and saves to the shared path.
-	codex := renderPortrait(t, string(lead), map[string]string{"LEAD": "Codex", "LEAD_ID": "codex", "SCRIPT": `"$ISOFORM_SKILL_DIR/scripts/isoform-agents"`})
-	for _, want := range []string{"isoform-agents\" detect codex`. It skips Codex, the lead.", portraitOpeningLine, "`<Agent>: reading...`", "bundle <folder>/bundle.md codex=<folder>/codex.md", "~/.agents/agent-of-you/portrait.md", "the Codex row of the table"} {
+	codex := renderPortrait(t, string(lead), map[string]string{"LEAD": "Codex", "LEAD_ID": "codex", "SCRIPT": `"$ISOFORM_SKILL_DIR/scripts/isoform-agents"`, "PORTRAIT_COMMAND": "$isoform-portrait", "AS_ME_COMMAND": "$isoform-as-me"})
+	for _, want := range []string{"isoform-agents\" detect codex`. It skips Codex, the lead.", portraitOpeningLine, "`<Agent>: reading (<effort>)...`", "`Try it: $isoform-as-me <a task>`", "bundle <folder>/bundle.md codex=<folder>/codex.md", "~/.agents/agent-of-you/portrait.md", "the Codex row of the table"} {
 		if !strings.Contains(codex, want) {
 			t.Errorf("Codex lead lacks %q", want)
 		}
@@ -672,7 +741,7 @@ func TestPortraitEveryPackageCanLead(t *testing.T) {
 			t.Errorf("helper lacks %q", want)
 		}
 	}
-	for _, path := range []string{"spec.md", "helper.md", "lead.md", "sync.sh", "isoform-agents", "portrait", "PORTRAIT-FORMAT.md"} {
+	for _, path := range []string{"spec.md", "helper.md", "lead.md", "as-me.md", "sync.sh", "isoform-agents", "portrait", "PORTRAIT-FORMAT.md"} {
 		text, err := os.ReadFile(filepath.Join(portraitSpecDir, path))
 		if err != nil {
 			t.Fatal(err)
@@ -689,7 +758,7 @@ func TestPortraitEveryPackageCanLead(t *testing.T) {
 func TestPortraitCodexLeadRunsTheSameSteps(t *testing.T) {
 	s := newPortraitStubs(t, claudeCodePluginDir, "claude", "codex")
 	out, _, _ := s.run(t, nil, "detect", "codex")
-	if !strings.HasPrefix(out, "claude\tready\tAnthropic\t") {
+	if !strings.HasPrefix(out, "claude\tready\tAnthropic\tmax\t") {
 		t.Fatalf("detect: %q", out)
 	}
 	if out, _, code := s.run(t, nil, "install", "claude"); code != 0 || !strings.HasSuffix(out, "/.claude/skills/isoform-portrait-helper/SKILL.md\n") {

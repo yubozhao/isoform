@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -437,3 +438,132 @@ func TestPortraitUninstallRestoresInstructionsByteForByte(t *testing.T) {
 }
 
 func ptr(s string) *string { return &s }
+
+// The blind test: as-me answers each situation from the portrait alone, and a
+// separate judge, with no tools and no portrait, scores it against the
+// person's real answer. Neither sees what the other must not.
+func TestPortraitEvalIsBlindBothWays(t *testing.T) {
+	s := newPortraitStubs(t, claudeCodePluginDir)
+	portrait := writePortraitFolder(t, filepath.Join(s.home, ".agents", "portraits"), "bo")
+	text, _ := os.ReadFile(filepath.Join(portrait, "PORTRAIT.md"))
+	writePortraitFile(t, filepath.Join(portrait, "PORTRAIT.md"), string(text)+"\nPORTRAIT-ONLY-MARKER\n")
+	// A claude stub that records each run's arguments and working folder.
+	runs := filepath.Join(s.root, "runs")
+	if err := os.MkdirAll(runs, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	stub := `#!/bin/sh
+n=$(ls "` + runs + `" | grep -c args)
+printf '%s\n' "$@" > "` + runs + `/$n.args"
+{ pwd; ls -A; } > "` + runs + `/$n.cwd"
+case "$*" in
+*"judge in a blind test"*)
+	case "$*" in
+	*CASE-WRONG*) printf 'Verdict: wrong\nWhy: the person waited for a yes.\n' ;;
+	*CASE-CLOSE*) printf '**Verdict:** Close\nWhy: same call, different order.\n' ;;
+	*CASE-BROKEN*) echo "I cannot judge this." ;;
+	*) printf 'Verdict: match\nWhy: the same decision.\n' ;;
+	esac ;;
+*) printf 'I would merge it now and tell Bo after.\nLeaned on: merge reviewed fixes without asking (this project)\n' ;;
+esac
+`
+	if err := os.WriteFile(filepath.Join(s.bin, "claude"), []byte(stub), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cases := filepath.Join(s.home, "cases")
+	for name, c := range map[string][2]string{
+		"a-match":  {"A reviewed fix is ready on a Friday evening. CASE-MATCH", "Merged it at once. Reason: it was reviewed. ANSWER-A-SECRET"},
+		"b-close":  {"A pull request has one flaky test. CASE-CLOSE", "Re-ran the test, then merged. Reason: flaky. ANSWER-B-SECRET"},
+		"c-wrong":  {"A customer asks for a refund by email. CASE-WRONG", "Waited for a yes before replying. Reason: money. ANSWER-C-SECRET"},
+		"d-broken": {"A meeting moved. CASE-BROKEN", "Accepted the new time. Reason: free then. ANSWER-D-SECRET"},
+	} {
+		writePortraitFile(t, filepath.Join(cases, name, "situation.md"), c[0]+"\n")
+		writePortraitFile(t, filepath.Join(cases, name, "answer.md"), c[1]+"\n")
+	}
+	writePortraitFile(t, filepath.Join(cases, "e-incomplete", "situation.md"), "No answer here.\n")
+
+	out, stderr, code := s.run(t, nil, "eval", cases)
+	if code != 0 {
+		t.Fatalf("eval: %d %q %q", code, out, stderr)
+	}
+	if out != "a-match: match\nb-close: close\nc-wrong: wrong\nd-broken: error\nscore: 37% of 4; wrote "+cases+"/results.md\n" {
+		t.Fatalf("eval output %q", out)
+	}
+	// Eight runs: as-me then the judge, for each of the four full cases.
+	files, _ := filepath.Glob(filepath.Join(runs, "*.args"))
+	if len(files) != 8 {
+		t.Fatalf("runs: %d", len(files))
+	}
+	for i := 0; i < 8; i++ {
+		args, _ := os.ReadFile(filepath.Join(runs, strconv.Itoa(i)+".args"))
+		cwd, _ := os.ReadFile(filepath.Join(runs, strconv.Itoa(i)+".cwd"))
+		a, c := string(args), string(cwd)
+		if !strings.Contains(a, "\n--effort\nmax\n") || !strings.Contains(a, "\n--strict-mcp-config\n") || !strings.Contains(a, "\n--no-session-persistence\n") {
+			t.Errorf("run %d: not a max-effort, MCP-free, unsaved run:\n%s", i, a)
+		}
+		if strings.Contains(c, cases) || strings.Contains(c, "answer.md") || strings.Contains(c, "PORTRAIT.md") {
+			t.Errorf("run %d started where it can see the cases or the portrait:\n%s", i, c)
+		}
+		if i%2 == 0 {
+			// as-me: the situation and the portrait path, never an answer.
+			if strings.Contains(a, "ANSWER-") || strings.Contains(a, cases) || strings.Contains(a, "judge") {
+				t.Errorf("as-me run %d saw the answer or the cases:\n%s", i, a)
+			}
+			if !strings.Contains(a, "\n--tools\nRead\n--allowed-tools\nRead(/"+portrait+"/**)\n") || !strings.Contains(a, portrait+"/PORTRAIT.md") || !strings.Contains(a, "Leaned on:") {
+				t.Errorf("as-me run %d must read only the portrait:\n%s", i, a)
+			}
+			if !strings.HasSuffix(strings.TrimSpace(c), "situation.md") || strings.Count(c, "\n") != 2 {
+				t.Errorf("as-me run %d folder must hold only situation.md:\n%s", i, c)
+			}
+		} else {
+			// The judge: the answer and as-me's reply, never the portrait,
+			// and no tools at all.
+			if strings.Contains(a, "PORTRAIT-ONLY-MARKER") || strings.Contains(a, portrait) || strings.Contains(a, "agentic self") {
+				t.Errorf("judge run %d saw the portrait:\n%s", i, a)
+			}
+			if !strings.Contains(a, "\n--tools\n\n") || strings.Contains(a, "--allowed-tools") {
+				t.Errorf("judge run %d must have no tools:\n%s", i, a)
+			}
+			if !strings.Contains(a, "ANSWER-") || !strings.Contains(a, "I would merge it now") {
+				t.Errorf("judge run %d lacks the answer or the reply:\n%s", i, a)
+			}
+			if strings.TrimSpace(c) != strings.Split(c, "\n")[0] {
+				t.Errorf("judge run %d folder must be empty:\n%s", i, c)
+			}
+		}
+	}
+	results, err := os.ReadFile(filepath.Join(cases, "results.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := string(results)
+	for _, want := range []string{
+		"# Blind test: bo, ",
+		"- Portrait: bo, version 2, updated 2026-11-24, made 2026-11-20\n- As-me: claude, effort max\n- Judge: claude, effort max\n",
+		"Score: 37% (1 match, 1 close, 1 wrong, of 4; match counts 1, close 0.5).",
+		"| a-match | match | the same decision. |",
+		"| b-close | close | same call, different order. |",
+		"| c-wrong | wrong | the person waited for a yes. |",
+		"| d-broken | error | the judge gave no verdict (status 0) |",
+		"## Candidate scenarios",
+		"## <n>. c-wrong\n- Situation: A customer asks for a refund by email. CASE-WRONG\n- Agent would: I would merge it now and tell Bo after.\n- Verdict: not yet\n- Reason:\n- Date: ",
+	} {
+		if !strings.Contains(r, want) {
+			t.Errorf("results.md lacks %q:\n%s", want, r)
+		}
+	}
+	if strings.Contains(r, "e-incomplete") || strings.Contains(r, "## <n>. a-match") {
+		t.Errorf("results.md lists the wrong cases:\n%s", r)
+	}
+	if info, _ := os.Stat(filepath.Join(cases, "results.md")); info.Mode().Perm() != 0o600 {
+		t.Errorf("results.md mode %v", info.Mode().Perm())
+	}
+	if leftovers, _ := filepath.Glob(filepath.Join(s.home, "isoform-portrait-eval.*")); len(leftovers) != 0 {
+		t.Errorf("eval left %v", leftovers)
+	}
+	// No portrait: one clear line.
+	empty := newPortraitStubs(t, claudeCodePluginDir)
+	if _, stderr, code := empty.run(t, nil, "eval", cases); code != 1 || !strings.Contains(stderr, "no portrait") {
+		t.Errorf("eval without a portrait: %d %q", code, stderr)
+	}
+}
