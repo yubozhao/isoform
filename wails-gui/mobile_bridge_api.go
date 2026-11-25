@@ -127,6 +127,11 @@ func (bridge *mobileBridge) handleAuthorized(w http.ResponseWriter, r *http.Requ
 	if bridge.serveExtraRoute(r.Method+" "+path, w, r, device) {
 		return
 	}
+	// With Chat off its routes are not there (scope cut 2026-11, A1).
+	if mobileChatRoute(r.Method, path) && chatFeatureErr() != nil {
+		mobileJSON(w, http.StatusNotFound, nil, "mobile route not found")
+		return
+	}
 	switch r.Method + " " + path {
 	case "GET /status":
 		bridge.serveStatus(w)
@@ -803,6 +808,11 @@ func (bridge *mobileBridge) serveStatus(w http.ResponseWriter) {
 		BriefSchedule: []mobileBriefSlotTime{},
 	}
 	view.Holds = bridge.mobileHoldsAvailable(calendarAccessGranted())
+	// With Chat off the phone sees no chat flag and hides Chat (scope cut
+	// 2026-11, A1).
+	if chatFeatureErr() != nil {
+		view.ChatMainSend, view.ChatB10, view.ScopeRequest, view.BriefAsk = false, false, false, false
+	}
 	if svc := bridge.briefSource(); svc != nil {
 		if schedule, err := svc.Schedule(); err == nil {
 			view.Schedule = schedule

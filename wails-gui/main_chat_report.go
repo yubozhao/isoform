@@ -114,6 +114,10 @@ var mainChatPostMu sync.Mutex
 // postToMainChat appends one report to the main chat. It returns the item id
 // of the new row, or "" when the report was deduped or could not be stored.
 func (a *App) postToMainChat(text string, report mainChatReport) string {
+	// With Chat off a report has no place to go (scope cut 2026-11, A1).
+	if chatFeatureErr() != nil {
+		return ""
+	}
 	if a == nil || a.store == nil {
 		return ""
 	}
@@ -359,6 +363,11 @@ func mainChatUnspecificPersonMoment(m engagement.Moment) bool {
 // postEngagementReport acknowledges a durable main-chat item independently of
 // the chosen notification channels. Kinds with a dedicated report are skipped.
 func (a *App) postEngagementReport(m engagement.Moment, text engagementText) bool {
+	// With Chat off there is no chat record to keep: the skip is intended
+	// (scope cut 2026-11, A1), so the moment is not retried.
+	if chatFeatureErr() != nil {
+		return true
+	}
 	if engagementKindHasOwnReport(m.Kind) || engagementKindSilent(m.Kind) ||
 		mainChatUnspecificPersonMoment(m) {
 		return true

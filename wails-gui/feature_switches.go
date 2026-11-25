@@ -29,7 +29,7 @@ const (
 
 const featureSwitchesEnv = "YANSU_FEATURES"
 
-var allFeatureSwitches = []featureSwitch{featureAutomations, featurePlaybooks, featureProactiveVoice, featureCalendarHolds, featureWatchNotes}
+var allFeatureSwitches = []featureSwitch{featureAutomations, featurePlaybooks, featureProactiveVoice, featureCalendarHolds, featureWatchNotes, featureChat}
 
 // featureOn reports whether a turned-off feature has been turned back on.
 func featureOn(feature featureSwitch) bool {
@@ -49,6 +49,7 @@ type FeatureSwitches struct {
 	Playbooks      bool `json:"playbooks"`
 	ProactiveVoice bool `json:"proactiveVoice"`
 	CalendarHolds  bool `json:"calendarHolds"`
+	Chat           bool `json:"chat"`
 }
 
 // GetFeatureSwitches is the Wails binding for FeatureSwitches.
@@ -58,6 +59,7 @@ func (a *App) GetFeatureSwitches() FeatureSwitches {
 		Playbooks:      featureOn(featurePlaybooks),
 		ProactiveVoice: featureOn(featureProactiveVoice),
 		CalendarHolds:  featureOn(featureCalendarHolds),
+		Chat:           featureOn(featureChat),
 	}
 }
 

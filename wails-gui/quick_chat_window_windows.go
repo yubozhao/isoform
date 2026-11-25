@@ -38,6 +38,9 @@ import (
 // overlay listens for, with NativeWindow=false so QuickChatOverlay
 // opens (the same path the renderer's in-app Ctrl+J shortcut takes).
 func (a *App) ShowQuickChatWindow(bundleID string) {
+	if chatFeatureErr() != nil {
+		return
+	}
 	quickChatWindowMu.Lock()
 	quickChatWindowApp = a
 	quickChatWindowOpen = true

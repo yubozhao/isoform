@@ -69,6 +69,9 @@ func (a *App) appendOfferChatTurn(ctx context.Context, store *storage.Store, tag
 // SendPromptWithOfferReferences keeps edited offer text source-derived in
 // ordinary desktop sessions, independently of the main-chat Today protocol.
 func (a *App) SendPromptWithOfferReferences(prompt, workDir, model, sessionID, tag string, images []ImageData, files []FileData, planMode, thinkingEnabled bool, uiLanguage, traceID string, userItem StreamItemData, refs []TaskOfferReference) (int, error) {
+	if err := a.chatSessionRefused(tag); err != nil {
+		return -1, err
+	}
 	if a == nil || a.store == nil || len(refs) == 0 || !mobileOfferReferencesValid(refs) || userItem.ID == "" || userItem.Kind != "user" {
 		return -1, errTaskOfferUnavailable
 	}

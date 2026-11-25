@@ -20,6 +20,9 @@ const firstWeekDiscoveryReason = "first week discovery"
 // Chat card, once. It posts the card only: it never pushes, never buzzes and
 // never changes the moment's state. Each card keeps the time its brief was ready.
 func (a *App) backfillBriefChatCards(ctx context.Context) {
+	if chatFeatureErr() != nil {
+		return
+	}
 	a.dedupeBriefChatCards(ctx)
 	svc, ok := a.mobileBriefSource().(*mobileBriefService)
 	if !ok || svc == nil || svc.store == nil {

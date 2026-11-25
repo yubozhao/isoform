@@ -8,6 +8,9 @@ import (
 )
 
 func (a *App) LoadMainChatProactiveItem(momentID string) (perfValue *StreamItemData, perfErr error) {
+	if err := chatFeatureErr(); err != nil {
+		return perfValue, err
+	}
 	defer logPageBinding("LoadMainChatProactiveItem", time.Now(), &perfValue)
 	if a == nil || a.store == nil || momentID == "" {
 		return nil, errors.New("chat item is unavailable")
@@ -62,6 +65,9 @@ func (a *App) LoadMainChatProactiveItem(momentID string) (perfValue *StreamItemD
 }
 
 func (a *App) ReturnToMainChatPlace(momentID string) (bool, error) {
+	if err := chatFeatureErr(); err != nil {
+		return false, err
+	}
 	if a == nil || a.store == nil || momentID == "" {
 		return false, nil
 	}

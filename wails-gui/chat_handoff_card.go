@@ -63,6 +63,9 @@ var chatHandoffAnswerMu sync.Mutex
 // ("declined"), or "handed" once the Work on it sheet sent it. An answered
 // card keeps its first answer.
 func (a *App) AnswerChatHandoffCard(itemID, answer string) (string, error) {
+	if err := chatFeatureErr(); err != nil {
+		return "", err
+	}
 	return a.answerChatHandoffCard(itemID, answer, "", time.Time{})
 }
 

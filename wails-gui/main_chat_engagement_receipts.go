@@ -125,6 +125,9 @@ func (a *App) recordMainChatDelivery(item mainChatProactive, at int64) error {
 // RecordMainChatProactiveReceipt observes a rendered computer card. Clients
 // cannot claim acted: that state requires the linked item's completion time.
 func (a *App) RecordMainChatProactiveReceipt(momentID, state string) error {
+	if err := chatFeatureErr(); err != nil {
+		return err
+	}
 	return a.recordMainChatProactiveReceipt(momentID, state, engagement.ChannelChat)
 }
 

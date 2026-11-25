@@ -429,7 +429,7 @@ func (bridge *mobileBridge) buildToday() (MobileTodayV1, error) {
 		cursor := ""
 		pages := [][]mobileTodayNeed{}
 		for {
-			page, err := app.ListMainChatWaitingItems(cursor, 200)
+			page, err := app.readMainChatWaitingItems(cursor, 200)
 			if err != nil {
 				return MobileTodayV1{}, err
 			}
@@ -486,7 +486,7 @@ func (bridge *mobileBridge) buildToday() (MobileTodayV1, error) {
 				bridge.today.mu.RUnlock()
 			}
 			view.Topics = append(view.Topics, mobileTodayTopicsWithChat(topics.Topics, func(id string) bool {
-				page, err := app.ListMainChatTopicItems(id, "", 1)
+				page, err := app.readMainChatTopicItems(id, "", 1)
 				return err == nil && len(page.Items) > 0
 			})...)
 		}

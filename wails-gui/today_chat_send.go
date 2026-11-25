@@ -89,6 +89,9 @@ func (a *App) SendPromptWithTodayContext(prompt string, workDir string, model st
 // The phone shares the computer's source resolution and atomic admission, but
 // retains its own origin so brief context cannot grant computer-only tools.
 func (a *App) sendPromptWithTodayContext(prompt string, workDir string, model string, sessionID string, tag string, images []ImageData, files []FileData, planMode bool, thinkingEnabled bool, uiLanguage string, traceID string, userItem StreamItemData, ref TodayChatContextRef, origin promptOrigin, onAdmitted func(int)) (int, error) {
+	if err := a.chatSessionRefused(tag); err != nil {
+		return -1, err
+	}
 	// Direct callers must get the same redaction as draft preparation.
 	prompt = todayChatRedactPrompt(prompt)
 	var result todayChatContextResult

@@ -97,6 +97,9 @@ func (a *App) ensureMainChatOnStartup() {
 // GetMainChat returns the main chat, creating it when missing. The renderer
 // calls it when its loaded state has no session of kind "main".
 func (a *App) GetMainChat() (perfValue MainChatInfo, perfErr error) {
+	if err := chatFeatureErr(); err != nil {
+		return perfValue, err
+	}
 	defer logPageBinding("GetMainChat", time.Now(), &perfValue)
 	row, err := a.ensureMainChat(context.Background())
 	if err != nil {

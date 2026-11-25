@@ -151,6 +151,9 @@ func (a *App) SetQuickChatHotkeyRecording(on bool) {
 // the hook reads. No need to reinstall the OS hook — the callback reads
 // the current value on each event.
 func (a *App) SetQuickChatHotkey(c QuickChatHotkeyConfig) error {
+	if err := chatFeatureErr(); err != nil {
+		return err
+	}
 	c.Key = strings.ToLower(c.Key) // do NOT TrimSpace — " " (space) is valid
 	if err := validateQuickChatHotkey(c); err != nil {
 		return err

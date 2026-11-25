@@ -286,6 +286,9 @@ import (
 // bundle ID as context. Safe to call from any goroutine; the actual
 // Cocoa work is dispatched to the main queue.
 func (a *App) ShowQuickChatWindow(bundleID string) {
+	if chatFeatureErr() != nil {
+		return
+	}
 	quickChatWindowMu.Lock()
 	quickChatWindowApp = a
 	quickChatWindowOpen = true

@@ -1019,20 +1019,7 @@ func (a *App) startupServices(ctx context.Context) {
 	if a.bridge != nil {
 		a.spotlight.SetHostBridgePort(a.bridge.Port())
 	}
-	go func() {
-		if err := a.spotlight.Start(a.ctx); err != nil {
-			log.Printf("[spotlight] supervisor start failed: %v", err)
-		}
-	}()
-
-	// Quick Chat global hotkey. Non-fatal on failure: the in-app
-	// Cmd+J shortcut still works even if the global tap can't start
-	// (e.g. Accessibility permission pending).
-	go func() {
-		if err := a.StartQuickChatHotkey(); err != nil {
-			log.Printf("[quickchat] global hotkey unavailable: %v", err)
-		}
-	}()
+	a.startQuickChat()
 
 	var memoryStore *MemoryStore
 	memoryDone := a.deferLaunchTask("memory_open", func() {
@@ -1067,39 +1054,7 @@ func (a *App) startupServices(ctx context.Context) {
 
 	// SSH configs / auto-connect removed along with SSH config persistence.
 
-	// Start Slack incremental scanner early so Trigger() is available
-	// before tryAutoStartDaemon fires. The scanner goroutine no-ops while the
-	// Furnace feature is paused (see furnaceScanEnabled).
-	scanner := NewSlackIncrementalScanner(a)
-	a.slackScanner = scanner
-	go scanner.Run(a.ctx)
-
-	// Start Telegram incremental scanner early so Trigger() is available
-	// before tryAutoStartTelegramDaemon fires.
-	telegramScanner := NewTelegramIncrementalScanner(a)
-	a.telegramScanner = telegramScanner
-	go telegramScanner.Run(a.ctx)
-
-	// Auto-start Slack daemon if persisted config exists.
-	go a.tryAutoStartDaemon()
-
-	// Auto-start Feishu daemon if persisted config exists.
-	go a.tryAutoStartFeishuDaemon()
-
-	// Start Discord incremental scanner early so Trigger() is available
-	// before tryAutoStartDiscordDaemon fires.
-	discordScanner := NewDiscordIncrementalScanner(a)
-	a.discordScanner = discordScanner
-	go discordScanner.Run(a.ctx)
-
-	// Auto-start Discord daemon if binding exists.
-	go a.tryAutoStartDiscordDaemon()
-
-	// Auto-start Telegram daemon if persisted config exists.
-	go a.tryAutoStartTelegramDaemon()
-
-	// Auto-start WeChat monitor if persisted config exists.
-	go a.tryAutoStartWeChatMonitor()
+	a.startChatApps()
 
 	// Pre-download speech models so voice input is ready on first use.
 	// After the engine is ready, start background listening if the user has

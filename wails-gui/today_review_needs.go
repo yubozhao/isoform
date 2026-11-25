@@ -99,7 +99,7 @@ func (a *App) GetNeedsYou(limit int) (TodayNeedsPage, error) {
 	if a.store != nil {
 		cursor := ""
 		for {
-			page, err := a.ListMainChatWaitingItems(cursor, 200)
+			page, err := a.readMainChatWaitingItems(cursor, 200)
 			if err != nil {
 				return TodayNeedsPage{}, err
 			}

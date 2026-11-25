@@ -121,6 +121,9 @@ func applyHotkeyToPlatform(_ QuickChatHotkeyConfig) {}
 // errors are logged from the pump goroutine, since hook installation
 // happens asynchronously after we LockOSThread.
 func (a *App) StartQuickChatHotkey() error {
+	if err := chatFeatureErr(); err != nil {
+		return err
+	}
 	quickChatHotkeyMu.Lock()
 	quickChatApp = a
 	quickChatHotkeyMu.Unlock()

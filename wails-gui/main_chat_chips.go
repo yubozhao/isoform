@@ -316,6 +316,9 @@ func parseAnswerChips(raw, message string) []string {
 
 // ListMainChatAnswerChips reads prepared requests for up to 100 main-chat answers.
 func (a *App) ListMainChatAnswerChips(itemIds []string) (perfValue map[string][]string, perfErr error) {
+	if err := chatFeatureErr(); err != nil {
+		return perfValue, err
+	}
 	defer logPageBinding("ListMainChatAnswerChips", time.Now(), &perfValue)
 	if a == nil || a.store == nil || a.IsClosedEyesModeEnabled() {
 		return map[string][]string{}, nil
